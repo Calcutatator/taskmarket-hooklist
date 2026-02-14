@@ -1,0 +1,7 @@
+{
+  "name": "@stakework/markdownlint-config",
+  "version": "0.0.0",
+  "private": true,
+  "main": ".markdownlint.json",
+  "files": [".markdownlint.json"]
+}

@@ -1,0 +1,6 @@
+#!/usr/bin/env sh
+. "$(dirname -- "$0")/_/husky.sh"
+
+pnpm turbo lint:check
+pnpm turbo type-check
+pnpm turbo format:check

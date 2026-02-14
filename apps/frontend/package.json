@@ -1,0 +1,38 @@
+{
+  "name": "@stakework/frontend",
+  "private": true,
+  "version": "1.0.0",
+  "type": "module",
+  "prettier": "@stakework/prettier-config",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview",
+    "lint:check": "eslint .",
+    "lint:write": "eslint . --fix",
+    "format:check": "prettier . --check",
+    "format:write": "prettier . --write",
+    "type-check": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@stakework/shared": "workspace:*",
+    "@tanstack/react-query": "^5.90.11",
+    "@tanstack/react-router": "^1.120.5",
+    "@trpc/client": "^11.4.4",
+    "@trpc/react-query": "^11.4.4",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1",
+    "viem": "^2.41.2",
+    "zod": "^3.22.4"
+  },
+  "devDependencies": {
+    "@stakework/eslint-config": "workspace:*",
+    "@stakework/prettier-config": "workspace:*",
+    "@tanstack/router-plugin": "^1.120.5",
+    "@types/react": "^18.3.11",
+    "@types/react-dom": "^18.3.1",
+    "@vitejs/plugin-react": "^4.3.4",
+    "typescript": "^5.3.3",
+    "vite": "^5.4.11"
+  }
+}

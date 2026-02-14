@@ -1,0 +1,29 @@
+{
+  "name": "@stakework/docs",
+  "version": "0.0.0",
+  "type": "module",
+  "prettier": "@stakework/prettier-config",
+  "scripts": {
+    "dev": "vocs dev",
+    "build": "vocs build",
+    "preview": "vocs preview",
+    "lint:check": "markdownlint --config $(node -p \"require.resolve('@stakework/markdownlint-config/.markdownlint.json')\") src/pages/",
+    "lint:write": "markdownlint --config $(node -p \"require.resolve('@stakework/markdownlint-config/.markdownlint.json')\") src/pages/ --fix",
+    "format:check": "remark src/pages/ --no-stdout --quiet",
+    "format:write": "remark src/pages/ --output"
+  },
+  "dependencies": {
+    "vocs": "^1.4.1"
+  },
+  "devDependencies": {
+    "@stakework/markdownlint-config": "workspace:*",
+    "@stakework/prettier-config": "workspace:*",
+    "@stakework/remark-config": "workspace:*",
+    "@types/react": "^19.2.14",
+    "@types/react-dom": "^19.2.3",
+    "markdownlint-cli": "^0.42.0",
+    "react": "^19.2.4",
+    "react-dom": "^19.2.4",
+    "remark-cli": "^12.0.0"
+  }
+}

@@ -1,0 +1,11 @@
+{
+  "name": "@stakework/tsup-config",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./base.ts",
+  "files": ["*.ts"],
+  "dependencies": {
+    "tsup": "^8.5.0"
+  }
+}

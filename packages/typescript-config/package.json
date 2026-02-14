@@ -1,0 +1,12 @@
+{
+  "name": "@stakework/typescript-config",
+  "version": "0.0.0",
+  "private": true,
+  "main": "base.json",
+  "files": ["*.json"],
+  "exports": {
+    "./base.json": "./base.json",
+    "./node.json": "./node.json",
+    "./react.json": "./react.json"
+  }
+}
