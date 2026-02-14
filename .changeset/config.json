@@ -3,7 +3,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [
-    ["@stakework/shared", "@stakework/api", "@stakework/cli"]
+    ["@stakework/shared", "@stakework/backend", "@stakework/cli"]
   ],
   "linked": [],
   "access": "restricted",

@@ -15,7 +15,7 @@ Stakework is a TypeScript monorepo for a decentralized task marketplace where:
 
 ### Apps
 
-- **apps/api** - Express + tRPC backend with Drizzle ORM
+- **apps/backend** - Express + tRPC backend with Drizzle ORM
 - **apps/cli** - Commander.js CLI for task management
 - **apps/frontend** - React + TanStack Router frontend
 - **apps/docs** - Vocs documentation site

@@ -17,7 +17,7 @@ When implementing features, follow established patterns in these guides:
 
 ## Repository Structure
 
-- apps/api - Express + tRPC backend (docs/BACKEND_GUIDE.md)
+- apps/backend - Express + tRPC backend (docs/BACKEND_GUIDE.md)
 - apps/frontend - React + TanStack Router (docs/FRONTEND_GUIDE.md)
 - apps/cli - Commander.js CLI (docs/CLI_GUIDE.md)
 - apps/docs - Vocs public documentation site

@@ -11,7 +11,7 @@ We use Vitest for unit and integration tests, Playwright for E2E tests.
 Test isolated logic without database:
 
 ```typescript
-// apps/api/test/unit/env.test.ts
+// apps/backend/test/unit/env.test.ts
 import { describe, it, expect } from 'vitest';
 
 describe('Environment validation', () => {
@@ -26,7 +26,7 @@ describe('Environment validation', () => {
 Test API endpoints with test database:
 
 ```typescript
-// apps/api/test/integration/tasks.test.ts
+// apps/backend/test/integration/tasks.test.ts
 import { describe, it, expect, beforeAll } from 'vitest';
 
 beforeAll(async () => {
@@ -74,8 +74,8 @@ forge test -vvv
 make test
 
 # Specific package
-cd apps/api && pnpm test
+cd apps/backend && pnpm test
 
 # Watch mode
-cd apps/api && pnpm test:watch
+cd apps/backend && pnpm test:watch
 ```

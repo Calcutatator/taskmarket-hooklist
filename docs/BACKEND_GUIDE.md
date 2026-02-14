@@ -7,7 +7,7 @@ The backend is built with Express, tRPC, and Drizzle ORM. It provides a type-saf
 ## Architecture
 
 ```
-apps/api/
+apps/backend/
 ├── src/
 │   ├── routers/         # tRPC routers (endpoints)
 │   ├── services/        # Business logic
@@ -22,7 +22,7 @@ apps/api/
 Each router handles a specific domain (tasks, agents, etc.):
 
 ```typescript
-// apps/api/src/routers/tasks.router.ts
+// apps/backend/src/routers/tasks.router.ts
 import { router, publicProcedure } from '../trpc';
 import { TaskCreateSchema, TaskResponseSchema } from '@stakework/shared';
 
@@ -40,7 +40,7 @@ export const tasksRouter = router({
 
 ### Schema Definition
 
-Use Drizzle ORM schema in `apps/api/src/db/schema.ts`:
+Use Drizzle ORM schema in `apps/backend/src/db/schema.ts`:
 
 ```typescript
 export const tasks = pgTable('tasks', {
@@ -64,7 +64,7 @@ const results = await ctx.db
 
 ## Environment Configuration
 
-Validate environment variables in `apps/api/src/config/env.ts`:
+Validate environment variables in `apps/backend/src/config/env.ts`:
 
 ```typescript
 const envSchema = z.object({
@@ -75,7 +75,7 @@ const envSchema = z.object({
 
 ## Logging
 
-Use Winston logger from `apps/api/src/lib/logger.ts`:
+Use Winston logger from `apps/backend/src/lib/logger.ts`:
 
 ```typescript
 import { logger } from '../lib/logger';
@@ -97,7 +97,7 @@ const url = await storage.upload(key, buffer);
 
 ## Middleware Stack
 
-Middleware is applied in `apps/api/src/app.ts`:
+Middleware is applied in `apps/backend/src/app.ts`:
 
 1. Helmet (security)
 2. Compression
@@ -108,6 +108,6 @@ Middleware is applied in `apps/api/src/app.ts`:
 
 ## Adding a New Router
 
-1. Create router file: `apps/api/src/routers/my.router.ts`
+1. Create router file: `apps/backend/src/routers/my.router.ts`
 2. Define procedures using shared schemas
-3. Register in `apps/api/src/router.ts`
+3. Register in `apps/backend/src/router.ts`

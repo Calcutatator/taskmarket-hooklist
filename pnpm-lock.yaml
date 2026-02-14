@@ -24,7 +24,7 @@ importers:
         specifier: ^5.3.3
         version: 5.9.3
 
-  apps/api:
+  apps/backend:
     dependencies:
       '@aws-sdk/client-s3':
         specifier: ^3.0.0
@@ -1404,7 +1404,6 @@ packages:
     cpu: [ppc64]
     os: [aix]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/aix-ppc64@0.27.3:
@@ -1439,7 +1438,6 @@ packages:
     cpu: [arm64]
     os: [android]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/android-arm64@0.27.3:
@@ -1474,7 +1472,6 @@ packages:
     cpu: [arm]
     os: [android]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/android-arm@0.27.3:
@@ -1509,7 +1506,6 @@ packages:
     cpu: [x64]
     os: [android]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/android-x64@0.27.3:
@@ -1544,7 +1540,6 @@ packages:
     cpu: [arm64]
     os: [darwin]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/darwin-arm64@0.27.3:
@@ -1579,7 +1574,6 @@ packages:
     cpu: [x64]
     os: [darwin]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/darwin-x64@0.27.3:
@@ -1614,7 +1608,6 @@ packages:
     cpu: [arm64]
     os: [freebsd]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/freebsd-arm64@0.27.3:
@@ -1649,7 +1642,6 @@ packages:
     cpu: [x64]
     os: [freebsd]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/freebsd-x64@0.27.3:
@@ -1684,7 +1676,6 @@ packages:
     cpu: [arm64]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-arm64@0.27.3:
@@ -1719,7 +1710,6 @@ packages:
     cpu: [arm]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-arm@0.27.3:
@@ -1754,7 +1744,6 @@ packages:
     cpu: [ia32]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-ia32@0.27.3:
@@ -1789,7 +1778,6 @@ packages:
     cpu: [loong64]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-loong64@0.27.3:
@@ -1824,7 +1812,6 @@ packages:
     cpu: [mips64el]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-mips64el@0.27.3:
@@ -1859,7 +1846,6 @@ packages:
     cpu: [ppc64]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-ppc64@0.27.3:
@@ -1894,7 +1880,6 @@ packages:
     cpu: [riscv64]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-riscv64@0.27.3:
@@ -1929,7 +1914,6 @@ packages:
     cpu: [s390x]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-s390x@0.27.3:
@@ -1964,7 +1948,6 @@ packages:
     cpu: [x64]
     os: [linux]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/linux-x64@0.27.3:
@@ -2007,7 +1990,6 @@ packages:
     cpu: [x64]
     os: [netbsd]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/netbsd-x64@0.27.3:
@@ -2050,7 +2032,6 @@ packages:
     cpu: [x64]
     os: [openbsd]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/openbsd-x64@0.27.3:
@@ -2093,7 +2074,6 @@ packages:
     cpu: [x64]
     os: [sunos]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/sunos-x64@0.27.3:
@@ -2128,7 +2108,6 @@ packages:
     cpu: [arm64]
     os: [win32]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/win32-arm64@0.27.3:
@@ -2163,7 +2142,6 @@ packages:
     cpu: [ia32]
     os: [win32]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/win32-ia32@0.27.3:
@@ -2198,7 +2176,6 @@ packages:
     cpu: [x64]
     os: [win32]
     requiresBuild: true
-    dev: true
     optional: true
 
   /@esbuild/win32-x64@0.27.3:
@@ -5472,19 +5449,12 @@ packages:
     resolution: {integrity: sha512-Rs1bVAIdBs5gbTIKza/tgpMuG1k3U/UMJLWecIMxNdJFDMzcM5LOiLVRYh3PilWEYDIeUDv7bpiHPLPsbydGcw==}
     dependencies:
       undici-types: 6.21.0
-    dev: true
 
   /@types/node@22.19.11:
     resolution: {integrity: sha512-BH7YwL6rA93ReqeQS1c4bsPpcfOmJasG+Fkr6Y59q83f9M1WcBRHR2vM+P9eOisYRcN3ujQoiZY8uk5W+1WL8w==}
     dependencies:
       undici-types: 6.21.0
     dev: true
-
-  /@types/node@25.2.3:
-    resolution: {integrity: sha512-m0jEgYlYz+mDJZ2+F4v8D1AyQb+QzsNqRuI7xg1VQX/KlKS0qT9r1Mo16yo5F/MtifXFgaofIFsdFMox2SxIbQ==}
-    dependencies:
-      undici-types: 7.16.0
-    dev: false
 
   /@types/prop-types@15.7.15:
     resolution: {integrity: sha512-F6bEyamV9jKGAFBEmlQnesRPGOQqS2+Uwi0Em15xenOxHaf2hv6L8YCVn3rPdPJOiJfPiCnLIRyvwVaqMY3MIw==}
@@ -5730,17 +5700,16 @@ packages:
       - supports-color
     dev: false
 
-  /@vanilla-extract/compiler@0.3.4(yaml@2.8.2):
+  /@vanilla-extract/compiler@0.3.4:
     resolution: {integrity: sha512-W9HXf9EAccpE1vEIATvSoBVj/bQnmHfYHfDJjUN8dcOHW6oMcnoGTqweDM9I66BHqlNH4d0IsaeZKSViOv7K4w==}
     dependencies:
       '@vanilla-extract/css': 1.18.0
       '@vanilla-extract/integration': 8.0.7
-      vite: 7.3.1(yaml@2.8.2)
-      vite-node: 3.2.4(yaml@2.8.2)
+      vite: 5.4.21(@types/node@20.19.33)
+      vite-node: 3.2.4
     transitivePeerDependencies:
       - '@types/node'
       - babel-plugin-macros
-      - jiti
       - less
       - lightningcss
       - sass
@@ -5749,8 +5718,6 @@ packages:
       - sugarss
       - supports-color
       - terser
-      - tsx
-      - yaml
     dev: false
 
   /@vanilla-extract/css@1.18.0:
@@ -5800,18 +5767,17 @@ packages:
     resolution: {integrity: sha512-gT2jbfZuaaCLrAxwXbRgIhGhcXbRZCG3v4TTUnjw0EJ7ArdBRxkq4msNJkbuRkCgfIK5ATmprB5t9ljvLeFDEA==}
     dev: false
 
-  /@vanilla-extract/vite-plugin@5.1.4(vite@7.3.1)(yaml@2.8.2):
+  /@vanilla-extract/vite-plugin@5.1.4(vite@7.3.1):
     resolution: {integrity: sha512-fTYNKUK3n4ApkUf2FEcO7mpqNKEHf9kDGg8DXlkqHtPxgwPhjuaajmDfQCSBsNgnA2SLI+CB5EO6kLQuKsw2Rw==}
     peerDependencies:
       vite: ^5.0.0 || ^6.0.0 || ^7.0.0
     dependencies:
-      '@vanilla-extract/compiler': 0.3.4(yaml@2.8.2)
+      '@vanilla-extract/compiler': 0.3.4
       '@vanilla-extract/integration': 8.0.7
       vite: 7.3.1(yaml@2.8.2)
     transitivePeerDependencies:
       - '@types/node'
       - babel-plugin-macros
-      - jiti
       - less
       - lightningcss
       - sass
@@ -5820,8 +5786,6 @@ packages:
       - sugarss
       - supports-color
       - terser
-      - tsx
-      - yaml
     dev: false
 
   /@vitejs/plugin-react@4.7.0(vite@5.4.21):
@@ -7448,7 +7412,6 @@ packages:
       '@esbuild/win32-arm64': 0.21.5
       '@esbuild/win32-ia32': 0.21.5
       '@esbuild/win32-x64': 0.21.5
-    dev: true
 
   /esbuild@0.27.3:
     resolution: {integrity: sha512-8VwMnyGCONIs6cWue2IdpHxHnAjzxnw2Zr7MkVxB2vjmQ2ivqGFb4LEG3SMnv0Gb2F/G/2yA8zUaiL1gywDCCg==}
@@ -7706,7 +7669,7 @@ packages:
     resolution: {integrity: sha512-EzV94NYKoO09GLXGjXj9JIlXijVck4ONSr5wiCWDvhsvj5jxSrzTmRU/9C1DyB6uToszLs8aifA6NQ7lEQdvFw==}
     engines: {node: '>= 0.8'}
     dependencies:
-      '@types/node': 25.2.3
+      '@types/node': 20.19.33
       require-like: 0.1.2
     dev: false
 
@@ -12591,11 +12554,6 @@ packages:
 
   /undici-types@6.21.0:
     resolution: {integrity: sha512-iwDZqg0QAGrg9Rav5H4n0M64c3mkR59cJ6wQp+7C4nI0gsmExaedaYLNO44eT4AtBBwjbTiGPMlt2Md0T9H9JQ==}
-    dev: true
-
-  /undici-types@7.16.0:
-    resolution: {integrity: sha512-Zz+aZWSj8LE6zoxD+xrjh4VfkIG8Ya6LvYkZqtUQGJPZjYl53ypCaUwWqo7eI0x66KBGeRo+mlBEkMSeSZ38Nw==}
-    dev: false
 
   /unified-args@11.0.1:
     resolution: {integrity: sha512-WEQghE91+0s3xPVs0YW6a5zUduNLjmANswX7YbBfksHNDGMjHxaWCql4SR7c9q0yov/XiIEdk6r/LqfPjaYGcw==}
@@ -12958,7 +12916,7 @@ packages:
       - terser
     dev: true
 
-  /vite-node@3.2.4(yaml@2.8.2):
+  /vite-node@3.2.4:
     resolution: {integrity: sha512-EbKSKh+bh1E1IFxeO0pg1n4dvoOTt0UDiXMd/qn++r98+jPO1xtJilvXldeuQ8giIB5IkpjCgMleHMNEsGH6pg==}
     engines: {node: ^18.0.0 || ^20.0.0 || >=22.0.0}
     hasBin: true
@@ -12967,10 +12925,9 @@ packages:
       debug: 4.4.3
       es-module-lexer: 1.7.0
       pathe: 2.0.3
-      vite: 7.3.1(yaml@2.8.2)
+      vite: 5.4.21(@types/node@20.19.33)
     transitivePeerDependencies:
       - '@types/node'
-      - jiti
       - less
       - lightningcss
       - sass
@@ -12979,8 +12936,6 @@ packages:
       - sugarss
       - supports-color
       - terser
-      - tsx
-      - yaml
     dev: false
 
   /vite@5.4.21(@types/node@20.19.33):
@@ -13020,7 +12975,6 @@ packages:
       rollup: 4.57.1
     optionalDependencies:
       fsevents: 2.3.3
-    dev: true
 
   /vite@7.3.1(yaml@2.8.2):
     resolution: {integrity: sha512-w+N7Hifpc3gRjZ63vYBXA56dvvRlNWRczTdmCBBa+CotUzAPf5b7YMdMR/8CQoeYE5LX3W4wj6RYTgonm1b9DA==}
@@ -13158,7 +13112,7 @@ packages:
       '@tailwindcss/vite': 4.1.15(vite@7.3.1)
       '@vanilla-extract/css': 1.18.0
       '@vanilla-extract/dynamic': 2.1.5
-      '@vanilla-extract/vite-plugin': 5.1.4(vite@7.3.1)(yaml@2.8.2)
+      '@vanilla-extract/vite-plugin': 5.1.4(vite@7.3.1)
       '@vitejs/plugin-react': 5.1.4(vite@7.3.1)
       autoprefixer: 10.4.24(postcss@8.5.6)
       cac: 6.7.14

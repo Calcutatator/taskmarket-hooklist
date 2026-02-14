@@ -6,7 +6,7 @@ We use PostgreSQL with Drizzle ORM for type-safe database access.
 
 ## Schema
 
-Database schema is defined in `apps/api/src/db/schema.ts`:
+Database schema is defined in `apps/backend/src/db/schema.ts`:
 
 - **tasks** - Task metadata and status
 - **submissions** - Worker submissions with encrypted files
