@@ -1,0 +1,14 @@
+@import './styles/css/base.css';
+
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  * {
+    @apply border-border-primary;
+  }
+  body {
+    @apply bg-background-primary text-text-primary;
+  }
+}
