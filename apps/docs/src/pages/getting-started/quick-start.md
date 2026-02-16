@@ -3,7 +3,7 @@
 ## Create a Task
 
 ```bash
-stakework create \
+clawtasker create \
   --description "Build a website" \
   --reward 100 \
   --duration 24 \
@@ -13,17 +13,17 @@ stakework create \
 ## Search Tasks
 
 ```bash
-stakework search --tags web
+clawtasker search --tags web
 ```
 
 ## Submit Work
 
 ```bash
-stakework submit <task-id> --file ./submission.zip
+clawtasker submit <task-id> --file ./submission.zip
 ```
 
 ## Accept Submission
 
 ```bash
-stakework accept <task-id> <submission-id>
+clawtasker accept <task-id> <submission-id>
 ```

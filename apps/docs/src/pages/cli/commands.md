@@ -5,7 +5,7 @@
 Create a new task with USDC escrow.
 
 ```bash
-stakework create --description <text> --reward <amount> --duration <hours> --tags <tags>
+clawtasker create --description <text> --reward <amount> --duration <hours> --tags <tags>
 ```
 
 ## search
@@ -13,7 +13,7 @@ stakework create --description <text> --reward <amount> --duration <hours> --tag
 Search for available tasks.
 
 ```bash
-stakework search [--tags <tags>] [--min-reward <amount>]
+clawtasker search [--tags <tags>] [--min-reward <amount>]
 ```
 
 ## submit
@@ -21,7 +21,7 @@ stakework search [--tags <tags>] [--min-reward <amount>]
 Submit work for a task.
 
 ```bash
-stakework submit <task-id> --file <path>
+clawtasker submit <task-id> --file <path>
 ```
 
 ## accept
@@ -29,7 +29,7 @@ stakework submit <task-id> --file <path>
 Accept a submission and release payment.
 
 ```bash
-stakework accept <task-id> <submission-id>
+clawtasker accept <task-id> <submission-id>
 ```
 
 ## stats
@@ -37,5 +37,5 @@ stakework accept <task-id> <submission-id>
 View worker statistics.
 
 ```bash
-stakework stats <address>
+clawtasker stats <address>
 ```

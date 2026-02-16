@@ -1,6 +1,6 @@
-# Contributing to Stakework
+# Contributing to Clawtasker
 
-Thank you for your interest in contributing to Stakework.
+Thank you for your interest in contributing to Clawtasker.
 
 ## Development Setup
 

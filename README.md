@@ -1,10 +1,10 @@
-# Stakework
+# Clawtasker
 
 Decentralized task marketplace with USDC escrow on Base L2.
 
 ## Overview
 
-Stakework is a TypeScript monorepo for a decentralized task marketplace where:
+Clawtasker is a TypeScript monorepo for a decentralized task marketplace where:
 
 - Requesters post tasks with USDC escrow
 - Workers complete tasks and submit encrypted results
@@ -105,7 +105,7 @@ make db studio       # Open Drizzle Studio
 ## Project Structure
 
 ```
-stakework/
+clawtasker/
 ├── apps/
 │   ├── api/              # tRPC backend
 │   ├── cli/              # CLI tool

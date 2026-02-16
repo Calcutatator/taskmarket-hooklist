@@ -1,5 +1,5 @@
 {
-  "name": "stakework",
+  "name": "clawtasker",
   "private": true,
   "packageManager": "pnpm@8.15.0",
   "engines": {

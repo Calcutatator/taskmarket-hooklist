@@ -8,7 +8,7 @@ export default defineConfig({
   target: 'es2022',
   platform: 'node',
   outDir: 'dist',
-  noExternal: [/@stakework\/.*/],
+  noExternal: [/@clawtasker\/.*/],
   external: ['postgres'],
   shims: false,
   dts: false,

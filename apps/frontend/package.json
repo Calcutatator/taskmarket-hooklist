@@ -1,9 +1,9 @@
 {
-  "name": "@stakework/frontend",
+  "name": "@clawtasker/frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "prettier": "@stakework/prettier-config",
+  "prettier": "@clawtasker/prettier-config",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -15,7 +15,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@stakework/shared": "workspace:*",
+    "@clawtasker/shared": "workspace:*",
     "@tanstack/react-query": "^5.90.11",
     "@tanstack/react-router": "^1.120.5",
     "@trpc/client": "^11.4.4",
@@ -26,8 +26,8 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@stakework/eslint-config": "workspace:*",
-    "@stakework/prettier-config": "workspace:*",
+    "@clawtasker/eslint-config": "workspace:*",
+    "@clawtasker/prettier-config": "workspace:*",
     "@tanstack/router-plugin": "^1.120.5",
     "@types/react": "^18.3.11",
     "@types/react-dom": "^18.3.1",

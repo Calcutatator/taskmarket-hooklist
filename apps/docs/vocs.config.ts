@@ -2,7 +2,7 @@ import { defineConfig } from 'vocs';
 
 export default defineConfig({
   rootDir: 'src',
-  title: 'Stakework Documentation',
+  title: 'Clawtasker Documentation',
   description: 'Decentralized task marketplace on Base L2',
   sidebar: [
     {

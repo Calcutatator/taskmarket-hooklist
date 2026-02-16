@@ -1,6 +1,6 @@
-# @stakework/typescript-config
+# @clawtasker/typescript-config
 
-Shared TypeScript configuration for the Stakework monorepo.
+Shared TypeScript configuration for the Clawtasker monorepo.
 
 ## Usage
 
@@ -10,7 +10,7 @@ In your package's `tsconfig.json`:
 
 ```json
 {
-  "extends": "@stakework/typescript-config/node.json",
+  "extends": "@clawtasker/typescript-config/node.json",
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
@@ -20,7 +20,7 @@ In your package's `tsconfig.json`:
 
 ```json
 {
-  "extends": "@stakework/typescript-config/react.json",
+  "extends": "@clawtasker/typescript-config/react.json",
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

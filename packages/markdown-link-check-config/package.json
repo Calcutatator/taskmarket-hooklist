@@ -1,5 +1,5 @@
 {
-  "name": "@stakework/markdown-link-check-config",
+  "name": "@clawtasker/markdown-link-check-config",
   "version": "0.0.0",
   "private": true,
   "main": ".markdown-link-check.json",

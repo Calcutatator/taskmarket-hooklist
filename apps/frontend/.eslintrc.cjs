@@ -1,5 +1,5 @@
 module.exports = {
-  extends: ['@stakework/eslint-config'],
+  extends: ['@clawtasker/eslint-config'],
   env: {
     browser: true,
   },

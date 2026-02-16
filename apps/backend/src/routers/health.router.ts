@@ -1,5 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import { HealthResponseSchema } from '@stakework/shared';
+import { HealthResponseSchema } from '@clawtasker/shared';
 import { getServerConfig } from '../config/env';
 
 export const healthRouter = router({

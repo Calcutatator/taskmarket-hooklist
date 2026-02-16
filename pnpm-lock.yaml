@@ -32,7 +32,7 @@ importers:
       '@aws-sdk/s3-request-presigner':
         specifier: ^3.0.0
         version: 3.990.0
-      '@stakework/shared':
+      '@clawtasker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@trpc/server':
@@ -72,10 +72,10 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@stakework/eslint-config':
+      '@clawtasker/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@stakework/prettier-config':
+      '@clawtasker/prettier-config':
         specifier: workspace:*
         version: link:../../packages/prettier-config
       '@types/compression':
@@ -111,7 +111,7 @@ importers:
 
   apps/cli:
     dependencies:
-      '@stakework/shared':
+      '@clawtasker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@trpc/client':
@@ -130,13 +130,13 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@stakework/eslint-config':
+      '@clawtasker/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@stakework/prettier-config':
+      '@clawtasker/prettier-config':
         specifier: workspace:*
         version: link:../../packages/prettier-config
-      '@stakework/tsup-config':
+      '@clawtasker/tsup-config':
         specifier: workspace:*
         version: link:../../packages/tsup-config
       '@types/node':
@@ -155,13 +155,13 @@ importers:
         specifier: ^1.4.1
         version: 1.4.1(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)(rollup@4.57.1)(typescript@5.9.3)
     devDependencies:
-      '@stakework/markdownlint-config':
+      '@clawtasker/markdownlint-config':
         specifier: workspace:*
         version: link:../../packages/markdownlint-config
-      '@stakework/prettier-config':
+      '@clawtasker/prettier-config':
         specifier: workspace:*
         version: link:../../packages/prettier-config
-      '@stakework/remark-config':
+      '@clawtasker/remark-config':
         specifier: workspace:*
         version: link:../../packages/remark-config
       '@types/react':
@@ -185,7 +185,7 @@ importers:
 
   apps/frontend:
     dependencies:
-      '@stakework/shared':
+      '@clawtasker/shared':
         specifier: workspace:*
         version: link:../../packages/shared
       '@tanstack/react-query':
@@ -213,10 +213,10 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@stakework/eslint-config':
+      '@clawtasker/eslint-config':
         specifier: workspace:*
         version: link:../../packages/eslint-config
-      '@stakework/prettier-config':
+      '@clawtasker/prettier-config':
         specifier: workspace:*
         version: link:../../packages/prettier-config
       '@tanstack/router-plugin':
@@ -282,10 +282,10 @@ importers:
         specifier: ^3.22.4
         version: 3.25.76
     devDependencies:
-      '@stakework/eslint-config':
+      '@clawtasker/eslint-config':
         specifier: workspace:*
         version: link:../eslint-config
-      '@stakework/prettier-config':
+      '@clawtasker/prettier-config':
         specifier: workspace:*
         version: link:../prettier-config
       '@types/node':

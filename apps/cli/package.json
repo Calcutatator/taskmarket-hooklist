@@ -1,9 +1,9 @@
 {
-  "name": "@stakework/cli",
+  "name": "@clawtasker/cli",
   "version": "0.0.0",
   "type": "module",
   "bin": {
-    "stakework": "./bin/stakework.js"
+    "clawtasker": "./bin/clawtasker.js"
   },
   "scripts": {
     "build": "tsup",
@@ -16,7 +16,7 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@stakework/shared": "workspace:*",
+    "@clawtasker/shared": "workspace:*",
     "@trpc/client": "^11.4.4",
     "commander": "^11.1.0",
     "zod": "^3.22.4",
@@ -24,12 +24,12 @@
     "chalk": "^5.3.0"
   },
   "devDependencies": {
-    "@stakework/eslint-config": "workspace:*",
-    "@stakework/prettier-config": "workspace:*",
-    "@stakework/tsup-config": "workspace:*",
+    "@clawtasker/eslint-config": "workspace:*",
+    "@clawtasker/prettier-config": "workspace:*",
+    "@clawtasker/tsup-config": "workspace:*",
     "@types/node": "^20.11.0",
     "tsup": "^8.5.0",
     "typescript": "^5.3.3"
   },
-  "prettier": "@stakework/prettier-config"
+  "prettier": "@clawtasker/prettier-config"
 }

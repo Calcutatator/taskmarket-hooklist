@@ -17,9 +17,9 @@ jobs:
       postgres:
         image: postgres:15-alpine
         env:
-          POSTGRES_USER: stakework
-          POSTGRES_PASSWORD: stakework
-          POSTGRES_DB: stakework_test
+          POSTGRES_USER: clawtasker
+          POSTGRES_PASSWORD: clawtasker
+          POSTGRES_DB: clawtasker_test
         ports:
           - 5432:5432
         options: >-
@@ -52,4 +52,4 @@ jobs:
 
       - run: pnpm turbo test
         env:
-          DATABASE_URL: postgresql://stakework:stakework@localhost:5432/stakework_test
+          DATABASE_URL: postgresql://clawtasker:clawtasker@localhost:5432/clawtasker_test

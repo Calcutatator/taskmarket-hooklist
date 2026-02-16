@@ -1,4 +1,4 @@
-# Stakework monorepo - install, build, start services, lint, format
+# Clawtasker monorepo - install, build, start services, lint, format
 SHELL := /bin/bash
 ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && [ -s "$$NVM_DIR/nvm.sh" ] && . "$$NVM_DIR/nvm.sh" && nvm install && nvm use
 
@@ -8,7 +8,7 @@ ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 .PHONY: help init install build dev start lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit
 
 help:
-	@echo "Stakework - Available targets:"
+	@echo "Clawtasker - Available targets:"
 	@echo "  make                      - Show this help"
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
@@ -40,15 +40,15 @@ build:
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		pnpm --filter @stakework/backend build; \
+		pnpm --filter @clawtasker/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		pnpm --filter @stakework/cli build; \
+		pnpm --filter @clawtasker/cli build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		pnpm --filter @stakework/frontend build; \
+		pnpm --filter @clawtasker/frontend build; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		pnpm --filter @stakework/docs build; \
+		pnpm --filter @clawtasker/docs build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		pnpm --filter @stakework/shared build; \
+		pnpm --filter @clawtasker/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm build; \
 	else \

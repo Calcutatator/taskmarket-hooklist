@@ -1,5 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import { AgentStatsSchema, LeaderboardResponseSchema } from '@stakework/shared';
+import { AgentStatsSchema, LeaderboardResponseSchema } from '@clawtasker/shared';
 import { z } from 'zod';
 import { agents, ratings } from '../db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
@@ -36,8 +36,7 @@ export const agentsRouter = router({
         .orderBy(desc(ratings.createdAt))
         .limit(10);
 
-      const averageRating =
-        agent.ratedTasks > 0 ? agent.totalStars / agent.ratedTasks : 0;
+      const averageRating = agent.ratedTasks > 0 ? agent.totalStars / agent.ratedTasks : 0;
 
       return {
         address: agent.address,
@@ -68,7 +67,12 @@ export const agentsRouter = router({
         })
         .from(agents)
         .where(sql`${agents.ratedTasks} >= 5`)
-        .orderBy(desc(sql`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`), desc(agents.completedTasks))
+        .orderBy(
+          desc(
+            sql`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`
+          ),
+          desc(agents.completedTasks)
+        )
         .limit(input.limit);
 
       return results.map((row, index) => ({

@@ -4,9 +4,6 @@ import { Command } from 'commander';
 
 const program = new Command();
 
-program
-  .name('stakework')
-  .description('CLI for Stakework task marketplace')
-  .version('1.0.0');
+program.name('clawtasker').description('CLI for Clawtasker task marketplace').version('1.0.0');
 
 program.parse();

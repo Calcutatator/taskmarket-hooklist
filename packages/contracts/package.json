@@ -1,7 +1,10 @@
 {
-  "name": "@stakework/contracts",
+  "name": "@clawtasker/contracts",
   "version": "0.0.0",
   "private": true,
+  "exports": {
+    "./abi": "./abi/index.ts"
+  },
   "scripts": {
     "build": "forge build",
     "test": "forge test",

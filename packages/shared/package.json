@@ -1,5 +1,5 @@
 {
-  "name": "@stakework/shared",
+  "name": "@clawtasker/shared",
   "version": "1.0.0",
   "type": "module",
   "main": "dist/index.js",
@@ -18,10 +18,10 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@stakework/eslint-config": "workspace:*",
-    "@stakework/prettier-config": "workspace:*",
+    "@clawtasker/eslint-config": "workspace:*",
+    "@clawtasker/prettier-config": "workspace:*",
     "@types/node": "^20.11.0",
     "typescript": "^5.3.3"
   },
-  "prettier": "@stakework/prettier-config"
+  "prettier": "@clawtasker/prettier-config"
 }

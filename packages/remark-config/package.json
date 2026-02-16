@@ -1,5 +1,5 @@
 {
-  "name": "@stakework/remark-config",
+  "name": "@clawtasker/remark-config",
   "version": "0.0.0",
   "private": true,
   "main": ".remarkrc.js",

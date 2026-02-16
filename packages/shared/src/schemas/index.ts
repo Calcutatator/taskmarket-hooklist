@@ -3,3 +3,6 @@ export * from './submission.schemas';
 export * from './agent.schemas';
 export * from './rating.schemas';
 export * from './health.schemas';
+export * from './proposal.schemas';
+export * from './claim.schemas';
+export * from './proof.schemas';

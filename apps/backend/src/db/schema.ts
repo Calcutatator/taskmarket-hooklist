@@ -25,12 +25,23 @@ export const tasks = pgTable(
     tags: text('tags').array().notNull(),
     worker: text('worker'),
     rating: smallint('rating'),
+    mode: text('mode').notNull().default('contest'),
+    stakeRequired: integer('stake_required').notNull().default(0),
+    stakeBps: smallint('stake_bps').notNull().default(0),
+    proposalDeadline: timestamp('proposal_deadline'),
+    metricDescription: text('metric_description'),
+    metricTarget: text('metric_target'),
+    claimedBy: text('claimed_by'),
+    claimedAt: timestamp('claimed_at'),
+    platformFeeBps: smallint('platform_fee_bps').notNull().default(500),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
     expiryIdx: index('idx_tasks_expiry').on(table.expiryTime),
     requesterIdx: index('idx_tasks_requester').on(table.requester),
     workerIdx: index('idx_tasks_worker').on(table.worker),
+    modeIdx: index('idx_tasks_mode').on(table.mode),
+    claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
   })
 );
 
@@ -60,9 +71,7 @@ export const agents = pgTable(
     completedTasks: integer('completed_tasks').notNull().default(0),
     ratedTasks: integer('rated_tasks').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
-    totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 })
-      .notNull()
-      .default('0'),
+    totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 }).notNull().default('0'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
@@ -89,6 +98,89 @@ export const ratings = pgTable(
   })
 );
 
+export const proposals = pgTable(
+  'proposals',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    proposalText: text('proposal_text').notNull(),
+    estimatedDuration: integer('estimated_duration'),
+    status: text('status').notNull().default('pending'),
+    signature: text('signature').notNull(),
+    submittedAt: timestamp('submitted_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_proposals_task').on(table.taskId),
+    workerIdx: index('idx_proposals_worker').on(table.workerAddress),
+    statusIdx: index('idx_proposals_status').on(table.status),
+  })
+);
+
+export const claims = pgTable(
+  'claims',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    stakeAmount: numeric('stake_amount', { precision: 78, scale: 0 }).notNull(),
+    stakeTxHash: text('stake_tx_hash').notNull(),
+    claimedAt: timestamp('claimed_at').defaultNow().notNull(),
+    status: text('status').notNull().default('active'),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_claims_task').on(table.taskId),
+    workerIdx: index('idx_claims_worker').on(table.workerAddress),
+  })
+);
+
+export const proofs = pgTable(
+  'proofs',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    proofData: text('proof_data').notNull(),
+    proofType: text('proof_type').notNull(),
+    metricValue: text('metric_value'),
+    status: text('status').notNull().default('pending'),
+    signature: text('signature').notNull(),
+    submittedAt: timestamp('submitted_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_proofs_task').on(table.taskId),
+    workerIdx: index('idx_proofs_worker').on(table.workerAddress),
+  })
+);
+
+export const platformFees = pgTable(
+  'platform_fees',
+  {
+    id: serial('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    amount: numeric('amount', { precision: 78, scale: 0 }).notNull(),
+    txHash: text('tx_hash').notNull(),
+    collectedAt: timestamp('collected_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_platform_fees_task').on(table.taskId),
+  })
+);
+
+export const indexerState = pgTable('indexer_state', {
+  id: text('id').primaryKey().default('main'),
+  lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
+  updatedAt: timestamp('updated_at').defaultNow().notNull(),
+});
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;
@@ -97,3 +189,13 @@ export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 export type Rating = typeof ratings.$inferSelect;
 export type NewRating = typeof ratings.$inferInsert;
+export type Proposal = typeof proposals.$inferSelect;
+export type NewProposal = typeof proposals.$inferInsert;
+export type Claim = typeof claims.$inferSelect;
+export type NewClaim = typeof claims.$inferInsert;
+export type Proof = typeof proofs.$inferSelect;
+export type NewProof = typeof proofs.$inferInsert;
+export type PlatformFee = typeof platformFees.$inferSelect;
+export type NewPlatformFee = typeof platformFees.$inferInsert;
+export type IndexerState = typeof indexerState.$inferSelect;
+export type NewIndexerState = typeof indexerState.$inferInsert;

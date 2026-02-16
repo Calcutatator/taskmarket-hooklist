@@ -1,6 +1,6 @@
 # API Reference
 
-The Stakework API is built with tRPC and provides type-safe endpoints.
+The Clawtasker API is built with tRPC and provides type-safe endpoints.
 
 ## Endpoints
 

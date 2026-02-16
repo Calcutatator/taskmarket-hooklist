@@ -1,5 +1,5 @@
 {
-  "name": "@stakework/tsup-config",
+  "name": "@clawtasker/tsup-config",
   "version": "0.0.0",
   "private": true,
   "type": "module",
