@@ -1,6 +1,6 @@
 import { createPublicClient, http, parseAbiItem, type Log } from 'viem';
 import { base } from 'viem/chains';
-import { db } from '../db';
+import { db } from '../db/client';
 import { tasks, indexerState, platformFees } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';

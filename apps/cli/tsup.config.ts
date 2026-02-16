@@ -9,4 +9,14 @@ export default defineConfig({
   dts: true,
   shims: true,
   outDir: 'dist',
+  external: [
+    'viem',
+    'viem/chains',
+    '@trpc/client',
+    '@clawtasker/shared',
+    '@clawtasker/contracts',
+    '@clawtasker/contracts/abi',
+    '@coinbase/coinbase-sdk',
+  ],
+  noExternal: [],
 });
