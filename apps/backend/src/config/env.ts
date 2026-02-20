@@ -13,6 +13,12 @@ const envSchema = z.object({
   AWS_REGION: z.string().optional(),
   AWS_S3_BUCKET: z.string().optional(),
   CORS_ORIGIN: z.string().optional().default('*'),
+  CHAIN_ID: z.coerce.number().default(8453),
+  SERVER_PRIVATE_KEY: z.string().regex(/^0x[a-fA-F0-9]{64}$/),
+  // Production/testnet: https://facilitator.daydreams.systems (works for Base Sepolia from localhost)
+  // Local debugging only: http://localhost:8009
+  X402_FACILITATOR_URL: z.string().url().default('https://facilitator.daydreams.systems'),
+  X402_FACILITATOR_TOKEN: z.string().optional(),
 });
 
 export type Env = z.infer<typeof envSchema>;

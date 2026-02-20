@@ -8,43 +8,57 @@ import {
 import { z } from 'zod';
 import { tasks, submissions, proposals } from '../db/schema';
 import { eq, sql, desc, and } from 'drizzle-orm';
+import { randomBytes } from 'crypto';
+import { contractCreateTask, MODE_MAP } from '../services/contract';
+import { getServerConfig } from '../config/env';
 
 export const tasksRouter = router({
   create: publicProcedure
-    .input(
-      TaskCreateSchema.extend({
-        id: z.string(),
-        requester: z.string(),
-        requesterPubkey: z.string(),
-        escrowTxHash: z.string(),
-        expiryTime: z.string(),
-        proposalDeadline: z.string().optional(),
-      })
-    )
+    .meta({ openapi: { method: 'POST', path: '/tasks', tags: ['Tasks'], summary: 'Create task (X402 required)' } })
+    .input(TaskCreateSchema)
     .output(z.object({ success: z.boolean(), taskId: z.string() }))
     .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
+      const config = getServerConfig();
+      const taskId = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+      const reward = BigInt(input.reward);
+      const durationSecs = BigInt(input.duration * 3600);
+      const mode = MODE_MAP[input.mode ?? 'contest'] ?? 0;
+
+      const escrowTxHash = await contractCreateTask(taskId, reward, durationSecs, mode);
+
+      const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
+
       await ctx.db.insert(tasks).values({
-        id: input.id,
-        requester: input.requester,
-        requesterPubkey: input.requesterPubkey,
+        id: taskId,
+        requester: payer,
+        requesterPubkey: payer,
         description: input.description,
         reward: input.reward,
-        escrowTxHash: input.escrowTxHash,
-        expiryTime: new Date(input.expiryTime),
+        escrowTxHash,
+        expiryTime,
         status: 'open',
         tags: input.tags,
-        mode: input.mode || 'contest',
+        mode: input.mode ?? 'contest',
         stakeRequired: input.stakeRequired ? 1 : 0,
-        stakeBps: input.stakeBps || 0,
-        proposalDeadline: input.proposalDeadline ? new Date(input.proposalDeadline) : null,
-        metricDescription: input.metricDescription || null,
-        metricTarget: input.metricTarget || null,
+        stakeBps: input.stakeBps ?? 0,
+        proposalDeadline: input.proposalDeadline
+          ? new Date(Date.now() + input.proposalDeadline * 1000)
+          : null,
+        metricDescription: input.metricDescription ?? null,
+        metricTarget: input.metricTarget ?? null,
+        platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
       });
 
-      return { success: true, taskId: input.id };
+      return { success: true, taskId };
     }),
 
   list: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/tasks', tags: ['Tasks'], summary: 'List tasks' } })
     .input(TaskListInputSchema)
     .output(TaskListResponseSchema)
     .query(async ({ input, ctx }) => {
@@ -122,6 +136,7 @@ export const tasksRouter = router({
     }),
 
   get: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/tasks/{taskId}', tags: ['Tasks'], summary: 'Get task by ID' } })
     .input(z.object({ taskId: z.string() }))
     .output(TaskResponseSchema.nullable())
     .query(async ({ input, ctx }) => {

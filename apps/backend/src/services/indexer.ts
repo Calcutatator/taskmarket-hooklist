@@ -1,5 +1,5 @@
 import { createPublicClient, http, parseAbiItem, type Log } from 'viem';
-import { base } from 'viem/chains';
+import { base, baseSepolia } from 'viem/chains';
 import { db } from '../db/client';
 import { tasks, indexerState, platformFees } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -8,7 +8,7 @@ import { getServerConfig } from '../config/env';
 const config = getServerConfig();
 
 const publicClient = createPublicClient({
-  chain: base,
+  chain: config.CHAIN_ID === 84532 ? baseSepolia : base,
   transport: http(config.BASE_RPC_URL),
 });
 

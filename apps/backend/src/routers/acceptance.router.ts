@@ -2,20 +2,24 @@ import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { tasks, agents, platformFees, ratings } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
+import { contractAcceptSubmission, contractRateTask } from '../services/contract';
 
 export const acceptanceRouter = router({
   accept: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/accept', tags: ['Tasks'], summary: 'Accept submission (X402 required)' } })
     .input(
       z.object({
         taskId: z.string(),
         worker: z.string(),
-        txHash: z.string(),
-        workerPayment: z.string(),
-        platformFee: z.string(),
       })
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
       const taskResult = await ctx.db
         .select()
         .from(tasks)
@@ -25,6 +29,17 @@ export const acceptanceRouter = router({
       if (taskResult.length === 0) {
         throw new Error('Task not found');
       }
+
+      const task = taskResult[0];
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can accept a submission');
+      }
+
+      const txHash = await contractAcceptSubmission(
+        input.taskId as `0x${string}`,
+        input.worker as `0x${string}`,
+      );
 
       await ctx.db
         .update(tasks)
@@ -44,42 +59,44 @@ export const acceptanceRouter = router({
         await ctx.db.insert(agents).values({
           address: input.worker,
           completedTasks: 1,
-          totalEarnings: input.workerPayment,
+          totalEarnings: task.reward,
         });
       } else {
         await ctx.db
           .update(agents)
           .set({
             completedTasks: sql`${agents.completedTasks} + 1`,
-            totalEarnings: sql`${agents.totalEarnings} + ${input.workerPayment}`,
+            totalEarnings: sql`${agents.totalEarnings} + ${task.reward}`,
             updatedAt: new Date(),
           })
           .where(eq(agents.address, input.worker));
       }
 
-      if (Number(input.platformFee) > 0) {
-        await ctx.db.insert(platformFees).values({
-          taskId: input.taskId,
-          amount: input.platformFee,
-          txHash: input.txHash,
-        });
-      }
+      await ctx.db.insert(platformFees).values({
+        taskId: input.taskId,
+        amount: '0',
+        txHash,
+      });
 
       return { success: true };
     }),
 
   rate: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/rate', tags: ['Tasks'], summary: 'Rate task (X402 required)' } })
     .input(
       z.object({
         taskId: z.string(),
         worker: z.string(),
         rating: z.number().min(1).max(5),
-        txHash: z.string(),
-        blockNumber: z.number(),
       })
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
       const taskResult = await ctx.db
         .select()
         .from(tasks)
@@ -90,6 +107,17 @@ export const acceptanceRouter = router({
         throw new Error('Task not accepted');
       }
 
+      const task = taskResult[0];
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can rate a task');
+      }
+
+      const { blockNumber } = await contractRateTask(
+        input.taskId as `0x${string}`,
+        input.rating,
+      );
+
       await ctx.db
         .update(tasks)
         .set({ rating: input.rating })
@@ -99,7 +127,7 @@ export const acceptanceRouter = router({
         taskId: input.taskId,
         workerAddress: input.worker,
         rating: input.rating,
-        blockNumber: input.blockNumber,
+        blockNumber,
       });
 
       await ctx.db

@@ -5,16 +5,17 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit
+.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all
 
 help:
 	@echo "Clawtasker - Available targets:"
 	@echo "  make                      - Show this help"
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
-	@echo "  make build <app|all>      - Build specific app or all (backend, cli, frontend, docs, shared, contracts, all)"
+	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|shared|contracts|all)"
 	@echo "  make dev                  - Start all dev servers in parallel"
-	@echo "  make start <service>      - Start specific service (db, api, frontend, docs, cli, anvil)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|anvil)"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
 	@echo "  make format-check <app|all> - Check formatting for specific app or all"
@@ -24,7 +25,7 @@ help:
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start, stop, migrate, seed, studio)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 
 init:
@@ -32,28 +33,41 @@ init:
 
 install: init
 
+deploy:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && forge script script/DeployTestnet.s.sol:DeployTestnet \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make deploy <testnet|mainnet>"; \
+		exit 1; \
+	fi
+
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		pnpm --filter @clawtasker/backend build; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		pnpm --filter @clawtasker/cli build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @clawtasker/frontend build; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		pnpm --filter @clawtasker/docs build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		pnpm --filter @clawtasker/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm build; \
+		forge build --root packages/contracts; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
@@ -65,138 +79,116 @@ start:
 	if [ "$(word 1,$(ARGS))" = "db" ]; then \
 		cd platform/dev && docker compose up -d postgres; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm dev; \
+		pnpm --filter @clawtasker/backend dev; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm dev; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm dev; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm dev; \
+		pnpm --filter @clawtasker/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|api|frontend|docs|cli|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|anvil>"; \
 		exit 1; \
 	fi
 
 lint-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-check <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-check <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		cd apps/backend && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-check <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-check <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
 lint-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-fix <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		cd apps/backend && pnpm lint:write; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm lint:write; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-fix <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
 format-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-check <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make format-check <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:check; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		cd apps/backend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make format-check <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
 format-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-fix <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make format-fix <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:write; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		cd apps/backend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|cli|frontend|docs|shared|contracts|all>"; \
+		echo "Usage: make format-fix <backend|frontend|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
 type-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make type-check <backend|cli|frontend|shared|all>"; \
+		echo "Usage: make type-check <backend|frontend|shared|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo type-check; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
 		cd apps/backend && pnpm type-check; \
-	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
-		cd apps/cli && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm type-check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|cli|frontend|shared|all>"; \
+		echo "Usage: make type-check <backend|frontend|shared|all>"; \
 		exit 1; \
 	fi
 

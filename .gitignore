@@ -56,3 +56,6 @@ lib/
 # OS
 .DS_Store
 Thumbs.db
+
+#Uploads
+apps/backend/uploads/

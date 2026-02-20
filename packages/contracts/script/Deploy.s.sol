@@ -6,7 +6,7 @@ import "../src/TaskMarket.sol";
 
 contract DeployScript is Script {
     function run() external {
-        uint256 deployerPrivateKey = vm.envUint("PRIVATE_KEY");
+        uint256 deployerPrivateKey = vm.envUint("DEV_PRIVATE_KEY");
         address usdcToken = vm.envAddress("USDC_TOKEN_ADDRESS");
         address feeRecipient = vm.envAddress("FEE_RECIPIENT_ADDRESS");
         uint16 defaultFeeBps = uint16(vm.envUint("DEFAULT_PLATFORM_FEE_BPS"));

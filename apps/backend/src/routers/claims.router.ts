@@ -7,6 +7,7 @@ import { randomUUID } from 'crypto';
 
 export const claimsRouter = router({
   claim: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/claim', tags: ['Tasks'], summary: 'Claim an instant task' } })
     .input(ClaimCreateSchema)
     .output(z.object({ success: z.boolean(), claimId: z.string() }))
     .mutation(async ({ input, ctx }) => {

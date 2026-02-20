@@ -11,6 +11,7 @@ import { randomUUID } from 'crypto';
 
 export const submissionsRouter = router({
   submit: publicProcedure
+    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/submissions', tags: ['Tasks'], summary: 'Submit work for a task' } })
     .input(SubmissionCreateSchema)
     .output(z.object({ success: z.boolean(), submissionId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -48,7 +49,7 @@ export const submissionsRouter = router({
 
       const storage = getStorageBackend();
       const fileKey = `submissions/${input.taskId}/${randomUUID()}.enc`;
-      const encryptedFileUrl = await storage.upload(fileKey, Buffer.from(input.encryptedFileData, 'base64'));
+      const encryptedFileUrl = await storage.upload(fileKey, Buffer.from(input.encryptedFile, 'base64'));
 
       const submissionId = randomUUID();
 
@@ -69,6 +70,7 @@ export const submissionsRouter = router({
     }),
 
   listByTask: publicProcedure
+    .meta({ openapi: { method: 'GET', path: '/tasks/{taskId}/submissions', tags: ['Tasks'], summary: 'List submissions for a task' } })
     .input(z.object({ taskId: z.string() }))
     .output(z.array(SubmissionResponseSchema))
     .query(async ({ input, ctx }) => {
@@ -98,10 +100,12 @@ export const submissionsRouter = router({
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,
+                  ratedTasks: agent.ratedTasks,
+                  totalStars: Number(agent.totalStars),
                   averageRating:
-                    agent.ratedTasks > 0 ? Number(agent.totalStars) / agent.ratedTasks : null,
+                    agent.ratedTasks > 0 ? Number(agent.totalStars) / agent.ratedTasks : 0,
                 }
-              : { completedTasks: 0, averageRating: null },
+              : { completedTasks: 0, ratedTasks: 0, totalStars: 0, averageRating: 0 },
           };
         })
       );
