@@ -7,6 +7,14 @@ import { randomUUID } from 'crypto';
 
 export const proofsRouter = router({
   submit: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/proofs',
+        tags: ['Tasks'],
+        summary: 'Submit a proof for a race task',
+      },
+    })
     .input(ProofSubmitSchema)
     .output(z.object({ success: z.boolean(), proofId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -50,10 +58,7 @@ export const proofsRouter = router({
     .input(z.object({ taskId: z.string() }))
     .output(z.array(ProofResponseSchema))
     .query(async ({ input, ctx }) => {
-      const results = await ctx.db
-        .select()
-        .from(proofs)
-        .where(eq(proofs.taskId, input.taskId));
+      const results = await ctx.db.select().from(proofs).where(eq(proofs.taskId, input.taskId));
 
       return results.map((proof) => ({
         id: proof.id,
@@ -77,15 +82,9 @@ export const proofsRouter = router({
     )
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      await ctx.db
-        .update(proofs)
-        .set({ status: 'verified' })
-        .where(eq(proofs.id, input.proofId));
+      await ctx.db.update(proofs).set({ status: 'verified' }).where(eq(proofs.id, input.proofId));
 
-      await ctx.db
-        .update(tasks)
-        .set({ status: 'accepted' })
-        .where(eq(tasks.id, input.taskId));
+      await ctx.db.update(tasks).set({ status: 'accepted' }).where(eq(tasks.id, input.taskId));
 
       return { success: true };
     }),

@@ -1,17 +1,21 @@
 import { router, publicProcedure } from '../trpc';
-import {
-  SubmissionCreateSchema,
-  SubmissionResponseSchema,
-} from '@clawtasker/shared';
+import { SubmissionCreateSchema, SubmissionResponseSchema } from '@clawtasker/shared';
 import { z } from 'zod';
 import { submissions, tasks, agents } from '../db/schema';
-import { eq, and, sql } from 'drizzle-orm';
+import { eq } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID } from 'crypto';
 
 export const submissionsRouter = router({
   submit: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/submissions', tags: ['Tasks'], summary: 'Submit work for a task' } })
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/submissions',
+        tags: ['Tasks'],
+        summary: 'Submit work for a task',
+      },
+    })
     .input(SubmissionCreateSchema)
     .output(z.object({ success: z.boolean(), submissionId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -48,8 +52,8 @@ export const submissionsRouter = router({
       }
 
       const storage = getStorageBackend();
-      const fileKey = `submissions/${input.taskId}/${randomUUID()}.enc`;
-      const encryptedFileUrl = await storage.upload(fileKey, Buffer.from(input.encryptedFile, 'base64'));
+      const fileKey = `submissions/${input.taskId}/${randomUUID()}`;
+      const fileUrl = await storage.upload(fileKey, Buffer.from(input.file, 'base64'));
 
       const submissionId = randomUUID();
 
@@ -57,20 +61,29 @@ export const submissionsRouter = router({
         id: submissionId,
         taskId: input.taskId,
         workerAddress: input.workerAddress,
-        encryptedFileUrl,
-        encryptedKeyBundle: input.encryptedKeyBundle,
+        fileUrl,
         signature: input.signature,
       });
 
       if (task.status === 'open') {
-        await ctx.db.update(tasks).set({ status: 'pending_approval' }).where(eq(tasks.id, input.taskId));
+        await ctx.db
+          .update(tasks)
+          .set({ status: 'pending_approval' })
+          .where(eq(tasks.id, input.taskId));
       }
 
       return { success: true, submissionId };
     }),
 
   listByTask: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/tasks/{taskId}/submissions', tags: ['Tasks'], summary: 'List submissions for a task' } })
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/tasks/{taskId}/submissions',
+        tags: ['Tasks'],
+        summary: 'List submissions for a task',
+      },
+    })
     .input(z.object({ taskId: z.string() }))
     .output(z.array(SubmissionResponseSchema))
     .query(async ({ input, ctx }) => {
@@ -93,8 +106,7 @@ export const submissionsRouter = router({
             id: sub.id,
             taskId: sub.taskId,
             workerAddress: sub.workerAddress,
-            encryptedFileUrl: sub.encryptedFileUrl,
-            encryptedKeyBundle: sub.encryptedKeyBundle,
+            fileUrl: sub.fileUrl,
             signature: sub.signature,
             submittedAt: sub.submittedAt.toISOString(),
             workerStats: agent
@@ -140,7 +152,7 @@ export const submissionsRouter = router({
       }
 
       const storage = getStorageBackend();
-      const presignedUrl = await storage.getPresignedUrl(submission.encryptedFileUrl, 3600);
+      const presignedUrl = await storage.getPresignedUrl(submission.fileUrl, 3600);
 
       return { presignedUrl };
     }),

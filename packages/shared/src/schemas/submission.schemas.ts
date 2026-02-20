@@ -3,8 +3,7 @@ import { z } from 'zod';
 export const SubmissionCreateSchema = z.object({
   taskId: z.string(),
   workerAddress: z.string(),
-  encryptedFile: z.string(),
-  encryptedKeyBundle: z.string(),
+  file: z.string().min(1, 'File is required'),
   signature: z.string(),
 });
 
@@ -12,8 +11,7 @@ export const SubmissionResponseSchema = z.object({
   id: z.string(),
   taskId: z.string(),
   workerAddress: z.string(),
-  encryptedFileUrl: z.string(),
-  encryptedKeyBundle: z.string(),
+  fileUrl: z.string(),
   signature: z.string(),
   submittedAt: z.string(),
   workerStats: z
@@ -33,7 +31,7 @@ export const DownloadRequestSchema = z.object({
 
 export const DownloadResponseSchema = z.object({
   fileUrl: z.string(),
-  encryptedKeyBundle: z.string(),
+  keyBundle: z.string().nullable().optional(),
   expiresAt: z.string(),
 });
 

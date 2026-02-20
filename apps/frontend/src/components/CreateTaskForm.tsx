@@ -7,14 +7,7 @@ import { parseUnits } from 'viem';
 import { TaskCreateSchema, type TaskCreate } from '@clawtasker/shared';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import {
-  Form,
-  FormControl,
-  FormField,
-  FormItem,
-  FormLabel,
-  FormMessage,
-} from './ui/form';
+import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
@@ -25,7 +18,11 @@ import { trpc } from '@/contexts/TRPCProvider';
 const TASK_MODES = [
   { value: 'contest', label: 'Contest', description: 'Multiple workers submit; you pick the best' },
   { value: 'instant', label: 'Instant', description: 'First worker claims exclusive rights' },
-  { value: 'proposal', label: 'Proposal', description: 'Workers propose; you select one to execute' },
+  {
+    value: 'proposal',
+    label: 'Proposal',
+    description: 'Workers propose; you select one to execute',
+  },
   { value: 'race', label: 'Race', description: 'First to hit metric target wins' },
 ] as const;
 
@@ -34,8 +31,8 @@ export function CreateTaskForm() {
   const navigate = useNavigate();
   const [step, setStep] = useState<'form' | 'approve' | 'create'>('form');
 
-  const { approve, isPending: isApprovePending } = useApproveUSDC();
-  const { createTask, isPending: isCreatePending } = useCreateTask();
+  const { approve } = useApproveUSDC();
+  const { createTask } = useCreateTask();
   const createTaskMutation = trpc.tasks.create.useMutation();
 
   const form = useForm<TaskCreate>({
@@ -82,8 +79,6 @@ export function CreateTaskForm() {
       // Step 3: Save to backend
       await createTaskMutation.mutateAsync({
         ...data,
-        requester: address,
-        signature: '0x', // Placeholder - signature is optional in this implementation
       });
 
       navigate({ to: '/' });
@@ -201,7 +196,10 @@ export function CreateTaskForm() {
                       placeholder="design, frontend, urgent"
                       onChange={(e) =>
                         field.onChange(
-                          e.target.value.split(',').map((tag) => tag.trim()).filter(Boolean)
+                          e.target.value
+                            .split(',')
+                            .map((tag) => tag.trim())
+                            .filter(Boolean)
                         )
                       }
                     />
@@ -306,7 +304,12 @@ export function CreateTaskForm() {
             )}
 
             <div className="space-y-2">
-              <Button type="submit" disabled={isSubmitting || !address} className="w-full" size="lg">
+              <Button
+                type="submit"
+                disabled={isSubmitting || !address}
+                className="w-full"
+                size="lg"
+              >
                 {!address
                   ? 'Connect Wallet'
                   : step === 'approve'

@@ -1,9 +1,9 @@
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
 import { useAcceptSubmission } from '@/hooks/useTaskMarket';
 import type { TaskResponse } from '@clawtasker/shared';
+import { API_URL } from '@/lib/api';
 
 interface ContestPanelProps {
   task: TaskResponse;
@@ -72,11 +72,16 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
           <CardHeader>
             <CardTitle>Submit Your Work</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-text-secondary mb-4">Use the CLI to submit your encrypted work file:</p>
-            <code className="block bg-background-secondary p-4 rounded text-sm">
-              clawtasker submit {task.id} --file ./your-work.zip
-            </code>
+          <CardContent className="space-y-2">
+            <p className="text-text-secondary text-sm">Submit your work via the API:</p>
+            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/submissions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taskId": "${task.id}",
+    "workerAddress": "0xYOUR_ADDRESS",
+    "file": "BASE64_CONTENT",
+    "signature": "0xSIG"
+  }'`}</pre>
           </CardContent>
         </Card>
       )}

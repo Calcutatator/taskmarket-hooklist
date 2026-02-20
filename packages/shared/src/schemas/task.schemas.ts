@@ -56,7 +56,17 @@ export const TaskListInputSchema = z.object({
   limit: z.number().min(1).max(100).optional().default(20),
   cursor: z.string().optional(),
   status: z
-    .enum(['ALL', 'open', 'claimed', 'worker_selected', 'pending_approval', 'accepted', 'completed', 'expired', 'disputed'])
+    .enum([
+      'ALL',
+      'open',
+      'claimed',
+      'worker_selected',
+      'pending_approval',
+      'accepted',
+      'completed',
+      'expired',
+      'disputed',
+    ])
     .optional()
     .default('ALL'),
   mode: z.enum(['ALL', 'contest', 'instant', 'proposal', 'race']).optional().default('ALL'),

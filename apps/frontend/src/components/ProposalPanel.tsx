@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useSelectWorker } from '@/hooks/useTaskMarket';
 import type { TaskResponse } from '@clawtasker/shared';
+import { API_URL } from '@/lib/api';
 
 interface ProposalPanelProps {
   task: TaskResponse;
@@ -14,10 +15,6 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
   const { selectWorker, isPending } = useSelectWorker();
   const isRequester = address?.toLowerCase() === task.requester.toLowerCase();
   const hasWorkerSelected = task.status === 'worker_selected';
-
-  const handleSelect = (proposalId: string, workerAddress: string) => {
-    selectWorker(task.id as `0x${string}`, workerAddress as `0x${string}`);
-  };
 
   return (
     <div className="space-y-4">
@@ -40,16 +37,34 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
                             {proposal.workerAddress.substring(0, 6)}...
                             {proposal.workerAddress.substring(38)}
                           </p>
+                          {proposal.proposalText && (
+                            <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap">
+                              {proposal.proposalText}
+                            </p>
+                          )}
                           {proposal.workerStats && (
                             <p className="text-xs text-text-tertiary">
                               {proposal.workerStats.completedTasks} tasks •{' '}
                               {proposal.workerStats.averageRating?.toFixed(1) || 'N/A'} ⭐
                             </p>
                           )}
+                          {proposal.estimatedDuration && (
+                            <p className="text-xs text-text-tertiary mt-1">
+                              Est. {proposal.estimatedDuration}h
+                            </p>
+                          )}
+                          <p className="text-xs text-text-tertiary">
+                            {new Date(proposal.submittedAt).toLocaleString()}
+                          </p>
                         </div>
                         {isRequester && !hasWorkerSelected && proposal.status === 'pending' && (
                           <Button
-                            onClick={() => handleSelect(proposal.id, proposal.workerAddress)}
+                            onClick={() =>
+                              selectWorker(
+                                task.id as `0x${string}`,
+                                proposal.workerAddress as `0x${string}`
+                              )
+                            }
                             disabled={isPending}
                             variant="success"
                             size="sm"
@@ -58,20 +73,6 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
                           </Button>
                         )}
                       </div>
-
-                      <div className="bg-background-secondary p-3 rounded">
-                        <p className="text-sm whitespace-pre-wrap">{proposal.proposalText}</p>
-                      </div>
-
-                      {proposal.estimatedDuration && (
-                        <p className="text-xs text-text-tertiary">
-                          Est. duration: {Math.floor(proposal.estimatedDuration / 3600)}h
-                        </p>
-                      )}
-
-                      <p className="text-xs text-text-tertiary">
-                        {new Date(proposal.submittedAt).toLocaleString()}
-                      </p>
                     </div>
                   </CardContent>
                 </Card>
@@ -86,11 +87,17 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
           <CardHeader>
             <CardTitle>Submit a Proposal</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-text-secondary mb-4">Use the CLI to submit your proposal:</p>
-            <code className="block bg-background-secondary p-4 rounded text-sm">
-              clawtasker propose {task.id} --text "Your proposal here" --estimated-duration 48
-            </code>
+          <CardContent className="space-y-2">
+            <p className="text-text-secondary text-sm">Pitch your approach via the API:</p>
+            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/proposals \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taskId": "${task.id}",
+    "workerAddress": "0xYOUR_ADDRESS",
+    "proposalText": "Your approach, timeline, and any questions for the requester.",
+    "estimatedDuration": 48,
+    "signature": "0xSIG"
+  }'`}</pre>
           </CardContent>
         </Card>
       )}

@@ -8,9 +8,18 @@ import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { contractSelectWorker } from '../services/contract';
 
 export const proposalsRouter = router({
   submit: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/proposals',
+        tags: ['Tasks'],
+        summary: 'Submit a proposal for a task',
+      },
+    })
     .input(ProposalCreateSchema)
     .output(z.object({ success: z.boolean(), proposalId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -107,9 +116,19 @@ export const proposalsRouter = router({
     }),
 
   select: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/proposals/select',
+        tags: ['Tasks'],
+        summary: 'Select a proposal (requester only)',
+      },
+    })
     .input(ProposalSelectSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+
       const taskResult = await ctx.db
         .select()
         .from(tasks)
@@ -129,6 +148,16 @@ export const proposalsRouter = router({
       if (task.status !== 'open') {
         throw new Error('Task not open');
       }
+
+      if (payer && task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can select a worker');
+      }
+
+      await contractSelectWorker(
+        input.taskId as `0x${string}`,
+        task.requester as `0x${string}`,
+        input.workerAddress as `0x${string}`
+      );
 
       await ctx.db
         .update(proposals)

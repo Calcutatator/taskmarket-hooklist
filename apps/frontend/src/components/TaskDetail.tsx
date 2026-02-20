@@ -2,6 +2,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
 import type { TaskResponse } from '@clawtasker/shared';
+import { formatUSDC } from '@/lib/format';
 
 interface TaskDetailProps {
   task: TaskResponse;
@@ -36,7 +37,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <div>
             <h3 className="font-semibold text-sm mb-1">Reward</h3>
             <p className="text-2xl font-bold text-state-success-primary">
-              {(Number(task.reward) / 1e6).toFixed(2)} USDC
+              {formatUSDC(task.reward)} USDC
             </p>
           </div>
 
@@ -61,7 +62,9 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <Separator />
             <div>
               <h3 className="font-semibold text-sm mb-1">Stake Required</h3>
-              <p className="text-sm text-text-secondary">{(task.stakeBps / 100).toFixed(1)}% of reward</p>
+              <p className="text-sm text-text-secondary">
+                {(task.stakeBps / 100).toFixed(1)}% of reward
+              </p>
             </div>
           </>
         )}

@@ -1,5 +1,5 @@
 {
-  "extends": "@clawtasker/typescript-config/base.json",
+  "extends": "../../typescript-config/base.json",
   "compilerOptions": {
     "resolveJsonModule": true,
     "esModuleInterop": true

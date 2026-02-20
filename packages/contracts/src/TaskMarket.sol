@@ -8,10 +8,16 @@ import "@openzeppelin/contracts/access/Ownable.sol";
 /**
  * @title TaskMarket
  * @notice Multi-mode decentralized task marketplace with USDC escrow on Base L2
- * @dev Supports Contest, Instant, Proposal, and Race modes with platform fees and staking
+ * @dev Supports Contest, Instant, Proposal, and Race modes with platform fees and staking.
+ *      All mutating functions are called by the authorized server wallet, which passes
+ *      the real requester/worker addresses explicitly. This ensures on-chain records
+ *      attribute activity to the actual participants, not the server.
  */
 contract TaskMarket is ReentrancyGuard, Ownable {
     IERC20 public immutable usdcToken;
+
+    /// @notice Server wallet authorized to call mutating functions on behalf of users
+    address public authorizedServer;
 
     enum TaskMode {
         Contest,
@@ -84,6 +90,12 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     event TaskReopened(bytes32 indexed taskId);
     event FeesUpdated(uint16 newFeeBps);
     event FeeRecipientUpdated(address newRecipient);
+    event AuthorizedServerUpdated(address newServer);
+
+    modifier onlyServer() {
+        require(msg.sender == authorizedServer, "Not authorized server");
+        _;
+    }
 
     /**
      * @notice Constructor
@@ -100,21 +112,35 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     }
 
     /**
+     * @notice Set the authorized server address (owner only)
+     * @param server New authorized server wallet
+     */
+    function setAuthorizedServer(address server) external onlyOwner {
+        require(server != address(0), "Invalid server address");
+        authorizedServer = server;
+        emit AuthorizedServerUpdated(server);
+    }
+
+    /**
      * @notice Create a new task with USDC escrow
      * @param taskId Unique task identifier
+     * @param requester Real requester wallet address (task attributed on-chain to this address)
      * @param reward USDC reward amount (6 decimals)
      * @param duration Task duration in seconds
      * @param mode Task mode (Contest/Instant/Proposal/Race)
      * @param proposalDeadline Deadline for proposals (Proposal mode only, seconds from now)
-     * @dev Requires prior USDC approval for reward amount
+     * @dev Server must have USDC approval for reward amount before calling.
+     *      Server holds the USDC (received via X402 payment) and escrows it here.
      */
     function createTask(
         bytes32 taskId,
+        address requester,
         uint256 reward,
         uint256 duration,
         TaskMode mode,
         uint256 proposalDeadline
-    ) external {
+    ) external onlyServer {
+        require(requester != address(0), "Invalid requester");
         require(reward > 0, "Reward must be greater than 0");
         require(duration > 0, "Duration must be greater than 0");
         require(tasks[taskId].requester == address(0), "Task already exists");
@@ -123,7 +149,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
 
         tasks[taskId] = Task({
             id: taskId,
-            requester: msg.sender,
+            requester: requester,
             worker: address(0),
             reward: reward,
             createdAt: block.timestamp,
@@ -138,40 +164,45 @@ contract TaskMarket is ReentrancyGuard, Ownable {
             feeBps: defaultFeeBps
         });
 
-        emit TaskCreated(taskId, msg.sender, reward, block.timestamp + duration, mode);
+        emit TaskCreated(taskId, requester, reward, block.timestamp + duration, mode);
     }
 
     /**
-     * @notice Claim an Instant mode task with stake
+     * @notice Claim an Instant mode task on behalf of a worker
      * @param taskId Task identifier
-     * @param stakeAmount USDC stake amount (10% of reward recommended)
-     * @dev Requires prior USDC approval for stake amount
+     * @param worker Real worker wallet address (claim attributed on-chain to this address)
+     * @param stakeAmount USDC stake amount (0 = no stake required)
+     * @dev If stakeAmount > 0, server must have USDC approval for stake amount.
      */
-    function claimTask(bytes32 taskId, uint256 stakeAmount) external {
+    function claimTask(bytes32 taskId, address worker, uint256 stakeAmount) external onlyServer {
         Task storage task = tasks[taskId];
         require(task.requester != address(0), "Task does not exist");
+        require(worker != address(0), "Invalid worker");
         require(task.mode == TaskMode.Instant, "Not an Instant task");
         require(task.status == TaskStatus.Open, "Task not available");
         require(block.timestamp <= task.expiryTime, "Task expired");
 
-        require(usdcToken.transferFrom(msg.sender, address(this), stakeAmount), "Stake transfer failed");
+        if (stakeAmount > 0) {
+            require(usdcToken.transferFrom(msg.sender, address(this), stakeAmount), "Stake transfer failed");
+        }
 
-        task.claimer = msg.sender;
+        task.claimer = worker;
         task.claimedAt = block.timestamp;
         task.stakeAmount = stakeAmount;
         task.status = TaskStatus.Claimed;
 
-        emit TaskClaimed(taskId, msg.sender, stakeAmount);
+        emit TaskClaimed(taskId, worker, stakeAmount);
     }
 
     /**
      * @notice Select a worker for Proposal mode
      * @param taskId Task identifier
+     * @param requester Real requester wallet (must match task.requester)
      * @param worker Selected worker address
      */
-    function selectWorker(bytes32 taskId, address worker) external {
+    function selectWorker(bytes32 taskId, address requester, address worker) external onlyServer {
         Task storage task = tasks[taskId];
-        require(msg.sender == task.requester, "Not requester");
+        require(requester == task.requester, "Not requester");
         require(task.mode == TaskMode.Proposal, "Not a Proposal task");
         require(task.status == TaskStatus.Open, "Task not available");
         require(block.timestamp <= task.proposalDeadline, "Proposal deadline passed");
@@ -183,13 +214,14 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Accept submission and release payment
+     * @notice Accept submission and release payment to worker
      * @param taskId Task identifier
-     * @param worker Worker address
+     * @param requester Real requester wallet (must match task.requester)
+     * @param worker Worker address to pay
      */
-    function acceptSubmission(bytes32 taskId, address worker) external nonReentrant {
+    function acceptSubmission(bytes32 taskId, address requester, address worker) external onlyServer nonReentrant {
         Task storage task = tasks[taskId];
-        require(msg.sender == task.requester, "Not requester");
+        require(requester == task.requester, "Not requester");
         require(block.timestamp <= task.expiryTime, "Task expired");
 
         if (task.mode == TaskMode.Instant) {
@@ -225,16 +257,17 @@ contract TaskMarket is ReentrancyGuard, Ownable {
             emit StakeReturned(taskId, task.claimer, task.stakeAmount);
         }
 
-        emit TaskAccepted(taskId, msg.sender, worker, workerPayment, fee);
+        emit TaskAccepted(taskId, requester, worker, workerPayment, fee);
     }
 
     /**
      * @notice Forfeit claimer's stake and reopen Instant task
      * @param taskId Task identifier
+     * @param requester Real requester wallet (must match task.requester)
      */
-    function forfeitAndReopen(bytes32 taskId) external {
+    function forfeitAndReopen(bytes32 taskId, address requester) external onlyServer {
         Task storage task = tasks[taskId];
-        require(msg.sender == task.requester, "Not requester");
+        require(requester == task.requester, "Not requester");
         require(task.mode == TaskMode.Instant, "Not an Instant task");
         require(task.status == TaskStatus.Claimed, "Task not claimed");
         require(
@@ -262,11 +295,12 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     /**
      * @notice Rate a completed task
      * @param taskId Task identifier
+     * @param requester Real requester wallet (must match task.requester)
      * @param rating Rating (1-5 stars)
      */
-    function rateTask(bytes32 taskId, uint8 rating) external {
+    function rateTask(bytes32 taskId, address requester, uint8 rating) external onlyServer {
         Task storage task = tasks[taskId];
-        require(msg.sender == task.requester, "Not requester");
+        require(requester == task.requester, "Not requester");
         require(task.status == TaskStatus.Accepted, "Task not accepted");
         require(rating >= 1 && rating <= 5, "Rating must be 1-5");
         require(task.rating == 0, "Already rated");
@@ -280,7 +314,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Refund expired task
+     * @notice Refund expired task reward to requester
      * @param taskId Task identifier
      */
     function refundExpired(bytes32 taskId) external nonReentrant {

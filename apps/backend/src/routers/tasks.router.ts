@@ -14,7 +14,14 @@ import { getServerConfig } from '../config/env';
 
 export const tasksRouter = router({
   create: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/tasks', tags: ['Tasks'], summary: 'Create task (X402 required)' } })
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks',
+        tags: ['Tasks'],
+        summary: 'Create task (X402 required)',
+      },
+    })
     .input(TaskCreateSchema)
     .output(z.object({ success: z.boolean(), taskId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -29,7 +36,20 @@ export const tasksRouter = router({
       const durationSecs = BigInt(input.duration * 3600);
       const mode = MODE_MAP[input.mode ?? 'contest'] ?? 0;
 
-      const escrowTxHash = await contractCreateTask(taskId, reward, durationSecs, mode);
+      const proposalDeadlineSecs =
+        input.mode === 'proposal'
+          ? input.proposalDeadline
+            ? BigInt(input.proposalDeadline)
+            : durationSecs
+          : 0n;
+      const escrowTxHash = await contractCreateTask(
+        taskId,
+        payer as `0x${string}`,
+        reward,
+        durationSecs,
+        mode,
+        proposalDeadlineSecs
+      );
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
 
@@ -64,7 +84,7 @@ export const tasksRouter = router({
     .query(async ({ input, ctx }) => {
       const limit = input.limit || 20;
 
-      let conditions = [];
+      const conditions = [];
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }
@@ -136,7 +156,14 @@ export const tasksRouter = router({
     }),
 
   get: publicProcedure
-    .meta({ openapi: { method: 'GET', path: '/tasks/{taskId}', tags: ['Tasks'], summary: 'Get task by ID' } })
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/tasks/{taskId}',
+        tags: ['Tasks'],
+        summary: 'Get task by ID',
+      },
+    })
     .input(z.object({ taskId: z.string() }))
     .output(TaskResponseSchema.nullable())
     .query(async ({ input, ctx }) => {

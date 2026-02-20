@@ -1,9 +1,16 @@
-import { createPublicClient, http, parseAbiItem, type Log } from 'viem';
+import { createPublicClient, http, parseAbiItem } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { db } from '../db/client';
-import { tasks, indexerState, platformFees } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { tasks, claims, agents, indexerState, platformFees } from '../db/schema';
+import { eq, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
+
+type EventLog = {
+  args: Record<string, unknown>;
+  eventName: string;
+  blockNumber?: bigint | null;
+  transactionHash?: `0x${string}` | null;
+};
 
 const config = getServerConfig();
 
@@ -14,14 +21,30 @@ const publicClient = createPublicClient({
 
 const POLL_INTERVAL = 12000;
 
-const TASK_CREATED_EVENT = parseAbiItem('event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, uint8 mode)');
-const TASK_CLAIMED_EVENT = parseAbiItem('event TaskClaimed(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)');
-const TASK_WORKER_SELECTED_EVENT = parseAbiItem('event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)');
-const TASK_ACCEPTED_EVENT = parseAbiItem('event TaskAccepted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)');
-const TASK_RATED_EVENT = parseAbiItem('event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating)');
-const TASK_EXPIRED_EVENT = parseAbiItem('event TaskExpired(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)');
-const STAKE_FORFEITED_EVENT = parseAbiItem('event StakeForfeited(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)');
-const STAKE_RETURNED_EVENT = parseAbiItem('event StakeReturned(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)');
+const TASK_CREATED_EVENT = parseAbiItem(
+  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, uint8 mode)'
+);
+const TASK_CLAIMED_EVENT = parseAbiItem(
+  'event TaskClaimed(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+);
+const TASK_WORKER_SELECTED_EVENT = parseAbiItem(
+  'event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)'
+);
+const TASK_ACCEPTED_EVENT = parseAbiItem(
+  'event TaskAccepted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)'
+);
+const TASK_RATED_EVENT = parseAbiItem(
+  'event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating)'
+);
+const TASK_EXPIRED_EVENT = parseAbiItem(
+  'event TaskExpired(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
+);
+const STAKE_FORFEITED_EVENT = parseAbiItem(
+  'event StakeForfeited(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+);
+const STAKE_RETURNED_EVENT = parseAbiItem(
+  'event StakeReturned(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+);
 const TASK_REOPENED_EVENT = parseAbiItem('event TaskReopened(bytes32 indexed taskId)');
 
 const MODE_MAP: Record<number, string> = {
@@ -53,15 +76,15 @@ async function updateLastProcessedBlock(block: bigint): Promise<void> {
     .where(eq(indexerState.id, 'main'));
 }
 
-async function processTaskCreatedEvent(log: Log): Promise<void> {
-  const { taskId, requester, mode } = log.args as any;
+async function processTaskCreatedEvent(log: EventLog): Promise<void> {
+  const { taskId, requester, mode } = log.args;
   const modeString = MODE_MAP[Number(mode)] || 'contest';
 
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
 }
 
-async function processTaskClaimedEvent(log: Log): Promise<void> {
-  const { taskId, claimer, stakeAmount } = log.args as any;
+async function processTaskClaimedEvent(log: EventLog): Promise<void> {
+  const { taskId, claimer, stakeAmount } = log.args;
 
   await db
     .update(tasks)
@@ -72,11 +95,16 @@ async function processTaskClaimedEvent(log: Log): Promise<void> {
     })
     .where(eq(tasks.id, taskId as string));
 
-  console.log(`TaskClaimed event: ${taskId} by ${claimer}`);
+  await db
+    .update(claims)
+    .set({ stakeAmount: stakeAmount!.toString() })
+    .where(eq(claims.taskId, taskId as string));
+
+  console.log(`TaskClaimed event: ${taskId} by ${claimer}, stake: ${stakeAmount}`);
 }
 
-async function processTaskWorkerSelectedEvent(log: Log): Promise<void> {
-  const { taskId, worker } = log.args as any;
+async function processTaskWorkerSelectedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker } = log.args;
 
   await db
     .update(tasks)
@@ -89,8 +117,8 @@ async function processTaskWorkerSelectedEvent(log: Log): Promise<void> {
   console.log(`TaskWorkerSelected event: ${taskId} - ${worker}`);
 }
 
-async function processTaskAcceptedEvent(log: Log): Promise<void> {
-  const { taskId, worker, workerPayment, platformFee } = log.args as any;
+async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, workerPayment, platformFee } = log.args;
 
   await db
     .update(tasks)
@@ -103,16 +131,36 @@ async function processTaskAcceptedEvent(log: Log): Promise<void> {
   if (Number(platformFee) > 0 && log.transactionHash) {
     await db.insert(platformFees).values({
       taskId: taskId as string,
-      amount: platformFee.toString(),
+      amount: (platformFee as bigint).toString(),
       txHash: log.transactionHash,
     });
   }
 
-  console.log(`TaskAccepted event: ${taskId} - ${worker}`);
+  if (Number(workerPayment) > 0) {
+    await db
+      .insert(agents)
+      .values({
+        address: worker as string,
+        totalEarnings: (workerPayment as bigint).toString(),
+        completedTasks: 1,
+        ratedTasks: 0,
+        totalStars: 0,
+      })
+      .onConflictDoUpdate({
+        target: agents.address,
+        set: {
+          totalEarnings: sql`${agents.totalEarnings} + ${(workerPayment as bigint).toString()}`,
+          completedTasks: sql`${agents.completedTasks} + 1`,
+          updatedAt: new Date(),
+        },
+      });
+  }
+
+  console.log(`TaskAccepted event: ${taskId} - ${worker}, payment: ${workerPayment}`);
 }
 
-async function processTaskRatedEvent(log: Log): Promise<void> {
-  const { taskId, rating } = log.args as any;
+async function processTaskRatedEvent(log: EventLog): Promise<void> {
+  const { taskId, rating } = log.args;
 
   await db
     .update(tasks)
@@ -122,8 +170,8 @@ async function processTaskRatedEvent(log: Log): Promise<void> {
   console.log(`TaskRated event: ${taskId} - ${rating} stars`);
 }
 
-async function processTaskExpiredEvent(log: Log): Promise<void> {
-  const { taskId } = log.args as any;
+async function processTaskExpiredEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
 
   await db
     .update(tasks)
@@ -133,8 +181,8 @@ async function processTaskExpiredEvent(log: Log): Promise<void> {
   console.log(`TaskExpired event: ${taskId}`);
 }
 
-async function processTaskReopenedEvent(log: Log): Promise<void> {
-  const { taskId } = log.args as any;
+async function processTaskReopenedEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
 
   await db
     .update(tasks)
@@ -151,7 +199,7 @@ async function processTaskReopenedEvent(log: Log): Promise<void> {
 async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
   const contractAddress = config.CONTRACT_ADDRESS as `0x${string}`;
 
-  const logs = await publicClient.getLogs({
+  const logs = (await publicClient.getLogs({
     address: contractAddress,
     fromBlock,
     toBlock,
@@ -166,7 +214,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       STAKE_RETURNED_EVENT,
       TASK_REOPENED_EVENT,
     ] as any,
-  });
+  })) as unknown as EventLog[];
 
   for (const log of logs) {
     try {

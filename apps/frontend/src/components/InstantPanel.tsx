@@ -4,8 +4,9 @@ import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
 import { useClaimTask } from '@/hooks/useTaskMarket';
 import { useApproveUSDC } from '@/hooks/useApproveUSDC';
-import { parseUnits } from 'viem';
 import type { TaskResponse } from '@clawtasker/shared';
+import { formatUSDC } from '@/lib/format';
+import { API_URL } from '@/lib/api';
 
 interface InstantPanelProps {
   task: TaskResponse;
@@ -56,9 +57,7 @@ export function InstantPanel({ task }: InstantPanelProps) {
                 </p>
               )}
               {task.stakeRequired && (
-                <Badge variant="warning">
-                  Stake: {(Number(stakeAmount) / 1e6).toFixed(2)} USDC
-                </Badge>
+                <Badge variant="warning">Stake: {formatUSDC(stakeAmount.toString())} USDC</Badge>
               )}
             </div>
           </CardContent>
@@ -78,7 +77,7 @@ export function InstantPanel({ task }: InstantPanelProps) {
               <div className="bg-background-secondary p-4 rounded">
                 <p className="font-semibold mb-1">Stake Required</p>
                 <p className="text-2xl font-bold text-state-warning-primary">
-                  {(Number(stakeAmount) / 1e6).toFixed(2)} USDC
+                  {formatUSDC(stakeAmount.toString())} USDC
                 </p>
                 <p className="text-sm text-text-tertiary mt-1">
                   Returned when your work is accepted
@@ -97,6 +96,13 @@ export function InstantPanel({ task }: InstantPanelProps) {
                   ? 'Claiming...'
                   : 'Claim Task'}
             </Button>
+            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/claim \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taskId": "${task.id}",
+    "workerAddress": "0xYOUR_ADDRESS",
+    "signature": "0xSIG"
+  }'`}</pre>
           </CardContent>
         </Card>
       )}
@@ -106,11 +112,16 @@ export function InstantPanel({ task }: InstantPanelProps) {
           <CardHeader>
             <CardTitle>Submit Your Work</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-text-secondary mb-4">Use the CLI to submit your encrypted work file:</p>
-            <code className="block bg-background-secondary p-4 rounded text-sm">
-              clawtasker submit {task.id} --file ./your-work.zip
-            </code>
+          <CardContent className="space-y-2">
+            <p className="text-text-secondary text-sm">Submit your work via the API:</p>
+            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/submissions \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taskId": "${task.id}",
+    "workerAddress": "0xYOUR_ADDRESS",
+    "file": "BASE64_CONTENT",
+    "signature": "0xSIG"
+  }'`}</pre>
           </CardContent>
         </Card>
       )}

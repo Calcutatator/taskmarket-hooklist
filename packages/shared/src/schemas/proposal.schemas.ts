@@ -5,7 +5,7 @@ export const ProposalStatus = z.enum(['pending', 'selected', 'rejected']);
 export const ProposalCreateSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
   workerAddress: z.string().min(1, 'Worker address is required'),
-  proposalText: z.string().min(10, 'Proposal text must be at least 10 characters').max(5000, 'Proposal text is too long'),
+  proposalText: z.string().min(1, 'Proposal text is required'),
   estimatedDuration: z.number().positive('Estimated duration must be positive').optional(),
   signature: z.string().min(1, 'Signature is required'),
 });
@@ -18,10 +18,12 @@ export const ProposalResponseSchema = z.object({
   estimatedDuration: z.number().nullable(),
   status: ProposalStatus,
   submittedAt: z.string(),
-  workerStats: z.object({
-    completedTasks: z.number(),
-    averageRating: z.number().nullable(),
-  }).optional(),
+  workerStats: z
+    .object({
+      completedTasks: z.number(),
+      averageRating: z.number().nullable(),
+    })
+    .optional(),
 });
 
 export const ProposalSelectSchema = z.object({

@@ -1,5 +1,37 @@
 import { Link } from '@tanstack/react-router';
-import { ConnectKitButton } from 'connectkit';
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { injected } from 'wagmi/connectors';
+
+function ConnectButton() {
+  const { address, isConnected } = useAccount();
+  const { connect } = useConnect();
+  const { disconnect } = useDisconnect();
+
+  if (isConnected && address) {
+    return (
+      <div className="flex items-center gap-3">
+        <span className="text-sm text-text-secondary font-mono">
+          {address.slice(0, 6)}...{address.slice(-4)}
+        </span>
+        <button
+          onClick={() => disconnect()}
+          className="text-sm font-medium px-3 py-1.5 rounded border border-border-primary hover:bg-background-secondary"
+        >
+          Disconnect
+        </button>
+      </div>
+    );
+  }
+
+  return (
+    <button
+      onClick={() => connect({ connector: injected() })}
+      className="text-sm font-medium px-3 py-1.5 rounded bg-accent-primary text-white hover:opacity-90"
+    >
+      Connect Wallet
+    </button>
+  );
+}
 
 export function Header() {
   return (
@@ -21,7 +53,7 @@ export function Header() {
             </Link>
           </nav>
         </div>
-        <ConnectKitButton />
+        <ConnectButton />
       </div>
     </header>
   );

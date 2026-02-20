@@ -31,31 +31,33 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         x402Version: 2,
         error: 'Payment required',
         resource: { url: resourceUrl, description, mimeType: 'application/json' },
-        accepts: [{
-          scheme: 'exact',
-          network,
-          amount,
-          asset: usdcAddress,
-          payTo,
-          maxTimeoutSeconds: 300,
-          extra: {
-            ...USDC_DOMAIN,
-            eip712: {
-              domain: { ...USDC_DOMAIN, chainId, verifyingContract: usdcAddress },
-              types: {
-                TransferWithAuthorization: [
-                  { name: 'from', type: 'address' },
-                  { name: 'to', type: 'address' },
-                  { name: 'value', type: 'uint256' },
-                  { name: 'validAfter', type: 'uint256' },
-                  { name: 'validBefore', type: 'uint256' },
-                  { name: 'nonce', type: 'bytes32' },
-                ],
+        accepts: [
+          {
+            scheme: 'exact',
+            network,
+            amount,
+            asset: usdcAddress,
+            payTo,
+            maxTimeoutSeconds: 300,
+            extra: {
+              ...USDC_DOMAIN,
+              eip712: {
+                domain: { ...USDC_DOMAIN, chainId, verifyingContract: usdcAddress },
+                types: {
+                  TransferWithAuthorization: [
+                    { name: 'from', type: 'address' },
+                    { name: 'to', type: 'address' },
+                    { name: 'value', type: 'uint256' },
+                    { name: 'validAfter', type: 'uint256' },
+                    { name: 'validBefore', type: 'uint256' },
+                    { name: 'nonce', type: 'bytes32' },
+                  ],
+                },
+                primaryType: 'TransferWithAuthorization',
               },
-              primaryType: 'TransferWithAuthorization',
             },
           },
-        }],
+        ],
       };
       res.setHeader(
         'PAYMENT-REQUIRED',
@@ -65,9 +67,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
     }
 
     try {
-      const paymentPayload = JSON.parse(
-        Buffer.from(paymentSignature, 'base64').toString()
-      );
+      const paymentPayload = JSON.parse(Buffer.from(paymentSignature, 'base64').toString());
 
       if (paymentPayload.x402Version !== 2) {
         throw new Error('Invalid x402 version, expected v2');
@@ -115,7 +115,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         throw new Error(`Facilitator error: ${settleRes.status} ${text}`);
       }
 
-      const settle = await settleRes.json() as {
+      const settle = (await settleRes.json()) as {
         success: boolean;
         transaction?: string;
         payer?: string;
@@ -131,7 +131,9 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       res.locals.paymentTxHash = settle.transaction;
       res.setHeader(
         'PAYMENT-RESPONSE',
-        Buffer.from(JSON.stringify({ success: true, transaction: settle.transaction })).toString('base64')
+        Buffer.from(JSON.stringify({ success: true, transaction: settle.transaction })).toString(
+          'base64'
+        )
       );
       next();
     } catch (err) {

@@ -8,7 +8,7 @@ Clawtasker is a platform where requesters post tasks with USDC escrow and worker
 
 ## Quick Links
 
-- [Installation](./getting-started/installation)
-- [Quick Start](./getting-started/quick-start)
-- [API Reference](./api/reference)
-- [CLI Commands](./cli/commands)
+* [Installation](./getting-started/installation)
+* [Quick Start](./getting-started/quick-start)
+* [API Reference](./api/reference)
+* [CLI Commands](./cli/commands)

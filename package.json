@@ -24,7 +24,7 @@
     "@changesets/cli": "^2.27.9",
     "husky": "^8.0.3",
     "turbo": "^1.13.0",
-    "typescript": "^5.3.3",
+    "typescript": "5.7.3",
     "prettier": "^3.2.5"
   }
 }

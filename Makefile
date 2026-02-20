@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all
+.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke
 
 help:
 	@echo "Clawtasker - Available targets:"
@@ -26,6 +26,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
+	@echo "  make smoke <mode>         - Run smoke test (contest|instant|proposal|race)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 
 init:
@@ -258,6 +259,21 @@ db:
 		cd apps/backend && pnpm db:studio; \
 	else \
 		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio>"; \
+		exit 1; \
+	fi
+
+smoke:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "contest" ]; then \
+		cd apps/backend && pnpm smoke:contest; \
+	elif [ "$(word 1,$(ARGS))" = "instant" ]; then \
+		cd apps/backend && pnpm smoke:instant; \
+	elif [ "$(word 1,$(ARGS))" = "proposal" ]; then \
+		cd apps/backend && pnpm smoke:proposal; \
+	elif [ "$(word 1,$(ARGS))" = "race" ]; then \
+		cd apps/backend && pnpm smoke:race; \
+	else \
+		echo "Usage: make smoke <contest|instant|proposal|race>"; \
 		exit 1; \
 	fi
 

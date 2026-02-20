@@ -1,12 +1,40 @@
+import { trpc } from '@/contexts/TRPCProvider';
 import { TaskCard } from './TaskCard';
-import type { TaskResponse } from '@clawtasker/shared';
 
-interface TaskListProps {
-  tasks: TaskResponse[];
-  isLoading?: boolean;
+interface TaskListFilters {
+  mode?: string;
+  status?: string;
+  minReward?: string;
+  tags?: string;
 }
 
-export function TaskList({ tasks, isLoading }: TaskListProps) {
+interface TaskListProps {
+  filters?: TaskListFilters;
+}
+
+export function TaskList({ filters }: TaskListProps) {
+  const { data, isLoading, error } = trpc.tasks.list.useQuery({
+    mode: (filters?.mode as 'ALL' | 'contest' | 'instant' | 'proposal' | 'race') ?? 'ALL',
+    status:
+      (filters?.status as
+        | 'ALL'
+        | 'open'
+        | 'claimed'
+        | 'worker_selected'
+        | 'pending_approval'
+        | 'accepted'
+        | 'completed'
+        | 'expired'
+        | 'disputed') ?? 'ALL',
+    tags: filters?.tags
+      ? filters.tags
+          .split(',')
+          .map((t) => t.trim())
+          .filter(Boolean)
+      : undefined,
+    minReward: filters?.minReward || undefined,
+  });
+
   if (isLoading) {
     return (
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
@@ -17,11 +45,24 @@ export function TaskList({ tasks, isLoading }: TaskListProps) {
     );
   }
 
+  if (error) {
+    return (
+      <div className="text-center py-12">
+        <p className="text-text-secondary text-lg">Failed to load tasks</p>
+        <p className="text-text-tertiary text-sm mt-2">{error.message}</p>
+      </div>
+    );
+  }
+
+  const tasks = data?.tasks ?? [];
+
   if (tasks.length === 0) {
     return (
       <div className="text-center py-12">
         <p className="text-text-secondary text-lg">No tasks found</p>
-        <p className="text-text-tertiary text-sm mt-2">Try adjusting your filters or create a new task</p>
+        <p className="text-text-tertiary text-sm mt-2">
+          Try adjusting your filters or create a new task
+        </p>
       </div>
     );
   }

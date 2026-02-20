@@ -23,6 +23,7 @@ export const LeaderboardEntrySchema = z.object({
   address: z.string(),
   completedTasks: z.number(),
   averageRating: z.number(),
+  totalEarnings: z.string(),
 });
 
 export const LeaderboardResponseSchema = z.array(LeaderboardEntrySchema);

@@ -12,7 +12,7 @@ import { trpc } from '@/contexts/TRPCProvider';
 export function TaskDetailView() {
   const { taskId } = useParams({ from: '/tasks/$taskId' });
 
-  const { data: task, isLoading } = trpc.tasks.get.useQuery({ id: taskId });
+  const { data: task, isLoading } = trpc.tasks.get.useQuery({ taskId });
   const { data: submissions } = trpc.submissions.listByTask.useQuery(
     { taskId },
     { enabled: !!task && (task.mode === 'contest' || task.mode === 'instant') }

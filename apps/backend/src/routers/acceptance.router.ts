@@ -6,7 +6,14 @@ import { contractAcceptSubmission, contractRateTask } from '../services/contract
 
 export const acceptanceRouter = router({
   accept: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/accept', tags: ['Tasks'], summary: 'Accept submission (X402 required)' } })
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/accept',
+        tags: ['Tasks'],
+        summary: 'Accept submission (X402 required)',
+      },
+    })
     .input(
       z.object({
         taskId: z.string(),
@@ -38,7 +45,8 @@ export const acceptanceRouter = router({
 
       const txHash = await contractAcceptSubmission(
         input.taskId as `0x${string}`,
-        input.worker as `0x${string}`,
+        payer as `0x${string}`,
+        input.worker as `0x${string}`
       );
 
       await ctx.db
@@ -82,7 +90,14 @@ export const acceptanceRouter = router({
     }),
 
   rate: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/rate', tags: ['Tasks'], summary: 'Rate task (X402 required)' } })
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/rate',
+        tags: ['Tasks'],
+        summary: 'Rate task (X402 required)',
+      },
+    })
     .input(
       z.object({
         taskId: z.string(),
@@ -115,13 +130,11 @@ export const acceptanceRouter = router({
 
       const { blockNumber } = await contractRateTask(
         input.taskId as `0x${string}`,
-        input.rating,
+        payer as `0x${string}`,
+        input.rating
       );
 
-      await ctx.db
-        .update(tasks)
-        .set({ rating: input.rating })
-        .where(eq(tasks.id, input.taskId));
+      await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
 
       await ctx.db.insert(ratings).values({
         taskId: input.taskId,

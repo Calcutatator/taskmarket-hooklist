@@ -12,10 +12,17 @@ contract DeployTestnet is Script {
         address deployer = vm.addr(deployerPrivateKey);
         uint16 feeBps = uint16(vm.envUint("DEFAULT_PLATFORM_FEE_BPS"));
 
+        // Derive server address from SERVER_PRIVATE_KEY
+        uint256 serverPrivateKey = vm.envUint("SERVER_PRIVATE_KEY");
+        address serverAddress = vm.addr(serverPrivateKey);
+
         vm.startBroadcast(deployerPrivateKey);
         TaskMarket taskMarket = new TaskMarket(CIRCLE_USDC, deployer, feeBps);
+        taskMarket.setAuthorizedServer(serverAddress);
+        vm.stopBroadcast();
+
         console.log("TaskMarket deployed to:", address(taskMarket));
         console.log("USDC:", CIRCLE_USDC);
-        vm.stopBroadcast();
+        console.log("Authorized server:", serverAddress);
     }
 }

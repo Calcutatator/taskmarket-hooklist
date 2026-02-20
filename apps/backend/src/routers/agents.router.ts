@@ -63,10 +63,11 @@ export const agentsRouter = router({
           completedTasks: agents.completedTasks,
           ratedTasks: agents.ratedTasks,
           totalStars: agents.totalStars,
+          totalEarnings: agents.totalEarnings,
           averageRating: sql<number>`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`,
         })
         .from(agents)
-        .where(sql`${agents.ratedTasks} >= 5`)
+        .where(sql`${agents.completedTasks} >= 1`)
         .orderBy(
           desc(
             sql`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`
@@ -80,6 +81,7 @@ export const agentsRouter = router({
         address: row.address,
         completedTasks: row.completedTasks,
         averageRating: Number(row.averageRating.toFixed(1)),
+        totalEarnings: row.totalEarnings ?? '0',
       }));
     }),
 });

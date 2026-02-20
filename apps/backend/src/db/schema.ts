@@ -53,8 +53,7 @@ export const submissions = pgTable(
       .notNull()
       .references(() => tasks.id),
     workerAddress: text('worker_address').notNull(),
-    encryptedFileUrl: text('encrypted_file_url').notNull(),
-    encryptedKeyBundle: text('encrypted_key_bundle').notNull(),
+    fileUrl: text('file_url').notNull(),
     signature: text('signature').notNull(),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
   },

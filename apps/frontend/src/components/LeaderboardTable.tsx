@@ -1,5 +1,6 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { trpc } from '@/contexts/TRPCProvider';
+import { formatUSDC } from '@/lib/format';
 
 export function LeaderboardTable() {
   const { data: leaderboard, isLoading } = trpc.agents.leaderboard.useQuery({
@@ -90,7 +91,7 @@ export function LeaderboardTable() {
                   </td>
                   <td className="py-3 px-4 text-right">
                     <span className="font-semibold text-state-success-primary">
-                      {(worker.totalEarned / 1e6).toFixed(2)} USDC
+                      {formatUSDC(worker.totalEarnings ?? '0')} USDC
                     </span>
                   </td>
                 </tr>

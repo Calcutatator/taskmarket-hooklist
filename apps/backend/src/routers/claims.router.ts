@@ -4,10 +4,18 @@ import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { contractClaimTask } from '../services/contract';
 
 export const claimsRouter = router({
   claim: publicProcedure
-    .meta({ openapi: { method: 'POST', path: '/tasks/{taskId}/claim', tags: ['Tasks'], summary: 'Claim an instant task' } })
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/claim',
+        tags: ['Tasks'],
+        summary: 'Claim an instant task',
+      },
+    })
     .input(ClaimCreateSchema)
     .output(z.object({ success: z.boolean(), claimId: z.string() }))
     .mutation(async ({ input, ctx }) => {
@@ -31,6 +39,12 @@ export const claimsRouter = router({
         throw new Error('Task not available for claiming');
       }
 
+      const stakeTxHash = await contractClaimTask(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        0n
+      );
+
       const claimId = randomUUID();
 
       await ctx.db.insert(claims).values({
@@ -38,7 +52,7 @@ export const claimsRouter = router({
         taskId: input.taskId,
         workerAddress: input.workerAddress,
         stakeAmount: '0',
-        stakeTxHash: input.stakeTxHash,
+        stakeTxHash,
         status: 'active',
       });
 

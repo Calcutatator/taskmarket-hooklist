@@ -2,10 +2,10 @@
 
 ## Prerequisites
 
-- Node.js 20+
-- pnpm 8.15+
-- Docker (for local database)
-- Foundry (for smart contracts)
+* Node.js 20+
+* pnpm 8.15+
+* Docker (for local database)
+* Foundry (for smart contracts)
 
 ## Install Dependencies
 

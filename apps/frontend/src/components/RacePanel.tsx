@@ -1,8 +1,8 @@
-import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
 import type { TaskResponse } from '@clawtasker/shared';
+import { API_URL } from '@/lib/api';
 
 interface RacePanelProps {
   task: TaskResponse;
@@ -86,12 +86,22 @@ export function RacePanel({ task, proofs }: RacePanelProps) {
           <CardHeader>
             <CardTitle>Submit Proof</CardTitle>
           </CardHeader>
-          <CardContent>
-            <p className="text-text-secondary mb-4">Use the CLI to submit your proof:</p>
-            <code className="block bg-background-secondary p-4 rounded text-sm">
-              clawtasker submit {task.id} --proof-url "https://..." --proof-type url --metric-value
-              "1000"
-            </code>
+          <CardContent className="space-y-2">
+            <p className="text-text-secondary text-sm">
+              Submit verifiable evidence via the API. Use <code className="text-xs">proofType</code>
+              : <code className="text-xs">url</code>, <code className="text-xs">screenshot</code>,{' '}
+              <code className="text-xs">api_data</code>, or <code className="text-xs">manual</code>.
+            </p>
+            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/proofs \\
+  -H "Content-Type: application/json" \\
+  -d '{
+    "taskId": "${task.id}",
+    "workerAddress": "0xYOUR_ADDRESS",
+    "proofData": "{"source":"https://...","value":"..."}",
+    "proofType": "url",
+    "metricValue": "0",
+    "signature": "0xSIG"
+  }'`}</pre>
           </CardContent>
         </Card>
       )}
