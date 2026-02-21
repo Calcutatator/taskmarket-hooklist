@@ -1,0 +1,12 @@
+{
+  "name": "@clawtasker/design-system",
+  "version": "1.0.0",
+  "private": true,
+  "scripts": {
+    "generate": "clafoutis generate --cwd .",
+    "clean": "rm -rf build"
+  },
+  "devDependencies": {
+    "@clafoutis/cli": "1.2.1"
+  }
+}

@@ -64,11 +64,11 @@ export function LeaderboardTable() {
                     <span
                       className={`font-bold ${
                         index === 0
-                          ? 'text-yellow-500'
+                          ? 'text-yellow-1000'
                           : index === 1
-                            ? 'text-gray-400'
+                            ? 'text-slate-700'
                             : index === 2
-                              ? 'text-orange-600'
+                              ? 'text-orange-1000'
                               : 'text-text-secondary'
                       }`}
                     >
@@ -86,7 +86,7 @@ export function LeaderboardTable() {
                       <span className="font-semibold">
                         {worker.averageRating?.toFixed(1) || 'N/A'}
                       </span>
-                      {worker.averageRating && <span className="text-yellow-500">★</span>}
+                      {worker.averageRating && <span className="text-yellow-1000">★</span>}
                     </div>
                   </td>
                   <td className="py-3 px-4 text-right">

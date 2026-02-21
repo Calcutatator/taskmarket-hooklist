@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke
+.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system
 
 help:
 	@echo "Clawtasker - Available targets:"
@@ -28,6 +28,7 @@ help:
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
 	@echo "  make smoke <mode>         - Run smoke test (contest|instant|proposal|race)"
 	@echo "  make pre-commit           - Run pre-commit checks"
+	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 
 init:
 	$(ENV_LOADER) && pnpm install
@@ -276,6 +277,13 @@ smoke:
 		echo "Usage: make smoke <contest|instant|proposal|race>"; \
 		exit 1; \
 	fi
+
+design-system:
+	@$(ENV_LOADER) && \
+	pnpm --filter @clawtasker/design-system generate && \
+	cp packages/design-system/build/tailwind/base.css apps/frontend/src/styles/css/base.css && \
+	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
+	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js
 
 pre-commit:
 	@echo "Running pre-commit checks..."

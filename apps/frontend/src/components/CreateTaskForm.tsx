@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
-import { useAccount, useSignTypedData } from 'wagmi';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
 import { TaskCreateSchema, type TaskCreate } from '@clawtasker/shared';
 import { Button } from './ui/button';
@@ -27,6 +27,7 @@ type Step = 'form' | 'payment' | 'signing' | 'submitting';
 
 export function CreateTaskForm() {
   const { address } = useAccount();
+  const { switchChainAsync } = useSwitchChain();
   const navigate = useNavigate();
   const [step, setStep] = useState<Step>('form');
   const [error, setError] = useState<string | null>(null);
@@ -72,11 +73,26 @@ export function CreateTaskForm() {
 
       // Step 2: Sign the EIP-712 TransferWithAuthorization message
       setStep('signing');
+      const eip712 = accepted.extra?.eip712;
+      const requiredChainId = Number(eip712.domain.chainId);
+
+      // Switch to the required chain. Try wagmi first; if wagmi's internal
+      // state desynced (user switched chains in MetaMask outside of wagmi),
+      // fall back to the raw EIP-3326 provider call so MetaMask still prompts.
+      try {
+        await switchChainAsync({ chainId: requiredChainId });
+      } catch {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (window as any).ethereum?.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+        });
+      }
+
       const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
         .map((b) => b.toString(16).padStart(2, '0'))
         .join('')}` as `0x${string}`;
       const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
-      const eip712 = accepted.extra?.eip712;
 
       const signature = await signTypedDataAsync({
         domain: {

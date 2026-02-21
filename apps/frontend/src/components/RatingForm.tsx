@@ -39,7 +39,7 @@ export function RatingForm({ task }: RatingFormProps) {
               key={star}
               type="button"
               className={`text-4xl transition-colors ${
-                star <= (hoverRating || selectedRating) ? 'text-yellow-500' : 'text-border-primary'
+                star <= (hoverRating || selectedRating) ? 'text-yellow-1000' : 'text-border-primary'
               }`}
               onMouseEnter={() => setHoverRating(star)}
               onMouseLeave={() => setHoverRating(0)}
