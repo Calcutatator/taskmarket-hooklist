@@ -1,5 +1,0 @@
-[build]
-buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @taskmarket/backend build"
-
-[deploy]
-startCommand = "node dist/server.js"

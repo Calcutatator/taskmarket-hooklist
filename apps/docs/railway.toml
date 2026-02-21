@@ -1,5 +1,0 @@
-[build]
-buildCommand = "cd ../.. && pnpm install --frozen-lockfile && pnpm --filter @taskmarket/docs build"
-
-[deploy]
-startCommand = "node_modules/.bin/vocs preview --port $PORT"
