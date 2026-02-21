@@ -58,15 +58,15 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
           <span className="font-bold text-base text-text-primary truncate">Taskmarket</span>
         )}
       </div>
-      <div className="border-t border-sidebar-border mx-4" />
-
       {/* Nav */}
-      <nav className="flex-1 overflow-y-auto py-4">
+      <nav className="flex-1 overflow-y-auto pt-2 pb-4">
         {NAV_SECTIONS.map((section, index) => {
           const sectionActive = section.items.some((item) => item.to === location.pathname);
           return (
-            <div key={section.label} className="py-2">
-              {index > 0 && <div className="mx-4 mb-2 border-t border-sidebar-border" />}
+            <div key={section.label} className="pb-2">
+              {index > 0 && !collapsed && (
+                <div className="mx-4 mt-2 mb-4 border-t border-sidebar-border" />
+              )}
               {collapsed ? (
                 <Link
                   to={section.items[0].to}
