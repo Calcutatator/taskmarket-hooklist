@@ -2,7 +2,7 @@ import { useQueryClient } from '@tanstack/react-query';
 import { httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 import { ReactNode, useState } from 'react';
-import type { AppRouter } from '@clawtasker/backend/src/router';
+import type { AppRouter } from '@taskmarket/backend/src/router';
 
 export const trpc = createTRPCReact<AppRouter>();
 

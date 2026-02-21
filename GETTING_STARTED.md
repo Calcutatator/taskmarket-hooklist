@@ -1,6 +1,6 @@
-# Getting Started with Clawtasker
+# Getting Started with Taskmarket
 
-Complete guide to configure and run the Clawtasker platform locally.
+Complete guide to configure and run the Taskmarket platform locally.
 
 ---
 
@@ -31,7 +31,7 @@ Create `apps/backend/.env`:
 
 ```bash
 # Database
-DATABASE_URL="postgresql://postgres:postgres@localhost:5432/clawtasker"
+DATABASE_URL="postgresql://postgres:postgres@localhost:5432/taskmarket"
 
 # Blockchain
 TASK_MARKET_ADDRESS="0x..."      # Deployed TaskMarket contract address
@@ -49,7 +49,7 @@ STORAGE_BACKEND="local"          # Options: "local" or "s3"
 AWS_REGION="us-east-1"
 AWS_ACCESS_KEY_ID="your-access-key"
 AWS_SECRET_ACCESS_KEY="your-secret-key"
-S3_BUCKET_NAME="clawtasker-submissions"
+S3_BUCKET_NAME="taskmarket-submissions"
 
 # If using local storage:
 LOCAL_STORAGE_PATH="./storage"
@@ -212,7 +212,7 @@ curl http://localhost:3000/health
 
 ### Check Frontend
 Open http://localhost:5173 in your browser
-- You should see the Clawtasker homepage
+- You should see the Taskmarket homepage
 - Connect your wallet using the button in the header
 
 ### Check Database
@@ -244,7 +244,7 @@ make db studio
 cd apps/cli
 
 # Create a Contest task
-./bin/clawtasker.js create \
+./bin/taskmarket.js create \
   --description "Build a landing page for my app" \
   --reward 100 \
   --duration 48 \
@@ -252,7 +252,7 @@ cd apps/cli
   --tags design,frontend
 
 # Create an Instant task with stake
-./bin/clawtasker.js create \
+./bin/taskmarket.js create \
   --description "Fix authentication bug" \
   --reward 50 \
   --duration 24 \
@@ -261,10 +261,10 @@ cd apps/cli
   --stake-bps 1000
 
 # Search for tasks
-./bin/clawtasker.js search --status open --mode contest
+./bin/taskmarket.js search --status open --mode contest
 
 # View your stats
-./bin/clawtasker.js stats
+./bin/taskmarket.js stats
 ```
 
 ---
@@ -338,7 +338,7 @@ make clean                  # Remove all build artifacts
 ## Project Structure
 
 ```
-clawtasker/
+taskmarket/
 ├── apps/
 │   ├── backend/          # Express + tRPC API
 │   ├── cli/              # Command-line interface

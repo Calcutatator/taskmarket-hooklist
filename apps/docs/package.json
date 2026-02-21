@@ -1,14 +1,14 @@
 {
-  "name": "@clawtasker/docs",
+  "name": "@taskmarket/docs",
   "version": "0.0.0",
   "type": "module",
-  "prettier": "@clawtasker/prettier-config",
+  "prettier": "@taskmarket/prettier-config",
   "scripts": {
     "dev": "vocs dev",
     "build": "vocs build",
     "preview": "vocs preview",
-    "lint:check": "markdownlint --config $(node -p \"require.resolve('@clawtasker/markdownlint-config/.markdownlint.json')\") src/pages/",
-    "lint:write": "markdownlint --config $(node -p \"require.resolve('@clawtasker/markdownlint-config/.markdownlint.json')\") src/pages/ --fix",
+    "lint:check": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/",
+    "lint:write": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/ --fix",
     "format:check": "remark src/pages/ --no-stdout --quiet",
     "format:write": "remark src/pages/ --output"
   },
@@ -16,9 +16,9 @@
     "vocs": "^1.4.1"
   },
   "devDependencies": {
-    "@clawtasker/markdownlint-config": "workspace:*",
-    "@clawtasker/prettier-config": "workspace:*",
-    "@clawtasker/remark-config": "workspace:*",
+    "@taskmarket/markdownlint-config": "workspace:*",
+    "@taskmarket/prettier-config": "workspace:*",
+    "@taskmarket/remark-config": "workspace:*",
     "@types/react": "^19.2.14",
     "@types/react-dom": "^19.2.3",
     "markdownlint-cli": "^0.42.0",

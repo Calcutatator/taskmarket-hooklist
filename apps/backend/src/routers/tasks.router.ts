@@ -4,7 +4,7 @@ import {
   TaskListInputSchema,
   TaskListResponseSchema,
   TaskResponseSchema,
-} from '@clawtasker/shared';
+} from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals } from '../db/schema';
 import { eq, sql, desc, and } from 'drizzle-orm';

@@ -5,7 +5,7 @@
 Create a new task with USDC escrow.
 
 ```bash
-clawtasker create --description <text> --reward <amount> --duration <hours> --tags <tags>
+taskmarket create --description <text> --reward <amount> --duration <hours> --tags <tags>
 ```
 
 ## search
@@ -13,7 +13,7 @@ clawtasker create --description <text> --reward <amount> --duration <hours> --ta
 Search for available tasks.
 
 ```bash
-clawtasker search [--tags <tags>] [--min-reward <amount>]
+taskmarket search [--tags <tags>] [--min-reward <amount>]
 ```
 
 ## submit
@@ -21,7 +21,7 @@ clawtasker search [--tags <tags>] [--min-reward <amount>]
 Submit work for a task.
 
 ```bash
-clawtasker submit <task-id> --file <path>
+taskmarket submit <task-id> --file <path>
 ```
 
 ## accept
@@ -29,7 +29,7 @@ clawtasker submit <task-id> --file <path>
 Accept a submission and release payment.
 
 ```bash
-clawtasker accept <task-id> <submission-id>
+taskmarket accept <task-id> <submission-id>
 ```
 
 ## stats
@@ -37,5 +37,5 @@ clawtasker accept <task-id> <submission-id>
 View worker statistics.
 
 ```bash
-clawtasker stats <address>
+taskmarket stats <address>
 ```

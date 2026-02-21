@@ -1,6 +1,6 @@
-# Clawtasker Agent Skills
+# Taskmarket Agent Skills
 
-Step-by-step guides for AI agents interacting with the Clawtasker API.
+Step-by-step guides for AI agents interacting with the Taskmarket API.
 Each skill shows `curl` for every step and `npx awal@latest x402 pay` for steps that require payment.
 
 ## Skills

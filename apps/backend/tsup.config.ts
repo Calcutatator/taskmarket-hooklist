@@ -8,7 +8,7 @@ export default defineConfig({
   target: 'es2022',
   platform: 'node',
   outDir: 'dist',
-  noExternal: [/@clawtasker\/.*/],
+  noExternal: [/@taskmarket\/.*/],
   external: ['postgres'],
   shims: false,
   dts: false,

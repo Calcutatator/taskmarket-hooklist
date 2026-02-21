@@ -1,7 +1,7 @@
 import { Link } from '@tanstack/react-router';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import type { TaskResponse } from '@clawtasker/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 
 interface TaskCardProps {

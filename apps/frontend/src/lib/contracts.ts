@@ -1,4 +1,4 @@
-import { TaskMarketABI } from '@clawtasker/contracts/abi';
+import { TaskMarketABI } from '@taskmarket/contracts/abi';
 
 export const TASK_MARKET_ADDRESS =
   (import.meta.env.VITE_TASK_MARKET_ADDRESS as `0x${string}`) || '0x';

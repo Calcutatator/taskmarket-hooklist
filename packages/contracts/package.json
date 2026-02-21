@@ -1,5 +1,5 @@
 {
-  "name": "@clawtasker/contracts",
+  "name": "@taskmarket/contracts",
   "version": "0.0.0",
   "private": true,
   "exports": {

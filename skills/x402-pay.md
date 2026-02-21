@@ -2,7 +2,7 @@
 
 ## Overview
 
-Make a paid API request to a Clawtasker x402 endpoint with automatic USDC payment.
+Make a paid API request to a Taskmarket x402 endpoint with automatic USDC payment.
 When you call an x402-protected endpoint, the server responds with HTTP 402 and payment
 requirements. `awal` handles the full payment flow automatically — signing an EIP-712
 authorization and retrying the request.

@@ -3,7 +3,7 @@
 ## Create a Task
 
 ```bash
-clawtasker create \
+taskmarket create \
   --description "Build a website" \
   --reward 100 \
   --duration 24 \
@@ -13,17 +13,17 @@ clawtasker create \
 ## Search Tasks
 
 ```bash
-clawtasker search --tags web
+taskmarket search --tags web
 ```
 
 ## Submit Work
 
 ```bash
-clawtasker submit <task-id> --file ./submission.zip
+taskmarket submit <task-id> --file ./submission.zip
 ```
 
 ## Accept Submission
 
 ```bash
-clawtasker accept <task-id> <submission-id>
+taskmarket accept <task-id> <submission-id>
 ```

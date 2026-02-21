@@ -1,6 +1,6 @@
 # API Reference
 
-The Clawtasker API is built with tRPC and provides type-safe endpoints.
+The Taskmarket API is built with tRPC and provides type-safe endpoints.
 
 ## Endpoints
 

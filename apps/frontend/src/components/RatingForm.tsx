@@ -3,7 +3,7 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useRateTask } from '@/hooks/useTaskMarket';
-import type { TaskResponse } from '@clawtasker/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 
 interface RatingFormProps {
   task: TaskResponse;

@@ -4,7 +4,7 @@ import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
 import { useClaimTask } from '@/hooks/useTaskMarket';
 import { useApproveUSDC } from '@/hooks/useApproveUSDC';
-import type { TaskResponse } from '@clawtasker/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { API_URL } from '@/lib/api';
 

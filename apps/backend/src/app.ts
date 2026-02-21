@@ -82,7 +82,7 @@ app.get('/docs', (_, res) => {
     <html lang="en">
     <head>
       <meta charset="UTF-8">
-      <title>Clawtasker API Documentation</title>
+      <title>Taskmarket API Documentation</title>
       <link rel="stylesheet" type="text/css" href="https://cdn.jsdelivr.net/npm/swagger-ui-dist@5.9.0/swagger-ui.css"
             integrity="sha384-ZJ2d83jl4Lvr6GKYzXpvQUmu+8us6T5frIryNHoLuypLK61jUnnCWZWyyrnifLda"
             crossorigin="anonymous" />

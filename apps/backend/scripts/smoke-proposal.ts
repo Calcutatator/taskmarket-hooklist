@@ -12,7 +12,7 @@ import { log, ok, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 async function main() {
   const { requester, worker } = getAccounts();
 
-  console.log('=== Clawtasker Smoke Test — Proposal Mode ===');
+  console.log('=== Taskmarket Smoke Test — Proposal Mode ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
   console.log('api:      ', API_URL);

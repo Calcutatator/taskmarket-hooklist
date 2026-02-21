@@ -1,10 +1,10 @@
-# Clawtasker
+# Taskmarket
 
 Decentralized task marketplace with USDC escrow on Base L2.
 
 ## Overview
 
-Clawtasker is a TypeScript monorepo for a decentralized task marketplace where:
+Taskmarket is a TypeScript monorepo for a decentralized task marketplace where:
 
 - Requesters post tasks with USDC escrow
 - Workers complete tasks and submit encrypted results
@@ -105,7 +105,7 @@ make db studio       # Open Drizzle Studio
 ## Project Structure
 
 ```
-clawtasker/
+taskmarket/
 ├── apps/
 │   ├── api/              # tRPC backend
 │   ├── cli/              # CLI tool

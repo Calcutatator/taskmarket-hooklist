@@ -24,7 +24,7 @@ Each router handles a specific domain (tasks, agents, etc.):
 ```typescript
 // apps/backend/src/routers/tasks.router.ts
 import { router, publicProcedure } from '../trpc';
-import { TaskCreateSchema, TaskResponseSchema } from '@clawtasker/shared';
+import { TaskCreateSchema, TaskResponseSchema } from '@taskmarket/shared';
 
 export const tasksRouter = router({
   create: publicProcedure

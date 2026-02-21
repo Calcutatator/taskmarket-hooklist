@@ -3,7 +3,7 @@ import {
   ProposalCreateSchema,
   ProposalResponseSchema,
   ProposalSelectSchema,
-} from '@clawtasker/shared';
+} from '@taskmarket/shared';
 import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';

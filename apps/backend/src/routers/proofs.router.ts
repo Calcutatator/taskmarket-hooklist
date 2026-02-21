@@ -1,5 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import { ProofSubmitSchema, ProofResponseSchema } from '@clawtasker/shared';
+import { ProofSubmitSchema, ProofResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { proofs, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';

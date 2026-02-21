@@ -4,7 +4,7 @@ import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
-import { TaskCreateSchema, type TaskCreate } from '@clawtasker/shared';
+import { TaskCreateSchema, type TaskCreate } from '@taskmarket/shared';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';

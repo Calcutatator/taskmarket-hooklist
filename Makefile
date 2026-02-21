@@ -1,4 +1,4 @@
-# Clawtasker monorepo - install, build, start services, lint, format
+# Taskmarket monorepo - install, build, start services, lint, format
 SHELL := /bin/bash
 ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && [ -s "$$NVM_DIR/nvm.sh" ] && . "$$NVM_DIR/nvm.sh" && nvm install && nvm use
 
@@ -8,7 +8,7 @@ ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 .PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system
 
 help:
-	@echo "Clawtasker - Available targets:"
+	@echo "Taskmarket - Available targets:"
 	@echo "  make                      - Show this help"
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
@@ -60,11 +60,11 @@ build:
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		pnpm --filter @clawtasker/backend build; \
+		pnpm --filter @taskmarket/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		pnpm --filter @clawtasker/frontend build; \
+		pnpm --filter @taskmarket/frontend build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		pnpm --filter @clawtasker/shared build; \
+		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts; \
 	else \
@@ -81,9 +81,9 @@ start:
 	if [ "$(word 1,$(ARGS))" = "db" ]; then \
 		cd platform/dev && docker compose up -d postgres; \
 	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		pnpm --filter @clawtasker/backend dev; \
+		pnpm --filter @taskmarket/backend dev; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		pnpm --filter @clawtasker/frontend dev; \
+		pnpm --filter @taskmarket/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
@@ -280,7 +280,7 @@ smoke:
 
 design-system:
 	@$(ENV_LOADER) && \
-	pnpm --filter @clawtasker/design-system generate && \
+	pnpm --filter @taskmarket/design-system generate && \
 	cp packages/design-system/build/tailwind/base.css apps/frontend/src/styles/css/base.css && \
 	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
 	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js

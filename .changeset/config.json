@@ -3,7 +3,7 @@
   "changelog": "@changesets/cli/changelog",
   "commit": false,
   "fixed": [
-    ["@clawtasker/shared", "@clawtasker/backend"]
+    ["@taskmarket/shared", "@taskmarket/backend"]
   ],
   "linked": [],
   "access": "restricted",

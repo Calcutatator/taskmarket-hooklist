@@ -2,7 +2,7 @@ import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useSelectWorker } from '@/hooks/useTaskMarket';
-import type { TaskResponse } from '@clawtasker/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 import { API_URL } from '@/lib/api';
 
 interface ProposalPanelProps {

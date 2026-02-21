@@ -1,9 +1,9 @@
 {
-  "name": "@clawtasker/frontend",
+  "name": "@taskmarket/frontend",
   "private": true,
   "version": "1.0.0",
   "type": "module",
-  "prettier": "@clawtasker/prettier-config",
+  "prettier": "@taskmarket/prettier-config",
   "scripts": {
     "dev": "vite",
     "build": "vite build",
@@ -15,9 +15,9 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@clawtasker/backend": "workspace:*",
-    "@clawtasker/contracts": "workspace:*",
-    "@clawtasker/shared": "workspace:*",
+    "@taskmarket/backend": "workspace:*",
+    "@taskmarket/contracts": "workspace:*",
+    "@taskmarket/shared": "workspace:*",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.1",
@@ -43,8 +43,8 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
-    "@clawtasker/eslint-config": "workspace:*",
-    "@clawtasker/prettier-config": "workspace:*",
+    "@taskmarket/eslint-config": "workspace:*",
+    "@taskmarket/prettier-config": "workspace:*",
     "@tanstack/router-plugin": "^1.120.5",
     "@types/aos": "^3.0.7",
     "@types/react": "^19",

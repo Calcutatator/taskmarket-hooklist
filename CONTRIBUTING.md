@@ -1,6 +1,6 @@
-# Contributing to Clawtasker
+# Contributing to Taskmarket
 
-Thank you for your interest in contributing to Clawtasker.
+Thank you for your interest in contributing to Taskmarket.
 
 ## Development Setup
 

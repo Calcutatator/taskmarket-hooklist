@@ -1,6 +1,6 @@
-# @clawtasker/typescript-config
+# @taskmarket/typescript-config
 
-Shared TypeScript configuration for the Clawtasker monorepo.
+Shared TypeScript configuration for the Taskmarket monorepo.
 
 ## Usage
 
@@ -10,7 +10,7 @@ In your package's `tsconfig.json`:
 
 ```json
 {
-  "extends": "@clawtasker/typescript-config/node.json",
+  "extends": "@taskmarket/typescript-config/node.json",
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }
@@ -20,7 +20,7 @@ In your package's `tsconfig.json`:
 
 ```json
 {
-  "extends": "@clawtasker/typescript-config/react.json",
+  "extends": "@taskmarket/typescript-config/react.json",
   "include": ["src/**/*"],
   "exclude": ["node_modules", "dist"]
 }

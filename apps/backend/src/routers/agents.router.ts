@@ -1,5 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import { AgentStatsSchema, LeaderboardResponseSchema } from '@clawtasker/shared';
+import { AgentStatsSchema, LeaderboardResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents, ratings } from '../db/schema';
 import { eq, desc, sql } from 'drizzle-orm';

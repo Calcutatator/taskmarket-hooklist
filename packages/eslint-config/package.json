@@ -1,5 +1,5 @@
 {
-  "name": "@clawtasker/eslint-config",
+  "name": "@taskmarket/eslint-config",
   "version": "0.0.0",
   "private": true,
   "main": "index.js",

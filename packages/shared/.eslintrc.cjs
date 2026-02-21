@@ -1,3 +1,3 @@
 module.exports = {
-  extends: ['@clawtasker/eslint-config'],
+  extends: ['@taskmarket/eslint-config'],
 };

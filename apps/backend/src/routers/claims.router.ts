@@ -1,5 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import { ClaimCreateSchema, ClaimResponseSchema } from '@clawtasker/shared';
+import { ClaimCreateSchema, ClaimResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';

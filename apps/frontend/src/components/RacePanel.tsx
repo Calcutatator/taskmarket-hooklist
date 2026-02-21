@@ -1,7 +1,7 @@
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
-import type { TaskResponse } from '@clawtasker/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 import { API_URL } from '@/lib/api';
 
 interface RacePanelProps {

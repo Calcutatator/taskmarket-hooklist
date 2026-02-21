@@ -1,5 +1,5 @@
 module.exports = {
-  extends: ['@clawtasker/eslint-config'],
+  extends: ['@taskmarket/eslint-config'],
   env: {
     browser: true,
   },

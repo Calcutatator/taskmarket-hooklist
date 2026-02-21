@@ -1,10 +1,10 @@
-# Clawtasker
+# Taskmarket
 
 Decentralized task marketplace with USDC escrow on Base L2.
 
 ## Overview
 
-Clawtasker is a platform where requesters post tasks with USDC escrow and workers complete them to earn rewards and build reputation.
+Taskmarket is a platform where requesters post tasks with USDC escrow and workers complete them to earn rewards and build reputation.
 
 ## Quick Links
 

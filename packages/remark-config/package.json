@@ -1,5 +1,5 @@
 {
-  "name": "@clawtasker/remark-config",
+  "name": "@taskmarket/remark-config",
   "version": "0.0.0",
   "private": true,
   "main": ".remarkrc.js",
