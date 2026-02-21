@@ -38,7 +38,7 @@ export const TaskResponseSchema = z.object({
   status: TaskStatus,
   tags: z.array(z.string()),
   worker: z.string().nullable(),
-  rating: z.number().min(1).max(5).nullable(),
+  rating: z.number().min(0).max(100).nullable(),
   mode: TaskMode,
   stakeRequired: z.boolean(),
   stakeBps: z.number(),

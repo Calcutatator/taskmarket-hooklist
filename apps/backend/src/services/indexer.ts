@@ -20,6 +20,10 @@ const publicClient = createPublicClient({
 });
 
 const POLL_INTERVAL = 12000;
+const MAX_BLOCK_RANGE = 10_000n;
+
+const IDENTITY_REGISTRY_ADDRESS = '0x8004A818BFB912233c491871b3d84c89A494BD9e' as const;
+const ERC8004_SEED_BLOCK = 36_304_157;
 
 const TASK_CREATED_EVENT = parseAbiItem(
   'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, uint8 mode)'
@@ -47,6 +51,10 @@ const STAKE_RETURNED_EVENT = parseAbiItem(
 );
 const TASK_REOPENED_EVENT = parseAbiItem('event TaskReopened(bytes32 indexed taskId)');
 
+const METADATA_SET_EVENT = parseAbiItem(
+  'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
+);
+
 const MODE_MAP: Record<number, string> = {
   0: 'contest',
   1: 'instant',
@@ -54,26 +62,25 @@ const MODE_MAP: Record<number, string> = {
   3: 'race',
 };
 
-async function getLastProcessedBlock(): Promise<bigint> {
-  const result = await db.select().from(indexerState).where(eq(indexerState.id, 'main')).limit(1);
+async function getLastBlock(id: string, defaultBlock: number): Promise<bigint> {
+  const result = await db.select().from(indexerState).where(eq(indexerState.id, id)).limit(1);
 
   if (result.length === 0) {
-    const deployBlock = BigInt(config.CONTRACT_DEPLOY_BLOCK);
     await db.insert(indexerState).values({
-      id: 'main',
-      lastBlock: Number(deployBlock),
+      id,
+      lastBlock: defaultBlock,
     });
-    return deployBlock;
+    return BigInt(defaultBlock);
   }
 
   return BigInt(result[0].lastBlock);
 }
 
-async function updateLastProcessedBlock(block: bigint): Promise<void> {
+async function setLastBlock(id: string, block: bigint): Promise<void> {
   await db
     .update(indexerState)
     .set({ lastBlock: Number(block), updatedAt: new Date() })
-    .where(eq(indexerState.id, 'main'));
+    .where(eq(indexerState.id, id));
 }
 
 async function processTaskCreatedEvent(log: EventLog): Promise<void> {
@@ -239,18 +246,74 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
   }
 }
 
+async function processIdentityEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
+  const logs = (await publicClient.getLogs({
+    address: IDENTITY_REGISTRY_ADDRESS,
+    event: METADATA_SET_EVENT,
+    fromBlock,
+    toBlock,
+  })) as unknown as EventLog[];
+
+  for (const log of logs) {
+    try {
+      const { agentId, metadataKey, metadataValue } = log.args;
+      if (metadataKey !== 'agentWallet') continue;
+
+      const agentIdStr = (agentId as bigint).toString();
+
+      if (!metadataValue || metadataValue === '0x') {
+        // Cleared: unsetAgentWallet or token transfer — null out agentId for this row
+        await db
+          .update(agents)
+          .set({ agentId: null, updatedAt: new Date() })
+          .where(eq(agents.agentId, agentIdStr));
+      } else {
+        // abi.encodePacked(address) = 20 raw bytes; first 40 hex chars after '0x'
+        const wallet = ('0x' + (metadataValue as string).slice(2, 42)) as `0x${string}`;
+        // onConflictDoNothing: a wallet can own multiple agentIds (ERC-721 allows it).
+        // We keep the FIRST agentId associated with each wallet address.
+        await db
+          .insert(agents)
+          .values({ address: wallet, agentId: agentIdStr })
+          .onConflictDoNothing();
+      }
+    } catch (error) {
+      console.error('Error processing MetadataSet event:', error);
+    }
+  }
+}
+
+async function processInChunks(
+  fromBlock: bigint,
+  toBlock: bigint,
+  fn: (from: bigint, to: bigint) => Promise<void>
+): Promise<void> {
+  let from = fromBlock;
+  while (from <= toBlock) {
+    const to = from + MAX_BLOCK_RANGE - 1n < toBlock ? from + MAX_BLOCK_RANGE - 1n : toBlock;
+    await fn(from, to);
+    from = to + 1n;
+  }
+}
+
 export async function startIndexer(): Promise<void> {
   console.log('Starting event indexer...');
 
   const poll = async () => {
     try {
-      const lastBlock = await getLastProcessedBlock();
+      const lastBlock = await getLastBlock('main', config.CONTRACT_DEPLOY_BLOCK);
       const latestBlock = await publicClient.getBlockNumber();
 
       if (latestBlock > lastBlock) {
         console.log(`Indexing blocks ${lastBlock + 1n} to ${latestBlock}`);
-        await processEvents(lastBlock + 1n, latestBlock);
-        await updateLastProcessedBlock(latestBlock);
+        await processInChunks(lastBlock + 1n, latestBlock, processEvents);
+        await setLastBlock('main', latestBlock);
+      }
+
+      const erc8004LastBlock = await getLastBlock('erc8004', ERC8004_SEED_BLOCK);
+      if (latestBlock > erc8004LastBlock) {
+        await processInChunks(erc8004LastBlock + 1n, latestBlock, processIdentityEvents);
+        await setLastBlock('erc8004', latestBlock);
       }
     } catch (error) {
       console.error('Indexer error:', error);

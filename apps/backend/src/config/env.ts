@@ -19,6 +19,9 @@ const envSchema = z.object({
   // Local debugging only: http://localhost:8009
   X402_FACILITATOR_URL: z.string().url().default('https://facilitator.daydreams.systems'),
   X402_FACILITATOR_TOKEN: z.string().optional(),
+  BACKEND_URL: z.string().url().default('http://localhost:3000'),
+  ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A818BFB912233c491871b3d84c89A494BD9e'),
+  ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004B663056A597Dffe9eCcC1965A193B7388713'),
 });
 
 export type Env = z.infer<typeof envSchema>;

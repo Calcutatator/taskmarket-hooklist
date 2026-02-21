@@ -5,6 +5,19 @@ import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/access/Ownable.sol";
 
+interface IReputationRegistry {
+    function giveFeedback(
+        uint256 agentId,
+        int128 value,
+        uint8 valueDecimals,
+        string calldata tag1,
+        string calldata tag2,
+        string calldata endpoint,
+        string calldata feedbackURI,
+        bytes32 feedbackHash
+    ) external;
+}
+
 /**
  * @title TaskMarket
  * @notice Multi-mode decentralized task marketplace with USDC escrow on Base L2
@@ -66,6 +79,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     uint16 public defaultFeeBps;
     address public feeRecipient;
     uint256 public totalFeesCollected;
+    address public reputationRegistry;
 
     event TaskCreated(
         bytes32 indexed taskId,
@@ -91,6 +105,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     event FeesUpdated(uint16 newFeeBps);
     event FeeRecipientUpdated(address newRecipient);
     event AuthorizedServerUpdated(address newServer);
+    event ReputationRegistryUpdated(address newRegistry);
 
     modifier onlyServer() {
         require(msg.sender == authorizedServer, "Not authorized server");
@@ -109,6 +124,15 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         usdcToken = IERC20(_usdcToken);
         feeRecipient = _feeRecipient;
         defaultFeeBps = _defaultFeeBps;
+    }
+
+    /**
+     * @notice Set the ERC-8004 reputation registry address (owner only)
+     * @param registry New reputation registry address
+     */
+    function setReputationRegistry(address registry) external onlyOwner {
+        reputationRegistry = registry;
+        emit ReputationRegistryUpdated(registry);
     }
 
     /**
@@ -296,13 +320,23 @@ contract TaskMarket is ReentrancyGuard, Ownable {
      * @notice Rate a completed task
      * @param taskId Task identifier
      * @param requester Real requester wallet (must match task.requester)
-     * @param rating Rating (1-5 stars)
+     * @param rating Rating (0-100)
+     * @param workerAgentId ERC-8004 agentId of the worker, or 0 if unknown
+     * @param feedbackURI URI of the canonical off-chain feedback file
+     * @param feedbackHash keccak256 hash of the feedback file content
      */
-    function rateTask(bytes32 taskId, address requester, uint8 rating) external onlyServer {
+    function rateTask(
+        bytes32 taskId,
+        address requester,
+        uint8 rating,
+        uint256 workerAgentId,
+        string calldata feedbackURI,
+        bytes32 feedbackHash
+    ) external onlyServer {
         Task storage task = tasks[taskId];
         require(requester == task.requester, "Not requester");
         require(task.status == TaskStatus.Accepted, "Task not accepted");
-        require(rating >= 1 && rating <= 5, "Rating must be 1-5");
+        require(rating <= 100, "Rating must be 0-100");
         require(task.rating == 0, "Already rated");
 
         task.rating = rating;
@@ -311,6 +345,19 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         workerStats[task.worker].totalStars += rating;
 
         emit TaskRated(taskId, task.worker, rating);
+
+        if (workerAgentId != 0 && reputationRegistry != address(0)) {
+            try IReputationRegistry(reputationRegistry).giveFeedback(
+                workerAgentId,
+                int128(int256(uint256(rating))),
+                0,
+                "starred",
+                "",
+                "",
+                feedbackURI,
+                feedbackHash
+            ) {} catch {}
+        }
     }
 
     /**

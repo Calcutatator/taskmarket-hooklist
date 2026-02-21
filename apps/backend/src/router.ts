@@ -7,6 +7,8 @@ import { acceptanceRouter } from './routers/acceptance.router';
 import { claimsRouter } from './routers/claims.router';
 import { proposalsRouter } from './routers/proposals.router';
 import { proofsRouter } from './routers/proofs.router';
+import { feedbacksRouter } from './routers/feedbacks.router';
+import { identityRouter } from './routers/identity.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -17,6 +19,8 @@ export const appRouter = router({
   claims: claimsRouter,
   proposals: proposalsRouter,
   proofs: proofsRouter,
+  feedbacks: feedbacksRouter,
+  identity: identityRouter,
 });
 
 export type AppRouter = typeof appRouter;

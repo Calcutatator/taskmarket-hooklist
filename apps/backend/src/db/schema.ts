@@ -34,6 +34,7 @@ export const tasks = pgTable(
     claimedBy: text('claimed_by'),
     claimedAt: timestamp('claimed_at'),
     platformFeeBps: smallint('platform_fee_bps').notNull().default(500),
+    requesterAgentId: text('requester_agent_id'),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
@@ -67,6 +68,7 @@ export const agents = pgTable(
   'agents',
   {
     address: text('address').primaryKey(),
+    agentId: text('agent_id'),
     completedTasks: integer('completed_tasks').notNull().default(0),
     ratedTasks: integer('rated_tasks').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
@@ -75,25 +77,31 @@ export const agents = pgTable(
   },
   (table) => ({
     completedIdx: index('idx_agents_completed').on(table.completedTasks),
+    agentIdIdx: index('idx_agents_agent_id').on(table.agentId),
   })
 );
 
-export const ratings = pgTable(
-  'ratings',
+export const feedbacks = pgTable(
+  'feedbacks',
   {
-    id: serial('id').primaryKey(),
+    id: text('id').primaryKey(),
     taskId: text('task_id')
       .notNull()
       .references(() => tasks.id),
     workerAddress: text('worker_address').notNull(),
+    workerAgentId: text('worker_agent_id'),
+    requesterAddress: text('requester_address').notNull(),
+    requesterAgentId: text('requester_agent_id'),
     rating: smallint('rating').notNull(),
-    blockNumber: bigint('block_number', { mode: 'number' }).notNull(),
+    feedbackText: text('feedback_text'),
+    fileContent: text('file_content').notNull(),
+    ratingTxHash: text('rating_tx_hash'),
+    ratingBlockNumber: bigint('rating_block_number', { mode: 'number' }),
     createdAt: timestamp('created_at').defaultNow().notNull(),
   },
   (table) => ({
-    workerIdx: index('idx_ratings_worker').on(table.workerAddress),
-    createdIdx: index('idx_ratings_created').on(table.createdAt),
-    taskIdIdx: index('idx_ratings_task').on(table.taskId),
+    taskIdx: index('idx_feedbacks_task').on(table.taskId),
+    workerIdx: index('idx_feedbacks_worker').on(table.workerAddress),
   })
 );
 
@@ -186,8 +194,8 @@ export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
-export type Rating = typeof ratings.$inferSelect;
-export type NewRating = typeof ratings.$inferInsert;
+export type Feedback = typeof feedbacks.$inferSelect;
+export type NewFeedback = typeof feedbacks.$inferInsert;
 export type Proposal = typeof proposals.$inferSelect;
 export type NewProposal = typeof proposals.$inferInsert;
 export type Claim = typeof claims.$inferSelect;

@@ -1,7 +1,7 @@
 import { router, publicProcedure } from '../trpc';
 import { AgentStatsSchema, LeaderboardResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
-import { agents, ratings } from '../db/schema';
+import { agents, feedbacks } from '../db/schema';
 import { eq, desc, sql } from 'drizzle-orm';
 
 export const agentsRouter = router({
@@ -30,10 +30,14 @@ export const agentsRouter = router({
       const agent = agentResult[0];
 
       const recentRatings = await ctx.db
-        .select()
-        .from(ratings)
-        .where(eq(ratings.workerAddress, input.address))
-        .orderBy(desc(ratings.createdAt))
+        .select({
+          taskId: feedbacks.taskId,
+          rating: feedbacks.rating,
+          createdAt: feedbacks.createdAt,
+        })
+        .from(feedbacks)
+        .where(eq(feedbacks.workerAddress, input.address))
+        .orderBy(desc(feedbacks.createdAt))
         .limit(10);
 
       const averageRating = agent.ratedTasks > 0 ? agent.totalStars / agent.ratedTasks : 0;

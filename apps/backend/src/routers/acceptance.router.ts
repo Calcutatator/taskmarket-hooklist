@@ -1,8 +1,23 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
-import { tasks, agents, platformFees, ratings } from '../db/schema';
+import { tasks, agents, platformFees, feedbacks } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { contractAcceptSubmission, contractRateTask } from '../services/contract';
+import { getServerConfig } from '../config/env';
+import { randomUUID } from 'crypto';
+import { keccak256, toBytes } from 'viem';
+
+function sortKeys(obj: unknown): unknown {
+  if (Array.isArray(obj)) return obj.map(sortKeys);
+  if (obj !== null && typeof obj === 'object') {
+    return Object.fromEntries(
+      Object.keys(obj as object)
+        .sort()
+        .map((k) => [k, sortKeys((obj as Record<string, unknown>)[k])])
+    );
+  }
+  return obj;
+}
 
 export const acceptanceRouter = router({
   accept: publicProcedure
@@ -102,15 +117,18 @@ export const acceptanceRouter = router({
       z.object({
         taskId: z.string(),
         worker: z.string(),
-        rating: z.number().min(1).max(5),
+        rating: z.number().int().min(0).max(100),
+        feedbackText: z.string().max(500).optional(),
       })
     )
-    .output(z.object({ success: z.boolean() }))
+    .output(z.object({ success: z.boolean(), feedbackId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
         throw new Error('Payment required: missing payer');
       }
+
+      const config = getServerConfig();
 
       const taskResult = await ctx.db
         .select()
@@ -128,20 +146,73 @@ export const acceptanceRouter = router({
         throw new Error('Only the task requester can rate a task');
       }
 
-      const { blockNumber } = await contractRateTask(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        input.rating
-      );
+      const workerAgentResult = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(eq(agents.address, input.worker))
+        .limit(1);
 
-      await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
+      const workerAgentId = workerAgentResult[0]?.agentId
+        ? BigInt(workerAgentResult[0].agentId)
+        : 0n;
 
-      await ctx.db.insert(ratings).values({
+      const feedbackId = randomUUID();
+      const feedbackURI = `${config.BACKEND_URL}/api/feedback/${feedbackId}`;
+
+      const feedbackData = sortKeys({
+        agentId: workerAgentResult[0]?.agentId ? Number(workerAgentResult[0].agentId) : null,
+        agentRegistry: `eip155:${config.CHAIN_ID}:${config.ERC8004_IDENTITY_REGISTRY}`,
+        clientAddress: `eip155:${config.CHAIN_ID}:${config.CONTRACT_ADDRESS}`,
+        createdAt: new Date().toISOString(),
+        ...(input.feedbackText ? { feedback: input.feedbackText } : {}),
+        proofOfPayment: {
+          chainId: String(config.CHAIN_ID),
+          fromAddress: task.requester,
+          toAddress: config.CONTRACT_ADDRESS,
+          txHash: task.escrowTxHash,
+        },
+        tag1: 'starred',
+        taskmarket: {
+          platform: config.BACKEND_URL,
+          requester: task.requester,
+          reward: task.reward,
+          taskId: task.id,
+          worker: input.worker,
+        },
+        value: input.rating,
+        valueDecimals: 0,
+      });
+
+      const fileContent = JSON.stringify(feedbackData, null, 2);
+      const feedbackHash = keccak256(toBytes(fileContent)) as `0x${string}`;
+
+      await ctx.db.insert(feedbacks).values({
+        id: feedbackId,
         taskId: input.taskId,
         workerAddress: input.worker,
+        workerAgentId: workerAgentResult[0]?.agentId ?? null,
+        requesterAddress: payer,
+        requesterAgentId: task.requesterAgentId ?? null,
         rating: input.rating,
-        blockNumber,
+        feedbackText: input.feedbackText ?? null,
+        fileContent,
       });
+
+      const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        input.rating,
+        workerAgentId,
+        feedbackURI,
+        feedbackHash
+      );
+
+      await ctx.db
+        .update(feedbacks)
+        .set({ ratingTxHash, ratingBlockNumber })
+        .where(eq(feedbacks.id, feedbackId));
+
+      await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
 
       await ctx.db
         .update(agents)
@@ -152,6 +223,6 @@ export const acceptanceRouter = router({
         })
         .where(eq(agents.address, input.worker));
 
-      return { success: true };
+      return { success: true, feedbackId };
     }),
 });

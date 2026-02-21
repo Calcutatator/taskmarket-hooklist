@@ -11,6 +11,9 @@ import { morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import { x402Middleware } from './middleware/x402';
+import { db } from './db/client';
+import { feedbacks } from './db/schema';
+import { eq } from 'drizzle-orm';
 
 export const app = express();
 
@@ -40,6 +43,12 @@ app.use(
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
 
+// tRPC X402 guards
+app.post(
+  '/trpc/identity.register',
+  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
+);
+
 // tRPC middleware (for frontend / existing clients)
 app.use(
   '/trpc',
@@ -48,6 +57,22 @@ app.use(
     createContext,
   })
 );
+
+// Feedback file endpoint — mount before OpenAPI to avoid route conflict
+app.get('/api/feedback/:id', async (req, res) => {
+  try {
+    const result = await db
+      .select({ fileContent: feedbacks.fileContent })
+      .from(feedbacks)
+      .where(eq(feedbacks.id, req.params.id))
+      .limit(1);
+    if (!result.length) return res.status(404).json({ error: 'Not found' });
+    res.setHeader('Content-Type', 'application/json');
+    res.send(result[0].fileContent);
+  } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
 
 // X402 guards — mount BEFORE the OpenAPI handler
 app.post(
@@ -61,6 +86,10 @@ app.post(
 app.post(
   '/api/tasks/:taskId/rate',
   x402Middleware({ getAmount: () => '1000', description: 'Rate task' })
+);
+app.post(
+  '/api/identity/register',
+  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
 );
 
 // OpenAPI REST (handles all /api routes, including the ones above after X402 next())

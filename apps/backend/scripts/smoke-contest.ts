@@ -1,5 +1,5 @@
 /**
- * Contest mode smoke test: create → submit → accept → rate
+ * Contest mode smoke test: create → submit → accept → rate → verify feedback
  *
  * Contest: task is open, any worker can submit, requester picks winner.
  *
@@ -7,7 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-contest.ts
  */
-import { log, ok, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -18,7 +18,7 @@ async function main() {
   console.log('api:      ', API_URL);
 
   // 1. Create task
-  log('1/4', 'Creating contest task (X402)...');
+  log('1/5', 'Creating contest task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -33,7 +33,7 @@ async function main() {
   ok('taskId', taskId);
 
   // 2. Worker submits
-  log('2/4', 'Worker submitting work...');
+  log('2/5', 'Worker submitting work...');
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -43,20 +43,35 @@ async function main() {
   ok('submissionId', submissionId);
 
   // 3. Requester accepts
-  log('3/4', 'Requester accepting submission (X402)...');
+  log('3/5', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
-  // 4. Requester rates
-  log('4/4', 'Requester rating 5 stars (X402)...');
-  await x402Post(
+  // 4. Requester rates (0-100 scale per ERC-8004)
+  log('4/5', 'Requester rating 85/100 (X402)...');
+  const { feedbackId } = (await x402Post(
     `/api/tasks/${taskId}/rate`,
-    { taskId, worker: worker.address, rating: 5 },
+    {
+      taskId,
+      worker: worker.address,
+      rating: 85,
+      feedbackText: 'Excellent haiku, delivered promptly.',
+    },
     requester
-  );
-  ok('rated', '5 stars');
+  )) as { feedbackId: string };
+  ok('feedbackId', feedbackId);
 
-  console.log('\n=== Contest smoke test passed ✓ ===');
+  // 5. Verify feedback file is accessible and valid JSON
+  log('5/5', 'Verifying feedback file endpoint...');
+  const feedbackFile = (await get(`/api/feedback/${feedbackId}`)) as Record<string, unknown>;
+  if (typeof feedbackFile !== 'object' || feedbackFile.value !== 85) {
+    throw new Error(`Feedback file invalid: ${JSON.stringify(feedbackFile)}`);
+  }
+  ok('feedbackFile.value', feedbackFile.value);
+  ok('feedbackFile.tag1', feedbackFile.tag1);
+  ok('feedbackFile.valueDecimals', feedbackFile.valueDecimals);
+
+  console.log('\n=== Contest smoke test passed ===');
   console.log('taskId:', taskId);
 }
 

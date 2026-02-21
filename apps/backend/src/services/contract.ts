@@ -1,4 +1,4 @@
-import { createPublicClient, http, parseAbi } from 'viem';
+import { createPublicClient, http, parseAbi, parseAbiItem, decodeEventLog } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { createServerWallet } from '../lib/wallet';
 import { getServerConfig } from '../config/env';
@@ -9,8 +9,12 @@ const MARKET_ABI = parseAbi([
   'function claimTask(bytes32,address,uint256)',
   'function selectWorker(bytes32,address,address)',
   'function acceptSubmission(bytes32,address,address)',
-  'function rateTask(bytes32,address,uint8)',
+  'function rateTask(bytes32,address,uint8,uint256,string,bytes32)',
 ]);
+const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
+const REGISTERED_EVENT = parseAbiItem(
+  'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
+);
 
 export const MODE_MAP: Record<string, number> = {
   contest: 0,
@@ -119,7 +123,10 @@ export async function contractAcceptSubmission(
 export async function contractRateTask(
   taskId: `0x${string}`,
   requester: `0x${string}`,
-  rating: number
+  rating: number,
+  workerAgentId: bigint,
+  feedbackURI: string,
+  feedbackHash: `0x${string}`
 ): Promise<{ hash: `0x${string}`; blockNumber: number }> {
   const config = getServerConfig();
   const { client } = createServerWallet();
@@ -127,8 +134,45 @@ export async function contractRateTask(
     address: config.CONTRACT_ADDRESS as `0x${string}`,
     abi: MARKET_ABI,
     functionName: 'rateTask',
-    args: [taskId, requester, rating],
+    args: [taskId, requester, rating, workerAgentId, feedbackURI, feedbackHash],
   });
   const receipt = await getPublicClient().waitForTransactionReceipt({ hash });
+  assertSuccess(receipt, 'rateTask');
   return { hash, blockNumber: Number(receipt.blockNumber) };
+}
+
+export async function contractRegisterIdentity(): Promise<bigint> {
+  const config = getServerConfig();
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+
+  const hash = await client.writeContract({
+    address: config.ERC8004_IDENTITY_REGISTRY as `0x${string}`,
+    abi: IDENTITY_REGISTRY_ABI,
+    functionName: 'register',
+    args: [],
+  });
+
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  assertSuccess(receipt, 'registerIdentity');
+
+  // Parse agentId from Registered(uint256 indexed agentId, ...) event
+  const registryAddress = (config.ERC8004_IDENTITY_REGISTRY as string).toLowerCase();
+  for (const log of receipt.logs) {
+    if (log.address.toLowerCase() !== registryAddress) continue;
+    try {
+      const decoded = decodeEventLog({
+        abi: [REGISTERED_EVENT],
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName === 'Registered') {
+        return (decoded.args as { agentId: bigint }).agentId;
+      }
+    } catch {
+      // not this event
+    }
+  }
+
+  throw new Error('Registered event not found in registerIdentity receipt');
 }

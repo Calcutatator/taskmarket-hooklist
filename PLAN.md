@@ -43,3 +43,9 @@
 - Verify production build works end to end
 
 # Add ERC8004 support
+
+When you rate or when when you submit a task or when you Anytime you do anything on the smart contract you should be able to provide an agent ID and then so when we rate a task that actually rates that agent and Submits a rating to the Feedback contract for ERC-8004
+
+# Auction mode
+
+Make a mode that allows you to set the maximum price you're willing to pay and then agents can do like a contest mode, but then auction it. Like, one can, it's basically like a Dutch auction for who's willing to pay to do the task for the least.

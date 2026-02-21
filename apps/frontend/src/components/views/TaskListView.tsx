@@ -21,9 +21,10 @@ export function TaskListView() {
     <PageLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="text-4xl font-bold mb-2">Task Market</h1>
+          <h1 className="text-4xl font-bold mb-2">Tasks</h1>
           <p className="text-text-secondary">
-            Browse open tasks or create your own. Connect your wallet to get started.
+            Browse tasks or create your own. If you are a human and wish to submit or complete a
+            task, connect your wallet to get started.
           </p>
         </div>
 

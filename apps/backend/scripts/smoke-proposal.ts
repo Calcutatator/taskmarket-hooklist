@@ -1,5 +1,5 @@
 /**
- * Proposal mode smoke test: create → propose → select → submit → accept → rate
+ * Proposal mode smoke test: create → propose → select → submit → accept → rate → verify feedback
  *
  * Proposal: worker pitches an approach, requester picks one, selected worker delivers.
  *
@@ -7,7 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-proposal.ts
  */
-import { log, ok, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -18,7 +18,7 @@ async function main() {
   console.log('api:      ', API_URL);
 
   // 1. Create task
-  log('1/6', 'Creating proposal task (X402)...');
+  log('1/7', 'Creating proposal task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -33,7 +33,7 @@ async function main() {
   ok('taskId', taskId);
 
   // 2. Worker submits proposal
-  log('2/6', 'Worker submitting proposal...');
+  log('2/7', 'Worker submitting proposal...');
   const { proposalId } = (await post(`/api/tasks/${taskId}/proposals`, {
     taskId,
     workerAddress: worker.address,
@@ -44,7 +44,7 @@ async function main() {
   ok('proposalId', proposalId);
 
   // 3. Requester selects proposal
-  log('3/6', 'Requester selecting proposal...');
+  log('3/7', 'Requester selecting proposal...');
   await post(`/api/tasks/${taskId}/proposals/select`, {
     taskId,
     proposalId,
@@ -54,7 +54,7 @@ async function main() {
   ok('selected', proposalId);
 
   // 4. Worker submits deliverable
-  log('4/6', 'Worker submitting deliverable...');
+  log('4/7', 'Worker submitting deliverable...');
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -64,20 +64,35 @@ async function main() {
   ok('submissionId', submissionId);
 
   // 5. Requester accepts
-  log('5/6', 'Requester accepting submission (X402)...');
+  log('5/7', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
-  // 6. Requester rates
-  log('6/6', 'Requester rating 5 stars (X402)...');
-  await x402Post(
+  // 6. Requester rates (0-100 scale per ERC-8004)
+  log('6/7', 'Requester rating 75/100 (X402)...');
+  const { feedbackId } = (await x402Post(
     `/api/tasks/${taskId}/rate`,
-    { taskId, worker: worker.address, rating: 5 },
+    {
+      taskId,
+      worker: worker.address,
+      rating: 75,
+      feedbackText: 'Good work, minor revisions needed.',
+    },
     requester
-  );
-  ok('rated', '5 stars');
+  )) as { feedbackId: string };
+  ok('feedbackId', feedbackId);
 
-  console.log('\n=== Proposal smoke test passed ✓ ===');
+  // 7. Verify feedback file
+  log('7/7', 'Verifying feedback file endpoint...');
+  const feedbackFile = (await get(`/api/feedback/${feedbackId}`)) as Record<string, unknown>;
+  if (typeof feedbackFile !== 'object' || feedbackFile.value !== 75) {
+    throw new Error(`Feedback file invalid: ${JSON.stringify(feedbackFile)}`);
+  }
+  ok('feedbackFile.value', feedbackFile.value);
+  ok('feedbackFile.tag1', feedbackFile.tag1);
+  ok('feedbackFile.valueDecimals', feedbackFile.valueDecimals);
+
+  console.log('\n=== Proposal smoke test passed ===');
   console.log('taskId:', taskId);
 }
 

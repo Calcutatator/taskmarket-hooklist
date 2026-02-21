@@ -246,7 +246,7 @@ contract TaskMarketTest is Test {
         emit TaskMarket.TaskRated(TASK_ID_1, worker1, 5);
 
         vm.prank(server);
-        market.rateTask(TASK_ID_1, requester, 5);
+        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
 
         TaskMarket.Task memory task = market.getTask(TASK_ID_1);
         assertEq(task.rating, 5);
@@ -344,9 +344,9 @@ contract TaskMarketTest is Test {
         usdc.approve(address(market), REWARD);
         market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Contest, 0);
         market.acceptSubmission(TASK_ID_1, requester, worker1);
-        market.rateTask(TASK_ID_1, requester, 5);
+        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
         vm.expectRevert();
-        market.rateTask(TASK_ID_1, requester, 4);
+        market.rateTask(TASK_ID_1, requester, 4, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -421,7 +421,7 @@ contract TaskMarketTest is Test {
 
         vm.prank(alice);
         vm.expectRevert("Not authorized server");
-        market.rateTask(TASK_ID_1, requester, 5);
+        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
     }
 
     // -----------------------------------------------------------------------
@@ -584,7 +584,7 @@ contract TaskMarketTest is Test {
         market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Contest, 0);
         market.acceptSubmission(TASK_ID_1, requester, worker1);
         vm.expectRevert("Not requester");
-        market.rateTask(TASK_ID_1, worker2, 5);
+        market.rateTask(TASK_ID_1, worker2, 5, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -648,7 +648,7 @@ contract TaskMarketTest is Test {
         usdc.approve(address(market), REWARD);
         market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Contest, 0);
         vm.expectRevert("Task not accepted");
-        market.rateTask(TASK_ID_1, requester, 3);
+        market.rateTask(TASK_ID_1, requester, 3, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -657,8 +657,8 @@ contract TaskMarketTest is Test {
         usdc.approve(address(market), REWARD);
         market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Contest, 0);
         market.acceptSubmission(TASK_ID_1, requester, worker1);
-        vm.expectRevert("Rating must be 1-5");
-        market.rateTask(TASK_ID_1, requester, 0);
+        vm.expectRevert("Rating must be 0-100");
+        market.rateTask(TASK_ID_1, requester, 101, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -667,8 +667,8 @@ contract TaskMarketTest is Test {
         usdc.approve(address(market), REWARD);
         market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Contest, 0);
         market.acceptSubmission(TASK_ID_1, requester, worker1);
-        vm.expectRevert("Rating must be 1-5");
-        market.rateTask(TASK_ID_1, requester, 6);
+        vm.expectRevert("Rating must be 0-100");
+        market.rateTask(TASK_ID_1, requester, 101, 0, "", bytes32(0));
         vm.stopPrank();
     }
 

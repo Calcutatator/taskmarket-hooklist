@@ -6,7 +6,7 @@ import {
   TaskResponseSchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { tasks, submissions, proposals } from '../db/schema';
+import { tasks, submissions, proposals, agents } from '../db/schema';
 import { eq, sql, desc, and } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
@@ -53,6 +53,12 @@ export const tasksRouter = router({
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
 
+      const requesterAgent = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(eq(agents.address, payer))
+        .limit(1);
+
       await ctx.db.insert(tasks).values({
         id: taskId,
         requester: payer,
@@ -72,6 +78,7 @@ export const tasksRouter = router({
         metricDescription: input.metricDescription ?? null,
         metricTarget: input.metricTarget ?? null,
         platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
+        requesterAgentId: requesterAgent[0]?.agentId ?? null,
       });
 
       return { success: true, taskId };

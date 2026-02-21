@@ -21,6 +21,17 @@ export function fail(step: string, status: number, body: string): never {
   process.exit(1);
 }
 
+/** GET without auth. */
+export async function get(path: string): Promise<unknown> {
+  const r = await fetch(`${API_URL}${path}`, {
+    method: 'GET',
+    headers: { 'Content-Type': 'application/json' },
+  });
+  const result = await r.json();
+  if (!r.ok) fail(path, r.status, JSON.stringify(result, null, 2));
+  return result;
+}
+
 /** POST without X402. */
 export async function post(path: string, body: Record<string, unknown>): Promise<unknown> {
   const r = await fetch(`${API_URL}${path}`, {

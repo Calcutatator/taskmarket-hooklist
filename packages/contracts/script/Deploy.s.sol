@@ -10,15 +10,22 @@ contract DeployScript is Script {
         address usdcToken = vm.envAddress("USDC_TOKEN_ADDRESS");
         address feeRecipient = vm.envAddress("FEE_RECIPIENT_ADDRESS");
         uint16 defaultFeeBps = uint16(vm.envUint("DEFAULT_PLATFORM_FEE_BPS"));
+        address reputationRegistry = vm.envAddress("ERC8004_REPUTATION_REGISTRY");
+
+        uint256 serverPrivateKey = vm.envUint("SERVER_PRIVATE_KEY");
+        address serverAddress = vm.addr(serverPrivateKey);
 
         vm.startBroadcast(deployerPrivateKey);
 
         TaskMarket taskMarket = new TaskMarket(usdcToken, feeRecipient, defaultFeeBps);
+        taskMarket.setAuthorizedServer(serverAddress);
+        taskMarket.setReputationRegistry(reputationRegistry);
 
         console.log("TaskMarket deployed to:", address(taskMarket));
         console.log("USDC Token:", usdcToken);
         console.log("Fee Recipient:", feeRecipient);
         console.log("Default Fee BPS:", defaultFeeBps);
+        console.log("Reputation registry:", reputationRegistry);
 
         vm.stopBroadcast();
     }
