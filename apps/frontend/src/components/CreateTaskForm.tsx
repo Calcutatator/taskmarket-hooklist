@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { useForm } from 'react-hook-form';
 import { zodResolver } from '@hookform/resolvers/zod';
 import { useNavigate } from '@tanstack/react-router';
-import { useAccount } from 'wagmi';
+import { useAccount, useSignTypedData } from 'wagmi';
 import { parseUnits } from 'viem';
 import { TaskCreateSchema, type TaskCreate } from '@clawtasker/shared';
 import { Button } from './ui/button';
@@ -11,9 +11,6 @@ import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from '
 import { Input } from './ui/input';
 import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
-import { useApproveUSDC } from '@/hooks/useApproveUSDC';
-import { useCreateTask } from '@/hooks/useTaskMarket';
-import { trpc } from '@/contexts/TRPCProvider';
 
 const TASK_MODES = [
   { value: 'contest', label: 'Contest', description: 'Multiple workers submit; you pick the best' },
@@ -26,14 +23,14 @@ const TASK_MODES = [
   { value: 'race', label: 'Race', description: 'First to hit metric target wins' },
 ] as const;
 
+type Step = 'form' | 'payment' | 'signing' | 'submitting';
+
 export function CreateTaskForm() {
   const { address } = useAccount();
   const navigate = useNavigate();
-  const [step, setStep] = useState<'form' | 'approve' | 'create'>('form');
-
-  const { approve } = useApproveUSDC();
-  const { createTask } = useCreateTask();
-  const createTaskMutation = trpc.tasks.create.useMutation();
+  const [step, setStep] = useState<Step>('form');
+  const [error, setError] = useState<string | null>(null);
+  const { signTypedDataAsync } = useSignTypedData();
 
   const form = useForm<TaskCreate>({
     resolver: zodResolver(TaskCreateSchema),
@@ -50,45 +47,124 @@ export function CreateTaskForm() {
 
   const onSubmit = async (data: TaskCreate) => {
     if (!address) return;
+    setError(null);
 
     try {
-      const rewardBigInt = parseUnits(data.reward.toString(), 6);
-      const durationSeconds = data.duration * 3600;
+      // Convert human-readable USDC (e.g. "1.00") to base units (e.g. "1000000")
+      const rewardBaseUnits = parseUnits(data.reward, 6).toString();
+      const body = { ...data, reward: rewardBaseUnits };
 
-      // Step 1: Approve USDC
-      setStep('approve');
-      await approve(rewardBigInt);
-
-      // Step 2: Create task on-chain
-      setStep('create');
-      const taskId = `0x${Date.now().toString(16).padStart(64, '0')}` as `0x${string}`;
-      const modeNum = ['contest', 'instant', 'proposal', 'race'].indexOf(data.mode);
-      const proposalDeadlineTimestamp =
-        data.mode === 'proposal' && data.proposalDeadline
-          ? Math.floor(new Date(data.proposalDeadline).getTime() / 1000)
-          : 0;
-
-      await createTask(
-        taskId,
-        rewardBigInt,
-        BigInt(durationSeconds),
-        modeNum,
-        BigInt(proposalDeadlineTimestamp)
-      );
-
-      // Step 3: Save to backend
-      await createTaskMutation.mutateAsync({
-        ...data,
+      // Step 1: Probe the endpoint to get 402 payment requirements
+      setStep('payment');
+      const probeRes = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
       });
 
+      if (probeRes.status !== 402) {
+        throw new Error(`Expected 402, got ${probeRes.status}`);
+      }
+
+      const payReq = await probeRes.json();
+      const accepted = payReq.accepts?.[0];
+      if (!accepted) throw new Error('No payment terms in 402 response');
+
+      // Step 2: Sign the EIP-712 TransferWithAuthorization message
+      setStep('signing');
+      const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')}` as `0x${string}`;
+      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
+      const eip712 = accepted.extra?.eip712;
+
+      const signature = await signTypedDataAsync({
+        domain: {
+          name: eip712.domain.name,
+          version: eip712.domain.version,
+          chainId: Number(eip712.domain.chainId),
+          verifyingContract: eip712.domain.verifyingContract as `0x${string}`,
+        },
+        types: {
+          TransferWithAuthorization: eip712.types.TransferWithAuthorization,
+        },
+        primaryType: 'TransferWithAuthorization',
+        message: {
+          from: address,
+          to: accepted.payTo as `0x${string}`,
+          value: BigInt(accepted.amount),
+          validAfter: 0n,
+          validBefore,
+          nonce,
+        },
+      });
+
+      // Step 3: Retry with payment-signature header
+      setStep('submitting');
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: accepted.scheme,
+        network: accepted.network,
+        payload: {
+          signature,
+          authorization: {
+            from: address,
+            to: accepted.payTo,
+            value: accepted.amount,
+            validAfter: '0',
+            validBefore: validBefore.toString(),
+            nonce,
+          },
+        },
+        accepted: {
+          scheme: accepted.scheme,
+          network: accepted.network,
+          amount: accepted.amount,
+          asset: accepted.asset,
+          payTo: accepted.payTo,
+          maxTimeoutSeconds: accepted.maxTimeoutSeconds,
+        },
+      };
+
+      const paymentSignature = btoa(JSON.stringify(paymentPayload));
+
+      const createRes = await fetch('/api/tasks', {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'payment-signature': paymentSignature,
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!createRes.ok) {
+        const err = await createRes.json().catch(() => ({}));
+        throw new Error(err.error || `Server error: ${createRes.status}`);
+      }
+
       navigate({ to: '/' });
-    } catch (error) {
-      console.error('Task creation failed:', error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Task creation failed');
       setStep('form');
     }
   };
 
   const isSubmitting = step !== 'form';
+
+  const buttonLabel = () => {
+    if (!address) return 'Connect Wallet to Create Task';
+    if (step === 'payment') return 'Fetching payment terms...';
+    if (step === 'signing') return 'Sign in MetaMask...';
+    if (step === 'submitting') return 'Creating task...';
+    return 'Create Task';
+  };
+
+  const statusMessage = () => {
+    if (step === 'payment') return 'Step 1/3: Getting payment requirements...';
+    if (step === 'signing') return 'Step 2/3: Sign the USDC authorization in MetaMask (no gas fee)';
+    if (step === 'submitting') return 'Step 3/3: Submitting task...';
+    return null;
+  };
 
   return (
     <Card>
@@ -154,8 +230,9 @@ export function CreateTaskForm() {
                     <FormControl>
                       <Input
                         type="number"
-                        step="0.01"
-                        placeholder="100.00"
+                        step="0.000001"
+                        min="0"
+                        placeholder="1.00"
                         {...field}
                         onChange={(e) => field.onChange(e.target.value)}
                       />
@@ -303,6 +380,8 @@ export function CreateTaskForm() {
               </div>
             )}
 
+            {error && <p className="text-sm text-state-error-primary">{error}</p>}
+
             <div className="space-y-2">
               <Button
                 type="submit"
@@ -310,19 +389,10 @@ export function CreateTaskForm() {
                 className="w-full"
                 size="lg"
               >
-                {!address
-                  ? 'Connect Wallet'
-                  : step === 'approve'
-                    ? 'Approving USDC...'
-                    : step === 'create'
-                      ? 'Creating Task...'
-                      : 'Create Task'}
+                {buttonLabel()}
               </Button>
-              {isSubmitting && (
-                <p className="text-sm text-text-secondary text-center">
-                  {step === 'approve' && 'Step 1/2: Approving USDC transfer...'}
-                  {step === 'create' && 'Step 2/2: Creating task on-chain...'}
-                </p>
+              {statusMessage() && (
+                <p className="text-sm text-text-secondary text-center">{statusMessage()}</p>
               )}
             </div>
           </form>
