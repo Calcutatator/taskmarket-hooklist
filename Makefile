@@ -84,6 +84,8 @@ start:
 		pnpm --filter @taskmarket/backend dev; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend dev; \
+	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
+		pnpm --filter @taskmarket/docs dev; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
