@@ -2,7 +2,7 @@ import winston from 'winston';
 import { getServerConfig } from '../config/env';
 
 export const logger = winston.createLogger({
-  level: getServerConfig().NODE_ENV === 'production' ? 'info' : 'debug',
+  level: getServerConfig().NODE_ENV === 'production' ? 'http' : 'debug',
   format: winston.format.combine(
     winston.format.timestamp(),
     winston.format.errors({ stack: true }),

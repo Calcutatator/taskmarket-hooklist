@@ -7,7 +7,7 @@ import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { createOpenApiExpressMiddleware } from 'trpc-to-openapi';
 import { appRouter } from './router';
 import { createContext } from './context';
-import { morganStream } from './lib/logger';
+import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import { x402Middleware } from './middleware/x402';
@@ -55,6 +55,13 @@ app.use(
   createExpressMiddleware({
     router: appRouter,
     createContext,
+    onError({ path, error }) {
+      logger.error(`tRPC error on /${path ?? 'unknown'}`, {
+        code: error.code,
+        message: error.message,
+        stack: error.stack,
+      });
+    },
   })
 );
 
@@ -98,6 +105,12 @@ app.use(
   createOpenApiExpressMiddleware({
     router: appRouter,
     createContext,
+    onError({ path, error }: { path: string | undefined; error: Error }) {
+      logger.error(`OpenAPI error on ${path ?? 'unknown'}`, {
+        message: error.message,
+        stack: error.stack,
+      });
+    },
   })
 );
 
