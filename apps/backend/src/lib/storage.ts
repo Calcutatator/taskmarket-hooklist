@@ -17,6 +17,7 @@ class S3Storage implements StorageBackend {
     const config = getServerConfig();
     this.client = new S3Client({
       region: config.AWS_REGION!,
+      endpoint: config.AWS_ENDPOINT_URL!,
     });
     this.bucket = config.AWS_S3_BUCKET!;
   }
@@ -59,7 +60,7 @@ class LocalStorage implements StorageBackend {
 
 export function getStorageBackend(): StorageBackend {
   const config = getServerConfig();
-  if (config.NODE_ENV === 'production' && config.AWS_S3_BUCKET) {
+  if (config.NODE_ENV === 'production') {
     return new S3Storage();
   }
   return new LocalStorage();
