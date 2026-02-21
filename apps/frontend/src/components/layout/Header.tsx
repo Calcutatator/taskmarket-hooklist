@@ -1,5 +1,6 @@
 import { Link } from '@tanstack/react-router';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { Button } from '@/components/ui/button';
 
 function ConnectButton() {
   const { address, isConnected } = useAccount();
@@ -12,23 +13,17 @@ function ConnectButton() {
         <span className="text-sm text-text-secondary font-mono">
           {address.slice(0, 6)}...{address.slice(-4)}
         </span>
-        <button
-          onClick={() => disconnect()}
-          className="text-sm font-medium px-3 py-1.5 rounded border border-border-primary hover:bg-background-secondary"
-        >
+        <Button variant="outline" size="sm" onClick={() => disconnect()}>
           Disconnect
-        </button>
+        </Button>
       </div>
     );
   }
 
   return (
-    <button
-      onClick={() => connect({ connector: connectors[0] })}
-      className="text-sm font-medium px-3 py-1.5 rounded bg-accent-primary text-white hover:opacity-90"
-    >
+    <Button size="sm" onClick={() => connect({ connector: connectors[0] })}>
       Connect Wallet
-    </button>
+    </Button>
   );
 }
 
