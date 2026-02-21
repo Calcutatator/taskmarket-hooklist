@@ -10,7 +10,7 @@
     "dev": "vocs dev",
     "build": "vocs build",
     "preview": "vocs preview",
-    "start": "vocs preview --host --port ${PORT:-4173}",
+    "start": "vocs preview",
     "lint:check": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/",
     "lint:write": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/ --fix",
     "format:check": "remark src/pages/ --no-stdout --quiet",

@@ -3,6 +3,8 @@ import { defineConfig } from 'vocs';
 export default defineConfig({
   vite: {
     preview: {
+      host: '0.0.0.0',
+      port: parseInt(process.env.PORT ?? '4173'),
       allowedHosts: true,
     },
   },
