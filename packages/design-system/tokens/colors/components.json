@@ -4,11 +4,11 @@
       "primary": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.orange.900}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.1100}"
+          "$value": "{colors.orange.1000}"
         },
         "text": {
           "$type": "color",
@@ -18,11 +18,11 @@
       "secondary": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.400}"
+          "$value": "{colors.sand.400}"
         },
         "text": {
           "$type": "color",
@@ -36,7 +36,7 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "border": {
           "$type": "color",
@@ -54,7 +54,7 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "text": {
           "$type": "color",
@@ -64,15 +64,15 @@
       "accent": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.blue.1000}"
+          "$value": "{colors.orange.1000}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       },
       "success": {
@@ -86,7 +86,7 @@
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       },
       "error": {
@@ -100,7 +100,7 @@
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       },
       "warning": {
@@ -114,21 +114,21 @@
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.sand.1200}"
         }
       },
       "info": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.blue.1000}"
+          "$value": "{colors.orange.1000}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       },
       "link": {
@@ -138,7 +138,7 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.blue.1000}"
+          "$value": "{colors.orange.1000}"
         },
         "text": {
           "$type": "color",
@@ -150,21 +150,21 @@
       "default": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.sand.1200}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       },
       "secondary": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.sand.1200}"
         }
       },
       "outline": {
@@ -184,11 +184,11 @@
       "info": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.300}"
+          "$value": "{colors.orange.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.blue.1100}"
+          "$value": "{colors.orange.1100}"
         }
       },
       "success": {
@@ -353,7 +353,7 @@
     "toggle": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.sand.300}"
       },
       "text": {
         "$type": "color",
@@ -361,65 +361,65 @@
       },
       "hover": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       },
       "active": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.orange.900}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       }
     },
     "switch": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.600}"
+        "$value": "{colors.sand.600}"
       },
       "thumb": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "checked": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "thumb": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       }
     },
     "slider": {
       "track": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       },
       "range": {
         "$type": "color",
-        "$value": "{colors.blue.900}"
+        "$value": "{colors.orange.900}"
       },
       "thumb": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "thumbBorder": {
         "$type": "color",
-        "$value": "{colors.blue.900}"
+        "$value": "{colors.orange.900}"
       }
     },
     "tooltip": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "text": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       }
     },
     "popover": {
@@ -457,11 +457,11 @@
       },
       "hover": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.sand.300}"
       },
       "active": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       },
       "separator": {
         "$type": "color",
@@ -472,7 +472,7 @@
       "header": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.200}"
+          "$value": "{colors.sand.200}"
         },
         "text": {
           "$type": "color",
@@ -486,11 +486,11 @@
         },
         "alt": {
           "$type": "color",
-          "$value": "{colors.slate.200}"
+          "$value": "{colors.sand.200}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         }
       },
       "border": {
@@ -506,7 +506,7 @@
       "list": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         }
       },
       "trigger": {
@@ -516,7 +516,7 @@
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.900}"
+          "$value": "{colors.sand.900}"
         },
         "hover": {
           "$type": "color",
@@ -541,21 +541,21 @@
     "avatar": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       },
       "text": {
         "$type": "color",
-        "$value": "{colors.slate.1100}"
+        "$value": "{colors.sand.1100}"
       }
     },
     "skeleton": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.sand.300}"
       },
       "shimmer": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       }
     },
     "dialog": {
@@ -605,7 +605,7 @@
     "sidebar": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.slate.200}"
+        "$value": "{colors.sand.200}"
       },
       "border": {
         "$type": "color",
@@ -618,11 +618,11 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "active": {
           "$type": "color",
-          "$value": "{colors.blue.400}"
+          "$value": "{colors.orange.400}"
         }
       },
       "section": {
@@ -648,7 +648,7 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         }
       },
       "content": {
@@ -678,7 +678,7 @@
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "disabled": {
           "text": {
@@ -690,11 +690,11 @@
       "active": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.1200}"
+          "$value": "{colors.sand.1200}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.100}"
+          "$value": "{colors.sand.100}"
         }
       }
     },
@@ -702,21 +702,21 @@
       "primary": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.400}"
+          "$value": "{colors.sand.400}"
         },
         "fill": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "hover": {
           "$type": "color",
-          "$value": "{colors.blue.1000}"
+          "$value": "{colors.orange.1000}"
         }
       },
       "success": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.400}"
+          "$value": "{colors.sand.400}"
         },
         "fill": {
           "$type": "color",
@@ -730,7 +730,7 @@
       "error": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.400}"
+          "$value": "{colors.sand.400}"
         },
         "fill": {
           "$type": "color",
@@ -744,7 +744,7 @@
       "warning": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.400}"
+          "$value": "{colors.sand.400}"
         },
         "fill": {
           "$type": "color",

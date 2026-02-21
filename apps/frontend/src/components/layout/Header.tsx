@@ -1,6 +1,8 @@
 import { Link } from '@tanstack/react-router';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { Sun, Moon } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { useTheme } from '@/contexts/ThemeContext';
 
 function ConnectButton() {
   const { address, isConnected } = useAccount();
@@ -27,6 +29,19 @@ function ConnectButton() {
   );
 }
 
+function ThemeToggle() {
+  const { isDark, toggleTheme } = useTheme();
+  return (
+    <button
+      onClick={toggleTheme}
+      aria-label="Toggle theme"
+      className="rounded-md p-2 text-text-secondary hover:bg-background-secondary hover:text-text-primary transition-colors"
+    >
+      {isDark ? <Sun size={18} /> : <Moon size={18} />}
+    </button>
+  );
+}
+
 export function Header() {
   return (
     <header className="sticky top-0 z-40 w-full border-b border-border-primary bg-background-primary">
@@ -47,7 +62,10 @@ export function Header() {
             </Link>
           </nav>
         </div>
-        <ConnectButton />
+        <div className="flex items-center gap-2">
+          <ThemeToggle />
+          <ConnectButton />
+        </div>
       </div>
     </header>
   );

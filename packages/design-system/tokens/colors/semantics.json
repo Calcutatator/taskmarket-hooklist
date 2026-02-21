@@ -3,19 +3,19 @@
     "background": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.200}"
+        "$value": "{colors.sand.200}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "overlay": {
         "$type": "color",
@@ -25,139 +25,139 @@
     "text": {
       "base": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.1100}"
+        "$value": "{colors.sand.1100}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.900}"
+        "$value": "{colors.sand.900}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.800}"
+        "$value": "{colors.sand.800}"
       },
       "placeholder": {
         "$type": "color",
-        "$value": "{colors.slate.800}"
+        "$value": "{colors.sand.800}"
       },
       "link": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       }
     },
     "surface": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.200}"
+        "$value": "{colors.sand.200}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.sand.300}"
       },
       "inset": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.sand.300}"
       }
     },
     "border": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.600}"
+        "$value": "{colors.sand.600}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.sand.500}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.700}"
+        "$value": "{colors.orange.700}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "focus": {
         "$type": "color",
-        "$value": "{colors.blue.800}"
+        "$value": "{colors.orange.800}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.sand.400}"
       }
     },
     "separator": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.sand.500}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.600}"
+        "$value": "{colors.sand.600}"
       }
     },
     "icon": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.sand.1200}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.1100}"
+        "$value": "{colors.sand.1100}"
       },
       "muted": {
         "$type": "color",
-        "$value": "{colors.slate.900}"
+        "$value": "{colors.sand.900}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.800}"
+        "$value": "{colors.sand.800}"
       }
     },
     "ring": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.blue.700}"
+        "$value": "{colors.orange.700}"
       },
       "offset": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.sand.100}"
       }
     },
     "highlight": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.blue.400}"
+        "$value": "{colors.orange.400}"
       },
       "text": {
         "$type": "color",
-        "$value": "{colors.blue.1200}"
+        "$value": "{colors.orange.1200}"
       }
     },
     "state": {
@@ -200,19 +200,19 @@
       "info": {
         "primary": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.300}"
+          "$value": "{colors.orange.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.blue.1100}"
+          "$value": "{colors.orange.1100}"
         },
         "border": {
           "$type": "color",
-          "$value": "{colors.blue.700}"
+          "$value": "{colors.orange.700}"
         }
       },
       "success": {
@@ -236,15 +236,15 @@
       "disabled": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.sand.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.800}"
+          "$value": "{colors.sand.800}"
         },
         "border": {
           "$type": "color",
-          "$value": "{colors.slate.500}"
+          "$value": "{colors.sand.500}"
         }
       }
     }

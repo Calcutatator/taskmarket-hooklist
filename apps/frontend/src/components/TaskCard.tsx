@@ -20,8 +20,8 @@ export function TaskCard({ task }: TaskCardProps) {
 
   return (
     <Link to="/tasks/$taskId" params={{ taskId: task.id }}>
-      <Card className="hover:border-border-accent transition-colors cursor-pointer">
-        <CardHeader>
+      <Card className="hover:border-border-accent transition-colors cursor-pointer h-52 flex flex-col">
+        <CardHeader className="flex-1">
           <div className="flex items-center justify-between mb-2">
             <Badge variant={modeVariant}>{task.mode}</Badge>
             <Badge variant={task.status === 'open' ? 'success' : 'default'}>{task.status}</Badge>

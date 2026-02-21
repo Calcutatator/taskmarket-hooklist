@@ -32,15 +32,15 @@
     },
     "sm": {
       "$type": "dimension",
-      "$value": "4px"
+      "$value": "0px"
     },
     "md": {
       "$type": "dimension",
-      "$value": "8px"
+      "$value": "0px"
     },
     "lg": {
       "$type": "dimension",
-      "$value": "12px"
+      "$value": "0px"
     },
     "full": {
       "$type": "dimension",

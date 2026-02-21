@@ -3,19 +3,19 @@
     "background": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.200}"
+        "$value": "{colors.mauve.200}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.mauve.500}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       },
       "overlay": {
         "$type": "color",
@@ -25,139 +25,139 @@
     "text": {
       "base": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.mauve.1200}"
       },
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.mauve.1200}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.1100}"
+        "$value": "{colors.mauve.1100}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.900}"
+        "$value": "{colors.mauve.900}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.700}"
+        "$value": "{colors.mauve.700}"
       },
       "placeholder": {
         "$type": "color",
-        "$value": "{colors.slate.700}"
+        "$value": "{colors.mauve.700}"
       },
       "link": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       }
     },
     "surface": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.300}"
+        "$value": "{colors.mauve.300}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.400}"
+        "$value": "{colors.mauve.400}"
       },
       "tertiary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.mauve.500}"
       },
       "inset": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       }
     },
     "border": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.600}"
+        "$value": "{colors.mauve.600}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.mauve.500}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.700}"
+        "$value": "{colors.orange.700}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.mauve.1200}"
       },
       "focus": {
         "$type": "color",
-        "$value": "{colors.blue.800}"
+        "$value": "{colors.orange.800}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.mauve.500}"
       }
     },
     "separator": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.500}"
+        "$value": "{colors.mauve.500}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.600}"
+        "$value": "{colors.mauve.600}"
       }
     },
     "icon": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.slate.1200}"
+        "$value": "{colors.mauve.1200}"
       },
       "secondary": {
         "$type": "color",
-        "$value": "{colors.slate.1100}"
+        "$value": "{colors.mauve.1100}"
       },
       "muted": {
         "$type": "color",
-        "$value": "{colors.slate.900}"
+        "$value": "{colors.mauve.900}"
       },
       "inverse": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.blue.1100}"
+        "$value": "{colors.orange.1100}"
       },
       "disabled": {
         "$type": "color",
-        "$value": "{colors.slate.700}"
+        "$value": "{colors.mauve.700}"
       }
     },
     "ring": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.blue.700}"
+        "$value": "{colors.orange.700}"
       },
       "offset": {
         "$type": "color",
-        "$value": "{colors.slate.100}"
+        "$value": "{colors.mauve.100}"
       }
     },
     "highlight": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.blue.500}"
+        "$value": "{colors.orange.500}"
       },
       "text": {
         "$type": "color",
-        "$value": "{colors.blue.1200}"
+        "$value": "{colors.orange.1200}"
       }
     },
     "state": {
@@ -200,19 +200,19 @@
       "info": {
         "primary": {
           "$type": "color",
-          "$value": "{colors.blue.900}"
+          "$value": "{colors.orange.900}"
         },
         "bg": {
           "$type": "color",
-          "$value": "{colors.blue.300}"
+          "$value": "{colors.orange.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.blue.1100}"
+          "$value": "{colors.orange.1100}"
         },
         "border": {
           "$type": "color",
-          "$value": "{colors.blue.700}"
+          "$value": "{colors.orange.700}"
         }
       },
       "success": {
@@ -236,15 +236,15 @@
       "disabled": {
         "bg": {
           "$type": "color",
-          "$value": "{colors.slate.300}"
+          "$value": "{colors.mauve.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.slate.700}"
+          "$value": "{colors.mauve.700}"
         },
         "border": {
           "$type": "color",
-          "$value": "{colors.slate.500}"
+          "$value": "{colors.mauve.500}"
         }
       }
     }
