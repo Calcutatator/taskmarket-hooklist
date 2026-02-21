@@ -1,6 +1,11 @@
 import { defineConfig } from 'vocs';
 
 export default defineConfig({
+  vite: {
+    preview: {
+      allowedHosts: true,
+    },
+  },
   rootDir: 'src',
   title: 'Taskmarket Documentation',
   description: 'Decentralized task marketplace on Base L2',
