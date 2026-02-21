@@ -6,6 +6,15 @@ vi.mock('../../../src/services/contract', () => ({
   contractRateTask: vi.fn().mockResolvedValue({ hash: '0xratetx', blockNumber: 100 }),
 }));
 
+vi.mock('../../../src/config/env', () => ({
+  getServerConfig: vi.fn().mockReturnValue({
+    BACKEND_URL: 'http://localhost:3000',
+    CHAIN_ID: 84532,
+    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+  }),
+}));
+
 import { acceptanceRouter } from '../../../src/routers/acceptance.router';
 import { contractAcceptSubmission, contractRateTask } from '../../../src/services/contract';
 
@@ -152,16 +161,18 @@ describe('acceptance router', () => {
 
     it('rates task, inserts rating, updates agent stats on happy path', async () => {
       const ctx = createMockCtx(REQUESTER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'accepted' })]));
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'accepted' })])) // task lookup
+        .mockReturnValueOnce(makeChain([])); // worker agent lookup (no agentId)
 
       const caller = acceptanceRouter.createCaller(ctx);
       const result = await caller.rate(rateInput);
 
       expect(result.success).toBe(true);
       expect(contractRateTask).toHaveBeenCalledOnce();
-      // update task rating + update agent stats = 2 updates
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
-      // insert rating
+      // update feedbacks (ratingTxHash) + update tasks (rating) + update agents (stats) = 3 updates
+      expect(ctx.db.update).toHaveBeenCalledTimes(3);
+      // insert feedback
       expect(ctx.db.insert).toHaveBeenCalledTimes(1);
     });
   });
