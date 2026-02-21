@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "vite preview",
+    "start": "serve dist -p ${PORT:-4173} -s",
     "lint:check": "eslint .",
     "lint:write": "eslint . --fix",
     "format:check": "prettier . --check",
@@ -42,6 +42,9 @@
     "viem": "^2.41.2",
     "wagmi": "3.4.0",
     "zod": "^3.22.4"
+  },
+  "optionalDependencies": {
+    "serve": "^14.2.4"
   },
   "devDependencies": {
     "@taskmarket/eslint-config": "workspace:*",

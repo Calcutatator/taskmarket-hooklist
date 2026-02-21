@@ -84,8 +84,27 @@ async function setLastBlock(id: string, block: bigint): Promise<void> {
 }
 
 async function processTaskCreatedEvent(log: EventLog): Promise<void> {
-  const { taskId, requester, mode } = log.args;
+  const { taskId, requester, reward, expiryTime, mode } = log.args;
   const modeString = MODE_MAP[Number(mode)] || 'contest';
+
+  await db
+    .insert(tasks)
+    .values({
+      id: taskId as string,
+      requester: requester as string,
+      requesterPubkey: '',
+      description: '',
+      reward: (reward as bigint).toString(),
+      escrowTxHash: log.transactionHash!,
+      expiryTime: new Date(Number(expiryTime as bigint) * 1000),
+      status: 'open',
+      tags: [],
+      mode: modeString,
+      stakeRequired: 0,
+      stakeBps: 0,
+      platformFeeBps: 500,
+    })
+    .onConflictDoNothing();
 
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
 }
