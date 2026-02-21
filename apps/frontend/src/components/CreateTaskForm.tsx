@@ -157,7 +157,7 @@ export function CreateTaskForm() {
                         step="0.01"
                         placeholder="100.00"
                         {...field}
-                        onChange={(e) => field.onChange(parseFloat(e.target.value))}
+                        onChange={(e) => field.onChange(e.target.value)}
                       />
                     </FormControl>
                     <FormMessage />
