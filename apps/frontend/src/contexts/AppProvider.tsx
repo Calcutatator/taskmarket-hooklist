@@ -5,10 +5,10 @@ import { TRPCProvider } from './TRPCProvider';
 
 export function AppProvider({ children }: { children: ReactNode }) {
   return (
-    <QueryProvider>
-      <WalletProvider>
+    <WalletProvider>
+      <QueryProvider>
         <TRPCProvider>{children}</TRPCProvider>
-      </WalletProvider>
-    </QueryProvider>
+      </QueryProvider>
+    </WalletProvider>
   );
 }

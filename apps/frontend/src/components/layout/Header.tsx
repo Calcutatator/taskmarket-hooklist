@@ -1,10 +1,9 @@
 import { Link } from '@tanstack/react-router';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
-import { injected } from 'wagmi/connectors';
 
 function ConnectButton() {
   const { address, isConnected } = useAccount();
-  const { connect } = useConnect();
+  const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
 
   if (isConnected && address) {
@@ -25,7 +24,7 @@ function ConnectButton() {
 
   return (
     <button
-      onClick={() => connect({ connector: injected() })}
+      onClick={() => connect({ connector: connectors[0] })}
       className="text-sm font-medium px-3 py-1.5 rounded bg-accent-primary text-white hover:opacity-90"
     >
       Connect Wallet

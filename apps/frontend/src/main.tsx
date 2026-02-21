@@ -3,8 +3,7 @@ import * as React from 'react';
 import { createRoot } from 'react-dom/client';
 import { createRouter, RouterProvider } from '@tanstack/react-router';
 import { routeTree } from './generated/routeTree.gen';
-import { WalletProvider } from './contexts/WalletProvider';
-import { TRPCProvider } from './contexts/TRPCProvider';
+import { AppProvider } from './contexts/AppProvider';
 
 const router = createRouter({ routeTree });
 
@@ -17,10 +16,8 @@ declare module '@tanstack/react-router' {
 const root = createRoot(document.getElementById('root')!);
 root.render(
   <React.StrictMode>
-    <WalletProvider>
-      <TRPCProvider>
-        <RouterProvider router={router} />
-      </TRPCProvider>
-    </WalletProvider>
+    <AppProvider>
+      <RouterProvider router={router} />
+    </AppProvider>
   </React.StrictMode>
 );
