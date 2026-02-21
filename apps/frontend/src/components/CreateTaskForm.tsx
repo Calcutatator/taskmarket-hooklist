@@ -5,6 +5,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import { parseUnits } from 'viem';
 import { TaskCreateSchema, type TaskCreate } from '@taskmarket/shared';
+import { API_URL } from '@/lib/api';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Form, FormControl, FormField, FormItem, FormLabel, FormMessage } from './ui/form';
@@ -57,7 +58,7 @@ export function CreateTaskForm() {
 
       // Step 1: Probe the endpoint to get 402 payment requirements
       setStep('payment');
-      const probeRes = await fetch('/api/tasks', {
+      const probeRes = await fetch(`${API_URL}/api/tasks`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify(body),
@@ -144,7 +145,7 @@ export function CreateTaskForm() {
 
       const paymentSignature = btoa(JSON.stringify(paymentPayload));
 
-      const createRes = await fetch('/api/tasks', {
+      const createRes = await fetch(`${API_URL}/api/tasks`, {
         method: 'POST',
         headers: {
           'Content-Type': 'application/json',
