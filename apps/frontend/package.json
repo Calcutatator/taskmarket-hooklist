@@ -8,7 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
-    "start": "vite preview",
+    "start": "vite preview --host --port ${PORT:-4173}",
     "lint:check": "eslint .",
     "lint:write": "eslint . --fix",
     "format:check": "prettier . --check",
