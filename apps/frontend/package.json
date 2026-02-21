@@ -8,6 +8,7 @@
     "dev": "vite",
     "build": "vite build",
     "preview": "vite preview",
+    "start": "vite preview",
     "lint:check": "eslint .",
     "lint:write": "eslint . --fix",
     "format:check": "prettier . --check",
