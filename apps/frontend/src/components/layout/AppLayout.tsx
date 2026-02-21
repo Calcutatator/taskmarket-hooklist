@@ -2,7 +2,8 @@ import { ReactNode, useEffect } from 'react';
 import AOS from 'aos';
 import 'aos/dist/aos.css';
 import { Header } from './Header';
-import { Footer } from './Footer';
+import { Sidebar } from './Sidebar';
+import { SidebarProvider } from '@/contexts/SidebarContext';
 
 interface AppLayoutProps {
   children: ReactNode;
@@ -20,16 +21,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   }, []);
 
   return (
-    <div className="flex min-h-screen flex-col">
-      <div data-aos="fade-down">
-        <Header />
+    <SidebarProvider>
+      <div className="flex h-screen overflow-hidden">
+        <Sidebar />
+        <div className="flex flex-1 flex-col overflow-hidden">
+          <Header />
+          <main className="flex-1 overflow-auto">{children}</main>
+        </div>
       </div>
-      <main className="flex-1" data-aos="fade-in">
-        {children}
-      </main>
-      <div data-aos="fade-up">
-        <Footer />
-      </div>
-    </div>
+    </SidebarProvider>
   );
 }

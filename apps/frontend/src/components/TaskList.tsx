@@ -10,9 +10,10 @@ interface TaskListFilters {
 
 interface TaskListProps {
   filters?: TaskListFilters;
+  search?: string;
 }
 
-export function TaskList({ filters }: TaskListProps) {
+export function TaskList({ filters, search }: TaskListProps) {
   const { data, isLoading, error } = trpc.tasks.list.useQuery({
     mode: (filters?.mode as 'ALL' | 'contest' | 'instant' | 'proposal' | 'race') ?? 'ALL',
     status:
@@ -54,7 +55,11 @@ export function TaskList({ filters }: TaskListProps) {
     );
   }
 
-  const tasks = data?.tasks ?? [];
+  const allTasks = data?.tasks ?? [];
+  const searchLower = search?.toLowerCase() ?? '';
+  const tasks = searchLower
+    ? allTasks.filter((task) => task.description.toLowerCase().includes(searchLower))
+    : allTasks;
 
   if (tasks.length === 0) {
     return (

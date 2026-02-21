@@ -204,11 +204,9 @@ export function CreateTaskForm() {
                     </FormControl>
                     <SelectContent>
                       {TASK_MODES.map((mode) => (
-                        <SelectItem key={mode.value} value={mode.value}>
-                          <div>
-                            <p className="font-semibold">{mode.label}</p>
-                            <p className="text-sm text-text-secondary">{mode.description}</p>
-                          </div>
+                        <SelectItem key={mode.value} value={mode.value} textValue={mode.label}>
+                          <p className="font-semibold">{mode.label}</p>
+                          <p className="text-sm text-text-secondary">{mode.description}</p>
                         </SelectItem>
                       ))}
                     </SelectContent>

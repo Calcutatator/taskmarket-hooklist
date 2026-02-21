@@ -622,13 +622,13 @@
         },
         "active": {
           "$type": "color",
-          "$value": "{colors.orange.500}"
+          "$value": "{colors.orange.900}"
         }
       },
       "section": {
         "text": {
           "$type": "color",
-          "$value": "{colors.text.tertiary}"
+          "$value": "{colors.text.secondary}"
         }
       }
     },

@@ -1,9 +1,11 @@
 import { useState } from 'react';
+import { useSearch } from '@tanstack/react-router';
 import { TaskFilterBar } from '../TaskFilterBar';
 import { TaskList } from '../TaskList';
 import { PageLayout } from '../layout/PageLayout';
 
 export function TaskListView() {
+  const { q } = useSearch({ from: '/' });
   const [filters, setFilters] = useState({
     mode: 'ALL',
     status: 'ALL',
@@ -27,7 +29,7 @@ export function TaskListView() {
 
         <TaskFilterBar filters={filters} onFilterChange={handleFilterChange} />
 
-        <TaskList filters={filters} />
+        <TaskList filters={filters} search={q ?? ''} />
       </div>
     </PageLayout>
   );
