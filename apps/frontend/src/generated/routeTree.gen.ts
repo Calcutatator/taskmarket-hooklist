@@ -9,11 +9,17 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './../routes/__root'
+import { Route as ProtocolRouteImport } from './../routes/protocol'
 import { Route as LeaderboardRouteImport } from './../routes/leaderboard'
 import { Route as IndexRouteImport } from './../routes/index'
 import { Route as TasksNewRouteImport } from './../routes/tasks/new'
 import { Route as TasksTaskIdRouteImport } from './../routes/tasks/$taskId'
 
+const ProtocolRoute = ProtocolRouteImport.update({
+  id: '/protocol',
+  path: '/protocol',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const LeaderboardRoute = LeaderboardRouteImport.update({
   id: '/leaderboard',
   path: '/leaderboard',
@@ -38,12 +44,14 @@ const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
 }
@@ -51,26 +59,46 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
+  '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/leaderboard' | '/tasks/$taskId' | '/tasks/new'
+  fullPaths:
+    | '/'
+    | '/leaderboard'
+    | '/protocol'
+    | '/tasks/$taskId'
+    | '/tasks/new'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard' | '/tasks/$taskId' | '/tasks/new'
-  id: '__root__' | '/' | '/leaderboard' | '/tasks/$taskId' | '/tasks/new'
+  to: '/' | '/leaderboard' | '/protocol' | '/tasks/$taskId' | '/tasks/new'
+  id:
+    | '__root__'
+    | '/'
+    | '/leaderboard'
+    | '/protocol'
+    | '/tasks/$taskId'
+    | '/tasks/new'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LeaderboardRoute: typeof LeaderboardRoute
+  ProtocolRoute: typeof ProtocolRoute
   TasksTaskIdRoute: typeof TasksTaskIdRoute
   TasksNewRoute: typeof TasksNewRoute
 }
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/protocol': {
+      id: '/protocol'
+      path: '/protocol'
+      fullPath: '/protocol'
+      preLoaderRoute: typeof ProtocolRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/leaderboard': {
       id: '/leaderboard'
       path: '/leaderboard'
@@ -105,6 +133,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LeaderboardRoute: LeaderboardRoute,
+  ProtocolRoute: ProtocolRoute,
   TasksTaskIdRoute: TasksTaskIdRoute,
   TasksNewRoute: TasksNewRoute,
 }

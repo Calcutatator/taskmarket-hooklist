@@ -20,7 +20,11 @@ export function TaskCard({ task }: TaskCardProps) {
 
   return (
     <Link to="/tasks/$taskId" params={{ taskId: task.id }}>
-      <Card className="hover:border-border-accent transition-colors cursor-pointer h-52 flex flex-col">
+      <Card className="hover:border-border-accent transition-colors cursor-pointer h-52 flex flex-col relative overflow-visible">
+        {/* Top-left corner bracket */}
+        <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-sidebar-item-active pointer-events-none" />
+        {/* Bottom-right corner bracket */}
+        <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-sidebar-item-active pointer-events-none" />
         <CardHeader className="flex-1">
           <div className="flex items-center justify-between mb-2">
             <Badge variant={modeVariant}>{task.mode}</Badge>

@@ -7,7 +7,7 @@
     },
     "heading": {
       "$type": "fontFamily",
-      "$value": "Overpass, Arial, sans-serif"
+      "$value": "Kode Mono, monospace"
     },
     "mono": {
       "$type": "fontFamily",

@@ -1,6 +1,7 @@
 import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
+import path from 'path';
 import compression from 'compression';
 import morgan from 'morgan';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
@@ -113,6 +114,13 @@ app.use(
     },
   })
 );
+
+// skill.md — plain text agent integration guide (served from file, no restart needed to update)
+app.get('/skill.md', (_, res) => {
+  res.sendFile(path.resolve(process.cwd(), 'skill.md'), {
+    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+  });
+});
 
 // OpenAPI docs
 const openApiDocument = generateOpenAPI();
