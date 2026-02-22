@@ -182,6 +182,20 @@ export const platformFees = pgTable(
   })
 );
 
+export const devices = pgTable(
+  'devices',
+  {
+    id: text('id').primaryKey(),
+    apiTokenHash: text('api_token_hash').notNull().unique(),
+    walletAddress: text('wallet_address').notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at'),
+  },
+  (table) => ({
+    walletIdx: index('devices_wallet_idx').on(table.walletAddress),
+  })
+);
+
 export const indexerState = pgTable('indexer_state', {
   id: text('id').primaryKey().default('main'),
   lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
@@ -206,3 +220,5 @@ export type PlatformFee = typeof platformFees.$inferSelect;
 export type NewPlatformFee = typeof platformFees.$inferInsert;
 export type IndexerState = typeof indexerState.$inferSelect;
 export type NewIndexerState = typeof indexerState.$inferInsert;
+export type Device = typeof devices.$inferSelect;
+export type NewDevice = typeof devices.$inferInsert;

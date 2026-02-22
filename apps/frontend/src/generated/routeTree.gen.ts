@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './../routes/__root'
 import { Route as ProtocolRouteImport } from './../routes/protocol'
 import { Route as LeaderboardRouteImport } from './../routes/leaderboard'
 import { Route as IndexRouteImport } from './../routes/index'
+import { Route as TasksIndexRouteImport } from './../routes/tasks/index'
 import { Route as TasksNewRouteImport } from './../routes/tasks/new'
 import { Route as TasksTaskIdRouteImport } from './../routes/tasks/$taskId'
 
@@ -28,6 +29,11 @@ const LeaderboardRoute = LeaderboardRouteImport.update({
 const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const TasksIndexRoute = TasksIndexRouteImport.update({
+  id: '/tasks/',
+  path: '/tasks/',
   getParentRoute: () => rootRouteImport,
 } as any)
 const TasksNewRoute = TasksNewRouteImport.update({
@@ -47,6 +53,7 @@ export interface FileRoutesByFullPath {
   '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -54,6 +61,7 @@ export interface FileRoutesByTo {
   '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/tasks': typeof TasksIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -62,6 +70,7 @@ export interface FileRoutesById {
   '/protocol': typeof ProtocolRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -71,8 +80,15 @@ export interface FileRouteTypes {
     | '/protocol'
     | '/tasks/$taskId'
     | '/tasks/new'
+    | '/tasks/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/leaderboard' | '/protocol' | '/tasks/$taskId' | '/tasks/new'
+  to:
+    | '/'
+    | '/leaderboard'
+    | '/protocol'
+    | '/tasks/$taskId'
+    | '/tasks/new'
+    | '/tasks'
   id:
     | '__root__'
     | '/'
@@ -80,6 +96,7 @@ export interface FileRouteTypes {
     | '/protocol'
     | '/tasks/$taskId'
     | '/tasks/new'
+    | '/tasks/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -88,6 +105,7 @@ export interface RootRouteChildren {
   ProtocolRoute: typeof ProtocolRoute
   TasksTaskIdRoute: typeof TasksTaskIdRoute
   TasksNewRoute: typeof TasksNewRoute
+  TasksIndexRoute: typeof TasksIndexRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -113,6 +131,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/tasks/': {
+      id: '/tasks/'
+      path: '/tasks'
+      fullPath: '/tasks/'
+      preLoaderRoute: typeof TasksIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tasks/new': {
       id: '/tasks/new'
       path: '/tasks/new'
@@ -136,6 +161,7 @@ const rootRouteChildren: RootRouteChildren = {
   ProtocolRoute: ProtocolRoute,
   TasksTaskIdRoute: TasksTaskIdRoute,
   TasksNewRoute: TasksNewRoute,
+  TasksIndexRoute: TasksIndexRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

@@ -14,6 +14,7 @@ export function makeChain(resolveValue: any = undefined) {
     values: vi.fn().mockReturnThis(),
     returning: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
+    onConflictDoUpdate: vi.fn().mockReturnThis(),
     // Thenable so that `await chain` resolves correctly
     then: (onfulfilled: any, onrejected?: any) =>
       Promise.resolve(resolveValue).then(onfulfilled, onrejected),
