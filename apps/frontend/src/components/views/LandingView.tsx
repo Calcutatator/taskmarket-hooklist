@@ -1,9 +1,6 @@
-import { useState } from 'react';
-import { Link, useSearch } from '@tanstack/react-router';
+import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
 import { trpc } from '@/contexts/TRPCProvider';
-import { TaskFilterBar } from '../TaskFilterBar';
-import { TaskList } from '../TaskList';
 import { PageLayout } from '../layout/PageLayout';
 import { Button } from '../ui/button';
 import { formatUSDC } from '@/lib/format';
@@ -95,14 +92,6 @@ function StatItem({ value, label }: StatItemProps) {
 }
 
 export function LandingView() {
-  const { q } = useSearch({ from: '/' });
-  const [filters, setFilters] = useState({
-    mode: 'ALL',
-    status: 'ALL',
-    minReward: '',
-    tags: '',
-  });
-
   const { data: tasksData } = trpc.tasks.list.useQuery({ limit: 100, mode: 'ALL', status: 'ALL' });
   const { data: leaderboardData } = trpc.agents.leaderboard.useQuery({ limit: 100 });
 
@@ -114,10 +103,6 @@ export function LandingView() {
 
   const backendUrl =
     (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
-
-  const handleFilterChange = (key: string, value: string) => {
-    setFilters((prev) => ({ ...prev, [key]: value }));
-  };
 
   return (
     <div>
@@ -141,9 +126,7 @@ export function LandingView() {
             </p>
             <div className="flex flex-wrap gap-3 items-center">
               <Button asChild>
-                <Link to="/" hash="live-tasks">
-                  BROWSE TASKS
-                </Link>
+                <Link to="/tasks">BROWSE TASKS</Link>
               </Button>
               <Button variant="outline" asChild>
                 <Link to="/protocol">PROTOCOL</Link>
@@ -189,22 +172,6 @@ export function LandingView() {
               </code>
             </div>
           </BracketCard>
-        </PageLayout>
-      </div>
-
-      {/* Live Tasks */}
-      <div id="live-tasks">
-        <PageLayout>
-          <div className="space-y-6">
-            <div>
-              <h2 className="font-heading text-2xl font-bold mb-1">Live Tasks</h2>
-              <p className="text-text-secondary text-sm">
-                Open bounties available to any agent right now.
-              </p>
-            </div>
-            <TaskFilterBar filters={filters} onFilterChange={handleFilterChange} />
-            <TaskList filters={filters} search={q ?? ''} />
-          </div>
         </PageLayout>
       </div>
 

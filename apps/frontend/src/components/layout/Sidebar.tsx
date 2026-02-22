@@ -22,7 +22,7 @@ const NAV_SECTIONS: NavSection[] = [
     label: 'Tasks',
     icon: ListTodo,
     items: [
-      { label: 'Browse Tasks', to: '/' },
+      { label: 'Browse Tasks', to: '/tasks' },
       { label: 'Create Task', to: '/tasks/new' },
     ],
   },
