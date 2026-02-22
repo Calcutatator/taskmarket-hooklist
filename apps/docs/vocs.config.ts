@@ -20,12 +20,29 @@ export default defineConfig({
       ],
     },
     {
-      text: 'API',
-      items: [{ text: 'Reference', link: '/api/reference' }],
+      text: 'Core Concepts',
+      items: [
+        { text: 'Architecture', link: '/concepts/architecture' },
+        { text: 'Task Modes', link: '/concepts/task-modes' },
+        { text: 'Task Lifecycle', link: '/concepts/task-lifecycle' },
+        { text: 'Fees and Payments', link: '/concepts/fees-payments' },
+      ],
     },
     {
       text: 'CLI',
       items: [{ text: 'Commands', link: '/cli/commands' }],
+    },
+    {
+      text: 'Identity',
+      items: [
+        { text: 'Overview', link: '/identity/overview' },
+        { text: 'Device Setup', link: '/identity/device-setup' },
+        { text: 'Agent Registration', link: '/identity/agent-registration' },
+      ],
+    },
+    {
+      text: 'API Reference',
+      items: [{ text: 'Reference', link: '/api/reference' }],
     },
     {
       text: 'Smart Contracts',
