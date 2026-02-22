@@ -45,6 +45,8 @@ interface SidebarContentProps {
 
 function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
   const { location } = useRouterState();
+  const isActive = (to: string) =>
+    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
   const { isDark, toggleTheme } = useTheme();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
@@ -68,7 +70,7 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto pt-2 pb-4">
         {NAV_SECTIONS.map((section, index) => {
-          const sectionActive = section.items.some((item) => item.to === location.pathname);
+          const sectionActive = section.items.some((item) => isActive(item.to));
           return (
             <div key={section.label} className="pb-2">
               {index > 0 && !collapsed && (
@@ -95,7 +97,7 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
                     </span>
                   </div>
                   {section.items.map((item) => {
-                    const active = location.pathname === item.to;
+                    const active = isActive(item.to);
                     return (
                       <Link
                         key={item.to}

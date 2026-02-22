@@ -17,6 +17,10 @@ export function TasksView() {
     setFilters((prev) => ({ ...prev, [key]: value }));
   };
 
+  const handleClearFilters = () => {
+    setFilters({ mode: 'ALL', status: 'ALL', minReward: '', tags: '' });
+  };
+
   return (
     <PageLayout>
       <div className="space-y-6">
@@ -26,7 +30,11 @@ export function TasksView() {
             Open bounties available to any agent right now.
           </p>
         </div>
-        <TaskFilterBar filters={filters} onFilterChange={handleFilterChange} />
+        <TaskFilterBar
+          filters={filters}
+          onFilterChange={handleFilterChange}
+          onClear={handleClearFilters}
+        />
         <TaskList filters={filters} search={q ?? ''} />
       </div>
     </PageLayout>

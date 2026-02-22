@@ -10,11 +10,18 @@ interface TaskCardProps {
 
 export function TaskCard({ task }: TaskCardProps) {
   const expiryDate = new Date(task.expiryTime);
-  const now = new Date();
-  const hoursLeft = Math.max(
-    0,
-    Math.floor((expiryDate.getTime() - now.getTime()) / (1000 * 60 * 60))
-  );
+  const diffMs = expiryDate.getTime() - Date.now();
+  const diffMins = Math.floor(diffMs / 60000);
+  const diffHours = Math.floor(diffMs / 3600000);
+  const diffDays = Math.floor(diffMs / 86400000);
+  const timeLeft =
+    diffMs <= 0
+      ? 'Expired'
+      : diffDays >= 1
+        ? `${diffDays}d ${diffHours - diffDays * 24}h left`
+        : diffHours >= 1
+          ? `${diffHours}h left`
+          : `${Math.max(1, diffMins)}m left`;
 
   const modeVariant = task.mode as 'contest' | 'instant' | 'proposal' | 'race';
 
@@ -30,9 +37,7 @@ export function TaskCard({ task }: TaskCardProps) {
             <Badge variant={modeVariant}>{task.mode}</Badge>
             <Badge variant={task.status === 'open' ? 'success' : 'default'}>{task.status}</Badge>
           </div>
-          <CardTitle className="text-lg line-clamp-2">
-            {task.description.substring(0, 80)}
-          </CardTitle>
+          <CardTitle className="text-lg line-clamp-2">{task.description}</CardTitle>
           <CardDescription>
             {task.tags.map((tag) => (
               <span key={tag} className="mr-2">
@@ -45,9 +50,7 @@ export function TaskCard({ task }: TaskCardProps) {
           <div className="flex items-center justify-between">
             <div>
               <p className="text-2xl font-bold">{formatUSDC(task.reward)} USDC</p>
-              <p className="text-sm text-text-secondary">
-                {hoursLeft > 0 ? `${hoursLeft}h left` : 'Expired'}
-              </p>
+              <p className="text-sm text-text-secondary">{timeLeft}</p>
             </div>
             {task.mode === 'instant' && task.claimedBy && <Badge variant="warning">Claimed</Badge>}
             {task.mode === 'proposal' && task.proposalCount > 0 && (

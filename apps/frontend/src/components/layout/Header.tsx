@@ -37,7 +37,7 @@ export function Header() {
 
   const handleSearchSubmit = (e: { preventDefault: () => void }) => {
     e.preventDefault();
-    navigate({ to: '/', search: { q: searchValue } });
+    navigate({ to: '/tasks', search: { q: searchValue } });
   };
 
   return (

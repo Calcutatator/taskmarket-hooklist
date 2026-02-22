@@ -1,4 +1,5 @@
-import { useParams } from '@tanstack/react-router';
+import { Link, useParams } from '@tanstack/react-router';
+import { ChevronLeft } from 'lucide-react';
 import { TaskDetail } from '../TaskDetail';
 import { ContestPanel } from '../ContestPanel';
 import { InstantPanel } from '../InstantPanel';
@@ -53,6 +54,14 @@ export function TaskDetailView() {
   return (
     <PageLayout>
       <div className="space-y-6">
+        <Link
+          to="/tasks"
+          className="inline-flex items-center gap-1 text-sm text-text-secondary hover:text-text-primary transition-colors"
+        >
+          <ChevronLeft size={14} />
+          Tasks
+        </Link>
+
         <TaskDetail task={task} />
 
         {task.mode === 'contest' && <ContestPanel task={task} submissions={submissions || []} />}
