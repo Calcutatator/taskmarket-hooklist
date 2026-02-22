@@ -52,9 +52,11 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
   return (
     <div className="flex flex-col h-full">
       {/* Logo */}
-      <div
+      <Link
+        to="/"
+        onClick={onClose}
         className={cn(
-          'flex items-center h-12 shrink-0',
+          'flex items-center h-12 shrink-0 hover:opacity-80 transition-opacity',
           collapsed ? 'justify-center' : 'px-4 gap-3'
         )}
       >
@@ -62,7 +64,7 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
         {!collapsed && (
           <span className="font-bold text-base text-text-primary truncate">Taskmarket</span>
         )}
-      </div>
+      </Link>
       {/* Nav */}
       <nav className="flex-1 overflow-y-auto pt-2 pb-4">
         {NAV_SECTIONS.map((section, index) => {
