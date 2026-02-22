@@ -38,6 +38,9 @@ const NAV_SECTIONS: NavSection[] = [
   },
 ];
 
+// All nav paths used for longest-prefix active matching
+const ALL_NAV_PATHS = NAV_SECTIONS.flatMap((s) => s.items.map((i) => i.to));
+
 interface SidebarContentProps {
   collapsed: boolean;
   onClose?: () => void;
@@ -45,8 +48,18 @@ interface SidebarContentProps {
 
 function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
   const { location } = useRouterState();
-  const isActive = (to: string) =>
-    to === '/' ? location.pathname === '/' : location.pathname.startsWith(to);
+  // A nav item is active if it's an exact match, OR it's the longest-matching
+  // prefix of the current path (so /tasks wins for /tasks/$id but /tasks/new
+  // wins when you're actually on /tasks/new).
+  const isActive = (to: string) => {
+    const { pathname } = location;
+    if (pathname === to) return true;
+    if (to === '/') return false;
+    return (
+      pathname.startsWith(to + '/') &&
+      !ALL_NAV_PATHS.some((p) => p !== to && p.length > to.length && pathname.startsWith(p))
+    );
+  };
   const { isDark, toggleTheme } = useTheme();
   const { address, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
