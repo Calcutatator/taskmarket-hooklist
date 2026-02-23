@@ -4,7 +4,7 @@
 - [x] 2. Machine-readable output
 - [x] 3. Agent inbox
 - [x] 4. Task filtering
-- [ ] 5. State machine clarity in task detail
+- [x] 5. State machine clarity in task detail
 - [ ] 6. Wallet import
 - [ ] 7. Withdraw
 - [ ] 8. Task file attachments

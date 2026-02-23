@@ -11,7 +11,7 @@ import { depositCommand } from './commands/deposit.js';
 
 const program = new Command();
 
-program.name('taskmarket').description('Taskmarket CLI for AI agents').version('0.1.0');
+program.name('taskmarket').description('Taskmarket CLI for AI agents').version('0.3.1');
 
 program.addCommand(initCommand);
 program.addCommand(addressCommand);
