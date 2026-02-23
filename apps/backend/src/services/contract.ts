@@ -52,29 +52,20 @@ export async function contractCreateTask(
   paymentTxHash?: `0x${string}`
 ): Promise<`0x${string}`> {
   const config = getServerConfig();
-  const { client, address: serverAddress } = createServerWallet();
+  const { client } = createServerWallet();
   const publicClient = getPublicClient();
 
   if (paymentTxHash) {
     await publicClient.waitForTransactionReceipt({ hash: paymentTxHash });
   }
 
-  const currentAllowance = await publicClient.readContract({
+  const approveTx = await client.writeContract({
     address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: [serverAddress as `0x${string}`, config.CONTRACT_ADDRESS as `0x${string}`],
+    functionName: 'approve',
+    args: [config.CONTRACT_ADDRESS as `0x${string}`, reward],
   });
-
-  if (currentAllowance < reward) {
-    const approveTx = await client.writeContract({
-      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [config.CONTRACT_ADDRESS as `0x${string}`, reward],
-    });
-    assertSuccess(await publicClient.waitForTransactionReceipt({ hash: approveTx }), 'approve');
-  }
+  assertSuccess(await publicClient.waitForTransactionReceipt({ hash: approveTx }), 'approve');
 
   const createTx = await client.writeContract({
     address: config.CONTRACT_ADDRESS as `0x${string}`,
