@@ -34,7 +34,7 @@ export const devicesRouter = router({
         deviceId: z.string(),
         apiToken: z.string(),
         deviceEncryptionKey: z.string(),
-        agentId: z.string(),
+        agentId: z.string().nullable(),
       })
     )
     .mutation(async ({ input, ctx }) => {
@@ -50,30 +50,44 @@ export const devicesRouter = router({
         walletAddress: input.walletAddress,
       });
 
-      // Register ERC-8004 identity — platform sponsors this, no USDC required from agent.
-      // Idempotent: if the wallet is already registered, return the existing agentId.
+      // Check if agent already has an on-chain identity registered.
       const existing = await ctx.db
         .select({ agentId: agents.agentId })
         .from(agents)
         .where(eq(agents.address, input.walletAddress))
         .limit(1);
 
-      let agentId: string;
-      if (existing[0]?.agentId) {
-        agentId = existing[0].agentId;
-      } else {
-        const agentIdBigInt = await contractRegisterIdentity();
-        agentId = agentIdBigInt.toString();
-        await ctx.db
-          .insert(agents)
-          .values({ address: input.walletAddress, agentId })
-          .onConflictDoUpdate({
-            target: agents.address,
-            set: { agentId, updatedAt: new Date() },
-          });
+      const agentId: string | null = existing[0]?.agentId ?? null;
+
+      if (agentId) {
+        // Already registered — return immediately.
+        return { deviceId, apiToken, deviceEncryptionKey, agentId };
       }
 
-      return { deviceId, apiToken, deviceEncryptionKey, agentId };
+      // Ensure agent row exists so the background job can update it.
+      await ctx.db
+        .insert(agents)
+        .values({ address: input.walletAddress, agentId: null })
+        .onConflictDoNothing();
+
+      // Register ERC-8004 identity in the background — platform sponsors this.
+      // The client should poll GET /api/identity/status?address=... until agentId appears.
+      contractRegisterIdentity()
+        .then(async (agentIdBigInt) => {
+          const id = agentIdBigInt.toString();
+          await ctx.db
+            .insert(agents)
+            .values({ address: input.walletAddress, agentId: id })
+            .onConflictDoUpdate({
+              target: agents.address,
+              set: { agentId: id, updatedAt: new Date() },
+            });
+        })
+        .catch((err) => {
+          console.error('[devices] background identity registration failed:', err);
+        });
+
+      return { deviceId, apiToken, deviceEncryptionKey, agentId: null };
     }),
 
   key: publicProcedure

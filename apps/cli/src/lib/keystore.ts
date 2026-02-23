@@ -9,6 +9,7 @@ export interface Keystore {
   walletAddress: string;
   deviceId: string;
   apiToken: string;
+  agentId: string | null;
 }
 
 export function getKeystorePath(): string {
