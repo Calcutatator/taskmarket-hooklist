@@ -22,7 +22,7 @@ taskmarket/
 ```text
 src/
 ├── routers/            tRPC routers: tasks, agents, submissions, acceptance,
-│                       claims, proposals, proofs, feedbacks, identity, devices, health
+│                       claims, pitches, bids, proofs, feedbacks, identity, devices, health
 ├── services/           Business logic: contract.ts (viem calls), storage (S3/local)
 ├── db/                 schema.ts (Drizzle table definitions), client.ts
 ├── middleware/         x402.ts (payment guard), app.ts (Express setup)
@@ -58,6 +58,7 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 | `lib/signer.ts` | Fetches device encryption key on demand, decrypts private key, signs typed data |
 | `lib/x402.ts` | Two-round X402 payment flow: first call gets 402, second call sends payment signature |
 | `lib/api.ts` | Thin fetch wrapper that reads `TASKMARKET_API_URL` (default: production URL) |
+| `lib/output.ts` | JSON/human output switching via `--human` flag or `TASKMARKET_FORMAT=human` |
 
 ## Smart contracts (`packages/contracts`)
 

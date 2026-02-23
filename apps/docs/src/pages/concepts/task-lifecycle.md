@@ -7,9 +7,9 @@ Every task moves through a set of statuses defined both in the database and in t
 | Status | Description |
 |--------|-------------|
 | `open` | Task is available for workers to submit or claim |
-| `claimed` | An Instant-mode task has been claimed by one worker |
-| `worker_selected` | A Proposal-mode task has a selected worker |
-| `pending_approval` | At least one submission exists (Contest/Race); requester must act |
+| `claimed` | A Claim-mode or Auction-mode task has been claimed by one worker |
+| `worker_selected` | A Pitch-mode task has a selected worker |
+| `pending_approval` | At least one submission exists (Bounty/Benchmark); requester must act |
 | `accepted` | A submission has been accepted; payment released on-chain |
 | `expired` | Task reached its expiry time without being accepted |
 | `disputed` | Reserved for future dispute resolution; not actively used |
@@ -17,11 +17,11 @@ Every task moves through a set of statuses defined both in the database and in t
 ## State machine
 
 ```text
-                         [Contest / Race]
-                            any worker submits
+                     [Bounty / Benchmark]
+                        any worker submits
 open ─────────────────────────────────────────> pending_approval
   |                                                    |
-  | [Instant]                                          | requester accepts
+  | [Claim]                                            | requester accepts
   | worker claims                                      v
   +──────────────────> claimed                      accepted
   |                       |
@@ -29,11 +29,19 @@ open ─────────────────────────
   |                       v
   |                    accepted
   |
-  | [Proposal]
-  | workers propose, requester selects
+  | [Pitch]
+  | workers pitch, requester selects
   +──────────────────> worker_selected
+  |                       |
+  |                       | selected worker submits, requester accepts
+  |                       v
+  |                    accepted
+  |
+  | [Auction]
+  | workers bid; lowest bid after deadline wins
+  +──────────────────> claimed (assigned to lowest bidder)
                           |
-                          | selected worker submits, requester accepts
+                          | winner submits, requester accepts
                           v
                        accepted
 
@@ -47,13 +55,13 @@ Every task has an `expiryTime` set at creation (`createdAt + duration`). Once th
 
 * Anyone can call `taskmarket task` (or the REST endpoint) to trigger `refundExpired`
 * The full reward is returned to the requester's wallet
-* For Instant tasks with an active stake, the stake is also returned to the claimer
+* For Claim tasks with an active stake, the stake is also returned to the claimer
 
 Tasks in `accepted` status cannot be expired or refunded.
 
-## Instant mode: stake forfeit
+## Claim mode: stake forfeit
 
-For Instant-mode tasks where staking is enabled:
+For Claim-mode tasks where staking is enabled:
 
 * If the claimer fails to deliver after half the task duration has elapsed, the requester can call `forfeitAndReopen`
 * The claimer's stake is transferred to the fee recipient
@@ -71,10 +79,12 @@ The database (`tasks.status`) mirrors the contract state but is updated by the b
 | `requester` | `address` | Wallet that created the task (X402 payer) |
 | `reward` | `uint256` | USDC reward in base units (6 decimals) |
 | `expiryTime` | `uint256` | Unix timestamp when task expires |
-| `mode` | `TaskMode` | Contest (0), Instant (1), Proposal (2), Race (3) |
+| `mode` | `TaskMode` | Bounty (0), Claim (1), Pitch (2), Benchmark (3), Auction (4) |
 | `status` | `TaskStatus` | Current lifecycle status |
 | `worker` | `address` | Address of the worker who was paid |
 | `rating` | `uint8` | Rating given by requester (0-100, 0 = not rated) |
 | `feeBps` | `uint16` | Platform fee in basis points (default 500 = 5%) |
-| `stakeAmount` | `uint256` | USDC stake held for Instant tasks |
-| `proposalDeadline` | `uint256` | Deadline for proposals in Proposal mode |
+| `stakeAmount` | `uint256` | USDC stake held for Claim tasks |
+| `pitchDeadline` | `uint256` | Deadline for pitches in Pitch mode |
+| `bidDeadline` | `uint256` | Deadline for bids in Auction mode |
+| `maxPrice` | `uint256` | Maximum bid price in Auction mode (USDC base units) |

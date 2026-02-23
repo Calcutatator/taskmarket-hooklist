@@ -26,11 +26,13 @@ function createTask(
     uint256 reward,
     uint256 duration,
     TaskMode mode,
-    uint256 proposalDeadline
+    uint256 pitchDeadline,
+    uint256 bidDeadline,
+    uint256 maxPrice
 ) external onlyServer
 ```
 
-Creates a task and escrews `reward` USDC from the server wallet into the contract. The server must have sufficient USDC approval. `duration` is in seconds. `proposalDeadline` is seconds from now (only used in Proposal mode; pass 0 for other modes).
+Creates a task and escrews `reward` USDC from the server wallet into the contract. The server must have sufficient USDC approval. `duration` is in seconds. `pitchDeadline` is seconds from now (Pitch mode only; pass 0 for other modes). `bidDeadline` is seconds from now (Auction mode only). `maxPrice` is the maximum bid in USDC base units (Auction mode only).
 
 ***
 
@@ -44,7 +46,7 @@ function claimTask(
 ) external onlyServer
 ```
 
-Claims an Instant-mode task for `worker`. If `stakeAmount > 0`, the server transfers that amount of USDC from itself into the contract as the worker's stake.
+Claims a Claim-mode task for `worker`. If `stakeAmount > 0`, the server transfers that amount of USDC from itself into the contract as the worker's stake.
 
 ***
 
@@ -58,7 +60,7 @@ function selectWorker(
 ) external onlyServer
 ```
 
-Selects a worker for a Proposal-mode task. Status moves to `WorkerSelected`.
+Selects a worker for a Pitch-mode task. Status moves to `WorkerSelected`.
 
 ***
 
@@ -72,7 +74,7 @@ function acceptSubmission(
 ) external onlyServer nonReentrant
 ```
 
-Releases payment. Transfers `reward * (1 - feeBps/10000)` USDC to the worker and `reward * feeBps/10000` to the `feeRecipient`. For Instant tasks with a stake, the stake is returned to the claimer. Status moves to `Accepted`.
+Releases payment. Transfers `reward * (1 - feeBps/10000)` USDC to the worker and `reward * feeBps/10000` to the `feeRecipient`. For Claim tasks with a stake, the stake is returned to the claimer. Status moves to `Accepted`.
 
 ***
 
@@ -102,7 +104,7 @@ function forfeitAndReopen(
 ) external onlyServer
 ```
 
-For Instant tasks where the claimer has not delivered past the halfway point. Transfers the stake to the fee recipient and resets the task to `Open` status.
+For Claim tasks where the claimer has not delivered past the halfway point. Transfers the stake to the fee recipient and resets the task to `Open` status.
 
 ***
 
@@ -143,10 +145,22 @@ struct Task {
     uint256 stakeAmount;
     address claimer;
     uint256 claimedAt;
-    uint256 proposalDeadline;
+    uint256 pitchDeadline; // Pitch mode: deadline for pitch submissions
+    uint256 bidDeadline;   // Auction mode: deadline for bids
+    uint256 maxPrice;      // Auction mode: maximum bid price (USDC base units)
     uint16 feeBps;
 }
 ```
+
+### TaskMode enum
+
+| Value | Int | Description |
+|-------|-----|-------------|
+| `Bounty` | 0 | Open contest — any worker submits, requester picks best |
+| `Claim` | 1 | First-claim exclusive, optional stake |
+| `Pitch` | 2 | Workers pitch approaches, requester selects one |
+| `Benchmark` | 3 | Verifiable metric-based competition |
+| `Auction` | 4 | Reverse Dutch auction — lowest bid wins |
 
 ***
 
@@ -155,8 +169,8 @@ struct Task {
 | Event | Emitted when |
 |-------|-------------|
 | `TaskCreated(taskId, requester, reward, expiryTime, mode)` | Task created |
-| `TaskClaimed(taskId, claimer, stakeAmount)` | Instant task claimed |
-| `TaskWorkerSelected(taskId, worker)` | Proposal task worker selected |
+| `TaskClaimed(taskId, claimer, stakeAmount)` | Claim or Auction task claimed/assigned |
+| `TaskWorkerSelected(taskId, worker)` | Pitch task worker selected |
 | `TaskAccepted(taskId, requester, worker, workerPayment, platformFee)` | Submission accepted |
 | `TaskRated(taskId, worker, rating)` | Task rated |
 | `TaskExpired(taskId, requester, refundAmount)` | Expired task refunded |
