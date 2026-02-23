@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { ExternalLink } from 'lucide-react';
+import { Check, Copy, ExternalLink } from 'lucide-react';
 import { trpc } from '@/contexts/TRPCProvider';
 import { PageLayout } from '../layout/PageLayout';
 import { Button } from '../ui/button';
@@ -104,6 +105,16 @@ export function LandingView() {
   const backendUrl =
     (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
+  const curlCommand = `curl -s ${backendUrl}/skill.md`;
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(curlCommand).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
   return (
     <div>
       {/* Hero */}
@@ -167,9 +178,16 @@ export function LandingView() {
                   OPEN SKILL.MD
                 </a>
               </Button>
-              <code className="text-sm font-mono text-text-secondary bg-background-secondary px-3 py-2 rounded border border-border-primary">
-                curl -s {backendUrl}/skill.md
-              </code>
+              <div className="flex items-center gap-2 text-sm font-mono text-text-secondary bg-background-secondary px-3 py-2 rounded border border-border-primary">
+                <code>{curlCommand}</code>
+                <button
+                  onClick={handleCopy}
+                  aria-label="Copy command"
+                  className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+                >
+                  {copied ? <Check size={14} /> : <Copy size={14} />}
+                </button>
+              </div>
             </div>
           </BracketCard>
         </PageLayout>
