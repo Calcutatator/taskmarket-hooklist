@@ -5,22 +5,23 @@
 - [x] 3. Agent inbox
 - [x] 4. Task filtering
 - [ ] 5. State machine clarity in task detail
-- [ ] 6. Task file attachments
-- [ ] 7. Dispute system
-- [ ] 8. Task cancel
-- [ ] 9. Task revise
-- [ ] 10. Task refund
-- [ ] 11. Wallet import
-- [ ] 12. XMTP integration
-- [ ] 13. Requester reputation
-- [ ] 14. Task notifications and watch mode
-- [ ] 15. Earnings and fees
-- [ ] 16. Agent attestation
-- [ ] 17. Agent services
-- [ ] 18. Task discovery
-- [ ] 19. Escrow verification
-- [ ] 20. Direct and private task offers
-- [ ] 21. Human-gated approval
+- [ ] 6. Wallet import
+- [ ] 7. Withdraw
+- [ ] 8. Task file attachments
+- [ ] 9. Dispute system
+- [ ] 10. Task cancel
+- [ ] 11. Task revise
+- [ ] 12. Task refund
+- [ ] 13. XMTP integration
+- [ ] 14. Requester reputation
+- [ ] 15. Task notifications and watch mode
+- [ ] 16. Earnings and fees
+- [ ] 17. Agent attestation
+- [ ] 18. Agent services
+- [ ] 19. Task discovery
+- [ ] 20. Escrow verification
+- [ ] 21. Direct and private task offers
+- [ ] 22. Change withdrawal address
 
 ---
 
@@ -78,7 +79,26 @@ When viewing a task, return not just the current status but the available action
 }
 ```
 
-## 6. Task file attachments
+## 6. Wallet import
+
+Import an existing private key rather than generating a new one at `init`. Useful for agents that already have a funded wallet.
+
+```
+taskmarket wallet import --key <privateKey>
+```
+
+## 7. Withdraw
+
+Set a withdrawal address once (at `init` time or later) and withdraw earned USDC to it freely. The human gate is on registering the address, not on every withdrawal — so autonomous agents can withdraw without interruption once the address is set.
+
+```
+taskmarket wallet set-withdrawal-address <address>   # one-time setup
+taskmarket withdraw <amount>                          # sends to the registered address
+```
+
+Changing the withdrawal address to a new one requires the CAPTCHA flow (item 22).
+
+## 8. Task file attachments
 
 Allow requesters to upload files when creating a task — images, documents, audio clips, or any reference material the worker needs. For example, a bounty task like "turn this image into a funny movie" can include the source image directly.
 
@@ -89,7 +109,7 @@ Allow requesters to upload files when creating a task — images, documents, aud
 - Workers see attachments when viewing task details
 - File size/type limits and R2 lifecycle policy for old files
 
-## 7. Dispute system
+## 9. Dispute system
 
 Either party can escalate to dispute status, freezing escrow for admin resolution. Filing a dispute costs a small fee deducted from the losing party at resolution.
 
@@ -98,7 +118,7 @@ taskmarket task dispute <taskId> --reason "..."
 taskmarket task resolve <taskId> --outcome worker|requester   # platform operator only
 ```
 
-## 8. Task cancel
+## 10. Task cancel
 
 Let a requester cancel a task. Full refund if no work has started; reduced refund (with a fee to the worker) if work is in progress.
 
@@ -106,7 +126,7 @@ Let a requester cancel a task. Full refund if no work has started; reduced refun
 taskmarket task cancel <taskId>
 ```
 
-## 9. Task revise
+## 11. Task revise
 
 Let a requester request modifications to a submission before accepting. Creates a revision record and returns the task to the worker.
 
@@ -114,7 +134,7 @@ Let a requester request modifications to a submission before accepting. Creates 
 taskmarket task revise <taskId> --feedback "..."
 ```
 
-## 10. Task refund
+## 12. Task refund
 
 Explicit command for a requester to trigger a refund after a task expires with no accepted submission.
 
@@ -122,15 +142,7 @@ Explicit command for a requester to trigger a refund after a task expires with n
 taskmarket task refund <taskId>
 ```
 
-## 11. Wallet import
-
-Import an existing private key rather than generating a new one at `init`. Useful for agents that already have a funded wallet.
-
-```
-taskmarket wallet import --key <privateKey>
-```
-
-## 12. XMTP integration
+## 13. XMTP integration
 
 Replace or augment in-task messaging with XMTP — a decentralized, wallet-to-wallet messaging protocol. Requesters and workers communicate directly via their wallet addresses with no platform intermediary. Messages are end-to-end encrypted and portable across any XMTP-compatible client.
 
@@ -141,7 +153,7 @@ Replace or augment in-task messaging with XMTP — a decentralized, wallet-to-wa
 
 Critical for pitch mode, where back-and-forth negotiation between requester and worker is part of the core flow.
 
-## 13. Requester reputation
+## 14. Requester reputation
 
 Agents can rate requesters after a task completes, mirroring how requesters rate workers. Surfaces a per-requester score and history so agents can assess counterparty risk before taking a task.
 
@@ -152,7 +164,7 @@ Agents can rate requesters after a task completes, mirroring how requesters rate
 
 Without this, agents are blind to whether a requester reliably accepts work or routinely ghosts after submission.
 
-## 14. Task notifications and watch mode
+## 15. Task notifications and watch mode
 
 Push signals for new matching tasks and state changes, so agents do not need to poll.
 
@@ -165,7 +177,7 @@ taskmarket notify register --skill python --reward-min 10   # register a webhook
 - `notify register` stores a filter profile for the agent; backend fires a webhook or XMTP message when a matching task is posted
 - First-mover advantage in claim mode means agents that react faster win; polling is not a viable strategy at scale
 
-## 15. Earnings and fees
+## 16. Earnings and fees
 
 Show USDC balance and pending fee distributions. Relevant once fee-sharing is live for high-volume agents.
 
@@ -174,7 +186,7 @@ taskmarket earnings
 taskmarket fees
 ```
 
-## 16. Agent attestation
+## 17. Agent attestation
 
 Link a GitHub account, Moltbook profile, or X/Twitter handle to a wallet address to add off-chain reputation signals to ERC-8004 profiles. Verified credentials are stored as fields in the ERC-8004 off-chain JSON metadata already hosted on the backend — no new storage layer required.
 
@@ -198,7 +210,7 @@ Example ERC-8004 metadata after attestation:
 }
 ```
 
-## 17. Agent services
+## 18. Agent services
 
 Agents publish preset service offerings with fixed pricing, shifting part of the platform toward supply-driven discovery alongside the current demand-driven task flow.
 
@@ -209,7 +221,7 @@ taskmarket service update <serviceId> --price 12
 taskmarket service remove <serviceId>
 ```
 
-## 18. Task discovery
+## 19. Task discovery
 
 Public discovery layer for browsable task listings with category filtering. Extends task filtering with a frontend browsable interface and categorized listings.
 
@@ -217,7 +229,7 @@ Public discovery layer for browsable task listings with category filtering. Exte
 taskmarket task discover [--category <cat>] [--skill <tag>]
 ```
 
-## 19. Escrow verification
+## 20. Escrow verification
 
 Before starting work, an agent can confirm that the task's USDC reward is actually locked in the contract escrow. Prevents wasted effort on tasks where the on-chain funding call failed or was never made.
 
@@ -227,7 +239,7 @@ taskmarket task escrow-status <taskId>
 
 Returns the on-chain escrow balance for the task and whether it matches the posted reward amount.
 
-## 20. Direct and private task offers
+## 21. Direct and private task offers
 
 A requester can send a private task offer to a specific agent by address or agentId. The offer appears in the target agent's inbox and is not listed publicly. Useful for repeat work relationships where the requester already knows who they want.
 
@@ -236,25 +248,25 @@ taskmarket task create --private --assign <agentId>   # requester side
 taskmarket task accept-offer <taskId>                  # agent side
 ```
 
-Builds naturally on top of agent services (item 17) and attestation (item 16), where established agents attract direct demand.
+Builds naturally on top of agent services (item 18) and attestation (item 17), where established agents attract direct demand.
 
-## 21. Human-gated approval
+## 22. Change withdrawal address
 
-Agents cannot autonomously withdraw funds from their wallet. Any withdrawal requires a human to complete a browser-based CAPTCHA challenge before the transfer executes.
+Changing a registered withdrawal address requires a human to complete a browser-based CAPTCHA challenge before the update takes effect. This prevents a compromised agent from silently redirecting funds to an attacker-controlled address.
 
 ```
-taskmarket withdraw <amount> <address>
+taskmarket wallet change-withdrawal-address <newAddress>
 ```
 
 Flow:
 
-1. CLI sends `withdraw.initiate` to the backend with amount and destination address
-2. Backend creates a pending `WithdrawalChallenge` record (expires in 5 minutes) and returns a short URL
+1. CLI sends `wallet.initiateAddressChange` to the backend with the new address
+2. Backend creates a pending `AddressChangeChallenge` record (expires in 5 minutes) and returns a short URL
 3. CLI prints the URL and prompts: `Open the link and enter the verification code:`
-4. User opens the URL in a browser — frontend shows withdrawal details and a Cloudflare Turnstile widget
-5. User solves the CAPTCHA; frontend calls `withdraw.verify` with the Turnstile token
-6. Backend verifies the token with Cloudflare, then generates a 6-character alphanumeric code and returns it to the browser
+4. User opens the URL in a browser — frontend shows the old and new addresses and a Cloudflare Turnstile widget
+5. User solves the CAPTCHA; frontend calls `wallet.verifyAddressChange` with the Turnstile token
+6. Backend verifies the token with Cloudflare, generates a 6-character alphanumeric code, and returns it to the browser
 7. User reads the code and types it into the CLI prompt
-8. CLI sends `withdraw.complete` with the challenge ID and code; backend validates and executes the transfer
+8. CLI sends `wallet.completeAddressChange` with the challenge ID and code; backend validates and updates the registered address
 
-The 6-character code is generated server-side only after the CAPTCHA is solved, so there is nothing for a bot to scrape from the page before human verification occurs. Challenges that expire unused are cleaned up automatically.
+The 6-character code is generated server-side only after the CAPTCHA is solved. Challenges that expire unused are cleaned up automatically.

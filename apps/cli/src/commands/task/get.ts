@@ -2,6 +2,8 @@ import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
 import { isHumanMode, printResult, printError } from '../../lib/output.js';
 
+type PendingAction = { role: string; action: string; command: string };
+
 export const getCmd = new Command('get')
   .description('Get task details')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
@@ -13,7 +15,17 @@ export const getCmd = new Command('get')
       printError(`Task not found: ${taskId}`, human);
     }
     if (human) {
-      console.log(JSON.stringify(task, null, 2));
+      const { pendingActions, ...taskData } = task as Record<string, unknown> & {
+        pendingActions?: PendingAction[];
+      };
+      console.log(JSON.stringify(taskData, null, 2));
+      if (pendingActions && pendingActions.length > 0) {
+        console.log('');
+        console.log('Next steps:');
+        for (const a of pendingActions) {
+          console.log(`  [${a.role}] ${a.command}`);
+        }
+      }
     } else {
       printResult(task, human);
     }

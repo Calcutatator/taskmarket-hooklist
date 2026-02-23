@@ -1,14 +1,22 @@
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
-import type { TaskResponse } from '@taskmarket/shared';
+import type { TaskDetailResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
+import { useAccount } from 'wagmi';
 
 interface TaskDetailProps {
-  task: TaskResponse;
+  task: TaskDetailResponse;
 }
 
 export function TaskDetail({ task }: TaskDetailProps) {
+  const { address, isConnected } = useAccount();
+  const isRequester = isConnected && address?.toLowerCase() === task.requester.toLowerCase();
+  const visibleActions = isConnected
+    ? task.pendingActions.filter((a) =>
+        isRequester ? a.role === 'requester' : a.role === 'worker'
+      )
+    : task.pendingActions;
   const modeVariant = task.mode as 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction';
   const expiryDate = new Date(task.expiryTime);
   const createdDate = new Date(task.createdAt);
@@ -127,6 +135,25 @@ export function TaskDetail({ task }: TaskDetailProps) {
                   <Badge key={tag} variant="outline">
                     {tag}
                   </Badge>
+                ))}
+              </div>
+            </div>
+          </>
+        )}
+
+        {visibleActions.length > 0 && (
+          <>
+            <Separator />
+            <div>
+              <h3 className="font-semibold text-sm mb-2">Available actions</h3>
+              <div className="space-y-2">
+                {visibleActions.map((a, i) => (
+                  <div key={i} className="text-xs">
+                    {!isConnected && <span className="text-text-secondary mr-2">[{a.role}]</span>}
+                    <code className="bg-background-secondary px-2 py-1 rounded font-mono break-all">
+                      {a.command}
+                    </code>
+                  </div>
                 ))}
               </div>
             </div>

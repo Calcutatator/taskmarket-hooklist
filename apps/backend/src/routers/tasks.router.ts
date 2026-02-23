@@ -3,7 +3,8 @@ import {
   TaskCreateSchema,
   TaskListInputSchema,
   TaskListResponseSchema,
-  TaskResponseSchema,
+  TaskDetailResponseSchema,
+  type PendingAction,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents } from '../db/schema';
@@ -11,6 +12,103 @@ import { eq, sql, desc, and, gt, lte } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
 import { getServerConfig } from '../config/env';
+
+function computePendingActions(task: {
+  id: string;
+  status: string;
+  mode: string;
+  rating: number | null;
+  pitchCount: number;
+  expiryTime: Date;
+  claimedBy: string | null;
+  worker: string | null;
+}): PendingAction[] {
+  if (task.status === 'open' && task.expiryTime < new Date()) {
+    return [];
+  }
+
+  const id = task.id;
+  const workerAddr = task.worker ?? task.claimedBy;
+
+  switch (task.status) {
+    case 'open':
+      switch (task.mode) {
+        case 'bounty':
+          return [
+            {
+              role: 'worker',
+              action: 'submit',
+              command: `taskmarket task submit ${id} --file <path>`,
+            },
+          ];
+        case 'claim':
+          return [{ role: 'worker', action: 'claim', command: `taskmarket task claim ${id}` }];
+        case 'pitch': {
+          const actions: PendingAction[] = [
+            {
+              role: 'worker',
+              action: 'pitch',
+              command: `taskmarket task pitch ${id} --text "..."`,
+            },
+          ];
+          if (task.pitchCount > 0) {
+            actions.push({
+              role: 'requester',
+              action: 'select_worker',
+              command: `taskmarket task select-worker ${id} --pitch <pitchId> --worker <address>`,
+            });
+          }
+          return actions;
+        }
+        case 'benchmark':
+          return [
+            {
+              role: 'worker',
+              action: 'submit_proof',
+              command: `taskmarket task proof ${id} --data <data> --type <type>`,
+            },
+          ];
+        case 'auction':
+          return [
+            { role: 'worker', action: 'bid', command: `taskmarket task bid ${id} --price <n>` },
+          ];
+        default:
+          return [];
+      }
+    case 'claimed':
+      return [
+        { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
+      ];
+    case 'worker_selected':
+      return [
+        { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
+      ];
+    case 'pending_approval': {
+      const addr = workerAddr ?? '<address>';
+      return [
+        {
+          role: 'requester',
+          action: 'accept',
+          command: `taskmarket task accept ${id} --worker ${addr}`,
+        },
+      ];
+    }
+    case 'accepted':
+      if (task.rating === null) {
+        const addr = workerAddr ?? '<address>';
+        return [
+          {
+            role: 'requester',
+            action: 'rate',
+            command: `taskmarket task rate ${id} --worker ${addr} --rating <0-100>`,
+          },
+        ];
+      }
+      return [];
+    default:
+      return [];
+  }
+}
 
 export const tasksRouter = router({
   create: publicProcedure
@@ -202,7 +300,7 @@ export const tasksRouter = router({
       },
     })
     .input(z.object({ taskId: z.string() }))
-    .output(TaskResponseSchema.nullable())
+    .output(TaskDetailResponseSchema.nullable())
     .query(async ({ input, ctx }) => {
       const result = await ctx.db.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
 
@@ -248,6 +346,16 @@ export const tasksRouter = router({
         platformFeeBps: task.platformFeeBps,
         submissionCount: Number(submissionCount[0]?.count || 0),
         pitchCount: Number(pitchCount[0]?.count || 0),
+        pendingActions: computePendingActions({
+          id: task.id,
+          status: task.status,
+          mode: task.mode,
+          rating: task.rating,
+          pitchCount: Number(pitchCount[0]?.count || 0),
+          expiryTime: task.expiryTime,
+          claimedBy: task.claimedBy,
+          worker: task.worker,
+        }),
       };
     }),
 });
