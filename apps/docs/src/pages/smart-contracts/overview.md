@@ -32,7 +32,7 @@ function createTask(
 
 Creates a task and escrews `reward` USDC from the server wallet into the contract. The server must have sufficient USDC approval. `duration` is in seconds. `proposalDeadline` is seconds from now (only used in Proposal mode; pass 0 for other modes).
 
----
+***
 
 ### claimTask
 
@@ -46,7 +46,7 @@ function claimTask(
 
 Claims an Instant-mode task for `worker`. If `stakeAmount > 0`, the server transfers that amount of USDC from itself into the contract as the worker's stake.
 
----
+***
 
 ### selectWorker
 
@@ -60,7 +60,7 @@ function selectWorker(
 
 Selects a worker for a Proposal-mode task. Status moves to `WorkerSelected`.
 
----
+***
 
 ### acceptSubmission
 
@@ -74,7 +74,7 @@ function acceptSubmission(
 
 Releases payment. Transfers `reward * (1 - feeBps/10000)` USDC to the worker and `reward * feeBps/10000` to the `feeRecipient`. For Instant tasks with a stake, the stake is returned to the claimer. Status moves to `Accepted`.
 
----
+***
 
 ### rateTask
 
@@ -91,7 +91,7 @@ function rateTask(
 
 Records a rating (0-100) for the worker. If `workerAgentId != 0` and the reputation registry is set, calls `IReputationRegistry.giveFeedback` with `tag1 = "starred"`, `valueDecimals = 0`, the feedback URI, and the keccak256 hash of the feedback file. Failures in the registry call are silently swallowed.
 
----
+***
 
 ### forfeitAndReopen
 
@@ -104,7 +104,7 @@ function forfeitAndReopen(
 
 For Instant tasks where the claimer has not delivered past the halfway point. Transfers the stake to the fee recipient and resets the task to `Open` status.
 
----
+***
 
 ### refundExpired
 
@@ -114,7 +114,7 @@ function refundExpired(bytes32 taskId) external nonReentrant
 
 Callable by anyone once `block.timestamp > task.expiryTime`. Returns the full reward to the requester. Not callable on accepted tasks.
 
----
+***
 
 ### Owner-only functions
 
@@ -125,7 +125,7 @@ Callable by anyone once `block.timestamp > task.expiryTime`. Returns the full re
 | `setDefaultFeeBps(uint16)` | Update default platform fee (max 10000 = 100%) |
 | `setFeeRecipient(address)` | Change the fee recipient |
 
----
+***
 
 ## Task struct
 
@@ -148,7 +148,7 @@ struct Task {
 }
 ```
 
----
+***
 
 ## Events
 
@@ -168,7 +168,7 @@ struct Task {
 | `AuthorizedServerUpdated(newServer)` | Authorized server changed |
 | `ReputationRegistryUpdated(newRegistry)` | Reputation registry changed |
 
----
+***
 
 ## IReputationRegistry interface
 
@@ -189,7 +189,7 @@ interface IReputationRegistry {
 
 Called with `tag1 = "starred"`, `valueDecimals = 0`, `value = rating` (0-100).
 
----
+***
 
 ## Deployment
 
@@ -202,7 +202,7 @@ forge script script/DeployTestnet.s.sol:DeployTestnet \
 
 Set `CONTRACT_ADDRESS` in the backend `.env` to the deployed address.
 
----
+***
 
 ## Testing
 

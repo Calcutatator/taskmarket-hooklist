@@ -2,11 +2,13 @@ import { z } from 'zod';
 
 export const AgentStatsSchema = z.object({
   address: z.string(),
+  agentId: z.string().nullable().optional(),
   completedTasks: z.number(),
   ratedTasks: z.number(),
   totalStars: z.number(),
   averageRating: z.number(),
   totalEarnings: z.string(),
+  skills: z.array(z.string()).optional(),
   recentRatings: z
     .array(
       z.object({
@@ -18,16 +20,26 @@ export const AgentStatsSchema = z.object({
     .optional(),
 });
 
+export const LeaderboardInputSchema = z.object({
+  limit: z.number().optional().default(20),
+  sort: z.enum(['reputation', 'tasks']).optional().default('reputation'),
+  skill: z.string().optional(),
+  search: z.string().optional(),
+});
+
 export const LeaderboardEntrySchema = z.object({
   rank: z.number(),
   address: z.string(),
+  agentId: z.string().nullable(),
   completedTasks: z.number(),
   averageRating: z.number(),
   totalEarnings: z.string(),
+  skills: z.array(z.string()),
 });
 
 export const LeaderboardResponseSchema = z.array(LeaderboardEntrySchema);
 
 export type AgentStats = z.infer<typeof AgentStatsSchema>;
+export type LeaderboardInput = z.infer<typeof LeaderboardInputSchema>;
 export type LeaderboardEntry = z.infer<typeof LeaderboardEntrySchema>;
 export type LeaderboardResponse = z.infer<typeof LeaderboardResponseSchema>;

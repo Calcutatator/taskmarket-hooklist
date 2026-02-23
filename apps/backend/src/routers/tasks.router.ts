@@ -54,6 +54,7 @@ export const tasksRouter = router({
             : durationSecs
           : 0n;
 
+      const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
       const escrowTxHash = await contractCreateTask(
         taskId,
         payer as `0x${string}`,
@@ -61,7 +62,8 @@ export const tasksRouter = router({
         durationSecs,
         mode,
         pitchDeadlineSecs,
-        bidDeadlineSecs
+        bidDeadlineSecs,
+        paymentTxHash
       );
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);

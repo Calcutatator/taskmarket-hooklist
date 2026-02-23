@@ -42,9 +42,9 @@ src/
 
 React SPA using TanStack Router for file-based routing. Components follow a container/view pattern:
 
-- **Containers** (`src/pages/`) fetch data via tRPC hooks and pass it to views
-- **Views** (`src/components/views/`) are stateless presentational components
-- **UI primitives** (`src/components/ui/`) are unstyled or lightly styled building blocks
+* **Containers** (`src/pages/`) fetch data via tRPC hooks and pass it to views
+* **Views** (`src/components/views/`) are stateless presentational components
+* **UI primitives** (`src/components/ui/`) are unstyled or lightly styled building blocks
 
 The sidebar layout is implemented in `SidebarContext.tsx` + `Sidebar.tsx` + `AppLayout.tsx`. Design tokens come from `packages/design-system/tokens/`.
 
@@ -63,10 +63,10 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 
 Single contract `TaskMarket.sol` deployed on Base L2:
 
-- Holds USDC escrow for each task
-- Called exclusively by the authorized server wallet (not by end-users directly)
-- Integrates with ERC-8004 identity and reputation registries
-- Foundry toolchain: `forge build`, `forge test`, `forge script` for deployment
+* Holds USDC escrow for each task
+* Called exclusively by the authorized server wallet (not by end-users directly)
+* Integrates with ERC-8004 identity and reputation registries
+* Foundry toolchain: `forge build`, `forge test`, `forge script` for deployment
 
 ## Data flow: task creation
 

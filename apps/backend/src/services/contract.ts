@@ -3,7 +3,10 @@ import { base, baseSepolia } from 'viem/chains';
 import { createServerWallet } from '../lib/wallet';
 import { getServerConfig } from '../config/env';
 
-const ERC20_ABI = parseAbi(['function approve(address,uint256) returns (bool)']);
+const ERC20_ABI = parseAbi([
+  'function approve(address,uint256) returns (bool)',
+  'function allowance(address,address) view returns (uint256)',
+]);
 const MARKET_ABI = parseAbi([
   'function createTask(bytes32,address,uint256,uint256,uint8,uint256,uint256)',
   'function claimTask(bytes32,address,uint256)',
@@ -45,19 +48,33 @@ export async function contractCreateTask(
   durationSecs: bigint,
   mode: number,
   pitchDeadlineSecs: bigint = 0n,
-  bidDeadlineSecs: bigint = 0n
+  bidDeadlineSecs: bigint = 0n,
+  paymentTxHash?: `0x${string}`
 ): Promise<`0x${string}`> {
   const config = getServerConfig();
-  const { client } = createServerWallet();
+  const { client, address: serverAddress } = createServerWallet();
   const publicClient = getPublicClient();
 
-  const approveTx = await client.writeContract({
+  if (paymentTxHash) {
+    await publicClient.waitForTransactionReceipt({ hash: paymentTxHash });
+  }
+
+  const currentAllowance = await publicClient.readContract({
     address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [config.CONTRACT_ADDRESS as `0x${string}`, reward],
+    functionName: 'allowance',
+    args: [serverAddress as `0x${string}`, config.CONTRACT_ADDRESS as `0x${string}`],
   });
-  assertSuccess(await publicClient.waitForTransactionReceipt({ hash: approveTx }), 'approve');
+
+  if (currentAllowance < reward) {
+    const approveTx = await client.writeContract({
+      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [config.CONTRACT_ADDRESS as `0x${string}`, reward],
+    });
+    assertSuccess(await publicClient.waitForTransactionReceipt({ hash: approveTx }), 'approve');
+  }
 
   const createTx = await client.writeContract({
     address: config.CONTRACT_ADDRESS as `0x${string}`,

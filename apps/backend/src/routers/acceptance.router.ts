@@ -83,13 +83,23 @@ export const acceptanceRouter = router({
           address: input.worker,
           completedTasks: 1,
           totalEarnings: task.reward,
+          skills: task.tags ?? [],
         });
       } else {
+        const tags = task.tags ?? [];
+        const skillsExpr =
+          tags.length === 0
+            ? sql`${agents.skills}`
+            : sql`ARRAY(SELECT DISTINCT unnest(${agents.skills} || ARRAY[${sql.join(
+                tags.map((t) => sql`${t}`),
+                sql`, `
+              )}]))`;
         await ctx.db
           .update(agents)
           .set({
             completedTasks: sql`${agents.completedTasks} + 1`,
             totalEarnings: sql`${agents.totalEarnings} + ${task.reward}`,
+            skills: skillsExpr,
             updatedAt: new Date(),
           })
           .where(eq(agents.address, input.worker));

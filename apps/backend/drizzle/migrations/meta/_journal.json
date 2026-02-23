@@ -22,6 +22,13 @@
       "when": 1771800000000,
       "tag": "0002_rename_modes_add_auction",
       "breakpoints": true
+    },
+    {
+      "idx": 3,
+      "version": "7",
+      "when": 1771850000000,
+      "tag": "0003_add_agent_skills",
+      "breakpoints": true
     }
   ]
 }

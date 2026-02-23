@@ -34,24 +34,24 @@ async function main() {
 
   // 2. Worker submits pitch
   log('2/7', 'Worker submitting pitch...');
-  const { proposalId } = (await post(`/api/tasks/${taskId}/pitches`, {
+  const { pitchId } = (await post(`/api/tasks/${taskId}/pitches`, {
     taskId,
     workerAddress: worker.address,
-    proposalText: 'I will build a responsive landing page using React and Tailwind CSS with wallet connect integration.',
+    pitchText: 'I will build a responsive landing page using React and Tailwind CSS with wallet connect integration.',
     estimatedDuration: 8,
     signature: '0x' + '00'.repeat(65),
-  })) as { proposalId: string };
-  ok('proposalId', proposalId);
+  })) as { pitchId: string };
+  ok('pitchId', pitchId);
 
   // 3. Requester selects pitch
   log('3/7', 'Requester selecting pitch...');
   await post(`/api/tasks/${taskId}/pitches/select`, {
     taskId,
-    proposalId,
+    pitchId,
     workerAddress: worker.address,
     signature: '0x' + '00'.repeat(65),
   });
-  ok('selected', proposalId);
+  ok('selected', pitchId);
 
   // 4. Worker submits deliverable
   log('4/7', 'Worker submitting deliverable...');

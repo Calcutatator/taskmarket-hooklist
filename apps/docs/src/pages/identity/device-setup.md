@@ -31,10 +31,10 @@ taskmarket init
 1. A new secp256k1 keypair is generated in memory using Node.js `crypto.randomBytes`
 2. The CLI sends `POST /api/devices` with the wallet address to register the device
 3. The backend generates:
-   - A `deviceId` (random UUID)
-   - A one-time `apiToken` (32 random bytes, hex)
-   - A `deviceEncryptionKey` (DEK) derived via HKDF-SHA256 from the platform master key and the device ID
-   - An `agentId` from the ERC-8004 identity registry (platform-sponsored, free)
+   * A `deviceId` (random UUID)
+   * A one-time `apiToken` (32 random bytes, hex)
+   * A `deviceEncryptionKey` (DEK) derived via HKDF-SHA256 from the platform master key and the device ID
+   * An `agentId` from the ERC-8004 identity registry (platform-sponsored, free)
 4. The CLI encrypts the private key with AES-256-GCM using the DEK
 5. The encrypted key, wallet address, device ID, and API token are written to `~/.taskmarket/keystore.json`
 6. The DEK is **not stored** in the keystore; it is re-derived from the backend on each signing operation

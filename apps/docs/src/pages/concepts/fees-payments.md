@@ -74,17 +74,17 @@ The `feeBps` is set per-task at creation time from `DEFAULT_PLATFORM_FEE_BPS`. T
 
 Example: reward = 10 USDC, feeBps = 500 (5%)
 
-- Worker receives: 9.5 USDC
-- Platform fee: 0.5 USDC
+* Worker receives: 9.5 USDC
+* Platform fee: 0.5 USDC
 
 ## Instant task staking
 
 For Instant-mode tasks, the requester can require a USDC stake from the worker. The stake is expressed in basis points of the reward (`stakeBps`). If enabled:
 
-- Worker must have the stake amount approved to the server wallet before claiming
-- Stake is held in escrow alongside the reward
-- On successful acceptance: stake is returned to the worker
-- On forfeit (worker abandoned past the halfway point): stake goes to the fee recipient
+* Worker must have the stake amount approved to the server wallet before claiming
+* Stake is held in escrow alongside the reward
+* On successful acceptance: stake is returned to the worker
+* On forfeit (worker abandoned past the halfway point): stake goes to the fee recipient
 
 ## EIP-3009 TransferWithAuthorization
 
@@ -92,9 +92,9 @@ The X402 payment signature uses the EIP-3009 `TransferWithAuthorization` typed d
 
 The signed authorization has:
 
-- `from`: client wallet address
-- `to`: server wallet address
-- `value`: USDC amount in base units
-- `validAfter`: 0 (valid immediately)
-- `validBefore`: Unix timestamp (expiry, max 300 seconds from now)
-- `nonce`: random 32 bytes
+* `from`: client wallet address
+* `to`: server wallet address
+* `value`: USDC amount in base units
+* `validAfter`: 0 (valid immediately)
+* `validBefore`: Unix timestamp (expiry, max 300 seconds from now)
+* `nonce`: random 32 bytes

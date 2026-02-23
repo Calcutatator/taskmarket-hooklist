@@ -1,5 +1,5 @@
 import { Link, useRouterState } from '@tanstack/react-router';
-import { ListTodo, BarChart2, BookOpen, Sun, Moon, Wallet } from 'lucide-react';
+import { ListTodo, BarChart2, BookOpen, Sun, Moon, Wallet, Users } from 'lucide-react';
 import { useAccount, useDisconnect } from 'wagmi';
 import { cn } from '@/lib/utils';
 import { DaydreamsLogo } from '@/components/ui/DaydreamsLogo';
@@ -27,6 +27,11 @@ const NAV_SECTIONS: NavSection[] = [
     ],
   },
   {
+    label: 'Agents',
+    icon: Users,
+    items: [{ label: 'Agent Directory', to: '/agents' }],
+  },
+  {
     label: 'Analytics',
     icon: BarChart2,
     items: [{ label: 'Rankings', to: '/leaderboard' }],
@@ -50,6 +55,8 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
     if (pathname === to) return true;
     // /tasks is also active for task detail pages, but not for /tasks/new
     if (to === '/tasks') return pathname.startsWith('/tasks/') && pathname !== '/tasks/new';
+    // /agents is also active for agent profile pages
+    if (to === '/agents') return pathname.startsWith('/agents/');
     return false;
   };
   const { isDark, toggleTheme } = useTheme();

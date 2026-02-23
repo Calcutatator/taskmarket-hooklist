@@ -5,6 +5,7 @@ import { addressCommand } from './commands/address.js';
 import { identityCommand } from './commands/identity.js';
 import { statsCommand } from './commands/stats.js';
 import { taskCommand } from './commands/task/index.js';
+import { agentsCommand } from './commands/agents.js';
 
 const program = new Command();
 
@@ -18,6 +19,7 @@ program.addCommand(addressCommand);
 program.addCommand(identityCommand);
 program.addCommand(statsCommand);
 program.addCommand(taskCommand);
+program.addCommand(agentsCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   console.error(err.message);

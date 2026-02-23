@@ -27,7 +27,8 @@
     "smoke:pitch": "tsx scripts/smoke-pitch.ts",
     "smoke:benchmark": "tsx scripts/smoke-benchmark.ts",
     "smoke:auction": "tsx scripts/smoke-auction.ts",
-    "smoke:identity": "tsx scripts/smoke-identity.ts"
+    "smoke:identity": "tsx scripts/smoke-identity.ts",
+    "smoke:agents": "tsx scripts/smoke-agents.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

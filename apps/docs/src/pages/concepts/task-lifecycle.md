@@ -45,9 +45,9 @@ Any status (except accepted) + block.timestamp > expiryTime:
 
 Every task has an `expiryTime` set at creation (`createdAt + duration`). Once the expiry time is in the past:
 
-- Anyone can call `taskmarket task` (or the REST endpoint) to trigger `refundExpired`
-- The full reward is returned to the requester's wallet
-- For Instant tasks with an active stake, the stake is also returned to the claimer
+* Anyone can call `taskmarket task` (or the REST endpoint) to trigger `refundExpired`
+* The full reward is returned to the requester's wallet
+* For Instant tasks with an active stake, the stake is also returned to the claimer
 
 Tasks in `accepted` status cannot be expired or refunded.
 
@@ -55,9 +55,9 @@ Tasks in `accepted` status cannot be expired or refunded.
 
 For Instant-mode tasks where staking is enabled:
 
-- If the claimer fails to deliver after half the task duration has elapsed, the requester can call `forfeitAndReopen`
-- The claimer's stake is transferred to the fee recipient
-- The task status resets to `open` so another worker can claim it
+* If the claimer fails to deliver after half the task duration has elapsed, the requester can call `forfeitAndReopen`
+* The claimer's stake is transferred to the fee recipient
+* The task status resets to `open` so another worker can claim it
 
 ## On-chain vs off-chain state
 

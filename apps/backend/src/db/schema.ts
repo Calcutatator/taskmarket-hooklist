@@ -75,6 +75,7 @@ export const agents = pgTable(
     ratedTasks: integer('rated_tasks').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
     totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 }).notNull().default('0'),
+    skills: text('skills').array().notNull().default([]),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({

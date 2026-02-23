@@ -13,8 +13,10 @@ import { Route as ProtocolRouteImport } from './../routes/protocol'
 import { Route as LeaderboardRouteImport } from './../routes/leaderboard'
 import { Route as IndexRouteImport } from './../routes/index'
 import { Route as TasksIndexRouteImport } from './../routes/tasks/index'
+import { Route as AgentsIndexRouteImport } from './../routes/agents/index'
 import { Route as TasksNewRouteImport } from './../routes/tasks/new'
 import { Route as TasksTaskIdRouteImport } from './../routes/tasks/$taskId'
+import { Route as AgentsAgentIdRouteImport } from './../routes/agents/$agentId'
 
 const ProtocolRoute = ProtocolRouteImport.update({
   id: '/protocol',
@@ -36,6 +38,11 @@ const TasksIndexRoute = TasksIndexRouteImport.update({
   path: '/tasks/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentsIndexRoute = AgentsIndexRouteImport.update({
+  id: '/agents/',
+  path: '/agents/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const TasksNewRoute = TasksNewRouteImport.update({
   id: '/tasks/new',
   path: '/tasks/new',
@@ -46,21 +53,30 @@ const TasksTaskIdRoute = TasksTaskIdRouteImport.update({
   path: '/tasks/$taskId',
   getParentRoute: () => rootRouteImport,
 } as any)
+const AgentsAgentIdRoute = AgentsAgentIdRouteImport.update({
+  id: '/agents/$agentId',
+  path: '/agents/$agentId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
   '/protocol': typeof ProtocolRoute
+  '/agents/$agentId': typeof AgentsAgentIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/agents/': typeof AgentsIndexRoute
   '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
   '/protocol': typeof ProtocolRoute
+  '/agents/$agentId': typeof AgentsAgentIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/agents': typeof AgentsIndexRoute
   '/tasks': typeof TasksIndexRoute
 }
 export interface FileRoutesById {
@@ -68,8 +84,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/leaderboard': typeof LeaderboardRoute
   '/protocol': typeof ProtocolRoute
+  '/agents/$agentId': typeof AgentsAgentIdRoute
   '/tasks/$taskId': typeof TasksTaskIdRoute
   '/tasks/new': typeof TasksNewRoute
+  '/agents/': typeof AgentsIndexRoute
   '/tasks/': typeof TasksIndexRoute
 }
 export interface FileRouteTypes {
@@ -78,24 +96,30 @@ export interface FileRouteTypes {
     | '/'
     | '/leaderboard'
     | '/protocol'
+    | '/agents/$agentId'
     | '/tasks/$taskId'
     | '/tasks/new'
+    | '/agents/'
     | '/tasks/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
     | '/leaderboard'
     | '/protocol'
+    | '/agents/$agentId'
     | '/tasks/$taskId'
     | '/tasks/new'
+    | '/agents'
     | '/tasks'
   id:
     | '__root__'
     | '/'
     | '/leaderboard'
     | '/protocol'
+    | '/agents/$agentId'
     | '/tasks/$taskId'
     | '/tasks/new'
+    | '/agents/'
     | '/tasks/'
   fileRoutesById: FileRoutesById
 }
@@ -103,8 +127,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   LeaderboardRoute: typeof LeaderboardRoute
   ProtocolRoute: typeof ProtocolRoute
+  AgentsAgentIdRoute: typeof AgentsAgentIdRoute
   TasksTaskIdRoute: typeof TasksTaskIdRoute
   TasksNewRoute: typeof TasksNewRoute
+  AgentsIndexRoute: typeof AgentsIndexRoute
   TasksIndexRoute: typeof TasksIndexRoute
 }
 
@@ -138,6 +164,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TasksIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents/': {
+      id: '/agents/'
+      path: '/agents'
+      fullPath: '/agents/'
+      preLoaderRoute: typeof AgentsIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/tasks/new': {
       id: '/tasks/new'
       path: '/tasks/new'
@@ -152,6 +185,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof TasksTaskIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/agents/$agentId': {
+      id: '/agents/$agentId'
+      path: '/agents/$agentId'
+      fullPath: '/agents/$agentId'
+      preLoaderRoute: typeof AgentsAgentIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -159,8 +199,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   LeaderboardRoute: LeaderboardRoute,
   ProtocolRoute: ProtocolRoute,
+  AgentsAgentIdRoute: AgentsAgentIdRoute,
   TasksTaskIdRoute: TasksTaskIdRoute,
   TasksNewRoute: TasksNewRoute,
+  AgentsIndexRoute: AgentsIndexRoute,
   TasksIndexRoute: TasksIndexRoute,
 }
 export const routeTree = rootRouteImport
