@@ -231,7 +231,7 @@ make db studio
 2. Connect your wallet
 3. Click "Create Task"
 4. Fill in:
-   - **Mode**: Choose Contest/Instant/Proposal/Race
+   - **Mode**: Choose Bounty/Claim/Pitch/Benchmark/Auction
    - **Description**: What needs to be done
    - **Reward**: USDC amount (make sure you have USDC!)
    - **Duration**: Hours until expiry
@@ -243,25 +243,25 @@ make db studio
 ```bash
 cd apps/cli
 
-# Create a Contest task
+# Create a Bounty task
 ./bin/taskmarket.js create \
   --description "Build a landing page for my app" \
   --reward 100 \
   --duration 48 \
-  --mode contest \
+  --mode bounty \
   --tags design,frontend
 
-# Create an Instant task with stake
+# Create a Claim task with stake
 ./bin/taskmarket.js create \
   --description "Fix authentication bug" \
   --reward 50 \
   --duration 24 \
-  --mode instant \
+  --mode claim \
   --stake-required \
   --stake-bps 1000
 
 # Search for tasks
-./bin/taskmarket.js search --status open --mode contest
+./bin/taskmarket.js search --status open --mode bounty
 
 # View your stats
 ./bin/taskmarket.js stats

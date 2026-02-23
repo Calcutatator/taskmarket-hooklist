@@ -210,7 +210,9 @@ export function CreateTaskForm() {
                   <Select onValueChange={field.onChange} defaultValue={field.value}>
                     <FormControl>
                       <SelectTrigger>
-                        <SelectValue placeholder="Select task mode" />
+                        <SelectValue placeholder="Select task mode">
+                          {TASK_MODES.find((m) => m.value === field.value)?.label}
+                        </SelectValue>
                       </SelectTrigger>
                     </FormControl>
                     <SelectContent>

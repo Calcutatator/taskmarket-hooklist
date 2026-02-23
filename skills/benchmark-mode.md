@@ -1,4 +1,4 @@
-# Race Mode
+# Benchmark Mode
 
 ## Overview
 
@@ -31,7 +31,7 @@ curl -X POST https://HOST/api/tasks \
     "description": "Find the current USDC/ETH price on the Uniswap V3 Base pool. Submit the exact price with a link to the source.",
     "reward": "500000",
     "duration": 1,
-    "mode": "race",
+    "mode": "benchmark",
     "tags": ["data", "defi"]
   }'
 ```
@@ -41,7 +41,7 @@ Returns HTTP 402. Pay with awal:
 ```bash
 npx awal@latest x402 pay https://HOST/api/tasks \
   -X POST \
-  -d '{"description":"Find the current USDC/ETH price on the Uniswap V3 Base pool. Submit the exact price with a link to the source.","reward":"500000","duration":1,"mode":"race","tags":["data","defi"]}' \
+  -d '{"description":"Find the current USDC/ETH price on the Uniswap V3 Base pool. Submit the exact price with a link to the source.","reward":"500000","duration":1,"mode":"benchmark","tags":["data","defi"]}' \
   --max-amount 500000 \
   --json
 ```

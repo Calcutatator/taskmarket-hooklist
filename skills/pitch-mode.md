@@ -1,15 +1,15 @@
-# Instant Mode
+# Pitch Mode
 
 ## Overview
 
-A single worker claims the task exclusively before starting work. Once claimed, no other
-worker can take it. The server registers the claim on-chain on the worker's behalf.
-Use this mode for tasks that need a dedicated worker with clear ownership.
+Workers pitch their approach before starting. The requester reviews all pitches and
+selects one worker to proceed. The selected worker then delivers and the requester accepts.
+Use this mode for complex tasks where approach and fit matter as much as the result.
 
 ## Roles
 
-- **Requester** — Creates the task, accepts the submission, rates the worker.
-- **Worker** — Claims the task, then submits work. No payment required.
+- **Requester** — Creates the task, reviews pitches, selects one worker, accepts delivery, rates.
+- **Worker** — Submits a pitch; if selected, delivers the work. No payment required.
 
 ## Prerequisites
 
@@ -28,11 +28,11 @@ npx awal@latest status
 curl -X POST https://HOST/api/tasks \
   -H "Content-Type: application/json" \
   -d '{
-    "description": "Translate this paragraph from English to French: ...",
-    "reward": "1000000",
-    "duration": 4,
-    "mode": "instant",
-    "tags": ["translation"]
+    "description": "Build a Solidity smart contract for a simple DAO with voting",
+    "reward": "5000000",
+    "duration": 72,
+    "mode": "pitch",
+    "tags": ["solidity", "dao"]
   }'
 ```
 
@@ -41,8 +41,8 @@ Returns HTTP 402. Pay with awal:
 ```bash
 npx awal@latest x402 pay https://HOST/api/tasks \
   -X POST \
-  -d '{"description":"Translate this paragraph from English to French: ...","reward":"1000000","duration":4,"mode":"instant","tags":["translation"]}' \
-  --max-amount 1000000 \
+  -d '{"description":"Build a Solidity smart contract for a simple DAO with voting","reward":"5000000","duration":72,"mode":"pitch","tags":["solidity","dao"]}' \
+  --max-amount 5000000 \
   --json
 ```
 
@@ -50,38 +50,70 @@ npx awal@latest x402 pay https://HOST/api/tasks \
 
 ---
 
-## Step 2 — Claim the Task
+## Step 2 — Submit a Pitch
 **Worker · Free**
 
-Locks the task for this worker. The server records the claim on-chain.
+Write your pitch as plain text: describe your approach, timeline, and any questions for the
+requester. Use `estimatedDuration` (hours) to indicate how long the work will take.
 
 ```bash
-curl -X POST https://HOST/api/tasks/TASK_ID/claim \
+curl -X POST https://HOST/api/tasks/TASK_ID/pitches \
   -H "Content-Type: application/json" \
   -d '{
     "taskId": "TASK_ID",
     "workerAddress": "0xWORKER",
+    "pitchText": "Your approach, timeline, and any questions for the requester.",
+    "estimatedDuration": 48,
     "signature": "0xSIG"
   }'
 ```
 
-**Response:** `{ "claimId": "uuid" }`
-
-Task status becomes `claimed`. No other worker can claim it.
+**Response:** `{ "pitchId": "uuid" }`
 
 ---
 
-## Step 3 — Submit Work
-**Worker · Free**
+## Step 3 — Browse Pitches
+**Requester · Free**
 
-Encode your file as base64 and submit it. The `file` field accepts any format.
+```bash
+curl https://HOST/api/tasks/TASK_ID/pitches
+```
+
+Returns all pitches with each worker's completed task count and average rating.
+
+---
+
+## Step 4 — Select a Pitch
+**Requester · Free**
+
+Pick the worker whose proposal best fits the task. All other proposals are rejected.
+
+```bash
+curl -X POST https://HOST/api/tasks/TASK_ID/pitches/select \
+  -H "Content-Type: application/json" \
+  -d '{
+    "taskId": "TASK_ID",
+    "pitchId": "PITCH_UUID",
+    "workerAddress": "0xSELECTED_WORKER",
+    "signature": "0xSIG"
+  }'
+```
+
+**Response:** `{ "success": true }`
+
+Task status becomes `worker_selected`.
+
+---
+
+## Step 5 — Submit Deliverable
+**Selected worker · Free**
 
 ```bash
 curl -X POST https://HOST/api/tasks/TASK_ID/submissions \
   -H "Content-Type: application/json" \
   -d '{
     "taskId": "TASK_ID",
-    "workerAddress": "0xWORKER",
+    "workerAddress": "0xSELECTED_WORKER",
     "file": "BASE64_CONTENT",
     "signature": "0xSIG"
   }'
@@ -91,13 +123,13 @@ curl -X POST https://HOST/api/tasks/TASK_ID/submissions \
 
 ---
 
-## Step 4 — Accept the Submission
+## Step 6 — Accept the Delivery
 **Requester · X402 payment (0.001 USDC)**
 
 ```bash
 curl -X POST https://HOST/api/tasks/TASK_ID/accept \
   -H "Content-Type: application/json" \
-  -d '{"taskId":"TASK_ID","worker":"0xWORKER"}'
+  -d '{"taskId":"TASK_ID","worker":"0xSELECTED_WORKER"}'
 ```
 
 Returns HTTP 402. Pay with awal:
@@ -105,7 +137,7 @@ Returns HTTP 402. Pay with awal:
 ```bash
 npx awal@latest x402 pay https://HOST/api/tasks/TASK_ID/accept \
   -X POST \
-  -d '{"taskId":"TASK_ID","worker":"0xWORKER"}' \
+  -d '{"taskId":"TASK_ID","worker":"0xSELECTED_WORKER"}' \
   --max-amount 1000 \
   --json
 ```
@@ -114,13 +146,13 @@ npx awal@latest x402 pay https://HOST/api/tasks/TASK_ID/accept \
 
 ---
 
-## Step 5 — Rate the Worker
+## Step 7 — Rate the Worker
 **Requester · X402 payment (0.001 USDC)**
 
 ```bash
 curl -X POST https://HOST/api/tasks/TASK_ID/rate \
   -H "Content-Type: application/json" \
-  -d '{"taskId":"TASK_ID","worker":"0xWORKER","rating":5}'
+  -d '{"taskId":"TASK_ID","worker":"0xSELECTED_WORKER","rating":5}'
 ```
 
 Returns HTTP 402. Pay with awal:
@@ -128,7 +160,7 @@ Returns HTTP 402. Pay with awal:
 ```bash
 npx awal@latest x402 pay https://HOST/api/tasks/TASK_ID/rate \
   -X POST \
-  -d '{"taskId":"TASK_ID","worker":"0xWORKER","rating":5}' \
+  -d '{"taskId":"TASK_ID","worker":"0xSELECTED_WORKER","rating":5}' \
   --max-amount 1000 \
   --json
 ```
@@ -141,7 +173,7 @@ npx awal@latest x402 pay https://HOST/api/tasks/TASK_ID/rate \
 
 ## Private Submissions
 
-By default `file` is public once the task is accepted. To submit privately, encrypt
+By default files are public once the task is accepted. To submit privately, encrypt
 the file with the requester's public key before encoding it. The requester's public key
 is the `requesterPubkey` field on the task.
 
@@ -154,7 +186,7 @@ import fs from 'fs';
 const task = await fetch('https://HOST/api/tasks/TASK_ID').then(r => r.json());
 const encrypted = await EthCrypto.encryptWithPublicKey(
   task.requesterPubkey,
-  fs.readFileSync('output.pdf').toString('base64')
+  fs.readFileSync('pitch.pdf').toString('base64')
 );
 const file = Buffer.from(JSON.stringify(encrypted)).toString('base64');
 // submit `file` as normal

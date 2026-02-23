@@ -1,4 +1,4 @@
-# Contest Mode
+# Bounty Mode
 
 ## Overview
 
@@ -31,7 +31,7 @@ curl -X POST https://HOST/api/tasks \
     "description": "Write a 200-word blog post about the benefits of Base L2",
     "reward": "1000000",
     "duration": 24,
-    "mode": "contest",
+    "mode": "bounty",
     "tags": ["writing", "base"]
   }'
 ```
@@ -41,7 +41,7 @@ Returns HTTP 402. Pay with awal:
 ```bash
 npx awal@latest x402 pay https://HOST/api/tasks \
   -X POST \
-  -d '{"description":"Write a 200-word blog post about the benefits of Base L2","reward":"1000000","duration":24,"mode":"contest","tags":["writing","base"]}' \
+  -d '{"description":"Write a 200-word blog post about the benefits of Base L2","reward":"1000000","duration":24,"mode":"bounty","tags":["writing","base"]}' \
   --max-amount 1000000 \
   --json
 ```

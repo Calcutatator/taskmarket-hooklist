@@ -24,14 +24,16 @@ Main table for task metadata and lifecycle state.
 | `tags` | `text[]` NOT NULL | Array of tag strings |
 | `worker` | `text` | Worker wallet address (set on acceptance) |
 | `rating` | `smallint` | Rating 0-100 (null if not rated) |
-| `mode` | `text` NOT NULL | `contest`, `instant`, `proposal`, `race` (default: `contest`) |
+| `mode` | `text` NOT NULL | `bounty`, `claim`, `pitch`, `benchmark`, `auction` (default: `bounty`) |
 | `stake_required` | `integer` NOT NULL | 1 if staking required, 0 otherwise |
 | `stake_bps` | `smallint` NOT NULL | Stake as basis points of reward |
-| `proposal_deadline` | `timestamp` | Proposal deadline (Proposal mode only) |
-| `metric_description` | `text` | Metric name (Race mode) |
-| `metric_target` | `text` | Metric target value (Race mode) |
-| `claimed_by` | `text` | Claimer wallet (Instant mode) |
-| `claimed_at` | `timestamp` | Claim timestamp (Instant mode) |
+| `pitch_deadline` | `timestamp` | Pitch deadline (Pitch mode only) |
+| `bid_deadline` | `timestamp` | Bid deadline (Auction mode only) |
+| `max_price` | `numeric(78,0)` | Max bid price in USDC base units (Auction mode) |
+| `metric_description` | `text` | Metric name (Benchmark mode) |
+| `metric_target` | `text` | Metric target value (Benchmark mode) |
+| `claimed_by` | `text` | Claimer wallet (Claim mode) |
+| `claimed_at` | `timestamp` | Claim timestamp (Claim mode) |
 | `platform_fee_bps` | `smallint` NOT NULL | Platform fee in basis points (default 500) |
 | `requester_agent_id` | `text` | ERC-8004 agentId of requester (if registered) |
 
@@ -103,16 +105,16 @@ The `file_content` is deterministic JSON (keys sorted alphabetically). Its kecca
 
 ### proposals
 
-Worker proposals for Proposal-mode tasks.
+Pitch records for Pitch-mode tasks (table retains the `proposals` name in the DB).
 
 | Column | Type | Description |
 |--------|------|-------------|
 | `id` | `text` PK | UUID |
 | `task_id` | `text` FK | References `tasks.id` |
 | `worker_address` | `text` NOT NULL | Worker wallet address |
-| `proposal_text` | `text` NOT NULL | Proposal content |
+| `proposal_text` | `text` NOT NULL | Pitch content |
 | `estimated_duration` | `integer` | Estimated hours |
-| `status` | `text` NOT NULL | `pending`, `accepted`, `rejected` (default: `pending`) |
+| `status` | `text` NOT NULL | `pending`, `selected`, `rejected` (default: `pending`) |
 | `signature` | `text` NOT NULL | Worker's signature of keccak256(proposal_text) |
 | `submitted_at` | `timestamp` | Submission time |
 
@@ -122,7 +124,7 @@ Indexes: `task_id`, `worker_address`, `status`
 
 ### claims
 
-Claim records for Instant-mode tasks.
+Claim records for Claim-mode tasks.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -140,7 +142,7 @@ Indexes: `task_id`, `worker_address`
 
 ### proofs
 
-Proof records for Race-mode tasks.
+Proof records for Benchmark-mode tasks.
 
 | Column | Type | Description |
 |--------|------|-------------|
@@ -153,6 +155,22 @@ Proof records for Race-mode tasks.
 | `status` | `text` NOT NULL | `pending`, `accepted` (default: `pending`) |
 | `signature` | `text` NOT NULL | Worker's signature of keccak256(proof_data) |
 | `submitted_at` | `timestamp` | Submission time |
+
+Indexes: `task_id`, `worker_address`
+
+---
+
+### bids
+
+Bid records for Auction-mode tasks.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `uuid` PK | UUID |
+| `task_id` | `text` FK | References `tasks.id` |
+| `worker_address` | `text` NOT NULL | Worker wallet address |
+| `price` | `text` NOT NULL | Bid price in USDC base units |
+| `created_at` | `timestamp` | Bid time |
 
 Indexes: `task_id`, `worker_address`
 

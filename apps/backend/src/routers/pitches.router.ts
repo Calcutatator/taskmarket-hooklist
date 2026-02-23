@@ -1,9 +1,5 @@
 import { router, publicProcedure } from '../trpc';
-import {
-  ProposalCreateSchema,
-  ProposalResponseSchema,
-  ProposalSelectSchema,
-} from '@taskmarket/shared';
+import { PitchCreateSchema, PitchResponseSchema, PitchSelectSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
@@ -20,8 +16,8 @@ export const pitchesRouter = router({
         summary: 'Submit a pitch for a task',
       },
     })
-    .input(ProposalCreateSchema)
-    .output(z.object({ success: z.boolean(), proposalId: z.string() }))
+    .input(PitchCreateSchema)
+    .output(z.object({ success: z.boolean(), pitchId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const taskResult = await ctx.db
         .select()
@@ -47,7 +43,7 @@ export const pitchesRouter = router({
         throw new Error('Pitch deadline has passed');
       }
 
-      const existingProposal = await ctx.db
+      const existingPitch = await ctx.db
         .select()
         .from(proposals)
         .where(
@@ -55,28 +51,28 @@ export const pitchesRouter = router({
         )
         .limit(1);
 
-      if (existingProposal.length > 0) {
+      if (existingPitch.length > 0) {
         throw new Error('Worker has already submitted a pitch');
       }
 
-      const proposalId = randomUUID();
+      const pitchId = randomUUID();
 
       await ctx.db.insert(proposals).values({
-        id: proposalId,
+        id: pitchId,
         taskId: input.taskId,
         workerAddress: input.workerAddress,
-        proposalText: input.proposalText,
+        proposalText: input.pitchText,
         estimatedDuration: input.estimatedDuration || null,
         signature: input.signature,
         status: 'pending',
       });
 
-      return { success: true, proposalId };
+      return { success: true, pitchId };
     }),
 
   listByTask: publicProcedure
     .input(z.object({ taskId: z.string() }))
-    .output(z.array(ProposalResponseSchema))
+    .output(z.array(PitchResponseSchema))
     .query(async ({ input, ctx }) => {
       const results = await ctx.db
         .select()
@@ -84,23 +80,23 @@ export const pitchesRouter = router({
         .where(eq(proposals.taskId, input.taskId));
 
       const pitchesWithStats = await Promise.all(
-        results.map(async (proposal) => {
+        results.map(async (pitch) => {
           const agentResult = await ctx.db
             .select()
             .from(agents)
-            .where(eq(agents.address, proposal.workerAddress))
+            .where(eq(agents.address, pitch.workerAddress))
             .limit(1);
 
           const agent = agentResult[0];
 
           return {
-            id: proposal.id,
-            taskId: proposal.taskId,
-            workerAddress: proposal.workerAddress,
-            proposalText: proposal.proposalText,
-            estimatedDuration: proposal.estimatedDuration,
-            status: proposal.status as any,
-            submittedAt: proposal.submittedAt.toISOString(),
+            id: pitch.id,
+            taskId: pitch.taskId,
+            workerAddress: pitch.workerAddress,
+            pitchText: pitch.proposalText,
+            estimatedDuration: pitch.estimatedDuration,
+            status: pitch.status as any,
+            submittedAt: pitch.submittedAt.toISOString(),
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,
@@ -124,7 +120,7 @@ export const pitchesRouter = router({
         summary: 'Select a pitch (requester only)',
       },
     })
-    .input(ProposalSelectSchema)
+    .input(PitchSelectSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -162,12 +158,12 @@ export const pitchesRouter = router({
       await ctx.db
         .update(proposals)
         .set({ status: 'selected' })
-        .where(eq(proposals.id, input.proposalId));
+        .where(eq(proposals.id, input.pitchId));
 
       await ctx.db
         .update(proposals)
         .set({ status: 'rejected' })
-        .where(and(eq(proposals.taskId, input.taskId), ne(proposals.id, input.proposalId)));
+        .where(and(eq(proposals.taskId, input.taskId), ne(proposals.id, input.pitchId)));
 
       await ctx.db
         .update(tasks)

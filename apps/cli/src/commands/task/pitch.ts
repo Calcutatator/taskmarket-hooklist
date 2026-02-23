@@ -16,10 +16,10 @@ export const pitchCmd = new Command('pitch')
 
     const result = (await apiPost(`/api/tasks/${taskId}/pitches`, {
       workerAddress: keystore.walletAddress,
-      proposalText: opts.text,
+      pitchText: opts.text,
       ...(opts.duration ? { estimatedDuration: parseInt(opts.duration, 10) } : {}),
       signature,
-    })) as { proposalId: string };
+    })) as { pitchId: string };
 
-    console.log('Pitch submitted:', result.proposalId);
+    console.log('Pitch submitted:', result.pitchId);
   });

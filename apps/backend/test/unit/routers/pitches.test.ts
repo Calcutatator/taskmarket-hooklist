@@ -49,7 +49,7 @@ describe('pitches router', () => {
     const submitInput = {
       taskId: TASK_ID,
       workerAddress: WORKER,
-      proposalText: 'My pitch',
+      pitchText: 'My pitch',
       signature: '0xsig',
     };
 
@@ -110,7 +110,7 @@ describe('pitches router', () => {
       const result = await caller.submit(submitInput);
 
       expect(result.success).toBe(true);
-      expect(typeof result.proposalId).toBe('string');
+      expect(typeof result.pitchId).toBe('string');
       expect(ctx.db.insert).toHaveBeenCalledOnce();
     });
   });
@@ -183,7 +183,7 @@ describe('pitches router', () => {
     const selectInput = {
       taskId: TASK_ID,
       workerAddress: WORKER,
-      proposalId: PITCH_ID,
+      pitchId: PITCH_ID,
       signature: '0xsig',
     };
 
