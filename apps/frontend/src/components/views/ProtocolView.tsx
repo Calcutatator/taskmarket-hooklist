@@ -209,11 +209,7 @@ export function ProtocolView() {
             </p>
             <div className="flex flex-wrap gap-3">
               <Button variant="outline" asChild>
-                <a
-                  href="https://taskmarketdocs-production.up.railway.app"
-                  target="_blank"
-                  rel="noreferrer"
-                >
+                <a href="https://docs-market.daydreams.systems" target="_blank" rel="noreferrer">
                   DOCS
                 </a>
               </Button>

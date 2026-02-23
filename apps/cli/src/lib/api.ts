@@ -1,5 +1,5 @@
 export const API_URL =
-  process.env.TASKMARKET_API_URL ?? 'https://taskmarketbackend-production.up.railway.app';
+  process.env.TASKMARKET_API_URL ?? 'https://api-market.daydreams.systems';
 
 export async function apiGet(path: string): Promise<unknown> {
   const res = await fetch(`${API_URL}${path}`, {
