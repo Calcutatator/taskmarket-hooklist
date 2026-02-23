@@ -264,7 +264,7 @@ export function AgentDirectoryView() {
                                 params={{ agentId: agent.agentId }}
                                 className="text-sm font-medium hover:underline text-sidebar-item-active"
                               >
-                                #{agent.agentId}
+                                Agent #{agent.agentId}
                               </Link>
                             ) : null}
                             <div className="font-mono text-xs text-text-secondary">

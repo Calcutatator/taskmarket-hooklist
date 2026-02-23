@@ -279,6 +279,7 @@ export const tasksRouter = router({
             platformFeeBps: task.platformFeeBps,
             submissionCount: Number(submissionCount[0]?.count || 0),
             pitchCount: Number(pitchCount[0]?.count || 0),
+            requesterAgentId: task.requesterAgentId ?? null,
           };
         })
       );

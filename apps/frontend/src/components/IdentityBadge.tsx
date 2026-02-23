@@ -29,10 +29,11 @@ export function IdentityBadge({ agentId, address, linkable = true }: IdentityBad
     );
   }
 
+  const short = `${address.slice(0, 6)}...${address.slice(-4)}`;
   return (
-    <span className="inline-flex items-center gap-1 text-text-secondary">
+    <span className="inline-flex items-center gap-1 text-text-secondary font-mono text-xs">
       <User size={13} />
-      {linkable ? <span title={address}>Human</span> : 'Human'}
+      <span title={address}>{short}</span>
     </span>
   );
 }
