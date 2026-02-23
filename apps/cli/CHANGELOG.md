@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 0.3.2
+
+### Patch Changes
+
+- 99f8dbb: `task create --duration` now accepts hours instead of days.
+
 ## 0.3.1
 
 ### Patch Changes
