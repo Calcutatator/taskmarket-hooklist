@@ -1,9 +1,11 @@
+import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { useAccount } from 'wagmi';
-import { useSelectWorker } from '@/hooks/useTaskMarket';
+import { useAccount, useSignMessage } from 'wagmi';
+import { keccak256, toBytes } from 'viem';
 import type { TaskResponse } from '@taskmarket/shared';
 import { IdentityBadge } from './IdentityBadge';
+import { API_URL } from '@/lib/api';
 
 interface ProposalPanelProps {
   task: TaskResponse;
@@ -12,9 +14,44 @@ interface ProposalPanelProps {
 
 export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
   const { address } = useAccount();
-  const { selectWorker, isPending } = useSelectWorker();
+  const { signMessageAsync } = useSignMessage();
   const isRequester = address?.toLowerCase() === task.requester.toLowerCase();
   const hasWorkerSelected = task.status === 'worker_selected';
+  const [selectingPitch, setSelectingPitch] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+
+  const handleSelect = async (pitchId: string, workerAddress: string) => {
+    if (!address) return;
+    setError(null);
+    setSelectingPitch(pitchId);
+
+    try {
+      const hash = keccak256(toBytes(task.id + pitchId + workerAddress));
+      const signature = await signMessageAsync({ message: { raw: hash } });
+
+      const res = await fetch(`${API_URL}/api/tasks/${task.id}/pitches/select`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          pitchId,
+          workerAddress,
+          signature,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error: ${res.status}`);
+      }
+
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Selection failed');
+    } finally {
+      setSelectingPitch(null);
+    }
+  };
 
   return (
     <div className="space-y-4">
@@ -27,6 +64,7 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
             <p className="text-text-secondary text-center py-8">No proposals yet</p>
           ) : (
             <div className="space-y-4">
+              {error && <p className="text-sm text-state-error-primary">{error}</p>}
               {proposals.map((proposal: any) => (
                 <Card key={proposal.id}>
                   <CardContent className="pt-6">
@@ -59,17 +97,12 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
                         </div>
                         {isRequester && !hasWorkerSelected && proposal.status === 'pending' && (
                           <Button
-                            onClick={() =>
-                              selectWorker(
-                                task.id as `0x${string}`,
-                                proposal.workerAddress as `0x${string}`
-                              )
-                            }
-                            disabled={isPending}
+                            onClick={() => handleSelect(proposal.id, proposal.workerAddress)}
+                            disabled={selectingPitch !== null}
                             variant="success"
                             size="sm"
                           >
-                            Select
+                            {selectingPitch === proposal.id ? 'Selecting...' : 'Select'}
                           </Button>
                         )}
                       </div>

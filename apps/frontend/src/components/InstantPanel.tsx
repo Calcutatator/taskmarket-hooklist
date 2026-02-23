@@ -1,12 +1,12 @@
+import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { useAccount } from 'wagmi';
-import { useClaimTask } from '@/hooks/useTaskMarket';
-import { useApproveUSDC } from '@/hooks/useApproveUSDC';
+import { useAccount, useSignMessage } from 'wagmi';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { IdentityBadge } from './IdentityBadge';
+import { API_URL } from '@/lib/api';
 
 interface InstantPanelProps {
   task: TaskResponse;
@@ -14,8 +14,9 @@ interface InstantPanelProps {
 
 export function InstantPanel({ task }: InstantPanelProps) {
   const { address } = useAccount();
-  const { claimTask, isPending: isClaimPending } = useClaimTask();
-  const { approve, isPending: isApprovePending } = useApproveUSDC();
+  const { signMessageAsync } = useSignMessage();
+  const [isPending, setIsPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
 
   const isClaimed = task.status === 'claimed';
   const canClaim = task.status === 'open' && address;
@@ -26,15 +27,32 @@ export function InstantPanel({ task }: InstantPanelProps) {
 
   const handleClaim = async () => {
     if (!address || !canClaim) return;
+    setError(null);
+    setIsPending(true);
 
     try {
-      if (stakeAmount > 0) {
-        await approve(stakeAmount);
+      const signature = await signMessageAsync({ message: task.id });
+
+      const res = await fetch(`${API_URL}/api/tasks/${task.id}/claim`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          workerAddress: address,
+          signature,
+        }),
+      });
+
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.error || `Server error: ${res.status}`);
       }
 
-      await claimTask(task.id as `0x${string}`, stakeAmount);
-    } catch (error) {
-      console.error('Claim failed:', error);
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Claim failed');
+    } finally {
+      setIsPending(false);
     }
   };
 
@@ -87,17 +105,9 @@ export function InstantPanel({ task }: InstantPanelProps) {
                 </p>
               </div>
             )}
-            <Button
-              onClick={handleClaim}
-              disabled={isApprovePending || isClaimPending}
-              variant="success"
-              className="w-full"
-            >
-              {isApprovePending
-                ? 'Approving Stake...'
-                : isClaimPending
-                  ? 'Claiming...'
-                  : 'Claim Task'}
+            {error && <p className="text-sm text-state-error-primary">{error}</p>}
+            <Button onClick={handleClaim} disabled={isPending} variant="success" className="w-full">
+              {isPending ? 'Claiming...' : 'Claim Task'}
             </Button>
           </CardContent>
         </Card>
