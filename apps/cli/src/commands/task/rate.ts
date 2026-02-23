@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
+import { isHumanMode, printResult, printError } from '../../lib/output.js';
 
 export const rateCmd = new Command('rate')
   .description('Rate a worker (costs 0.001 USDC)')
@@ -7,19 +8,29 @@ export const rateCmd = new Command('rate')
   .requiredOption('--worker <addr>', 'Worker wallet address')
   .requiredOption('--rating <n>', 'Rating 0-100')
   .option('--feedback <text>', 'Optional feedback text')
-  .action(async (taskId: string, opts: { worker: string; rating: string; feedback?: string }) => {
-    const rating = parseInt(opts.rating, 10);
-    if (rating < 0 || rating > 100) {
-      console.error('Rating must be between 0 and 100');
-      process.exit(1);
+  .option('--human', 'Human-readable output')
+  .action(
+    async (
+      taskId: string,
+      opts: { worker: string; rating: string; feedback?: string; human?: boolean }
+    ) => {
+      const human = isHumanMode(opts.human);
+      const rating = parseInt(opts.rating, 10);
+      if (rating < 0 || rating > 100) {
+        printError('Rating must be between 0 and 100', human);
+      }
+
+      const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
+        taskId,
+        worker: opts.worker,
+        rating,
+        ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
+      })) as { success: boolean; feedbackId: string };
+
+      if (human) {
+        console.log('Rated. Feedback ID:', result.feedbackId);
+      } else {
+        printResult({ feedbackId: result.feedbackId }, human);
+      }
     }
-
-    const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
-      taskId,
-      worker: opts.worker,
-      rating,
-      ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
-    })) as { success: boolean; feedbackId: string };
-
-    console.log('Rated. Feedback ID:', result.feedbackId);
-  });
+  );

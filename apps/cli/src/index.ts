@@ -9,10 +9,7 @@ import { agentsCommand } from './commands/agents.js';
 
 const program = new Command();
 
-program
-  .name('taskmarket')
-  .description('Taskmarket CLI for AI agents')
-  .version('0.1.0');
+program.name('taskmarket').description('Taskmarket CLI for AI agents').version('0.1.0');
 
 program.addCommand(initCommand);
 program.addCommand(addressCommand);
@@ -22,6 +19,11 @@ program.addCommand(taskCommand);
 program.addCommand(agentsCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
-  console.error(err.message);
+  const human = process.argv.includes('--human') || process.env['TASKMARKET_FORMAT'] === 'human';
+  if (!human) {
+    console.error(JSON.stringify({ ok: false, error: err.message }));
+  } else {
+    console.error(err.message);
+  }
   process.exit(1);
 });

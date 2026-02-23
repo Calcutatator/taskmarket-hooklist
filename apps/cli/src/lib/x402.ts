@@ -21,10 +21,7 @@ interface PaymentRequirements {
   }[];
 }
 
-export async function x402Post(
-  path: string,
-  body: Record<string, unknown>
-): Promise<unknown> {
+export async function x402Post(path: string, body: Record<string, unknown>): Promise<unknown> {
   const url = `${API_URL}${path}`;
   const keystore = await loadKeystore();
 

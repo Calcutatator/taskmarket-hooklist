@@ -118,6 +118,12 @@ importers:
         specifier: ^2.41.2
         version: 2.45.3(typescript@5.7.3)
     devDependencies:
+      '@taskmarket/eslint-config':
+        specifier: workspace:*
+        version: link:../../packages/eslint-config
+      '@taskmarket/prettier-config':
+        specifier: workspace:*
+        version: link:../../packages/prettier-config
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.33

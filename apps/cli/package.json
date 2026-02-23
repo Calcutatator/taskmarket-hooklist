@@ -5,11 +5,14 @@
   "bin": {
     "taskmarket": "./dist/index.js"
   },
+  "prettier": "@taskmarket/prettier-config",
   "dependencies": {
     "commander": "^12.0.0",
     "viem": "^2.41.2"
   },
   "devDependencies": {
+    "@taskmarket/eslint-config": "workspace:*",
+    "@taskmarket/prettier-config": "workspace:*",
     "@types/node": "^20.11.0",
     "tsx": "^4.7.0",
     "typescript": "^5.3.3",
@@ -24,6 +27,11 @@
   "scripts": {
     "build": "tsc",
     "dev": "tsx src/index.ts",
+    "lint:check": "eslint src/",
+    "lint:write": "eslint src/ --fix",
+    "format:check": "prettier --check src/",
+    "format:write": "prettier --write src/",
+    "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest watch"
   }

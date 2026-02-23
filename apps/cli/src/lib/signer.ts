@@ -40,9 +40,7 @@ export async function signMessage(message: string, keystore: Keystore): Promise<
   return sig;
 }
 
-export function createSignFn(
-  keystore: Keystore
-): (typedData: TypedData) => Promise<string> {
+export function createSignFn(keystore: Keystore): (typedData: TypedData) => Promise<string> {
   return (typedData) => signTypedData(typedData, keystore);
 }
 
@@ -56,7 +54,13 @@ export async function createTransferAuthorization(
     payTo: string;
     amount: string;
     maxTimeoutSeconds: number;
-    extra: { eip712: { domain: Record<string, unknown>; types: Record<string, unknown>; primaryType: string } };
+    extra: {
+      eip712: {
+        domain: Record<string, unknown>;
+        types: Record<string, unknown>;
+        primaryType: string;
+      };
+    };
   },
   keystore: Keystore
 ): Promise<{ authorization: Record<string, string>; signature: string }> {

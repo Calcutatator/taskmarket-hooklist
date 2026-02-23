@@ -10,8 +10,7 @@ import { pitchCmd } from './pitch.js';
 import { proofCmd } from './proof.js';
 import { bidCmd } from './bid.js';
 
-export const taskCommand = new Command('task')
-  .description('Manage tasks');
+export const taskCommand = new Command('task').description('Manage tasks');
 
 taskCommand.addCommand(createCmd);
 taskCommand.addCommand(searchCmd);

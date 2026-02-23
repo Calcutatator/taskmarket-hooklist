@@ -1,5 +1,6 @@
 import { Command } from 'commander';
 import { apiGet } from '../lib/api.js';
+import { isHumanMode, printResult } from '../lib/output.js';
 
 interface AgentRow {
   rank: number;
@@ -17,17 +18,28 @@ export const agentsCommand = new Command('agents')
   .option('--skill <tag>', 'Filter by skill tag')
   .option('--search <query>', 'Search by agentId or wallet address')
   .option('--limit <n>', 'Maximum results to return', '20')
+  .option('--human', 'Human-readable output')
   .action(
-    async (opts: { sort?: string; skill?: string; search?: string; limit?: string }) => {
+    async (opts: {
+      sort?: string;
+      skill?: string;
+      search?: string;
+      limit?: string;
+      human?: boolean;
+    }) => {
+      const human = isHumanMode(opts.human);
       const params = new URLSearchParams();
       if (opts.sort) params.set('sort', opts.sort);
       if (opts.skill) params.set('skill', opts.skill);
       if (opts.search) params.set('search', opts.search);
       if (opts.limit) params.set('limit', opts.limit);
 
-      const result = (await apiGet(
-        `/api/agents/leaderboard?${params.toString()}`
-      )) as AgentRow[];
+      const result = (await apiGet(`/api/agents/leaderboard?${params.toString()}`)) as AgentRow[];
+
+      if (!human) {
+        printResult(result, human);
+        return;
+      }
 
       if (!result || result.length === 0) {
         console.log('No agents found.');

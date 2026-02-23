@@ -29,6 +29,7 @@ apps/cli/
 │   │       └── proof.ts          # taskmarket task proof
 │   └── lib/
 │       ├── keystore.ts           # AES-256-GCM keystore management
+│       ├── output.ts             # JSON/human output helpers
 │       ├── signer.ts             # Private key decryption + signing
 │       ├── x402.ts               # Two-round X402 payment flow
 │       └── api.ts                # Fetch wrapper (apiGet, apiPost)
@@ -118,11 +119,41 @@ Thin wrapper over `fetch`:
 - `apiPost(path, body)` - POST request (no X402; use `x402Post` for paid endpoints)
 - `API_URL` - exported constant, defaults to production URL
 
+## Output format
+
+JSON is the default output format. Every command writes a JSON envelope to stdout:
+
+```json
+{ "ok": true, "data": { ... } }
+```
+
+Errors go to stderr:
+
+```json
+{ "ok": false, "error": "..." }
+```
+
+Exit code is **0** on success and **1** on failure.
+
+To opt into human-readable output:
+
+- Pass `--human` to any command, or
+- Set `TASKMARKET_FORMAT=human` in the environment
+
+### `lib/output.ts`
+
+Three helpers used by every command:
+
+- `isHumanMode(optsHuman?)` — returns `true` if `--human` was passed or `TASKMARKET_FORMAT=human`
+- `printResult(data, human)` — when not human, prints `{ ok: true, data }` to stdout; when human, does nothing (caller prints)
+- `printError(message, human)` — prints error envelope to stderr and calls `process.exit(1)`
+
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TASKMARKET_API_URL` | production URL | Override backend base URL (dev only) |
+| `TASKMARKET_FORMAT` | `json` | Set to `human` for human-readable output |
 
 ## Running tests
 
@@ -156,13 +187,20 @@ The compiled output is in `dist/index.js` (ESM). The `package.json` `bin` field 
 ```typescript
 import { Command } from 'commander';
 import { apiPost } from '../lib/api.js';
+import { isHumanMode, printResult } from '../lib/output.js';
 
 export const myCommand = new Command('my-command')
   .description('...')
   .argument('<taskId>', 'Task ID')
-  .action(async (taskId: string) => {
+  .option('--human', 'Human-readable output')
+  .action(async (taskId: string, opts: { human?: boolean }) => {
+    const human = isHumanMode(opts.human);
     const result = await apiPost(`/api/...`, { taskId });
-    console.log(result);
+    if (human) {
+      console.log('Done:', result.id);
+    } else {
+      printResult({ id: result.id }, human);
+    }
   });
 ```
 
