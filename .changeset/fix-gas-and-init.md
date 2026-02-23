@@ -1,6 +1,5 @@
 ---
 "@lucid-agents/taskmarket": patch
-"@taskmarket/backend": patch
 ---
 
 Fix device registration timeout and platform-wide gas reliability
