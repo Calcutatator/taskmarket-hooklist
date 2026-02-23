@@ -7,6 +7,7 @@ import { statsCommand } from './commands/stats.js';
 import { taskCommand } from './commands/task/index.js';
 import { agentsCommand } from './commands/agents.js';
 import { inboxCommand } from './commands/inbox.js';
+import { depositCommand } from './commands/deposit.js';
 
 const program = new Command();
 
@@ -19,6 +20,7 @@ program.addCommand(statsCommand);
 program.addCommand(taskCommand);
 program.addCommand(agentsCommand);
 program.addCommand(inboxCommand);
+program.addCommand(depositCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   const human = process.argv.includes('--human') || process.env['TASKMARKET_FORMAT'] === 'human';

@@ -55,6 +55,9 @@ export const initCommand = new Command('init')
       console.log('Wallet created:', address);
       console.log('Agent ID:', agentId);
       console.log('Keystore saved to:', getKeystorePath());
+      console.log('');
+      console.log('Next: deposit Base Sepolia USDC to your wallet before creating tasks.');
+      console.log('Run `taskmarket deposit` for deposit instructions.');
     } else {
       printResult({ address, agentId }, human);
     }
