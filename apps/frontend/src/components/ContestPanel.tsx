@@ -1,22 +1,150 @@
+import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { useAccount } from 'wagmi';
-import { useAcceptSubmission } from '@/hooks/useTaskMarket';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import type { TaskResponse } from '@taskmarket/shared';
 import { IdentityBadge } from './IdentityBadge';
+import { API_URL } from '@/lib/api';
 
 interface ContestPanelProps {
   task: TaskResponse;
   submissions: any[];
 }
 
+type AcceptStep = 'idle' | 'payment' | 'signing' | 'submitting';
+
 export function ContestPanel({ task, submissions }: ContestPanelProps) {
   const { address } = useAccount();
-  const { acceptSubmission, isPending } = useAcceptSubmission();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { switchChainAsync } = useSwitchChain();
   const isRequester = address?.toLowerCase() === task.requester.toLowerCase();
+  const [acceptingWorker, setAcceptingWorker] = useState<string | null>(null);
+  const [step, setStep] = useState<AcceptStep>('idle');
+  const [error, setError] = useState<string | null>(null);
 
-  const handleAccept = (workerAddress: string) => {
-    acceptSubmission(task.id as `0x${string}`, workerAddress as `0x${string}`);
+  const handleAccept = async (workerAddress: string) => {
+    if (!address) return;
+    setError(null);
+    setAcceptingWorker(workerAddress);
+
+    try {
+      const url = `${API_URL}/api/tasks/${task.id}/accept`;
+      const body = { taskId: task.id, worker: workerAddress };
+
+      // Step 1: probe to get 402 payment requirements
+      setStep('payment');
+      const probeRes = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+
+      if (probeRes.status !== 402) {
+        throw new Error(`Expected 402, got ${probeRes.status}`);
+      }
+
+      const payReq = await probeRes.json();
+      const accepted = payReq.accepts?.[0];
+      if (!accepted) throw new Error('No payment terms in 402 response');
+
+      // Step 2: sign EIP-712 TransferWithAuthorization
+      setStep('signing');
+      const eip712 = accepted.extra?.eip712;
+      const requiredChainId = Number(eip712.domain.chainId);
+
+      try {
+        await switchChainAsync({ chainId: requiredChainId });
+      } catch {
+        // eslint-disable-next-line @typescript-eslint/no-explicit-any
+        await (window as any).ethereum?.request({
+          method: 'wallet_switchEthereumChain',
+          params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
+        });
+      }
+
+      const nonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+        .map((b) => b.toString(16).padStart(2, '0'))
+        .join('')}` as `0x${string}`;
+      const validBefore = BigInt(Math.floor(Date.now() / 1000) + 300);
+
+      const signature = await signTypedDataAsync({
+        domain: {
+          name: eip712.domain.name,
+          version: eip712.domain.version,
+          chainId: Number(eip712.domain.chainId),
+          verifyingContract: eip712.domain.verifyingContract as `0x${string}`,
+        },
+        types: {
+          TransferWithAuthorization: eip712.types.TransferWithAuthorization,
+        },
+        primaryType: 'TransferWithAuthorization',
+        message: {
+          from: address,
+          to: accepted.payTo as `0x${string}`,
+          value: BigInt(accepted.amount),
+          validAfter: 0n,
+          validBefore,
+          nonce,
+        },
+      });
+
+      // Step 3: retry with payment-signature header
+      setStep('submitting');
+      const paymentPayload = {
+        x402Version: 2,
+        scheme: accepted.scheme,
+        network: accepted.network,
+        payload: {
+          signature,
+          authorization: {
+            from: address,
+            to: accepted.payTo,
+            value: accepted.amount,
+            validAfter: '0',
+            validBefore: validBefore.toString(),
+            nonce,
+          },
+        },
+        accepted: {
+          scheme: accepted.scheme,
+          network: accepted.network,
+          amount: accepted.amount,
+          asset: accepted.asset,
+          payTo: accepted.payTo,
+          maxTimeoutSeconds: accepted.maxTimeoutSeconds,
+        },
+      };
+
+      const acceptRes = await fetch(url, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'payment-signature': btoa(JSON.stringify(paymentPayload)),
+        },
+        body: JSON.stringify(body),
+      });
+
+      if (!acceptRes.ok) {
+        const err = await acceptRes.json().catch(() => ({}));
+        throw new Error(err.error || `Server error: ${acceptRes.status}`);
+      }
+
+      // Reload page to reflect updated task status
+      window.location.reload();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Acceptance failed');
+    } finally {
+      setStep('idle');
+      setAcceptingWorker(null);
+    }
+  };
+
+  const acceptLabel = (workerAddress: string) => {
+    if (acceptingWorker !== workerAddress) return 'Accept';
+    if (step === 'payment') return 'Fetching payment terms...';
+    if (step === 'signing') return 'Sign in MetaMask...';
+    if (step === 'submitting') return 'Submitting...';
+    return 'Accept';
   };
 
   return (
@@ -30,6 +158,7 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
             <p className="text-text-secondary text-center py-8">No submissions yet</p>
           ) : (
             <div className="space-y-4">
+              {error && <p className="text-sm text-state-error-primary">{error}</p>}
               {submissions.map((submission: any) => (
                 <Card key={submission.id}>
                   <CardContent className="pt-6">
@@ -52,10 +181,10 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
                       {isRequester && task.status === 'pending_approval' && (
                         <Button
                           onClick={() => handleAccept(submission.workerAddress)}
-                          disabled={isPending}
+                          disabled={step !== 'idle'}
                           variant="success"
                         >
-                          Accept
+                          {acceptLabel(submission.workerAddress)}
                         </Button>
                       )}
                     </div>
