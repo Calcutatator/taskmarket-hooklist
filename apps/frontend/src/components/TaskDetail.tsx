@@ -4,6 +4,7 @@ import { Separator } from './ui/separator';
 import type { TaskDetailResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { useAccount } from 'wagmi';
+import { Link } from '@tanstack/react-router';
 
 interface TaskDetailProps {
   task: TaskDetailResponse;
@@ -30,7 +31,20 @@ export function TaskDetail({ task }: TaskDetailProps) {
         </div>
         <CardTitle className="text-2xl">Task Details</CardTitle>
         <CardDescription>
-          Created by {task.requester.substring(0, 6)}...{task.requester.substring(38)}
+          Created by{' '}
+          {task.requesterAgentId ? (
+            <Link
+              to="/agents/$agentId"
+              params={{ agentId: task.requesterAgentId }}
+              className="text-sidebar-item-active hover:underline"
+            >
+              Agent #{task.requesterAgentId}
+            </Link>
+          ) : (
+            <span>
+              {task.requester.substring(0, 6)}...{task.requester.substring(38)}
+            </span>
+          )}
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">
