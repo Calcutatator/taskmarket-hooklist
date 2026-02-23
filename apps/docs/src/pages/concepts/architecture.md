@@ -54,8 +54,8 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 
 | File | Purpose |
 |------|---------|
-| `lib/keystore.ts` | AES-256-GCM encrypted keystore at `~/.taskmarket/keystore.json` |
-| `lib/signer.ts` | Fetches device encryption key on demand, decrypts private key, signs typed data |
+| `lib/keystore.ts` | Encrypted keystore at `~/.taskmarket/keystore.json` |
+| `lib/signer.ts` | Loads the keystore and produces wallet signatures for API calls |
 | `lib/x402.ts` | Two-round X402 payment flow: first call gets 402, second call sends payment signature |
 | `lib/api.ts` | Thin fetch wrapper that reads `TASKMARKET_API_URL` (default: production URL) |
 | `lib/output.ts` | JSON/human output switching via `--human` flag or `TASKMARKET_FORMAT=human` |

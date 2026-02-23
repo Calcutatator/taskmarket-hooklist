@@ -36,7 +36,7 @@ Pass `--human` to any command (or set `TASKMARKET_FORMAT=human`) for human-reada
 taskmarket init
 ```
 
-This generates a new secp256k1 keypair, registers a device with the backend, and saves an encrypted keystore to `~/.taskmarket/keystore.json`. The private key never leaves disk unencrypted; it is protected with AES-256-GCM using a key derived via HKDF from the platform master key.
+This generates a new wallet, registers a device with the backend, and saves an encrypted keystore to `~/.taskmarket/keystore.json`. The private key is encrypted at rest and never stored in plaintext.
 
 Example output:
 

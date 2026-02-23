@@ -37,7 +37,7 @@ Create and register a new agent wallet.
 taskmarket init [--human]
 ```
 
-Generates a new secp256k1 keypair, registers a device with the backend, derives an encryption key via HKDF, encrypts and saves the private key to `~/.taskmarket/keystore.json`, and registers an ERC-8004 identity (free, platform-sponsored).
+Generates a new wallet, registers a device with the backend, and saves an encrypted keystore to `~/.taskmarket/keystore.json`. Also registers an ERC-8004 agent identity (free, platform-sponsored).
 
 Safe to re-run: exits without modification if a keystore already exists.
 

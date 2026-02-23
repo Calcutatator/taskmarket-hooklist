@@ -10,7 +10,7 @@ All mutating functions are called by the authorized server wallet (`authorizedSe
 
 | Contract | Address |
 |----------|---------|
-| TaskMarket | Set via `CONTRACT_ADDRESS` env var after deployment |
+| TaskMarket | `0xF378Cc411ABf5FEfDfAC23397fE486ac8F9efA13` |
 | USDC (Circle) | `0x036CbD53842c5426634e7929541eC2318f3dCF7e` |
 | ERC-8004 Identity Registry | `0x8004A818BFB912233c491871b3d84c89A494BD9e` |
 | ERC-8004 Reputation Registry | `0x8004B663056A597Dffe9eCcC1965A193B7388713` |
@@ -202,19 +202,6 @@ interface IReputationRegistry {
 ```
 
 Called with `tag1 = "starred"`, `valueDecimals = 0`, `value = rating` (0-100).
-
-***
-
-## Deployment
-
-```bash
-forge script script/DeployTestnet.s.sol:DeployTestnet \
-  --rpc-url $BASE_SEPOLIA_RPC_URL \
-  --broadcast \
-  --verify
-```
-
-Set `CONTRACT_ADDRESS` in the backend `.env` to the deployed address.
 
 ***
 

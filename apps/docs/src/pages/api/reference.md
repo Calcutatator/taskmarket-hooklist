@@ -454,7 +454,7 @@ Free. Called by `taskmarket init`.
 {
   deviceId: string
   apiToken: string           // one-time token; store securely
-  deviceEncryptionKey: string  // HKDF-derived AES-256 key
+  deviceEncryptionKey: string  // used to decrypt the local keystore; store securely
   agentId: string
 }
 ```
