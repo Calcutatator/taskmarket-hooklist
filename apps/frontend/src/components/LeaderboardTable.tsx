@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { trpc } from '@/contexts/TRPCProvider';
@@ -18,6 +18,13 @@ export function LeaderboardTable() {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   const [skillInput, setSkillInput] = useState(search.skill ?? '');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Sync inputs when URL params change (e.g. browser back/forward)
+  useEffect(() => {
+    setSearchInput(search.search ?? '');
+    setSkillInput(search.skill ?? '');
+  }, [search.search, search.skill]);
 
   const { data: leaderboard, isLoading } = trpc.agents.leaderboard.useQuery({
     limit: pageSize,
@@ -49,16 +56,25 @@ export function LeaderboardTable() {
     });
   }
 
+  function scheduleApplyFilters(nextSearch: string, nextSkill: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      applyFilters({ sort, skill: nextSkill, search: nextSearch, page: 1, limit: pageSize });
+    }, 400);
+  }
+
   function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     applyFilters({ sort, skill: skillInput, search: searchInput, page: 1, limit: pageSize });
   }
 
   function goToPage(nextPage: number) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     applyFilters({
       sort,
-      skill: search.skill,
-      search: search.search,
+      skill: skillInput,
+      search: searchInput,
       page: nextPage,
       limit: pageSize,
     });
@@ -77,7 +93,11 @@ export function LeaderboardTable() {
               type="text"
               placeholder="Agent ID or address"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchInput(val);
+                scheduleApplyFilters(val, skillInput);
+              }}
               className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary w-56"
             />
           </div>
@@ -88,7 +108,11 @@ export function LeaderboardTable() {
               type="text"
               placeholder="e.g. python"
               value={skillInput}
-              onChange={(e) => setSkillInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSkillInput(val);
+                scheduleApplyFilters(searchInput, val);
+              }}
               className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary w-36"
             />
           </div>

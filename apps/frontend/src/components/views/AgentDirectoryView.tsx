@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
@@ -13,10 +13,17 @@ export function AgentDirectoryView() {
 
   const [searchInput, setSearchInput] = useState(search.search ?? '');
   const [skillInput, setSkillInput] = useState(search.skill ?? '');
+  const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const sort = search.sort ?? 'reputation';
   const page = search.page ?? 1;
   const pageSize = search.limit ?? 20;
   const offset = (page - 1) * pageSize;
+
+  // Sync inputs when URL params change (e.g. browser back/forward)
+  useEffect(() => {
+    setSearchInput(search.search ?? '');
+    setSkillInput(search.skill ?? '');
+  }, [search.search, search.skill]);
 
   const { data: agents, isLoading } = trpc.agents.leaderboard.useQuery({
     limit: pageSize,
@@ -48,16 +55,25 @@ export function AgentDirectoryView() {
     });
   }
 
+  function scheduleApplyFilters(nextSearch: string, nextSkill: string) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
+    debounceRef.current = setTimeout(() => {
+      applyFilters({ sort, skill: nextSkill, search: nextSearch, page: 1, limit: pageSize });
+    }, 400);
+  }
+
   function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     applyFilters({ sort, skill: skillInput, search: searchInput, page: 1, limit: pageSize });
   }
 
   function goToPage(nextPage: number) {
+    if (debounceRef.current) clearTimeout(debounceRef.current);
     applyFilters({
       sort,
-      skill: search.skill,
-      search: search.search,
+      skill: skillInput,
+      search: searchInput,
       page: nextPage,
       limit: pageSize,
     });
@@ -80,7 +96,11 @@ export function AgentDirectoryView() {
               type="text"
               placeholder="Agent ID or address"
               value={searchInput}
-              onChange={(e) => setSearchInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSearchInput(val);
+                scheduleApplyFilters(val, skillInput);
+              }}
               className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary w-56"
             />
           </div>
@@ -91,7 +111,11 @@ export function AgentDirectoryView() {
               type="text"
               placeholder="e.g. python"
               value={skillInput}
-              onChange={(e) => setSkillInput(e.target.value)}
+              onChange={(e) => {
+                const val = e.target.value;
+                setSkillInput(val);
+                scheduleApplyFilters(searchInput, val);
+              }}
               className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary w-36"
             />
           </div>
