@@ -78,7 +78,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <div>
-          <h3 className="font-semibold mb-2">Description</h3>
+          <h3 className="font-heading font-semibold mb-2">Description</h3>
           <p className="text-text-secondary whitespace-pre-wrap">{task.description}</p>
         </div>
 
@@ -86,7 +86,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <h3 className="font-semibold text-sm mb-1">
+            <h3 className="font-heading font-semibold text-sm mb-1">
               {task.mode === 'auction' ? 'Max Price' : 'Reward'}
             </h3>
             <p className="text-2xl font-bold text-state-success-primary">
@@ -96,17 +96,17 @@ export function TaskDetail({ task }: TaskDetailProps) {
           </div>
 
           <div>
-            <h3 className="font-semibold text-sm mb-1">Platform Fee</h3>
+            <h3 className="font-heading font-semibold text-sm mb-1">Platform Fee</h3>
             <p className="text-lg">{(task.platformFeeBps / 100).toFixed(1)}%</p>
           </div>
 
           <div>
-            <h3 className="font-semibold text-sm mb-1">Created</h3>
+            <h3 className="font-heading font-semibold text-sm mb-1">Created</h3>
             <p className="text-sm text-text-secondary">{createdDate.toLocaleString()}</p>
           </div>
 
           <div>
-            <h3 className="font-semibold text-sm mb-1">Expires</h3>
+            <h3 className="font-heading font-semibold text-sm mb-1">Expires</h3>
             <p className="text-sm text-text-secondary">{expiryDate.toLocaleString()}</p>
           </div>
         </div>
@@ -115,7 +115,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-1">Stake Required</h3>
+              <h3 className="font-heading font-semibold text-sm mb-1">Stake Required</h3>
               <p className="text-sm text-text-secondary">
                 {(task.stakeBps / 100).toFixed(1)}% of reward
               </p>
@@ -127,7 +127,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-1">Pitch Deadline</h3>
+              <h3 className="font-heading font-semibold text-sm mb-1">Pitch Deadline</h3>
               <p className="text-sm text-text-secondary">
                 {new Date(task.pitchDeadline).toLocaleString()}
               </p>
@@ -139,7 +139,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-1">Metric</h3>
+              <h3 className="font-heading font-semibold text-sm mb-1">Metric</h3>
               <p className="text-sm text-text-secondary">{task.metricDescription}</p>
               <p className="text-sm font-semibold mt-1">Target: {task.metricTarget}</p>
             </div>
@@ -152,13 +152,13 @@ export function TaskDetail({ task }: TaskDetailProps) {
             <div className="space-y-2">
               {task.maxPrice && (
                 <div>
-                  <h3 className="font-semibold text-sm mb-1">Max Price</h3>
+                  <h3 className="font-heading font-semibold text-sm mb-1">Max Price</h3>
                   <p className="text-sm text-text-secondary">{formatUSDC(task.maxPrice)} USDC</p>
                 </div>
               )}
               {task.bidDeadline && (
                 <div>
-                  <h3 className="font-semibold text-sm mb-1">Bid Deadline</h3>
+                  <h3 className="font-heading font-semibold text-sm mb-1">Bid Deadline</h3>
                   <p className="text-sm text-text-secondary">
                     {new Date(task.bidDeadline).toLocaleString()}
                   </p>
@@ -172,7 +172,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-2">Tags</h3>
+              <h3 className="font-heading font-semibold text-sm mb-2">Tags</h3>
               <div className="flex flex-wrap gap-2">
                 {task.tags.map((tag) => (
                   <Badge key={tag} variant="outline">
@@ -188,7 +188,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-2">Available actions</h3>
+              <h3 className="font-heading font-semibold text-sm mb-2">Available actions</h3>
               <div className="space-y-2">
                 {visibleActions.map((a, i) => (
                   <CopyCommand

@@ -43,7 +43,7 @@ export function TaskDetailView() {
       <PageLayout>
         <Card>
           <CardContent className="py-12 text-center">
-            <h2 className="text-2xl font-bold mb-2">Task Not Found</h2>
+            <h2 className="font-heading text-2xl font-bold mb-2">Task Not Found</h2>
             <p className="text-text-secondary">The task you're looking for doesn't exist.</p>
           </CardContent>
         </Card>

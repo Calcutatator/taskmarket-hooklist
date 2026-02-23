@@ -317,7 +317,7 @@ export function CreateTaskForm() {
 
             {mode === 'claim' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Claim Mode Settings</h3>
+                <h3 className="font-heading font-semibold">Claim Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="stakeRequired"
@@ -360,7 +360,7 @@ export function CreateTaskForm() {
 
             {mode === 'pitch' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Pitch Mode Settings</h3>
+                <h3 className="font-heading font-semibold">Pitch Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="pitchDeadline"
@@ -379,7 +379,7 @@ export function CreateTaskForm() {
 
             {mode === 'benchmark' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Benchmark Mode Settings</h3>
+                <h3 className="font-heading font-semibold">Benchmark Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="metricDescription"
@@ -411,7 +411,7 @@ export function CreateTaskForm() {
 
             {mode === 'auction' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Auction Mode Settings</h3>
+                <h3 className="font-heading font-semibold">Auction Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="bidDeadline"
