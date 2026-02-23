@@ -5,6 +5,8 @@ interface TaskListFilters {
   mode?: string;
   status?: string;
   minReward?: string;
+  maxReward?: string;
+  deadlineHours?: string;
   tags?: string;
 }
 
@@ -12,6 +14,9 @@ interface TaskListProps {
   filters?: TaskListFilters;
   search?: string;
 }
+
+const toBaseUnits = (val: string | undefined) =>
+  val ? String(Math.round(Number(val) * 1_000_000)) : undefined;
 
 export function TaskList({ filters, search }: TaskListProps) {
   const { data, isLoading, error } = trpc.tasks.list.useQuery({
@@ -34,7 +39,9 @@ export function TaskList({ filters, search }: TaskListProps) {
           .map((t) => t.trim())
           .filter(Boolean)
       : undefined,
-    minReward: filters?.minReward || undefined,
+    minReward: toBaseUnits(filters?.minReward) || undefined,
+    maxReward: toBaseUnits(filters?.maxReward) || undefined,
+    deadlineHours: filters?.deadlineHours ? Number(filters.deadlineHours) : undefined,
   });
 
   if (isLoading) {

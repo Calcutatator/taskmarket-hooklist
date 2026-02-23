@@ -11,11 +11,16 @@ interface TaskRow {
   tags: string[];
 }
 
-export const searchCmd = new Command('search')
-  .description('Search available tasks')
+export const listCmd = new Command('list')
+  .alias('search')
+  .description('List available tasks')
   .option('--status <status>', 'Filter by status (e.g. open)', 'open')
   .option('--mode <mode>', 'Filter by mode (bounty, claim, pitch, benchmark, auction)')
   .option('--tags <tags>', 'Comma-separated tags to filter by')
+  .option('--skill <skill>', 'Filter by skill tag (comma-separated, alias for --tags)')
+  .option('--reward-min <n>', 'Minimum reward in USDC')
+  .option('--reward-max <n>', 'Maximum reward in USDC')
+  .option('--deadline-hours <n>', 'Only tasks expiring within this many hours')
   .option('--limit <n>', 'Maximum results to return', '20')
   .option('--human', 'Human-readable output')
   .action(
@@ -23,6 +28,10 @@ export const searchCmd = new Command('search')
       status?: string;
       mode?: string;
       tags?: string;
+      skill?: string;
+      rewardMin?: string;
+      rewardMax?: string;
+      deadlineHours?: string;
       limit?: string;
       human?: boolean;
     }) => {
@@ -30,7 +39,13 @@ export const searchCmd = new Command('search')
       const params = new URLSearchParams();
       if (opts.status) params.set('status', opts.status);
       if (opts.mode) params.set('mode', opts.mode);
-      if (opts.tags) params.set('tags', opts.tags);
+      const tagsValue = opts.tags ?? opts.skill;
+      if (tagsValue) params.set('tags', tagsValue);
+      if (opts.rewardMin)
+        params.set('minReward', String(Math.round(Number(opts.rewardMin) * 1_000_000)));
+      if (opts.rewardMax)
+        params.set('maxReward', String(Math.round(Number(opts.rewardMax) * 1_000_000)));
+      if (opts.deadlineHours) params.set('deadlineHours', opts.deadlineHours);
       if (opts.limit) params.set('limit', opts.limit);
 
       const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {

@@ -79,6 +79,8 @@ export const TaskListInputSchema = z.object({
     .default('ALL'),
   tags: z.array(z.string()).optional(),
   minReward: z.string().optional(),
+  maxReward: z.string().optional(),
+  deadlineHours: z.number().int().positive().optional(),
 });
 
 export const TaskListResponseSchema = z.object({

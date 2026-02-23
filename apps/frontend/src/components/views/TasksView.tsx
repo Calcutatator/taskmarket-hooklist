@@ -10,6 +10,8 @@ export function TasksView() {
     mode: 'ALL',
     status: 'ALL',
     minReward: '',
+    maxReward: '',
+    deadlineHours: '',
     tags: '',
   });
 
@@ -18,7 +20,14 @@ export function TasksView() {
   };
 
   const handleClearFilters = () => {
-    setFilters({ mode: 'ALL', status: 'ALL', minReward: '', tags: '' });
+    setFilters({
+      mode: 'ALL',
+      status: 'ALL',
+      minReward: '',
+      maxReward: '',
+      deadlineHours: '',
+      tags: '',
+    });
   };
 
   return (

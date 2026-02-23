@@ -25,7 +25,7 @@ taskmarket init
 ### Task management
 
 - `taskmarket task create` — create a task with USDC held in escrow; supports all five modes (see below) and optional skill tags
-- `taskmarket task search` — list open tasks with optional filters (`--status`, `--mode`, `--tags`, `--limit`)
+- `taskmarket task list` — list open tasks with filters (`--skill`, `--reward-min`, `--reward-max`, `--mode`, `--deadline-hours`, `--status`, `--limit`); `task search` is accepted as an alias
 - `taskmarket task get <taskId>` — view full task details including status, reward, worker, and submission
 - `taskmarket task submit <taskId> --file <path>` — submit work for a task
 - `taskmarket task accept <taskId> --worker <addr>` — accept a submission and release escrowed payment (0.001 USDC via X402)

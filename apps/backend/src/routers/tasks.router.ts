@@ -7,7 +7,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents } from '../db/schema';
-import { eq, sql, desc, and } from 'drizzle-orm';
+import { eq, sql, desc, and, gt, lte } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
 import { getServerConfig } from '../config/env';
@@ -122,6 +122,15 @@ export const tasksRouter = router({
       }
       if (input.minReward) {
         conditions.push(sql`${tasks.reward} >= ${input.minReward}`);
+      }
+      if (input.maxReward) {
+        conditions.push(sql`${tasks.reward} <= ${input.maxReward}`);
+      }
+      if (input.deadlineHours) {
+        const now = new Date();
+        const cutoff = new Date(Date.now() + input.deadlineHours * 3_600_000);
+        conditions.push(gt(tasks.expiryTime, now));
+        conditions.push(lte(tasks.expiryTime, cutoff));
       }
 
       let query = ctx.db.select().from(tasks);

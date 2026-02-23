@@ -9,18 +9,29 @@ interface TaskFilterBarProps {
     mode: string;
     tags: string;
     minReward: string;
+    maxReward: string;
+    deadlineHours: string;
   };
   onFilterChange: (key: string, value: string) => void;
   onClear?: () => void;
 }
 
-const DEFAULT_FILTERS = { mode: 'ALL', status: 'ALL', minReward: '', tags: '' };
+const DEFAULT_FILTERS = {
+  mode: 'ALL',
+  status: 'ALL',
+  minReward: '',
+  maxReward: '',
+  deadlineHours: '',
+  tags: '',
+};
 
 export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBarProps) {
   const isDirty =
     filters.mode !== DEFAULT_FILTERS.mode ||
     filters.status !== DEFAULT_FILTERS.status ||
     filters.minReward !== DEFAULT_FILTERS.minReward ||
+    filters.maxReward !== DEFAULT_FILTERS.maxReward ||
+    filters.deadlineHours !== DEFAULT_FILTERS.deadlineHours ||
     filters.tags !== DEFAULT_FILTERS.tags;
 
   return (
@@ -81,6 +92,28 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
             placeholder="design, frontend"
             value={filters.tags}
             onChange={(e) => onFilterChange('tags', e.target.value)}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="maxReward">Max Reward (USDC)</Label>
+          <Input
+            id="maxReward"
+            type="number"
+            placeholder="any"
+            value={filters.maxReward}
+            onChange={(e) => onFilterChange('maxReward', e.target.value)}
+          />
+        </div>
+
+        <div>
+          <Label htmlFor="deadlineHours">Expires within (hours)</Label>
+          <Input
+            id="deadlineHours"
+            type="number"
+            placeholder="any"
+            value={filters.deadlineHours}
+            onChange={(e) => onFilterChange('deadlineHours', e.target.value)}
           />
         </div>
       </div>
