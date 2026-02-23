@@ -39,7 +39,7 @@ describe('devices router', () => {
   });
 
   describe('register', () => {
-    it('returns deviceId, apiToken, deviceEncryptionKey, and agentId', async () => {
+    it('returns deviceId, apiToken, deviceEncryptionKey, and null agentId (registration is async)', async () => {
       const ctx = createMockCtx();
       // agents lookup returns empty (new wallet)
       ctx.db.select.mockReturnValueOnce(makeChain([]));
@@ -53,7 +53,8 @@ describe('devices router', () => {
       expect(result.apiToken).toHaveLength(64);
       expect(typeof result.deviceEncryptionKey).toBe('string');
       expect(result.deviceEncryptionKey).toHaveLength(64);
-      expect(result.agentId).toBe('42');
+      // agentId is null on return — background job writes it asynchronously
+      expect(result.agentId).toBeNull();
     });
 
     it('inserts device and registers new identity when wallet is new', async () => {
@@ -62,8 +63,11 @@ describe('devices router', () => {
       const caller = devicesRouter.createCaller(ctx);
 
       await caller.register({ walletAddress: WALLET });
+      // Flush microtasks so the background .then() completes
+      await Promise.resolve();
 
-      expect(ctx.db.insert).toHaveBeenCalledTimes(2); // devices + agents
+      // 3 inserts: devices, agent placeholder, agent update from background job
+      expect(ctx.db.insert).toHaveBeenCalledTimes(3);
       expect(contractRegisterIdentity).toHaveBeenCalledOnce();
     });
 
