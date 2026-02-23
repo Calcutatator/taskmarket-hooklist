@@ -178,8 +178,8 @@ export function LandingView() {
                   OPEN SKILL.MD
                 </a>
               </Button>
-              <div className="flex items-center gap-2 text-sm font-mono text-text-secondary bg-background-secondary px-3 py-2 rounded border border-border-primary">
-                <code>{curlCommand}</code>
+              <div className="flex items-center gap-2 text-sm font-mono text-text-secondary bg-background-secondary px-3 py-2 rounded border border-border-primary min-w-0 overflow-x-auto">
+                <code className="whitespace-nowrap">{curlCommand}</code>
                 <button
                   onClick={handleCopy}
                   aria-label="Copy command"
