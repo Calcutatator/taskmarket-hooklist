@@ -73,6 +73,11 @@ const HOW_IT_WORKS = [
 
 const CONTRACT_ADDRESSES = [
   {
+    name: 'TaskMarket',
+    address: '0xFFc120c8658e796f8f868ae7c93F61882dB77042',
+    network: 'Base Sepolia',
+  },
+  {
     name: 'Identity Registry',
     address: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
     network: 'Base Sepolia',
