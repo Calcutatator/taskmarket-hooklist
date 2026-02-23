@@ -51,7 +51,7 @@ mapping(bytes32 => uint256) public stakeForfeit;
 ### Enums
 
 ```solidity
-enum TaskMode { Contest, Instant, Proposal, Race }
+enum TaskMode { Bounty, Claim, Pitch, Benchmark, Auction }
 enum TaskStatus { Open, Claimed, WorkerSelected, PendingApproval, Accepted, Expired, Disputed }
 ```
 
@@ -71,7 +71,9 @@ struct Task {
     uint256 stakeAmount;
     address claimer;
     uint256 claimedAt;
-    uint256 proposalDeadline;
+    uint256 pitchDeadline;
+    uint256 bidDeadline;
+    uint256 maxPrice;
     uint16 feeBps;
 }
 ```
@@ -92,10 +94,12 @@ Average rating = `(totalStars * 100) / ratedTasks` (returns value scaled by 100,
 
 | Function | Visibility | Modifier | Description |
 |----------|------------|----------|-------------|
-| `createTask(taskId, requester, reward, duration, mode, proposalDeadline)` | external | onlyServer | Create task, escrow USDC |
-| `claimTask(taskId, worker, stakeAmount)` | external | onlyServer | Claim Instant task |
-| `selectWorker(taskId, requester, worker)` | external | onlyServer | Select Proposal worker |
-| `acceptSubmission(taskId, requester, worker)` | external | onlyServer, nonReentrant | Release payment |
+| `createTask(taskId, requester, reward, duration, mode, pitchDeadline, bidDeadline)` | external | onlyServer | Create task, escrow USDC |
+| `claimTask(taskId, worker, stakeAmount)` | external | onlyServer | Claim Claim-mode task |
+| `selectWorker(taskId, requester, worker)` | external | onlyServer | Select Pitch-mode worker |
+| `submitBid(taskId, worker, price)` | external | onlyServer | Submit auction bid |
+| `selectLowestBidder(taskId)` | external | onlyServer | Assign lowest bidder after deadline |
+| `acceptSubmission(taskId, requester, worker)` | external | onlyServer, nonReentrant | Release payment (bid price for auction) |
 | `forfeitAndReopen(taskId, requester)` | external | onlyServer | Forfeit stake, reopen task |
 | `rateTask(taskId, requester, rating, workerAgentId, feedbackURI, feedbackHash)` | external | onlyServer | Rate worker (0-100) |
 | `refundExpired(taskId)` | external | nonReentrant | Refund expired task (anyone can call) |

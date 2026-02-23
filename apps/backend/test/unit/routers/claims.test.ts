@@ -16,7 +16,7 @@ function makeTask(overrides: Record<string, any> = {}) {
     id: TASK_ID,
     requester: '0xRequester',
     requesterPubkey: '0xRequester',
-    description: 'Instant task',
+    description: 'Claim task',
     reward: '1000000',
     escrowTxHash: '0xhash',
     createdAt: new Date(),
@@ -25,10 +25,10 @@ function makeTask(overrides: Record<string, any> = {}) {
     tags: [],
     worker: null,
     rating: null,
-    mode: 'instant',
+    mode: 'claim',
     stakeRequired: 0,
     stakeBps: 0,
-    proposalDeadline: null,
+    pitchDeadline: null,
     metricDescription: null,
     metricTarget: null,
     claimedBy: null,
@@ -54,12 +54,12 @@ describe('claims router', () => {
       await expect(caller.claim(claimInput)).rejects.toThrow('Task not found');
     });
 
-    it('throws when task mode is not instant', async () => {
+    it('throws when task mode is not claim', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'contest' })]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
       const caller = claimsRouter.createCaller(ctx);
-      await expect(caller.claim(claimInput)).rejects.toThrow('Not an Instant task');
+      await expect(caller.claim(claimInput)).rejects.toThrow('Not a Claim task');
     });
 
     it('throws when task is already claimed (status != open)', async () => {

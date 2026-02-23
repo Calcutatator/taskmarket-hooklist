@@ -35,10 +35,10 @@ function makeTask(overrides: Record<string, any> = {}) {
     tags: [],
     worker: null,
     rating: null,
-    mode: 'contest',
+    mode: 'bounty',
     stakeRequired: 0,
     stakeBps: 0,
-    proposalDeadline: null,
+    pitchDeadline: null,
     metricDescription: null,
     metricTarget: null,
     claimedBy: null,
@@ -61,9 +61,9 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not found');
     });
 
-    it('submits to open contest task and updates status to pending_approval', async () => {
+    it('submits to open bounty task and updates status to pending_approval', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'contest', status: 'open' })]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit(baseSubmitInput);
@@ -75,9 +75,9 @@ describe('submissions router', () => {
       expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
-    it('submits to open race task and updates status to pending_approval', async () => {
+    it('submits to open benchmark task and updates status to pending_approval', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'race', status: 'open' })]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'benchmark', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit(baseSubmitInput);
@@ -86,10 +86,10 @@ describe('submissions router', () => {
       expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
-    it('submits to claimed instant task by correct worker', async () => {
+    it('submits to claimed claim task by correct worker', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'instant', status: 'claimed', claimedBy: WORKER })])
+        makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -100,30 +100,30 @@ describe('submissions router', () => {
       expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
-    it('throws when instant task is not claimed', async () => {
+    it('throws when claim task is not claimed', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'instant', status: 'open' })])
+        makeChain([makeTask({ mode: 'claim', status: 'open' })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not claimed');
     });
 
-    it('throws when instant task claimer is a different worker', async () => {
+    it('throws when claim task claimer is a different worker', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'instant', status: 'claimed', claimedBy: '0xOtherWorker' })])
+        makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: '0xOtherWorker' })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Only claimer can submit');
     });
 
-    it('submits to proposal task by selected worker', async () => {
+    it('submits to pitch task by selected worker', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'proposal', status: 'worker_selected', worker: WORKER })])
+        makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', worker: WORKER })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -132,11 +132,11 @@ describe('submissions router', () => {
       expect(result.success).toBe(true);
     });
 
-    it('throws when proposal task worker is different', async () => {
+    it('throws when pitch task worker is different', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([
-          makeTask({ mode: 'proposal', status: 'worker_selected', worker: '0xOtherWorker' }),
+          makeTask({ mode: 'pitch', status: 'worker_selected', worker: '0xOtherWorker' }),
         ])
       );
 
@@ -146,10 +146,10 @@ describe('submissions router', () => {
       );
     });
 
-    it('throws when proposal task worker is not yet selected', async () => {
+    it('throws when pitch task worker is not yet selected', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'proposal', status: 'open', worker: null })])
+        makeChain([makeTask({ mode: 'pitch', status: 'open', worker: null })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);

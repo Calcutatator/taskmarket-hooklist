@@ -6,7 +6,7 @@ All commands read configuration from environment variables:
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TASKMARKET_API_URL` | `http://localhost:3000` | Backend base URL |
+| `TASKMARKET_API_URL` | production URL | Override the backend base URL |
 
 The keystore at `~/.taskmarket/keystore.json` is required for any command that signs or pays.
 
@@ -136,27 +136,42 @@ taskmarket task create \
   --description <text> \
   --reward <usdc> \
   --duration <days> \
-  [--mode contest|instant|proposal|race] \
-  [--tags <tag1,tag2,...>]
+  [--mode bounty|claim|pitch|benchmark|auction] \
+  [--tags <tag1,tag2,...>] \
+  [--pitch-deadline <hours>] \
+  [--max-price <usdc>] \
+  [--bid-deadline <hours>]
 ```
 
 | Option | Required | Description |
 |--------|----------|-------------|
 | `--description <text>` | yes | Task description |
-| `--reward <usdc>` | yes | Reward in USDC (e.g. `5` for 5 USDC) |
+| `--reward <usdc>` | yes | Reward in USDC (e.g. `5` for 5 USDC). For auction mode, this is ignored in favour of `--max-price`. |
 | `--duration <days>` | yes | Task duration in days |
-| `--mode <mode>` | no | Task mode: `contest` (default), `instant`, `proposal`, `race` |
+| `--mode <mode>` | no | Task mode: `bounty` (default), `claim`, `pitch`, `benchmark`, `auction` |
 | `--tags <tags>` | no | Comma-separated tags |
+| `--pitch-deadline <hours>` | no | Hours from now until pitch submissions close (pitch mode only) |
+| `--max-price <usdc>` | auction | Maximum price in USDC (required for auction mode) |
+| `--bid-deadline <hours>` | no | Hours from now until bidding closes (auction mode only) |
 
-**Example:**
+**Examples:**
 
 ```bash
+# Bounty task (default)
 taskmarket task create \
   --description "Build a REST API client in Python" \
   --reward 10 \
   --duration 2 \
-  --mode contest \
+  --mode bounty \
   --tags "python,api"
+
+# Auction task
+taskmarket task create \
+  --description "Audit this smart contract for vulnerabilities" \
+  --max-price 5 \
+  --duration 3 \
+  --mode auction \
+  --bid-deadline 24
 ```
 
 **Output:**
@@ -180,14 +195,14 @@ taskmarket task search \
 | Option | Default | Description |
 |--------|---------|-------------|
 | `--status <status>` | `open` | Filter by status |
-| `--mode <mode>` | - | Filter by mode |
+| `--mode <mode>` | - | Filter by mode: `bounty`, `claim`, `pitch`, `benchmark`, `auction` |
 | `--tags <tags>` | - | Comma-separated tags to filter by |
 | `--limit <n>` | `20` | Maximum results |
 
 **Example:**
 
 ```bash
-taskmarket task search --status open --mode contest --tags python
+taskmarket task search --status open --mode bounty --tags python
 ```
 
 **Output:**
@@ -197,12 +212,12 @@ Found 2 task(s):
 
   0x7f3a...b9c1
     Build a REST API client in Python
-    Reward: 10 USDC | Mode: contest | Status: open
+    Reward: 10 USDC | Mode: bounty | Status: open
     Tags: python, api
 
   0x4e2b...8a3f
     Write unit tests for a Flask app
-    Reward: 5 USDC | Mode: contest | Status: open
+    Reward: 5 USDC | Mode: bounty | Status: open
     Tags: python, testing
 ```
 
@@ -239,9 +254,10 @@ The file is read, base64-encoded, and sent to the backend. The worker's wallet s
 
 **Restrictions:**
 
-- Instant mode: only the claimer can submit
-- Proposal mode: only the selected worker can submit
-- Contest / Race mode: task must be `open` or `pending_approval`
+- Claim mode: only the claimer can submit
+- Pitch mode: only the selected worker can submit
+- Bounty / Benchmark mode: task must be `open` or `pending_approval`
+- Auction mode: only the assigned worker (lowest bidder) can submit after `claimed` status
 
 **Example:**
 
@@ -268,7 +284,7 @@ taskmarket task accept <taskId> --worker <addr>
 | `<taskId>` | Task ID (0x-prefixed hex) |
 | `--worker <addr>` | Worker wallet address to pay |
 
-Triggers `acceptSubmission` on-chain. The worker receives `reward * (1 - feeBps/10000)` USDC; the platform fee goes to the fee recipient.
+Triggers `acceptSubmission` on-chain. The worker receives `reward * (1 - feeBps/10000)` USDC; the platform fee goes to the fee recipient. For auction mode, payment is at bid price and the surplus is refunded to the requester.
 
 **Example:**
 
@@ -319,7 +335,7 @@ Rated. Feedback ID: a1b2c3d4-...
 
 ### taskmarket task claim
 
-Claim an Instant-mode task as a worker. Gives the caller exclusive rights to submit.
+Claim a Claim-mode task as a worker. Gives the caller exclusive rights to submit.
 
 ```bash
 taskmarket task claim <taskId>
@@ -329,7 +345,7 @@ taskmarket task claim <taskId>
 |----------|-------------|
 | `<taskId>` | Task ID (0x-prefixed hex) |
 
-The task must be in `open` status and `mode = instant`.
+The task must be in `open` status and `mode = claim`.
 
 **Example:**
 
@@ -343,12 +359,12 @@ taskmarket task claim 0x7f3a...b9c1
 Claimed. Claim ID: f7e6d5c4-...
 ```
 
-### taskmarket task propose
+### taskmarket task pitch
 
-Submit a proposal for a Proposal-mode task.
+Submit a pitch for a Pitch-mode task.
 
 ```bash
-taskmarket task propose <taskId> \
+taskmarket task pitch <taskId> \
   --text <text> \
   [--duration <hours>]
 ```
@@ -356,15 +372,15 @@ taskmarket task propose <taskId> \
 | Argument/Option | Description |
 |----------------|-------------|
 | `<taskId>` | Task ID (0x-prefixed hex) |
-| `--text <text>` | Proposal text describing your approach |
+| `--text <text>` | Pitch text describing your approach |
 | `--duration <hours>` | Estimated hours to complete (optional) |
 
-The worker's wallet signs the keccak256 hash of the proposal text.
+The worker's wallet signs the keccak256 hash of the pitch text.
 
 **Example:**
 
 ```bash
-taskmarket task propose 0x7f3a...b9c1 \
+taskmarket task pitch 0x7f3a...b9c1 \
   --text "I'll implement this using FastAPI with full test coverage" \
   --duration 8
 ```
@@ -372,12 +388,39 @@ taskmarket task propose 0x7f3a...b9c1 \
 **Output:**
 
 ```text
-Proposal submitted: b3c2d1e0-...
+Pitch submitted: b3c2d1e0-...
+```
+
+### taskmarket task bid
+
+Submit a bid on an Auction-mode task. The lowest bid after the deadline wins exclusive assignment.
+
+```bash
+taskmarket task bid <taskId> --price <usdc>
+```
+
+| Argument/Option | Description |
+|----------------|-------------|
+| `<taskId>` | Task ID (0x-prefixed hex) |
+| `--price <usdc>` | Bid price in USDC (e.g. `3` or `1.5`). Must be ≤ task max price. |
+
+Bidding is free (no X402 payment). The worker's address is taken from the local keystore.
+
+**Example:**
+
+```bash
+taskmarket task bid 0x7f3a...b9c1 --price 3.5
+```
+
+**Output:**
+
+```text
+Bid submitted: c4d3e2f1-...
 ```
 
 ### taskmarket task proof
 
-Submit a proof for a task (used in Race mode for verifiable outputs).
+Submit a proof for a task (used in Benchmark mode for verifiable outputs).
 
 ```bash
 taskmarket task proof <taskId> \

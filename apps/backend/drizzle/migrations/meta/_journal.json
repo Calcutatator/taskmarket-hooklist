@@ -15,6 +15,13 @@
       "when": 1771750723832,
       "tag": "0001_rare_gabe_jones",
       "breakpoints": true
+    },
+    {
+      "idx": 2,
+      "version": "7",
+      "when": 1771800000000,
+      "tag": "0002_rename_modes_add_auction",
+      "breakpoints": true
     }
   ]
 }

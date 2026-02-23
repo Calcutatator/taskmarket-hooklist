@@ -14,14 +14,19 @@ import { Textarea } from './ui/textarea';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 
 const TASK_MODES = [
-  { value: 'contest', label: 'Contest', description: 'Multiple workers submit; you pick the best' },
-  { value: 'instant', label: 'Instant', description: 'First worker claims exclusive rights' },
+  { value: 'bounty', label: 'Bounty', description: 'Multiple workers submit; you pick the best' },
+  { value: 'claim', label: 'Claim', description: 'First worker claims exclusive rights' },
   {
-    value: 'proposal',
-    label: 'Proposal',
+    value: 'pitch',
+    label: 'Pitch',
     description: 'Workers propose; you select one to execute',
   },
-  { value: 'race', label: 'Race', description: 'First to hit metric target wins' },
+  { value: 'benchmark', label: 'Benchmark', description: 'First to hit metric target wins' },
+  {
+    value: 'auction',
+    label: 'Auction',
+    description: 'Workers bid down from your max price',
+  },
 ] as const;
 
 type Step = 'form' | 'payment' | 'signing' | 'submitting';
@@ -37,7 +42,7 @@ export function CreateTaskForm() {
   const form = useForm<TaskCreate>({
     resolver: zodResolver(TaskCreateSchema),
     defaultValues: {
-      mode: 'contest',
+      mode: 'bounty',
       tags: [],
       stakeRequired: false,
       stakeBps: 1000,
@@ -54,7 +59,12 @@ export function CreateTaskForm() {
     try {
       // Convert human-readable USDC (e.g. "1.00") to base units (e.g. "1000000")
       const rewardBaseUnits = parseUnits(data.reward, 6).toString();
-      const body = { ...data, reward: rewardBaseUnits };
+      const body: Record<string, unknown> = { ...data, reward: rewardBaseUnits };
+
+      // Convert maxPrice to base units if provided
+      if (data.maxPrice) {
+        body.maxPrice = parseUnits(data.maxPrice, 6).toString();
+      }
 
       // Step 1: Probe the endpoint to get 402 payment requirements
       setStep('payment');
@@ -241,7 +251,9 @@ export function CreateTaskForm() {
                 name="reward"
                 render={({ field }) => (
                   <FormItem>
-                    <FormLabel>Reward (USDC)</FormLabel>
+                    <FormLabel>
+                      {mode === 'auction' ? 'Max Price (USDC)' : 'Reward (USDC)'}
+                    </FormLabel>
                     <FormControl>
                       <Input
                         type="number"
@@ -301,9 +313,9 @@ export function CreateTaskForm() {
               )}
             />
 
-            {mode === 'instant' && (
+            {mode === 'claim' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Instant Mode Settings</h3>
+                <h3 className="font-semibold">Claim Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="stakeRequired"
@@ -344,15 +356,15 @@ export function CreateTaskForm() {
               </div>
             )}
 
-            {mode === 'proposal' && (
+            {mode === 'pitch' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Proposal Mode Settings</h3>
+                <h3 className="font-semibold">Pitch Mode Settings</h3>
                 <FormField
                   control={form.control}
-                  name="proposalDeadline"
+                  name="pitchDeadline"
                   render={({ field }) => (
                     <FormItem>
-                      <FormLabel>Proposal Deadline</FormLabel>
+                      <FormLabel>Pitch Deadline</FormLabel>
                       <FormControl>
                         <Input type="datetime-local" {...field} />
                       </FormControl>
@@ -363,9 +375,9 @@ export function CreateTaskForm() {
               </div>
             )}
 
-            {mode === 'race' && (
+            {mode === 'benchmark' && (
               <div className="space-y-4 p-4 bg-background-secondary rounded">
-                <h3 className="font-semibold">Race Mode Settings</h3>
+                <h3 className="font-semibold">Benchmark Mode Settings</h3>
                 <FormField
                   control={form.control}
                   name="metricDescription"
@@ -387,6 +399,30 @@ export function CreateTaskForm() {
                       <FormLabel>Target Value</FormLabel>
                       <FormControl>
                         <Input placeholder="e.g., 500" {...field} />
+                      </FormControl>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+              </div>
+            )}
+
+            {mode === 'auction' && (
+              <div className="space-y-4 p-4 bg-background-secondary rounded">
+                <h3 className="font-semibold">Auction Mode Settings</h3>
+                <FormField
+                  control={form.control}
+                  name="bidDeadline"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Bid Deadline (hours from now)</FormLabel>
+                      <FormControl>
+                        <Input
+                          type="number"
+                          placeholder="24"
+                          {...field}
+                          onChange={(e) => field.onChange(parseInt(e.target.value))}
+                        />
                       </FormControl>
                       <FormMessage />
                     </FormItem>

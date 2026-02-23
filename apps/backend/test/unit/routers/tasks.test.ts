@@ -4,7 +4,7 @@ import { createMockCtx, makeChain } from '../helpers';
 // Mock contract service before importing router
 vi.mock('../../../src/services/contract', () => ({
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
-  MODE_MAP: { contest: 0, instant: 1, proposal: 2, race: 3 },
+  MODE_MAP: { bounty: 0, claim: 1, pitch: 2, benchmark: 3, auction: 4 },
 }));
 
 // Mock config so no real env vars are needed
@@ -34,7 +34,7 @@ const baseTaskInput = {
   reward: '1000000',
   duration: 7,
   tags: ['test'],
-  mode: 'contest' as const,
+  mode: 'bounty' as const,
   stakeRequired: false,
   stakeBps: 0,
 };
@@ -52,10 +52,10 @@ const mockTaskRow = {
   tags: ['test'],
   worker: null,
   rating: null,
-  mode: 'contest',
+  mode: 'bounty',
   stakeRequired: 0,
   stakeBps: 0,
-  proposalDeadline: null,
+  pitchDeadline: null,
   metricDescription: null,
   metricTarget: null,
   claimedBy: null,
@@ -92,10 +92,10 @@ describe('tasks router', () => {
       const ctx = createMockCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
-      await caller.create({ ...baseTaskInput, mode: 'instant' });
+      await caller.create({ ...baseTaskInput, mode: 'claim' });
 
       const [, , , , mode] = (contractCreateTask as any).mock.calls[0];
-      expect(mode).toBe(1); // MODE_MAP.instant
+      expect(mode).toBe(1); // MODE_MAP.claim
     });
   });
 
@@ -112,7 +112,7 @@ describe('tasks router', () => {
 
     it('returns task with counts when found', async () => {
       const ctx = createMockCtx();
-      // task lookup → submission count → proposal count
+      // task lookup → submission count → pitch count
       ctx.db.select
         .mockReturnValueOnce(makeChain([mockTaskRow]))
         .mockReturnValueOnce(makeChain([{ count: 3 }]))
@@ -124,7 +124,7 @@ describe('tasks router', () => {
       expect(result).not.toBeNull();
       expect(result!.id).toBe(mockTaskRow.id);
       expect(result!.submissionCount).toBe(3);
-      expect(result!.proposalCount).toBe(1);
+      expect(result!.pitchCount).toBe(1);
     });
   });
 
@@ -136,7 +136,7 @@ describe('tasks router', () => {
         .mockReturnValueOnce(makeChain([mockTaskRow]))
         // submission count for task
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
-        // proposal count for task
+        // pitch count for task
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
 
       const caller = tasksRouter.createCaller(ctx);

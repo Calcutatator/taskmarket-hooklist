@@ -5,11 +5,12 @@ import { agentsRouter } from './routers/agents.router';
 import { submissionsRouter } from './routers/submissions.router';
 import { acceptanceRouter } from './routers/acceptance.router';
 import { claimsRouter } from './routers/claims.router';
-import { proposalsRouter } from './routers/proposals.router';
+import { pitchesRouter } from './routers/pitches.router';
 import { proofsRouter } from './routers/proofs.router';
 import { feedbacksRouter } from './routers/feedbacks.router';
 import { identityRouter } from './routers/identity.router';
 import { devicesRouter } from './routers/devices.router';
+import { bidsRouter } from './routers/bids.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -18,11 +19,12 @@ export const appRouter = router({
   submissions: submissionsRouter,
   acceptance: acceptanceRouter,
   claims: claimsRouter,
-  proposals: proposalsRouter,
+  pitches: pitchesRouter,
   proofs: proofsRouter,
   feedbacks: feedbacksRouter,
   identity: identityRouter,
   devices: devicesRouter,
+  bids: bidsRouter,
 });
 
 export type AppRouter = typeof appRouter;

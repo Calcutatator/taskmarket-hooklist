@@ -10,14 +10,14 @@ import { eq, and, ne } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractSelectWorker } from '../services/contract';
 
-export const proposalsRouter = router({
+export const pitchesRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
         method: 'POST',
-        path: '/tasks/{taskId}/proposals',
+        path: '/tasks/{taskId}/pitches',
         tags: ['Tasks'],
-        summary: 'Submit a proposal for a task',
+        summary: 'Submit a pitch for a task',
       },
     })
     .input(ProposalCreateSchema)
@@ -35,16 +35,16 @@ export const proposalsRouter = router({
 
       const task = taskResult[0];
 
-      if (task.mode !== 'proposal') {
-        throw new Error('Not a Proposal task');
+      if (task.mode !== 'pitch') {
+        throw new Error('Not a Pitch task');
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open for proposals');
+        throw new Error('Task not open for pitches');
       }
 
-      if (task.proposalDeadline && new Date() > task.proposalDeadline) {
-        throw new Error('Proposal deadline has passed');
+      if (task.pitchDeadline && new Date() > task.pitchDeadline) {
+        throw new Error('Pitch deadline has passed');
       }
 
       const existingProposal = await ctx.db
@@ -56,7 +56,7 @@ export const proposalsRouter = router({
         .limit(1);
 
       if (existingProposal.length > 0) {
-        throw new Error('Worker has already submitted a proposal');
+        throw new Error('Worker has already submitted a pitch');
       }
 
       const proposalId = randomUUID();
@@ -83,7 +83,7 @@ export const proposalsRouter = router({
         .from(proposals)
         .where(eq(proposals.taskId, input.taskId));
 
-      const proposalsWithStats = await Promise.all(
+      const pitchesWithStats = await Promise.all(
         results.map(async (proposal) => {
           const agentResult = await ctx.db
             .select()
@@ -112,16 +112,16 @@ export const proposalsRouter = router({
         })
       );
 
-      return proposalsWithStats;
+      return pitchesWithStats;
     }),
 
   select: publicProcedure
     .meta({
       openapi: {
         method: 'POST',
-        path: '/tasks/{taskId}/proposals/select',
+        path: '/tasks/{taskId}/pitches/select',
         tags: ['Tasks'],
-        summary: 'Select a proposal (requester only)',
+        summary: 'Select a pitch (requester only)',
       },
     })
     .input(ProposalSelectSchema)
@@ -141,8 +141,8 @@ export const proposalsRouter = router({
 
       const task = taskResult[0];
 
-      if (task.mode !== 'proposal') {
-        throw new Error('Not a Proposal task');
+      if (task.mode !== 'pitch') {
+        throw new Error('Not a Pitch task');
       }
 
       if (task.status !== 'open') {

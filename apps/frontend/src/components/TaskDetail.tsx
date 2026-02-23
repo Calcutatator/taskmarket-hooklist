@@ -9,7 +9,7 @@ interface TaskDetailProps {
 }
 
 export function TaskDetail({ task }: TaskDetailProps) {
-  const modeVariant = task.mode as 'contest' | 'instant' | 'proposal' | 'race';
+  const modeVariant = task.mode as 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction';
   const expiryDate = new Date(task.expiryTime);
   const createdDate = new Date(task.createdAt);
 
@@ -35,9 +35,12 @@ export function TaskDetail({ task }: TaskDetailProps) {
 
         <div className="grid grid-cols-2 gap-4">
           <div>
-            <h3 className="font-semibold text-sm mb-1">Reward</h3>
+            <h3 className="font-semibold text-sm mb-1">
+              {task.mode === 'auction' ? 'Max Price' : 'Reward'}
+            </h3>
             <p className="text-2xl font-bold text-state-success-primary">
-              {formatUSDC(task.reward)} USDC
+              {formatUSDC(task.mode === 'auction' && task.maxPrice ? task.maxPrice : task.reward)}{' '}
+              USDC
             </p>
           </div>
 
@@ -57,7 +60,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
           </div>
         </div>
 
-        {task.mode === 'instant' && task.stakeRequired && (
+        {task.mode === 'claim' && task.stakeRequired && (
           <>
             <Separator />
             <div>
@@ -69,25 +72,47 @@ export function TaskDetail({ task }: TaskDetailProps) {
           </>
         )}
 
-        {task.mode === 'proposal' && task.proposalDeadline && (
+        {task.mode === 'pitch' && task.pitchDeadline && (
           <>
             <Separator />
             <div>
-              <h3 className="font-semibold text-sm mb-1">Proposal Deadline</h3>
+              <h3 className="font-semibold text-sm mb-1">Pitch Deadline</h3>
               <p className="text-sm text-text-secondary">
-                {new Date(task.proposalDeadline).toLocaleString()}
+                {new Date(task.pitchDeadline).toLocaleString()}
               </p>
             </div>
           </>
         )}
 
-        {task.mode === 'race' && task.metricDescription && (
+        {task.mode === 'benchmark' && task.metricDescription && (
           <>
             <Separator />
             <div>
               <h3 className="font-semibold text-sm mb-1">Metric</h3>
               <p className="text-sm text-text-secondary">{task.metricDescription}</p>
               <p className="text-sm font-semibold mt-1">Target: {task.metricTarget}</p>
+            </div>
+          </>
+        )}
+
+        {task.mode === 'auction' && (
+          <>
+            <Separator />
+            <div className="space-y-2">
+              {task.maxPrice && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-1">Max Price</h3>
+                  <p className="text-sm text-text-secondary">{formatUSDC(task.maxPrice)} USDC</p>
+                </div>
+              )}
+              {task.bidDeadline && (
+                <div>
+                  <h3 className="font-semibold text-sm mb-1">Bid Deadline</h3>
+                  <p className="text-sm text-text-secondary">
+                    {new Date(task.bidDeadline).toLocaleString()}
+                  </p>
+                </div>
+              )}
             </div>
           </>
         )}

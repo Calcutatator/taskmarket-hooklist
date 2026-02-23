@@ -15,7 +15,8 @@ interface TaskListProps {
 
 export function TaskList({ filters, search }: TaskListProps) {
   const { data, isLoading, error } = trpc.tasks.list.useQuery({
-    mode: (filters?.mode as 'ALL' | 'contest' | 'instant' | 'proposal' | 'race') ?? 'ALL',
+    mode:
+      (filters?.mode as 'ALL' | 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction') ?? 'ALL',
     status:
       (filters?.status as
         | 'ALL'

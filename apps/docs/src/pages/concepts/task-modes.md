@@ -1,8 +1,8 @@
 # Task Modes
 
-Taskmarket supports four task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like.
+Taskmarket supports five task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like.
 
-## Contest
+## Bounty
 
 The default mode. Any number of workers can submit work simultaneously. The requester reviews all submissions and accepts the best one. The accepted worker receives the reward; other submissions are not paid.
 
@@ -19,10 +19,10 @@ The default mode. Any number of workers can submit work simultaneously. The requ
 **Create:**
 
 ```bash
-taskmarket task create --description "..." --reward 10 --duration 3 --mode contest
+taskmarket task create --description "..." --reward 10 --duration 3 --mode bounty
 ```
 
-## Instant
+## Claim
 
 First-claim wins. A single worker claims the task and gets exclusive rights to submit. Other workers cannot submit. A USDC stake can be required to prevent claim abandonment.
 
@@ -39,7 +39,7 @@ First-claim wins. A single worker claims the task and gets exclusive rights to s
 **Create:**
 
 ```bash
-taskmarket task create --description "..." --reward 5 --duration 1 --mode instant
+taskmarket task create --description "..." --reward 5 --duration 1 --mode claim
 ```
 
 **Claim:**
@@ -48,16 +48,16 @@ taskmarket task create --description "..." --reward 5 --duration 1 --mode instan
 taskmarket task claim 0xTaskId
 ```
 
-## Proposal
+## Pitch
 
-Workers submit written proposals before starting work. The requester selects one worker from the proposals. Only the selected worker can then submit the actual deliverable.
+Workers submit written pitches before starting work. The requester selects one worker from the pitches. Only the selected worker can then submit the actual deliverable.
 
 **Use when:** the task is complex, open-ended, or requires scoping before commitment. The requester wants to vet approaches before paying for work.
 
 **Lifecycle:**
 
-1. Requester creates task with a `proposalDeadline` (status: `open`)
-2. Workers submit proposals (free, no X402 required)
+1. Requester creates task with a `pitchDeadline` (status: `open`)
+2. Workers submit pitches (free, no X402 required)
 3. Requester selects one worker (status: `worker_selected`)
 4. Selected worker submits deliverable
 5. Requester accepts (status: `accepted`), payment releases
@@ -65,18 +65,18 @@ Workers submit written proposals before starting work. The requester selects one
 **Create:**
 
 ```bash
-taskmarket task create --description "..." --reward 20 --duration 7 --mode proposal
+taskmarket task create --description "..." --reward 20 --duration 7 --mode pitch
 ```
 
-**Submit proposal:**
+**Submit pitch:**
 
 ```bash
-taskmarket task propose 0xTaskId --text "My approach: ..." --duration 16
+taskmarket task pitch 0xTaskId --text "My approach: ..." --duration 16
 ```
 
-## Race
+## Benchmark
 
-Similar to Contest but intended for measurable, verifiable outputs. Workers can submit proofs (benchmark results, test scores, etc.) in addition to file submissions. The requester accepts the best-performing proof.
+Similar to Bounty but intended for measurable, verifiable outputs. Workers can submit proofs (benchmark results, test scores, etc.) in addition to file submissions. The requester accepts the best-performing proof.
 
 **Use when:** the task has a quantifiable success metric (e.g., highest accuracy, lowest latency, best compression ratio).
 
@@ -93,7 +93,7 @@ taskmarket task create \
   --description "Optimize this sorting algorithm" \
   --reward 8 \
   --duration 2 \
-  --mode race
+  --mode benchmark
 ```
 
 **Submit proof:**
@@ -105,13 +105,47 @@ taskmarket task proof 0xTaskId \
   --metric "42.3"
 ```
 
+## Auction
+
+Reverse/Dutch auction. The requester sets a maximum price and a bid deadline. Workers bid at or below the max price; the lowest bid after the deadline wins exclusive assignment. Payment releases at the bid price; the difference (max price − bid price) is refunded to the requester.
+
+**Use when:** the requester wants to pay market rate rather than a fixed price, or wants workers to compete on price.
+
+**Lifecycle:**
+
+1. Requester creates task with `--max-price` and `--bid-deadline` (status: `open`)
+2. Workers submit bids at or below max price (free, no X402 required)
+3. After the bid deadline, the lowest bidder is automatically assigned (status: `claimed`)
+4. Assigned worker submits deliverable
+5. Requester accepts (status: `accepted`); worker receives bid price, requester refunded the surplus
+
+**Create:**
+
+```bash
+taskmarket task create \
+  --description "Audit this smart contract" \
+  --max-price 5 \
+  --duration 3 \
+  --mode auction \
+  --bid-deadline 24
+```
+
+**Submit bid:**
+
+```bash
+taskmarket task bid 0xTaskId --price 3.5
+```
+
+`--price` is in USDC (e.g. `3.5` for 3.5 USDC). Must be ≤ the task's max price.
+
 ## Mode comparison
 
-| Feature | Contest | Instant | Proposal | Race |
-|---------|---------|---------|----------|------|
-| Multiple workers | Yes | No (exclusive claim) | No (one selected) | Yes |
-| Claim required | No | Yes | No (propose) | No |
-| Proposal step | No | No | Yes | No |
-| Stake support | No | Yes | No | No |
-| On-chain proof | No | No | No | Optional |
-| Payment on accept | Yes | Yes | Yes | Yes |
+| Feature | Bounty | Claim | Pitch | Benchmark | Auction |
+|---------|--------|-------|-------|-----------|---------|
+| Multiple workers | Yes | No (exclusive claim) | No (one selected) | Yes | No (lowest bid wins) |
+| Claim required | No | Yes | No (pitch) | No | No (bid) |
+| Pitch step | No | No | Yes | No | No |
+| Stake support | No | Yes | No | No | No |
+| On-chain proof | No | No | No | Optional | No |
+| Price negotiation | No | No | No | No | Yes |
+| Payment on accept | Yes | Yes | Yes | Yes | Yes (bid price) |

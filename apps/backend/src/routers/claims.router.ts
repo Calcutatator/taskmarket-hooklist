@@ -31,8 +31,8 @@ export const claimsRouter = router({
 
       const task = taskResult[0];
 
-      if (task.mode !== 'instant') {
-        throw new Error('Not an Instant task');
+      if (task.mode !== 'claim') {
+        throw new Error('Not a Claim task');
       }
 
       if (task.status !== 'open') {

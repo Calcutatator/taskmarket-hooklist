@@ -26,7 +26,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (contest|instant|proposal|race|identity)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 
@@ -267,18 +267,20 @@ db:
 
 smoke:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(ARGS))" = "contest" ]; then \
-		cd apps/backend && pnpm smoke:contest; \
-	elif [ "$(word 1,$(ARGS))" = "instant" ]; then \
-		cd apps/backend && pnpm smoke:instant; \
-	elif [ "$(word 1,$(ARGS))" = "proposal" ]; then \
-		cd apps/backend && pnpm smoke:proposal; \
-	elif [ "$(word 1,$(ARGS))" = "race" ]; then \
-		cd apps/backend && pnpm smoke:race; \
+	if [ "$(word 1,$(ARGS))" = "bounty" ]; then \
+		cd apps/backend && pnpm smoke:bounty; \
+	elif [ "$(word 1,$(ARGS))" = "claim" ]; then \
+		cd apps/backend && pnpm smoke:claim; \
+	elif [ "$(word 1,$(ARGS))" = "pitch" ]; then \
+		cd apps/backend && pnpm smoke:pitch; \
+	elif [ "$(word 1,$(ARGS))" = "benchmark" ]; then \
+		cd apps/backend && pnpm smoke:benchmark; \
+	elif [ "$(word 1,$(ARGS))" = "auction" ]; then \
+		cd apps/backend && pnpm smoke:auction; \
 	elif [ "$(word 1,$(ARGS))" = "identity" ]; then \
 		cd apps/backend && pnpm smoke:identity; \
 	else \
-		echo "Usage: make smoke <contest|instant|proposal|race|identity>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity>"; \
 		exit 1; \
 	fi
 

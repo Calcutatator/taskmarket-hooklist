@@ -34,10 +34,11 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="ALL">All Modes</SelectItem>
-              <SelectItem value="contest">Contest</SelectItem>
-              <SelectItem value="instant">Instant</SelectItem>
-              <SelectItem value="proposal">Proposal</SelectItem>
-              <SelectItem value="race">Race</SelectItem>
+              <SelectItem value="bounty">Bounty</SelectItem>
+              <SelectItem value="claim">Claim</SelectItem>
+              <SelectItem value="pitch">Pitch</SelectItem>
+              <SelectItem value="benchmark">Benchmark</SelectItem>
+              <SelectItem value="auction">Auction</SelectItem>
             </SelectContent>
           </Select>
         </div>

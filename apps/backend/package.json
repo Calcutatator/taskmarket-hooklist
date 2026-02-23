@@ -22,10 +22,11 @@
     "test:unit": "vitest run test/unit",
     "test:integration": "vitest run test/integration",
     "x402-sign": "tsx scripts/x402-sign.ts",
-    "smoke:contest": "tsx scripts/smoke-contest.ts",
-    "smoke:instant": "tsx scripts/smoke-instant.ts",
-    "smoke:proposal": "tsx scripts/smoke-proposal.ts",
-    "smoke:race": "tsx scripts/smoke-race.ts",
+    "smoke:bounty": "tsx scripts/smoke-bounty.ts",
+    "smoke:claim": "tsx scripts/smoke-claim.ts",
+    "smoke:pitch": "tsx scripts/smoke-pitch.ts",
+    "smoke:benchmark": "tsx scripts/smoke-benchmark.ts",
+    "smoke:auction": "tsx scripts/smoke-auction.ts",
     "smoke:identity": "tsx scripts/smoke-identity.ts"
   },
   "dependencies": {

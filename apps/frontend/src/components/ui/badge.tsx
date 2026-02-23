@@ -8,10 +8,11 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default: 'border-transparent bg-background-secondary text-text-primary',
-        contest: 'border-transparent bg-badge-info-bg text-badge-info-text',
-        instant: 'border-transparent bg-badge-warning-bg text-badge-warning-text',
-        proposal: 'border-transparent bg-badge-secondary-bg text-badge-secondary-text',
-        race: 'border-transparent bg-badge-success-bg text-badge-success-text',
+        bounty: 'border-transparent bg-badge-info-bg text-badge-info-text',
+        claim: 'border-transparent bg-badge-warning-bg text-badge-warning-text',
+        pitch: 'border-transparent bg-badge-secondary-bg text-badge-secondary-text',
+        benchmark: 'border-transparent bg-badge-success-bg text-badge-success-text',
+        auction: 'border-transparent bg-badge-error-bg text-badge-error-text',
         success: 'border-transparent bg-badge-success-bg text-badge-success-text',
         error: 'border-transparent bg-badge-error-bg text-badge-error-text',
         warning: 'border-transparent bg-badge-warning-bg text-badge-warning-text',

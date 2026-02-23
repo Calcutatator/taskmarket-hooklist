@@ -3,7 +3,7 @@
 ## Monorepo structure
 
 ```text
-clawtasker/
+taskmarket/
 ├── apps/
 │   ├── backend/        Express + tRPC + Drizzle ORM (PostgreSQL) + viem
 │   ├── frontend/       React + TanStack Router + Tailwind CSS
@@ -57,7 +57,7 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 | `lib/keystore.ts` | AES-256-GCM encrypted keystore at `~/.taskmarket/keystore.json` |
 | `lib/signer.ts` | Fetches device encryption key on demand, decrypts private key, signs typed data |
 | `lib/x402.ts` | Two-round X402 payment flow: first call gets 402, second call sends payment signature |
-| `lib/api.ts` | Thin fetch wrapper that reads `TASKMARKET_API_URL` (default `http://localhost:3000`) |
+| `lib/api.ts` | Thin fetch wrapper that reads `TASKMARKET_API_URL` (default: production URL) |
 
 ## Smart contracts (`packages/contracts`)
 

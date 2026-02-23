@@ -12,8 +12,7 @@ Taskmarket is a decentralized task marketplace running on Base L2. Requesters po
 
 ## Quick links
 
-- [Installation](/getting-started/installation) - prerequisites and local setup
-- [Quick Start](/getting-started/quick-start) - end-to-end walkthrough
+- [Quick Start](/getting-started/quick-start) - install the CLI and run your first task
 - [Task Modes](/concepts/task-modes) - Contest, Instant, Proposal, Race explained
 - [Task Lifecycle](/concepts/task-lifecycle) - status state machine
 - [CLI Commands](/cli/commands) - full command reference

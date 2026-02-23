@@ -21,7 +21,7 @@ interface IReputationRegistry {
 /**
  * @title TaskMarket
  * @notice Multi-mode decentralized task marketplace with USDC escrow on Base L2
- * @dev Supports Contest, Instant, Proposal, and Race modes with platform fees and staking.
+ * @dev Supports Bounty, Claim, Pitch, Benchmark, and Auction modes with platform fees and staking.
  *      All mutating functions are called by the authorized server wallet, which passes
  *      the real requester/worker addresses explicitly. This ensures on-chain records
  *      attribute activity to the actual participants, not the server.
@@ -33,10 +33,11 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     address public authorizedServer;
 
     enum TaskMode {
-        Contest,
-        Instant,
-        Proposal,
-        Race
+        Bounty,
+        Claim,
+        Pitch,
+        Benchmark,
+        Auction
     }
 
     enum TaskStatus {
@@ -62,8 +63,10 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         uint256 stakeAmount;
         address claimer;
         uint256 claimedAt;
-        uint256 proposalDeadline;
+        uint256 pitchDeadline;
         uint16 feeBps;
+        uint256 bidDeadline;
+        uint256 maxPrice;
     }
 
     struct WorkerStats {
@@ -72,9 +75,15 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         uint256 totalStars;
     }
 
+    struct Bid {
+        address worker;
+        uint256 price;
+    }
+
     mapping(bytes32 => Task) public tasks;
     mapping(address => WorkerStats) public workerStats;
     mapping(bytes32 => uint256) public stakeForfeit;
+    mapping(bytes32 => Bid[]) public taskBids;
 
     uint16 public defaultFeeBps;
     address public feeRecipient;
@@ -106,6 +115,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     event FeeRecipientUpdated(address newRecipient);
     event AuthorizedServerUpdated(address newServer);
     event ReputationRegistryUpdated(address newRegistry);
+    event BidSubmitted(bytes32 indexed taskId, address indexed worker, uint256 price);
 
     modifier onlyServer() {
         require(msg.sender == authorizedServer, "Not authorized server");
@@ -149,10 +159,11 @@ contract TaskMarket is ReentrancyGuard, Ownable {
      * @notice Create a new task with USDC escrow
      * @param taskId Unique task identifier
      * @param requester Real requester wallet address (task attributed on-chain to this address)
-     * @param reward USDC reward amount (6 decimals)
+     * @param reward USDC reward amount (6 decimals); for Auction mode this is the max price
      * @param duration Task duration in seconds
-     * @param mode Task mode (Contest/Instant/Proposal/Race)
-     * @param proposalDeadline Deadline for proposals (Proposal mode only, seconds from now)
+     * @param mode Task mode (Bounty/Claim/Pitch/Benchmark/Auction)
+     * @param pitchDeadline Deadline for pitches (Pitch mode only, seconds from now)
+     * @param bidDeadline Deadline for bids (Auction mode only, seconds from now)
      * @dev Server must have USDC approval for reward amount before calling.
      *      Server holds the USDC (received via X402 payment) and escrows it here.
      */
@@ -162,7 +173,8 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         uint256 reward,
         uint256 duration,
         TaskMode mode,
-        uint256 proposalDeadline
+        uint256 pitchDeadline,
+        uint256 bidDeadline
     ) external onlyServer {
         require(requester != address(0), "Invalid requester");
         require(reward > 0, "Reward must be greater than 0");
@@ -184,15 +196,17 @@ contract TaskMarket is ReentrancyGuard, Ownable {
             stakeAmount: 0,
             claimer: address(0),
             claimedAt: 0,
-            proposalDeadline: mode == TaskMode.Proposal ? block.timestamp + proposalDeadline : 0,
-            feeBps: defaultFeeBps
+            pitchDeadline: mode == TaskMode.Pitch ? block.timestamp + pitchDeadline : 0,
+            feeBps: defaultFeeBps,
+            bidDeadline: mode == TaskMode.Auction ? block.timestamp + bidDeadline : 0,
+            maxPrice: mode == TaskMode.Auction ? reward : 0
         });
 
         emit TaskCreated(taskId, requester, reward, block.timestamp + duration, mode);
     }
 
     /**
-     * @notice Claim an Instant mode task on behalf of a worker
+     * @notice Claim a Claim mode task on behalf of a worker
      * @param taskId Task identifier
      * @param worker Real worker wallet address (claim attributed on-chain to this address)
      * @param stakeAmount USDC stake amount (0 = no stake required)
@@ -202,7 +216,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         Task storage task = tasks[taskId];
         require(task.requester != address(0), "Task does not exist");
         require(worker != address(0), "Invalid worker");
-        require(task.mode == TaskMode.Instant, "Not an Instant task");
+        require(task.mode == TaskMode.Claim, "Not a Claim task");
         require(task.status == TaskStatus.Open, "Task not available");
         require(block.timestamp <= task.expiryTime, "Task expired");
 
@@ -219,7 +233,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Select a worker for Proposal mode
+     * @notice Select a worker for Pitch mode
      * @param taskId Task identifier
      * @param requester Real requester wallet (must match task.requester)
      * @param worker Selected worker address
@@ -227,14 +241,64 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     function selectWorker(bytes32 taskId, address requester, address worker) external onlyServer {
         Task storage task = tasks[taskId];
         require(requester == task.requester, "Not requester");
-        require(task.mode == TaskMode.Proposal, "Not a Proposal task");
+        require(task.mode == TaskMode.Pitch, "Not a Pitch task");
         require(task.status == TaskStatus.Open, "Task not available");
-        require(block.timestamp <= task.proposalDeadline, "Proposal deadline passed");
+        require(block.timestamp <= task.pitchDeadline, "Pitch deadline passed");
 
         task.worker = worker;
         task.status = TaskStatus.WorkerSelected;
 
         emit TaskWorkerSelected(taskId, worker);
+    }
+
+    /**
+     * @notice Submit a bid on an Auction mode task
+     * @param taskId Task identifier
+     * @param worker Real worker wallet address
+     * @param price Bid price in USDC base units (must be <= maxPrice)
+     */
+    function submitBid(bytes32 taskId, address worker, uint256 price) external onlyServer {
+        Task storage task = tasks[taskId];
+        require(task.requester != address(0), "Task does not exist");
+        require(task.mode == TaskMode.Auction, "Not an Auction task");
+        require(task.status == TaskStatus.Open, "Task not open");
+        require(block.timestamp < task.bidDeadline, "Bid deadline passed");
+        require(price <= task.maxPrice, "Bid exceeds max price");
+
+        taskBids[taskId].push(Bid({ worker: worker, price: price }));
+
+        emit BidSubmitted(taskId, worker, price);
+    }
+
+    /**
+     * @notice Select the lowest bidder after bid deadline (callable by server)
+     * @param taskId Task identifier
+     */
+    function selectLowestBidder(bytes32 taskId) external onlyServer {
+        Task storage task = tasks[taskId];
+        require(task.requester != address(0), "Task does not exist");
+        require(task.mode == TaskMode.Auction, "Not an Auction task");
+        require(task.status == TaskStatus.Open, "Task not open");
+        require(block.timestamp >= task.bidDeadline, "Bid deadline not passed");
+
+        Bid[] storage bids = taskBids[taskId];
+        require(bids.length > 0, "No bids submitted");
+
+        uint256 lowestPrice = bids[0].price;
+        address lowestBidder = bids[0].worker;
+
+        for (uint256 i = 1; i < bids.length; i++) {
+            if (bids[i].price < lowestPrice) {
+                lowestPrice = bids[i].price;
+                lowestBidder = bids[i].worker;
+            }
+        }
+
+        task.worker = lowestBidder;
+        task.stakeAmount = lowestPrice;
+        task.status = TaskStatus.Claimed;
+
+        emit TaskWorkerSelected(taskId, lowestBidder);
     }
 
     /**
@@ -248,11 +312,14 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         require(requester == task.requester, "Not requester");
         require(block.timestamp <= task.expiryTime, "Task expired");
 
-        if (task.mode == TaskMode.Instant) {
+        if (task.mode == TaskMode.Claim) {
             require(task.status == TaskStatus.Claimed, "Task not claimed");
             require(worker == task.claimer, "Worker must be claimer");
-        } else if (task.mode == TaskMode.Proposal) {
+        } else if (task.mode == TaskMode.Pitch) {
             require(task.status == TaskStatus.WorkerSelected, "Worker not selected");
+            require(worker == task.worker, "Worker mismatch");
+        } else if (task.mode == TaskMode.Auction) {
+            require(task.status == TaskStatus.Claimed, "Winner not selected");
             require(worker == task.worker, "Worker mismatch");
         } else {
             require(
@@ -266,8 +333,9 @@ contract TaskMarket is ReentrancyGuard, Ownable {
 
         workerStats[worker].completedTasks++;
 
-        uint256 fee = (task.reward * task.feeBps) / 10000;
-        uint256 workerPayment = task.reward - fee;
+        uint256 paymentAmount = task.mode == TaskMode.Auction ? task.stakeAmount : task.reward;
+        uint256 fee = (paymentAmount * task.feeBps) / 10000;
+        uint256 workerPayment = paymentAmount - fee;
 
         require(usdcToken.transfer(worker, workerPayment), "Worker payment failed");
 
@@ -276,23 +344,30 @@ contract TaskMarket is ReentrancyGuard, Ownable {
             totalFeesCollected += fee;
         }
 
-        if (task.mode == TaskMode.Instant && task.stakeAmount > 0) {
+        if (task.mode == TaskMode.Claim && task.stakeAmount > 0) {
             require(usdcToken.transfer(task.claimer, task.stakeAmount), "Stake return failed");
             emit StakeReturned(taskId, task.claimer, task.stakeAmount);
+        }
+
+        if (task.mode == TaskMode.Auction) {
+            uint256 refund = task.maxPrice - task.stakeAmount;
+            if (refund > 0) {
+                require(usdcToken.transfer(task.requester, refund), "Auction refund failed");
+            }
         }
 
         emit TaskAccepted(taskId, requester, worker, workerPayment, fee);
     }
 
     /**
-     * @notice Forfeit claimer's stake and reopen Instant task
+     * @notice Forfeit claimer's stake and reopen Claim task
      * @param taskId Task identifier
      * @param requester Real requester wallet (must match task.requester)
      */
     function forfeitAndReopen(bytes32 taskId, address requester) external onlyServer {
         Task storage task = tasks[taskId];
         require(requester == task.requester, "Not requester");
-        require(task.mode == TaskMode.Instant, "Not an Instant task");
+        require(task.mode == TaskMode.Claim, "Not a Claim task");
         require(task.status == TaskStatus.Claimed, "Task not claimed");
         require(
             block.timestamp > task.claimedAt + ((task.expiryTime - task.createdAt) / 2),
@@ -375,7 +450,7 @@ contract TaskMarket is ReentrancyGuard, Ownable {
 
         require(usdcToken.transfer(task.requester, refundAmount), "Refund failed");
 
-        if (task.mode == TaskMode.Instant && task.stakeAmount > 0) {
+        if (task.mode == TaskMode.Claim && task.stakeAmount > 0) {
             require(usdcToken.transfer(task.claimer, task.stakeAmount), "Stake return failed");
             emit StakeReturned(taskId, task.claimer, task.stakeAmount);
         }
@@ -427,5 +502,14 @@ contract TaskMarket is ReentrancyGuard, Ownable {
      */
     function getTask(bytes32 taskId) external view returns (Task memory) {
         return tasks[taskId];
+    }
+
+    /**
+     * @notice Get all bids for a task
+     * @param taskId Task identifier
+     * @return bids Array of Bid structs
+     */
+    function getBids(bytes32 taskId) external view returns (Bid[] memory) {
+        return taskBids[taskId];
     }
 }

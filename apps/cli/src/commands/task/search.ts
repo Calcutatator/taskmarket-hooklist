@@ -13,7 +13,7 @@ interface TaskRow {
 export const searchCmd = new Command('search')
   .description('Search available tasks')
   .option('--status <status>', 'Filter by status (e.g. open)', 'open')
-  .option('--mode <mode>', 'Filter by mode (contest, instant, proposal, race)')
+  .option('--mode <mode>', 'Filter by mode (bounty, claim, pitch, benchmark, auction)')
   .option('--tags <tags>', 'Comma-separated tags to filter by')
   .option('--limit <n>', 'Maximum results to return', '20')
   .action(async (opts: { status?: string; mode?: string; tags?: string; limit?: string }) => {

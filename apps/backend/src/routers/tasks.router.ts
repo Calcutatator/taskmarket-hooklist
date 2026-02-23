@@ -30,25 +30,38 @@ export const tasksRouter = router({
         throw new Error('Payment required: missing payer');
       }
 
+      if (input.mode === 'auction' && !input.maxPrice) {
+        throw new Error('maxPrice is required for auction mode');
+      }
+
       const config = getServerConfig();
       const taskId = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
       const reward = BigInt(input.reward);
       const durationSecs = BigInt(input.duration * 3600);
-      const mode = MODE_MAP[input.mode ?? 'contest'] ?? 0;
+      const mode = MODE_MAP[input.mode ?? 'bounty'] ?? 0;
 
-      const proposalDeadlineSecs =
-        input.mode === 'proposal'
-          ? input.proposalDeadline
-            ? BigInt(input.proposalDeadline)
+      const pitchDeadlineSecs =
+        input.mode === 'pitch'
+          ? input.pitchDeadline
+            ? BigInt(input.pitchDeadline)
             : durationSecs
           : 0n;
+
+      const bidDeadlineSecs =
+        input.mode === 'auction'
+          ? input.bidDeadline
+            ? BigInt(input.bidDeadline * 3600)
+            : durationSecs
+          : 0n;
+
       const escrowTxHash = await contractCreateTask(
         taskId,
         payer as `0x${string}`,
         reward,
         durationSecs,
         mode,
-        proposalDeadlineSecs
+        pitchDeadlineSecs,
+        bidDeadlineSecs
       );
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
@@ -69,12 +82,16 @@ export const tasksRouter = router({
         expiryTime,
         status: 'open',
         tags: input.tags,
-        mode: input.mode ?? 'contest',
+        mode: input.mode ?? 'bounty',
         stakeRequired: input.stakeRequired ? 1 : 0,
         stakeBps: input.stakeBps ?? 0,
-        proposalDeadline: input.proposalDeadline
-          ? new Date(Date.now() + input.proposalDeadline * 1000)
+        pitchDeadline: input.pitchDeadline
+          ? new Date(Date.now() + input.pitchDeadline * 1000)
           : null,
+        bidDeadline: input.bidDeadline
+          ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
+          : null,
+        maxPrice: input.maxPrice ?? null,
         metricDescription: input.metricDescription ?? null,
         metricTarget: input.metricTarget ?? null,
         platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
@@ -122,7 +139,7 @@ export const tasksRouter = router({
             .from(submissions)
             .where(eq(submissions.taskId, task.id));
 
-          const proposalCount = await ctx.db
+          const pitchCount = await ctx.db
             .select({ count: sql<number>`count(*)` })
             .from(proposals)
             .where(eq(proposals.taskId, task.id));
@@ -143,14 +160,16 @@ export const tasksRouter = router({
             mode: task.mode as any,
             stakeRequired: task.stakeRequired === 1,
             stakeBps: task.stakeBps,
-            proposalDeadline: task.proposalDeadline?.toISOString() || null,
+            pitchDeadline: task.pitchDeadline?.toISOString() || null,
+            bidDeadline: task.bidDeadline?.toISOString() || null,
+            maxPrice: task.maxPrice ?? null,
             metricDescription: task.metricDescription,
             metricTarget: task.metricTarget,
             claimedBy: task.claimedBy,
             claimedAt: task.claimedAt?.toISOString() || null,
             platformFeeBps: task.platformFeeBps,
             submissionCount: Number(submissionCount[0]?.count || 0),
-            proposalCount: Number(proposalCount[0]?.count || 0),
+            pitchCount: Number(pitchCount[0]?.count || 0),
           };
         })
       );
@@ -187,7 +206,7 @@ export const tasksRouter = router({
         .from(submissions)
         .where(eq(submissions.taskId, task.id));
 
-      const proposalCount = await ctx.db
+      const pitchCount = await ctx.db
         .select({ count: sql<number>`count(*)` })
         .from(proposals)
         .where(eq(proposals.taskId, task.id));
@@ -208,14 +227,16 @@ export const tasksRouter = router({
         mode: task.mode as any,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
-        proposalDeadline: task.proposalDeadline?.toISOString() || null,
+        pitchDeadline: task.pitchDeadline?.toISOString() || null,
+        bidDeadline: task.bidDeadline?.toISOString() || null,
+        maxPrice: task.maxPrice ?? null,
         metricDescription: task.metricDescription,
         metricTarget: task.metricTarget,
         claimedBy: task.claimedBy,
         claimedAt: task.claimedAt?.toISOString() || null,
         platformFeeBps: task.platformFeeBps,
         submissionCount: Number(submissionCount[0]?.count || 0),
-        proposalCount: Number(proposalCount[0]?.count || 0),
+        pitchCount: Number(pitchCount[0]?.count || 0),
       };
     }),
 });

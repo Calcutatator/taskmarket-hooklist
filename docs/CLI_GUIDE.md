@@ -24,7 +24,8 @@ apps/cli/
 │   │       ├── accept.ts         # taskmarket task accept
 │   │       ├── rate.ts           # taskmarket task rate
 │   │       ├── claim.ts          # taskmarket task claim
-│   │       ├── propose.ts        # taskmarket task propose
+│   │       ├── pitch.ts          # taskmarket task pitch
+│   │       ├── bid.ts            # taskmarket task bid
 │   │       └── proof.ts          # taskmarket task proof
 │   └── lib/
 │       ├── keystore.ts           # AES-256-GCM keystore management
@@ -55,7 +56,8 @@ apps/cli/
 | `taskmarket task accept <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task rate <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task claim <taskId>` | Free | Yes |
-| `taskmarket task propose <taskId>` | Free | Yes (signs) |
+| `taskmarket task pitch <taskId>` | Free | Yes (signs) |
+| `taskmarket task bid <taskId>` | Free | Yes |
 | `taskmarket task proof <taskId>` | Free | Yes (signs) |
 
 ## Library architecture
@@ -114,13 +116,13 @@ Thin wrapper over `fetch`:
 
 - `apiGet(path)` - GET request to `TASKMARKET_API_URL`
 - `apiPost(path, body)` - POST request (no X402; use `x402Post` for paid endpoints)
-- `API_URL` - exported constant, default `http://localhost:3000`
+- `API_URL` - exported constant, defaults to production URL
 
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
-| `TASKMARKET_API_URL` | `http://localhost:3000` | Backend base URL |
+| `TASKMARKET_API_URL` | production URL | Override backend base URL (dev only) |
 
 ## Running tests
 

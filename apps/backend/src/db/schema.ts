@@ -25,10 +25,12 @@ export const tasks = pgTable(
     tags: text('tags').array().notNull(),
     worker: text('worker'),
     rating: smallint('rating'),
-    mode: text('mode').notNull().default('contest'),
+    mode: text('mode').notNull().default('bounty'),
     stakeRequired: integer('stake_required').notNull().default(0),
     stakeBps: smallint('stake_bps').notNull().default(0),
-    proposalDeadline: timestamp('proposal_deadline'),
+    pitchDeadline: timestamp('pitch_deadline'),
+    bidDeadline: timestamp('bid_deadline'),
+    maxPrice: numeric('max_price', { precision: 78, scale: 0 }),
     metricDescription: text('metric_description'),
     metricTarget: text('metric_target'),
     claimedBy: text('claimed_by'),
@@ -166,6 +168,24 @@ export const proofs = pgTable(
   })
 );
 
+export const bids = pgTable(
+  'bids',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    price: numeric('price', { precision: 78, scale: 0 }).notNull(),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_bids_task').on(table.taskId),
+    workerIdx: index('idx_bids_worker').on(table.workerAddress),
+    priceIdx: index('idx_bids_price').on(table.price),
+  })
+);
+
 export const platformFees = pgTable(
   'platform_fees',
   {
@@ -222,3 +242,5 @@ export type IndexerState = typeof indexerState.$inferSelect;
 export type NewIndexerState = typeof indexerState.$inferInsert;
 export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
+export type Bid = typeof bids.$inferSelect;
+export type NewBid = typeof bids.$inferInsert;

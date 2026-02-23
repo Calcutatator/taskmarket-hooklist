@@ -1,6 +1,6 @@
 import { z } from 'zod';
 
-export const TaskMode = z.enum(['contest', 'instant', 'proposal', 'race']);
+export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
 
 export const TaskStatus = z.enum([
   'open',
@@ -18,10 +18,12 @@ export const TaskCreateSchema = z.object({
   reward: z.string().min(1, 'Reward is required'),
   duration: z.number().positive('Duration must be positive'),
   tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
-  mode: TaskMode.optional().default('contest'),
+  mode: TaskMode.optional().default('bounty'),
   stakeRequired: z.boolean().optional().default(false),
   stakeBps: z.number().min(0).max(10000).optional().default(0),
-  proposalDeadline: z.number().positive().optional(),
+  pitchDeadline: z.number().positive().optional(),
+  bidDeadline: z.number().positive().optional(),
+  maxPrice: z.string().optional(),
   metricDescription: z.string().max(500).optional(),
   metricTarget: z.string().max(200).optional(),
 });
@@ -42,14 +44,16 @@ export const TaskResponseSchema = z.object({
   mode: TaskMode,
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
-  proposalDeadline: z.string().nullable(),
+  pitchDeadline: z.string().nullable(),
+  bidDeadline: z.string().nullable(),
+  maxPrice: z.string().nullable(),
   metricDescription: z.string().nullable(),
   metricTarget: z.string().nullable(),
   claimedBy: z.string().nullable(),
   claimedAt: z.string().nullable(),
   platformFeeBps: z.number(),
   submissionCount: z.number().optional().default(0),
-  proposalCount: z.number().optional().default(0),
+  pitchCount: z.number().optional().default(0),
 });
 
 export const TaskListInputSchema = z.object({
@@ -69,7 +73,10 @@ export const TaskListInputSchema = z.object({
     ])
     .optional()
     .default('ALL'),
-  mode: z.enum(['ALL', 'contest', 'instant', 'proposal', 'race']).optional().default('ALL'),
+  mode: z
+    .enum(['ALL', 'bounty', 'claim', 'pitch', 'benchmark', 'auction'])
+    .optional()
+    .default('ALL'),
   tags: z.array(z.string()).optional(),
   minReward: z.string().optional(),
 });

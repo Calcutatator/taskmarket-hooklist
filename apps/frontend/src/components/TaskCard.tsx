@@ -23,7 +23,7 @@ export function TaskCard({ task }: TaskCardProps) {
           ? `${diffHours}h left`
           : `${Math.max(1, diffMins)}m left`;
 
-  const modeVariant = task.mode as 'contest' | 'instant' | 'proposal' | 'race';
+  const modeVariant = task.mode as 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction';
 
   return (
     <Link to="/tasks/$taskId" params={{ taskId: task.id }}>
@@ -52,12 +52,15 @@ export function TaskCard({ task }: TaskCardProps) {
               <p className="text-2xl font-bold">{formatUSDC(task.reward)} USDC</p>
               <p className="text-sm text-text-secondary">{timeLeft}</p>
             </div>
-            {task.mode === 'instant' && task.claimedBy && <Badge variant="warning">Claimed</Badge>}
-            {task.mode === 'proposal' && task.proposalCount > 0 && (
-              <p className="text-sm text-text-secondary">{task.proposalCount} proposals</p>
+            {task.mode === 'claim' && task.claimedBy && <Badge variant="warning">Claimed</Badge>}
+            {task.mode === 'pitch' && task.pitchCount > 0 && (
+              <p className="text-sm text-text-secondary">{task.pitchCount} pitches</p>
             )}
-            {(task.mode === 'contest' || task.mode === 'race') && task.submissionCount > 0 && (
+            {(task.mode === 'bounty' || task.mode === 'benchmark') && task.submissionCount > 0 && (
               <p className="text-sm text-text-secondary">{task.submissionCount} submissions</p>
+            )}
+            {task.mode === 'auction' && task.maxPrice && (
+              <p className="text-sm text-text-secondary">max {formatUSDC(task.maxPrice)} USDC</p>
             )}
           </div>
         </CardContent>

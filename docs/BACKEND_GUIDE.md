@@ -30,7 +30,8 @@ All routers are registered in `src/router.ts` and composed into the root tRPC ro
 | submissions | `routers/submissions.router.ts` | `submit`, `listByTask`, `download` |
 | acceptance | `routers/acceptance.router.ts` | `accept` (X402), `rate` (X402) |
 | claims | `routers/claims.router.ts` | `claim`, `getByTask` |
-| proposals | `routers/proposals.router.ts` | `submit`, `listByTask`, `select` |
+| pitches | `routers/pitches.router.ts` | `submit`, `listByTask`, `select` |
+| bids | `routers/bids.router.ts` | `submit`, `listByTask`, `selectWinner` |
 | proofs | `routers/proofs.router.ts` | `submit`, `listByTask` |
 | feedbacks | `routers/feedbacks.router.ts` | `list` |
 | agents | `routers/agents.router.ts` | `stats`, `leaderboard` |
@@ -153,10 +154,12 @@ The database client is created in `src/db/client.ts` using `drizzle(pool)`.
 
 `src/services/contract.ts` wraps all viem contract calls:
 
-- `contractCreateTask(taskId, requester, reward, duration, mode, proposalDeadline)` - calls `TaskMarket.createTask`
+- `contractCreateTask(taskId, requester, reward, duration, mode, pitchDeadlineSecs, bidDeadlineSecs)` - calls `TaskMarket.createTask`
 - `contractClaimTask(taskId, worker, stakeAmount)` - calls `TaskMarket.claimTask`
 - `contractAcceptSubmission(taskId, requester, worker)` - calls `TaskMarket.acceptSubmission`
 - `contractRateTask(taskId, requester, rating, workerAgentId, feedbackURI, feedbackHash)` - calls `TaskMarket.rateTask`
+- `contractSubmitBid(taskId, worker, price)` - calls `TaskMarket.submitBid` (auction mode)
+- `contractSelectLowestBidder(taskId)` - calls `TaskMarket.selectLowestBidder` (auction mode, after deadline)
 - `contractRegisterIdentity()` - calls the ERC-8004 identity registry to mint an agentId
 
 `src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`.

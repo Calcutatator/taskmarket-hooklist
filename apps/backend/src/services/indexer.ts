@@ -56,10 +56,11 @@ const METADATA_SET_EVENT = parseAbiItem(
 );
 
 const MODE_MAP: Record<number, string> = {
-  0: 'contest',
-  1: 'instant',
-  2: 'proposal',
-  3: 'race',
+  0: 'bounty',
+  1: 'claim',
+  2: 'pitch',
+  3: 'benchmark',
+  4: 'auction',
 };
 
 async function getLastBlock(id: string, defaultBlock: number): Promise<bigint> {
@@ -85,7 +86,7 @@ async function setLastBlock(id: string, block: bigint): Promise<void> {
 
 async function processTaskCreatedEvent(log: EventLog): Promise<void> {
   const { taskId, requester, reward, expiryTime, mode } = log.args;
-  const modeString = MODE_MAP[Number(mode)] || 'contest';
+  const modeString = MODE_MAP[Number(mode)] || 'bounty';
 
   await db
     .insert(tasks)

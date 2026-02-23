@@ -12,7 +12,7 @@ function makeTask(overrides: Record<string, any> = {}) {
     id: TASK_ID,
     requester: '0xRequester',
     requesterPubkey: '0xRequester',
-    description: 'Race task',
+    description: 'Benchmark task',
     reward: '1000000',
     escrowTxHash: '0xhash',
     createdAt: new Date(),
@@ -21,10 +21,10 @@ function makeTask(overrides: Record<string, any> = {}) {
     tags: [],
     worker: null,
     rating: null,
-    mode: 'race',
+    mode: 'benchmark',
     stakeRequired: 0,
     stakeBps: 0,
-    proposalDeadline: null,
+    pitchDeadline: null,
     metricDescription: null,
     metricTarget: null,
     claimedBy: null,
@@ -56,12 +56,12 @@ describe('proofs router', () => {
       await expect(caller.submit(submitInput)).rejects.toThrow('Task not found');
     });
 
-    it('throws when task mode is not race', async () => {
+    it('throws when task mode is not benchmark', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'contest' })]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
       const caller = proofsRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow('Not a Race task');
+      await expect(caller.submit(submitInput)).rejects.toThrow('Not a Benchmark task');
     });
 
     it('throws when task is not open', async () => {

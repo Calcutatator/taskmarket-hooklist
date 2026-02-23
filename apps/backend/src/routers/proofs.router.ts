@@ -30,8 +30,8 @@ export const proofsRouter = router({
 
       const task = taskResult[0];
 
-      if (task.mode !== 'race') {
-        throw new Error('Not a Race task');
+      if (task.mode !== 'benchmark') {
+        throw new Error('Not a Benchmark task');
       }
 
       if (task.status !== 'open') {

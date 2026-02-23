@@ -31,21 +31,28 @@ export const submissionsRouter = router({
 
       const task = taskResult[0];
 
-      if (task.mode === 'instant') {
+      if (task.mode === 'claim') {
         if (task.status !== 'claimed') {
           throw new Error('Task not claimed');
         }
         if (task.claimedBy !== input.workerAddress) {
           throw new Error('Only claimer can submit');
         }
-      } else if (task.mode === 'proposal') {
+      } else if (task.mode === 'pitch') {
         if (task.status !== 'worker_selected') {
           throw new Error('Worker not selected');
         }
         if (task.worker !== input.workerAddress) {
           throw new Error('Only selected worker can submit');
         }
-      } else if (task.mode === 'contest' || task.mode === 'race') {
+      } else if (task.mode === 'auction') {
+        if (task.status !== 'claimed') {
+          throw new Error('Winner not selected yet');
+        }
+        if (task.worker !== input.workerAddress) {
+          throw new Error('Only winning bidder can submit');
+        }
+      } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         if (task.status !== 'open') {
           throw new Error('Task not open for submissions');
         }

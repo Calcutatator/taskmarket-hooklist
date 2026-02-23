@@ -16,15 +16,15 @@ export function TaskDetailView() {
   const { data: task, isLoading } = trpc.tasks.get.useQuery({ taskId });
   const { data: submissions } = trpc.submissions.listByTask.useQuery(
     { taskId },
-    { enabled: !!task && (task.mode === 'contest' || task.mode === 'instant') }
+    { enabled: !!task && (task.mode === 'bounty' || task.mode === 'claim') }
   );
-  const { data: proposals } = trpc.proposals.listByTask.useQuery(
+  const { data: pitches } = trpc.pitches.listByTask.useQuery(
     { taskId },
-    { enabled: !!task && task.mode === 'proposal' }
+    { enabled: !!task && task.mode === 'pitch' }
   );
   const { data: proofs } = trpc.proofs.listByTask.useQuery(
     { taskId },
-    { enabled: !!task && task.mode === 'race' }
+    { enabled: !!task && task.mode === 'benchmark' }
   );
 
   if (isLoading) {
@@ -64,10 +64,10 @@ export function TaskDetailView() {
 
         <TaskDetail task={task} />
 
-        {task.mode === 'contest' && <ContestPanel task={task} submissions={submissions || []} />}
-        {task.mode === 'instant' && <InstantPanel task={task} />}
-        {task.mode === 'proposal' && <ProposalPanel task={task} proposals={proposals || []} />}
-        {task.mode === 'race' && <RacePanel task={task} proofs={proofs || []} />}
+        {task.mode === 'bounty' && <ContestPanel task={task} submissions={submissions || []} />}
+        {task.mode === 'claim' && <InstantPanel task={task} />}
+        {task.mode === 'pitch' && <ProposalPanel task={task} proposals={pitches || []} />}
+        {task.mode === 'benchmark' && <RacePanel task={task} proofs={proofs || []} />}
 
         <RatingForm task={task} />
       </div>
