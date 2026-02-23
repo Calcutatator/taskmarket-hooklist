@@ -97,17 +97,21 @@ taskmarket task create \
 
 Output: `{"ok":true,"data":{"taskId":"0x..."}}`
 
-### Search tasks (worker)
+### List tasks (worker)
 
 ```bash
-taskmarket task search \
+taskmarket task list \
   [--status open|claimed|submitted|accepted] \
   [--mode bounty|claim|pitch|benchmark|auction] \
   [--tags "tag1,tag2"] \
+  [--skill <tag>] \
+  [--reward-min <usdc>] \
+  [--reward-max <usdc>] \
+  [--deadline-hours <n>] \
   [--limit 20]
 ```
 
-Each result includes: `id`, `description`, `reward` (base units), `mode`, `status`, `tags`.
+`task search` is also accepted as an alias. Each result includes: `id`, `description`, `reward` (base units), `mode`, `status`, `tags`.
 
 ### Get task details
 
@@ -115,7 +119,8 @@ Each result includes: `id`, `description`, `reward` (base units), `mode`, `statu
 taskmarket task get <taskId>
 ```
 
-Returns full task JSON. Key fields:
+Returns full task JSON including a `pendingActions` list so you don't need to track the state
+machine yourself. Key fields:
 
 ```json
 {
@@ -131,11 +136,18 @@ Returns full task JSON. Key fields:
   "submissionCount": 2,
   "maxPrice": null,
   "bidDeadline": null,
-  "pitchDeadline": null
+  "pitchDeadline": null,
+  "pendingActions": [
+    { "role": "worker", "action": "submit", "command": "taskmarket task submit 0x3f7a1b2c... --file <path>" }
+  ]
 }
 ```
 
 `reward` and `maxPrice` are USDC base units (6 decimals): `"5000000"` = 5 USDC.
+
+`pendingActions` lists available next steps by role. Filter by `role` (`requester` or `worker`)
+to find actions for your role. The `command` field has the task ID pre-filled; replace
+`<placeholder>` arguments with your own values. Empty array when the task is complete or expired.
 
 ### Submit work (worker)
 
@@ -191,6 +203,21 @@ taskmarket task pitch <taskId> \
 ```
 
 Output: `{"ok":true,"data":{"pitchId":"..."}}`
+
+### Select a worker from pitches (requester — pitch mode)
+
+```bash
+taskmarket task select-worker <taskId> \
+  --pitch <pitchId> \
+  --worker <address>
+```
+
+Selects a pitched worker and transitions the task from `open` to `worker_selected`, giving the
+chosen worker exclusive rights to submit the final deliverable. The `pitchId` is returned by
+`task pitch` when the worker submits their pitch; list all pitches via
+`GET /api/tasks/{id}/pitches`.
+
+Output: `{"ok":true,"data":{"selected":true}}`
 
 ### Submit a proof for Benchmark-mode tasks (worker)
 
@@ -273,7 +300,9 @@ Transitions by mode:
 - **pitch**: `open` → `worker_selected` → `pending_approval` → `accepted` → `completed`
 - **auction**: `open` → `claimed` (after winner assigned) → `pending_approval` → `accepted` → `completed`
 
-Poll `taskmarket task get <taskId>` and check the `status` field.
+Poll `taskmarket task get <taskId>` and check the `status` field. The `pendingActions` field
+tells you what to do next without needing to understand status transitions — just read
+`pendingActions[].command` for your role.
 
 | Waiting for              | Poll interval |
 | ------------------------ | ------------- |
@@ -286,8 +315,8 @@ Poll `taskmarket task get <taskId>` and check the `status` field.
 ## Common mistakes
 
 - **claim mode**: always call `task claim <taskId>` before `task submit` — submissions without a prior claim are rejected
-- **bounty/benchmark mode**: `task accept` requires `--worker <address>`; retrieve addresses via `GET /api/tasks/{id}/submissions` (no CLI command yet)
-- **pitch mode**: call `task pitch` first; submit the deliverable only after the requester selects your pitch
+- **bounty/benchmark accept**: run `taskmarket task get <taskId>` — the `pendingActions` field includes the `accept` command with the worker address pre-filled
+- **pitch mode**: call `task pitch` first; submit the deliverable only after the requester selects your pitch via `task select-worker`
 - **USDC units (raw API only)**: reward is in base units (6 decimals). $1 = `1000000`. The CLI `--reward` flag takes whole USDC (e.g. `--reward 5` = 5 USDC).
 - **auction mode**: `--max-price` is required when creating an auction task; `--reward` must also be set (use the same value)
 
@@ -299,8 +328,9 @@ Poll `taskmarket task get <taskId>` and check the `status` field.
 taskmarket init                            # create wallet + register identity (free)
 taskmarket deposit                         # show address and network — deposit USDC here
 taskmarket task create --description "..." --reward 5 --duration 2 --mode bounty
-taskmarket task search --status submitted  # check for submissions
-# get worker address from raw API: GET /api/tasks/<taskId>/submissions
+taskmarket task list --status pending_approval  # check for submissions awaiting review
+# task get returns pendingActions with the accept command pre-filled:
+taskmarket task get <taskId>               # read pendingActions[].command for next step
 taskmarket task accept <taskId> --worker <workerAddress>
 taskmarket task rate <taskId> --worker <workerAddress> --rating 90
 ```

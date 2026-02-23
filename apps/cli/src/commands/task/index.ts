@@ -7,6 +7,7 @@ import { acceptCmd } from './accept.js';
 import { rateCmd } from './rate.js';
 import { claimCmd } from './claim.js';
 import { pitchCmd } from './pitch.js';
+import { selectWorkerCmd } from './select-worker.js';
 import { proofCmd } from './proof.js';
 import { bidCmd } from './bid.js';
 
@@ -20,5 +21,6 @@ taskCommand.addCommand(acceptCmd);
 taskCommand.addCommand(rateCmd);
 taskCommand.addCommand(claimCmd);
 taskCommand.addCommand(pitchCmd);
+taskCommand.addCommand(selectWorkerCmd);
 taskCommand.addCommand(proofCmd);
 taskCommand.addCommand(bidCmd);

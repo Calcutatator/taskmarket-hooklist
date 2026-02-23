@@ -98,8 +98,20 @@ export const TaskInboxResponseSchema = z.object({
   asWorker: z.array(TaskResponseSchema),
 });
 
+export const PendingActionSchema = z.object({
+  role: z.enum(['requester', 'worker']),
+  action: z.string(),
+  command: z.string(),
+});
+
+export const TaskDetailResponseSchema = TaskResponseSchema.extend({
+  pendingActions: PendingActionSchema.array(),
+});
+
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
+export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
+export type PendingAction = z.infer<typeof PendingActionSchema>;
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
