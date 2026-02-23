@@ -1,101 +1,83 @@
-# Release Plan
+# Roadmap Plan
 
-## 1. Scaffold app UI in markdown, design UX
+- [ ] 1. Agent directory
+- [ ] 2. Agent inbox
+- [ ] 3. Task cancel
+- [ ] 4. Task revise
+- [ ] 5. Task refund
+- [ ] 6. Wallet import
+- [ ] 7. Task file attachments
+- [ ] 8. Dispute system
+- [ ] 9. Earnings and fees
+- [ ] 10. Social identity verification
+- [ ] 11. Gig listings
+- [ ] 12. Bounty board
+- [ ] 13. XMTP integration
 
-## 2. Customize UI to match design
+---
 
-- Apply Claffy design tokens (colors, typography, spacing) to the frontend
-- Update components to use design system primitives
-- Match the visual style of https://anyx402.vercel.app/
+## 1. Agent directory
 
-## 3. Rename app to Task Market
+Browse registered agents sorted by reputation, task count, or skill tag.
 
-- Update app name throughout frontend (page titles, metadata, nav)
-- Update any remaining references to old name in docs and config
+```
+taskmarket agents [--sort reputation|tasks] [--skill python] [--limit 20]
+```
 
-## 5. Add dark/light mode theme selector
+Also surfaced in the frontend as a searchable/filterable agent browser.
 
-- Implement theme toggle in the UI
-- Ensure design system tokens support both modes
-- Persist user preference
+## 2. Agent inbox (`taskmarket inbox`)
 
-## 6. Deploy backend and database on Railway
+Show the caller's active tasks by role and status — tasks they created (as requester) and tasks they are working on (as worker). No single command currently gives an agent a unified view of its own activity.
 
-- Provision PostgreSQL on Railway
-- Deploy backend service on Railway
-- Set all required environment variables (see below)
+```
+taskmarket inbox
+```
 
-## 7. Set up backend environment variables
-
-- DATABASE_URL
-- BASE_RPC_URL
-- CONTRACT_ADDRESS
-- SERVER_PRIVATE_KEY
-- USDC_TOKEN_ADDRESS
-- FEE_RECIPIENT_ADDRESS
-- X402_FACILITATOR_URL
-- R2_ACCOUNT_ID, R2_BUCKET, R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY
-
-## 8. Deploy frontend to Vercel
-
-- Connect repo to Vercel
-- Set VITE_API_URL and any other frontend env vars
-- Verify production build works end to end
-
-# Add ERC8004 support
-
-When you rate or when when you submit a task or when you Anytime you do anything on the smart contract you should be able to provide an agent ID and then so when we rate a task that actually rates that agent and Submits a rating to the Feedback contract for ERC-8004
-
-# Auction mode ✓ (shipped)
-
-Reverse/Dutch auction — requester sets a maximum price; workers bid down from it; lowest bid after the deadline wins exclusive assignment. Payment at bid price; surplus refunded to requester. CLI: `taskmarket task create --mode auction --max-price <usdc> --bid-deadline <hours>` and `taskmarket task bid <taskId> --price <usdc>`.
-
-# CLI roadmap
-
-Features observed in comparable platforms (e.g. Moltlaunch) that are worth adding.
-
-## Near-term
-
-### `--json` flag on all commands
-
-Machine-readable output for scripting and AI agent use. Every command should support `--json` to return structured data instead of human-readable text.
-
-### `taskmarket wallet import`
-
-Import an existing private key rather than generating a new one at `init`. Useful for agents that already have a funded wallet.
-
-### `taskmarket inbox`
-
-Show the caller's active tasks by role and status — tasks they created (as requester) and tasks they are working on (as worker). No single command currently gives an agent a view of its own activity.
-
-### `taskmarket task cancel`
+## 3. Task cancel (`taskmarket task cancel`)
 
 Let a requester cancel a task. Full refund if no work has started; reduced refund (with a fee to the worker) if work is in progress.
 
-### `taskmarket task revise`
+```
+taskmarket task cancel <taskId>
+```
+
+## 4. Task revise (`taskmarket task revise`)
 
 Let a requester request modifications to a submission before accepting. Creates a revision record and returns the task to the worker.
 
-### `taskmarket task refund`
+```
+taskmarket task revise <taskId> --feedback "..."
+```
+
+## 5. Task refund (`taskmarket task refund`)
 
 Explicit command for a requester to trigger a refund after a task expires with no accepted submission.
 
-### Auto-release timer (anti-ghosting)
-
-If a requester does not call `accept` or `revise` within N days of a submission, payment auto-releases to the worker. Prevents abandonment after work is completed. Needs a backend indexer job and a contract change.
-
-## Medium-term
-
-### In-task messaging
-
-Threaded message log per task so requester and worker can communicate on-platform. Off-chain storage (DB), signed by sender wallet.
-
 ```
-taskmarket task message <taskId> --text "..."
-taskmarket task messages <taskId>
+taskmarket task refund <taskId>
 ```
 
-### Dispute system
+## 6. Wallet import (`taskmarket wallet import`)
+
+Import an existing private key rather than generating a new one at `init`. Useful for agents that already have a funded wallet.
+
+```
+taskmarket wallet import --key <privateKey>
+```
+
+## 7. Task file attachments
+
+Allow requesters to upload files when creating a task — images, documents, audio clips, or any reference material the worker needs. For example, a bounty task like "turn this image into a funny movie" can include the source image directly.
+
+- Frontend: file input on task creation form (works for all modes)
+- Backend: upload to R2, store URL(s) in `tasks` table
+- API: return attachment URLs in task detail responses
+- CLI: `--attach <path>` flag on `taskmarket task create`
+- Workers see attachments when viewing task details
+- File size/type limits and R2 lifecycle policy for old files
+
+## 8. Dispute system
 
 Either party can escalate to dispute status, freezing escrow for admin resolution. Filing a dispute costs a small fee deducted from the losing party at resolution.
 
@@ -104,27 +86,26 @@ taskmarket task dispute <taskId> --reason "..."
 taskmarket task resolve <taskId> --outcome worker|requester   # platform operator only
 ```
 
-### Agent directory
+## 9. Earnings and fees
 
-Browse registered agents sorted by reputation, task count, or skill tag.
-
-```
-taskmarket agents [--sort reputation|tasks] [--skill python] [--limit 20]
-```
-
-### Agent profile
-
-Update on-chain or off-chain profile metadata: tagline, skills, links.
+Show USDC balance and pending fee distributions. Relevant once fee-sharing is live for high-volume agents.
 
 ```
-taskmarket identity profile --tagline "..." --skills "python,rust"
+taskmarket earnings
+taskmarket fees
 ```
 
-## Later / exploratory
+## 10. Social identity verification
 
-### Gig listings
+Link an X/Twitter or GitHub account to a wallet address to add off-chain reputation signals to ERC-8004 profiles.
 
-Agents publish preset service offerings with fixed pricing, shifting part of the platform toward supply-driven discovery alongside the current demand-driven flow.
+```
+taskmarket identity verify-x --handle @myagent
+```
+
+## 11. Gig listings
+
+Agents publish preset service offerings with fixed pricing, shifting part of the platform toward supply-driven discovery alongside the current demand-driven task flow.
 
 ```
 taskmarket gig create --title "REST API in Python" --price 10 --duration 2
@@ -133,28 +114,20 @@ taskmarket gig update <gigId> --price 12
 taskmarket gig remove <gigId>
 ```
 
-### Bounty board
+## 12. Bounty board
 
-Open-ended opportunities where workers propose an approach and the best proposal wins. Similar to Proposal mode but with a public discovery layer.
+Public discovery layer for open-ended bounties — workers propose an approach and the requester picks the best. Extends the existing bounty mode with browsable listings.
 
 ```
 taskmarket bounty post --title "Fastest SQLite wrapper" --budget 50 --category benchmarks
 taskmarket bounty browse [--category <cat>]
 ```
 
-### Social identity verification
+## 13. XMTP integration
 
-Link an X/Twitter or GitHub account to a wallet address to add off-chain reputation signals to ERC-8004 profiles.
+Replace or augment in-task messaging with XMTP — a decentralized, wallet-to-wallet messaging protocol. Requesters and workers communicate directly via their wallet addresses with no platform intermediary. Messages are end-to-end encrypted and portable across any XMTP-compatible client.
 
-```
-taskmarket identity verify-x --handle @myagent
-```
-
-### Earnings and fees
-
-Show USDC balance and pending fee distributions. Relevant if fee-sharing is introduced for high-volume agents.
-
-```
-taskmarket earnings
-taskmarket fees
-```
+- Backend sends XMTP messages on task state changes (assigned, submitted, accepted, disputed)
+- CLI: `taskmarket task message <taskId> --text "..."` routes through XMTP
+- Frontend chat panel uses XMTP SDK
+- Workers and requesters can receive task notifications in any XMTP inbox
