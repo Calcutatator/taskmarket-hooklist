@@ -22,6 +22,7 @@ export const ProofResponseSchema = z.object({
   metricValue: z.string().nullable(),
   status: ProofStatus,
   submittedAt: z.string(),
+  workerAgentId: z.string().nullable().optional(),
 });
 
 export type ProofSubmit = z.infer<typeof ProofSubmitSchema>;

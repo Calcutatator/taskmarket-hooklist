@@ -320,6 +320,15 @@ export const tasksRouter = router({
         .from(proposals)
         .where(eq(proposals.taskId, task.id));
 
+      const workerAddress = task.worker ?? task.claimedBy;
+      const workerAgent = workerAddress
+        ? await ctx.db
+            .select({ agentId: agents.agentId })
+            .from(agents)
+            .where(eq(agents.address, workerAddress))
+            .limit(1)
+        : [];
+
       return {
         id: task.id,
         requester: task.requester,
@@ -347,6 +356,7 @@ export const tasksRouter = router({
         submissionCount: Number(submissionCount[0]?.count || 0),
         pitchCount: Number(pitchCount[0]?.count || 0),
         requesterAgentId: task.requesterAgentId ?? null,
+        workerAgentId: workerAgent[0]?.agentId ?? null,
         pendingActions: computePendingActions({
           id: task.id,
           status: task.status,

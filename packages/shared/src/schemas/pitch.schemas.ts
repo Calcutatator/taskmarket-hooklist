@@ -18,6 +18,7 @@ export const PitchResponseSchema = z.object({
   estimatedDuration: z.number().nullable(),
   status: PitchStatus,
   submittedAt: z.string(),
+  workerAgentId: z.string().nullable().optional(),
   workerStats: z
     .object({
       completedTasks: z.number(),

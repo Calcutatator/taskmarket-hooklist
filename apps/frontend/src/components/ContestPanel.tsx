@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useAcceptSubmission } from '@/hooks/useTaskMarket';
 import type { TaskResponse } from '@taskmarket/shared';
+import { IdentityBadge } from './IdentityBadge';
 
 interface ContestPanelProps {
   task: TaskResponse;
@@ -34,10 +35,10 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
                   <CardContent className="pt-6">
                     <div className="flex items-center justify-between">
                       <div>
-                        <p className="font-semibold">
-                          {submission.workerAddress.substring(0, 6)}...
-                          {submission.workerAddress.substring(38)}
-                        </p>
+                        <IdentityBadge
+                          agentId={submission.workerAgentId}
+                          address={submission.workerAddress}
+                        />
                         <p className="text-sm text-text-secondary">
                           Submitted {new Date(submission.submittedAt).toLocaleString()}
                         </p>

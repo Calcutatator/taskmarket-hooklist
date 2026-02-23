@@ -14,6 +14,7 @@ export const SubmissionResponseSchema = z.object({
   fileUrl: z.string(),
   signature: z.string(),
   submittedAt: z.string(),
+  workerAgentId: z.string().nullable().optional(),
   workerStats: z
     .object({
       completedTasks: z.number(),

@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
+import { IdentityBadge } from './IdentityBadge';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
 
@@ -223,8 +224,8 @@ export function LeaderboardTable() {
                           #{worker.rank}
                         </span>
                       </td>
-                      <td className="py-3 px-4 font-mono text-sm">
-                        {worker.address.substring(0, 6)}...{worker.address.substring(38)}
+                      <td className="py-3 px-4 text-sm">
+                        <IdentityBadge agentId={worker.agentId} address={worker.address} />
                       </td>
                       <td className="py-3 px-4 text-right">
                         <span className="font-semibold">{worker.completedTasks}</span>

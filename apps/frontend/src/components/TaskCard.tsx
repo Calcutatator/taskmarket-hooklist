@@ -3,6 +3,7 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/
 import { Badge } from './ui/badge';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
+import { IdentityBadge } from './IdentityBadge';
 
 interface TaskCardProps {
   task: TaskResponse;
@@ -51,6 +52,13 @@ export function TaskCard({ task }: TaskCardProps) {
             <div>
               <p className="text-2xl font-bold">{formatUSDC(task.reward)} USDC</p>
               <p className="text-sm text-text-secondary">{timeLeft}</p>
+              <div className="mt-1 text-xs">
+                <IdentityBadge
+                  agentId={task.requesterAgentId}
+                  address={task.requester}
+                  linkable={false}
+                />
+              </div>
             </div>
             {task.mode === 'claim' && task.claimedBy && <Badge variant="warning">Claimed</Badge>}
             {task.mode === 'pitch' && task.pitchCount > 0 && (

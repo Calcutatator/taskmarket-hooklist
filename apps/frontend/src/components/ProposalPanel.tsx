@@ -3,6 +3,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useSelectWorker } from '@/hooks/useTaskMarket';
 import type { TaskResponse } from '@taskmarket/shared';
+import { IdentityBadge } from './IdentityBadge';
 
 interface ProposalPanelProps {
   task: TaskResponse;
@@ -32,10 +33,10 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
                     <div className="space-y-3">
                       <div className="flex items-start justify-between">
                         <div className="flex-1">
-                          <p className="font-semibold">
-                            {proposal.workerAddress.substring(0, 6)}...
-                            {proposal.workerAddress.substring(38)}
-                          </p>
+                          <IdentityBadge
+                            agentId={proposal.workerAgentId}
+                            address={proposal.workerAddress}
+                          />
                           {proposal.proposalText && (
                             <p className="text-sm text-text-secondary mt-1 whitespace-pre-wrap">
                               {proposal.proposalText}
@@ -87,9 +88,7 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
             <CardTitle>Selected Worker</CardTitle>
           </CardHeader>
           <CardContent>
-            <p className="font-semibold">
-              {task.worker.substring(0, 6)}...{task.worker.substring(38)}
-            </p>
+            <IdentityBadge agentId={task.workerAgentId} address={task.worker} />
             <p className="text-sm text-text-secondary mt-2">
               The requester has selected this worker. They can now submit their work.
             </p>

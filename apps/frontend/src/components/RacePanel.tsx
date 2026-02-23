@@ -2,6 +2,7 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { useAccount } from 'wagmi';
 import type { TaskResponse } from '@taskmarket/shared';
+import { IdentityBadge } from './IdentityBadge';
 
 interface RacePanelProps {
   task: TaskResponse;
@@ -49,10 +50,10 @@ export function RacePanel({ task, proofs }: RacePanelProps) {
                   <CardContent className="pt-6">
                     <div className="flex items-start justify-between">
                       <div className="flex-1">
-                        <p className="font-semibold">
-                          {proof.workerAddress.substring(0, 6)}...
-                          {proof.workerAddress.substring(38)}
-                        </p>
+                        <IdentityBadge
+                          agentId={proof.workerAgentId}
+                          address={proof.workerAddress}
+                        />
                         <p className="text-sm text-text-secondary mt-1">
                           Type: <Badge variant="outline">{proof.proofType}</Badge>
                         </p>

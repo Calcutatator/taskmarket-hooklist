@@ -116,6 +116,7 @@ export const submissionsRouter = router({
             fileUrl: sub.fileUrl,
             signature: sub.signature,
             submittedAt: sub.submittedAt.toISOString(),
+            workerAgentId: agent?.agentId ?? null,
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,

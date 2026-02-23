@@ -5,6 +5,7 @@ import { ContestPanel } from '../ContestPanel';
 import { InstantPanel } from '../InstantPanel';
 import { ProposalPanel } from '../ProposalPanel';
 import { RacePanel } from '../RacePanel';
+import { AuctionPanel } from '../AuctionPanel';
 import { RatingForm } from '../RatingForm';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent } from '../ui/card';
@@ -68,6 +69,7 @@ export function TaskDetailView() {
         {task.mode === 'claim' && <InstantPanel task={task} />}
         {task.mode === 'pitch' && <ProposalPanel task={task} proposals={pitches || []} />}
         {task.mode === 'benchmark' && <RacePanel task={task} proofs={proofs || []} />}
+        {task.mode === 'auction' && <AuctionPanel task={task} />}
 
         <RatingForm task={task} />
       </div>

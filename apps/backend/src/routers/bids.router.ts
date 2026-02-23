@@ -1,7 +1,7 @@
 import { router, publicProcedure } from '../trpc';
 import { BidCreateSchema, BidResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
-import { bids, tasks } from '../db/schema';
+import { bids, tasks, agents } from '../db/schema';
 import { eq, asc } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractSubmitBid, contractSelectLowestBidder } from '../services/contract';
@@ -88,13 +88,24 @@ export const bidsRouter = router({
         .where(eq(bids.taskId, input.taskId))
         .orderBy(asc(bids.price));
 
-      return results.map((bid) => ({
-        id: bid.id,
-        taskId: bid.taskId,
-        workerAddress: bid.workerAddress,
-        price: bid.price,
-        createdAt: bid.createdAt.toISOString(),
-      }));
+      return Promise.all(
+        results.map(async (bid) => {
+          const agentResult = await ctx.db
+            .select()
+            .from(agents)
+            .where(eq(agents.address, bid.workerAddress))
+            .limit(1);
+
+          return {
+            id: bid.id,
+            taskId: bid.taskId,
+            workerAddress: bid.workerAddress,
+            price: bid.price,
+            createdAt: bid.createdAt.toISOString(),
+            workerAgentId: agentResult[0]?.agentId ?? null,
+          };
+        })
+      );
     }),
 
   selectWinner: publicProcedure

@@ -55,6 +55,7 @@ export const TaskResponseSchema = z.object({
   submissionCount: z.number().optional().default(0),
   pitchCount: z.number().optional().default(0),
   requesterAgentId: z.string().nullable().optional(),
+  workerAgentId: z.string().nullable().optional(),
 });
 
 export const TaskListInputSchema = z.object({

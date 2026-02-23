@@ -6,6 +6,7 @@ import { useClaimTask } from '@/hooks/useTaskMarket';
 import { useApproveUSDC } from '@/hooks/useApproveUSDC';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
+import { IdentityBadge } from './IdentityBadge';
 
 interface InstantPanelProps {
   task: TaskResponse;
@@ -46,9 +47,13 @@ export function InstantPanel({ task }: InstantPanelProps) {
           </CardHeader>
           <CardContent>
             <div className="space-y-2">
-              <p className="text-text-secondary">
-                Claimed by: {task.claimedBy?.substring(0, 6)}...{task.claimedBy?.substring(38)}
-              </p>
+              <div className="text-text-secondary flex items-center gap-1">
+                Claimed by:{' '}
+                <IdentityBadge
+                  agentId={task.workerAgentId}
+                  address={task.claimedBy ?? task.worker ?? ''}
+                />
+              </div>
               {task.claimedAt && (
                 <p className="text-sm text-text-tertiary">
                   {new Date(task.claimedAt).toLocaleString()}

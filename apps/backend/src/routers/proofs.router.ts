@@ -1,7 +1,7 @@
 import { router, publicProcedure } from '../trpc';
 import { ProofSubmitSchema, ProofResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
-import { proofs, tasks } from '../db/schema';
+import { proofs, tasks, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 
@@ -60,16 +60,27 @@ export const proofsRouter = router({
     .query(async ({ input, ctx }) => {
       const results = await ctx.db.select().from(proofs).where(eq(proofs.taskId, input.taskId));
 
-      return results.map((proof) => ({
-        id: proof.id,
-        taskId: proof.taskId,
-        workerAddress: proof.workerAddress,
-        proofData: proof.proofData,
-        proofType: proof.proofType as any,
-        metricValue: proof.metricValue,
-        status: proof.status as any,
-        submittedAt: proof.submittedAt.toISOString(),
-      }));
+      return Promise.all(
+        results.map(async (proof) => {
+          const agentResult = await ctx.db
+            .select()
+            .from(agents)
+            .where(eq(agents.address, proof.workerAddress))
+            .limit(1);
+
+          return {
+            id: proof.id,
+            taskId: proof.taskId,
+            workerAddress: proof.workerAddress,
+            proofData: proof.proofData,
+            proofType: proof.proofType as any,
+            metricValue: proof.metricValue,
+            status: proof.status as any,
+            submittedAt: proof.submittedAt.toISOString(),
+            workerAgentId: agentResult[0]?.agentId ?? null,
+          };
+        })
+      );
     }),
 
   verify: publicProcedure

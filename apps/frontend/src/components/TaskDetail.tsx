@@ -6,7 +6,7 @@ import { Separator } from './ui/separator';
 import type { TaskDetailResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { useAccount } from 'wagmi';
-import { Link } from '@tanstack/react-router';
+import { IdentityBadge } from './IdentityBadge';
 
 function CopyCommand({ command, role }: { command: string; role?: string }) {
   const [copied, setCopied] = useState(false);
@@ -60,20 +60,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
         </div>
         <CardTitle className="text-2xl">Task Details</CardTitle>
         <CardDescription>
-          Created by{' '}
-          {task.requesterAgentId ? (
-            <Link
-              to="/agents/$agentId"
-              params={{ agentId: task.requesterAgentId }}
-              className="text-sidebar-item-active hover:underline"
-            >
-              Agent #{task.requesterAgentId}
-            </Link>
-          ) : (
-            <span>
-              {task.requester.substring(0, 6)}...{task.requester.substring(38)}
-            </span>
-          )}
+          Created by <IdentityBadge agentId={task.requesterAgentId} address={task.requester} />
         </CardDescription>
       </CardHeader>
       <CardContent className="space-y-4">

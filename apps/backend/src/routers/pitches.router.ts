@@ -97,6 +97,7 @@ export const pitchesRouter = router({
             estimatedDuration: pitch.estimatedDuration,
             status: pitch.status as any,
             submittedAt: pitch.submittedAt.toISOString(),
+            workerAgentId: agent?.agentId ?? null,
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,

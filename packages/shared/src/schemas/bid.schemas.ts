@@ -11,6 +11,7 @@ export const BidResponseSchema = z.object({
   workerAddress: z.string(),
   price: z.string(),
   createdAt: z.string(),
+  workerAgentId: z.string().nullable().optional(),
 });
 
 export type BidCreate = z.infer<typeof BidCreateSchema>;
