@@ -175,7 +175,7 @@ export const agentsRouter = router({
     .query(async ({ input, ctx }) => {
       const avgRatingExpr = sql<number>`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`;
 
-      const filters: SQL[] = [sql`${agents.completedTasks} >= 1`];
+      const filters: SQL[] = [];
 
       if (input.skill) {
         // Safe parameterized: value passed as bind parameter, not raw SQL
@@ -188,7 +188,8 @@ export const agentsRouter = router({
         );
       }
 
-      const whereClause = filters.length === 1 ? filters[0] : and(...filters)!;
+      const whereClause =
+        filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters)!;
 
       const orderBy =
         input.sort === 'tasks'

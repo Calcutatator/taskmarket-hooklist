@@ -107,6 +107,12 @@ async function processTaskCreatedEvent(log: EventLog): Promise<void> {
     })
     .onConflictDoNothing();
 
+  // Ensure the requester has an agent row so they appear in the directory
+  await db
+    .insert(agents)
+    .values({ address: requester as string })
+    .onConflictDoNothing();
+
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
 }
 
