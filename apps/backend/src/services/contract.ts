@@ -6,6 +6,7 @@ import { getServerConfig } from '../config/env';
 const ERC20_ABI = parseAbi([
   'function approve(address,uint256) returns (bool)',
   'function allowance(address,address) view returns (uint256)',
+  'function balanceOf(address) view returns (uint256)',
 ]);
 const MARKET_ABI = parseAbi([
   'function createTask(bytes32,address,uint256,uint256,uint8,uint256,uint256)',
@@ -75,17 +76,35 @@ export async function contractCreateTask(
 
   const gas = await getGasParams(publicClient);
 
-  const approveTx = await client.writeContract({
+  // Check current allowance — only approve if insufficient.
+  // Approves MAX_UINT256 so subsequent tasks never need another approve tx,
+  // and avoids RPC state-lag races where the simulation sees stale allowance=0.
+  const { account } = createServerWallet();
+  const allowance = await publicClient.readContract({
     address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
-    functionName: 'approve',
-    args: [config.CONTRACT_ADDRESS as `0x${string}`, reward],
-    ...gas,
+    functionName: 'allowance',
+    args: [account.address, config.CONTRACT_ADDRESS as `0x${string}`],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash: approveTx, timeout: TX_RECEIPT_TIMEOUT }),
-    'approve'
-  );
+  if ((allowance as bigint) < reward) {
+    const approveTx = await client.writeContract({
+      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'approve',
+      args: [
+        config.CONTRACT_ADDRESS as `0x${string}`,
+        BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+      ],
+      ...gas,
+    });
+    assertSuccess(
+      await publicClient.waitForTransactionReceipt({
+        hash: approveTx,
+        timeout: TX_RECEIPT_TIMEOUT,
+      }),
+      'approve'
+    );
+  }
 
   const createTx = await client.writeContract({
     address: config.CONTRACT_ADDRESS as `0x${string}`,
