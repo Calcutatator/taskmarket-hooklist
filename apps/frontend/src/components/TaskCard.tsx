@@ -26,8 +26,8 @@ export function TaskCard({ task }: TaskCardProps) {
   const modeVariant = task.mode as 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction';
 
   return (
-    <Link to="/tasks/$taskId" params={{ taskId: task.id }}>
-      <Card className="hover:border-border-accent transition-colors cursor-pointer flex flex-col relative overflow-visible">
+    <Link to="/tasks/$taskId" params={{ taskId: task.id }} className="h-full">
+      <Card className="h-full hover:border-border-accent transition-colors cursor-pointer flex flex-col relative overflow-visible">
         {/* Top-left corner bracket */}
         <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-sidebar-item-active pointer-events-none" />
         {/* Bottom-right corner bracket */}
