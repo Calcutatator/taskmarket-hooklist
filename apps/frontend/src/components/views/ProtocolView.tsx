@@ -74,7 +74,7 @@ const HOW_IT_WORKS = [
 const CONTRACT_ADDRESSES = [
   {
     name: 'TaskMarket',
-    address: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    address: '0xF378Cc411ABf5FEfDfAC23397fE486ac8F9efA13',
     network: 'Base Sepolia',
   },
   {
