@@ -3,9 +3,11 @@ import {
   AgentStatsSchema,
   LeaderboardResponseSchema,
   LeaderboardInputSchema,
+  TaskInboxInputSchema,
+  TaskInboxResponseSchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { agents, feedbacks } from '../db/schema';
+import { agents, feedbacks, tasks, submissions, proposals } from '../db/schema';
 import { eq, desc, sql, and, or, ilike } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
@@ -80,6 +82,82 @@ export const agentsRouter = router({
           createdAt: r.createdAt.toISOString(),
         })),
       };
+    }),
+
+  inbox: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/agents/inbox',
+        tags: ['Agents'],
+        summary: 'Get tasks created and worked on by address',
+      },
+    })
+    .input(TaskInboxInputSchema)
+    .output(TaskInboxResponseSchema)
+    .query(async ({ input, ctx }) => {
+      const { address } = input;
+
+      const mapTask = async (task: typeof tasks.$inferSelect) => {
+        const submissionCount = await ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(submissions)
+          .where(eq(submissions.taskId, task.id));
+
+        const pitchCount = await ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(proposals)
+          .where(eq(proposals.taskId, task.id));
+
+        return {
+          id: task.id,
+          requester: task.requester,
+          requesterPubkey: task.requesterPubkey,
+          description: task.description,
+          reward: task.reward,
+          escrowTxHash: task.escrowTxHash,
+          createdAt: task.createdAt.toISOString(),
+          expiryTime: task.expiryTime.toISOString(),
+          status: task.status as any,
+          tags: task.tags,
+          worker: task.worker,
+          rating: task.rating,
+          mode: task.mode as any,
+          stakeRequired: task.stakeRequired === 1,
+          stakeBps: task.stakeBps,
+          pitchDeadline: task.pitchDeadline?.toISOString() || null,
+          bidDeadline: task.bidDeadline?.toISOString() || null,
+          maxPrice: task.maxPrice ?? null,
+          metricDescription: task.metricDescription,
+          metricTarget: task.metricTarget,
+          claimedBy: task.claimedBy,
+          claimedAt: task.claimedAt?.toISOString() || null,
+          platformFeeBps: task.platformFeeBps,
+          submissionCount: Number(submissionCount[0]?.count || 0),
+          pitchCount: Number(pitchCount[0]?.count || 0),
+        };
+      };
+
+      const requesterRows = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.requester, address))
+        .orderBy(desc(tasks.createdAt))
+        .limit(50);
+
+      const workerRows = await ctx.db
+        .select()
+        .from(tasks)
+        .where(or(eq(tasks.worker, address), eq(tasks.claimedBy, address)))
+        .orderBy(desc(tasks.createdAt))
+        .limit(50);
+
+      const [asRequester, asWorker] = await Promise.all([
+        Promise.all(requesterRows.map(mapTask)),
+        Promise.all(workerRows.map(mapTask)),
+      ]);
+
+      return { asRequester, asWorker };
     }),
 
   leaderboard: publicProcedure

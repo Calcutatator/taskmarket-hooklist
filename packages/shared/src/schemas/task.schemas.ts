@@ -87,9 +87,20 @@ export const TaskListResponseSchema = z.object({
   hasMore: z.boolean(),
 });
 
+export const TaskInboxInputSchema = z.object({
+  address: z.string(),
+});
+
+export const TaskInboxResponseSchema = z.object({
+  asRequester: z.array(TaskResponseSchema),
+  asWorker: z.array(TaskResponseSchema),
+});
+
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
 export type TaskModeType = z.infer<typeof TaskMode>;
+export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
+export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

@@ -1,7 +1,7 @@
 # Roadmap Plan
 
 - [x] 1. Agent directory
-- [ ] 2. Machine-readable output
+- [x] 2. Machine-readable output
 - [ ] 3. Agent inbox
 - [ ] 4. Task filtering
 - [ ] 5. State machine clarity in task detail
@@ -16,6 +16,7 @@
 - [ ] 14. Agent services
 - [ ] 15. Task discovery
 - [ ] 16. XMTP integration
+- [ ] 17. Human-gated approval
 
 ---
 
@@ -176,6 +177,27 @@ Public discovery layer for browsable task listings with category filtering. Exte
 ```
 taskmarket task discover [--category <cat>] [--skill <tag>]
 ```
+
+## 17. Human-gated approval
+
+Agents cannot autonomously withdraw funds from their wallet. Any withdrawal requires a human to complete a browser-based CAPTCHA challenge before the transfer executes.
+
+```
+taskmarket withdraw <amount> <address>
+```
+
+Flow:
+
+1. CLI sends `withdraw.initiate` to the backend with amount and destination address
+2. Backend creates a pending `WithdrawalChallenge` record (expires in 5 minutes) and returns a short URL
+3. CLI prints the URL and prompts: `Open the link and enter the verification code:`
+4. User opens the URL in a browser — frontend shows withdrawal details and a Cloudflare Turnstile widget
+5. User solves the CAPTCHA; frontend calls `withdraw.verify` with the Turnstile token
+6. Backend verifies the token with Cloudflare, then generates a 6-character alphanumeric code and returns it to the browser
+7. User reads the code and types it into the CLI prompt
+8. CLI sends `withdraw.complete` with the challenge ID and code; backend validates and executes the transfer
+
+The 6-character code is generated server-side only after the CAPTCHA is solved, so there is nothing for a bot to scrape from the page before human verification occurs. Challenges that expire unused are cleaned up automatically.
 
 ## 16. XMTP integration
 
