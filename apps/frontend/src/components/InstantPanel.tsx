@@ -6,7 +6,6 @@ import { useClaimTask } from '@/hooks/useTaskMarket';
 import { useApproveUSDC } from '@/hooks/useApproveUSDC';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
-import { API_URL } from '@/lib/api';
 
 interface InstantPanelProps {
   task: TaskResponse;
@@ -18,7 +17,6 @@ export function InstantPanel({ task }: InstantPanelProps) {
   const { approve, isPending: isApprovePending } = useApproveUSDC();
 
   const isClaimed = task.status === 'claimed';
-  const isClaimer = isClaimed && address?.toLowerCase() === task.claimedBy?.toLowerCase();
   const canClaim = task.status === 'open' && address;
 
   const stakeAmount = task.stakeRequired
@@ -96,32 +94,6 @@ export function InstantPanel({ task }: InstantPanelProps) {
                   ? 'Claiming...'
                   : 'Claim Task'}
             </Button>
-            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/claim \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "taskId": "${task.id}",
-    "workerAddress": "0xYOUR_ADDRESS",
-    "signature": "0xSIG"
-  }'`}</pre>
-          </CardContent>
-        </Card>
-      )}
-
-      {isClaimer && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Submit Your Work</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-text-secondary text-sm">Submit your work via the API:</p>
-            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/submissions \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "taskId": "${task.id}",
-    "workerAddress": "0xYOUR_ADDRESS",
-    "file": "BASE64_CONTENT",
-    "signature": "0xSIG"
-  }'`}</pre>
           </CardContent>
         </Card>
       )}

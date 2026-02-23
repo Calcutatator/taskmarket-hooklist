@@ -1,3 +1,5 @@
+import { useState } from 'react';
+import { Check, Copy } from 'lucide-react';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
 import { Separator } from './ui/separator';
@@ -5,6 +7,33 @@ import type { TaskDetailResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { useAccount } from 'wagmi';
 import { Link } from '@tanstack/react-router';
+
+function CopyCommand({ command, role }: { command: string; role?: string }) {
+  const [copied, setCopied] = useState(false);
+
+  function handleCopy() {
+    void navigator.clipboard.writeText(command).then(() => {
+      setCopied(true);
+      setTimeout(() => setCopied(false), 2000);
+    });
+  }
+
+  return (
+    <div className="flex items-center gap-2 text-xs">
+      {role && <span className="text-text-secondary shrink-0">[{role}]</span>}
+      <code className="flex-1 bg-background-secondary px-2 py-1 rounded font-mono break-all">
+        {command}
+      </code>
+      <button
+        onClick={handleCopy}
+        aria-label="Copy command"
+        className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+      >
+        {copied ? <Check size={13} /> : <Copy size={13} />}
+      </button>
+    </div>
+  );
+}
 
 interface TaskDetailProps {
   task: TaskDetailResponse;
@@ -162,12 +191,11 @@ export function TaskDetail({ task }: TaskDetailProps) {
               <h3 className="font-semibold text-sm mb-2">Available actions</h3>
               <div className="space-y-2">
                 {visibleActions.map((a, i) => (
-                  <div key={i} className="text-xs">
-                    {!isConnected && <span className="text-text-secondary mr-2">[{a.role}]</span>}
-                    <code className="bg-background-secondary px-2 py-1 rounded font-mono break-all">
-                      {a.command}
-                    </code>
-                  </div>
+                  <CopyCommand
+                    key={i}
+                    command={a.command}
+                    role={!isConnected ? a.role : undefined}
+                  />
                 ))}
               </div>
             </div>

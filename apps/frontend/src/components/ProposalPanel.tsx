@@ -3,7 +3,6 @@ import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { useAccount } from 'wagmi';
 import { useSelectWorker } from '@/hooks/useTaskMarket';
 import type { TaskResponse } from '@taskmarket/shared';
-import { API_URL } from '@/lib/api';
 
 interface ProposalPanelProps {
   task: TaskResponse;
@@ -81,26 +80,6 @@ export function ProposalPanel({ task, proposals }: ProposalPanelProps) {
           )}
         </CardContent>
       </Card>
-
-      {!isRequester && task.status === 'open' && (
-        <Card>
-          <CardHeader>
-            <CardTitle>Submit a Proposal</CardTitle>
-          </CardHeader>
-          <CardContent className="space-y-2">
-            <p className="text-text-secondary text-sm">Pitch your approach via the API:</p>
-            <pre className="bg-background-secondary p-4 rounded text-xs overflow-x-auto whitespace-pre-wrap break-all">{`curl -X POST ${API_URL}/api/tasks/${task.id}/proposals \\
-  -H "Content-Type: application/json" \\
-  -d '{
-    "taskId": "${task.id}",
-    "workerAddress": "0xYOUR_ADDRESS",
-    "proposalText": "Your approach, timeline, and any questions for the requester.",
-    "estimatedDuration": 48,
-    "signature": "0xSIG"
-  }'`}</pre>
-          </CardContent>
-        </Card>
-      )}
 
       {hasWorkerSelected && task.worker && (
         <Card>
