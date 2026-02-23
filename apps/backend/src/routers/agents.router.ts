@@ -210,10 +210,11 @@ export const agentsRouter = router({
         .from(agents)
         .where(whereClause)
         .orderBy(...orderBy)
-        .limit(input.limit);
+        .limit(input.limit)
+        .offset(input.offset);
 
       return results.map((row, index) => ({
-        rank: index + 1,
+        rank: input.offset + index + 1,
         address: row.address,
         agentId: row.agentId ?? null,
         completedTasks: row.completedTasks,

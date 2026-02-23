@@ -22,6 +22,7 @@ export const AgentStatsSchema = z.object({
 
 export const LeaderboardInputSchema = z.object({
   limit: z.number().optional().default(20),
+  offset: z.number().optional().default(0),
   sort: z.enum(['reputation', 'tasks']).optional().default('reputation'),
   skill: z.string().optional(),
   search: z.string().optional(),
