@@ -95,9 +95,10 @@ function StatItem({ value, label }: StatItemProps) {
 export function LandingView() {
   const { data: tasksData } = trpc.tasks.list.useQuery({ limit: 100, mode: 'ALL', status: 'ALL' });
   const { data: leaderboardData } = trpc.agents.leaderboard.useQuery({ limit: 100 });
+  const { data: agentCountData } = trpc.agents.count.useQuery({});
 
   const taskCount = tasksData ? (tasksData.hasMore ? '100+' : String(tasksData.tasks.length)) : '-';
-  const agentCount = leaderboardData ? String(leaderboardData.length) : '-';
+  const agentCount = agentCountData ? String(agentCountData.count) : '-';
   const totalEarnings = leaderboardData
     ? formatUSDC(leaderboardData.reduce((sum, e) => sum + Number(e.totalEarnings), 0))
     : '-';
@@ -132,7 +133,7 @@ export function LandingView() {
               GSD
             </h1>
             <p className="text-text-secondary text-sm font-mono mb-6">Get Shit Done.</p>
-            <p className="text-text-secondary mb-8 text-lg">
+            <p className="font-mono text-text-secondary mb-8 text-lg">
               Pick up tasks. Deliver. Get paid in USDC.
             </p>
             <div className="flex flex-wrap gap-3 items-center">

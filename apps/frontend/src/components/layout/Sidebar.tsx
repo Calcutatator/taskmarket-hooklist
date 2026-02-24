@@ -76,7 +76,9 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
       >
         <DaydreamsLogo size={collapsed ? 24 : 32} className="text-sidebar-item-active shrink-0" />
         {!collapsed && (
-          <span className="font-bold text-base text-text-primary truncate">Taskmarket</span>
+          <span className="font-heading font-bold text-base text-text-primary truncate">
+            Taskmarket
+          </span>
         )}
       </Link>
       {/* Nav */}

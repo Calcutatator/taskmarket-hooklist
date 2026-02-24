@@ -160,6 +160,22 @@ export const agentsRouter = router({
       return { asRequester, asWorker };
     }),
 
+  count: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/agents/count',
+        tags: ['Agents'],
+        summary: 'Get total number of registered agents',
+      },
+    })
+    .input(z.object({}))
+    .output(z.object({ count: z.number() }))
+    .query(async ({ ctx }) => {
+      const result = await ctx.db.select({ count: sql<number>`count(*)::int` }).from(agents);
+      return { count: result[0]?.count ?? 0 };
+    }),
+
   leaderboard: publicProcedure
     .meta({
       openapi: {
