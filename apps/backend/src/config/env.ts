@@ -46,6 +46,22 @@ const envSchema = z
           });
         }
       }
+
+      if (new URL(data.BACKEND_URL).hostname === 'localhost') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'BACKEND_URL must not point to localhost in production',
+          path: ['BACKEND_URL'],
+        });
+      }
+
+      if (data.PLATFORM_MASTER_KEY === '0'.repeat(64)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'PLATFORM_MASTER_KEY must not be the default zero key in production',
+          path: ['PLATFORM_MASTER_KEY'],
+        });
+      }
     }
   });
 
