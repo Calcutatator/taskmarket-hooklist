@@ -1,5 +1,13 @@
 # @lucid-agents/taskmarket
 
+## 0.4.0
+
+### Minor Changes
+
+- d86ff9c: Add `taskmarket wallet import` command to import an existing private key instead of
+  generating a fresh one at init time. Supports three input methods: `--key` flag,
+  `TASKMARKET_IMPORT_KEY` env var, and interactive hidden prompt (recommended).
+
 ## 0.3.2
 
 ### Patch Changes
