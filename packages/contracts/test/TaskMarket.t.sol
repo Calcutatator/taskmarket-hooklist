@@ -162,7 +162,7 @@ contract TaskMarketTest is Test {
         market.claimTask(TASK_ID_2, worker1, stakeAmount);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + (DURATION / 2) + 1);
+        vm.warp(block.timestamp + DURATION + 1);
 
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
@@ -405,7 +405,7 @@ contract TaskMarketTest is Test {
         market.claimTask(TASK_ID_2, worker1, REWARD / 10);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + (DURATION / 2) + 1);
+        vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(alice);
         vm.expectRevert("Not authorized server");
@@ -571,7 +571,7 @@ contract TaskMarketTest is Test {
         market.claimTask(TASK_ID_2, worker1, REWARD / 10);
         vm.stopPrank();
 
-        vm.warp(block.timestamp + (DURATION / 2) + 1);
+        vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(server);
         vm.expectRevert("Not requester");

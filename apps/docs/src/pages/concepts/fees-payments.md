@@ -77,14 +77,15 @@ Example: reward = 10 USDC, feeBps = 500 (5%)
 * Worker receives: 9.5 USDC
 * Platform fee: 0.5 USDC
 
-## Instant task staking
+## Claim task staking
 
-For Instant-mode tasks, the requester can require a USDC stake from the worker. The stake is expressed in basis points of the reward (`stakeBps`). If enabled:
+For Claim-mode tasks, the requester can require a USDC stake from the worker. The stake is expressed in basis points of the reward (`stakeBps`). If enabled:
 
 * Worker must have the stake amount approved to the server wallet before claiming
 * Stake is held in escrow alongside the reward
 * On successful acceptance: stake is returned to the worker
-* On forfeit (worker abandoned past the halfway point): stake goes to the fee recipient
+* On natural expiry (`refundExpired`): stake is returned to the claimer
+* On forfeit (`forfeitAndReopen`, called after expiry): stake goes to the fee recipient as a non-delivery penalty
 
 ## EIP-3009 TransferWithAuthorization
 

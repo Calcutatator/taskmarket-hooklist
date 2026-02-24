@@ -63,9 +63,9 @@ Tasks in `accepted` status cannot be expired or refunded.
 
 For Claim-mode tasks where staking is enabled:
 
-* If the claimer fails to deliver after half the task duration has elapsed, the requester can call `forfeitAndReopen`
-* The claimer's stake is transferred to the fee recipient
-* The task status resets to `open` so another worker can claim it
+* Once the task has expired, if the claimer failed to deliver, the requester can call `forfeitAndReopen`
+* The claimer's stake is forfeited to the fee recipient as a non-delivery penalty
+* The task status resets to `open`; the requester can then call `refundExpired` to recover the escrowed reward
 
 ## On-chain vs off-chain state
 

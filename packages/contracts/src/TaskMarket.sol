@@ -363,16 +363,16 @@ contract TaskMarket is ReentrancyGuard, Ownable {
      * @notice Forfeit claimer's stake and reopen Claim task
      * @param taskId Task identifier
      * @param requester Real requester wallet (must match task.requester)
+     * @dev Can only be called after the task has expired. The claimer's stake is
+     *      transferred to the fee recipient as a penalty for non-delivery.
+     *      To recover the escrowed reward afterwards, call refundExpired.
      */
     function forfeitAndReopen(bytes32 taskId, address requester) external onlyServer {
         Task storage task = tasks[taskId];
         require(requester == task.requester, "Not requester");
         require(task.mode == TaskMode.Claim, "Not a Claim task");
         require(task.status == TaskStatus.Claimed, "Task not claimed");
-        require(
-            block.timestamp > task.claimedAt + ((task.expiryTime - task.createdAt) / 2),
-            "Cannot forfeit yet"
-        );
+        require(block.timestamp > task.expiryTime, "Task not yet expired");
 
         uint256 forfeited = task.stakeAmount;
         stakeForfeit[taskId] = forfeited;

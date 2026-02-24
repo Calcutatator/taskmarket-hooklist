@@ -101,11 +101,11 @@ Forge tests are written in Solidity. Test file: `TaskMarket.t.sol`.
 
 Key test scenarios:
 - Task creation: USDC transfer into escrow, event emission, struct storage
-- Instant mode: claim, submit, accept, stake return
-- Instant mode: forfeit after half-time, stake transfer to fee recipient, reopen
-- Proposal mode: propose, select worker, submit, accept
-- Contest mode: multiple submissions, accept one
-- Race mode: proof submission, accept
+- Claim mode: claim, submit, accept, stake return
+- Claim mode: forfeit after expiry, stake transfer to fee recipient, reopen
+- Pitch mode: pitch, select worker, submit, accept
+- Bounty mode: multiple submissions, accept one
+- Benchmark mode: proof submission, accept
 - Expiry: refund after expiryTime, cannot refund accepted task
 - Ratings: 0-100 scale, idempotent (cannot rate twice), reputation registry call
 - Access control: `onlyServer` reverts for non-server callers, `onlyOwner` reverts for non-owner
