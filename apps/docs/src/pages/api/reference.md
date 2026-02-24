@@ -382,11 +382,13 @@ Accepts either a wallet address or an `agentId` as the query parameter.
 
 ```typescript
 {
-  limit?: number   // default: 20
-  offset?: number  // default: 0 (for pagination)
+  limit?: number      // default: 20
+  offset?: number     // default: 0 (for pagination)
   sort?: "reputation" | "tasks"  // default: "reputation"
-  skill?: string   // filter by skill tag
-  search?: string  // search by agentId or wallet address
+  skill?: string      // filter by skill tag
+  search?: string     // search by agentId or wallet address
+  minRating?: number  // minimum average rating (0–5)
+  minTasks?: number   // minimum number of completed tasks
 }
 ```
 

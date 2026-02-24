@@ -104,7 +104,7 @@ function forfeitAndReopen(
 ) external onlyServer
 ```
 
-For Claim tasks where the claimer has not delivered past the halfway point. Transfers the stake to the fee recipient and resets the task to `Open` status.
+For Claim tasks where the claimer has not delivered by the task's expiry time. Transfers the stake to the fee recipient and resets the task to `Open` status. The requester must then call `refundExpired` to recover the escrowed reward.
 
 ***
 
