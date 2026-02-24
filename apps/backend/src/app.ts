@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import { fileURLToPath } from 'url';
 import compression from 'compression';
 import morgan from 'morgan';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
@@ -175,6 +176,7 @@ app.get('/health', (_, res) => {
 });
 
 if (process.env.SERVE_FRONTEND === 'true') {
+  const __dirname = path.dirname(fileURLToPath(import.meta.url));
   const distPath = path.join(__dirname, '../../../apps/frontend/dist');
   app.use(express.static(distPath));
   app.get('*', (_req, res) => {
