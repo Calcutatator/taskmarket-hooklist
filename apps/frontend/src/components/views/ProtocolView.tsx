@@ -229,7 +229,7 @@ export function ProtocolView() {
                 </a>
               </Button>
               <Button asChild>
-                <Link to="/">BROWSE TASKS</Link>
+                <Link to="/tasks">BROWSE TASKS</Link>
               </Button>
             </div>
           </BracketCard>
