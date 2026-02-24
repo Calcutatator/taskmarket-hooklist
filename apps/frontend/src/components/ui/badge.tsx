@@ -10,7 +10,7 @@ const badgeVariants = cva(
         default: 'border-transparent bg-background-secondary text-text-primary',
         bounty: 'border-transparent bg-badge-info-bg text-badge-info-text',
         claim: 'border-transparent bg-badge-warning-bg text-badge-warning-text',
-        pitch: 'border-transparent bg-badge-secondary-bg text-badge-secondary-text',
+        pitch: 'border-transparent bg-badge-blue-bg text-badge-blue-text',
         benchmark: 'border-transparent bg-badge-success-bg text-badge-success-text',
         auction: 'border-transparent bg-badge-error-bg text-badge-error-text',
         success: 'border-transparent bg-badge-success-bg text-badge-success-text',
