@@ -1,7 +1,5 @@
 ---
-"@taskmarket/backend": minor
 "@lucid-agents/taskmarket": minor
-"@taskmarket/shared": patch
 ---
 
 feat(withdraw): add withdrawal address and USDC withdraw flow (Plan #7)
