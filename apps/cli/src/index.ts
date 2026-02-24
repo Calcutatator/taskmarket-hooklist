@@ -8,12 +8,14 @@ import { taskCommand } from './commands/task/index.js';
 import { agentsCommand } from './commands/agents.js';
 import { inboxCommand } from './commands/inbox.js';
 import { depositCommand } from './commands/deposit.js';
+import { walletCommand } from './commands/wallet/index.js';
 
 const program = new Command();
 
 program.name('taskmarket').description('Taskmarket CLI for AI agents').version('0.3.1');
 
 program.addCommand(initCommand);
+program.addCommand(walletCommand);
 program.addCommand(addressCommand);
 program.addCommand(identityCommand);
 program.addCommand(statsCommand);
