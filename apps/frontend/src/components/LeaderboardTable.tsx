@@ -6,6 +6,18 @@ import { formatUSDC } from '@/lib/format';
 import { IdentityBadge } from './IdentityBadge';
 
 const PAGE_SIZE_OPTIONS = [10, 20, 50] as const;
+const MIN_RATING_OPTIONS = [
+  { label: 'Any', value: undefined },
+  { label: '3+', value: 3 },
+  { label: '4+', value: 4 },
+  { label: '4.5+', value: 4.5 },
+] as const;
+const MIN_TASKS_OPTIONS = [
+  { label: 'Any', value: undefined },
+  { label: '5+', value: 5 },
+  { label: '10+', value: 10 },
+  { label: '50+', value: 50 },
+] as const;
 
 export function LeaderboardTable() {
   const search = useSearch({ from: '/leaderboard' });
@@ -32,6 +44,8 @@ export function LeaderboardTable() {
     sort,
     skill: search.skill,
     search: search.search,
+    minRating: search.minRating,
+    minTasks: search.minTasks,
   });
 
   const hasNextPage = leaderboard !== undefined && leaderboard.length === pageSize;
@@ -43,6 +57,8 @@ export function LeaderboardTable() {
     search?: string;
     page?: number;
     limit?: number;
+    minRating?: number;
+    minTasks?: number;
   }) {
     void navigate({
       search: (prev) => ({
@@ -52,6 +68,8 @@ export function LeaderboardTable() {
         search: overrides.search || undefined,
         page: overrides.page && overrides.page > 1 ? overrides.page : undefined,
         limit: overrides.limit && overrides.limit !== 20 ? overrides.limit : undefined,
+        minRating: 'minRating' in overrides ? overrides.minRating : prev.minRating,
+        minTasks: 'minTasks' in overrides ? overrides.minTasks : prev.minTasks,
       }),
     });
   }
@@ -115,6 +133,42 @@ export function LeaderboardTable() {
               }}
               className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary w-36"
             />
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-secondary">Min Rating</label>
+            <select
+              value={search.minRating ?? ''}
+              onChange={(e) => {
+                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                applyFilters({ minRating: val, minTasks: search.minTasks, page: 1 });
+              }}
+              className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary"
+            >
+              {MIN_RATING_OPTIONS.map((o) => (
+                <option key={o.label} value={o.value ?? ''}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex flex-col gap-1">
+            <label className="text-xs font-medium text-text-secondary">Min Tasks</label>
+            <select
+              value={search.minTasks ?? ''}
+              onChange={(e) => {
+                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                applyFilters({ minTasks: val, minRating: search.minRating, page: 1 });
+              }}
+              className="px-3 py-1.5 text-sm border border-border-primary rounded bg-background-primary text-text-primary"
+            >
+              {MIN_TASKS_OPTIONS.map((o) => (
+                <option key={o.label} value={o.value ?? ''}>
+                  {o.label}
+                </option>
+              ))}
+            </select>
           </div>
 
           <div className="flex flex-col gap-1">
@@ -184,20 +238,21 @@ export function LeaderboardTable() {
             </select>
           </div>
 
-          <button
-            type="submit"
-            className="px-4 py-1.5 text-sm bg-sidebar-item-active text-white rounded hover:opacity-90 transition-opacity"
-          >
-            Filter
-          </button>
-
-          {(search.skill || search.search) && (
+          {(search.skill || search.search || search.minRating || search.minTasks) && (
             <button
               type="button"
               onClick={() => {
                 setSearchInput('');
                 setSkillInput('');
-                applyFilters({ sort, skill: '', search: '', page: 1, limit: pageSize });
+                applyFilters({
+                  sort,
+                  skill: '',
+                  search: '',
+                  page: 1,
+                  limit: pageSize,
+                  minRating: undefined,
+                  minTasks: undefined,
+                });
               }}
               className="px-4 py-1.5 text-sm border border-border-primary text-text-secondary rounded hover:text-text-primary transition-colors"
             >

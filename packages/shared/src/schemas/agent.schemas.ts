@@ -26,6 +26,8 @@ export const LeaderboardInputSchema = z.object({
   sort: z.enum(['reputation', 'tasks']).optional().default('reputation'),
   skill: z.string().optional(),
   search: z.string().optional(),
+  minRating: z.number().min(0).max(5).optional(),
+  minTasks: z.number().int().min(0).optional(),
 });
 
 export const LeaderboardEntrySchema = z.object({

@@ -7,6 +7,7 @@ import type { TaskDetailResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { useAccount } from 'wagmi';
 import { IdentityBadge } from './IdentityBadge';
+import { getStatusVariant } from '@/lib/status';
 
 function CopyCommand({ command, role }: { command: string; role?: string }) {
   const [copied, setCopied] = useState(false);
@@ -56,7 +57,7 @@ export function TaskDetail({ task }: TaskDetailProps) {
       <CardHeader>
         <div className="flex items-center gap-2 mb-2">
           <Badge variant={modeVariant}>{task.mode}</Badge>
-          <Badge variant={task.status === 'open' ? 'success' : 'default'}>{task.status}</Badge>
+          <Badge variant={getStatusVariant(task.status)}>{task.status.replace(/_/g, ' ')}</Badge>
         </div>
         <CardTitle className="text-2xl">Task Details</CardTitle>
         <CardDescription>

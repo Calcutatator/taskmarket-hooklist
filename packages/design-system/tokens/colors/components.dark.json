@@ -220,6 +220,16 @@
           "$type": "color",
           "$value": "{colors.red.1200}"
         }
+      },
+      "blue": {
+        "bg": {
+          "$type": "color",
+          "$value": "{colors.blue.400}"
+        },
+        "text": {
+          "$type": "color",
+          "$value": "{colors.blue.1200}"
+        }
       }
     },
     "alert": {

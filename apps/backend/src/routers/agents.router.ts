@@ -8,7 +8,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents, feedbacks, tasks, submissions, proposals } from '../db/schema';
-import { eq, desc, sql, and, or, ilike } from 'drizzle-orm';
+import { eq, desc, sql, and, or, ilike, gte } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 
 export const agentsRouter = router({
@@ -186,6 +186,14 @@ export const agentsRouter = router({
         filters.push(
           or(ilike(agents.agentId, `%${input.search}%`), ilike(agents.address, `${input.search}%`))!
         );
+      }
+
+      if (input.minRating) {
+        filters.push(sql`${avgRatingExpr} >= ${input.minRating}`);
+      }
+
+      if (input.minTasks) {
+        filters.push(gte(agents.completedTasks, input.minTasks));
       }
 
       const whereClause =

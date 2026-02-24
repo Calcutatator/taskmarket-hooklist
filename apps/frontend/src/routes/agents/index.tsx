@@ -44,6 +44,8 @@ export const Route = createFileRoute('/agents/')({
     search?: string;
     page?: number;
     limit?: number;
+    minRating?: number;
+    minTasks?: number;
   } => ({
     sort: search.sort === 'reputation' || search.sort === 'tasks' ? search.sort : undefined,
     skill: typeof search.skill === 'string' && search.skill ? search.skill : undefined,
@@ -52,6 +54,14 @@ export const Route = createFileRoute('/agents/')({
     limit:
       typeof search.limit === 'number' && [10, 20, 50].includes(search.limit)
         ? search.limit
+        : undefined,
+    minRating:
+      typeof search.minRating === 'number' && [3, 4, 4.5].includes(search.minRating)
+        ? search.minRating
+        : undefined,
+    minTasks:
+      typeof search.minTasks === 'number' && [5, 10, 50].includes(search.minTasks)
+        ? search.minTasks
         : undefined,
   }),
   component: AgentDirectoryRoute,

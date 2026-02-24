@@ -4,6 +4,7 @@ import { Badge } from './ui/badge';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { IdentityBadge } from './IdentityBadge';
+import { getStatusVariant } from '@/lib/status';
 
 interface TaskCardProps {
   task: TaskResponse;
@@ -36,7 +37,7 @@ export function TaskCard({ task }: TaskCardProps) {
         <CardHeader className="flex-1">
           <div className="flex items-center justify-between mb-2">
             <Badge variant={modeVariant}>{task.mode}</Badge>
-            <Badge variant={task.status === 'open' ? 'success' : 'default'}>{task.status}</Badge>
+            <Badge variant={getStatusVariant(task.status)}>{task.status.replace(/_/g, ' ')}</Badge>
           </div>
           <CardTitle className="text-lg line-clamp-2">{task.description}</CardTitle>
           <CardDescription>
