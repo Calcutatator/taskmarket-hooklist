@@ -24,11 +24,16 @@ export default {
 
     if (isSocialBot(ua)) {
       const url = new URL(request.url);
-      url.hostname = API_HOST;
-      return fetch(url.toString(), {
-        method: request.method,
-        headers: request.headers,
-      });
+      // Only proxy page requests — let static assets (images, js, css) pass through
+      // so the bot can fetch og-image.png from the frontend origin directly.
+      const hasFileExtension = /\.\w+$/.test(url.pathname);
+      if (!hasFileExtension) {
+        url.hostname = API_HOST;
+        return fetch(url.toString(), {
+          method: request.method,
+          headers: request.headers,
+        });
+      }
     }
 
     return fetch(request);
