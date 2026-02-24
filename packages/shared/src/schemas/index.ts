@@ -7,3 +7,4 @@ export * from './pitch.schemas';
 export * from './claim.schemas';
 export * from './proof.schemas';
 export * from './bid.schemas';
+export * from './wallet.schemas';

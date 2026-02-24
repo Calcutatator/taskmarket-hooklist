@@ -7,6 +7,7 @@ const ERC20_ABI = parseAbi([
   'function approve(address,uint256) returns (bool)',
   'function allowance(address,address) view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
+  'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
   'function createTask(bytes32,address,uint256,uint256,uint8,uint256,uint256)',
@@ -256,6 +257,40 @@ export async function contractRateTask(
   });
   assertSuccess(receipt, 'rateTask');
   return { hash, blockNumber: Number(receipt.blockNumber) };
+}
+
+export async function contractTransferWithAuthorization(
+  from: `0x${string}`,
+  to: `0x${string}`,
+  value: bigint,
+  validAfter: bigint,
+  validBefore: bigint,
+  nonce: `0x${string}`,
+  signature: string
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+
+  // Split 65-byte hex signature into v, r, s
+  const sig = signature.startsWith('0x') ? signature.slice(2) : signature;
+  const r = `0x${sig.slice(0, 64)}` as `0x${string}`;
+  const s = `0x${sig.slice(64, 128)}` as `0x${string}`;
+  const v = parseInt(sig.slice(128, 130), 16);
+
+  const hash = await client.writeContract({
+    address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'transferWithAuthorization',
+    args: [from, to, value, validAfter, validBefore, nonce, v, r, s],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'transferWithAuthorization'
+  );
+  return hash;
 }
 
 export async function contractRegisterIdentity(): Promise<bigint> {
