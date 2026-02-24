@@ -170,10 +170,18 @@ export const agentsRouter = router({
       },
     })
     .input(z.object({}))
-    .output(z.object({ count: z.number() }))
+    .output(z.object({ count: z.number(), totalEarnings: z.string() }))
     .query(async ({ ctx }) => {
-      const result = await ctx.db.select({ count: sql<number>`count(*)::int` }).from(agents);
-      return { count: result[0]?.count ?? 0 };
+      const result = await ctx.db
+        .select({
+          count: sql<number>`count(*)::int`,
+          totalEarnings: sql<string>`coalesce(sum(${agents.totalEarnings}::numeric), 0)::text`,
+        })
+        .from(agents);
+      return {
+        count: result[0]?.count ?? 0,
+        totalEarnings: result[0]?.totalEarnings ?? '0',
+      };
     }),
 
   leaderboard: publicProcedure

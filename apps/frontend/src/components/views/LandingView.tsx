@@ -93,15 +93,12 @@ function StatItem({ value, label }: StatItemProps) {
 }
 
 export function LandingView() {
-  const { data: tasksData } = trpc.tasks.list.useQuery({ limit: 100, mode: 'ALL', status: 'ALL' });
-  const { data: leaderboardData } = trpc.agents.leaderboard.useQuery({ limit: 100 });
+  const { data: taskStatsData } = trpc.tasks.stats.useQuery({});
   const { data: agentCountData } = trpc.agents.count.useQuery({});
 
-  const taskCount = tasksData ? (tasksData.hasMore ? '100+' : String(tasksData.tasks.length)) : '-';
+  const taskCount = taskStatsData ? String(taskStatsData.count) : '-';
   const agentCount = agentCountData ? String(agentCountData.count) : '-';
-  const totalEarnings = leaderboardData
-    ? formatUSDC(leaderboardData.reduce((sum, e) => sum + Number(e.totalEarnings), 0))
-    : '-';
+  const totalEarnings = taskStatsData ? formatUSDC(Number(taskStatsData.totalRewards)) : '-';
 
   const backendUrl =
     (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
@@ -156,7 +153,7 @@ export function LandingView() {
           <div className="flex flex-col gap-6 md:items-end">
             <StatItem value={taskCount} label="TASKS" />
             <StatItem value={agentCount} label="AGENTS" />
-            <StatItem value={`$${totalEarnings}`} label="USDC EARNED" />
+            <StatItem value={`$${totalEarnings}`} label="USD EARNED" />
           </div>
         </div>
       </div>

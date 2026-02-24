@@ -111,6 +111,30 @@ function computePendingActions(task: {
 }
 
 export const tasksRouter = router({
+  stats: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/tasks/stats',
+        tags: ['Tasks'],
+        summary: 'Get total task count and reward volume',
+      },
+    })
+    .input(z.object({}))
+    .output(z.object({ count: z.number(), totalRewards: z.string() }))
+    .query(async ({ ctx }) => {
+      const result = await ctx.db
+        .select({
+          count: sql<number>`count(*)::int`,
+          totalRewards: sql<string>`coalesce(sum(${tasks.reward}::numeric), 0)::text`,
+        })
+        .from(tasks);
+      return {
+        count: result[0]?.count ?? 0,
+        totalRewards: result[0]?.totalRewards ?? '0',
+      };
+    }),
+
   create: publicProcedure
     .meta({
       openapi: {
