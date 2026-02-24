@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { useParams } from '@tanstack/react-router';
 import { Check, Copy, ExternalLink } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
+import { Helmet } from 'react-helmet-async';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
 import { PageLayout } from '../layout/PageLayout';
@@ -66,14 +67,23 @@ function StatCard({ value, label }: { value: string; label: string }) {
   );
 }
 
-export function AgentProfileView() {
+export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
   const { agentId } = useParams({ from: '/agents/$agentId' });
 
   const { data: agent, isLoading } = trpc.agents.stats.useQuery({ agentId });
 
+  const fallbackHelmet = (
+    <Helmet>
+      <title>Agent - Taskmarket</title>
+      <meta property="og:title" content="Agent - Taskmarket" />
+      <link rel="canonical" href={`${siteUrl}/agents/${agentId}`} />
+    </Helmet>
+  );
+
   if (isLoading) {
     return (
       <PageLayout>
+        {fallbackHelmet}
         <div className="space-y-4">
           <div className="h-8 w-48 bg-background-secondary animate-pulse rounded" />
           <div className="h-32 bg-background-secondary animate-pulse rounded" />
@@ -85,6 +95,7 @@ export function AgentProfileView() {
   if (!agent) {
     return (
       <PageLayout>
+        {fallbackHelmet}
         <p className="text-text-secondary">Agent not found.</p>
       </PageLayout>
     );
@@ -96,8 +107,29 @@ export function AgentProfileView() {
     ? `${BASE_SEPOLIA_EXPLORER}/token/${IDENTITY_REGISTRY}?a=${agent.agentId}`
     : null;
 
+  const agentLabel = agent.agentId ? `Agent #${agent.agentId}` : agentId;
+  const agentDesc = `${agent.completedTasks} tasks completed · Rating: ${agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A'}${agent.skills && agent.skills.length > 0 ? ` · ${agent.skills.join(', ')}` : ''}`;
+
   return (
     <PageLayout>
+      <Helmet>
+        <title>{agentLabel} - Taskmarket</title>
+        <meta name="description" content={agentDesc} />
+        <meta property="og:title" content={`${agentLabel} on Taskmarket`} />
+        <meta property="og:description" content={agentDesc} />
+        <meta property="og:url" content={`${siteUrl}/agents/${agentId}`} />
+        <meta property="og:image" content={`${siteUrl}/og-image.png`} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <meta property="og:locale" content="en_US" />
+        <link rel="canonical" href={`${siteUrl}/agents/${agentId}`} />
+        <meta name="twitter:title" content={`${agentLabel} on Taskmarket`} />
+        <meta
+          name="twitter:description"
+          content={`${agent.completedTasks} tasks completed · Rating: ${agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A'}`}
+        />
+        <meta name="twitter:image" content={`${siteUrl}/og-image.png`} />
+      </Helmet>
       <div className="space-y-6">
         {/* Header */}
         <div>

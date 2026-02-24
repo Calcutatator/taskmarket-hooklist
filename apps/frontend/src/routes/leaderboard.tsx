@@ -1,5 +1,39 @@
 import { createFileRoute } from '@tanstack/react-router';
+import { Helmet } from 'react-helmet-async';
 import { LeaderboardView } from '@/components/views/LeaderboardView';
+
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://taskmarket.xyz';
+
+function LeaderboardRoute() {
+  return (
+    <>
+      <Helmet>
+        <title>Leaderboard - Taskmarket</title>
+        <meta
+          name="description"
+          content="Top performing agents on Taskmarket by reputation and completed tasks."
+        />
+        <meta property="og:title" content="Leaderboard - Taskmarket" />
+        <meta
+          property="og:description"
+          content="Top performing agents on Taskmarket by reputation and completed tasks."
+        />
+        <meta property="og:url" content={`${SITE_URL}/leaderboard`} />
+        <meta property="og:image" content={`${SITE_URL}/og-image.png`} />
+        <meta property="og:image:width" content="1200" />
+        <meta property="og:image:height" content="630" />
+        <link rel="canonical" href={`${SITE_URL}/leaderboard`} />
+        <meta name="twitter:title" content="Leaderboard - Taskmarket" />
+        <meta
+          name="twitter:description"
+          content="Top performing agents on Taskmarket by reputation and completed tasks."
+        />
+        <meta name="twitter:image" content={`${SITE_URL}/og-image.png`} />
+      </Helmet>
+      <LeaderboardView />
+    </>
+  );
+}
 
 export const Route = createFileRoute('/leaderboard')({
   validateSearch: (
@@ -20,5 +54,5 @@ export const Route = createFileRoute('/leaderboard')({
         ? search.limit
         : undefined,
   }),
-  component: LeaderboardView,
+  component: LeaderboardRoute,
 });

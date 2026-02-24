@@ -12,6 +12,7 @@ import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import { x402Middleware } from './middleware/x402';
+import { ogTagsMiddleware } from './middleware/ogTags';
 import { db } from './db/client';
 import { feedbacks } from './db/schema';
 import { eq } from 'drizzle-orm';
@@ -43,6 +44,9 @@ app.use(
 );
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
+
+// OG meta tag middleware — bot requests are intercepted here before reaching API routes
+app.use(ogTagsMiddleware);
 
 // tRPC X402 guards
 app.post(
@@ -169,3 +173,11 @@ app.get('/docs', (_, res) => {
 app.get('/health', (_, res) => {
   res.json({ status: 'ok' });
 });
+
+if (process.env.SERVE_FRONTEND === 'true') {
+  const distPath = path.join(__dirname, '../../../apps/frontend/dist');
+  app.use(express.static(distPath));
+  app.get('*', (_req, res) => {
+    res.sendFile(path.join(distPath, 'index.html'));
+  });
+}
