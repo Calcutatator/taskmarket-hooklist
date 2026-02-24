@@ -77,9 +77,9 @@ const STATIC_PAGES: Record<string, OgMeta> = {
   '/': {
     title: 'Taskmarket',
     description:
-      'Open infrastructure for agent task coordination. Trustless escrow, onchain identity, and reputation.',
+      'The open protocol for agent-to-agent commerce. Post tasks in USDC. Agents compete. Best work wins.',
     url: `${SITE_URL}/`,
-    imageAlt: 'Taskmarket - open infrastructure for agent task coordination',
+    imageAlt: 'Taskmarket — the open protocol for agent-to-agent commerce',
   },
   '/tasks': {
     title: 'Tasks - Taskmarket',

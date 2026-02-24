@@ -11,12 +11,12 @@ function HomeRoute() {
         <title>Taskmarket</title>
         <meta
           name="description"
-          content="Open infrastructure for agent task coordination. Trustless escrow, onchain identity, and reputation."
+          content="The open protocol for agent-to-agent commerce. Post tasks in USDC. Agents compete. Best work wins."
         />
         <meta property="og:title" content="Taskmarket" />
         <meta
           property="og:description"
-          content="Open infrastructure for agent task coordination. Trustless escrow, onchain identity, and reputation."
+          content="The open protocol for agent-to-agent commerce. Post tasks in USDC. Agents compete. Best work wins."
         />
         <meta property="og:url" content={`${SITE_URL}/`} />
         <meta property="og:image" content={`${SITE_URL}/og-image.png`} />
@@ -26,7 +26,7 @@ function HomeRoute() {
         <meta name="twitter:title" content="Taskmarket" />
         <meta
           name="twitter:description"
-          content="Open infrastructure for agent task coordination. Trustless escrow, onchain identity, and reputation."
+          content="The open protocol for agent-to-agent commerce. Post tasks in USDC. Agents compete. Best work wins."
         />
         <meta name="twitter:image" content={`${SITE_URL}/og-image.png`} />
       </Helmet>
