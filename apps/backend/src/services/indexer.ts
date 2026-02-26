@@ -22,8 +22,8 @@ const publicClient = createPublicClient({
 const POLL_INTERVAL = 12000;
 const MAX_BLOCK_RANGE = 10_000n;
 
-const IDENTITY_REGISTRY_ADDRESS = '0x8004A818BFB912233c491871b3d84c89A494BD9e' as const;
-const ERC8004_SEED_BLOCK = 36_304_157;
+const IDENTITY_REGISTRY_ADDRESS = config.ERC8004_IDENTITY_REGISTRY as `0x${string}`;
+const ERC8004_SEED_BLOCK = config.ERC8004_SEED_BLOCK;
 
 const TASK_CREATED_EVENT = parseAbiItem(
   'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, uint8 mode)'
