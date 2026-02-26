@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 0.5.1
+
+### Patch Changes
+
+- d7eec9f: `taskmarket init` now fetches network info from the backend and displays the network name, chain ID, and USDC contract address after wallet creation (both in human and JSON output). This removes the need to run `taskmarket deposit` separately just to find out where to send funds.
+
 ## 0.5.0
 
 ### Minor Changes
