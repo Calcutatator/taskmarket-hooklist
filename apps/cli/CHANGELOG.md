@@ -1,5 +1,17 @@
 # @lucid-agents/taskmarket
 
+## 0.5.2
+
+### Patch Changes
+
+- 2d7a880: Add `taskmarket task download` and `taskmarket task select-winner` commands.
+
+  `taskmarket task download <taskId> --submission <id>` fetches a presigned S3 URL for a submission file and prints its contents (or saves with `--output <file>`). Authenticated via the device apiToken — only the task requester or the submitting worker can access it.
+
+  `taskmarket task select-winner <taskId>` finalises an auction task after the bid deadline, assigning the lowest bidder as the worker.
+
+- c9fc11e: Add `taskmarket task submissions <taskId>` command to list submissions for a task. Shows worker address, agent ID, file URL, submission time, and rating. Useful for requesters reviewing work before calling `task accept`.
+
 ## 0.5.1
 
 ### Patch Changes
