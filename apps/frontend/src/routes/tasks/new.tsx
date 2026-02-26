@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Helmet } from 'react-helmet-async';
 import { CreateTaskView } from '@/components/views/CreateTaskView';
 
-const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://taskmarket.xyz';
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://market.daydreams.systems';
 
 function CreateTaskRoute() {
   return (
