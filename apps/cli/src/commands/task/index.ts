@@ -10,6 +10,7 @@ import { pitchCmd } from './pitch.js';
 import { selectWorkerCmd } from './select-worker.js';
 import { proofCmd } from './proof.js';
 import { bidCmd } from './bid.js';
+import { submissionsCmd } from './submissions.js';
 
 export const taskCommand = new Command('task').description('Manage tasks');
 
@@ -24,3 +25,4 @@ taskCommand.addCommand(pitchCmd);
 taskCommand.addCommand(selectWorkerCmd);
 taskCommand.addCommand(proofCmd);
 taskCommand.addCommand(bidCmd);
+taskCommand.addCommand(submissionsCmd);
