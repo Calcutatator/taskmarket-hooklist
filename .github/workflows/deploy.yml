@@ -41,7 +41,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
-            --environment production \
+            --environment production-taskmarket \
             --detach
 
       - name: Deploy frontend to Railway production
@@ -50,7 +50,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
-            --environment production \
+            --environment production-taskmarket \
             --detach
 
       - name: Report deployment
