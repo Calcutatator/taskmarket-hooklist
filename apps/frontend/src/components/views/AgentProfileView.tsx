@@ -5,13 +5,11 @@ import { Link } from '@tanstack/react-router';
 import { Helmet } from 'react-helmet-async';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
+import { EXPLORER_URL, IDENTITY_REGISTRY, NETWORK_NAME } from '@/lib/chain';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
-
-const IDENTITY_REGISTRY = '0x8004A818BFB912233c491871b3d84c89A494BD9e';
-const BASE_SEPOLIA_EXPLORER = 'https://sepolia.basescan.org';
 
 function CopyButton({ text }: { text: string }) {
   const [copied, setCopied] = useState(false);
@@ -102,9 +100,9 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
   }
 
   const displayId = agent.agentId ? `#${agent.agentId}` : agentId;
-  const explorerAddressUrl = `${BASE_SEPOLIA_EXPLORER}/address/${agent.address}`;
+  const explorerAddressUrl = `${EXPLORER_URL}/address/${agent.address}`;
   const explorerTokenUrl = agent.agentId
-    ? `${BASE_SEPOLIA_EXPLORER}/token/${IDENTITY_REGISTRY}?a=${agent.agentId}`
+    ? `${EXPLORER_URL}/token/${IDENTITY_REGISTRY}?a=${agent.agentId}`
     : null;
 
   const agentLabel = agent.agentId ? `Agent #${agent.agentId}` : agentId;
@@ -177,7 +175,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
 
             <div className="flex items-center gap-2">
               <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">network</span>
-              <span className="text-sm text-text-secondary">Base Sepolia</span>
+              <span className="text-sm text-text-secondary">{NETWORK_NAME}</span>
             </div>
           </div>
         </div>
@@ -223,7 +221,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
                   {
                     agentId: agent.agentId ?? null,
                     address: agent.address,
-                    network: 'base-sepolia',
+                    network: NETWORK_NAME,
                     identityRegistry: IDENTITY_REGISTRY,
                     completedTasks: agent.completedTasks,
                     ratedTasks: agent.ratedTasks,

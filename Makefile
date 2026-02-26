@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw
+.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -13,6 +13,7 @@ help:
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
+	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
 	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|shared|contracts|all)"
 	@echo "  make dev                  - Start all dev servers in parallel"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|anvil)"
@@ -51,6 +52,23 @@ deploy:
 		echo "Usage: make deploy <testnet|mainnet>"; \
 		exit 1; \
 	fi
+
+release:
+	@LAST=$$(git tag --sort=-version:refname | grep "^v[0-9]" | head -1); \
+	if [ -z "$$LAST" ]; then \
+		NEXT="v0.1.0"; \
+	else \
+		VER="$${LAST#v}"; \
+		MAJOR=$$(echo "$$VER" | cut -d. -f1); \
+		MINOR=$$(echo "$$VER" | cut -d. -f2); \
+		PATCH=$$(echo "$$VER" | cut -d. -f3); \
+		NEXT_PATCH=$$((PATCH + 1)); \
+		NEXT="v$${MAJOR}.$${MINOR}.$${NEXT_PATCH}"; \
+	fi; \
+	echo "Creating tag $$NEXT..."; \
+	git tag "$$NEXT"; \
+	git push origin "$$NEXT"; \
+	echo "Released $$NEXT"
 
 build:
 	@$(ENV_LOADER) && \

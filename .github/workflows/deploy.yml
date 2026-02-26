@@ -1,0 +1,57 @@
+name: Deploy to Railway Production
+
+on:
+  push:
+    tags:
+      - 'v*'
+
+concurrency:
+  group: deploy-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Verify CI passed on tagged commit
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          SHA=$(git rev-parse HEAD)
+          STATUS=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
+            --jq '[.check_runs[] | select(.name == "quality")] | .[0].conclusion // "not_found"')
+          echo "CI status for ${SHA}: ${STATUS}"
+          if [ "$STATUS" != "success" ]; then
+            echo "CI did not pass on this commit (status: ${STATUS}). Aborting deploy."
+            exit 1
+          fi
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy backend to Railway production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment production \
+            --detach
+
+      - name: Deploy frontend to Railway production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment production \
+            --detach
+
+      - name: Report deployment
+        run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + frontend)"

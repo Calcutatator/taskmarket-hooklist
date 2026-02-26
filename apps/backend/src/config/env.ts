@@ -10,7 +10,6 @@ const envSchema = z
     CONTRACT_DEPLOY_BLOCK: z.coerce.number().default(0),
     USDC_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid USDC address'),
     DEFAULT_PLATFORM_FEE_BPS: z.coerce.number().min(0).max(10000).default(500),
-    FEE_RECIPIENT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid fee recipient address'),
     AWS_REGION: z.string().optional(),
     AWS_S3_BUCKET: z.string().optional(),
     AWS_ENDPOINT_URL: z.string().url().optional(),
@@ -24,8 +23,8 @@ const envSchema = z
     X402_FACILITATOR_URL: z.string().url().default('https://facilitator.daydreams.systems'),
     X402_FACILITATOR_TOKEN: z.string().optional(),
     BACKEND_URL: z.string().url().default('http://localhost:3000'),
-    ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A818BFB912233c491871b3d84c89A494BD9e'),
-    ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004B663056A597Dffe9eCcC1965A193B7388713'),
+    ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
+    ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     PLATFORM_MASTER_KEY: z.string().min(32).default('0'.repeat(64)),
   })
   .superRefine((data, ctx) => {

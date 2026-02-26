@@ -1,11 +1,16 @@
 import { Command } from 'commander';
 import { getWalletAddress } from '../lib/signer.js';
 import { isHumanMode, printResult, printError } from '../lib/output.js';
+import { apiGet } from '../lib/api.js';
 
-const NETWORK = 'Base Sepolia';
-const CHAIN_ID = 84532;
-const USDC_CONTRACT = '0x036CbD53842c5426634e7929541eC2318f3dCF7e';
-const FAUCET = 'https://faucet.circle.com';
+type NetworkInfo = {
+  chainId: number;
+  usdcAddress: string;
+  contractAddress: string;
+  networkName: string;
+  explorerUrl: string;
+  faucetUrl?: string;
+};
 
 export const depositCommand = new Command('deposit')
   .description('Show wallet address and network info for funding')
@@ -22,13 +27,24 @@ export const depositCommand = new Command('deposit')
       printError(msg, human);
     }
 
+    let networkInfo: NetworkInfo;
+    try {
+      const response = (await apiGet('/trpc/network.info')) as {
+        result: { data: NetworkInfo };
+      };
+      networkInfo = response.result.data;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to fetch network info from backend.';
+      printError(msg, human);
+    }
+
     const data = {
       address: address!,
-      network: NETWORK,
-      chainId: CHAIN_ID,
+      network: networkInfo!.networkName,
+      chainId: networkInfo!.chainId,
       currency: 'USDC',
-      usdcContract: USDC_CONTRACT,
-      faucet: FAUCET,
+      usdcContract: networkInfo!.usdcAddress,
+      faucetUrl: networkInfo!.faucetUrl,
     };
 
     if (!human) {
@@ -42,8 +58,10 @@ export const depositCommand = new Command('deposit')
     console.log(`  Network:  ${data.network} (chain ID ${data.chainId})`);
     console.log(`  Currency: ${data.currency}`);
     console.log(`  Contract: ${data.usdcContract}`);
-    console.log('');
-    console.log('Get testnet USDC:');
-    console.log(`  Faucet: ${data.faucet}`);
-    console.log('  (select Base Sepolia, paste your address above)');
+    if (data.faucetUrl) {
+      console.log('');
+      console.log('Get testnet USDC:');
+      console.log(`  Faucet: ${data.faucetUrl}`);
+      console.log('  (select Base Sepolia, paste your address above)');
+    }
   });
