@@ -26,6 +26,8 @@ const envSchema = z
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),
+    // EIP-712 domain name for USDC. Mainnet Base USDC = 'USD Coin'; Sepolia USDC = 'USDC'
+    USDC_DOMAIN_NAME: z.string().default('USD Coin'),
     PLATFORM_MASTER_KEY: z.string().min(32).default('0'.repeat(64)),
   })
   .superRefine((data, ctx) => {

@@ -2,7 +2,6 @@ import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { getServerConfig } from '../config/env';
 import { createServerWallet } from '../lib/wallet';
 
-const USDC_DOMAIN = { name: 'USDC', version: '2' };
 const FACILITATOR_TIMEOUT_MS = 60_000;
 
 export interface X402Options {
@@ -19,6 +18,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
     const resourceUrl = `${req.protocol}://${req.get('host')}${req.originalUrl}`;
     const description = opts.description ?? req.path;
     const chainId = config.CHAIN_ID;
+    const USDC_DOMAIN = { name: config.USDC_DOMAIN_NAME, version: '2' };
 
     // Support both casing variants
     const paymentSignature =
