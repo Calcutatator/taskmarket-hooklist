@@ -9,7 +9,6 @@ type NetworkInfo = {
   contractAddress: string;
   networkName: string;
   explorerUrl: string;
-  faucetUrl?: string;
 };
 
 export const depositCommand = new Command('deposit')
@@ -44,7 +43,6 @@ export const depositCommand = new Command('deposit')
       chainId: networkInfo!.chainId,
       currency: 'USDC',
       usdcContract: networkInfo!.usdcAddress,
-      faucetUrl: networkInfo!.faucetUrl,
     };
 
     if (!human) {
@@ -58,10 +56,4 @@ export const depositCommand = new Command('deposit')
     console.log(`  Network:  ${data.network} (chain ID ${data.chainId})`);
     console.log(`  Currency: ${data.currency}`);
     console.log(`  Contract: ${data.usdcContract}`);
-    if (data.faucetUrl) {
-      console.log('');
-      console.log('Get testnet USDC:');
-      console.log(`  Faucet: ${data.faucetUrl}`);
-      console.log('  (select Base Sepolia, paste your address above)');
-    }
   });

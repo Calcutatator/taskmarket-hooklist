@@ -11,7 +11,6 @@ export const networkRouter = router({
       networkName: config.CHAIN_ID === 84532 ? 'Base Sepolia' : 'Base',
       explorerUrl:
         config.CHAIN_ID === 84532 ? 'https://sepolia.basescan.org' : 'https://basescan.org',
-      faucetUrl: config.CHAIN_ID === 84532 ? 'https://faucet.circle.com' : undefined,
     };
   }),
 });

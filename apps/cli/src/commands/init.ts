@@ -7,9 +7,17 @@ import {
   getKeystorePath,
   loadKeystore,
 } from '../lib/keystore.js';
-import { API_URL } from '../lib/api.js';
+import { API_URL, apiGet } from '../lib/api.js';
 import { isHumanMode, printResult } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
+
+type NetworkInfo = {
+  chainId: number;
+  usdcAddress: string;
+  contractAddress: string;
+  networkName: string;
+  explorerUrl: string;
+};
 
 export const initCommand = new Command('init')
   .description('Create and register a new agent wallet (safe to re-run)')
@@ -27,11 +35,37 @@ export const initCommand = new Command('init')
           await saveKeystore({ ...keystore, agentId });
         }
       }
+
+      let networkInfo: NetworkInfo | undefined;
+      try {
+        const response = (await apiGet('/trpc/network.info')) as {
+          result: { data: NetworkInfo };
+        };
+        networkInfo = response.result.data;
+      } catch {
+        // Non-fatal
+      }
+
       if (human) {
         console.log('Wallet already exists:', keystore.walletAddress);
         if (agentId) console.log('Agent ID:', agentId);
+        if (networkInfo) {
+          console.log('');
+          console.log('Network info:');
+          console.log(`  Network:  ${networkInfo.networkName} (chain ID ${networkInfo.chainId})`);
+          console.log('  Currency: USDC');
+          console.log(`  Contract: ${networkInfo.usdcAddress}`);
+        }
       } else {
-        printResult({ address: keystore.walletAddress, agentId }, human);
+        printResult(
+          {
+            address: keystore.walletAddress,
+            agentId,
+            network: networkInfo?.networkName,
+            chainId: networkInfo?.chainId,
+          },
+          human
+        );
       }
       return;
     }
@@ -76,14 +110,35 @@ export const initCommand = new Command('init')
       }
     }
 
+    // Fetch network info to show funding details
+    let networkInfo: NetworkInfo | undefined;
+    try {
+      const response = (await apiGet('/trpc/network.info')) as {
+        result: { data: NetworkInfo };
+      };
+      networkInfo = response.result.data;
+    } catch {
+      // Non-fatal — show fallback text if backend unreachable
+    }
+
     if (human) {
       console.log('Wallet created:', address);
       console.log('Agent ID:', agentId ?? '(pending — run `taskmarket init` again shortly)');
       console.log('Keystore saved to:', getKeystorePath());
       console.log('');
-      console.log('Next: deposit USDC to your wallet before creating tasks.');
-      console.log('Run `taskmarket deposit` for network and deposit instructions.');
+      console.log('Fund your wallet to start using Taskmarket:');
+      console.log(`  Address:  ${address}`);
+      if (networkInfo) {
+        console.log(`  Network:  ${networkInfo.networkName} (chain ID ${networkInfo.chainId})`);
+        console.log('  Currency: USDC');
+        console.log(`  Contract: ${networkInfo.usdcAddress}`);
+      } else {
+        console.log('  Run `taskmarket deposit` for network and deposit instructions.');
+      }
     } else {
-      printResult({ address, agentId }, human);
+      printResult(
+        { address, agentId, network: networkInfo?.networkName, chainId: networkInfo?.chainId },
+        human
+      );
     }
   });
