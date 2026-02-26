@@ -11,6 +11,8 @@ import { selectWorkerCmd } from './select-worker.js';
 import { proofCmd } from './proof.js';
 import { bidCmd } from './bid.js';
 import { submissionsCmd } from './submissions.js';
+import { selectWinnerCmd } from './select-winner.js';
+import { downloadCmd } from './download.js';
 
 export const taskCommand = new Command('task').description('Manage tasks');
 
@@ -26,3 +28,5 @@ taskCommand.addCommand(selectWorkerCmd);
 taskCommand.addCommand(proofCmd);
 taskCommand.addCommand(bidCmd);
 taskCommand.addCommand(submissionsCmd);
+taskCommand.addCommand(selectWinnerCmd);
+taskCommand.addCommand(downloadCmd);

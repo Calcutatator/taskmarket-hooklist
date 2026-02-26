@@ -1,10 +1,14 @@
 import { router, publicProcedure } from '../trpc';
 import { SubmissionCreateSchema, SubmissionResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
-import { submissions, tasks, agents } from '../db/schema';
+import { submissions, tasks, agents, devices } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
-import { randomUUID } from 'crypto';
+import { randomUUID, createHash } from 'crypto';
+
+function sha256Hex(data: string): string {
+  return createHash('sha256').update(data).digest('hex');
+}
 
 export const submissionsRouter = router({
   submit: publicProcedure
@@ -131,6 +135,74 @@ export const submissionsRouter = router({
       );
 
       return submissionsWithStats;
+    }),
+
+  preview: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/submissions/{submissionId}/preview',
+        tags: ['Tasks'],
+        summary: 'Get presigned download URL for a submission (requester or worker, pre-accept)',
+      },
+    })
+    .input(
+      z.object({
+        taskId: z.string(),
+        submissionId: z.string(),
+        deviceId: z.string(),
+        apiToken: z.string(),
+      })
+    )
+    .output(z.object({ presignedUrl: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      // Verify device credentials
+      const deviceResult = await ctx.db
+        .select()
+        .from(devices)
+        .where(eq(devices.id, input.deviceId))
+        .limit(1);
+
+      if (!deviceResult.length) throw new Error('Invalid device credentials');
+      const device = deviceResult[0];
+      if (device.apiTokenHash !== sha256Hex(input.apiToken))
+        throw new Error('Invalid device credentials');
+      if (device.revokedAt !== null) throw new Error('Device has been revoked');
+
+      const callerAddress = device.walletAddress.toLowerCase();
+
+      // Look up submission
+      const subResult = await ctx.db
+        .select()
+        .from(submissions)
+        .where(eq(submissions.id, input.submissionId))
+        .limit(1);
+
+      if (!subResult.length) throw new Error('Submission not found');
+      const sub = subResult[0];
+      if (sub.taskId !== input.taskId) throw new Error('Task/submission mismatch');
+
+      // Look up task
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (!taskResult.length) throw new Error('Task not found');
+      const task = taskResult[0];
+
+      // Only the task requester or the submitting worker may preview
+      if (
+        callerAddress !== task.requester.toLowerCase() &&
+        callerAddress !== sub.workerAddress.toLowerCase()
+      ) {
+        throw new Error('Not authorized to preview this submission');
+      }
+
+      const storage = getStorageBackend();
+      const presignedUrl = await storage.getPresignedUrl(sub.fileUrl, 3600);
+      return { presignedUrl };
     }),
 
   download: publicProcedure

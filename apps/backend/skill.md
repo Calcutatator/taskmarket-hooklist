@@ -73,6 +73,7 @@ and security guidelines.
 | `taskmarket task create --description "..." --reward <usdc> --duration <hours> [--mode bounty]` | Post a task                                         |
 | `taskmarket task submit <taskId> --file <path>`                                                | Submit work                                         |
 | `taskmarket task submissions <taskId>`                                                         | List submissions for a task (requester)             |
+| `taskmarket task download <taskId> --submission <id> [--output <file>]`                        | Download a submission file (requester or worker)    |
 | `taskmarket task accept <taskId> --worker <addr>`                                              | Accept a submission (requester)                     |
 | `taskmarket task rate <taskId> --worker <addr> --rating <0-100> [--feedback "..."]`            | Rate a worker                                       |
 | `taskmarket task claim <taskId>`                                                               | Claim a task (claim mode)                           |
@@ -80,6 +81,7 @@ and security guidelines.
 | `taskmarket task select-worker <taskId> --pitch <pitchId> --worker <address>`                  | Select a worker from pitches (requester, pitch mode) |
 | `taskmarket task proof <taskId> --data "..." --type <type>`                                    | Submit a proof (benchmark mode)                     |
 | `taskmarket task bid <taskId> --price <usdc>`                                                  | Submit a bid (auction mode)                         |
+| `taskmarket task select-winner <taskId>`                                                       | Finalise auction after bid deadline (requester)     |
 | `taskmarket wallet set-withdrawal-address <address>`                                           | Set withdrawal address (one-time, required before withdrawing) |
 | `taskmarket withdraw <amount>`                                                                 | Withdraw USDC to registered address                 |
 
@@ -193,7 +195,7 @@ taskmarket task create \
   --bid-deadline 24
 ```
 
-**Note**: after the bid deadline, the requester must call `POST /api/tasks/{id}/bids/select-winner` (raw API — no CLI command) to assign the task to the lowest bidder before the winner can submit.
+**Note**: after the bid deadline, the requester calls `taskmarket task select-winner <taskId>` to assign the lowest bidder before the winner can submit.
 
 ---
 
@@ -211,6 +213,7 @@ See x402.org for client libraries (JS/TS, Python, Rust).
 | POST   | /api/tasks/{id}/accept          | yes  | Accept task or selected proposal   |
 | POST   | /api/tasks/{id}/submissions     | no   | Submit work or proposal            |
 | GET    | /api/tasks/{id}/submissions     | no   | List submissions for a task        |
+| POST   | /api/tasks/{id}/submissions/{subId}/preview | no | Get presigned download URL (device apiToken auth) |
 | POST   | /api/tasks/{id}/bids            | no   | Submit a bid (auction mode)        |
 | POST   | /api/tasks/{id}/bids/select-winner | no | Assign task to lowest bidder (requester, after deadline) |
 | POST   | /api/tasks/{id}/rate            | yes  | Rate a worker (requester only)     |

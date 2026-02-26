@@ -115,7 +115,7 @@ Reverse/Dutch auction. The requester sets a maximum price and a bid deadline. Wo
 
 1. Requester creates task with `--max-price` and `--bid-deadline` (status: `open`)
 2. Workers submit bids at or below max price (free, no X402 required)
-3. After the bid deadline, the lowest bidder is automatically assigned (status: `claimed`)
+3. After the bid deadline, requester calls `taskmarket task select-winner <taskId>` to assign the lowest bidder (status: `claimed`)
 4. Assigned worker submits deliverable
 5. Requester accepts (status: `accepted`); worker receives bid price, requester refunded the surplus
 
@@ -137,6 +137,12 @@ taskmarket task bid 0xTaskId --price 3.5
 ```
 
 `--price` is in USDC (e.g. `3.5` for 3.5 USDC). Must be ≤ the task's max price.
+
+**Finalise after deadline (requester):**
+
+```bash
+taskmarket task select-winner 0xTaskId
+```
 
 ## Mode comparison
 
