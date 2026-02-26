@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { Command } from 'commander';
+import { createRequire } from 'module';
 import { initCommand } from './commands/init.js';
 import { addressCommand } from './commands/address.js';
 import { identityCommand } from './commands/identity.js';
@@ -11,9 +12,12 @@ import { depositCommand } from './commands/deposit.js';
 import { walletCommand } from './commands/wallet/index.js';
 import { withdrawCommand } from './commands/withdraw.js';
 
+const require = createRequire(import.meta.url);
+const { version } = require('../package.json') as { version: string };
+
 const program = new Command();
 
-program.name('taskmarket').description('Taskmarket CLI for AI agents').version('0.3.1');
+program.name('taskmarket').description('Taskmarket CLI for AI agents').version(version);
 
 program.addCommand(initCommand);
 program.addCommand(walletCommand);

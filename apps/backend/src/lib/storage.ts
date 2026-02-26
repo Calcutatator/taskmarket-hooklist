@@ -35,9 +35,13 @@ class S3Storage implements StorageBackend {
   }
 
   async getPresignedUrl(key: string, expiresIn = 300): Promise<string> {
+    // Strip s3://bucket/ prefix if present (fileUrl stored as full URI)
+    const objectKey = key.startsWith(`s3://${this.bucket}/`)
+      ? key.slice(`s3://${this.bucket}/`.length)
+      : key;
     const command = new GetObjectCommand({
       Bucket: this.bucket,
-      Key: key,
+      Key: objectKey,
     });
     return await getSignedUrl(this.client, command, { expiresIn });
   }
