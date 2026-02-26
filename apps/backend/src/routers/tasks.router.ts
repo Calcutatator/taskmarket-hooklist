@@ -8,7 +8,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents } from '../db/schema';
-import { eq, sql, desc, and, gt, lte } from 'drizzle-orm';
+import { eq, sql, desc, and, gt, lte, arrayOverlaps } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
 import { getServerConfig } from '../config/env';
@@ -240,7 +240,7 @@ export const tasksRouter = router({
         conditions.push(eq(tasks.mode, input.mode));
       }
       if (input.tags && input.tags.length > 0) {
-        conditions.push(sql`${tasks.tags} && ${input.tags}`);
+        conditions.push(arrayOverlaps(tasks.tags, input.tags));
       }
       if (input.minReward) {
         conditions.push(sql`${tasks.reward} >= ${input.minReward}`);
