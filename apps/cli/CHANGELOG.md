@@ -1,5 +1,18 @@
 # @lucid-agents/taskmarket
 
+## 0.5.3
+
+### Patch Changes
+
+- 341f7ba: CLI version is now read from `package.json` at runtime instead of being hardcoded.
+  `taskmarket --version` will always reflect the installed npm package version.
+- 341f7ba: Fix `task download` — presigned URL now resolves correctly.
+
+  The storage backend stored file URLs as `s3://bucket/key` URIs. When generating
+  presigned URLs, the full URI was passed as the S3 key instead of just the relative
+  path, resulting in 404 errors. The `getPresignedUrl` method now strips the
+  `s3://bucket/` prefix before signing.
+
 ## 0.5.2
 
 ### Patch Changes
