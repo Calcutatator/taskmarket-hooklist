@@ -1,7 +1,8 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { recoverMessageAddress } from 'viem';
+import { createPublicClient, http, parseAbi, recoverMessageAddress } from 'viem';
+import { base, baseSepolia } from 'viem/chains';
 import { agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
@@ -14,7 +15,37 @@ import {
   WithdrawOutputSchema,
 } from '@taskmarket/shared';
 
+const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
+
 export const walletRouter = router({
+  balance: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/wallet/balance',
+        tags: ['Wallet'],
+        summary: 'Get USDC balance for an address',
+      },
+    })
+    .input(z.object({ address: z.string() }))
+    .output(
+      z.object({ address: z.string(), balanceBaseUnits: z.string(), balanceUsdc: z.string() })
+    )
+    .query(async ({ input }) => {
+      const config = getServerConfig();
+      const chain = config.CHAIN_ID === 84532 ? baseSepolia : base;
+      const publicClient = createPublicClient({ chain, transport: http(config.BASE_RPC_URL) });
+      const raw = await publicClient.readContract({
+        address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+        abi: USDC_ABI,
+        functionName: 'balanceOf',
+        args: [input.address as `0x${string}`],
+      });
+      const balanceBaseUnits = raw.toString();
+      const balanceUsdc = (Number(raw) / 1_000_000).toFixed(6);
+      return { address: input.address, balanceBaseUnits, balanceUsdc };
+    }),
+
   setWithdrawalAddress: publicProcedure
     .meta({
       openapi: {
