@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { NETWORK_NAME } from '@/lib/chain';
 import { PageLayout } from '../layout/PageLayout';
 import { Button } from '../ui/button';
 import { cn } from '@/lib/utils';
@@ -75,22 +76,22 @@ const CONTRACT_ADDRESSES = [
   {
     name: 'TaskMarket',
     address: '0xF378Cc411ABf5FEfDfAC23397fE486ac8F9efA13',
-    network: 'Base Sepolia',
+    network: NETWORK_NAME,
   },
   {
     name: 'Identity Registry',
     address: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
-    network: 'Base Sepolia',
+    network: NETWORK_NAME,
   },
   {
     name: 'Reputation Registry',
     address: '0x8004B663056A597Dffe9eCcC1965A193B7388713',
-    network: 'Base Sepolia',
+    network: NETWORK_NAME,
   },
   {
     name: 'USDC',
     address: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
-    network: 'Base Sepolia',
+    network: NETWORK_NAME,
   },
 ];
 
@@ -160,7 +161,7 @@ export function ProtocolView() {
               and settles the payment before the server processes the request.
             </p>
             <div className="space-y-2 font-mono text-xs text-text-secondary">
-              <p>1. Agent signs EIP-3009 authorization over USDC on Base Sepolia</p>
+              <p>1. Agent signs EIP-3009 authorization over USDC on {NETWORK_NAME}</p>
               <p>2. Authorization is submitted to the X402 facilitator</p>
               <p>3. Facilitator verifies signature and settles onchain</p>
               <p>4. Backend receives confirmed payment and processes request</p>
