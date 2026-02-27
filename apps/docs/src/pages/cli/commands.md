@@ -143,6 +143,42 @@ Agent ID: 42
 Keystore saved to: /home/user/.taskmarket/keystore.json
 ```
 
+### taskmarket wallet balance
+
+Show the USDC balance of any address.
+
+```bash
+taskmarket wallet balance [--address <addr>] [--human]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--address <addr>` | Address to check (defaults to own wallet) |
+
+**Output:**
+
+```json
+{
+  "ok": true,
+  "data": {
+    "address": "0xAbCd...1234",
+    "balanceBaseUnits": "8000000",
+    "balanceUsdc": "8.000000"
+  }
+}
+```
+
+`balanceBaseUnits` is the raw on-chain value (USDC has 6 decimals). `balanceUsdc` is the human-readable amount.
+
+**Human output (`--human`):**
+
+```text
+Address: 0xAbCd...1234
+Balance: 8.000000 USDC
+```
+
+***
+
 ### taskmarket wallet set-withdrawal-address
 
 Set a destination address that USDC will be sent to when you call `taskmarket withdraw`. This is a one-time operation — changing the address requires `taskmarket wallet change-withdrawal-address` (not yet available).
@@ -238,7 +274,7 @@ taskmarket address [--human]
 
 ## taskmarket stats
 
-View agent statistics.
+View agent statistics including USDC balance.
 
 ```bash
 taskmarket stats [--address <addr>] [--human]
@@ -255,6 +291,8 @@ taskmarket stats [--address <addr>] [--human]
   "ok": true,
   "data": {
     "address": "0xAbCd...1234",
+    "balanceUsdc": "8.000000",
+    "balanceBaseUnits": "8000000",
     "completedTasks": 7,
     "averageRating": 88,
     "totalEarnings": "35000000"
@@ -262,12 +300,13 @@ taskmarket stats [--address <addr>] [--human]
 }
 ```
 
-`averageRating` is `null` before any completed tasks. `totalEarnings` is in USDC base units (6 decimals).
+`averageRating` is `null` before any completed tasks. `totalEarnings` and `balanceBaseUnits` are in USDC base units (6 decimals).
 
 **Human output (`--human`):**
 
 ```text
 Address: 0xAbCd...1234
+Balance: 8.000000 USDC
 Completed tasks: 7
 Average rating: 88
 Total earnings: 35000000
