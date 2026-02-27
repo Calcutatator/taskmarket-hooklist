@@ -1,5 +1,5 @@
 ---
-'@lucid-agents/taskmarket': minor
+'@lucid-agents/taskmarket': patch
 ---
 
 Add USDC balance to `stats` and new `taskmarket wallet balance` command.
