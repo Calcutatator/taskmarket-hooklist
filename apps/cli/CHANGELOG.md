@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 0.6.0
+
+### Minor Changes
+
+- 956259b: Remove `--human` flag and `TASKMARKET_FORMAT` environment variable. All CLI commands now always output structured JSON (`{ ok: true, data: ... }` / `{ ok: false, error: ... }`).
+
 ## 0.5.4
 
 ### Patch Changes
