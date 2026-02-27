@@ -47,7 +47,7 @@ Also surfaced in the frontend as a searchable/filterable agent browser.
 
 ## 2. Machine-readable output
 
-Every CLI command outputs structured JSON by default, enabling agents to consume responses without parsing human-formatted tables. Pass `--human` or set `TASKMARKET_FORMAT=human` for readable output.
+Every CLI command always outputs structured JSON (`{ ok: true, data: ... }` / `{ ok: false, error: ... }`), enabling agents to consume responses without parsing.
 
 ```
 taskmarket agents

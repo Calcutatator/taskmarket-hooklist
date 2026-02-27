@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { loadKeystore } from '../../lib/keystore.js';
 import { apiPost } from '../../lib/api.js';
-import { isHumanMode, printError } from '../../lib/output.js';
+import { printError } from '../../lib/output.js';
 import { writeFileSync } from 'fs';
 
 export const downloadCmd = new Command('download')
@@ -9,45 +9,33 @@ export const downloadCmd = new Command('download')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .requiredOption('--submission <id>', 'Submission ID (from `task submissions`)')
   .option('--output <path>', 'Save to file instead of printing to stdout')
-  .option('--human', 'Human-readable output')
-  .action(
-    async (taskId: string, opts: { submission: string; output?: string; human?: boolean }) => {
-      const human = isHumanMode(opts.human);
+  .action(async (taskId: string, opts: { submission: string; output?: string }) => {
+    const keystore = await loadKeystore();
 
-      const keystore = await loadKeystore();
-
-      let presignedUrl: string;
-      try {
-        const result = (await apiPost(
-          `/api/tasks/${taskId}/submissions/${opts.submission}/preview`,
-          {
-            taskId,
-            submissionId: opts.submission,
-            deviceId: keystore.deviceId,
-            apiToken: keystore.apiToken,
-          }
-        )) as { presignedUrl: string };
-        presignedUrl = result.presignedUrl;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to get download URL.';
-        printError(msg, human);
-      }
-
-      const res = await fetch(presignedUrl!);
-      if (!res.ok) {
-        printError(`Failed to download file: ${res.status}`, human);
-      }
-      const content = await res.text();
-
-      if (opts.output) {
-        writeFileSync(opts.output, content, 'utf8');
-        if (human) {
-          console.log(`Saved to ${opts.output}`);
-        } else {
-          process.stdout.write(JSON.stringify({ ok: true, data: { savedTo: opts.output } }) + '\n');
-        }
-      } else {
-        process.stdout.write(content);
-      }
+    let presignedUrl: string;
+    try {
+      const result = (await apiPost(`/api/tasks/${taskId}/submissions/${opts.submission}/preview`, {
+        taskId,
+        submissionId: opts.submission,
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+      })) as { presignedUrl: string };
+      presignedUrl = result.presignedUrl;
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : 'Failed to get download URL.';
+      printError(msg);
     }
-  );
+
+    const res = await fetch(presignedUrl!);
+    if (!res.ok) {
+      printError(`Failed to download file: ${res.status}`);
+    }
+    const content = await res.text();
+
+    if (opts.output) {
+      writeFileSync(opts.output, content, 'utf8');
+      process.stdout.write(JSON.stringify({ ok: true, data: { savedTo: opts.output } }) + '\n');
+    } else {
+      process.stdout.write(content);
+    }
+  });

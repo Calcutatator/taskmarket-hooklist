@@ -1,15 +1,13 @@
 import { Command } from 'commander';
 import { loadKeystore } from '../../lib/keystore.js';
 import { apiPost } from '../../lib/api.js';
-import { isHumanMode, printResult } from '../../lib/output.js';
+import { printResult } from '../../lib/output.js';
 
 export const bidCmd = new Command('bid')
   .description('Submit a bid on an auction task')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .requiredOption('--price <usdc>', 'Bid price in USDC (e.g. 3 or 1.5)')
-  .option('--human', 'Human-readable output')
-  .action(async (taskId: string, opts: { price: string; human?: boolean }) => {
-    const human = isHumanMode(opts.human);
+  .action(async (taskId: string, opts: { price: string }) => {
     const keystore = await loadKeystore();
     const priceBaseUnits = String(Math.round(parseFloat(opts.price) * 1e6));
 
@@ -19,9 +17,5 @@ export const bidCmd = new Command('bid')
       workerAddress: keystore.walletAddress,
     })) as { bidId: string };
 
-    if (human) {
-      console.log('Bid submitted:', result.bidId);
-    } else {
-      printResult({ bidId: result.bidId }, human);
-    }
+    printResult({ bidId: result.bidId });
   });

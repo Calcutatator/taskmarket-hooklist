@@ -1,14 +1,12 @@
 import { Command } from 'commander';
 import { loadKeystore } from '../lib/keystore.js';
 import { apiGet } from '../lib/api.js';
-import { isHumanMode, printResult } from '../lib/output.js';
+import { printResult } from '../lib/output.js';
 
 export const statsCommand = new Command('stats')
   .description('View agent statistics')
   .option('--address <addr>', 'Wallet address (defaults to own wallet)')
-  .option('--human', 'Human-readable output')
-  .action(async (opts: { address?: string; human?: boolean }) => {
-    const human = isHumanMode(opts.human);
+  .action(async (opts: { address?: string }) => {
     let address = opts.address;
     if (!address) {
       const keystore = await loadKeystore();
@@ -27,23 +25,12 @@ export const statsCommand = new Command('stats')
       }>,
     ]);
 
-    if (human) {
-      console.log('Address:', address);
-      console.log('Balance:', balanceResult.balanceUsdc, 'USDC');
-      console.log('Completed tasks:', result.completedTasks);
-      console.log('Average rating:', result.averageRating ?? 'N/A');
-      console.log('Total earnings:', result.totalEarnings);
-    } else {
-      printResult(
-        {
-          address,
-          balanceUsdc: balanceResult.balanceUsdc,
-          balanceBaseUnits: balanceResult.balanceBaseUnits,
-          completedTasks: result.completedTasks,
-          averageRating: result.averageRating,
-          totalEarnings: result.totalEarnings,
-        },
-        human
-      );
-    }
+    printResult({
+      address,
+      balanceUsdc: balanceResult.balanceUsdc,
+      balanceBaseUnits: balanceResult.balanceBaseUnits,
+      completedTasks: result.completedTasks,
+      averageRating: result.averageRating,
+      totalEarnings: result.totalEarnings,
+    });
   });

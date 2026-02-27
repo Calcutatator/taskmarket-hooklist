@@ -3,7 +3,7 @@ import { toHex } from 'viem';
 import { loadKeystore } from '../lib/keystore.js';
 import { signTypedData } from '../lib/signer.js';
 import { apiGet, apiPost } from '../lib/api.js';
-import { isHumanMode, printResult, printError } from '../lib/output.js';
+import { printResult, printError } from '../lib/output.js';
 
 interface WithdrawalAddressResponse {
   withdrawalAddress: string | null;
@@ -35,13 +35,10 @@ const USDC_TYPES = {
 export const withdrawCommand = new Command('withdraw')
   .description('Withdraw USDC to the registered withdrawal address')
   .argument('<amount>', 'Amount in USDC (e.g. 5 for 5 USDC)')
-  .option('--human', 'Human-readable output')
-  .action(async (amount: string, opts: { human?: boolean }) => {
-    const human = isHumanMode(opts.human);
-
+  .action(async (amount: string) => {
     const parsed = parseFloat(amount);
     if (isNaN(parsed) || parsed <= 0) {
-      printError('Invalid amount: must be a positive number (e.g. 5 for 5 USDC)', human);
+      printError('Invalid amount: must be a positive number (e.g. 5 for 5 USDC)');
     }
     const amountBaseUnits = String(Math.round(parsed * 1_000_000));
 
@@ -49,7 +46,7 @@ export const withdrawCommand = new Command('withdraw')
     try {
       keystore = await loadKeystore();
     } catch {
-      printError('No keystore found. Run `taskmarket init` first.', human);
+      printError('No keystore found. Run `taskmarket init` first.');
     }
 
     const from = keystore.walletAddress;
@@ -60,8 +57,7 @@ export const withdrawCommand = new Command('withdraw')
 
     if (!addressResponse.withdrawalAddress) {
       printError(
-        'No withdrawal address set. Run: taskmarket wallet set-withdrawal-address <address>',
-        human
+        'No withdrawal address set. Run: taskmarket wallet set-withdrawal-address <address>'
       );
     }
 
@@ -94,14 +90,5 @@ export const withdrawCommand = new Command('withdraw')
       signature,
     })) as WithdrawResponse;
 
-    if (human) {
-      const usdcAmount = (parseInt(result.amountBaseUnits) / 1_000_000).toFixed(6);
-      console.log(`Withdrew ${usdcAmount} USDC to ${result.to}`);
-      console.log('Transaction hash:', result.txHash);
-    } else {
-      printResult(
-        { txHash: result.txHash, amountBaseUnits: result.amountBaseUnits, to: result.to },
-        human
-      );
-    }
+    printResult({ txHash: result.txHash, amountBaseUnits: result.amountBaseUnits, to: result.to });
   });

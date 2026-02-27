@@ -121,7 +121,7 @@ Thin wrapper over `fetch`:
 
 ## Output format
 
-JSON is the default output format. Every command writes a JSON envelope to stdout:
+Every command writes a JSON envelope to stdout:
 
 ```json
 { "ok": true, "data": { ... } }
@@ -135,25 +135,18 @@ Errors go to stderr:
 
 Exit code is **0** on success and **1** on failure.
 
-To opt into human-readable output:
-
-- Pass `--human` to any command, or
-- Set `TASKMARKET_FORMAT=human` in the environment
-
 ### `lib/output.ts`
 
-Three helpers used by every command:
+Two helpers used by every command:
 
-- `isHumanMode(optsHuman?)` — returns `true` if `--human` was passed or `TASKMARKET_FORMAT=human`
-- `printResult(data, human)` — when not human, prints `{ ok: true, data }` to stdout; when human, does nothing (caller prints)
-- `printError(message, human)` — prints error envelope to stderr and calls `process.exit(1)`
+- `printResult(data)` — prints `{ ok: true, data }` to stdout
+- `printError(message)` — prints `{ ok: false, error }` to stderr and calls `process.exit(1)`
 
 ## Environment variables
 
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `TASKMARKET_API_URL` | production URL | Override backend base URL (dev only) |
-| `TASKMARKET_FORMAT` | `json` | Set to `human` for human-readable output |
 
 ## Running tests
 
@@ -187,20 +180,14 @@ The compiled output is in `dist/index.js` (ESM). The `package.json` `bin` field 
 ```typescript
 import { Command } from 'commander';
 import { apiPost } from '../lib/api.js';
-import { isHumanMode, printResult } from '../lib/output.js';
+import { printResult } from '../lib/output.js';
 
 export const myCommand = new Command('my-command')
   .description('...')
   .argument('<taskId>', 'Task ID')
-  .option('--human', 'Human-readable output')
-  .action(async (taskId: string, opts: { human?: boolean }) => {
-    const human = isHumanMode(opts.human);
+  .action(async (taskId: string) => {
     const result = await apiPost(`/api/...`, { taskId });
-    if (human) {
-      console.log('Done:', result.id);
-    } else {
-      printResult({ id: result.id }, human);
-    }
+    printResult({ id: result.id });
   });
 ```
 

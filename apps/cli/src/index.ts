@@ -31,11 +31,6 @@ program.addCommand(depositCommand);
 program.addCommand(withdrawCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
-  const human = process.argv.includes('--human') || process.env['TASKMARKET_FORMAT'] === 'human';
-  if (!human) {
-    console.error(JSON.stringify({ ok: false, error: err.message }));
-  } else {
-    console.error(err.message);
-  }
+  process.stderr.write(JSON.stringify({ ok: false, error: err.message }) + '\n');
   process.exit(1);
 });

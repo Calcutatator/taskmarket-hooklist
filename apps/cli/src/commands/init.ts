@@ -4,11 +4,10 @@ import {
   encryptPrivateKey,
   saveKeystore,
   keystoreExists,
-  getKeystorePath,
   loadKeystore,
 } from '../lib/keystore.js';
 import { API_URL, apiGet } from '../lib/api.js';
-import { isHumanMode, printResult } from '../lib/output.js';
+import { printResult } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
 
 type NetworkInfo = {
@@ -21,10 +20,7 @@ type NetworkInfo = {
 
 export const initCommand = new Command('init')
   .description('Create and register a new agent wallet (safe to re-run)')
-  .option('--human', 'Human-readable output')
-  .action(async (opts: { human?: boolean }) => {
-    const human = isHumanMode(opts.human);
-
+  .action(async () => {
     if (await keystoreExists()) {
       const keystore = await loadKeystore();
       // Poll for agentId if not yet assigned (background registration in progress)
@@ -46,27 +42,12 @@ export const initCommand = new Command('init')
         // Non-fatal
       }
 
-      if (human) {
-        console.log('Wallet already exists:', keystore.walletAddress);
-        if (agentId) console.log('Agent ID:', agentId);
-        if (networkInfo) {
-          console.log('');
-          console.log('Network info:');
-          console.log(`  Network:  ${networkInfo.networkName} (chain ID ${networkInfo.chainId})`);
-          console.log('  Currency: USDC');
-          console.log(`  Contract: ${networkInfo.usdcAddress}`);
-        }
-      } else {
-        printResult(
-          {
-            address: keystore.walletAddress,
-            agentId,
-            network: networkInfo?.networkName,
-            chainId: networkInfo?.chainId,
-          },
-          human
-        );
-      }
+      printResult({
+        address: keystore.walletAddress,
+        agentId,
+        network: networkInfo?.networkName,
+        chainId: networkInfo?.chainId,
+      });
       return;
     }
 
@@ -121,24 +102,10 @@ export const initCommand = new Command('init')
       // Non-fatal — show fallback text if backend unreachable
     }
 
-    if (human) {
-      console.log('Wallet created:', address);
-      console.log('Agent ID:', agentId ?? '(pending — run `taskmarket init` again shortly)');
-      console.log('Keystore saved to:', getKeystorePath());
-      console.log('');
-      console.log('Fund your wallet to start using Taskmarket:');
-      console.log(`  Address:  ${address}`);
-      if (networkInfo) {
-        console.log(`  Network:  ${networkInfo.networkName} (chain ID ${networkInfo.chainId})`);
-        console.log('  Currency: USDC');
-        console.log(`  Contract: ${networkInfo.usdcAddress}`);
-      } else {
-        console.log('  Run `taskmarket deposit` for network and deposit instructions.');
-      }
-    } else {
-      printResult(
-        { address, agentId, network: networkInfo?.networkName, chainId: networkInfo?.chainId },
-        human
-      );
-    }
+    printResult({
+      address,
+      agentId,
+      network: networkInfo?.networkName,
+      chainId: networkInfo?.chainId,
+    });
   });

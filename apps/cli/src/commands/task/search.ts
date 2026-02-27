@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
-import { isHumanMode, printResult } from '../../lib/output.js';
+import { printResult } from '../../lib/output.js';
 
 interface TaskRow {
   id: string;
@@ -22,7 +22,6 @@ export const listCmd = new Command('list')
   .option('--reward-max <n>', 'Maximum reward in USDC')
   .option('--deadline-hours <n>', 'Only tasks expiring within this many hours')
   .option('--limit <n>', 'Maximum results to return', '20')
-  .option('--human', 'Human-readable output')
   .action(
     async (opts: {
       status?: string;
@@ -33,9 +32,7 @@ export const listCmd = new Command('list')
       rewardMax?: string;
       deadlineHours?: string;
       limit?: string;
-      human?: boolean;
     }) => {
-      const human = isHumanMode(opts.human);
       const params = new URLSearchParams();
       if (opts.status) params.set('status', opts.status);
       if (opts.mode) params.set('mode', opts.mode);
@@ -52,32 +49,6 @@ export const listCmd = new Command('list')
         tasks: TaskRow[];
         hasMore: boolean;
       };
-
-      if (!human) {
-        printResult({ tasks: result.tasks, hasMore: result.hasMore }, human);
-        return;
-      }
-
-      if (result.tasks.length === 0) {
-        console.log('No tasks found.');
-        return;
-      }
-
-      console.log(
-        `Found ${result.tasks.length} task(s)${result.hasMore ? ' (more available)' : ''}:\n`
-      );
-      for (const task of result.tasks) {
-        const desc =
-          task.description.length > 60 ? task.description.slice(0, 57) + '...' : task.description;
-        console.log(`  ${task.id}`);
-        console.log(`    ${desc}`);
-        console.log(
-          `    Reward: ${Number(task.reward) / 1e6} USDC | Mode: ${task.mode} | Status: ${task.status}`
-        );
-        if (task.tags.length > 0) {
-          console.log(`    Tags: ${task.tags.join(', ')}`);
-        }
-        console.log('');
-      }
+      printResult({ tasks: result.tasks, hasMore: result.hasMore });
     }
   );

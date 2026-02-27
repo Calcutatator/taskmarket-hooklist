@@ -5,11 +5,10 @@ import {
   encryptPrivateKey,
   saveKeystore,
   keystoreExists,
-  getKeystorePath,
   loadKeystore,
 } from '../../lib/keystore.js';
 import { API_URL } from '../../lib/api.js';
-import { isHumanMode, printResult } from '../../lib/output.js';
+import { printResult } from '../../lib/output.js';
 import { pollAgentId } from '../../lib/agent.js';
 
 function normalizePrivateKey(raw: string): `0x${string}` {
@@ -53,18 +52,10 @@ function promptHiddenInput(prompt: string): Promise<string> {
 export const walletImportCommand = new Command('import')
   .description('Import an existing private key as the agent wallet')
   .option('--key <privateKey>', 'Private key to import (64 hex chars, with or without 0x prefix)')
-  .option('--human', 'Human-readable output')
-  .action(async (opts: { key?: string; human?: boolean }) => {
-    const human = isHumanMode(opts.human);
-
+  .action(async (opts: { key?: string }) => {
     if (await keystoreExists()) {
       const keystore = await loadKeystore();
-      if (human) {
-        console.log('Wallet already exists:', keystore.walletAddress);
-        if (keystore.agentId) console.log('Agent ID:', keystore.agentId);
-      } else {
-        printResult({ address: keystore.walletAddress, agentId: keystore.agentId }, human);
-      }
+      printResult({ address: keystore.walletAddress, agentId: keystore.agentId });
       return;
     }
 
@@ -125,40 +116,13 @@ export const walletImportCommand = new Command('import')
       }
     }
 
-    if (human) {
-      console.log('Wallet imported:', address);
-      console.log('Agent ID:', agentId ?? '(pending — run `taskmarket init` again shortly)');
-      console.log('Keystore saved to:', getKeystorePath());
-
-      if (keySource === 'flag') {
-        console.log('');
-        console.log(
-          'Warning: private key was passed via --key flag. It may be visible in shell history'
-        );
-        console.log('and in process listings (ps aux) while the command ran.');
-        console.log('To remove it from shell history:');
-        console.log('');
-        console.log('  # zsh');
-        console.log("  fc -W; sed -i '' '$d' ~/.zsh_history");
-        console.log('');
-        console.log('  # bash');
-        console.log("  history -d $(history 1 | awk '{print $1}') && history -w");
-      } else if (keySource === 'env') {
-        console.log('');
-        console.log('Note: key was read from TASKMARKET_IMPORT_KEY env var.');
-        console.log('This is secure only when injected at runtime by your orchestration platform');
-        console.log('(Docker -e, Kubernetes Secret, systemd EnvironmentFile).');
-        console.log('If set in a dotfile (.env, .zshrc), the agent can read it — avoid this.');
-      }
-    } else {
-      if (keySource === 'flag') {
-        console.error(
-          JSON.stringify({
-            warning:
-              'Private key was passed via --key flag and may be visible in shell history and ps aux.',
-          })
-        );
-      }
-      printResult({ address, agentId }, human);
+    if (keySource === 'flag') {
+      process.stderr.write(
+        JSON.stringify({
+          warning:
+            'Private key was passed via --key flag and may be visible in shell history and ps aux.',
+        }) + '\n'
+      );
     }
+    printResult({ address, agentId });
   });

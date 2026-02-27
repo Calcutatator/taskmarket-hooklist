@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { isHumanMode, printResult, printError } from '../../lib/output.js';
+import { printResult, printError } from '../../lib/output.js';
 
 export const createCmd = new Command('create')
   .description('Create a new task (costs reward amount in USDC)')
@@ -12,7 +12,6 @@ export const createCmd = new Command('create')
   .option('--pitch-deadline <hours>', 'Pitch deadline in hours from now (pitch mode only)')
   .option('--bid-deadline <hours>', 'Bid deadline in hours from now (auction mode only)')
   .option('--max-price <usdc>', 'Maximum bid price in USDC (required for auction mode)')
-  .option('--human', 'Human-readable output')
   .action(
     async (opts: {
       description: string;
@@ -23,12 +22,9 @@ export const createCmd = new Command('create')
       pitchDeadline?: string;
       bidDeadline?: string;
       maxPrice?: string;
-      human?: boolean;
     }) => {
-      const human = isHumanMode(opts.human);
-
       if (opts.mode === 'auction' && !opts.maxPrice) {
-        printError('--max-price is required for auction mode', human);
+        printError('--max-price is required for auction mode');
       }
 
       const rewardBaseUnits = String(Math.round(parseFloat(opts.reward) * 1e6));
@@ -57,11 +53,6 @@ export const createCmd = new Command('create')
       }
 
       const result = (await x402Post('/api/tasks', body)) as { success: boolean; taskId: string };
-
-      if (human) {
-        console.log('Task created:', result.taskId);
-      } else {
-        printResult({ taskId: result.taskId }, human);
-      }
+      printResult({ taskId: result.taskId });
     }
   );

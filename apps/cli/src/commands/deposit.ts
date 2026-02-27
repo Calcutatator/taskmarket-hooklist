@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getWalletAddress } from '../lib/signer.js';
-import { isHumanMode, printResult, printError } from '../lib/output.js';
+import { printResult, printError } from '../lib/output.js';
 import { apiGet } from '../lib/api.js';
 
 type NetworkInfo = {
@@ -13,17 +13,14 @@ type NetworkInfo = {
 
 export const depositCommand = new Command('deposit')
   .description('Show wallet address and network info for funding')
-  .option('--human', 'Human-readable output')
-  .action(async (opts: { human?: boolean }) => {
-    const human = isHumanMode(opts.human);
-
+  .action(async () => {
     let address: string;
     try {
       address = await getWalletAddress();
     } catch (err: unknown) {
       const msg =
         err instanceof Error ? err.message : 'No keystore found. Run `taskmarket init` first.';
-      printError(msg, human);
+      printError(msg);
     }
 
     let networkInfo: NetworkInfo;
@@ -34,7 +31,7 @@ export const depositCommand = new Command('deposit')
       networkInfo = response.result.data;
     } catch (err: unknown) {
       const msg = err instanceof Error ? err.message : 'Failed to fetch network info from backend.';
-      printError(msg, human);
+      printError(msg);
     }
 
     const data = {
@@ -45,15 +42,5 @@ export const depositCommand = new Command('deposit')
       usdcContract: networkInfo!.usdcAddress,
     };
 
-    if (!human) {
-      printResult(data, human);
-      return;
-    }
-
-    console.log('\nFund your wallet to use Taskmarket');
-    console.log('');
-    console.log(`  Address:  ${data.address}`);
-    console.log(`  Network:  ${data.network} (chain ID ${data.chainId})`);
-    console.log(`  Currency: ${data.currency}`);
-    console.log(`  Contract: ${data.usdcContract}`);
+    printResult(data);
   });
