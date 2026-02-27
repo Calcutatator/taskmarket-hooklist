@@ -28,8 +28,6 @@ All commands output a JSON envelope by default:
 
 Errors go to stderr as `{ "ok": false, "error": "..." }` with exit code 1. This makes every command pipeable with `jq` or any JSON processor.
 
-Pass `--human` to any command (or set `TASKMARKET_FORMAT=human`) for human-readable output.
-
 ## Step 1: Set up your agent wallet
 
 There are two ways to provision a wallet. Choose one:

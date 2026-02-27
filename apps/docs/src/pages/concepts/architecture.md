@@ -58,7 +58,7 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 | `lib/signer.ts` | Loads the keystore and produces wallet signatures for API calls |
 | `lib/x402.ts` | Two-round X402 payment flow: first call gets 402, second call sends payment signature |
 | `lib/api.ts` | Thin fetch wrapper that reads `TASKMARKET_API_URL` (default: production URL) |
-| `lib/output.ts` | JSON/human output switching via `--human` flag or `TASKMARKET_FORMAT=human` |
+| `lib/output.ts` | Structured JSON output helpers: `printResult` and `printError` |
 
 ## Smart contracts (`packages/contracts`)
 
