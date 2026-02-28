@@ -6,6 +6,7 @@ import { Helmet } from 'react-helmet-async';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
 import { EXPLORER_URL, IDENTITY_REGISTRY, NETWORK_NAME } from '@/lib/chain';
+import { AgentAvatar } from '../AgentAvatar';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
@@ -130,52 +131,61 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
       </Helmet>
       <div className="space-y-6">
         {/* Header */}
-        <div>
-          <p className="text-xs font-mono text-text-secondary tracking-widest mb-1">AGENT</p>
-          <h1 className="font-heading text-3xl font-bold mb-3">Agent {displayId}</h1>
+        <div className="flex items-start gap-6">
+          <AgentAvatar
+            address={agent.address}
+            size={96}
+            className="rounded-full overflow-hidden shrink-0 ring-2 ring-border-primary"
+          />
+          <div className="flex-1 min-w-0">
+            <p className="text-xs font-mono text-text-secondary tracking-widest mb-1">AGENT</p>
+            <h1 className="font-heading text-3xl font-bold mb-3">Agent {displayId}</h1>
 
-          <div className="space-y-1.5">
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">address</span>
-              <span className="font-mono text-sm text-text-secondary break-all">
-                {agent.address}
-              </span>
-              <CopyButton text={agent.address} />
-              <a
-                href={explorerAddressUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-                aria-label="View on BaseScan"
-              >
-                <ExternalLink size={13} />
-              </a>
-            </div>
-
-            {agent.agentId && (
+            <div className="space-y-1.5">
               <div className="flex items-center gap-2">
-                <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">erc-8004</span>
-                <span className="font-mono text-sm text-text-secondary">
-                  token #{agent.agentId}
+                <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">address</span>
+                <span className="font-mono text-sm text-text-secondary break-all">
+                  {agent.address}
                 </span>
-                <CopyButton text={agent.agentId} />
-                {explorerTokenUrl && (
-                  <a
-                    href={explorerTokenUrl}
-                    target="_blank"
-                    rel="noreferrer"
-                    className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-                    aria-label="View identity token on BaseScan"
-                  >
-                    <ExternalLink size={13} />
-                  </a>
-                )}
+                <CopyButton text={agent.address} />
+                <a
+                  href={explorerAddressUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+                  aria-label="View on BaseScan"
+                >
+                  <ExternalLink size={13} />
+                </a>
               </div>
-            )}
 
-            <div className="flex items-center gap-2">
-              <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">network</span>
-              <span className="text-sm text-text-secondary">{NETWORK_NAME}</span>
+              {agent.agentId && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">
+                    erc-8004
+                  </span>
+                  <span className="font-mono text-sm text-text-secondary">
+                    token #{agent.agentId}
+                  </span>
+                  <CopyButton text={agent.agentId} />
+                  {explorerTokenUrl && (
+                    <a
+                      href={explorerTokenUrl}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
+                      aria-label="View identity token on BaseScan"
+                    >
+                      <ExternalLink size={13} />
+                    </a>
+                  )}
+                </div>
+              )}
+
+              <div className="flex items-center gap-2">
+                <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">network</span>
+                <span className="text-sm text-text-secondary">{NETWORK_NAME}</span>
+              </div>
             </div>
           </div>
         </div>
@@ -241,7 +251,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
                 {
                   agentId: agent.agentId ?? null,
                   address: agent.address,
-                  network: 'base-sepolia',
+                  network: NETWORK_NAME,
                   identityRegistry: IDENTITY_REGISTRY,
                   completedTasks: agent.completedTasks,
                   ratedTasks: agent.ratedTasks,

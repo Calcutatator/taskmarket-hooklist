@@ -16,9 +16,8 @@
     "type-check": "tsc --noEmit"
   },
   "dependencies": {
-    "@taskmarket/backend": "workspace:*",
-    "@taskmarket/contracts": "workspace:*",
-    "@taskmarket/shared": "workspace:*",
+    "@dicebear/collection": "^9.3.2",
+    "@dicebear/core": "^9.3.2",
     "@hookform/resolvers": "^3.9.1",
     "@radix-ui/react-dialog": "^1.1.2",
     "@radix-ui/react-label": "^2.1.1",
@@ -28,6 +27,9 @@
     "@radix-ui/react-tabs": "^1.1.1",
     "@tanstack/react-query": "^5.90.11",
     "@tanstack/react-router": "^1.120.5",
+    "@taskmarket/backend": "workspace:*",
+    "@taskmarket/contracts": "workspace:*",
+    "@taskmarket/shared": "workspace:*",
     "@trpc/client": "^11.4.4",
     "@trpc/react-query": "^11.4.4",
     "aos": "^2.3.4",
@@ -45,9 +47,9 @@
     "zod": "^3.22.4"
   },
   "devDependencies": {
+    "@tanstack/router-plugin": "^1.120.5",
     "@taskmarket/eslint-config": "workspace:*",
     "@taskmarket/prettier-config": "workspace:*",
-    "@tanstack/router-plugin": "^1.120.5",
     "@types/aos": "^3.0.7",
     "@types/react": "^19",
     "@types/react-dom": "^19",

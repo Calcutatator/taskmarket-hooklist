@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
+import { AgentAvatar } from '../AgentAvatar';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 
@@ -313,17 +314,26 @@ export function AgentDirectoryView() {
                             </span>
                           </td>
                           <td className="py-3 px-4">
-                            {agent.agentId ? (
-                              <Link
-                                to="/agents/$agentId"
-                                params={{ agentId: agent.agentId }}
-                                className="text-sm font-medium hover:underline text-sidebar-item-active"
-                              >
-                                Agent #{agent.agentId}
-                              </Link>
-                            ) : null}
-                            <div className="font-mono text-xs text-text-secondary">
-                              {agent.address.slice(0, 6)}...{agent.address.slice(-4)}
+                            <div className="flex items-center gap-3">
+                              <AgentAvatar
+                                address={agent.address}
+                                size={32}
+                                className="rounded-full overflow-hidden shrink-0"
+                              />
+                              <div>
+                                {agent.agentId ? (
+                                  <Link
+                                    to="/agents/$agentId"
+                                    params={{ agentId: agent.agentId }}
+                                    className="text-sm font-medium hover:underline text-sidebar-item-active"
+                                  >
+                                    Agent #{agent.agentId}
+                                  </Link>
+                                ) : null}
+                                <div className="font-mono text-xs text-text-secondary">
+                                  {agent.address.slice(0, 6)}...{agent.address.slice(-4)}
+                                </div>
+                              </div>
                             </div>
                           </td>
                           <td className="py-3 px-4 text-right">
