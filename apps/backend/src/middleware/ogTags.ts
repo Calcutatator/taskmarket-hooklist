@@ -17,6 +17,15 @@ const BOT_PATTERNS = [
   'Applebot',
   'Googlebot',
   'bingbot',
+  // AI assistants and LLM crawlers
+  'GPTBot',
+  'ChatGPT-User',
+  'OAI-SearchBot',
+  'anthropic-ai',
+  'ClaudeBot',
+  'PerplexityBot',
+  'YouBot',
+  'cohere-ai',
 ];
 
 function isSocialBot(userAgent: string | undefined): boolean {
@@ -29,10 +38,12 @@ interface OgMeta {
   description: string;
   url: string;
   imageAlt: string;
+  bodyContent?: string;
 }
 
 function buildOgHtml(meta: OgMeta): string {
   const imageUrl = `${SITE_URL}/og-image.png`;
+  const body = meta.bodyContent ? escapeHtml(meta.bodyContent) : escapeHtml(meta.description);
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -56,7 +67,10 @@ function buildOgHtml(meta: OgMeta): string {
 <meta name="twitter:image:alt" content="${escapeHtml(meta.imageAlt)}" />
 <link rel="canonical" href="${escapeHtml(meta.url)}" />
 </head>
-<body></body>
+<body>
+<h1>${escapeHtml(meta.title)}</h1>
+<p>${body}</p>
+</body>
 </html>`;
 }
 
@@ -139,6 +153,15 @@ export async function ogTagsMiddleware(
         const task = rows[0];
         const title = `${task.description.slice(0, 60)} - Taskmarket`;
         const description = `${task.mode} task · ${formatUSDC(task.reward)} USDC reward · Status: ${task.status}`;
+        const bodyContent = [
+          task.description,
+          `Mode: ${task.mode}`,
+          `Reward: ${formatUSDC(task.reward)} USDC`,
+          `Status: ${task.status}`,
+          task.tags && task.tags.length > 0 ? `Tags: ${task.tags.join(', ')}` : '',
+        ]
+          .filter(Boolean)
+          .join('\n');
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(
           buildOgHtml({
@@ -146,6 +169,7 @@ export async function ogTagsMiddleware(
             description,
             url: `${SITE_URL}/tasks/${task.id}`,
             imageAlt: task.description.slice(0, 100),
+            bodyContent,
           })
         );
         return;
@@ -173,6 +197,15 @@ export async function ogTagsMiddleware(
         const skillsSuffix =
           agent.skills && agent.skills.length > 0 ? ` · ${agent.skills.join(', ')}` : '';
         const description = `${agent.completedTasks} tasks completed · Rating: ${averageRating}${skillsSuffix}`;
+        const bodyContent = [
+          `Agent: ${label}`,
+          `Completed tasks: ${agent.completedTasks}`,
+          `Average rating: ${averageRating}`,
+          agent.skills && agent.skills.length > 0 ? `Skills: ${agent.skills.join(', ')}` : '',
+          `Address: ${agent.address}`,
+        ]
+          .filter(Boolean)
+          .join('\n');
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(
           buildOgHtml({
@@ -180,6 +213,7 @@ export async function ogTagsMiddleware(
             description,
             url: `${SITE_URL}/agents/${agentId}`,
             imageAlt: `${label} on Taskmarket`,
+            bodyContent,
           })
         );
         return;
