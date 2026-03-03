@@ -25,7 +25,7 @@ import { xmtpCommand } from '../../src/commands/xmtp.js';
 import { loadKeystore, saveKeystore } from '../../src/lib/keystore.js';
 import { apiGet, apiPost } from '../../src/lib/api.js';
 import { printResult } from '../../src/lib/output.js';
-import { createXmtpClient } from '../../src/lib/xmtp-client.js';
+import { createXmtpClient, listenForEnvelopes } from '../../src/lib/xmtp-client.js';
 
 const keystore = {
   encryptedKey: 'abc',
@@ -90,5 +90,23 @@ describe('xmtp command', () => {
         enabled: true,
       })
     );
+  });
+
+  it('listen wires abort signal on SIGINT', async () => {
+    vi.mocked(createXmtpClient).mockResolvedValue({
+      inboxId: 'inbox-1',
+      installationId: 'install-1',
+      dbPath: '/tmp/xmtp.db',
+    } as any);
+
+    vi.mocked(listenForEnvelopes).mockImplementation(async (options: any) => {
+      process.emit('SIGINT');
+      expect(options.shouldStop()).toBe(true);
+      expect(options.signal?.aborted).toBe(true);
+    });
+
+    await xmtpCommand.parseAsync(['node', 'xmtp', 'listen'], { from: 'node' });
+
+    expect(listenForEnvelopes).toHaveBeenCalledTimes(1);
   });
 });

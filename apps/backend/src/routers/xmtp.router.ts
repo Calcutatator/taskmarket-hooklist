@@ -103,9 +103,39 @@ export const xmtpRouter = router({
         throw new Error('XMTP inbox mismatch for wallet');
       }
 
-      await ctx.db
-        .insert(agentXmtpInstallations)
-        .values({
+      const existingInstallationRows = await ctx.db
+        .select({
+          agentAddress: agentXmtpInstallations.agentAddress,
+          deviceId: agentXmtpInstallations.deviceId,
+          inboxId: agentXmtpInstallations.inboxId,
+        })
+        .from(agentXmtpInstallations)
+        .where(eq(agentXmtpInstallations.installationId, input.installationId))
+        .limit(1);
+
+      const existingInstallation = existingInstallationRows[0];
+      if (existingInstallation) {
+        const isOwnerMatch =
+          existingInstallation.agentAddress === auth.walletAddress &&
+          existingInstallation.deviceId === input.deviceId &&
+          existingInstallation.inboxId === input.inboxId;
+
+        if (!isOwnerMatch) {
+          throw new Error('XMTP installation mismatch for wallet/device');
+        }
+
+        await ctx.db
+          .update(agentXmtpInstallations)
+          .set({
+            status: 'active',
+            revokedAt: null,
+            lastSeenAt: new Date(),
+            dbPath: input.dbPath,
+            clientVersion: input.clientVersion,
+          })
+          .where(eq(agentXmtpInstallations.installationId, input.installationId));
+      } else {
+        await ctx.db.insert(agentXmtpInstallations).values({
           agentAddress: auth.walletAddress,
           deviceId: input.deviceId,
           inboxId: input.inboxId,
@@ -114,17 +144,8 @@ export const xmtpRouter = router({
           clientVersion: input.clientVersion,
           status: 'active',
           lastSeenAt: new Date(),
-        })
-        .onConflictDoUpdate({
-          target: agentXmtpInstallations.installationId,
-          set: {
-            status: 'active',
-            revokedAt: null,
-            lastSeenAt: new Date(),
-            dbPath: input.dbPath,
-            clientVersion: input.clientVersion,
-          },
         });
+      }
 
       return {
         inboxId: input.inboxId,
@@ -306,7 +327,7 @@ export const xmtpRouter = router({
       requireXmtpEnabled();
 
       const whereClause = input.address
-        ? eq(agents.address, input.address)
+        ? and(eq(agents.address, input.address), eq(agents.xmtpEnabled, 1))
         : and(eq(agents.agentId, input.agentId!), eq(agents.xmtpEnabled, 1));
 
       const rows = await ctx.db

@@ -27,7 +27,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|xmtp)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|xmtp|xmtp-live)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 
@@ -307,8 +307,10 @@ smoke:
 		cd apps/backend && pnpm smoke:withdraw; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp" ]; then \
 		cd apps/backend && pnpm smoke:xmtp; \
+	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
+		cd apps/cli && pnpm smoke:xmtp-live; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|xmtp>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|xmtp|xmtp-live>"; \
 		exit 1; \
 	fi
 

@@ -8,6 +8,7 @@
 - Last updated: 2026-03-03
 - Related roadmap item: `PLAN.md` item 13 (XMTP integration)
 - Companion technical spec: `docs/XMTP_TDD.md`
+- Production wiring addendum: `docs/XMTP_PRODUCTION_WIRING_PRD.md`
 
 ## 1. Executive Summary
 Taskmarket needs a protocol-native, wallet-linked messaging layer so generated agents can communicate directly while running. This PRD defines a phased launch that gives each generated agent an XMTP identity, enables direct send/receive and query/response messaging, and adds operational policy and observability controls without breaking existing task APIs.

@@ -6,6 +6,8 @@
 - Status: Draft
 - Last updated: 2026-03-03
 - PRD: `docs/XMTP_PRD.md`
+- Production wiring PRD: `docs/XMTP_PRODUCTION_WIRING_PRD.md`
+- Production wiring TDD: `docs/XMTP_PRODUCTION_WIRING_TDD.md`
 
 ## Implementation Status
 - [x] XMTP-1: Shared XMTP schemas and exports (`packages/shared`)

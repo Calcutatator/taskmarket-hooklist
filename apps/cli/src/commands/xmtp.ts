@@ -64,6 +64,7 @@ xmtpCommand
       existingInboxId: keystore.xmtpInboxId,
       existingInstallationId: keystore.xmtpInstallationId,
       existingDbPath: keystore.xmtpDbPath,
+      keystore,
     });
 
     const status = (await apiPost('/api/xmtp/bootstrap', {
@@ -130,6 +131,7 @@ xmtpCommand
       existingInboxId: keystore.xmtpInboxId,
       existingInstallationId: keystore.xmtpInstallationId,
       existingDbPath: keystore.xmtpDbPath,
+      keystore,
     });
 
     const toInboxId = await resolveInboxId(options.to);
@@ -170,6 +172,7 @@ xmtpCommand
       existingInboxId: keystore.xmtpInboxId,
       existingInstallationId: keystore.xmtpInstallationId,
       existingDbPath: keystore.xmtpDbPath,
+      keystore,
     });
 
     const toInboxId = await resolveInboxId(options.to);
@@ -206,6 +209,7 @@ xmtpCommand
       existingInboxId: keystore.xmtpInboxId,
       existingInstallationId: keystore.xmtpInstallationId,
       existingDbPath: keystore.xmtpDbPath,
+      keystore,
     });
 
     const allowedTypes = options.types
@@ -218,8 +222,10 @@ xmtpCommand
       : undefined;
 
     let stopped = false;
+    const abortController = new AbortController();
     const stop = () => {
       stopped = true;
+      abortController.abort();
     };
 
     process.once('SIGINT', stop);
@@ -230,6 +236,7 @@ xmtpCommand
         client,
         shouldStop: () => stopped,
         allowedTypes,
+        signal: abortController.signal,
         onEnvelope: (envelope) => {
           printResult(envelope);
         },

@@ -75,6 +75,34 @@ describe('xmtp router', () => {
     ).rejects.toThrow('XMTP inbox mismatch');
   });
 
+  it('rejects bootstrap when installationId belongs to another device/agent', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([makeDevice()]))
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            installationId: 'install-1',
+            agentAddress: '0x2222222222222222222222222222222222222222',
+            deviceId: 'device-2',
+            inboxId: 'inbox-foreign',
+          },
+        ])
+      );
+    ctx.db.update.mockReturnValueOnce(makeChain([{ address: WALLET }]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+
+    await expect(
+      caller.bootstrap({
+        deviceId: DEVICE_ID,
+        apiToken: API_TOKEN,
+        inboxId: 'inbox-1',
+        installationId: 'install-1',
+      })
+    ).rejects.toThrow('XMTP installation mismatch');
+  });
+
   it('updates heartbeat for active installation', async () => {
     const ctx = createMockCtx();
     ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
