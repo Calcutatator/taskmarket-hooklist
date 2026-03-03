@@ -13,6 +13,7 @@ import { devicesRouter } from './routers/devices.router';
 import { bidsRouter } from './routers/bids.router';
 import { walletRouter } from './routers/wallet.router';
 import { networkRouter } from './routers/network.router';
+import { xmtpRouter } from './routers/xmtp.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -29,6 +30,7 @@ export const appRouter = router({
   bids: bidsRouter,
   wallet: walletRouter,
   network: networkRouter,
+  xmtp: xmtpRouter,
 });
 
 export type AppRouter = typeof appRouter;

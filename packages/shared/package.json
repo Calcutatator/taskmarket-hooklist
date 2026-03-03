@@ -13,7 +13,9 @@
     "lint:write": "eslint src/ --fix",
     "format:check": "prettier --check src/",
     "format:write": "prettier --write src/",
-    "type-check": "tsc --noEmit"
+    "type-check": "tsc --noEmit",
+    "test": "vitest run",
+    "test:watch": "vitest watch"
   },
   "dependencies": {
     "zod": "^3.22.4"
@@ -22,7 +24,8 @@
     "@taskmarket/eslint-config": "workspace:*",
     "@taskmarket/prettier-config": "workspace:*",
     "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^2.0.0"
   },
   "prettier": "@taskmarket/prettier-config"
 }

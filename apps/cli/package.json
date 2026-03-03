@@ -7,6 +7,7 @@
   },
   "prettier": "@taskmarket/prettier-config",
   "dependencies": {
+    "@taskmarket/shared": "workspace:*",
     "commander": "^12.0.0",
     "viem": "^2.41.2"
   },
