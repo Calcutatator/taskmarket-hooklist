@@ -73,4 +73,73 @@ describe('xmtp-stream', () => {
     expect(streamFactory).toHaveBeenCalledTimes(2);
     expect(onEnvelope).toHaveBeenCalledTimes(1);
   });
+
+  it('resets reconnect attempts after a successful delivery', async () => {
+    let stop = false;
+    let callCount = 0;
+
+    const streamFactory = vi.fn(async function* () {
+      callCount += 1;
+      if (callCount === 1) {
+        throw new Error('first transient');
+      }
+
+      if (callCount === 2) {
+        yield ENVELOPE;
+        return;
+      }
+
+      yield {
+        ...ENVELOPE,
+        requestId: '40c2da5a-0f61-4e20-a8af-df7aad9ab8a2',
+      };
+    });
+
+    const onEnvelope = vi.fn(() => {
+      if (onEnvelope.mock.calls.length >= 2) {
+        stop = true;
+      }
+    });
+
+    await expect(
+      runStreamWithReconnect({
+        streamFactory,
+        onEnvelope,
+        shouldStop: () => stop,
+        maxReconnectAttempts: 1,
+        backoffMs: () => 0,
+      })
+    ).resolves.toBeUndefined();
+
+    expect(onEnvelope).toHaveBeenCalledTimes(2);
+    expect(streamFactory).toHaveBeenCalledTimes(3);
+  });
+
+  it('reconnects when stream ends unexpectedly', async () => {
+    let firstAttempt = true;
+    let stop = false;
+
+    const streamFactory = vi.fn(async function* () {
+      if (firstAttempt) {
+        firstAttempt = false;
+        return;
+      }
+      yield ENVELOPE;
+    });
+
+    const onEnvelope = vi.fn(() => {
+      stop = true;
+    });
+
+    await runStreamWithReconnect({
+      streamFactory,
+      onEnvelope,
+      shouldStop: () => stop,
+      maxReconnectAttempts: 2,
+      backoffMs: () => 0,
+    });
+
+    expect(streamFactory).toHaveBeenCalledTimes(2);
+    expect(onEnvelope).toHaveBeenCalledTimes(1);
+  });
 });

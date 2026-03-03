@@ -77,7 +77,12 @@ describe('xmtp command', () => {
     await xmtpCommand.parseAsync(['node', 'xmtp', 'status'], { from: 'node' });
 
     expect(apiGet).toHaveBeenCalledWith(
-      '/api/xmtp/status?deviceId=device-1&apiToken=token-1'
+      '/api/xmtp/status?deviceId=device-1',
+      {
+        headers: {
+          'x-taskmarket-api-token': 'token-1',
+        },
+      }
     );
     expect(printResult).toHaveBeenCalledWith(
       expect.objectContaining({

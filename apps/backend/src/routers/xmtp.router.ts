@@ -12,7 +12,7 @@ import {
   XmtpResolvePeerInputSchema,
   XmtpResolvePeerOutputSchema,
 } from '@taskmarket/shared';
-import { and, eq } from 'drizzle-orm';
+import { and, eq, isNull, or } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { agents, agentXmtpInstallations, agentXmtpPeerPolicies } from '../db/schema';
 import { listAgentInstallations, heartbeatInstallation } from '../services/xmtp-status';
@@ -24,6 +24,37 @@ function requireXmtpEnabled(): void {
   if (!getServerConfig().XMTP_ENABLED) {
     throw new Error('XMTP is disabled');
   }
+}
+
+function headerValue(value: string | string[] | undefined): string | undefined {
+  if (Array.isArray(value)) {
+    return value[0];
+  }
+  return value;
+}
+
+function resolveApiToken(
+  inputApiToken: string | undefined,
+  headers: Record<string, string | string[] | undefined>
+): string {
+  if (inputApiToken) {
+    return inputApiToken;
+  }
+
+  const explicitHeader = headerValue(headers['x-taskmarket-api-token']);
+  if (explicitHeader) {
+    return explicitHeader;
+  }
+
+  const authHeader = headerValue(headers.authorization);
+  if (authHeader?.startsWith('Bearer ')) {
+    const token = authHeader.slice('Bearer '.length).trim();
+    if (token) {
+      return token;
+    }
+  }
+
+  throw new Error('Missing XMTP api token');
 }
 
 export const xmtpRouter = router({
@@ -45,34 +76,32 @@ export const xmtpRouter = router({
         apiToken: input.apiToken,
       });
 
-      const existingAgent = await ctx.db
-        .select({ address: agents.address, xmtpInboxId: agents.xmtpInboxId })
-        .from(agents)
-        .where(eq(agents.address, auth.walletAddress))
-        .limit(1);
-
-      const existingInboxId = existingAgent[0]?.xmtpInboxId ?? null;
-      if (existingInboxId && existingInboxId !== input.inboxId) {
-        throw new Error('XMTP inbox mismatch for wallet');
-      }
-
       await ctx.db
         .insert(agents)
         .values({
           address: auth.walletAddress,
+        })
+        .onConflictDoNothing();
+
+      const updatedAgents = await ctx.db
+        .update(agents)
+        .set({
           xmtpInboxId: input.inboxId,
           xmtpEnabled: 1,
           xmtpLastSeenAt: new Date(),
+          updatedAt: new Date(),
         })
-        .onConflictDoUpdate({
-          target: agents.address,
-          set: {
-            xmtpInboxId: input.inboxId,
-            xmtpEnabled: 1,
-            xmtpLastSeenAt: new Date(),
-            updatedAt: new Date(),
-          },
-        });
+        .where(
+          and(
+            eq(agents.address, auth.walletAddress),
+            or(isNull(agents.xmtpInboxId), eq(agents.xmtpInboxId, input.inboxId))
+          )
+        )
+        .returning({ address: agents.address });
+
+      if (updatedAgents.length === 0) {
+        throw new Error('XMTP inbox mismatch for wallet');
+      }
 
       await ctx.db
         .insert(agentXmtpInstallations)
@@ -117,9 +146,10 @@ export const xmtpRouter = router({
     .output(XmtpStatusOutputSchema)
     .query(async ({ input, ctx }) => {
       requireXmtpEnabled();
+      const apiToken = resolveApiToken(input.apiToken, ctx.req.headers);
       const auth = await authenticateXmtpDevice(ctx, {
         deviceId: input.deviceId,
-        apiToken: input.apiToken,
+        apiToken,
       });
 
       const agentRows = await ctx.db
@@ -164,8 +194,14 @@ export const xmtpRouter = router({
         deviceId: input.deviceId,
         apiToken: input.apiToken,
       });
-
-      await heartbeatInstallation(ctx.db, input.installationId);
+      const didUpdate = await heartbeatInstallation(ctx.db, {
+        installationId: input.installationId,
+        deviceId: input.deviceId,
+        agentAddress: auth.walletAddress,
+      });
+      if (!didUpdate) {
+        throw new Error('Installation not found for authenticated device');
+      }
 
       await ctx.db
         .update(agents)
@@ -229,9 +265,10 @@ export const xmtpRouter = router({
     .output(XmtpPeerPolicyListOutputSchema)
     .query(async ({ input, ctx }) => {
       requireXmtpEnabled();
+      const apiToken = resolveApiToken(input.apiToken, ctx.req.headers);
       const auth = await authenticateXmtpDevice(ctx, {
         deviceId: input.deviceId,
-        apiToken: input.apiToken,
+        apiToken,
       });
 
       const rows = await ctx.db

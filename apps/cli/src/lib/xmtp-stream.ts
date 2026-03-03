@@ -81,8 +81,13 @@ export async function runStreamWithReconnect(
           return;
         }
         await options.onEnvelope(envelope);
+        reconnectAttempt = 0;
       }
-      return;
+      if (options.shouldStop()) {
+        return;
+      }
+
+      throw new Error('XMTP stream ended unexpectedly');
     } catch (error) {
       reconnectAttempt += 1;
       if (reconnectAttempt > maxReconnectAttempts) {

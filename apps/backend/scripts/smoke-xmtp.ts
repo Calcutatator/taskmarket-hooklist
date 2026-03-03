@@ -30,6 +30,9 @@ async function main() {
   if (!keyA || !keyB) {
     throw new Error('Set REQUESTER_PRIVATE_KEY/WORKER_PRIVATE_KEY or DEV_PRIVATE_KEY');
   }
+  if (keyA.toLowerCase() === keyB.toLowerCase()) {
+    throw new Error('REQUESTER_PRIVATE_KEY and WORKER_PRIVATE_KEY must be different');
+  }
 
   const agentA = privateKeyToAccount(keyA);
   const agentB = privateKeyToAccount(keyB);
@@ -75,7 +78,10 @@ async function main() {
   });
 
   const policies = (await get(
-    `/api/xmtp/peers?deviceId=${encodeURIComponent(deviceA.deviceId)}&apiToken=${encodeURIComponent(deviceA.apiToken)}`
+    `/api/xmtp/peers?deviceId=${encodeURIComponent(deviceA.deviceId)}`,
+    {
+      headers: { 'x-taskmarket-api-token': deviceA.apiToken },
+    }
   )) as {
     policies: Array<{ peerInboxId: string; policy: string }>;
   };
@@ -99,7 +105,10 @@ async function main() {
 
   log('5/5', 'Checking status and heartbeat...');
   const status = (await get(
-    `/api/xmtp/status?deviceId=${encodeURIComponent(deviceA.deviceId)}&apiToken=${encodeURIComponent(deviceA.apiToken)}`
+    `/api/xmtp/status?deviceId=${encodeURIComponent(deviceA.deviceId)}`,
+    {
+      headers: { 'x-taskmarket-api-token': deviceA.apiToken },
+    }
   )) as {
     enabled: boolean;
     inboxId: string | null;

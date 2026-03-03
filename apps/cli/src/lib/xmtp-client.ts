@@ -22,7 +22,7 @@ export interface XmtpClientSession {
   installationId: string;
   dbPath: string;
   sendMessage: (toInboxId: string, body: string) => Promise<void>;
-  streamMessages: () => AsyncIterable<string>;
+  streamMessages: (options?: { signal?: AbortSignal }) => AsyncIterable<string>;
 }
 
 export interface CreateXmtpClientInput {
@@ -56,8 +56,8 @@ async function createDevClient(input: CreateXmtpClientInput): Promise<XmtpClient
       messages.push({ toInboxId, body });
       devMessageBus.set(toInboxId, messages);
     },
-    async *streamMessages() {
-      while (true) {
+    async *streamMessages(options?: { signal?: AbortSignal }) {
+      while (!options?.signal?.aborted) {
         const messages = devMessageBus.get(inboxId) ?? [];
         if (messages.length > 0) {
           const next = messages.shift();
@@ -82,10 +82,11 @@ export async function createXmtpClient(input: CreateXmtpClientInput): Promise<Xm
   if (process.env.TASKMARKET_XMTP_ENV === 'production') {
     try {
       await import(sdkModuleName);
-      throw new Error('Production XMTP runtime wiring is not enabled in this build yet');
     } catch {
       throw new Error('XMTP production mode requires @xmtp/node-sdk and runtime wiring');
     }
+
+    throw new Error('Production XMTP runtime wiring is not enabled in this build yet');
   }
 
   return createDevClient(input);
@@ -105,16 +106,17 @@ export async function runQueryWithClient(options: {
   envelope: AgentMessageEnvelope;
   timeoutMs: number;
 }): Promise<AgentMessageEnvelope> {
+  const abortController = new AbortController();
   const manager = new XmtpQueryManager();
   const pending = manager.waitForResponse(options.envelope.requestId, options.timeoutMs);
 
   await sendMessageEnvelope(options.client, options.toInboxId, options.envelope);
 
   const consumeResponses = (async () => {
-    for await (const raw of options.client.streamMessages()) {
+    for await (const raw of options.client.streamMessages({ signal: abortController.signal })) {
       const envelope = decodeEnvelope(raw);
       if (manager.resolveResponse(envelope)) {
-        return;
+        break;
       }
     }
   })();
@@ -127,6 +129,10 @@ export async function runQueryWithClient(options: {
     return await pending;
   } finally {
     manager.clear();
+    abortController.abort();
+    await consumeResponses.catch(() => {
+      // Query result is already resolved by pending promise.
+    });
   }
 }
 

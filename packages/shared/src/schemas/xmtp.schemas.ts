@@ -34,7 +34,7 @@ export const XmtpBootstrapOutputSchema = z.object({
 
 export const XmtpStatusInputSchema = z.object({
   deviceId: z.string().min(1),
-  apiToken: z.string().min(1),
+  apiToken: z.string().min(1).optional(),
 });
 
 export const XmtpStatusOutputSchema = z.object({
@@ -71,7 +71,7 @@ export const XmtpPeerPolicyUpsertSchema = z.object({
 
 export const XmtpPeerPolicyListSchema = z.object({
   deviceId: z.string().min(1),
-  apiToken: z.string().min(1),
+  apiToken: z.string().min(1).optional(),
 });
 
 export const XmtpPeerPolicyUpsertOutputSchema = z.object({

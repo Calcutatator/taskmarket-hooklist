@@ -40,9 +40,8 @@ describe('xmtp router', () => {
 
   it('bootstraps XMTP metadata for a device', async () => {
     const ctx = createMockCtx();
-    ctx.db.select
-      .mockReturnValueOnce(makeChain([makeDevice()]))
-      .mockReturnValueOnce(makeChain([{ address: WALLET, xmtpInboxId: null }]));
+    ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    ctx.db.update.mockReturnValueOnce(makeChain([{ address: WALLET }]));
 
     const caller = xmtpRouter.createCaller(ctx);
     const result = await caller.bootstrap({
@@ -61,9 +60,8 @@ describe('xmtp router', () => {
 
   it('rejects bootstrap when existing inboxId mismatches', async () => {
     const ctx = createMockCtx();
-    ctx.db.select
-      .mockReturnValueOnce(makeChain([makeDevice()]))
-      .mockReturnValueOnce(makeChain([{ address: WALLET, xmtpInboxId: 'different-inbox' }]));
+    ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    ctx.db.update.mockReturnValueOnce(makeChain([]));
 
     const caller = xmtpRouter.createCaller(ctx);
 
@@ -80,6 +78,9 @@ describe('xmtp router', () => {
   it('updates heartbeat for active installation', async () => {
     const ctx = createMockCtx();
     ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    ctx.db.update
+      .mockReturnValueOnce(makeChain([{ installationId: 'install-1' }]))
+      .mockReturnValueOnce(makeChain([]));
 
     const caller = xmtpRouter.createCaller(ctx);
     const result = await caller.heartbeat({
@@ -90,6 +91,22 @@ describe('xmtp router', () => {
 
     expect(result.ok).toBe(true);
     expect(ctx.db.update).toHaveBeenCalledTimes(2);
+  });
+
+  it('rejects heartbeat when installation does not belong to authenticated device', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    ctx.db.update.mockReturnValueOnce(makeChain([]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+
+    await expect(
+      caller.heartbeat({
+        deviceId: DEVICE_ID,
+        apiToken: API_TOKEN,
+        installationId: 'install-foreign',
+      })
+    ).rejects.toThrow('Installation not found');
   });
 
   it('upserts and lists peer policies', async () => {
@@ -124,6 +141,65 @@ describe('xmtp router', () => {
     expect(upserted.ok).toBe(true);
     expect(listed.policies).toHaveLength(1);
     expect(listed.policies[0].peerInboxId).toBe('peer-1');
+  });
+
+  it('status returns only active installations', async () => {
+    const ctx = createMockCtx();
+    ctx.req = { headers: { 'x-taskmarket-api-token': API_TOKEN } } as any;
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([makeDevice()]))
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            xmtpInboxId: 'inbox-1',
+            xmtpEnabled: 1,
+            xmtpLastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
+          },
+        ])
+      )
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            installationId: 'install-active',
+            status: 'active',
+            lastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
+          },
+          {
+            installationId: 'install-revoked',
+            status: 'revoked',
+            lastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
+          },
+        ])
+      );
+
+    const caller = xmtpRouter.createCaller(ctx);
+    const result = await caller.status({ deviceId: DEVICE_ID });
+
+    expect(result.activeInstallations).toHaveLength(1);
+    expect(result.activeInstallations[0]?.installationId).toBe('install-active');
+  });
+
+  it('accepts api token from header for status query', async () => {
+    const ctx = createMockCtx();
+    ctx.req = { headers: { 'x-taskmarket-api-token': API_TOKEN } } as any;
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([makeDevice()]))
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            xmtpInboxId: 'inbox-1',
+            xmtpEnabled: 1,
+            xmtpLastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
+          },
+        ])
+      )
+      .mockReturnValueOnce(makeChain([]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+    const result = await caller.status({ deviceId: DEVICE_ID });
+
+    expect(result.inboxId).toBe('inbox-1');
+    expect(result.enabled).toBe(true);
   });
 
   it('resolves peer by address and by agentId', async () => {

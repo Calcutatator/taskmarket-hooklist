@@ -21,11 +21,17 @@ export function fail(step: string, status: number, body: string): never {
   process.exit(1);
 }
 
-/** GET without auth. */
-export async function get(path: string): Promise<unknown> {
+/** GET with optional headers. */
+export async function get(
+  path: string,
+  options?: { headers?: Record<string, string> }
+): Promise<unknown> {
   const r = await fetch(`${API_URL}${path}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers ?? {}),
+    },
   });
   const result = await r.json();
   if (!r.ok) fail(path, r.status, JSON.stringify(result, null, 2));

@@ -99,7 +99,12 @@ xmtpCommand
   .action(async () => {
     const keystore = await loadKeystore();
     const result = (await apiGet(
-      `/api/xmtp/status?deviceId=${encodeURIComponent(keystore.deviceId)}&apiToken=${encodeURIComponent(keystore.apiToken)}`
+      `/api/xmtp/status?deviceId=${encodeURIComponent(keystore.deviceId)}`,
+      {
+        headers: {
+          'x-taskmarket-api-token': keystore.apiToken,
+        },
+      }
     )) as {
       inboxId: string | null;
       enabled: boolean;
