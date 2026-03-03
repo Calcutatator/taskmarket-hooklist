@@ -1,7 +1,7 @@
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db/client';
 import { tasks, agents } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { eq, desc } from 'drizzle-orm';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
 
@@ -38,12 +38,12 @@ interface OgMeta {
   description: string;
   url: string;
   imageAlt: string;
-  bodyContent?: string;
+  bodyHtml?: string;
 }
 
 function buildOgHtml(meta: OgMeta): string {
   const imageUrl = `${SITE_URL}/og-image.png`;
-  const body = meta.bodyContent ? escapeHtml(meta.bodyContent) : escapeHtml(meta.description);
+  const bodyContent = meta.bodyHtml ?? `<p>${escapeHtml(meta.description)}</p>`;
   return `<!DOCTYPE html>
 <html lang="en">
 <head>
@@ -69,7 +69,7 @@ function buildOgHtml(meta: OgMeta): string {
 </head>
 <body>
 <h1>${escapeHtml(meta.title)}</h1>
-<p>${body}</p>
+${bodyContent}
 </body>
 </html>`;
 }
@@ -87,7 +87,7 @@ function formatUSDC(atomicUnits: string | number | null | undefined): string {
   return value.toFixed(3);
 }
 
-const STATIC_PAGES: Record<string, OgMeta> = {
+const STATIC_META: Record<string, Omit<OgMeta, 'bodyHtml'>> = {
   '/': {
     title: 'Taskmarket',
     description:
@@ -123,6 +123,94 @@ const STATIC_PAGES: Record<string, OgMeta> = {
   },
 };
 
+async function buildHomepageBody(): Promise<string> {
+  const recentTasks = await db
+    .select({
+      id: tasks.id,
+      description: tasks.description,
+      reward: tasks.reward,
+      mode: tasks.mode,
+      tags: tasks.tags,
+    })
+    .from(tasks)
+    .where(eq(tasks.status, 'open'))
+    .orderBy(desc(tasks.createdAt))
+    .limit(5);
+
+  if (recentTasks.length === 0) {
+    return `<p>${escapeHtml(STATIC_META['/'].description)}</p>`;
+  }
+
+  const items = recentTasks
+    .map((t) => {
+      const tags = t.tags.length > 0 ? ` [${t.tags.map(escapeHtml).join(', ')}]` : '';
+      return `<li>${escapeHtml(t.description.slice(0, 100))} — ${escapeHtml(formatUSDC(t.reward))} USDC · ${escapeHtml(t.mode)}${tags}</li>`;
+    })
+    .join('\n');
+
+  return `<p>${escapeHtml(STATIC_META['/'].description)}</p>\n<h2>Recent open tasks</h2>\n<ul>\n${items}\n</ul>`;
+}
+
+async function buildTasksBody(): Promise<string> {
+  const taskList = await db
+    .select({
+      id: tasks.id,
+      description: tasks.description,
+      reward: tasks.reward,
+      mode: tasks.mode,
+      tags: tasks.tags,
+    })
+    .from(tasks)
+    .where(eq(tasks.status, 'open'))
+    .orderBy(desc(tasks.createdAt))
+    .limit(20);
+
+  if (taskList.length === 0) {
+    return `<p>${escapeHtml(STATIC_META['/tasks'].description)}</p>`;
+  }
+
+  const items = taskList
+    .map((t) => {
+      const tags = t.tags.length > 0 ? ` [${t.tags.map(escapeHtml).join(', ')}]` : '';
+      return `<li><a href="${escapeHtml(`${SITE_URL}/tasks/${t.id}`)}">${escapeHtml(t.description.slice(0, 100))}</a> — ${escapeHtml(formatUSDC(t.reward))} USDC · ${escapeHtml(t.mode)}${tags}</li>`;
+    })
+    .join('\n');
+
+  return `<p>${escapeHtml(STATIC_META['/tasks'].description)}</p>\n<ul>\n${items}\n</ul>`;
+}
+
+async function buildAgentsBody(forLeaderboard = false): Promise<string> {
+  const agentList = await db
+    .select({
+      agentId: agents.agentId,
+      address: agents.address,
+      completedTasks: agents.completedTasks,
+      ratedTasks: agents.ratedTasks,
+      totalStars: agents.totalStars,
+      skills: agents.skills,
+    })
+    .from(agents)
+    .orderBy(desc(agents.completedTasks))
+    .limit(20);
+
+  const staticKey = forLeaderboard ? '/leaderboard' : '/agents';
+
+  if (agentList.length === 0) {
+    return `<p>${escapeHtml(STATIC_META[staticKey].description)}</p>`;
+  }
+
+  const items = agentList
+    .map((a) => {
+      const label = a.agentId ?? a.address.slice(0, 10);
+      const rating = a.ratedTasks > 0 ? (a.totalStars / a.ratedTasks).toFixed(1) : 'N/A';
+      const skills = a.skills.length > 0 ? ` · ${a.skills.map(escapeHtml).join(', ')}` : '';
+      return `<li><a href="${escapeHtml(`${SITE_URL}/agents/${a.agentId ?? a.address}`)}">${escapeHtml(label)}</a> — ${a.completedTasks} tasks · Rating: ${escapeHtml(rating)}${skills}</li>`;
+    })
+    .join('\n');
+
+  return `<p>${escapeHtml(STATIC_META[staticKey].description)}</p>\n<ul>\n${items}\n</ul>`;
+}
+
 export async function ogTagsMiddleware(
   req: Request,
   res: Response,
@@ -135,11 +223,63 @@ export async function ogTagsMiddleware(
 
   const pathname = req.path;
 
-  // Static pages
-  const staticMeta = STATIC_PAGES[pathname];
-  if (staticMeta) {
+  // Pages with DB-enriched body content
+  if (pathname === '/') {
+    try {
+      const bodyHtml = await buildHomepageBody();
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml({ ...STATIC_META['/'], bodyHtml }));
+      return;
+    } catch {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml(STATIC_META['/']));
+      return;
+    }
+  }
+
+  if (pathname === '/tasks') {
+    try {
+      const bodyHtml = await buildTasksBody();
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml({ ...STATIC_META['/tasks'], bodyHtml }));
+      return;
+    } catch {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml(STATIC_META['/tasks']));
+      return;
+    }
+  }
+
+  if (pathname === '/agents') {
+    try {
+      const bodyHtml = await buildAgentsBody(false);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml({ ...STATIC_META['/agents'], bodyHtml }));
+      return;
+    } catch {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml(STATIC_META['/agents']));
+      return;
+    }
+  }
+
+  if (pathname === '/leaderboard') {
+    try {
+      const bodyHtml = await buildAgentsBody(true);
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml({ ...STATIC_META['/leaderboard'], bodyHtml }));
+      return;
+    } catch {
+      res.setHeader('Content-Type', 'text/html; charset=utf-8');
+      res.send(buildOgHtml(STATIC_META['/leaderboard']));
+      return;
+    }
+  }
+
+  // Static page with no DB data needed
+  if (pathname === '/protocol') {
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(buildOgHtml(staticMeta));
+    res.send(buildOgHtml(STATIC_META['/protocol']));
     return;
   }
 
@@ -153,12 +293,14 @@ export async function ogTagsMiddleware(
         const task = rows[0];
         const title = `${task.description.slice(0, 60)} - Taskmarket`;
         const description = `${task.mode} task · ${formatUSDC(task.reward)} USDC reward · Status: ${task.status}`;
-        const bodyContent = [
-          task.description,
-          `Mode: ${task.mode}`,
-          `Reward: ${formatUSDC(task.reward)} USDC`,
-          `Status: ${task.status}`,
-          task.tags && task.tags.length > 0 ? `Tags: ${task.tags.join(', ')}` : '',
+        const lines = [
+          `<p>${escapeHtml(task.description)}</p>`,
+          '<ul>',
+          `<li>Mode: ${escapeHtml(task.mode)}</li>`,
+          `<li>Reward: ${escapeHtml(formatUSDC(task.reward))} USDC</li>`,
+          `<li>Status: ${escapeHtml(task.status)}</li>`,
+          task.tags.length > 0 ? `<li>Tags: ${task.tags.map(escapeHtml).join(', ')}</li>` : '',
+          '</ul>',
         ]
           .filter(Boolean)
           .join('\n');
@@ -169,17 +311,16 @@ export async function ogTagsMiddleware(
             description,
             url: `${SITE_URL}/tasks/${task.id}`,
             imageAlt: task.description.slice(0, 100),
-            bodyContent,
+            bodyHtml: lines,
           })
         );
         return;
       }
     } catch {
-      // Fall through to next() on DB error
+      // Fall through to generic fallback on DB error
     }
-    // Task not found — serve generic fallback
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(buildOgHtml(STATIC_PAGES['/tasks']));
+    res.send(buildOgHtml(STATIC_META['/tasks']));
     return;
   }
 
@@ -197,12 +338,15 @@ export async function ogTagsMiddleware(
         const skillsSuffix =
           agent.skills && agent.skills.length > 0 ? ` · ${agent.skills.join(', ')}` : '';
         const description = `${agent.completedTasks} tasks completed · Rating: ${averageRating}${skillsSuffix}`;
-        const bodyContent = [
-          `Agent: ${label}`,
-          `Completed tasks: ${agent.completedTasks}`,
-          `Average rating: ${averageRating}`,
-          agent.skills && agent.skills.length > 0 ? `Skills: ${agent.skills.join(', ')}` : '',
-          `Address: ${agent.address}`,
+        const lines = [
+          '<ul>',
+          `<li>Completed tasks: ${agent.completedTasks}</li>`,
+          `<li>Average rating: ${escapeHtml(averageRating)}</li>`,
+          agent.skills.length > 0
+            ? `<li>Skills: ${agent.skills.map(escapeHtml).join(', ')}</li>`
+            : '',
+          `<li>Address: ${escapeHtml(agent.address)}</li>`,
+          '</ul>',
         ]
           .filter(Boolean)
           .join('\n');
@@ -213,17 +357,16 @@ export async function ogTagsMiddleware(
             description,
             url: `${SITE_URL}/agents/${agentId}`,
             imageAlt: `${label} on Taskmarket`,
-            bodyContent,
+            bodyHtml: lines,
           })
         );
         return;
       }
     } catch {
-      // Fall through to next() on DB error
+      // Fall through to generic fallback on DB error
     }
-    // Agent not found — serve generic fallback
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
-    res.send(buildOgHtml(STATIC_PAGES['/agents']));
+    res.send(buildOgHtml(STATIC_META['/agents']));
     return;
   }
 
