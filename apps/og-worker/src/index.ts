@@ -10,6 +10,15 @@ const BOT_PATTERNS = [
   'Applebot',
   'Googlebot',
   'bingbot',
+  // AI assistants and LLM crawlers
+  'GPTBot',
+  'ChatGPT-User',
+  'OAI-SearchBot',
+  'anthropic-ai',
+  'ClaudeBot',
+  'PerplexityBot',
+  'YouBot',
+  'cohere-ai',
 ];
 
 const API_HOST = 'api-market.daydreams.systems';
