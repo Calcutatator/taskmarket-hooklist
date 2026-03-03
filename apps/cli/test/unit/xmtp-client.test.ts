@@ -273,4 +273,69 @@ describe('xmtp-client', () => {
       }
     }
   });
+
+  it('passes dbEncryptionKey derived from DEK when keystore is provided', async () => {
+    const previousEnv = process.env.TASKMARKET_XMTP_ENV;
+    const FAKE_DEK = 'ab'.repeat(32); // 32-byte hex string
+
+    const createClient = vi.fn().mockResolvedValue({
+      inboxId: 'inbox-1',
+      installationId: 'install-1',
+      sendMessage: vi.fn(),
+      async *streamAllMessages() {},
+    });
+
+    try {
+      process.env.TASKMARKET_XMTP_ENV = 'production';
+      vi.resetModules();
+      vi.doMock('@xmtp/node-sdk', () => ({ Client: { create: createClient } }), { virtual: true });
+      vi.doMock('../../src/lib/signer.js', () => ({
+        fetchDeviceKey: vi.fn().mockResolvedValue(FAKE_DEK),
+      }));
+      vi.doMock('../../src/lib/keystore.js', () => ({
+        decryptPrivateKey: vi.fn().mockReturnValue('0x' + 'aa'.repeat(32)),
+      }));
+      vi.doMock('viem/accounts', () => ({
+        privateKeyToAccount: vi.fn().mockReturnValue({
+          type: 'local',
+          signMessage: vi.fn(),
+          signTypedData: vi.fn(),
+        }),
+      }));
+
+      const { createXmtpClient } = await import('../../src/lib/xmtp-client.js');
+      await createXmtpClient({
+        walletAddress: '0x1111111111111111111111111111111111111111',
+        keystore: {
+          encryptedKey: 'deadbeef',
+          walletAddress: '0x1111111111111111111111111111111111111111',
+          deviceId: 'device-1',
+          apiToken: 'token-1',
+          agentId: null,
+        },
+      });
+
+      // The SDK factory is called with (signer, options) or ({signer, ...options})
+      const allArgs = createClient.mock.calls[0] ?? [];
+      const options =
+        allArgs.find(
+          (a): a is Record<string, unknown> =>
+            typeof a === 'object' && a !== null && 'dbEncryptionKey' in a
+        ) ?? {};
+
+      expect(options.dbEncryptionKey).toBeInstanceOf(Uint8Array);
+      expect((options.dbEncryptionKey as Uint8Array).length).toBe(32);
+    } finally {
+      vi.doUnmock('@xmtp/node-sdk');
+      vi.doUnmock('../../src/lib/signer.js');
+      vi.doUnmock('../../src/lib/keystore.js');
+      vi.doUnmock('viem/accounts');
+      vi.resetModules();
+      if (previousEnv === undefined) {
+        delete process.env.TASKMARKET_XMTP_ENV;
+      } else {
+        process.env.TASKMARKET_XMTP_ENV = previousEnv;
+      }
+    }
+  });
 });

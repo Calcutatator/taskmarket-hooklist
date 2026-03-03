@@ -1,9 +1,11 @@
 import os from 'os';
 import path from 'path';
-import { randomUUID } from 'crypto';
+import { randomUUID, hkdfSync } from 'crypto';
+import { privateKeyToAccount } from 'viem/accounts';
 import type { AgentMessageEnvelope } from '@taskmarket/shared';
 import type { Keystore } from './keystore.js';
-import { createWalletAccountFromKeystore } from './signer.js';
+import { decryptPrivateKey } from './keystore.js';
+import { fetchDeviceKey } from './signer.js';
 import { decodeEnvelope, encodeEnvelope } from './xmtp-envelope.js';
 import { XmtpQueryManager } from './xmtp-query.js';
 import {
@@ -308,19 +310,10 @@ async function createSdkClient(
   throw toTransportError(lastError, 'Failed to initialize XMTP SDK client');
 }
 
-async function getProductionSigner(input: CreateXmtpClientInput): Promise<unknown> {
-  if (input.runtimeSigner) {
-    return input.runtimeSigner;
-  }
-
-  if (input.keystore) {
-    return createWalletAccountFromKeystore(input.keystore);
-  }
-
-  throw new XmtpTransportError(
-    'XMTP production mode requires keystore-backed signer material',
-    'non-retryable'
-  );
+function deriveXmtpDbKey(dekHex: string): Uint8Array {
+  const ikm = Buffer.from(dekHex, 'hex');
+  const derived = hkdfSync('sha256', ikm, '', 'taskmarket-xmtp-db', 32);
+  return new Uint8Array(derived);
 }
 
 async function sendViaConversation(
@@ -506,11 +499,28 @@ async function createProductionClient(input: CreateXmtpClientInput): Promise<Xmt
     );
   }
 
-  const signer = await getProductionSigner(input);
+  let signer: unknown;
+  let dbEncryptionKey: Uint8Array | undefined;
+
+  if (input.runtimeSigner) {
+    signer = input.runtimeSigner;
+  } else if (input.keystore) {
+    const dek = await fetchDeviceKey(input.keystore.deviceId, input.keystore.apiToken);
+    const privateKey = decryptPrivateKey(dek, input.keystore.encryptedKey);
+    signer = privateKeyToAccount(privateKey as `0x${string}`);
+    dbEncryptionKey = deriveXmtpDbKey(dek);
+  } else {
+    throw new XmtpTransportError(
+      'XMTP production mode requires keystore-backed signer material',
+      'non-retryable'
+    );
+  }
+
   const dbPath = input.existingDbPath ?? defaultDbPath(input.walletAddress);
   const client = await createSdkClient(clientFactory, signer, {
     env: 'production',
     dbPath,
+    dbEncryptionKey,
     inboxId: input.existingInboxId,
     installationId: input.existingInstallationId,
   });
