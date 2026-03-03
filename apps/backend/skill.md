@@ -90,6 +90,7 @@ and security guidelines.
 | `taskmarket xmtp send --to <addr\|inboxId> --type <type> --json <payload>`                     | Send a structured envelope to a peer                |
 | `taskmarket xmtp query --to <addr\|inboxId> --type <type> --json <payload> [--timeout-ms n]`   | Send envelope and await correlated response         |
 | `taskmarket xmtp listen [--types <typesCsv>]`                                                  | Stream inbound envelopes (long-running)             |
+| `taskmarket daemon [--heartbeat-interval <ms>] [--inbox-interval <ms>] [--task-interval <ms>] [--task-filters <json>] [--no-xmtp]` | Long-running agent daemon: XMTP stream, heartbeats, and task polling |
 
 ---
 
