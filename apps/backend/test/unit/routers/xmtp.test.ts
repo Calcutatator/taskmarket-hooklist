@@ -185,16 +185,12 @@ describe('xmtp router', () => {
           },
         ])
       )
+      // SQL WHERE filters to active only — mock returns only the active row
       .mockReturnValueOnce(
         makeChain([
           {
             installationId: 'install-active',
             status: 'active',
-            lastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
-          },
-          {
-            installationId: 'install-revoked',
-            status: 'revoked',
             lastSeenAt: new Date('2026-03-03T00:00:00.000Z'),
           },
         ])
@@ -243,5 +239,67 @@ describe('xmtp router', () => {
 
     expect(byAddress.inboxId).toBe('inbox-by-address');
     expect(byAgentId.inboxId).toBe('inbox-by-agent');
+  });
+
+  it('resolvePeer returns null inboxId for xmtp-disabled agent', async () => {
+    const ctx = createMockCtx();
+    // xmtpEnabled = 0 agent is excluded by WHERE clause — SQL returns no rows
+    ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+    const result = await caller.resolvePeer({ address: WALLET });
+
+    expect(result.inboxId).toBeNull();
+    expect(result.address).toBeNull();
+  });
+
+  it('purgeStale revokes stale installations for the authenticated agent', async () => {
+    const ctx = createMockCtx();
+    // authenticateXmtpDevice: device lookup
+    ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    // findStaleInstallations: returns one stale row
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        {
+          id: 42,
+          agentAddress: WALLET,
+          deviceId: DEVICE_ID,
+          inboxId: 'inbox-1',
+          installationId: 'install-stale',
+          dbPath: null,
+          clientVersion: null,
+          status: 'active',
+          lastSeenAt: new Date('2020-01-01T00:00:00.000Z'),
+          revokedAt: null,
+          createdAt: new Date('2020-01-01T00:00:00.000Z'),
+        },
+      ])
+    );
+    // update (revoke)
+    ctx.db.update.mockReturnValueOnce(makeChain([]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+    const result = await caller.purgeStale({
+      deviceId: DEVICE_ID,
+      apiToken: API_TOKEN,
+    });
+
+    expect(result.purged).toBe(1);
+    expect(ctx.db.update).toHaveBeenCalledTimes(1);
+  });
+
+  it('purgeStale returns zero when no stale installations exist', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(makeChain([makeDevice()]));
+    ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+    const caller = xmtpRouter.createCaller(ctx);
+    const result = await caller.purgeStale({
+      deviceId: DEVICE_ID,
+      apiToken: API_TOKEN,
+    });
+
+    expect(result.purged).toBe(0);
+    expect(ctx.db.update).not.toHaveBeenCalled();
   });
 });

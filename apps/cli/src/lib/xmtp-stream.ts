@@ -69,7 +69,11 @@ export async function runStreamWithReconnect(
 ): Promise<void> {
   const maxReconnectAttempts = options.maxReconnectAttempts ?? Number.POSITIVE_INFINITY;
   const backoffMs =
-    options.backoffMs ?? ((attempt: number) => Math.min(30_000, 250 * 2 ** attempt));
+    options.backoffMs ??
+    ((attempt: number) => {
+      const base = Math.min(30_000, 250 * 2 ** attempt);
+      return base * (0.5 + Math.random() * 0.5);
+    });
 
   let reconnectAttempt = 0;
 

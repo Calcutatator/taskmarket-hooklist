@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { devices } from '../db/schema';
 import type { Context } from '../context';
@@ -28,16 +29,16 @@ export async function authenticateXmtpDevice(
     .limit(1);
 
   if (!deviceRows.length) {
-    throw new Error('Device not found');
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Device not found' });
   }
 
   const device = deviceRows[0];
   if (device.apiTokenHash !== sha256Hex(input.apiToken)) {
-    throw new Error('Invalid token');
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid token' });
   }
 
   if (device.revokedAt !== null) {
-    throw new Error('Device has been revoked');
+    throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Device has been revoked' });
   }
 
   return {

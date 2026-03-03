@@ -17,6 +17,10 @@ interface InMemoryMessage {
   body: string;
 }
 
+// Module-level singleton bus for the dev/test fallback client.
+// All createDevClient instances in the same process share this bus — intentional
+// for local two-agent testing, but tests must not rely on bus state being clean
+// unless they consume or reset messages from previous operations.
 const devMessageBus = new Map<string, InMemoryMessage[]>();
 
 const DEFAULT_SEND_RETRY_ATTEMPTS = 3;
@@ -589,7 +593,13 @@ export async function runQueryWithClient(options: {
   const consumeResponses = (async () => {
     try {
       for await (const raw of options.client.streamMessages({ signal: abortController.signal })) {
-        const envelope = decodeEnvelope(raw);
+        let envelope: AgentMessageEnvelope;
+        try {
+          envelope = decodeEnvelope(raw);
+        } catch {
+          // Malformed message — skip and continue consuming
+          continue;
+        }
         if (manager.resolveResponse(envelope)) {
           break;
         }

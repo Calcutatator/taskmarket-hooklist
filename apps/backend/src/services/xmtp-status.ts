@@ -10,27 +10,37 @@ export interface InstallationStatusRow {
   lastSeenAt: Date;
 }
 
+/**
+ * An XMTP "installation" is one XMTP client keypair registered on one device.
+ * This is XMTP's own term of art from @xmtp/node-sdk.
+ *
+ * A single agent wallet can have multiple installations — one per machine
+ * the agent has ever run on (laptop, prod server, etc.). Each installation
+ * has its own private key and local SQLite DB, but all share the same inboxId.
+ * XMTP delivers messages to all active installations for a given inboxId.
+ *
+ * Installations are kept alive by periodic heartbeats. Those that exceed
+ * XMTP_STALE_INSTALLATION_MINUTES without a heartbeat can be purged (revoked),
+ * preventing message delivery to abandoned/decommissioned machines.
+ */
 export async function listAgentInstallations(
   db: Db,
   agentAddress: string
 ): Promise<InstallationStatusRow[]> {
-  const rows = await db
+  return db
     .select({
       installationId: agentXmtpInstallations.installationId,
       status: agentXmtpInstallations.status,
       lastSeenAt: agentXmtpInstallations.lastSeenAt,
-      revokedAt: agentXmtpInstallations.revokedAt,
     })
     .from(agentXmtpInstallations)
-    .where(eq(agentXmtpInstallations.agentAddress, agentAddress));
-
-  return rows
-    .filter((row) => row.status === 'active' && row.revokedAt == null)
-    .map((row) => ({
-      installationId: row.installationId,
-      status: row.status,
-      lastSeenAt: row.lastSeenAt,
-    }));
+    .where(
+      and(
+        eq(agentXmtpInstallations.agentAddress, agentAddress),
+        eq(agentXmtpInstallations.status, 'active'),
+        isNull(agentXmtpInstallations.revokedAt)
+      )
+    );
 }
 
 export async function heartbeatInstallation(
@@ -58,7 +68,7 @@ export async function heartbeatInstallation(
   return rows.length > 0;
 }
 
-export async function findStaleInstallations(db: Db, staleBefore: Date) {
+export async function findStaleInstallations(db: Db, staleBefore: Date, agentAddress?: string) {
   return db
     .select()
     .from(agentXmtpInstallations)
@@ -66,7 +76,8 @@ export async function findStaleInstallations(db: Db, staleBefore: Date) {
       and(
         eq(agentXmtpInstallations.status, 'active'),
         isNull(agentXmtpInstallations.revokedAt),
-        lt(agentXmtpInstallations.lastSeenAt, staleBefore)
+        lt(agentXmtpInstallations.lastSeenAt, staleBefore),
+        agentAddress ? eq(agentXmtpInstallations.agentAddress, agentAddress) : undefined
       )
     );
 }

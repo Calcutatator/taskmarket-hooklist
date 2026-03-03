@@ -50,6 +50,46 @@ describe('xmtp-client', () => {
     expect(streamClosed).toBe(true);
   });
 
+  it('skips malformed messages and resolves on the next valid response', async () => {
+    const requestEnvelope = buildEnvelope({
+      type: 'task.query',
+      senderInboxId: 'inbox-a',
+      senderAddress: '0x1111111111111111111111111111111111111111',
+      payload: { ping: true },
+    });
+
+    const responseEnvelope = buildEnvelope({
+      type: 'task.response',
+      senderInboxId: 'inbox-b',
+      senderAddress: '0x2222222222222222222222222222222222222222',
+      replyToRequestId: requestEnvelope.requestId,
+      payload: { pong: true },
+    });
+
+    const rawMessages = ['not-valid-json', '{"bad":"schema"}', encodeEnvelope(responseEnvelope)];
+
+    const client = {
+      inboxId: 'inbox-a',
+      installationId: 'install-a',
+      dbPath: '/tmp/a.sqlite',
+      sendMessage: async () => {},
+      async *streamMessages(_options?: { signal?: AbortSignal }) {
+        for (const msg of rawMessages) {
+          yield msg;
+        }
+      },
+    };
+
+    const result = await runQueryWithClient({
+      client,
+      toInboxId: 'inbox-b',
+      envelope: requestEnvelope,
+      timeoutMs: 500,
+    });
+
+    expect(result.replyToRequestId).toBe(requestEnvelope.requestId);
+  });
+
   it('initializes SDK-backed client in production mode', async () => {
     const previousEnv = process.env.TASKMARKET_XMTP_ENV;
     const sendMessage = vi.fn().mockResolvedValue(undefined);

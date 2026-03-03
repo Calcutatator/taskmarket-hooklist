@@ -12,17 +12,23 @@ import {
   XmtpResolvePeerInputSchema,
   XmtpResolvePeerOutputSchema,
 } from '@taskmarket/shared';
-import { and, eq, isNull, or } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { and, eq, inArray, isNull, or } from 'drizzle-orm';
+import { z } from 'zod';
 import { getServerConfig } from '../config/env';
 import { agents, agentXmtpInstallations, agentXmtpPeerPolicies } from '../db/schema';
-import { listAgentInstallations, heartbeatInstallation } from '../services/xmtp-status';
+import {
+  listAgentInstallations,
+  heartbeatInstallation,
+  findStaleInstallations,
+} from '../services/xmtp-status';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { getPolicyMode } from '../services/xmtp-policy';
 import { publicProcedure, router } from '../trpc';
 
 function requireXmtpEnabled(): void {
   if (!getServerConfig().XMTP_ENABLED) {
-    throw new Error('XMTP is disabled');
+    throw new TRPCError({ code: 'PRECONDITION_FAILED', message: 'XMTP is disabled' });
   }
 }
 
@@ -33,6 +39,13 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return value;
 }
 
+/**
+ * Resolves the API token from the body (preferred) or from request headers.
+ * Used by query procedures (status, listPeerPolicies) where apiToken is
+ * optional in the schema to support both body-based and header-based auth.
+ * Mutation procedures (bootstrap, heartbeat, setPeerPolicy) require apiToken
+ * in the body directly and do not call this helper.
+ */
 function resolveApiToken(
   inputApiToken: string | undefined,
   headers: Record<string, string | string[] | undefined>
@@ -54,7 +67,7 @@ function resolveApiToken(
     }
   }
 
-  throw new Error('Missing XMTP api token');
+  throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Missing XMTP api token' });
 }
 
 export const xmtpRouter = router({
@@ -100,7 +113,7 @@ export const xmtpRouter = router({
         .returning({ address: agents.address });
 
       if (updatedAgents.length === 0) {
-        throw new Error('XMTP inbox mismatch for wallet');
+        throw new TRPCError({ code: 'CONFLICT', message: 'XMTP inbox mismatch for wallet' });
       }
 
       const existingInstallationRows = await ctx.db
@@ -221,7 +234,10 @@ export const xmtpRouter = router({
         agentAddress: auth.walletAddress,
       });
       if (!didUpdate) {
-        throw new Error('Installation not found for authenticated device');
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'Installation not found for authenticated device',
+        });
       }
 
       await ctx.db
@@ -340,5 +356,28 @@ export const xmtpRouter = router({
         address: rows[0]?.address ?? null,
         inboxId: rows[0]?.xmtpInboxId ?? null,
       };
+    }),
+
+  purgeStale: publicProcedure
+    .input(XmtpHeartbeatInputSchema.pick({ deviceId: true, apiToken: true }))
+    .output(z.object({ purged: z.number() }))
+    .mutation(async ({ input, ctx }) => {
+      requireXmtpEnabled();
+      const auth = await authenticateXmtpDevice(ctx, input);
+      const config = getServerConfig();
+      const staleBefore = new Date(Date.now() - config.XMTP_STALE_INSTALLATION_MINUTES * 60_000);
+      const stale = await findStaleInstallations(ctx.db, staleBefore, auth.walletAddress);
+      if (stale.length > 0) {
+        await ctx.db
+          .update(agentXmtpInstallations)
+          .set({ status: 'revoked', revokedAt: new Date() })
+          .where(
+            inArray(
+              agentXmtpInstallations.id,
+              stale.map((r) => r.id)
+            )
+          );
+      }
+      return { purged: stale.length };
     }),
 });

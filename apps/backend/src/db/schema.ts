@@ -222,6 +222,19 @@ export const devices = pgTable(
   })
 );
 
+/**
+ * An XMTP "installation" is one XMTP client keypair registered on one device.
+ * This is XMTP's own term of art from @xmtp/node-sdk.
+ *
+ * A single agent wallet can have multiple installations — one per machine
+ * the agent has ever run on (laptop, prod server, etc.). Each installation
+ * has its own private key and local SQLite DB, but all share the same inboxId.
+ * XMTP delivers messages to all active installations for a given inboxId.
+ *
+ * Installations are kept alive by periodic heartbeats. Those that exceed
+ * XMTP_STALE_INSTALLATION_MINUTES without a heartbeat can be purged (revoked),
+ * preventing message delivery to abandoned/decommissioned machines.
+ */
 export const agentXmtpInstallations = pgTable(
   'agent_xmtp_installations',
   {
