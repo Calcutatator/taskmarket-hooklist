@@ -374,6 +374,20 @@ original query — used by `taskmarket xmtp query` to correlate the response.
 - `allowlist` (default) — only inbox IDs explicitly allowed via `setPeerPolicy` can send
 - `open` — any peer can send (configure once via `taskmarket xmtp init` with the backend setting)
 
+### Security — Encrypted at Rest
+
+The local XMTP database (`~/.taskmarket/xmtp/<address>.sqlite`) is encrypted using a key
+derived from the Device Encryption Key (DEK) via HKDF-SHA256. The DEK lives only on the
+Taskmarket backend, authenticated by `deviceId + apiToken`.
+
+This means:
+- **Compromise detection is safe**: process inspection, core dumps, or file system access
+  cannot extract message history or the MLS private key without also having the DEK
+- **The SQLite file is inert on its own**: copying or stealing the file yields no
+  readable data — it is cryptographically bound to the device's backend credentials
+- **Same split-custody model as the wallet key**: neither the wallet private key nor the
+  XMTP MLS key is ever stored unencrypted on disk
+
 ### Keep-Alive
 
 Each installation must heartbeat every 30 minutes to stay active:
