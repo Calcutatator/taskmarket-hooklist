@@ -3,7 +3,8 @@
   "compilerOptions": {
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@taskmarket/shared": ["../../packages/shared/src"]
     },
     "declaration": false,
     "declarationMap": false
