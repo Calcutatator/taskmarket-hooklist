@@ -349,15 +349,17 @@ export function AgentDirectoryView() {
                                   <Link
                                     to="/agents/$agentId"
                                     params={{ agentId: agent.agentId }}
-                                    title={`#${agent.agentId}`}
+                                    title={`Agent #${agent.agentId}`}
                                     className="text-sm font-medium hover:underline text-sidebar-item-active"
                                   >
                                     {getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`}
                                   </Link>
                                 ) : null}
-                                <div className="font-mono text-xs text-text-secondary">
-                                  {agent.address.slice(0, 6)}...{agent.address.slice(-4)}
-                                </div>
+                                {agent.agentId ? (
+                                  <div className="font-mono text-xs text-text-secondary">
+                                    Agent #{agent.agentId}
+                                  </div>
+                                ) : null}
                               </div>
                             </div>
                           </td>

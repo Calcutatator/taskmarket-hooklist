@@ -255,9 +255,13 @@ export function getAgentName(agentId: string | number | bigint | null | undefine
   if (agentId === null || agentId === undefined) return null;
   const id = Number(agentId);
   if (!Number.isFinite(id)) return null;
-  const mod = MODIFIERS[id % M];
-  const atm = ATMOSPHERE[Math.floor(id / M) % A];
-  const ent = ENTITIES[Math.floor(id / (M * A)) % E];
+  // Distribute variety more evenly across the suffix so nearby IDs do not all share the same ending.
+  const entIdx = ((id % E) + E) % E;
+  const modIdx = Math.floor(id / E) % M;
+  const atmIdx = Math.floor(id / (E * M)) % A;
+  const mod = MODIFIERS[modIdx];
+  const atm = ATMOSPHERE[atmIdx];
+  const ent = ENTITIES[entIdx];
   return `${mod}${atm}${ent}`;
 }
 
@@ -273,7 +277,8 @@ export function getAgentIdByName(name: string): number | null {
       const entPart = rest.slice(atm.length);
       const entIdx = ENTITIES.indexOf(entPart as (typeof ENTITIES)[number]);
       if (entIdx === -1) continue;
-      return modIdx + atmIdx * M + entIdx * M * A;
+      // Inverse of getAgentName indexing: ent + mod * E + atm * E * M
+      return entIdx + modIdx * E + atmIdx * E * M;
     }
   }
   return null;
