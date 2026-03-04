@@ -390,8 +390,76 @@ async function* iterateCatchUpMessages(client: unknown): AsyncIterable<string> {
     return;
   }
 
-  const syncMethodNames = ['syncAllMessages', 'listMessages'];
-  for (const key of syncMethodNames) {
+  // XMTP SDK v2: sync via conversations API
+  const conversations = asObject(clientObject.conversations);
+  if (conversations) {
+    // Sync all conversations and their messages from the network
+    for (const syncKey of ['syncAll', 'sync']) {
+      const syncMethod = conversations[syncKey];
+      if (typeof syncMethod === 'function') {
+        await (syncMethod.call(conversations) as Promise<unknown>).catch(() => undefined);
+        break;
+      }
+    }
+
+    // List all conversations
+    let conversationList: unknown[] | null = null;
+    for (const listKey of ['list', 'listDms', 'getAll']) {
+      const listMethod = conversations[listKey];
+      if (typeof listMethod !== 'function') continue;
+      const result = await (listMethod.call(conversations) as Promise<unknown>).catch(() => null);
+      if (Array.isArray(result)) {
+        conversationList = result;
+        break;
+      }
+    }
+
+    if (conversationList && conversationList.length > 0) {
+      for (const convo of conversationList) {
+        const convoObject = asObject(convo);
+        if (!convoObject) continue;
+
+        // Sync this conversation to fetch its messages
+        const convoSync = convoObject['sync'];
+        if (typeof convoSync === 'function') {
+          await (convoSync.call(convoObject) as Promise<unknown>).catch(() => undefined);
+        }
+
+        // Get historical messages
+        for (const msgKey of ['messages', 'getMessages', 'listMessages']) {
+          const msgMethod = convoObject[msgKey];
+          if (typeof msgMethod !== 'function') continue;
+
+          const msgs = await (msgMethod.call(convoObject) as Promise<unknown>).catch(() => null);
+          if (!msgs) break;
+
+          if (typeof (msgs as AsyncIterable<unknown>)[Symbol.asyncIterator] === 'function') {
+            for await (const msg of msgs as AsyncIterable<unknown>) {
+              try {
+                yield readMessageText(msg);
+              } catch {
+                // Skip non-text messages (system messages, reactions, etc.)
+              }
+            }
+          } else if (typeof (msgs as Iterable<unknown>)[Symbol.iterator] === 'function') {
+            for (const msg of msgs as Iterable<unknown>) {
+              try {
+                yield readMessageText(msg);
+              } catch {
+                // Skip non-text messages
+              }
+            }
+          }
+          break;
+        }
+      }
+      return;
+    }
+  }
+
+  // Legacy fallback: direct client methods
+  const legacyMethodNames = ['syncAllMessages', 'listMessages'];
+  for (const key of legacyMethodNames) {
     const method = clientObject[key];
     if (typeof method !== 'function') {
       continue;
