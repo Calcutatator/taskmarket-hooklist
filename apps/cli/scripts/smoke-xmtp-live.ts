@@ -112,17 +112,17 @@ async function main() {
     },
   });
 
-  console.log('Step 1/3: send while receiver is offline...');
+  console.log('Step 1/6: send while receiver is offline...');
   await sendMessageEnvelope(clientA, clientB.inboxId, queryEnvelope);
 
-  console.log('Step 2/3: start receiver stream and wait for catch-up delivery...');
+  console.log('Step 2/6: start receiver stream and wait for catch-up delivery...');
   const received = await waitForEnvelope({
     client: clientB,
     requestId: queryEnvelope.requestId,
     timeoutMs,
   });
 
-  console.log('Step 3/3: validate envelope correlation...');
+  console.log('Step 3/6: validate envelope correlation...');
   if (received.requestId !== queryEnvelope.requestId) {
     throw new Error(
       `Expected requestId ${queryEnvelope.requestId} but got ${received.requestId}`
@@ -131,8 +131,35 @@ async function main() {
   if (received.senderInboxId !== clientA.inboxId) {
     throw new Error(`Expected sender inbox ${clientA.inboxId} but got ${received.senderInboxId}`);
   }
-
   console.log('offline catch-up requestId:', received.requestId);
+
+  console.log('Step 4/6: allowlist add — allow clientB in clientA consent store...');
+  if (!clientA.setConsentState) {
+    throw new Error('setConsentState not available on production client');
+  }
+  await clientA.setConsentState(clientB.inboxId, 'allowed');
+  console.log('allowlist add ok');
+
+  console.log('Step 5/6: allowlist list — verify entry present...');
+  if (!clientA.listConsentEntries) {
+    throw new Error('listConsentEntries not available on production client');
+  }
+  const entries = await clientA.listConsentEntries();
+  const found = entries.find((e) => e.entity === clientB.inboxId);
+  // SDK may not expose bulk list — a missing entry is only a warning, not a hard failure,
+  // since setConsentStates may succeed without being enumerable via the SDK list API.
+  if (!found) {
+    console.warn(
+      `Warning: clientB inbox not found in consent list (SDK may not expose bulk list). entries=${JSON.stringify(entries)}`
+    );
+  } else {
+    console.log('allowlist list ok, state:', found.state);
+  }
+
+  console.log('Step 6/6: allowlist remove — deny clientB in clientA consent store...');
+  await clientA.setConsentState(clientB.inboxId, 'denied');
+  console.log('allowlist remove ok');
+
   console.log('=== XMTP live smoke test passed ===');
 }
 

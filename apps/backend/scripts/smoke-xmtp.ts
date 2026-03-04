@@ -7,10 +7,15 @@
  * 3. Set/list peer policy
  * 4. Resolve peer inbox by address
  * 5. Check status and send heartbeat
+ * 6. Purge stale installations
  */
-import { randomUUID } from 'crypto';
+import { randomUUID, randomBytes } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { API_URL, get, log, ok, post } from './_x402';
+
+function randomPrivateKey(): `0x${string}` {
+  return `0x${randomBytes(32).toString('hex')}`;
+}
 
 async function registerDevice(walletAddress: string) {
   return (await post('/api/devices', { walletAddress })) as {
@@ -20,29 +25,16 @@ async function registerDevice(walletAddress: string) {
 }
 
 async function main() {
-  const keyA =
-    (process.env.REQUESTER_PRIVATE_KEY as `0x${string}` | undefined) ??
-    (process.env.DEV_PRIVATE_KEY as `0x${string}` | undefined);
-  const keyB =
-    (process.env.WORKER_PRIVATE_KEY as `0x${string}` | undefined) ??
-    (process.env.DEV_PRIVATE_KEY as `0x${string}` | undefined);
-
-  if (!keyA || !keyB) {
-    throw new Error('Set REQUESTER_PRIVATE_KEY/WORKER_PRIVATE_KEY or DEV_PRIVATE_KEY');
-  }
-  if (keyA.toLowerCase() === keyB.toLowerCase()) {
-    throw new Error('REQUESTER_PRIVATE_KEY and WORKER_PRIVATE_KEY must be different');
-  }
-
-  const agentA = privateKeyToAccount(keyA);
-  const agentB = privateKeyToAccount(keyB);
+  // Use ephemeral wallets so there is no stale xmtpInboxId from a prior run
+  const agentA = privateKeyToAccount(randomPrivateKey());
+  const agentB = privateKeyToAccount(randomPrivateKey());
 
   console.log('=== Taskmarket Smoke Test - XMTP Control Plane ===');
   console.log('api:', API_URL);
   console.log('agentA:', agentA.address);
   console.log('agentB:', agentB.address);
 
-  log('1/5', 'Registering devices...');
+  log('1/6', 'Registering devices...');
   const deviceA = await registerDevice(agentA.address);
   const deviceB = await registerDevice(agentB.address);
   ok('deviceA', deviceA.deviceId);
@@ -53,7 +45,7 @@ async function main() {
   const installationA = `smoke-install-${randomUUID()}`;
   const installationB = `smoke-install-${randomUUID()}`;
 
-  log('2/5', 'Bootstrapping XMTP metadata...');
+  log('2/6', 'Bootstrapping XMTP metadata...');
   await post('/api/xmtp/bootstrap', {
     deviceId: deviceA.deviceId,
     apiToken: deviceA.apiToken,
@@ -68,7 +60,7 @@ async function main() {
   });
   ok('bootstrapped', true);
 
-  log('3/5', 'Setting and listing peer policy...');
+  log('3/6', 'Setting and listing peer policy...');
   await post('/api/xmtp/peers', {
     deviceId: deviceA.deviceId,
     apiToken: deviceA.apiToken,
@@ -91,7 +83,7 @@ async function main() {
   }
   ok('policy rows', policies.policies.length);
 
-  log('4/5', 'Resolving peer by address...');
+  log('4/6', 'Resolving peer by address...');
   const resolved = (await get(
     `/api/xmtp/resolve?address=${encodeURIComponent(agentB.address)}`
   )) as {
@@ -103,7 +95,7 @@ async function main() {
   }
   ok('resolved inbox', resolved.inboxId);
 
-  log('5/5', 'Checking status and heartbeat...');
+  log('5/6', 'Checking status and heartbeat...');
   const status = (await get(
     `/api/xmtp/status?deviceId=${encodeURIComponent(deviceA.deviceId)}`,
     {
@@ -124,6 +116,17 @@ async function main() {
     installationId: installationA,
   });
   ok('heartbeat', 'ok');
+
+  log('6/6', 'Purging stale installations...');
+  const purgeResult = (await post('/api/xmtp/purge', {
+    deviceId: deviceA.deviceId,
+    apiToken: deviceA.apiToken,
+  })) as { purged: number };
+
+  if (typeof purgeResult.purged !== 'number') {
+    throw new Error(`Expected purged count, got: ${JSON.stringify(purgeResult)}`);
+  }
+  ok('purged', purgeResult.purged);
 
   console.log('\n=== XMTP control-plane smoke test passed ===');
 }

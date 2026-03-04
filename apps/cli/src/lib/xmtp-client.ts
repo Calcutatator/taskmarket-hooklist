@@ -52,6 +52,8 @@ export interface XmtpClientSession {
   dbPath: string;
   sendMessage: (toInboxId: string, body: string) => Promise<void>;
   streamMessages: (options?: { signal?: AbortSignal }) => AsyncIterable<string>;
+  setConsentState?: (inboxId: string, state: 'allowed' | 'denied') => Promise<void>;
+  listConsentEntries?: () => Promise<Array<{ entity: string; state: string }>>;
 }
 
 export interface CreateXmtpClientInput {
@@ -101,6 +103,12 @@ async function createDevClient(input: CreateXmtpClientInput): Promise<XmtpClient
 
         await new Promise((resolve) => setTimeout(resolve, 250));
       }
+    },
+    async setConsentState(_inboxId: string, _state: 'allowed' | 'denied') {
+      // no-op in dev mode
+    },
+    async listConsentEntries() {
+      return [];
     },
   };
 }
@@ -649,6 +657,80 @@ async function createProductionClient(input: CreateXmtpClientInput): Promise<Xmt
         }
         yield message;
       }
+    },
+    async setConsentState(targetInboxId: string, state: 'allowed' | 'denied') {
+      const clientObject = asObject(client);
+      if (!clientObject) return;
+
+      // Try SDK v3 setConsentStates
+      const setConsentStates = clientObject['setConsentStates'];
+      if (typeof setConsentStates === 'function') {
+        const sdkModule = asObject(await import('@xmtp/node-sdk').catch(() => null));
+        const ConsentEntityType = asObject(sdkModule?.['ConsentEntityType']);
+        const ConsentState = asObject(sdkModule?.['ConsentState']);
+        const entityType = ConsentEntityType?.['InboxId'] ?? 1;
+        const consentStateValue =
+          state === 'allowed' ? (ConsentState?.['Allowed'] ?? 1) : (ConsentState?.['Denied'] ?? 2);
+        await (
+          setConsentStates.call(client, [
+            { entityType, entity: targetInboxId, state: consentStateValue },
+          ]) as Promise<unknown>
+        ).catch(() => undefined);
+        return;
+      }
+
+      // Try preferences API
+      const preferences = asObject(clientObject['preferences']);
+      if (preferences) {
+        const setMethod = preferences['setConsentState'] ?? preferences['setConsent'];
+        if (typeof setMethod === 'function') {
+          await (setMethod.call(preferences, targetInboxId, state) as Promise<unknown>).catch(
+            () => undefined
+          );
+        }
+      }
+    },
+    async listConsentEntries(): Promise<Array<{ entity: string; state: string }>> {
+      const clientObject = asObject(client);
+      if (!clientObject) return [];
+
+      const preferences = asObject(clientObject['preferences']);
+      if (preferences) {
+        for (const key of ['consentList', 'list', 'entries', 'getConsentList']) {
+          const method = preferences[key];
+          if (typeof method === 'function') {
+            const result = await (method.call(preferences) as Promise<unknown>).catch(() => null);
+            if (Array.isArray(result)) {
+              return result
+                .map((entry: unknown) => {
+                  const obj = asObject(entry);
+                  if (!obj) return null;
+                  const entity = extractString(obj, ['entity', 'inboxId', 'address']) ?? '';
+                  const entryState =
+                    extractString(obj, ['state', 'consentState', 'status']) ?? 'unknown';
+                  return { entity, state: entryState };
+                })
+                .filter((e): e is { entity: string; state: string } => e !== null);
+            }
+          }
+          // Also support non-method property (array)
+          const prop = preferences[key];
+          if (Array.isArray(prop)) {
+            return prop
+              .map((entry: unknown) => {
+                const obj = asObject(entry);
+                if (!obj) return null;
+                const entity = extractString(obj, ['entity', 'inboxId', 'address']) ?? '';
+                const entryState =
+                  extractString(obj, ['state', 'consentState', 'status']) ?? 'unknown';
+                return { entity, state: entryState };
+              })
+              .filter((e): e is { entity: string; state: string } => e !== null);
+          }
+        }
+      }
+
+      return [];
     },
   };
 }

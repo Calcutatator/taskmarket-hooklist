@@ -359,6 +359,14 @@ export const xmtpRouter = router({
     }),
 
   purgeStale: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/xmtp/purge',
+        tags: ['XMTP'],
+        summary: 'Revoke stale XMTP installations that have missed heartbeats',
+      },
+    })
     .input(XmtpHeartbeatInputSchema.pick({ deviceId: true, apiToken: true }))
     .output(z.object({ purged: z.number() }))
     .mutation(async ({ input, ctx }) => {
