@@ -1,6 +1,5 @@
 import { Command } from 'commander';
 import { promises as fs } from 'fs';
-import { keccak256, toBytes } from 'viem';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -13,10 +12,9 @@ export const submitCmd = new Command('submit')
   .action(async (taskId: string, opts: { file: string }) => {
     const fileContent = await fs.readFile(opts.file);
     const fileBase64 = fileContent.toString('base64');
-    const fileHash = keccak256(toBytes(fileContent.toString('utf8')));
 
     const keystore = await loadKeystore();
-    const signature = await signMessage(fileHash, keystore);
+    const signature = await signMessage(`taskmarket:submit:${taskId}`, keystore);
 
     const result = (await apiPost(`/api/tasks/${taskId}/submissions`, {
       workerAddress: keystore.walletAddress,

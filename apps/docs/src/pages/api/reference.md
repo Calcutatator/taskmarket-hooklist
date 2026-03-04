@@ -96,7 +96,7 @@ Returns a `TaskDetailResponse` — a `TaskResponse` extended with `pendingAction
   taskId: string
   workerAddress: string
   file: string      // base64-encoded file content
-  signature: string // worker's signature of keccak256(file content)
+  signature: string // worker's EIP-191 personal_sign of "taskmarket:submit:<taskId>"
 }
 ```
 
@@ -171,7 +171,7 @@ Sign the message `"taskmarket:claim:<taskId>"` with the worker's private key.
   workerAddress: string
   pitchText: string
   estimatedDuration?: number  // hours
-  signature: string           // worker's signature of keccak256(pitchText)
+  signature: string           // worker's EIP-191 personal_sign of "taskmarket:pitch:<taskId>"
 }
 ```
 
@@ -267,7 +267,7 @@ Array<{
   proofData: string
   proofType: string
   metricValue?: string
-  signature: string  // worker's signature of keccak256(proofData)
+  signature: string  // worker's EIP-191 personal_sign of "taskmarket:proof:<taskId>"
 }
 ```
 

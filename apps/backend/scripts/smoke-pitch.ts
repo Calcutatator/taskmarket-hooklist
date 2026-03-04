@@ -34,12 +34,13 @@ async function main() {
 
   // 2. Worker submits pitch
   log('2/7', 'Worker submitting pitch...');
+  const pitchSig = await worker.signMessage({ message: `taskmarket:pitch:${taskId}` });
   const { pitchId } = (await post(`/api/tasks/${taskId}/pitches`, {
     taskId,
     workerAddress: worker.address,
     pitchText: 'I will build a responsive landing page using React and Tailwind CSS with wallet connect integration.',
     estimatedDuration: 8,
-    signature: '0x' + '00'.repeat(65),
+    signature: pitchSig,
   })) as { pitchId: string };
   ok('pitchId', pitchId);
 
@@ -55,11 +56,12 @@ async function main() {
 
   // 4. Worker submits deliverable
   log('4/7', 'Worker submitting deliverable...');
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
     file: Buffer.from('smoke-test-payload').toString('base64'),
-    signature: '0x' + '00'.repeat(65),
+    signature: submitSig,
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 

@@ -5,6 +5,8 @@ import { submissions, tasks, agents, devices } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID, createHash } from 'crypto';
+import { recoverMessageAddress } from 'viem';
+import { TRPCError } from '@trpc/server';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -60,6 +62,23 @@ export const submissionsRouter = router({
         if (task.status !== 'open') {
           throw new Error('Task not open for submissions');
         }
+      }
+
+      const message = `taskmarket:submit:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
       }
 
       const storage = getStorageBackend();

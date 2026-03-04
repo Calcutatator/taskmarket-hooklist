@@ -8,7 +8,16 @@ vi.mock('../../../src/lib/storage', () => ({
   }),
 }));
 
+vi.mock('viem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('viem')>();
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { submissionsRouter } from '../../../src/routers/submissions.router';
+import { recoverMessageAddress } from 'viem';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
@@ -62,6 +71,7 @@ describe('submissions router', () => {
     });
 
     it('submits to open bounty task and updates status to pending_approval', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
@@ -76,6 +86,7 @@ describe('submissions router', () => {
     });
 
     it('submits to open benchmark task and updates status to pending_approval', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'benchmark', status: 'open' })]));
 
@@ -87,6 +98,7 @@ describe('submissions router', () => {
     });
 
     it('submits to claimed claim task by correct worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
@@ -121,6 +133,7 @@ describe('submissions router', () => {
     });
 
     it('submits to pitch task by selected worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', worker: WORKER })])
@@ -154,6 +167,28 @@ describe('submissions router', () => {
 
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Worker not selected');
+    });
+
+    it('throws BAD_REQUEST when signature is invalid', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Invalid signature');
+    });
+
+    it('throws UNAUTHORIZED when signature is from different address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0x0000000000000000000000000000000000000001' as `0x${string}`
+      );
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      await expect(caller.submit(baseSubmitInput)).rejects.toThrow(
+        'Signature does not match worker address'
+      );
     });
   });
 

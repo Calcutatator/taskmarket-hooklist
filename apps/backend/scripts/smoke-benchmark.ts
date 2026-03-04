@@ -34,13 +34,14 @@ async function main() {
 
   // 2. Worker submits proof
   log('2/5', 'Worker submitting proof...');
+  const proofSig = await worker.signMessage({ message: `taskmarket:proof:${taskId}` });
   const { proofId } = (await post(`/api/tasks/${taskId}/proofs`, {
     taskId,
     workerAddress: worker.address,
     proofData: JSON.stringify({ gasPrice: '0.001 gwei', source: 'smoke-test' }),
     proofType: 'api_data',
     metricValue: '0.001',
-    signature: '0x' + '00'.repeat(65),
+    signature: proofSig,
   })) as { proofId: string };
   ok('proofId', proofId);
 

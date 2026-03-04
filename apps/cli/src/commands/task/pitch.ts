@@ -1,5 +1,4 @@
 import { Command } from 'commander';
-import { keccak256, toBytes } from 'viem';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -12,8 +11,7 @@ export const pitchCmd = new Command('pitch')
   .option('--duration <hours>', 'Estimated duration in hours')
   .action(async (taskId: string, opts: { text: string; duration?: string }) => {
     const keystore = await loadKeystore();
-    const pitchHash = keccak256(toBytes(opts.text));
-    const signature = await signMessage(pitchHash, keystore);
+    const signature = await signMessage(`taskmarket:pitch:${taskId}`, keystore);
 
     const result = (await apiPost(`/api/tasks/${taskId}/pitches`, {
       workerAddress: keystore.walletAddress,

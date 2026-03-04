@@ -5,6 +5,8 @@ import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractSelectWorker } from '../services/contract';
+import { recoverMessageAddress } from 'viem';
+import { TRPCError } from '@trpc/server';
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -53,6 +55,23 @@ export const pitchesRouter = router({
 
       if (existingPitch.length > 0) {
         throw new Error('Worker has already submitted a pitch');
+      }
+
+      const message = `taskmarket:pitch:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
       }
 
       const pitchId = randomUUID();
