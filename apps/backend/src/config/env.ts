@@ -48,7 +48,7 @@ const envSchema = z
     USDC_DOMAIN_NAME: z.string().default('USD Coin'),
     PLATFORM_MASTER_KEY: z.string().min(32).default('0'.repeat(64)),
     XMTP_ENABLED: strictBooleanFromEnv.default(false),
-    XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('allowlist'),
+    XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
   })
   .superRefine((data, ctx) => {
