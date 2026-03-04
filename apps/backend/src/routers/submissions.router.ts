@@ -59,7 +59,7 @@ export const submissionsRouter = router({
           throw new Error('Only winning bidder can submit');
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
-        if (task.status !== 'open') {
+        if (task.status !== 'open' && task.status !== 'pending_approval') {
           throw new Error('Task not open for submissions');
         }
       }

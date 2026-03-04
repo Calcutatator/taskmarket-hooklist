@@ -97,6 +97,23 @@ describe('submissions router', () => {
       expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
+    it('submits to pending_approval bounty task (additional worker)', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ mode: 'bounty', status: 'pending_approval' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.submit(baseSubmitInput);
+
+      expect(result.success).toBe(true);
+      expect(typeof result.submissionId).toBe('string');
+      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      // status already pending_approval, so no task status update
+      expect(ctx.db.update).not.toHaveBeenCalled();
+    });
+
     it('submits to claimed claim task by correct worker', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
