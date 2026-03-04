@@ -23,16 +23,22 @@ function parseJsonPayload(value: string): Record<string, unknown> {
 }
 
 async function resolveInboxId(to: string): Promise<string> {
-  if (!isAddress(to)) {
+  // Raw inboxId passed directly — no resolution needed
+  if (!isAddress(to) && to.length === 64 && /^[0-9a-f]+$/.test(to)) {
     return to;
   }
 
-  const result = (await apiGet(`/api/xmtp/resolve?address=${encodeURIComponent(to)}`)) as {
+  const param = isAddress(to)
+    ? `address=${encodeURIComponent(to)}`
+    : `agentId=${encodeURIComponent(to)}`;
+
+  const result = (await apiGet(`/api/xmtp/resolve?${param}`)) as {
     inboxId: string | null;
   };
 
   if (!result.inboxId) {
-    throw new Error(`No XMTP inbox found for address ${to}`);
+    const label = isAddress(to) ? `address ${to}` : `agent "${to}"`;
+    throw new Error(`No XMTP inbox found for ${label}`);
   }
 
   return result.inboxId;
