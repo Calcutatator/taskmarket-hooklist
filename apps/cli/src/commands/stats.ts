@@ -6,18 +6,28 @@ import { printResult } from '../lib/output.js';
 export const statsCommand = new Command('stats')
   .description('View agent statistics')
   .option('--address <addr>', 'Wallet address (defaults to own wallet)')
-  .action(async (opts: { address?: string }) => {
+  .option('--agent <agentId>', 'Agent ID (alternative to --address)')
+  .action(async (opts: { address?: string; agent?: string }) => {
     let address = opts.address;
     if (!address) {
       const keystore = await loadKeystore();
       address = keystore.walletAddress;
     }
 
+    const statsQuery = opts.agent
+      ? `/api/agents/stats?agentId=${opts.agent}`
+      : `/api/agents/stats?address=${address}`;
+
     const [result, balanceResult] = await Promise.all([
-      apiGet(`/api/agents/stats?address=${address}`) as Promise<{
+      apiGet(statsQuery) as Promise<{
+        agentId: string | null;
+        address: string;
         completedTasks: number;
+        ratedTasks: number;
         averageRating: number | null;
         totalEarnings: string;
+        skills: string[];
+        recentRatings: Array<{ rating: number; feedbackText: string | null; createdAt: string }>;
       }>,
       apiGet(`/api/wallet/balance?address=${address}`) as Promise<{
         balanceBaseUnits: string;
@@ -26,11 +36,15 @@ export const statsCommand = new Command('stats')
     ]);
 
     printResult({
-      address,
+      agentId: result.agentId,
+      address: result.address,
       balanceUsdc: balanceResult.balanceUsdc,
       balanceBaseUnits: balanceResult.balanceBaseUnits,
       completedTasks: result.completedTasks,
+      ratedTasks: result.ratedTasks,
       averageRating: result.averageRating,
       totalEarnings: result.totalEarnings,
+      skills: result.skills,
+      recentRatings: result.recentRatings,
     });
   });

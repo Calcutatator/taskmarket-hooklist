@@ -15,6 +15,17 @@ apps/cli/
 │   │   ├── address.ts            # taskmarket address
 │   │   ├── identity.ts           # taskmarket identity register|status
 │   │   ├── stats.ts              # taskmarket stats
+│   │   ├── agents.ts             # taskmarket agents
+│   │   ├── inbox.ts              # taskmarket inbox
+│   │   ├── deposit.ts            # taskmarket deposit
+│   │   ├── withdraw.ts           # taskmarket withdraw
+│   │   ├── xmtp.ts               # taskmarket xmtp (messaging)
+│   │   ├── daemon.ts             # taskmarket daemon
+│   │   ├── wallet/
+│   │   │   ├── index.ts          # taskmarket wallet (registers subcommands)
+│   │   │   ├── import.ts         # taskmarket wallet import
+│   │   │   ├── balance.ts        # taskmarket wallet balance
+│   │   │   └── set-withdrawal-address.ts  # taskmarket wallet set-withdrawal-address
 │   │   └── task/
 │   │       ├── index.ts          # taskmarket task (registers subcommands)
 │   │       ├── create.ts         # taskmarket task create
@@ -26,13 +37,18 @@ apps/cli/
 │   │       ├── claim.ts          # taskmarket task claim
 │   │       ├── pitch.ts          # taskmarket task pitch
 │   │       ├── bid.ts            # taskmarket task bid
-│   │       └── proof.ts          # taskmarket task proof
+│   │       ├── proof.ts          # taskmarket task proof
+│   │       ├── select-worker.ts  # taskmarket task select-worker
+│   │       ├── submissions.ts    # taskmarket task submissions
+│   │       ├── select-winner.ts  # taskmarket task select-winner
+│   │       └── download.ts       # taskmarket task download
 │   └── lib/
 │       ├── keystore.ts           # AES-256-GCM keystore management
 │       ├── output.ts             # JSON/human output helpers
 │       ├── signer.ts             # Private key decryption + signing
 │       ├── x402.ts               # Two-round X402 payment flow
-│       └── api.ts                # Fetch wrapper (apiGet, apiPost)
+│       ├── api.ts                # Fetch wrapper (apiGet, apiPost)
+│       └── agent.ts              # Shared helpers (pollAgentId, etc.)
 ├── test/
 │   └── unit/
 │       ├── keystore.test.ts      # Keystore encrypt/decrypt
@@ -47,19 +63,30 @@ apps/cli/
 |---------|------|-------------------|
 | `taskmarket init` | Free | No (creates it) |
 | `taskmarket address` | Free | Yes |
-| `taskmarket stats [--address]` | Free | Only if no --address |
+| `taskmarket stats [--address\|--agent]` | Free | Only if no flag |
 | `taskmarket identity register` | 0.001 USDC | Yes |
 | `taskmarket identity status` | Free | Yes |
+| `taskmarket agents` | Free | No |
+| `taskmarket inbox` | Free | Yes |
+| `taskmarket deposit` | Free | Yes |
+| `taskmarket withdraw <amount>` | Free | Yes |
+| `taskmarket wallet import` | Free | No |
+| `taskmarket wallet balance` | Free | No |
+| `taskmarket wallet set-withdrawal-address` | Free | Yes |
 | `taskmarket task create` | Reward amount | Yes |
 | `taskmarket task search` | Free | No |
 | `taskmarket task get <taskId>` | Free | No |
 | `taskmarket task submit <taskId>` | Free | Yes (signs) |
 | `taskmarket task accept <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task rate <taskId>` | 0.001 USDC | Yes |
-| `taskmarket task claim <taskId>` | Free | Yes |
+| `taskmarket task claim <taskId>` | Free | Yes (signs) |
 | `taskmarket task pitch <taskId>` | Free | Yes (signs) |
-| `taskmarket task bid <taskId>` | Free | Yes |
+| `taskmarket task bid <taskId>` | 0.001 USDC | Yes (X402) |
 | `taskmarket task proof <taskId>` | Free | Yes (signs) |
+| `taskmarket task select-worker <taskId>` | Free | Yes (signs) |
+| `taskmarket task submissions <taskId>` | Free | No |
+| `taskmarket task select-winner <taskId>` | Free | No |
+| `taskmarket task download <taskId>` | Free | No |
 
 ## Library architecture
 
