@@ -140,21 +140,15 @@ async function main() {
   await clientA.setConsentState(clientB.inboxId, 'allowed');
   console.log('allowlist add ok');
 
-  console.log('Step 5/6: allowlist list — verify entry present...');
-  if (!clientA.listConsentEntries) {
-    throw new Error('listConsentEntries not available on production client');
+  console.log('Step 5/6: allowlist check — verify clientB is allowed in clientA consent store...');
+  if (!clientA.getConsentState) {
+    throw new Error('getConsentState not available on production client');
   }
-  const entries = await clientA.listConsentEntries();
-  const found = entries.find((e) => e.entity === clientB.inboxId);
-  // SDK may not expose bulk list — a missing entry is only a warning, not a hard failure,
-  // since setConsentStates may succeed without being enumerable via the SDK list API.
-  if (!found) {
-    console.warn(
-      `Warning: clientB inbox not found in consent list (SDK may not expose bulk list). entries=${JSON.stringify(entries)}`
-    );
-  } else {
-    console.log('allowlist list ok, state:', found.state);
+  const consentState = await clientA.getConsentState(clientB.inboxId);
+  if (consentState !== 'allowed') {
+    throw new Error(`Expected consent state 'allowed' but got '${consentState}'`);
   }
+  console.log('allowlist check ok, state:', consentState);
 
   console.log('Step 6/6: allowlist remove — deny clientB in clientA consent store...');
   await clientA.setConsentState(clientB.inboxId, 'denied');

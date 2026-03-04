@@ -352,9 +352,10 @@ allowlistCommand
   });
 
 allowlistCommand
-  .command('list')
-  .description('List all XMTP SDK consent entries')
-  .action(async () => {
+  .command('check')
+  .description('Check the XMTP SDK consent state for a specific peer inbox')
+  .requiredOption('--to <agentIdOrAddrOrInboxId>', 'Target agent ID, wallet address, or inboxId')
+  .action(async (options: { to: string }) => {
     const keystore = await loadKeystore();
     const client = await createXmtpClient({
       walletAddress: keystore.walletAddress,
@@ -363,11 +364,12 @@ allowlistCommand
       existingDbPath: keystore.xmtpDbPath,
       keystore,
     });
-    if (!client.listConsentEntries) {
-      throw new Error('listConsentEntries not available in this XMTP client mode');
+    const targetInboxId = await resolveInboxId(options.to);
+    if (!client.getConsentState) {
+      throw new Error('getConsentState not available in this XMTP client mode');
     }
-    const entries = await client.listConsentEntries();
-    printResult({ entries });
+    const state = await client.getConsentState(targetInboxId);
+    printResult({ inboxId: targetInboxId, state });
   });
 
 xmtpCommand

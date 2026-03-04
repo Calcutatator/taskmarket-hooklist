@@ -53,7 +53,7 @@ export interface XmtpClientSession {
   sendMessage: (toInboxId: string, body: string) => Promise<void>;
   streamMessages: (options?: { signal?: AbortSignal }) => AsyncIterable<string>;
   setConsentState?: (inboxId: string, state: 'allowed' | 'denied') => Promise<void>;
-  listConsentEntries?: () => Promise<Array<{ entity: string; state: string }>>;
+  getConsentState?: (inboxId: string) => Promise<'allowed' | 'denied' | 'unknown'>;
 }
 
 export interface CreateXmtpClientInput {
@@ -107,8 +107,8 @@ async function createDevClient(input: CreateXmtpClientInput): Promise<XmtpClient
     async setConsentState(_inboxId: string, _state: 'allowed' | 'denied') {
       // no-op in dev mode
     },
-    async listConsentEntries() {
-      return [];
+    async getConsentState(_inboxId: string): Promise<'allowed' | 'denied' | 'unknown'> {
+      return 'unknown';
     },
   };
 }
@@ -662,75 +662,48 @@ async function createProductionClient(input: CreateXmtpClientInput): Promise<Xmt
       const clientObject = asObject(client);
       if (!clientObject) return;
 
-      // Try SDK v3 setConsentStates
-      const setConsentStates = clientObject['setConsentStates'];
-      if (typeof setConsentStates === 'function') {
-        const sdkModule = asObject(await import('@xmtp/node-sdk').catch(() => null));
-        const ConsentEntityType = asObject(sdkModule?.['ConsentEntityType']);
-        const ConsentState = asObject(sdkModule?.['ConsentState']);
-        const entityType = ConsentEntityType?.['InboxId'] ?? 1;
-        const consentStateValue =
-          state === 'allowed' ? (ConsentState?.['Allowed'] ?? 1) : (ConsentState?.['Denied'] ?? 2);
+      const sdkModule = asObject(await import('@xmtp/node-sdk').catch(() => null));
+      const ConsentEntityType = asObject(sdkModule?.['ConsentEntityType']);
+      const ConsentState = asObject(sdkModule?.['ConsentState']);
+      const entityType = ConsentEntityType?.['InboxId'] ?? 1;
+      const consentStateValue =
+        state === 'allowed' ? (ConsentState?.['Allowed'] ?? 1) : (ConsentState?.['Denied'] ?? 2);
+
+      // Both setConsentStates and getConsentState live on client.preferences
+      const preferences = asObject(clientObject['preferences']);
+      if (preferences && typeof preferences['setConsentStates'] === 'function') {
         await (
-          setConsentStates.call(client, [
+          preferences['setConsentStates'].call(preferences, [
             { entityType, entity: targetInboxId, state: consentStateValue },
           ]) as Promise<unknown>
         ).catch(() => undefined);
-        return;
-      }
-
-      // Try preferences API
-      const preferences = asObject(clientObject['preferences']);
-      if (preferences) {
-        const setMethod = preferences['setConsentState'] ?? preferences['setConsent'];
-        if (typeof setMethod === 'function') {
-          await (setMethod.call(preferences, targetInboxId, state) as Promise<unknown>).catch(
-            () => undefined
-          );
-        }
       }
     },
-    async listConsentEntries(): Promise<Array<{ entity: string; state: string }>> {
+    async getConsentState(targetInboxId: string): Promise<'allowed' | 'denied' | 'unknown'> {
       const clientObject = asObject(client);
-      if (!clientObject) return [];
+      if (!clientObject) return 'unknown';
+
+      const sdkModule = asObject(await import('@xmtp/node-sdk').catch(() => null));
+      const ConsentEntityType = asObject(sdkModule?.['ConsentEntityType']);
+      const ConsentState = asObject(sdkModule?.['ConsentState']);
+      const entityType = ConsentEntityType?.['InboxId'] ?? 1;
 
       const preferences = asObject(clientObject['preferences']);
-      if (preferences) {
-        for (const key of ['consentList', 'list', 'entries', 'getConsentList']) {
-          const method = preferences[key];
-          if (typeof method === 'function') {
-            const result = await (method.call(preferences) as Promise<unknown>).catch(() => null);
-            if (Array.isArray(result)) {
-              return result
-                .map((entry: unknown) => {
-                  const obj = asObject(entry);
-                  if (!obj) return null;
-                  const entity = extractString(obj, ['entity', 'inboxId', 'address']) ?? '';
-                  const entryState =
-                    extractString(obj, ['state', 'consentState', 'status']) ?? 'unknown';
-                  return { entity, state: entryState };
-                })
-                .filter((e): e is { entity: string; state: string } => e !== null);
-            }
-          }
-          // Also support non-method property (array)
-          const prop = preferences[key];
-          if (Array.isArray(prop)) {
-            return prop
-              .map((entry: unknown) => {
-                const obj = asObject(entry);
-                if (!obj) return null;
-                const entity = extractString(obj, ['entity', 'inboxId', 'address']) ?? '';
-                const entryState =
-                  extractString(obj, ['state', 'consentState', 'status']) ?? 'unknown';
-                return { entity, state: entryState };
-              })
-              .filter((e): e is { entity: string; state: string } => e !== null);
-          }
-        }
+      if (preferences && typeof preferences['getConsentState'] === 'function') {
+        const raw = await (
+          preferences['getConsentState'].call(
+            preferences,
+            entityType,
+            targetInboxId
+          ) as Promise<unknown>
+        ).catch(() => null);
+        const numericState =
+          typeof raw === 'number' ? raw : readNumber(asObject(raw) ?? {}, ['value', 'state']);
+        if (numericState === (ConsentState?.['Allowed'] ?? 1)) return 'allowed';
+        if (numericState === (ConsentState?.['Denied'] ?? 2)) return 'denied';
       }
 
-      return [];
+      return 'unknown';
     },
   };
 }

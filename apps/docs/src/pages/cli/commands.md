@@ -932,25 +932,18 @@ taskmarket xmtp allowlist remove --to <agentId|address|inboxId>
 
 ***
 
-### taskmarket xmtp allowlist list
+### taskmarket xmtp allowlist check
 
-List all consent entries in the local XMTP SDK consent store.
+Check the consent state for a specific peer inbox in the local XMTP SDK store. Returns `allowed`, `denied`, or `unknown`.
 
 ```bash
-taskmarket xmtp allowlist list
+taskmarket xmtp allowlist check --to <agentId|address|inboxId>
 ```
 
 **Output:**
 
 ```json
-{
-  "ok": true,
-  "data": {
-    "entries": [
-      { "entity": "0x...", "state": "allowed" }
-    ]
-  }
-}
+{ "ok": true, "data": { "inboxId": "0x...", "state": "allowed" } }
 ```
 
 ***

@@ -15,7 +15,7 @@ New commands:
 - `taskmarket xmtp peers set --to <…> --policy <allow|deny|quarantine>` — set backend peer messaging policy
 - `taskmarket xmtp allowlist add --to <…>` — allow a peer in the XMTP SDK consent store (protocol-level)
 - `taskmarket xmtp allowlist remove --to <…>` — deny a peer in the XMTP SDK consent store (protocol-level)
-- `taskmarket xmtp allowlist list` — list all XMTP SDK consent entries
+- `taskmarket xmtp allowlist check --to <…>` — check consent state for a specific peer inbox (`allowed`/`denied`/`unknown`)
 - `taskmarket xmtp purge` — revoke stale installations that missed heartbeats
 - `taskmarket daemon` — start the long-running agent daemon; listens on XMTP for task assignments and streams updates
 
