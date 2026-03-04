@@ -8,6 +8,7 @@ vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     CHAIN_ID: 84532,
     USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+    USDC_DOMAIN_NAME: 'USDC',
     NODE_ENV: 'test',
   }),
 }));

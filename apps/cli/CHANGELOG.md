@@ -1,5 +1,44 @@
 # @lucid-agents/taskmarket
 
+## 0.6.3
+
+### Patch Changes
+
+- 84323bf: Add cursor-based pagination to `taskmarket task list`. Pass `--cursor <value>` (the `nextCursor` from a previous response) to fetch the next page of results. The JSON output now includes `nextCursor` alongside `hasMore`.
+
+## 0.6.2
+
+### Patch Changes
+
+- 4a561e3: Enforce ECDSA signature verification on submit, pitch, and proof endpoints.
+
+  Workers must now sign `"taskmarket:submit:<taskId>"`, `"taskmarket:pitch:<taskId>"`, or
+  `"taskmarket:proof:<taskId>"` (EIP-191 personal_sign) when calling the respective endpoints.
+  Mismatched or missing signatures return `UNAUTHORIZED` / `BAD_REQUEST`. This closes the
+  impersonation attack vector on all three worker-mutation endpoints.
+
+## 0.6.1
+
+### Patch Changes
+
+- 89852b6: Fix `claims.claim` endpoint to verify ECDSA signature.
+
+  The claim endpoint previously accepted any `workerAddress` without verifying
+  the caller controlled that address, allowing griefing attacks where an attacker
+  could claim tasks on behalf of arbitrary addresses.
+
+  **Backend:** Added `recoverMessageAddress` (viem) verification — the worker must
+  sign `"taskmarket:claim:<taskId>"` and the recovered signer must match
+  `workerAddress`. Returns `BAD_REQUEST` for an unparseable signature, `UNAUTHORIZED`
+  for an address mismatch.
+
+  **CLI:** `taskmarket task claim <taskId>` now signs the canonical message using the
+  loaded keystore and includes the signature in the request body.
+
+  **Frontend:** `InstantPanel` updated to sign `"taskmarket:claim:<taskId>"` (was
+  signing the bare `task.id`) and to use the non-deprecated wagmi v3 APIs
+  (`useConnection`, `mutateAsync`).
+
 ## 0.6.0
 
 ### Minor Changes

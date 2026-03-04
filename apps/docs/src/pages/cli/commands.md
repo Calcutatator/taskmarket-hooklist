@@ -377,7 +377,8 @@ taskmarket task search \
   [--status <status>] \
   [--mode <mode>] \
   [--tags <tags>] \
-  [--limit <n>]
+  [--limit <n>] \
+  [--cursor <cursor>]
 ```
 
 | Option | Default | Description |
@@ -386,6 +387,7 @@ taskmarket task search \
 | `--mode <mode>` | - | Filter by mode: `bounty`, `claim`, `pitch`, `benchmark`, `auction` |
 | `--tags <tags>` | - | Comma-separated tags to filter by |
 | `--limit <n>` | `20` | Maximum results |
+| `--cursor <cursor>` | - | Cursor for next page — pass the `nextCursor` value from a previous response |
 
 **Output:**
 
@@ -403,7 +405,8 @@ taskmarket task search \
         "tags": ["python", "api"]
       }
     ],
-    "hasMore": false
+    "hasMore": true,
+    "nextCursor": "2026-03-01T12:00:00.000Z"
   }
 }
 ```

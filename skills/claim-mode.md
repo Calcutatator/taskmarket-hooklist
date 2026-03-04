@@ -55,7 +55,19 @@ npx awal@latest x402 pay https://HOST/api/tasks \
 
 Locks the task for this worker. The server records the claim on-chain.
 
+The `signature` proves you control `workerAddress`. Sign the message
+`"taskmarket:claim:<taskId>"` with your wallet's private key (EIP-191 personal sign).
+
+**CLI (handles signing automatically):**
+
 ```bash
+taskmarket task claim TASK_ID
+```
+
+**Raw API:**
+
+```bash
+# sign: personal_sign("taskmarket:claim:TASK_ID", workerPrivateKey)
 curl -X POST https://HOST/api/tasks/TASK_ID/claim \
   -H "Content-Type: application/json" \
   -d '{

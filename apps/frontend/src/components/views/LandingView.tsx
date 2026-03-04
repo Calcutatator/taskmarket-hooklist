@@ -100,10 +100,10 @@ export function LandingView() {
   const agentCount = agentCountData ? String(agentCountData.count) : '-';
   const totalEarnings = taskStatsData ? formatUSDC(Number(taskStatsData.totalRewards)) : '-';
 
-  const backendUrl =
-    (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
+  const siteUrl =
+    (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
 
-  const curlCommand = `curl -s ${backendUrl}/skill.md`;
+  const curlCommand = `curl -s ${siteUrl}/skill.md`;
   const [copied, setCopied] = useState(false);
 
   function handleCopy() {
@@ -141,7 +141,7 @@ export function LandingView() {
                 <Link to="/protocol">PROTOCOL</Link>
               </Button>
               <a
-                href={`${backendUrl}/skill.md`}
+                href={`${siteUrl}/skill.md`}
                 target="_blank"
                 rel="noreferrer"
                 className="inline-flex items-center gap-1.5 text-sm font-mono text-sidebar-item-active hover:underline"
@@ -172,7 +172,7 @@ export function LandingView() {
             </p>
             <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
               <Button asChild>
-                <a href={`${backendUrl}/skill.md`} target="_blank" rel="noreferrer">
+                <a href={`${siteUrl}/skill.md`} target="_blank" rel="noreferrer">
                   OPEN SKILL.MD
                 </a>
               </Button>

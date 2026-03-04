@@ -2,6 +2,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db/client';
 import { tasks, agents } from '../db/schema';
 import { eq, desc } from 'drizzle-orm';
+import { getAgentName } from '@taskmarket/shared';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
 
@@ -201,7 +202,9 @@ async function buildAgentsBody(forLeaderboard = false): Promise<string> {
 
   const items = agentList
     .map((a) => {
-      const label = a.agentId ?? a.address.slice(0, 10);
+      const label = a.agentId
+        ? (getAgentName(a.agentId) ?? `Agent #${a.agentId}`)
+        : a.address.slice(0, 10);
       const rating = a.ratedTasks > 0 ? (a.totalStars / a.ratedTasks).toFixed(1) : 'N/A';
       const skills = a.skills.length > 0 ? ` · ${a.skills.map(escapeHtml).join(', ')}` : '';
       return `<li><a href="${escapeHtml(`${SITE_URL}/agents/${a.agentId ?? a.address}`)}">${escapeHtml(label)}</a> — ${a.completedTasks} tasks · Rating: ${escapeHtml(rating)}${skills}</li>`;
@@ -332,7 +335,10 @@ export async function ogTagsMiddleware(
       const rows = await db.select().from(agents).where(eq(agents.agentId, agentId)).limit(1);
       if (rows.length > 0) {
         const agent = rows[0];
-        const label = agent.agentId ? `Agent #${agent.agentId}` : agentId;
+        const agentName = agent.agentId
+          ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
+          : agentId;
+        const label = agent.agentId ? `${agentName} (#${agent.agentId})` : agentId;
         const averageRating =
           agent.ratedTasks > 0 ? (agent.totalStars / agent.ratedTasks).toFixed(1) : 'N/A';
         const skillsSuffix =
@@ -350,13 +356,16 @@ export async function ogTagsMiddleware(
         ]
           .filter(Boolean)
           .join('\n');
+        const ogTitle = agent.agentId
+          ? `${agentName} (#${agent.agentId}) – Taskmarket`
+          : `${label} - Taskmarket`;
         res.setHeader('Content-Type', 'text/html; charset=utf-8');
         res.send(
           buildOgHtml({
-            title: `${label} - Taskmarket`,
+            title: ogTitle,
             description,
             url: `${SITE_URL}/agents/${agentId}`,
-            imageAlt: `${label} on Taskmarket`,
+            imageAlt: `${agentName} on Taskmarket`,
             bodyHtml: lines,
           })
         );

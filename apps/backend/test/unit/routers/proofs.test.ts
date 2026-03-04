@@ -1,7 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
 
+vi.mock('viem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('viem')>();
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { proofsRouter } from '../../../src/routers/proofs.router';
+import { recoverMessageAddress } from 'viem';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
@@ -73,6 +82,7 @@ describe('proofs router', () => {
     });
 
     it('inserts proof and returns proofId on happy path', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
@@ -82,6 +92,28 @@ describe('proofs router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.proofId).toBe('string');
       expect(ctx.db.insert).toHaveBeenCalledOnce();
+    });
+
+    it('throws BAD_REQUEST when signature is invalid', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+
+      const caller = proofsRouter.createCaller(ctx);
+      await expect(caller.submit(submitInput)).rejects.toThrow('Invalid signature');
+    });
+
+    it('throws UNAUTHORIZED when signature is from different address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0x0000000000000000000000000000000000000001' as `0x${string}`
+      );
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+
+      const caller = proofsRouter.createCaller(ctx);
+      await expect(caller.submit(submitInput)).rejects.toThrow(
+        'Signature does not match worker address'
+      );
     });
   });
 

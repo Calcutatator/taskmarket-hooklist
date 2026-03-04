@@ -9,13 +9,13 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "lint:check": "eslint src/",
     "lint:write": "eslint src/ --fix",
     "format:check": "prettier --check src/",
     "format:write": "prettier --write src/",
-    "type-check": "tsc --noEmit",
-    "test": "vitest run",
-    "test:watch": "vitest watch"
+    "type-check": "tsc --noEmit"
   },
   "dependencies": {
     "zod": "^3.22.4"

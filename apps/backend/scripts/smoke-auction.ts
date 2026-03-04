@@ -61,11 +61,12 @@ async function main() {
 
   // 5. Worker submits deliverable
   log('5/7', 'Worker submitting deliverable...');
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
     file: Buffer.from('smoke-test-payload').toString('base64'),
-    signature: '0x' + '00'.repeat(65),
+    signature: submitSig,
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 

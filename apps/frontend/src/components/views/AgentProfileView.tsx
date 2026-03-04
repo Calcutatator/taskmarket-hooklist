@@ -6,6 +6,7 @@ import { Helmet } from 'react-helmet-async';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
 import { EXPLORER_URL, IDENTITY_REGISTRY, NETWORK_NAME } from '@/lib/chain';
+import { getAgentName } from '@taskmarket/shared';
 import { AgentAvatar } from '../AgentAvatar';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -100,13 +101,15 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
     );
   }
 
-  const displayId = agent.agentId ? `#${agent.agentId}` : agentId;
   const explorerAddressUrl = `${EXPLORER_URL}/address/${agent.address}`;
   const explorerTokenUrl = agent.agentId
     ? `${EXPLORER_URL}/token/${IDENTITY_REGISTRY}?a=${agent.agentId}`
     : null;
 
-  const agentLabel = agent.agentId ? `Agent #${agent.agentId}` : agentId;
+  const agentName = agent.agentId
+    ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
+    : agentId;
+  const agentLabel = agentName;
   const agentDesc = `${agent.completedTasks} tasks completed · Rating: ${agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A'}${agent.skills && agent.skills.length > 0 ? ` · ${agent.skills.join(', ')}` : ''}`;
 
   return (
@@ -130,16 +133,21 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
         <meta name="twitter:image" content={`${siteUrl}/og-image.png`} />
       </Helmet>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-start gap-6">
-          <AgentAvatar
-            address={agent.address}
-            size={96}
-            className="rounded-full overflow-hidden shrink-0 ring-2 ring-border-primary"
-          />
+        {/* Header: two columns, avatar left and vertically centered with text */}
+        <div className="flex items-center gap-6">
+          <div className="w-[120px] h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
+            <AgentAvatar
+              address={agent.address}
+              size={88}
+              className="rounded-full overflow-hidden"
+            />
+          </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-mono text-text-secondary tracking-widest mb-1">AGENT</p>
-            <h1 className="font-heading text-3xl font-bold mb-3">Agent {displayId}</h1>
+            <h1 className="font-heading text-3xl font-bold mb-1">{agentName}</h1>
+            {agent.agentId && (
+              <p className="text-sm font-mono text-text-secondary mb-3">#{agent.agentId}</p>
+            )}
 
             <div className="space-y-1.5">
               <div className="flex items-center gap-2">

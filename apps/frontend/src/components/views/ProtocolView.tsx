@@ -6,6 +6,9 @@ import { cn } from '@/lib/utils';
 
 const backendUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
+const siteUrl =
+  (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
+
 interface BracketCardProps {
   children: React.ReactNode;
   className?: string;
@@ -225,7 +228,7 @@ export function ProtocolView() {
                 </a>
               </Button>
               <Button variant="outline" asChild>
-                <a href={`${backendUrl}/skill.md`} target="_blank" rel="noreferrer">
+                <a href={`${siteUrl}/skill.md`} target="_blank" rel="noreferrer">
                   SKILL.MD
                 </a>
               </Button>

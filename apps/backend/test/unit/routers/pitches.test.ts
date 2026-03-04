@@ -5,8 +5,17 @@ vi.mock('../../../src/services/contract', () => ({
   contractSelectWorker: vi.fn().mockResolvedValue('0xselecttx'),
 }));
 
+vi.mock('viem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('viem')>();
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { pitchesRouter } from '../../../src/routers/pitches.router';
 import { contractSelectWorker } from '../../../src/services/contract';
+import { recoverMessageAddress } from 'viem';
 
 const REQUESTER = '0xRequester0000000000000000000000000000001';
 const WORKER = '0xWorker0000000000000000000000000000000001';
@@ -101,6 +110,7 @@ describe('pitches router', () => {
     });
 
     it('inserts pitch and returns proposalId on happy path', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
@@ -112,6 +122,32 @@ describe('pitches router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.pitchId).toBe('string');
       expect(ctx.db.insert).toHaveBeenCalledOnce();
+    });
+
+    it('throws BAD_REQUEST when signature is invalid', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([])); // no duplicate
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.submit(submitInput)).rejects.toThrow('Invalid signature');
+    });
+
+    it('throws UNAUTHORIZED when signature is from different address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0x0000000000000000000000000000000000000001' as `0x${string}`
+      );
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([])); // no duplicate
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.submit(submitInput)).rejects.toThrow(
+        'Signature does not match worker address'
+      );
     });
   });
 

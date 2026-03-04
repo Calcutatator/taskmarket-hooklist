@@ -4,6 +4,8 @@ import { z } from 'zod';
 import { proofs, tasks, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
+import { recoverMessageAddress } from 'viem';
+import { TRPCError } from '@trpc/server';
 
 export const proofsRouter = router({
   submit: publicProcedure
@@ -36,6 +38,23 @@ export const proofsRouter = router({
 
       if (task.status !== 'open') {
         throw new Error('Task not open for proof submission');
+      }
+
+      const message = `taskmarket:proof:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
       }
 
       const proofId = randomUUID();

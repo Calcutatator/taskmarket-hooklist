@@ -29,10 +29,15 @@ function isSocialBot(ua: string): boolean {
 
 export default {
   async fetch(request: Request): Promise<Response> {
+    const url = new URL(request.url);
+
+    if (url.pathname === '/skill.md') {
+      return fetch(new Request('https://' + API_HOST + url.pathname + url.search, request));
+    }
+
     const ua = request.headers.get('user-agent') ?? '';
 
     if (isSocialBot(ua)) {
-      const url = new URL(request.url);
       // Only proxy page requests — let static assets (images, js, css) pass through
       // so the bot can fetch og-image.png from the frontend origin directly.
       const hasFileExtension = /\.\w+$/.test(url.pathname);

@@ -58,6 +58,7 @@ Creates a task with USDC escrow. The X402 payment amount equals the reward (or `
   tags?: string[]
   minReward?: string
   limit?: number    // default: 20
+  cursor?: string   // ISO timestamp from nextCursor; returns tasks created before this time
 }
 ```
 
@@ -96,7 +97,7 @@ Returns a `TaskDetailResponse` — a `TaskResponse` extended with `pendingAction
   taskId: string
   workerAddress: string
   file: string      // base64-encoded file content
-  signature: string // worker's signature of keccak256(file content)
+  signature: string // worker's EIP-191 personal_sign of "taskmarket:submit:<taskId>"
 }
 ```
 
@@ -130,12 +131,16 @@ Requires `submissionId` and proof that the task was accepted.
 
 `POST /api/tasks/{taskId}/claim`
 
+Requires a valid ECDSA signature proving the caller controls `workerAddress`.
+Sign the message `"taskmarket:claim:<taskId>"` with the worker's private key.
+
 **Input:**
 
 ```typescript
 {
   taskId: string
   workerAddress: string
+  signature: string  // worker's signature of "taskmarket:claim:<taskId>"
 }
 ```
 
@@ -167,7 +172,7 @@ Requires `submissionId` and proof that the task was accepted.
   workerAddress: string
   pitchText: string
   estimatedDuration?: number  // hours
-  signature: string           // worker's signature of keccak256(pitchText)
+  signature: string           // worker's EIP-191 personal_sign of "taskmarket:pitch:<taskId>"
 }
 ```
 
@@ -263,7 +268,7 @@ Array<{
   proofData: string
   proofType: string
   metricValue?: string
-  signature: string  // worker's signature of keccak256(proofData)
+  signature: string  // worker's EIP-191 personal_sign of "taskmarket:proof:<taskId>"
 }
 ```
 

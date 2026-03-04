@@ -5,6 +5,8 @@ import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractClaimTask } from '../services/contract';
+import { recoverMessageAddress } from 'viem';
+import { TRPCError } from '@trpc/server';
 
 export const claimsRouter = router({
   claim: publicProcedure
@@ -37,6 +39,23 @@ export const claimsRouter = router({
 
       if (task.status !== 'open') {
         throw new Error('Task not available for claiming');
+      }
+
+      const message = `taskmarket:claim:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
       }
 
       const stakeTxHash = await contractClaimTask(

@@ -2,7 +2,7 @@ import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
 import { Badge } from './ui/badge';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useConnection, useSignMessage } from 'wagmi';
 import type { TaskResponse } from '@taskmarket/shared';
 import { formatUSDC } from '@/lib/format';
 import { IdentityBadge } from './IdentityBadge';
@@ -13,8 +13,8 @@ interface InstantPanelProps {
 }
 
 export function InstantPanel({ task }: InstantPanelProps) {
-  const { address } = useAccount();
-  const { signMessageAsync } = useSignMessage();
+  const { address } = useConnection();
+  const { mutateAsync: signMessageAsync } = useSignMessage();
   const [isPending, setIsPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -31,7 +31,7 @@ export function InstantPanel({ task }: InstantPanelProps) {
     setIsPending(true);
 
     try {
-      const signature = await signMessageAsync({ message: task.id });
+      const signature = await signMessageAsync({ message: `taskmarket:claim:${task.id}` });
 
       const res = await fetch(`${API_URL}/api/tasks/${task.id}/claim`, {
         method: 'POST',
