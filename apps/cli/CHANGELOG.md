@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 0.6.3
+
+### Patch Changes
+
+- 84323bf: Add cursor-based pagination to `taskmarket task list`. Pass `--cursor <value>` (the `nextCursor` from a previous response) to fetch the next page of results. The JSON output now includes `nextCursor` alongside `hasMore`.
+
 ## 0.6.2
 
 ### Patch Changes
