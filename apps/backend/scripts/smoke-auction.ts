@@ -19,29 +19,33 @@ async function main() {
   console.log('worker:   ', worker.address);
   console.log('api:      ', API_URL);
 
-  // 1. Create auction task (max price 5 USDC, bid deadline in 1 minute)
-  log('1/7', 'Creating auction task (X402) — max 5 USDC, 1 min bid window...');
+  // 1. Create auction task (max price 0.001 USDC, 30s bid window)
+  log('1/7', 'Creating auction task (X402) — max 0.001 USDC, 30s bid window...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
       description: 'Audit this smart contract for vulnerabilities',
-      reward: '5000000', // 5 USDC max price (base units)
-      maxPrice: '5000000',
+      reward: '1000', // 0.001 USDC max price (base units)
+      maxPrice: '1000',
       duration: 1,
       mode: 'auction',
-      bidDeadline: 1 / 60, // ~1 minute in hours
+      bidDeadline: 30 / 3600, // 30 seconds in hours
       tags: ['smoke-test'],
     },
     requester
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  // 2. Worker A submits bid at 4 USDC
-  log('2/7', 'Worker A bidding at 4 USDC...');
-  const { bidId: bidIdA } = (await post(`/api/tasks/${taskId}/bids`, {
-    taskId,
-    price: '4000000', // 4 USDC in base units
-  })) as { bidId: string };
+  // 2. Worker A submits bid at 0.0008 USDC
+  log('2/7', 'Worker A bidding at 0.0008 USDC...');
+  const { bidId: bidIdA } = (await x402Post(
+    `/api/tasks/${taskId}/bids`,
+    {
+      taskId,
+      price: '800', // 0.0008 USDC in base units
+    },
+    worker
+  )) as { bidId: string };
   ok('bidId (worker A)', bidIdA);
 
   // 3. List bids — should show worker A's bid
@@ -52,7 +56,9 @@ async function main() {
   }
   ok('bidCount', bidList.length);
 
-  // 4. Select winner (trigger manually — in production the backend job does this after deadline)
+  // 4. Wait for bid deadline, then select winner
+  log('4/7', 'Waiting 32s for bid deadline to pass...');
+  await new Promise((r) => setTimeout(r, 32000));
   log('4/7', 'Selecting lowest bidder...');
   const { workerAddress: winner } = (await post(`/api/tasks/${taskId}/bids/select-winner`, {
     taskId,
