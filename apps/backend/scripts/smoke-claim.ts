@@ -7,7 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-claim.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -34,10 +34,12 @@ async function main() {
 
   // 2. Worker claims
   log('2/6', 'Worker claiming task...');
+  const claimMessage = `taskmarket:claim:${taskId}`;
+  const claimSignature = await worker.signMessage({ message: claimMessage });
   const { claimId } = (await post(`/api/tasks/${taskId}/claim`, {
     taskId,
     workerAddress: worker.address,
-    signature: '0x' + '00'.repeat(65),
+    signature: claimSignature,
   })) as { claimId: string };
   ok('claimId', claimId);
 

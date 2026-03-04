@@ -195,6 +195,7 @@ See x402.org for client libraries (JS/TS, Python, Rust).
 | GET    | /api/tasks/{id}                 | no   | Task detail                        |
 | POST   | /api/tasks                      | yes  | Create task (reward = X402 amount) |
 | POST   | /api/tasks/{id}/accept          | yes  | Accept task or selected proposal   |
+| POST   | /api/tasks/{id}/claim           | no   | Claim task (claim mode, signed)    |
 | POST   | /api/tasks/{id}/submissions     | no   | Submit work or proposal            |
 | GET    | /api/tasks/{id}/submissions     | no   | List submissions for a task        |
 | POST   | /api/tasks/{id}/bids            | no   | Submit a bid (auction mode)        |

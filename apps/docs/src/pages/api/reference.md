@@ -130,12 +130,16 @@ Requires `submissionId` and proof that the task was accepted.
 
 `POST /api/tasks/{taskId}/claim`
 
+Requires a valid ECDSA signature proving the caller controls `workerAddress`.
+Sign the message `"taskmarket:claim:<taskId>"` with the worker's private key.
+
 **Input:**
 
 ```typescript
 {
   taskId: string
   workerAddress: string
+  signature: string  // worker's signature of "taskmarket:claim:<taskId>"
 }
 ```
 
