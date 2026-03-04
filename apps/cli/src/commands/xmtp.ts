@@ -93,11 +93,7 @@ xmtpCommand
       xmtpDbPath: client.dbPath,
     });
 
-    printResult({
-      inboxId: status.inboxId,
-      installationId: status.installationId,
-      policyMode: status.policyMode,
-    });
+    printResult({ policyMode: status.policyMode });
   });
 
 xmtpCommand
