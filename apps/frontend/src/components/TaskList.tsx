@@ -1,5 +1,6 @@
 import { trpc } from '@/contexts/TRPCProvider';
 import { TaskCard } from './TaskCard';
+import { Button } from './ui/button';
 
 interface TaskListFilters {
   mode?: string;
@@ -19,30 +20,38 @@ const toBaseUnits = (val: string | undefined) =>
   val ? String(Math.round(Number(val) * 1_000_000)) : undefined;
 
 export function TaskList({ filters, search }: TaskListProps) {
-  const { data, isLoading, error } = trpc.tasks.list.useQuery({
-    mode:
-      (filters?.mode as 'ALL' | 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction') ?? 'ALL',
-    status:
-      (filters?.status as
-        | 'ALL'
-        | 'open'
-        | 'claimed'
-        | 'worker_selected'
-        | 'pending_approval'
-        | 'accepted'
-        | 'completed'
-        | 'expired'
-        | 'disputed') ?? 'ALL',
-    tags: filters?.tags
-      ? filters.tags
-          .split(',')
-          .map((t) => t.trim())
-          .filter(Boolean)
-      : undefined,
-    minReward: toBaseUnits(filters?.minReward) || undefined,
-    maxReward: toBaseUnits(filters?.maxReward) || undefined,
-    deadlineHours: filters?.deadlineHours ? Number(filters.deadlineHours) : undefined,
-  });
+  const { data, isLoading, error, fetchNextPage, hasNextPage, isFetchingNextPage } =
+    trpc.tasks.list.useInfiniteQuery(
+      {
+        mode:
+          (filters?.mode as 'ALL' | 'bounty' | 'claim' | 'pitch' | 'benchmark' | 'auction') ??
+          'ALL',
+        status:
+          (filters?.status as
+            | 'ALL'
+            | 'open'
+            | 'claimed'
+            | 'worker_selected'
+            | 'pending_approval'
+            | 'accepted'
+            | 'completed'
+            | 'expired'
+            | 'disputed') ?? 'ALL',
+        tags: filters?.tags
+          ? filters.tags
+              .split(',')
+              .map((t) => t.trim())
+              .filter(Boolean)
+          : undefined,
+        minReward: toBaseUnits(filters?.minReward) || undefined,
+        maxReward: toBaseUnits(filters?.maxReward) || undefined,
+        deadlineHours: filters?.deadlineHours ? Number(filters.deadlineHours) : undefined,
+      },
+      {
+        initialCursor: undefined,
+        getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+      }
+    );
 
   if (isLoading) {
     return (
@@ -63,7 +72,7 @@ export function TaskList({ filters, search }: TaskListProps) {
     );
   }
 
-  const allTasks = data?.tasks ?? [];
+  const allTasks = data?.pages.flatMap((p) => p.tasks) ?? [];
   const searchLower = search?.toLowerCase() ?? '';
   const tasks = searchLower
     ? allTasks.filter((task) => task.description.toLowerCase().includes(searchLower))
@@ -81,10 +90,19 @@ export function TaskList({ filters, search }: TaskListProps) {
   }
 
   return (
-    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
-      {tasks.map((task) => (
-        <TaskCard key={task.id} task={task} />
-      ))}
+    <div className="space-y-6">
+      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+        {tasks.map((task) => (
+          <TaskCard key={task.id} task={task} />
+        ))}
+      </div>
+      {hasNextPage && (
+        <div className="flex justify-center pt-2">
+          <Button variant="outline" onClick={() => fetchNextPage()} disabled={isFetchingNextPage}>
+            {isFetchingNextPage ? 'Loading...' : 'Load more'}
+          </Button>
+        </div>
+      )}
     </div>
   );
 }

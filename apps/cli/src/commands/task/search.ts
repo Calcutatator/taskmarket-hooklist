@@ -22,6 +22,7 @@ export const listCmd = new Command('list')
   .option('--reward-max <n>', 'Maximum reward in USDC')
   .option('--deadline-hours <n>', 'Only tasks expiring within this many hours')
   .option('--limit <n>', 'Maximum results to return', '20')
+  .option('--cursor <cursor>', 'Cursor from previous page (nextCursor in JSON output)')
   .action(
     async (opts: {
       status?: string;
@@ -32,6 +33,7 @@ export const listCmd = new Command('list')
       rewardMax?: string;
       deadlineHours?: string;
       limit?: string;
+      cursor?: string;
     }) => {
       const params = new URLSearchParams();
       if (opts.status) params.set('status', opts.status);
@@ -44,11 +46,13 @@ export const listCmd = new Command('list')
         params.set('maxReward', String(Math.round(Number(opts.rewardMax) * 1_000_000)));
       if (opts.deadlineHours) params.set('deadlineHours', opts.deadlineHours);
       if (opts.limit) params.set('limit', opts.limit);
+      if (opts.cursor) params.set('cursor', opts.cursor);
 
       const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {
         tasks: TaskRow[];
         hasMore: boolean;
+        nextCursor: string | null;
       };
-      printResult({ tasks: result.tasks, hasMore: result.hasMore });
+      printResult({ tasks: result.tasks, hasMore: result.hasMore, nextCursor: result.nextCursor });
     }
   );
