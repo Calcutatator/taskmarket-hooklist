@@ -58,6 +58,7 @@ Creates a task with USDC escrow. The X402 payment amount equals the reward (or `
   tags?: string[]
   minReward?: string
   limit?: number    // default: 20
+  cursor?: string   // ISO timestamp from nextCursor; returns tasks created before this time
 }
 ```
 

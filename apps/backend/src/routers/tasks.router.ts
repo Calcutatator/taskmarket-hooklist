@@ -8,7 +8,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents } from '../db/schema';
-import { eq, sql, desc, and, gt, lte, arrayOverlaps } from 'drizzle-orm';
+import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
 import { getServerConfig } from '../config/env';
@@ -254,6 +254,9 @@ export const tasksRouter = router({
         conditions.push(gt(tasks.expiryTime, now));
         conditions.push(lte(tasks.expiryTime, cutoff));
       }
+      if (input.cursor) {
+        conditions.push(lt(tasks.createdAt, new Date(input.cursor)));
+      }
 
       let query = ctx.db.select().from(tasks);
       if (conditions.length > 0) {
@@ -310,7 +313,7 @@ export const tasksRouter = router({
 
       return {
         tasks: tasksWithCounts,
-        nextCursor: hasMore ? tasksList[tasksList.length - 1].id : null,
+        nextCursor: hasMore ? tasksList[tasksList.length - 1].createdAt.toISOString() : null,
         hasMore,
       };
     }),
