@@ -1,7 +1,7 @@
 lockfileVersion: '6.0'
 
 settings:
-  autoInstallPeers: false
+  autoInstallPeers: true
   excludeLinksFromLockfile: false
 
 importers:
@@ -61,7 +61,7 @@ importers:
         version: 3.4.8
       trpc-to-openapi:
         specifier: ^2.0.0
-        version: 2.4.0(@trpc/server@11.10.0)(zod@3.25.76)
+        version: 2.4.0(@trpc/server@11.10.0)(zod-openapi@4.2.4)(zod@3.25.76)
       viem:
         specifier: ^2.41.2
         version: 2.45.3(typescript@5.9.3)(zod@3.25.76)
@@ -147,7 +147,7 @@ importers:
     dependencies:
       vocs:
         specifier: ^1.4.1
-        version: 1.4.1(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)(typescript@5.7.3)
+        version: 1.4.1(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)(rollup@4.57.1)(typescript@5.7.3)
     devDependencies:
       '@taskmarket/markdownlint-config':
         specifier: workspace:*
@@ -223,10 +223,10 @@ importers:
         version: link:../../packages/shared
       '@trpc/client':
         specifier: ^11.4.4
-        version: 11.10.0(typescript@5.7.3)
+        version: 11.10.0(@trpc/server@11.10.0)(typescript@5.7.3)
       '@trpc/react-query':
         specifier: ^11.4.4
-        version: 11.10.0(@tanstack/react-query@5.90.21)(@trpc/client@11.10.0)(react@18.3.1)(typescript@5.7.3)
+        version: 11.10.0(@tanstack/react-query@5.90.21)(@trpc/client@11.10.0)(@trpc/server@11.10.0)(react@18.3.1)(typescript@5.7.3)
       aos:
         specifier: ^2.3.4
         version: 2.3.4
@@ -328,7 +328,7 @@ importers:
     devDependencies:
       '@clafoutis/cli':
         specifier: 1.2.1
-        version: 1.2.1
+        version: 1.2.1(tslib@2.8.1)
 
   packages/eslint-config:
     dependencies:
@@ -1247,16 +1247,18 @@ packages:
       url: 0.11.4
     dev: true
 
-  /@bundled-es-modules/memfs@4.17.0:
+  /@bundled-es-modules/memfs@4.17.0(tslib@2.8.1):
     resolution: {integrity: sha512-ykdrkEmQr9BV804yd37ikXfNnvxrwYfY9Z2/EtMHFEFadEjsQXJ1zL9bVZrKNLDtm91UdUOEHso6Aweg93K6xQ==}
     dependencies:
       assert: 2.1.0
       buffer: 6.0.3
       events: 3.3.0
-      memfs: 4.56.10
+      memfs: 4.56.10(tslib@2.8.1)
       path: 0.12.7
       stream: 0.0.3
       util: 0.12.5
+    transitivePeerDependencies:
+      - tslib
     dev: true
 
   /@changesets/apply-release-plan@7.0.14:
@@ -1499,27 +1501,31 @@ packages:
       sisteransi: 1.0.5
     dev: true
 
-  /@clafoutis/cli@1.2.1:
+  /@clafoutis/cli@1.2.1(tslib@2.8.1):
     resolution: {integrity: sha512-2gbwlAWd3hay52xGevLq7FYLx1EyiFq7ZAeOu4PGQT8LYeQXdADYOQryjajNh+Gcl2NvcnEeLOmb3m6zYXxBjQ==}
     engines: {node: '>=20.0.0'}
     hasBin: true
     dependencies:
       '@clack/prompts': 1.0.1
-      '@clafoutis/generators': 1.0.4
+      '@clafoutis/generators': 1.0.4(tslib@2.8.1)
       '@clafoutis/shared': 1.0.0
       ajv: 8.18.0
       commander: 12.1.0
-      style-dictionary: 5.3.2
+      style-dictionary: 5.3.2(tslib@2.8.1)
       tsx: 4.21.0
+    transitivePeerDependencies:
+      - tslib
     dev: true
 
-  /@clafoutis/generators@1.0.4:
+  /@clafoutis/generators@1.0.4(tslib@2.8.1):
     resolution: {integrity: sha512-9rOyQOr3hrL6vyy3nuVCU+2byoHZ1D7N9OlyCVPIsSMBCkffQS3ib7elmJlD1W7mH6rJbBKmV1WwX3wALXvEVQ==}
     dependencies:
       '@clafoutis/shared': 1.0.0
       glob: 11.0.3
-      style-dictionary: 5.3.2
+      style-dictionary: 5.3.2(tslib@2.8.1)
       tinycolor2: 1.6.0
+    transitivePeerDependencies:
+      - tslib
     dev: true
 
   /@clafoutis/shared@1.0.0:
@@ -3717,13 +3723,14 @@ packages:
       react: 19.2.4
     dev: false
 
-  /@mdx-js/rollup@3.1.1:
+  /@mdx-js/rollup@3.1.1(rollup@4.57.1):
     resolution: {integrity: sha512-v8satFmBB+DqDzYohnm1u2JOvxx6Hl3pUvqzJvfs2Zk/ngZ1aRUhsWpXvwPkNeGN9c2NCm/38H29ZqXQUjf8dw==}
     peerDependencies:
       rollup: '>=2'
     dependencies:
       '@mdx-js/mdx': 3.1.1
-      '@rollup/pluginutils': 5.3.0
+      '@rollup/pluginutils': 5.3.0(rollup@4.57.1)
+      rollup: 4.57.1
       source-map: 0.7.6
       vfile: 6.0.3
     transitivePeerDependencies:
@@ -5882,7 +5889,7 @@ packages:
     resolution: {integrity: sha512-eybk3TjzzzV97Dlj5c+XrBFW57eTNhzod66y9HrBlzJ6NsCrWCp/2kaPS3K9wJmurBC0Tdw4yPjXKZqlznim3Q==}
     dev: false
 
-  /@rollup/pluginutils@5.3.0:
+  /@rollup/pluginutils@5.3.0(rollup@4.57.1):
     resolution: {integrity: sha512-5EdhGZtnu3V88ces7s53hhfK5KSASnJZv8Lulpc04cWO3REESroJXg73DFsOmgbU2BhwV0E20bu2IDZb3VKW4Q==}
     engines: {node: '>=14.0.0'}
     peerDependencies:
@@ -5894,6 +5901,7 @@ packages:
       '@types/estree': 1.0.8
       estree-walker: 2.0.2
       picomatch: 4.0.3
+      rollup: 4.57.1
     dev: false
 
   /@rollup/rollup-android-arm-eabi@4.57.1:
@@ -6983,16 +6991,17 @@ packages:
     engines: {node: '>=12'}
     dev: true
 
-  /@trpc/client@11.10.0(typescript@5.7.3):
+  /@trpc/client@11.10.0(@trpc/server@11.10.0)(typescript@5.7.3):
     resolution: {integrity: sha512-h0s2AwDtuhS8INRb4hlo4z3RKCkarWqlOy+3ffJgrlDxzzW6aLUN+9nDrcN4huPje1Em15tbCOqhIc6oaKYTRw==}
     peerDependencies:
       '@trpc/server': 11.10.0
       typescript: '>=5.7.2'
     dependencies:
+      '@trpc/server': 11.10.0(typescript@5.7.3)
       typescript: 5.7.3
     dev: false
 
-  /@trpc/react-query@11.10.0(@tanstack/react-query@5.90.21)(@trpc/client@11.10.0)(react@18.3.1)(typescript@5.7.3):
+  /@trpc/react-query@11.10.0(@tanstack/react-query@5.90.21)(@trpc/client@11.10.0)(@trpc/server@11.10.0)(react@18.3.1)(typescript@5.7.3):
     resolution: {integrity: sha512-SKLpwEMU32mpDTCc3msMxb0fx113x4Jsiw0/t+ENY6AtyvhvDMRF1bpWtoNyY6zpX5wN4JCQMhHef8k0T1rJIw==}
     peerDependencies:
       '@tanstack/react-query': ^5.80.3
@@ -7002,8 +7011,17 @@ packages:
       typescript: '>=5.7.2'
     dependencies:
       '@tanstack/react-query': 5.90.21(react@18.3.1)
-      '@trpc/client': 11.10.0(typescript@5.7.3)
+      '@trpc/client': 11.10.0(@trpc/server@11.10.0)(typescript@5.7.3)
+      '@trpc/server': 11.10.0(typescript@5.7.3)
       react: 18.3.1
+      typescript: 5.7.3
+    dev: false
+
+  /@trpc/server@11.10.0(typescript@5.7.3):
+    resolution: {integrity: sha512-zZjTrR6He61e5TiT7e/bQqab/jRcXBZM8Fg78Yoo8uh5pz60dzzbYuONNUCOkafv5ppXVMms4NHYfNZgzw50vg==}
+    peerDependencies:
+      typescript: '>=5.7.2'
+    dependencies:
       typescript: 5.7.3
     dev: false
 
@@ -11654,8 +11672,10 @@ packages:
     engines: {node: '>= 0.6'}
     dev: false
 
-  /memfs@4.56.10:
+  /memfs@4.56.10(tslib@2.8.1):
     resolution: {integrity: sha512-eLvzyrwqLHnLYalJP7YZ3wBe79MXktMdfQbvMrVD80K+NhrIukCVBvgP30zTJYEEDh9hZ/ep9z0KOdD7FSHo7w==}
+    peerDependencies:
+      tslib: '2'
     dependencies:
       '@jsonjoy.com/fs-core': 4.56.10(tslib@2.8.1)
       '@jsonjoy.com/fs-fsa': 4.56.10(tslib@2.8.1)
@@ -14846,14 +14866,14 @@ packages:
     resolution: {integrity: sha512-l63NF9y/cLROq/yqKXSLtcMeeyOfnSQlfMSlzFt/K73oIaD8DGaQWd7Z34X9GPiKqP5rbSh84Hl4bOlLcjiSrQ==}
     dev: false
 
-  /style-dictionary@5.3.2:
+  /style-dictionary@5.3.2(tslib@2.8.1):
     resolution: {integrity: sha512-A/HPAdqyKWZxsiclqiq++fckbrkJ8a8+LbHJeieI2UYiZNHkNqLTa1jE3sZycxFPbPYQmQnu6u9vq5TH4aWjrQ==}
     engines: {node: '>=22.0.0'}
     hasBin: true
     dependencies:
       '@bundled-es-modules/deepmerge': 4.3.1
       '@bundled-es-modules/glob': 13.0.3
-      '@bundled-es-modules/memfs': 4.17.0
+      '@bundled-es-modules/memfs': 4.17.0(tslib@2.8.1)
       '@zip.js/zip.js': 2.8.21
       chalk: 5.6.2
       change-case: 5.4.4
@@ -14864,6 +14884,8 @@ packages:
       path-unified: 0.2.0
       prettier: 3.8.1
       tinycolor2: 1.6.0
+    transitivePeerDependencies:
+      - tslib
     dev: true
 
   /style-to-js@1.1.21:
@@ -15095,7 +15117,7 @@ packages:
   /trough@2.2.0:
     resolution: {integrity: sha512-tmMpK00BjZiUyVyvrBK7knerNgmgvcV/KLVyuma/SC+TQN167GrMRciANTz09+k3zW8L8t60jWO1GpfkZdjTaw==}
 
-  /trpc-to-openapi@2.4.0(@trpc/server@11.10.0)(zod@3.25.76):
+  /trpc-to-openapi@2.4.0(@trpc/server@11.10.0)(zod-openapi@4.2.4)(zod@3.25.76):
     resolution: {integrity: sha512-B6xrwOC3Ab0q1BWD/QbJzK4OUpCLoT02hAzshSUXEuIZGcJZkMG/OJ4/3gd20dyr8aI+CrFirpWKRIo7JmHbMQ==}
     peerDependencies:
       '@trpc/server': ^11.1.0
@@ -15107,6 +15129,7 @@ packages:
       h3: 1.15.1
       openapi3-ts: 4.4.0
       zod: 3.25.76
+      zod-openapi: 4.2.4(zod@3.25.76)
     optionalDependencies:
       '@rollup/rollup-linux-x64-gnu': 4.6.1
     dev: false
@@ -16119,7 +16142,7 @@ packages:
       - terser
     dev: true
 
-  /vocs@1.4.1(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)(typescript@5.7.3):
+  /vocs@1.4.1(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)(rollup@4.57.1)(typescript@5.7.3):
     resolution: {integrity: sha512-PwCODbht+/0f6wtAyz5czqdWaMX80KlxOc6Mkqfd0u6bboTZ+YcyBuZaiQwJ4lkDE6NvSrCosPVD5CxGyvtitg==}
     engines: {node: '>=22'}
     hasBin: true
@@ -16131,7 +16154,7 @@ packages:
       '@hono/node-server': 1.19.9(hono@4.11.9)
       '@mdx-js/mdx': 3.1.1
       '@mdx-js/react': 3.1.1(@types/react@19.2.14)(react@19.2.4)
-      '@mdx-js/rollup': 3.1.1
+      '@mdx-js/rollup': 3.1.1(rollup@4.57.1)
       '@noble/hashes': 1.8.0
       '@radix-ui/colors': 3.0.0
       '@radix-ui/react-accordion': 1.2.12(@types/react-dom@19.2.3)(@types/react@19.2.14)(react-dom@19.2.4)(react@19.2.4)
@@ -16481,6 +16504,15 @@ packages:
       mustache: 4.2.0
       stacktracey: 2.1.8
     dev: true
+
+  /zod-openapi@4.2.4(zod@3.25.76):
+    resolution: {integrity: sha512-tsrQpbpqFCXqVXUzi3TPwFhuMtLN3oNZobOtYnK6/5VkXsNdnIgyNr4r8no4wmYluaxzN3F7iS+8xCW8BmMQ8g==}
+    engines: {node: '>=18'}
+    peerDependencies:
+      zod: ^3.21.4
+    dependencies:
+      zod: 3.25.76
+    dev: false
 
   /zod@3.22.3:
     resolution: {integrity: sha512-EjIevzuJRiRPbVH4mGc8nApb/lVLKVpmUhAaR5R5doKGfAnGJ6Gr3CViAVjP+4FWSxCsybeWQdcgCtbX+7oZug==}

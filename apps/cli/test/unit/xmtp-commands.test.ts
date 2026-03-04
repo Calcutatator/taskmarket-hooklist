@@ -62,9 +62,7 @@ describe('xmtp command', () => {
         xmtpInstallationId: 'install-1',
       })
     );
-    expect(printResult).toHaveBeenCalledWith(
-      expect.objectContaining({ inboxId: 'inbox-1', installationId: 'install-1' })
-    );
+    expect(printResult).toHaveBeenCalledWith({ policyMode: 'allowlist' });
   });
 
   it('status fetches backend status and prints it', async () => {

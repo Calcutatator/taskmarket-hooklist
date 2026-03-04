@@ -106,7 +106,7 @@ async function createDevClient(input: CreateXmtpClientInput): Promise<XmtpClient
 }
 
 function asObject(value: unknown): Record<string, unknown> | null {
-  if (!value || typeof value !== 'object') {
+  if (!value || (typeof value !== 'object' && typeof value !== 'function')) {
     return null;
   }
 
@@ -296,18 +296,11 @@ async function createSdkClient(
   signer: unknown,
   options: Record<string, unknown>
 ): Promise<unknown> {
-  const callVariants: Array<unknown[]> = [[signer, options], [{ signer, ...options }], [options]];
-
-  let lastError: unknown;
-  for (const args of callVariants) {
-    try {
-      return await factory(...args);
-    } catch (error) {
-      lastError = error;
-    }
+  try {
+    return await factory(signer, options);
+  } catch (error) {
+    throw toTransportError(error, 'Failed to initialize XMTP SDK client');
   }
-
-  throw toTransportError(lastError, 'Failed to initialize XMTP SDK client');
 }
 
 function deriveXmtpDbKey(dekHex: string): Uint8Array {
@@ -503,11 +496,36 @@ async function createProductionClient(input: CreateXmtpClientInput): Promise<Xmt
   let dbEncryptionKey: Uint8Array | undefined;
 
   if (input.runtimeSigner) {
-    signer = input.runtimeSigner;
+    const account = input.runtimeSigner as {
+      address: string;
+      signMessage: (args: { message: string | { raw: Uint8Array } }) => Promise<`0x${string}`>;
+    };
+    signer = {
+      type: 'EOA' as const,
+      getIdentifier: () => ({ identifier: account.address.toLowerCase(), identifierKind: 0 }),
+      signMessage: async (message: string | Uint8Array) => {
+        const sig =
+          typeof message === 'string'
+            ? await account.signMessage({ message })
+            : await account.signMessage({ message: { raw: message } });
+        return Buffer.from(sig.slice(2), 'hex');
+      },
+    };
   } else if (input.keystore) {
     const dek = await fetchDeviceKey(input.keystore.deviceId, input.keystore.apiToken);
     const privateKey = decryptPrivateKey(dek, input.keystore.encryptedKey);
-    signer = privateKeyToAccount(privateKey as `0x${string}`);
+    const account = privateKeyToAccount(privateKey as `0x${string}`);
+    signer = {
+      type: 'EOA' as const,
+      getIdentifier: () => ({ identifier: account.address.toLowerCase(), identifierKind: 0 }),
+      signMessage: async (message: string | Uint8Array) => {
+        const sig =
+          typeof message === 'string'
+            ? await account.signMessage({ message })
+            : await account.signMessage({ message: { raw: message } });
+        return Buffer.from(sig.slice(2), 'hex');
+      },
+    };
     dbEncryptionKey = deriveXmtpDbKey(dek);
   } else {
     throw new XmtpTransportError(
