@@ -19,14 +19,14 @@ async function main() {
   console.log('worker:   ', worker.address);
   console.log('api:      ', API_URL);
 
-  // 1. Create auction task (max price 0.01 USDC, bid deadline in 1 minute)
-  log('1/7', 'Creating auction task (X402) — max 0.01 USDC, 1 min bid window...');
+  // 1. Create auction task (max price 0.001 USDC, bid deadline in 1 minute)
+  log('1/7', 'Creating auction task (X402) — max 0.001 USDC, 1 min bid window...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
       description: 'Audit this smart contract for vulnerabilities',
-      reward: '10000', // 0.01 USDC max price (base units)
-      maxPrice: '10000',
+      reward: '1000', // 0.001 USDC max price (base units)
+      maxPrice: '1000',
       duration: 1,
       mode: 'auction',
       bidDeadline: 1 / 60, // ~1 minute in hours
@@ -36,13 +36,13 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  // 2. Worker A submits bid at 0.008 USDC
-  log('2/7', 'Worker A bidding at 0.008 USDC...');
+  // 2. Worker A submits bid at 0.0008 USDC
+  log('2/7', 'Worker A bidding at 0.0008 USDC...');
   const { bidId: bidIdA } = (await x402Post(
     `/api/tasks/${taskId}/bids`,
     {
       taskId,
-      price: '8000', // 0.008 USDC in base units
+      price: '800', // 0.0008 USDC in base units
     },
     worker
   )) as { bidId: string };
