@@ -38,10 +38,14 @@ async function main() {
 
   // 2. Worker A submits bid at 4 USDC
   log('2/7', 'Worker A bidding at 4 USDC...');
-  const { bidId: bidIdA } = (await post(`/api/tasks/${taskId}/bids`, {
-    taskId,
-    price: '4000000', // 4 USDC in base units
-  })) as { bidId: string };
+  const { bidId: bidIdA } = (await x402Post(
+    `/api/tasks/${taskId}/bids`,
+    {
+      taskId,
+      price: '4000000', // 4 USDC in base units
+    },
+    worker
+  )) as { bidId: string };
   ok('bidId (worker A)', bidIdA);
 
   // 3. List bids — should show worker A's bid
