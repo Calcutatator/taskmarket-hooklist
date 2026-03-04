@@ -19,8 +19,8 @@ async function main() {
   console.log('worker:   ', worker.address);
   console.log('api:      ', API_URL);
 
-  // 1. Create auction task (max price 0.001 USDC, bid deadline in 1 minute)
-  log('1/7', 'Creating auction task (X402) — max 0.001 USDC, 1 min bid window...');
+  // 1. Create auction task (max price 0.001 USDC, 30s bid window)
+  log('1/7', 'Creating auction task (X402) — max 0.001 USDC, 30s bid window...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -29,7 +29,7 @@ async function main() {
       maxPrice: '1000',
       duration: 1,
       mode: 'auction',
-      bidDeadline: 1 / 60, // ~1 minute in hours
+      bidDeadline: 30 / 3600, // 30 seconds in hours
       tags: ['smoke-test'],
     },
     requester
@@ -56,7 +56,9 @@ async function main() {
   }
   ok('bidCount', bidList.length);
 
-  // 4. Select winner (trigger manually — in production the backend job does this after deadline)
+  // 4. Wait for bid deadline, then select winner
+  log('4/7', 'Waiting 32s for bid deadline to pass...');
+  await new Promise((r) => setTimeout(r, 32000));
   log('4/7', 'Selecting lowest bidder...');
   const { workerAddress: winner } = (await post(`/api/tasks/${taskId}/bids/select-winner`, {
     taskId,
