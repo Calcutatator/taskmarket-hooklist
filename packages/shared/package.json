@@ -9,6 +9,8 @@
     "build": "tsc",
     "dev": "tsc --watch",
     "clean": "rm -rf dist",
+    "test": "vitest run",
+    "test:watch": "vitest watch",
     "lint:check": "eslint src/",
     "lint:write": "eslint src/ --fix",
     "format:check": "prettier --check src/",
@@ -22,7 +24,8 @@
     "@taskmarket/eslint-config": "workspace:*",
     "@taskmarket/prettier-config": "workspace:*",
     "@types/node": "^20.11.0",
-    "typescript": "^5.3.3"
+    "typescript": "^5.3.3",
+    "vitest": "^1.2.0"
   },
   "prettier": "@taskmarket/prettier-config"
 }

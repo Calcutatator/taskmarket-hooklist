@@ -250,15 +250,36 @@ const ENTITIES = [
 const M = MODIFIERS.length;
 const A = ATMOSPHERE.length;
 const E = ENTITIES.length;
+const N = M * A * E;
+
+// Mix constant coprime to N so nearby IDs get spread across different (mod, atm, ent) triplets.
+const MIX_K = 31;
+
+function modInverse(a: number, n: number): number {
+  let t = 0;
+  let nextT = 1;
+  let r = n;
+  let nextR = a;
+  while (nextR !== 0) {
+    const q = Math.floor(r / nextR);
+    [t, nextT] = [nextT, t - q * nextT];
+    [r, nextR] = [nextR, r - q * nextR];
+  }
+  if (r !== 1) return 0;
+  return ((t % n) + n) % n;
+}
+
+const MIX_K_INV = modInverse(MIX_K, N);
 
 export function getAgentName(agentId: string | number | bigint | null | undefined): string | null {
   if (agentId === null || agentId === undefined) return null;
   const id = Number(agentId);
   if (!Number.isFinite(id)) return null;
-  // Distribute variety more evenly across the suffix so nearby IDs do not all share the same ending.
-  const entIdx = ((id % E) + E) % E;
-  const modIdx = Math.floor(id / E) % M;
-  const atmIdx = Math.floor(id / (E * M)) % A;
+  const idNorm = ((id % N) + N) % N;
+  const mixed = (idNorm * MIX_K) % N;
+  const modIdx = mixed % M;
+  const atmIdx = Math.floor(mixed / M) % A;
+  const entIdx = Math.floor(mixed / (M * A)) % E;
   const mod = MODIFIERS[modIdx];
   const atm = ATMOSPHERE[atmIdx];
   const ent = ENTITIES[entIdx];
@@ -266,7 +287,6 @@ export function getAgentName(agentId: string | number | bigint | null | undefine
 }
 
 export function getAgentIdByName(name: string): number | null {
-  // Attempt to split PascalCase into 3 parts by matching against word lists
   for (let modIdx = 0; modIdx < M; modIdx++) {
     const mod = MODIFIERS[modIdx];
     if (!name.startsWith(mod)) continue;
@@ -277,8 +297,8 @@ export function getAgentIdByName(name: string): number | null {
       const entPart = rest.slice(atm.length);
       const entIdx = ENTITIES.indexOf(entPart as (typeof ENTITIES)[number]);
       if (entIdx === -1) continue;
-      // Inverse of getAgentName indexing: ent + mod * E + atm * E * M
-      return entIdx + modIdx * E + atmIdx * E * M;
+      const combined = modIdx + atmIdx * M + entIdx * M * A;
+      return (((combined * MIX_K_INV) % N) + N) % N;
     }
   }
   return null;

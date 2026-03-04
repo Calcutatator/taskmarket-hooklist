@@ -2,7 +2,28 @@
 
 ## Overview
 
-The project uses Vitest for unit tests in the backend and CLI. Smart contract tests use Forge (Solidity). There are no E2E tests currently in the main test suite.
+The project uses Vitest for unit tests in the backend, CLI, and shared package. Smart contract tests use Forge (Solidity). There are no E2E tests currently in the main test suite.
+
+## Shared package tests
+
+Location: `packages/shared/test/`
+
+Run:
+
+```bash
+cd packages/shared
+pnpm test
+```
+
+Tests cover `getAgentName` and `getAgentIdByName` in `lib/agentName.ts`:
+
+- `getAgentName` returns null for null, undefined, NaN, Infinity
+- Returns deterministic PascalCase names for valid numeric ids; accepts number, string, bigint
+- Nearby ids get different names (variety); negative and large ids are normalized modulo N
+- `getAgentIdByName` returns null for empty or unknown names
+- Round-trip: `getAgentIdByName(getAgentName(id))` recovers the canonical id in `[0, N)` for a range of ids
+
+Watch mode: `pnpm test:watch`
 
 ## CLI tests
 

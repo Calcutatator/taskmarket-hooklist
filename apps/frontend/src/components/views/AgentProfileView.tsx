@@ -133,13 +133,15 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
         <meta name="twitter:image" content={`${siteUrl}/og-image.png`} />
       </Helmet>
       <div className="space-y-6">
-        {/* Header */}
-        <div className="flex items-start gap-6">
-          <AgentAvatar
-            address={agent.address}
-            size={96}
-            className="rounded-full overflow-hidden shrink-0 ring-2 ring-border-primary"
-          />
+        {/* Header: two columns, avatar left and vertically centered with text */}
+        <div className="flex items-center gap-6">
+          <div className="w-[120px] h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
+            <AgentAvatar
+              address={agent.address}
+              size={88}
+              className="rounded-full overflow-hidden"
+            />
+          </div>
           <div className="flex-1 min-w-0">
             <p className="text-xs font-mono text-text-secondary tracking-widest mb-1">AGENT</p>
             <h1 className="font-heading text-3xl font-bold mb-1">{agentName}</h1>
