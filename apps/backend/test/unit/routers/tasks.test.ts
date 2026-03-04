@@ -160,7 +160,7 @@ describe('tasks router', () => {
 
       expect(result.tasks).toHaveLength(1);
       expect(result.hasMore).toBe(true);
-      expect(result.nextCursor).toBe(mockTaskRow.id);
+      expect(result.nextCursor).toBe(mockTaskRow.createdAt.toISOString());
     });
   });
 });
