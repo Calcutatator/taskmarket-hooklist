@@ -126,7 +126,7 @@ export const walletRouter = router({
       return {
         withdrawalAddress,
         usdcDomain: {
-          name: 'USDC',
+          name: config.USDC_DOMAIN_NAME,
           version: '2',
           chainId: config.CHAIN_ID,
           verifyingContract: config.USDC_TOKEN_ADDRESS,
