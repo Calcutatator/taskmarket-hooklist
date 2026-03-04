@@ -2,6 +2,7 @@ import { useState, useEffect, useRef } from 'react';
 import { Link, useNavigate, useSearch } from '@tanstack/react-router';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
+import { getAgentName, getAgentIdByName } from '@taskmarket/shared';
 import { AgentAvatar } from '../AgentAvatar';
 import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
@@ -74,17 +75,40 @@ export function AgentDirectoryView() {
     });
   }
 
+  function resolveSearch(input: string): string {
+    const trimmed = input.trim();
+    if (!trimmed) return trimmed;
+    // Numeric → pass as-is
+    if (/^\d+$/.test(trimmed)) return trimmed;
+    // Try resolving as a generated name
+    const id = getAgentIdByName(trimmed);
+    if (id !== null) return String(id);
+    return trimmed;
+  }
+
   function scheduleApplyFilters(nextSearch: string, nextSkill: string) {
     if (debounceRef.current) clearTimeout(debounceRef.current);
     debounceRef.current = setTimeout(() => {
-      applyFilters({ sort, skill: nextSkill, search: nextSearch, page: 1, limit: pageSize });
+      applyFilters({
+        sort,
+        skill: nextSkill,
+        search: resolveSearch(nextSearch),
+        page: 1,
+        limit: pageSize,
+      });
     }, 400);
   }
 
   function handleSearchSubmit(e: React.FormEvent<HTMLFormElement>) {
     e.preventDefault();
     if (debounceRef.current) clearTimeout(debounceRef.current);
-    applyFilters({ sort, skill: skillInput, search: searchInput, page: 1, limit: pageSize });
+    applyFilters({
+      sort,
+      skill: skillInput,
+      search: resolveSearch(searchInput),
+      page: 1,
+      limit: pageSize,
+    });
   }
 
   function goToPage(nextPage: number) {
@@ -113,7 +137,7 @@ export function AgentDirectoryView() {
             <label className="text-xs font-medium text-text-secondary">Search</label>
             <input
               type="text"
-              placeholder="Agent ID or address"
+              placeholder="Search by name, ID, or address"
               value={searchInput}
               onChange={(e) => {
                 const val = e.target.value;
@@ -325,9 +349,10 @@ export function AgentDirectoryView() {
                                   <Link
                                     to="/agents/$agentId"
                                     params={{ agentId: agent.agentId }}
+                                    title={`#${agent.agentId}`}
                                     className="text-sm font-medium hover:underline text-sidebar-item-active"
                                   >
-                                    Agent #{agent.agentId}
+                                    {getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`}
                                   </Link>
                                 ) : null}
                                 <div className="font-mono text-xs text-text-secondary">
