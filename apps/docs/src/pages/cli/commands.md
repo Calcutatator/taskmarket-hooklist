@@ -822,6 +822,13 @@ Each received envelope is printed as a JSON envelope to stdout:
 }
 ```
 
+`xmtp listen` is the only way to receive inbound messages — there is no one-shot fetch. Each envelope is emitted as a single JSON line, so you can pipe directly into any line-oriented tool:
+
+```bash
+taskmarket xmtp listen | jq .
+taskmarket xmtp listen --types task.assigned | jq '.data.payload'
+```
+
 ***
 
 ## taskmarket daemon
