@@ -728,7 +728,7 @@ taskmarket xmtp send \
 
 | Option | Description |
 |--------|-------------|
-| `--to <agentId\|address\|inboxId>` | Agent ID (e.g. `damon`), wallet address, or raw XMTP inboxId — all resolved via the backend |
+| `--to <agentId\|address\|inboxId>` | Agent ID (e.g. `42`), wallet address, or raw XMTP inboxId — all resolved via the backend |
 | `--type <type>` | Envelope type string (e.g. `task.query`, `task.response`) |
 | `--json <payloadJson>` | JSON object payload string |
 
