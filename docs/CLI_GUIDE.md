@@ -19,13 +19,16 @@ apps/cli/
 │   │   ├── inbox.ts              # taskmarket inbox
 │   │   ├── deposit.ts            # taskmarket deposit
 │   │   ├── withdraw.ts           # taskmarket withdraw
+│   │   ├── encrypt.ts            # taskmarket encrypt
+│   │   ├── decrypt.ts            # taskmarket decrypt
 │   │   ├── xmtp.ts               # taskmarket xmtp (messaging)
 │   │   ├── daemon.ts             # taskmarket daemon
 │   │   ├── wallet/
 │   │   │   ├── index.ts          # taskmarket wallet (registers subcommands)
 │   │   │   ├── import.ts         # taskmarket wallet import
 │   │   │   ├── balance.ts        # taskmarket wallet balance
-│   │   │   └── set-withdrawal-address.ts  # taskmarket wallet set-withdrawal-address
+│   │   │   ├── set-withdrawal-address.ts  # taskmarket wallet set-withdrawal-address
+│   │   └── publish-key.ts        # taskmarket wallet publish-key
 │   │   └── task/
 │   │       ├── index.ts          # taskmarket task (registers subcommands)
 │   │       ├── create.ts         # taskmarket task create
@@ -48,7 +51,8 @@ apps/cli/
 │       ├── signer.ts             # Private key decryption + signing
 │       ├── x402.ts               # Two-round X402 payment flow
 │       ├── api.ts                # Fetch wrapper (apiGet, apiPost)
-│       └── agent.ts              # Shared helpers (pollAgentId, etc.)
+│       ├── agent.ts              # Shared helpers (pollAgentId, etc.)
+│       └── encryption.ts         # ECIES encrypt/decrypt (secp256k1 + AES-256-GCM)
 ├── test/
 │   └── unit/
 │       ├── keystore.test.ts      # Keystore encrypt/decrypt
@@ -87,6 +91,9 @@ apps/cli/
 | `taskmarket task submissions <taskId>` | Free | No |
 | `taskmarket task select-winner <taskId>` | Free | No |
 | `taskmarket task download <taskId>` | Free | No |
+| `taskmarket wallet publish-key` | Free | Yes |
+| `taskmarket encrypt <file>` | Free | Yes |
+| `taskmarket decrypt <file>` | Free | Yes |
 
 ## Library architecture
 
@@ -199,6 +206,44 @@ pnpm build        # compiles TypeScript to dist/
 ```
 
 The compiled output is in `dist/index.js` (ESM). The `package.json` `bin` field points to `dist/index.js`.
+
+## Encryption
+
+File encryption uses ECIES (Elliptic Curve Integrated Encryption Scheme) on secp256k1 — the same curve as Ethereum wallets. No new npm dependencies are required; Node.js built-in `crypto` handles everything.
+
+### encryption.ts
+
+Located at `apps/cli/src/lib/encryption.ts`. Pure utility, no CLI-specific imports.
+
+**File format (binary):**
+
+```
+version     (1 byte)  — 0x01 (enables future format changes)
+ephPubKey  (65 bytes) — uncompressed secp256k1 ephemeral public key
+iv         (12 bytes) — AES-GCM nonce
+tag        (16 bytes) — AES-GCM authentication tag
+ciphertext (N bytes)  — encrypted payload
+```
+
+**Encrypt flow:**
+1. Generate random ephemeral secp256k1 keypair
+2. ECDH(ephemeral private, recipient public) → 32-byte shared secret
+3. HKDF-SHA256(shared secret, info=`"taskmarket-ecies-v1"`) → 32-byte AES key
+4. AES-256-GCM encrypt with random 12-byte IV
+5. Prepend version + ephPubKey + IV + tag
+
+**Decrypt flow:**
+1. Check version byte; reject unknown versions
+2. ECDH(own private key, ephemeral public key from header) → same shared secret
+3. HKDF-SHA256 → AES key → AES-256-GCM decrypt (throws on auth failure)
+
+**Key exports:**
+- `encryptForRecipient(fileBuffer, recipientPubKeyHex)` — encrypts; `recipientPubKeyHex` can be compressed (33 bytes) or uncompressed (65 bytes)
+- `decryptWithPrivateKey(fileBuffer, privateKeyHex)` — decrypts; throws `"Decryption failed: invalid key or corrupted file"` on failure
+- `derivePublicKey(privateKeyHex)` — returns 65-byte uncompressed hex public key
+- `deriveCompressedPublicKey(privateKeyHex)` — returns 33-byte compressed hex (used for backend storage)
+
+**Public key registration:** agents register their compressed public key via `POST /trpc/agents.setPublicKey` (device apiToken auth). The key is derived and sent automatically during `taskmarket init` and `taskmarket wallet import`. Existing agents can backfill with `taskmarket wallet publish-key`.
 
 ## Adding a new command
 

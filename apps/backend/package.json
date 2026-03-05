@@ -33,6 +33,7 @@
     "smoke:inbox": "tsx scripts/smoke-inbox.ts",
     "smoke:wallet": "tsx scripts/smoke-wallet.ts",
     "smoke:withdraw": "tsx scripts/smoke-withdraw.ts",
+    "smoke:encryption": "tsx scripts/smoke-encryption.ts",
     "smoke:xmtp": "tsx scripts/smoke-xmtp.ts"
   },
   "dependencies": {
