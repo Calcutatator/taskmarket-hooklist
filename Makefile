@@ -305,8 +305,10 @@ smoke:
 		cd apps/backend && pnpm smoke:wallet; \
 	elif [ "$(word 1,$(ARGS))" = "withdraw" ]; then \
 		cd apps/backend && pnpm smoke:withdraw; \
+	elif [ "$(word 1,$(ARGS))" = "encryption" ]; then \
+		cd apps/backend && pnpm smoke:encryption; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption>"; \
 		exit 1; \
 	fi
 

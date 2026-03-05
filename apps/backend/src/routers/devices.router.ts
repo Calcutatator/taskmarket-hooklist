@@ -28,7 +28,7 @@ export const devicesRouter = router({
         summary: 'Register a device, create agent wallet, and register ERC-8004 identity (free)',
       },
     })
-    .input(z.object({ walletAddress: z.string() }))
+    .input(z.object({ walletAddress: z.string(), publicKey: z.string().optional() }))
     .output(
       z.object({
         deviceId: z.string(),
@@ -60,15 +60,31 @@ export const devicesRouter = router({
       const agentId: string | null = existing[0]?.agentId ?? null;
 
       if (agentId) {
-        // Already registered — return immediately.
+        // Already registered — update publicKey if provided, then return.
+        if (input.publicKey) {
+          await ctx.db
+            .update(agents)
+            .set({ publicKey: input.publicKey, updatedAt: new Date() })
+            .where(eq(agents.address, input.walletAddress));
+        }
         return { deviceId, apiToken, deviceEncryptionKey, agentId };
       }
 
       // Ensure agent row exists so the background job can update it.
       await ctx.db
         .insert(agents)
-        .values({ address: input.walletAddress, agentId: null })
-        .onConflictDoNothing();
+        .values({
+          address: input.walletAddress,
+          agentId: null,
+          ...(input.publicKey ? { publicKey: input.publicKey } : {}),
+        })
+        .onConflictDoUpdate({
+          target: agents.address,
+          set: {
+            updatedAt: new Date(),
+            ...(input.publicKey ? { publicKey: input.publicKey } : {}),
+          },
+        });
 
       // Register ERC-8004 identity in the background — platform sponsors this.
       // The client should poll GET /api/identity/status?address=... until agentId appears.

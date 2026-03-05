@@ -43,6 +43,13 @@
       "when": 1771950000000,
       "tag": "0005_add_withdrawal_address",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772000000000,
+      "tag": "0007_add_public_key",
+      "breakpoints": true
     }
   ]
 }

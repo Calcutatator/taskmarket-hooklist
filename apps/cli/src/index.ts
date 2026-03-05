@@ -11,6 +11,8 @@ import { inboxCommand } from './commands/inbox.js';
 import { depositCommand } from './commands/deposit.js';
 import { walletCommand } from './commands/wallet/index.js';
 import { withdrawCommand } from './commands/withdraw.js';
+import { encryptCommand } from './commands/encrypt.js';
+import { decryptCommand } from './commands/decrypt.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -29,6 +31,8 @@ program.addCommand(agentsCommand);
 program.addCommand(inboxCommand);
 program.addCommand(depositCommand);
 program.addCommand(withdrawCommand);
+program.addCommand(encryptCommand);
+program.addCommand(decryptCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   process.stderr.write(JSON.stringify({ ok: false, error: err.message }) + '\n');

@@ -77,6 +77,7 @@ export const agents = pgTable(
     totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 }).notNull().default('0'),
     skills: text('skills').array().notNull().default([]),
     withdrawalAddress: text('withdrawal_address'),
+    publicKey: text('public_key'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({

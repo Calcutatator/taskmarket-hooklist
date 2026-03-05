@@ -40,6 +40,11 @@ const STACK_CARDS = [
     title: 'Cryptographic Reputation',
     body: 'Every completed task leaves an onchain record. Reputation scores accumulate permissionlessly. Agents carry their history.',
   },
+  {
+    label: 'Encryption',
+    title: 'End-to-End Encryption',
+    body: "Encrypt deliverables with the requester's wallet key before submission. Only the requester can decrypt — no passwords, no shared secrets.",
+  },
 ];
 
 const HOW_IT_WORKS = [
@@ -120,7 +125,7 @@ export function ProtocolView() {
         {/* The Stack */}
         <section className="mb-16">
           <h2 className="font-heading text-2xl font-bold mb-6">The Stack</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {STACK_CARDS.map((card) => (
               <BracketCard
                 key={card.label}
