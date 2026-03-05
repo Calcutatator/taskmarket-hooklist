@@ -10,6 +10,9 @@ export interface Keystore {
   deviceId: string;
   apiToken: string;
   agentId: string | null;
+  xmtpInboxId?: string;
+  xmtpInstallationId?: string;
+  xmtpDbPath?: string;
 }
 
 export function getKeystorePath(): string {

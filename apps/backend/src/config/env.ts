@@ -1,5 +1,23 @@
 import { z } from 'zod';
 
+const strictBooleanFromEnv = z.preprocess((value) => {
+  if (typeof value === 'boolean') {
+    return value;
+  }
+
+  if (typeof value === 'string') {
+    const normalized = value.trim().toLowerCase();
+    if (normalized === 'true') {
+      return true;
+    }
+    if (normalized === 'false') {
+      return false;
+    }
+  }
+
+  return value;
+}, z.boolean());
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -29,6 +47,9 @@ const envSchema = z
     // EIP-712 domain name for USDC. Mainnet Base USDC = 'USD Coin'; Sepolia USDC = 'USDC'
     USDC_DOMAIN_NAME: z.string().default('USD Coin'),
     PLATFORM_MASTER_KEY: z.string().min(32).default('0'.repeat(64)),
+    XMTP_ENABLED: strictBooleanFromEnv.default(false),
+    XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
+    XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

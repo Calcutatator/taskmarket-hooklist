@@ -13,6 +13,8 @@ import { walletCommand } from './commands/wallet/index.js';
 import { withdrawCommand } from './commands/withdraw.js';
 import { encryptCommand } from './commands/encrypt.js';
 import { decryptCommand } from './commands/decrypt.js';
+import { xmtpCommand } from './commands/xmtp.js';
+import { daemonCommand } from './commands/daemon.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -33,6 +35,8 @@ program.addCommand(depositCommand);
 program.addCommand(withdrawCommand);
 program.addCommand(encryptCommand);
 program.addCommand(decryptCommand);
+program.addCommand(xmtpCommand);
+program.addCommand(daemonCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   process.stderr.write(JSON.stringify({ ok: false, error: err.message }) + '\n');

@@ -1,12 +1,14 @@
 {
   "name": "@lucid-agents/taskmarket",
-  "version": "0.6.4",
+  "version": "0.7.0",
   "type": "module",
   "bin": {
     "taskmarket": "./dist/index.js"
   },
   "prettier": "@taskmarket/prettier-config",
   "dependencies": {
+    "@xmtp/node-sdk": "^2.0.0",
+    "@taskmarket/shared": "workspace:*",
     "commander": "^12.0.0",
     "viem": "^2.41.2"
   },
@@ -33,6 +35,7 @@
     "format:write": "prettier --write src/",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
-    "test:watch": "vitest watch"
+    "test:watch": "vitest watch",
+    "smoke:xmtp-live": "tsx scripts/smoke-xmtp-live.ts"
   }
 }

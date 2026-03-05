@@ -35,7 +35,7 @@ export function createMockCtx(payer?: string) {
   const db: any = {
     select: vi.fn().mockReturnValue(makeChain([])),
     insert: vi.fn().mockReturnValue(makeChain()),
-    update: vi.fn().mockReturnValue(makeChain()),
+    update: vi.fn().mockReturnValue(makeChain([])),
   };
 
   return {
