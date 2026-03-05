@@ -95,7 +95,7 @@ export const initCommand = new Command('init')
 
       if (!emailAddress) {
         const username =
-          opts.email ?? (agentId && networkInfo ? `${agentId}_${networkInfo.chainId}` : null);
+          opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
         if (username) {
           emailAddress = await tryRegisterEmail(
             keystore.deviceId,
@@ -165,7 +165,7 @@ export const initCommand = new Command('init')
     }
 
     const username =
-      opts.email ?? (agentId && networkInfo ? `${agentId}_${networkInfo.chainId}` : null);
+      opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
     const emailAddress = username
       ? await tryRegisterEmail(deviceId, apiToken, username, !!opts.email)
       : null;
