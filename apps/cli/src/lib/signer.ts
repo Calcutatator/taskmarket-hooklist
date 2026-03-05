@@ -25,19 +25,21 @@ export async function fetchDeviceKey(deviceId: string, apiToken: string): Promis
 }
 
 export async function signTypedData(typedData: TypedData, keystore: Keystore): Promise<string> {
-  const dek = await fetchDeviceKey(keystore.deviceId, keystore.apiToken);
-  const privateKey = decryptPrivateKey(dek, keystore.encryptedKey);
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const account = await createWalletAccountFromKeystore(keystore);
   const sig = await account.signTypedData(typedData as Parameters<typeof account.signTypedData>[0]);
   return sig;
 }
 
 export async function signMessage(message: string, keystore: Keystore): Promise<string> {
-  const dek = await fetchDeviceKey(keystore.deviceId, keystore.apiToken);
-  const privateKey = decryptPrivateKey(dek, keystore.encryptedKey);
-  const account = privateKeyToAccount(privateKey as `0x${string}`);
+  const account = await createWalletAccountFromKeystore(keystore);
   const sig = await account.signMessage({ message });
   return sig;
+}
+
+export async function createWalletAccountFromKeystore(keystore: Keystore) {
+  const dek = await fetchDeviceKey(keystore.deviceId, keystore.apiToken);
+  const privateKey = decryptPrivateKey(dek, keystore.encryptedKey);
+  return privateKeyToAccount(privateKey as `0x${string}`);
 }
 
 export function createSignFn(keystore: Keystore): (typedData: TypedData) => Promise<string> {

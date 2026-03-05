@@ -1,9 +1,15 @@
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api-market.daydreams.systems';
 
-export async function apiGet(path: string): Promise<unknown> {
+export async function apiGet(
+  path: string,
+  options?: { headers?: Record<string, string> }
+): Promise<unknown> {
   const res = await fetch(`${API_URL}${path}`, {
     method: 'GET',
-    headers: { 'Content-Type': 'application/json' },
+    headers: {
+      'Content-Type': 'application/json',
+      ...(options?.headers ?? {}),
+    },
   });
   const body = await res.json();
   if (!res.ok) {

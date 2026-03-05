@@ -43,6 +43,13 @@
       "when": 1771950000000,
       "tag": "0005_add_withdrawal_address",
       "breakpoints": true
+    },
+    {
+      "idx": 6,
+      "version": "7",
+      "when": 1772050000000,
+      "tag": "0006_add_xmtp_control_plane",
+      "breakpoints": true
     }
   ]
 }

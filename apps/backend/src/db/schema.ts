@@ -6,6 +6,7 @@ import {
   bigint,
   smallint,
   index,
+  uniqueIndex,
   numeric,
   serial,
 } from 'drizzle-orm/pg-core';
@@ -77,6 +78,9 @@ export const agents = pgTable(
     totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 }).notNull().default('0'),
     skills: text('skills').array().notNull().default([]),
     withdrawalAddress: text('withdrawal_address'),
+    xmtpInboxId: text('xmtp_inbox_id'),
+    xmtpEnabled: integer('xmtp_enabled').notNull().default(0),
+    xmtpLastSeenAt: timestamp('xmtp_last_seen_at'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({
@@ -218,6 +222,68 @@ export const devices = pgTable(
   })
 );
 
+/**
+ * An XMTP "installation" is one XMTP client keypair registered on one device.
+ * This is XMTP's own term of art from @xmtp/node-sdk.
+ *
+ * A single agent wallet can have multiple installations — one per machine
+ * the agent has ever run on (laptop, prod server, etc.). Each installation
+ * has its own private key and local SQLite DB, but all share the same inboxId.
+ * XMTP delivers messages to all active installations for a given inboxId.
+ *
+ * Installations are kept alive by periodic heartbeats. Those that exceed
+ * XMTP_STALE_INSTALLATION_MINUTES without a heartbeat can be purged (revoked),
+ * preventing message delivery to abandoned/decommissioned machines.
+ */
+export const agentXmtpInstallations = pgTable(
+  'agent_xmtp_installations',
+  {
+    id: serial('id').primaryKey(),
+    agentAddress: text('agent_address')
+      .notNull()
+      .references(() => agents.address),
+    deviceId: text('device_id')
+      .notNull()
+      .references(() => devices.id),
+    inboxId: text('inbox_id').notNull(),
+    installationId: text('installation_id').notNull().unique(),
+    dbPath: text('db_path'),
+    clientVersion: text('client_version'),
+    status: text('status').notNull().default('active'),
+    lastSeenAt: timestamp('last_seen_at').defaultNow().notNull(),
+    revokedAt: timestamp('revoked_at'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    agentIdx: index('idx_agent_xmtp_installations_agent').on(table.agentAddress),
+    inboxIdx: index('idx_agent_xmtp_installations_inbox').on(table.inboxId),
+    statusIdx: index('idx_agent_xmtp_installations_status').on(table.status),
+  })
+);
+
+export const agentXmtpPeerPolicies = pgTable(
+  'agent_xmtp_peer_policies',
+  {
+    id: serial('id').primaryKey(),
+    ownerAgentAddress: text('owner_agent_address')
+      .notNull()
+      .references(() => agents.address),
+    peerInboxId: text('peer_inbox_id').notNull(),
+    policy: text('policy').notNull().default('allow'),
+    reason: text('reason'),
+    updatedByDeviceId: text('updated_by_device_id').references(() => devices.id),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_agent_xmtp_peer_policies_owner').on(table.ownerAgentAddress),
+    peerIdx: index('idx_agent_xmtp_peer_policies_peer').on(table.peerInboxId),
+    ownerPeerUniqueIdx: uniqueIndex('uidx_agent_xmtp_peer_policies_owner_peer').on(
+      table.ownerAgentAddress,
+      table.peerInboxId
+    ),
+  })
+);
+
 export const indexerState = pgTable('indexer_state', {
   id: text('id').primaryKey().default('main'),
   lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
@@ -246,3 +312,7 @@ export type Device = typeof devices.$inferSelect;
 export type NewDevice = typeof devices.$inferInsert;
 export type Bid = typeof bids.$inferSelect;
 export type NewBid = typeof bids.$inferInsert;
+export type AgentXmtpInstallation = typeof agentXmtpInstallations.$inferSelect;
+export type NewAgentXmtpInstallation = typeof agentXmtpInstallations.$inferInsert;
+export type AgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferSelect;
+export type NewAgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferInsert;

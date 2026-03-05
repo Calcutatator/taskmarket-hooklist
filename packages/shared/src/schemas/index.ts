@@ -8,3 +8,4 @@ export * from './claim.schemas';
 export * from './proof.schemas';
 export * from './bid.schemas';
 export * from './wallet.schemas';
+export * from './xmtp.schemas';

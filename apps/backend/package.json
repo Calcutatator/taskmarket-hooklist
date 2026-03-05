@@ -32,7 +32,8 @@
     "smoke:agents": "tsx scripts/smoke-agents.ts",
     "smoke:inbox": "tsx scripts/smoke-inbox.ts",
     "smoke:wallet": "tsx scripts/smoke-wallet.ts",
-    "smoke:withdraw": "tsx scripts/smoke-withdraw.ts"
+    "smoke:withdraw": "tsx scripts/smoke-withdraw.ts",
+    "smoke:xmtp": "tsx scripts/smoke-xmtp.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
