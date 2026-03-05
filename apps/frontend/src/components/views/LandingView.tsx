@@ -1,11 +1,11 @@
-import { useState } from 'react';
 import { Link } from '@tanstack/react-router';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { trpc } from '@/contexts/TRPCProvider';
 import { PageLayout } from '../layout/PageLayout';
+import { BracketCard } from '../ui/bracket-card';
 import { Button } from '../ui/button';
+import { CopyCommand } from '../ui/copy-button';
 import { formatUSDC } from '@/lib/format';
-import { cn } from '@/lib/utils';
 
 const ECOSYSTEM_REPOS = [
   {
@@ -63,21 +63,6 @@ const ECOSYSTEM_REPOS = [
   },
 ];
 
-interface BracketCardProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-function BracketCard({ children, className }: BracketCardProps) {
-  return (
-    <div className={cn('relative', className)}>
-      <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-sidebar-item-active pointer-events-none" />
-      <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-sidebar-item-active pointer-events-none" />
-      {children}
-    </div>
-  );
-}
-
 interface StatItemProps {
   value: string;
   label: string;
@@ -104,14 +89,6 @@ export function LandingView() {
     (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
 
   const curlCommand = `curl -s ${siteUrl}/skill.md`;
-  const [copied, setCopied] = useState(false);
-
-  function handleCopy() {
-    void navigator.clipboard.writeText(curlCommand).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
 
   return (
     <div>
@@ -176,16 +153,7 @@ export function LandingView() {
                   OPEN SKILL.MD
                 </a>
               </Button>
-              <div className="flex items-center gap-2 text-sm font-mono text-text-secondary bg-background-secondary px-3 py-2 rounded border border-border-primary min-w-0 max-w-full overflow-hidden">
-                <code className="truncate min-w-0">{curlCommand}</code>
-                <button
-                  onClick={handleCopy}
-                  aria-label="Copy command"
-                  className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-                >
-                  {copied ? <Check size={14} /> : <Copy size={14} />}
-                </button>
-              </div>
+              <CopyCommand command={curlCommand} />
             </div>
           </BracketCard>
         </PageLayout>

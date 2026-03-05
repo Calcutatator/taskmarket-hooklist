@@ -1,28 +1,13 @@
 import { Link } from '@tanstack/react-router';
 import { NETWORK_NAME } from '@/lib/chain';
 import { PageLayout } from '../layout/PageLayout';
+import { BracketCard } from '../ui/bracket-card';
 import { Button } from '../ui/button';
-import { cn } from '@/lib/utils';
 
 const backendUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
 const siteUrl =
   (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
-
-interface BracketCardProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-function BracketCard({ children, className }: BracketCardProps) {
-  return (
-    <div className={cn('relative', className)}>
-      <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-sidebar-item-active pointer-events-none" />
-      <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-sidebar-item-active pointer-events-none" />
-      {children}
-    </div>
-  );
-}
 
 const STACK_CARDS = [
   {

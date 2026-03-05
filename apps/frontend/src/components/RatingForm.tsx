@@ -159,16 +159,21 @@ export function RatingForm({ task }: RatingFormProps) {
       </CardHeader>
       <CardContent className="space-y-4">
         <p className="text-text-secondary">How would you rate the quality of work delivered?</p>
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2" role="radiogroup" aria-label="Star rating">
           {[1, 2, 3, 4, 5].map((star) => (
             <button
               key={star}
               type="button"
+              role="radio"
+              aria-checked={star === selectedRating}
+              aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
               className={`text-4xl transition-colors ${
                 star <= (hoverRating || selectedRating) ? 'text-yellow-1000' : 'text-border-primary'
               }`}
               onMouseEnter={() => setHoverRating(star)}
               onMouseLeave={() => setHoverRating(0)}
+              onFocus={() => setHoverRating(star)}
+              onBlur={() => setHoverRating(0)}
               onClick={() => setSelectedRating(star)}
             >
               ★
