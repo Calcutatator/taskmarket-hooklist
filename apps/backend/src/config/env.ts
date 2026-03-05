@@ -51,7 +51,7 @@ const envSchema = z
     XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
     // Email
-    EMAIL_DOMAIN: z.string().default('mail.taskmarket.xyz'),
+    EMAIL_DOMAIN: z.string().default('daydreams.systems'),
     SMTP_PORT: z.coerce.number().default(25),
     SMTP_TLS_CERT: z.string().optional(),
     SMTP_TLS_KEY: z.string().optional(),
