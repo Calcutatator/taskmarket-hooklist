@@ -8,7 +8,7 @@ import { sendEmail } from '../services/mailer';
 import { getServerConfig } from '../config/env';
 import { EmailSchema } from '@taskmarket/shared';
 
-const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
+const USERNAME_RE = /^[a-z0-9][a-z0-9_-]{1,28}[a-z0-9]$/;
 
 // In-memory sliding-window rate limiter: 100 sends per hour per agent
 const sendTimestamps = new Map<string, number[]>();

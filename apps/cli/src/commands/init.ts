@@ -18,11 +18,41 @@ type NetworkInfo = {
   explorerUrl: string;
 };
 
+async function tryRegisterEmail(
+  deviceId: string,
+  apiToken: string,
+  username: string,
+  explicit: boolean
+): Promise<string | null> {
+  try {
+    const reg = (await apiPost('/api/emails/register', {
+      deviceId,
+      apiToken,
+      username,
+    })) as { emailAddress: string };
+    return reg.emailAddress;
+  } catch (err: unknown) {
+    if (explicit) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        JSON.stringify({
+          ok: false,
+          error: `Email registration failed: ${msg}. Run: taskmarket email register --username ${username}`,
+        }) + '\n'
+      );
+    }
+    return null;
+  }
+}
+
 export const initCommand = new Command('init')
   .description('Create and register a new agent wallet (safe to re-run)')
-  .option('--email <username>', 'Claim an email address (e.g. myagent)')
+  .option(
+    '--email <username>',
+    'Claim a custom email username (default: auto-generated from agent ID)'
+  )
   .action(async (opts: { email?: string }) => {
-    // Step 0: fail-fast email availability check (unauthenticated, before any other work)
+    // Fail-fast availability check for explicit --email before doing any other work
     if (opts.email) {
       const check = (await apiGet(
         `/api/emails/check-username?username=${encodeURIComponent(opts.email)}`
@@ -34,7 +64,6 @@ export const initCommand = new Command('init')
 
     if (await keystoreExists()) {
       const keystore = await loadKeystore();
-      // Poll for agentId if not yet assigned (background registration in progress)
       let agentId = keystore.agentId;
       if (!agentId) {
         agentId = await pollAgentId(keystore.walletAddress);
@@ -53,30 +82,26 @@ export const initCommand = new Command('init')
         // Non-fatal
       }
 
-      // Re-run: register email if requested and not already set
+      // Check for existing email first
       let emailAddress: string | null = null;
-      if (opts.email) {
-        try {
-          const existing = (await apiGet(
-            `/api/agents/stats?address=${keystore.walletAddress}`
-          )) as { emailAddress?: string | null };
-          if (existing.emailAddress) {
-            emailAddress = existing.emailAddress;
-          } else {
-            const reg = (await apiPost('/api/emails/register', {
-              deviceId: keystore.deviceId,
-              apiToken: keystore.apiToken,
-              username: opts.email,
-            })) as { emailAddress: string };
-            emailAddress = reg.emailAddress;
-          }
-        } catch (err: unknown) {
-          const msg = err instanceof Error ? err.message : String(err);
-          process.stderr.write(
-            JSON.stringify({
-              ok: false,
-              error: `Email registration failed: ${msg}. Run: taskmarket email register --username ${opts.email}`,
-            }) + '\n'
+      try {
+        const existing = (await apiGet(`/api/agents/stats?address=${keystore.walletAddress}`)) as {
+          emailAddress?: string | null;
+        };
+        emailAddress = existing.emailAddress ?? null;
+      } catch {
+        // Non-fatal
+      }
+
+      if (!emailAddress) {
+        const username =
+          opts.email ?? (agentId && networkInfo ? `${agentId}_${networkInfo.chainId}` : null);
+        if (username) {
+          emailAddress = await tryRegisterEmail(
+            keystore.deviceId,
+            keystore.apiToken,
+            username,
+            !!opts.email
           );
         }
       }
@@ -93,7 +118,6 @@ export const initCommand = new Command('init')
 
     const { privateKey, address } = generateKeypair();
 
-    // Register device with backend
     const res = await fetch(`${API_URL}/api/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -119,7 +143,6 @@ export const initCommand = new Command('init')
 
     const encryptedKey = encryptPrivateKey(deviceEncryptionKey, privateKey);
 
-    // agentId may be null if on-chain registration is still pending — poll for it
     let agentId: string | null = initialAgentId;
     await saveKeystore({ encryptedKey, walletAddress: address, deviceId, apiToken, agentId });
 
@@ -131,7 +154,6 @@ export const initCommand = new Command('init')
       }
     }
 
-    // Fetch network info to show funding details
     let networkInfo: NetworkInfo | undefined;
     try {
       const response = (await apiGet('/trpc/network.info')) as {
@@ -139,29 +161,14 @@ export const initCommand = new Command('init')
       };
       networkInfo = response.result.data;
     } catch {
-      // Non-fatal — show fallback text if backend unreachable
+      // Non-fatal
     }
 
-    // Register email if requested
-    let emailAddress: string | null = null;
-    if (opts.email) {
-      try {
-        const reg = (await apiPost('/api/emails/register', {
-          deviceId,
-          apiToken,
-          username: opts.email,
-        })) as { emailAddress: string };
-        emailAddress = reg.emailAddress;
-      } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : String(err);
-        process.stderr.write(
-          JSON.stringify({
-            ok: false,
-            error: `Email registration failed: ${msg}. Run: taskmarket email register --username ${opts.email}`,
-          }) + '\n'
-        );
-      }
-    }
+    const username =
+      opts.email ?? (agentId && networkInfo ? `${agentId}_${networkInfo.chainId}` : null);
+    const emailAddress = username
+      ? await tryRegisterEmail(deviceId, apiToken, username, !!opts.email)
+      : null;
 
     printResult({
       address,
