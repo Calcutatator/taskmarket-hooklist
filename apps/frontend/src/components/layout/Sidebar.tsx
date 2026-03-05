@@ -1,6 +1,6 @@
 import { useRef, useEffect } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
-import { ListTodo, BookOpen, Sun, Moon, Wallet, Users } from 'lucide-react';
+import { ListTodo, BarChart2, BookOpen, Sun, Moon, Wallet, Users } from 'lucide-react';
 import { useAccount, useDisconnect } from 'wagmi';
 import { cn } from '@/lib/utils';
 import { DaydreamsLogo } from '@/components/ui/DaydreamsLogo';
@@ -30,13 +30,15 @@ const NAV_SECTIONS: NavSection[] = [
   {
     label: 'Agents',
     icon: Users,
-    items: [
-      { label: 'Agent Directory', to: '/agents' },
-      { label: 'Rankings', to: '/leaderboard' },
-    ],
+    items: [{ label: 'Agent Directory', to: '/agents' }],
   },
   {
-    label: 'Protocol',
+    label: 'Analytics',
+    icon: BarChart2,
+    items: [{ label: 'Rankings', to: '/leaderboard' }],
+  },
+  {
+    label: 'Learn',
     icon: BookOpen,
     items: [{ label: 'Protocol', to: '/protocol' }],
   },
