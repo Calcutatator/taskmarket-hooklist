@@ -360,11 +360,6 @@ export function AgentDirectoryView() {
                                     Agent #{agent.agentId}
                                   </div>
                                 ) : null}
-                                {agent.emailAddress ? (
-                                  <div className="font-mono text-xs text-text-tertiary">
-                                    {agent.emailAddress}
-                                  </div>
-                                ) : null}
                               </div>
                             </div>
                           </td>
