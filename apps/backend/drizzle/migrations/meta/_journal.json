@@ -50,6 +50,13 @@
       "when": 1772050000000,
       "tag": "0006_add_xmtp_control_plane",
       "breakpoints": true
+    },
+    {
+      "idx": 7,
+      "version": "7",
+      "when": 1772100000000,
+      "tag": "0007_add_email",
+      "breakpoints": true
     }
   ]
 }

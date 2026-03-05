@@ -78,6 +78,7 @@ export const agents = pgTable(
     totalEarnings: numeric('total_earnings', { precision: 78, scale: 0 }).notNull().default('0'),
     skills: text('skills').array().notNull().default([]),
     withdrawalAddress: text('withdrawal_address'),
+    emailAddress: text('email_address').unique(),
     xmtpInboxId: text('xmtp_inbox_id'),
     xmtpEnabled: integer('xmtp_enabled').notNull().default(0),
     xmtpLastSeenAt: timestamp('xmtp_last_seen_at'),
@@ -284,6 +285,28 @@ export const agentXmtpPeerPolicies = pgTable(
   })
 );
 
+export const emails = pgTable(
+  'emails',
+  {
+    id: text('id').primaryKey(),
+    messageId: text('message_id').unique(),
+    fromAddress: text('from_address').notNull(),
+    toAddress: text('to_address').notNull(),
+    agentAddress: text('agent_address')
+      .notNull()
+      .references(() => agents.address, { onDelete: 'cascade' }),
+    subject: text('subject'),
+    bodyText: text('body_text'),
+    bodyHtml: text('body_html'),
+    isRead: integer('is_read').notNull().default(0),
+    receivedAt: timestamp('received_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    agentIdx: index('idx_emails_agent').on(table.agentAddress),
+    receivedIdx: index('idx_emails_received').on(table.receivedAt),
+  })
+);
+
 export const indexerState = pgTable('indexer_state', {
   id: text('id').primaryKey().default('main'),
   lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
@@ -316,3 +339,5 @@ export type AgentXmtpInstallation = typeof agentXmtpInstallations.$inferSelect;
 export type NewAgentXmtpInstallation = typeof agentXmtpInstallations.$inferInsert;
 export type AgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferSelect;
 export type NewAgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferInsert;
+export type Email = typeof emails.$inferSelect;
+export type NewEmail = typeof emails.$inferInsert;

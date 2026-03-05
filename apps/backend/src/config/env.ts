@@ -50,6 +50,15 @@ const envSchema = z
     XMTP_ENABLED: strictBooleanFromEnv.default(false),
     XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
+    // Email
+    EMAIL_DOMAIN: z.string().default('mail.taskmarket.xyz'),
+    SMTP_PORT: z.coerce.number().default(25),
+    SMTP_TLS_CERT: z.string().optional(),
+    SMTP_TLS_KEY: z.string().optional(),
+    SMTP_RELAY_HOST: z.string().optional(),
+    SMTP_RELAY_PORT: z.coerce.number().default(587),
+    SMTP_RELAY_USER: z.string().optional(),
+    SMTP_RELAY_PASS: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

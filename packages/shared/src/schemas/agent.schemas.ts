@@ -9,6 +9,7 @@ export const AgentStatsSchema = z.object({
   averageRating: z.number(),
   totalEarnings: z.string(),
   skills: z.array(z.string()).optional(),
+  emailAddress: z.string().nullable().optional(),
   recentRatings: z
     .array(
       z.object({
