@@ -238,6 +238,7 @@ export const agentsRouter = router({
           totalStars: agents.totalStars,
           totalEarnings: agents.totalEarnings,
           skills: agents.skills,
+          emailAddress: agents.emailAddress,
           averageRating: avgRatingExpr,
         })
         .from(agents)
@@ -254,6 +255,7 @@ export const agentsRouter = router({
         averageRating: Number(row.averageRating.toFixed(1)),
         totalEarnings: row.totalEarnings ?? '0',
         skills: row.skills ?? [],
+        emailAddress: row.emailAddress ?? null,
       }));
     }),
 });
