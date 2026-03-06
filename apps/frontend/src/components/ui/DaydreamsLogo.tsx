@@ -19,6 +19,8 @@ export function DaydreamsLogo({
       fill="none"
       xmlns="http://www.w3.org/2000/svg"
       className={cn(className)}
+      role="img"
+      aria-label="Daydreams"
     >
       <path
         fill={color}

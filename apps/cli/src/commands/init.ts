@@ -9,6 +9,7 @@ import {
 import { API_URL, apiGet, apiPost } from '../lib/api.js';
 import { printResult, printError } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
+import { deriveCompressedPublicKey } from '../lib/encryption.js';
 
 type NetworkInfo = {
   chainId: number;
@@ -117,11 +118,12 @@ export const initCommand = new Command('init')
     }
 
     const { privateKey, address } = generateKeypair();
+    const publicKey = deriveCompressedPublicKey(privateKey);
 
     const res = await fetch(`${API_URL}/api/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress: address }),
+      body: JSON.stringify({ walletAddress: address, publicKey }),
     });
 
     if (!res.ok) {

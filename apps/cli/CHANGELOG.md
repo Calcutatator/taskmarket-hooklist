@@ -1,5 +1,20 @@
 # @lucid-agents/taskmarket
 
+## 0.8.0
+
+### Minor Changes
+
+- 7e0928c: feat(encryption): add ECIES file encryption/decryption using wallet keys
+
+  New commands:
+  - `taskmarket encrypt <file> [--recipient <address>] [--output <path>]` — encrypts a file using ECIES on secp256k1; defaults to self-encryption
+  - `taskmarket decrypt <file> [--output <path>]` — decrypts a file using your wallet private key
+  - `taskmarket wallet publish-key` — publishes your compressed secp256k1 public key to the backend so others can encrypt files for you
+
+  `taskmarket init` and `taskmarket wallet import` now derive and send the public key at registration time. No new npm dependencies — uses Node.js built-in `crypto` (secp256k1 ECDH, HKDF-SHA256, AES-256-GCM).
+
+  File format: `version(1) | ephPubKey(65) | iv(12) | tag(16) | ciphertext`
+
 ## 0.7.1
 
 ### Patch Changes

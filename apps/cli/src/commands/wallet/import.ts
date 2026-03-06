@@ -10,6 +10,7 @@ import {
 import { API_URL } from '../../lib/api.js';
 import { printResult } from '../../lib/output.js';
 import { pollAgentId } from '../../lib/agent.js';
+import { deriveCompressedPublicKey } from '../../lib/encryption.js';
 
 function normalizePrivateKey(raw: string): `0x${string}` {
   const hex = raw.startsWith('0x') ? raw.slice(2) : raw;
@@ -77,12 +78,13 @@ export const walletImportCommand = new Command('import')
     const privateKey = normalizePrivateKey(rawKey);
     const account = privateKeyToAccount(privateKey);
     const address = account.address;
+    const publicKey = deriveCompressedPublicKey(privateKey);
 
     // Register device with backend
     const res = await fetch(`${API_URL}/api/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress: address }),
+      body: JSON.stringify({ walletAddress: address, publicKey }),
     });
 
     if (!res.ok) {

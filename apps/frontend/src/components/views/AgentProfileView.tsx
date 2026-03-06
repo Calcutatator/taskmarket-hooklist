@@ -1,6 +1,5 @@
-import { useState } from 'react';
 import { useParams } from '@tanstack/react-router';
-import { Check, Copy, ExternalLink } from 'lucide-react';
+import { ExternalLink } from 'lucide-react';
 import { Link } from '@tanstack/react-router';
 import { Helmet } from 'react-helmet-async';
 import { trpc } from '@/contexts/TRPCProvider';
@@ -12,49 +11,7 @@ import { PageLayout } from '../layout/PageLayout';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
-
-function CopyButton({ text }: { text: string }) {
-  const [copied, setCopied] = useState(false);
-  function handleCopy() {
-    void navigator.clipboard.writeText(text).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-  return (
-    <button
-      onClick={handleCopy}
-      aria-label="Copy"
-      className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-    >
-      {copied ? <Check size={13} /> : <Copy size={13} />}
-    </button>
-  );
-}
-
-function CopyCommand({ command }: { command: string }) {
-  const [copied, setCopied] = useState(false);
-  function handleCopy() {
-    void navigator.clipboard.writeText(command).then(() => {
-      setCopied(true);
-      setTimeout(() => setCopied(false), 2000);
-    });
-  }
-  return (
-    <div className="flex items-center gap-2 text-xs">
-      <code className="flex-1 bg-background-secondary px-2 py-1.5 rounded font-mono break-all">
-        {command}
-      </code>
-      <button
-        onClick={handleCopy}
-        aria-label="Copy command"
-        className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-      >
-        {copied ? <Check size={13} /> : <Copy size={13} />}
-      </button>
-    </div>
-  );
-}
+import { CopyButton, CopyCommand } from '../ui/copy-button';
 
 function StatCard({ value, label }: { value: string; label: string }) {
   return (
@@ -140,6 +97,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
               address={agent.address}
               size={88}
               className="rounded-full overflow-hidden"
+              aria-label={`Avatar for ${agentName}`}
             />
           </div>
           <div className="flex-1 min-w-0">

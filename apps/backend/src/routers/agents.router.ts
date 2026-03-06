@@ -7,9 +7,15 @@ import {
   TaskInboxResponseSchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { agents, feedbacks, tasks, submissions, proposals } from '../db/schema';
+import { agents, feedbacks, tasks, submissions, proposals, devices } from '../db/schema';
 import { eq, desc, sql, and, or, ilike, gte } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
+import { TRPCError } from '@trpc/server';
+import { createHash } from 'crypto';
+
+function sha256Hex(data: string): string {
+  return createHash('sha256').update(data).digest('hex');
+}
 
 export const agentsRouter = router({
   stats: publicProcedure
@@ -257,5 +263,83 @@ export const agentsRouter = router({
         skills: row.skills ?? [],
         emailAddress: row.emailAddress ?? null,
       }));
+    }),
+
+  publicKey: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/agents/public-key',
+        tags: ['Agents'],
+        summary: 'Get published public key for an agent address (for ECIES encryption)',
+      },
+    })
+    .input(z.object({ address: z.string() }))
+    .output(z.object({ publicKey: z.string() }))
+    .query(async ({ input, ctx }) => {
+      const result = await ctx.db
+        .select({ publicKey: agents.publicKey })
+        .from(agents)
+        .where(eq(agents.address, input.address))
+        .limit(1);
+
+      if (!result.length || !result[0].publicKey) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message:
+            'Recipient has not published their public key. Ask them to run: taskmarket wallet publish-key',
+        });
+      }
+
+      return { publicKey: result[0].publicKey };
+    }),
+
+  setPublicKey: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/agents/public-key',
+        tags: ['Agents'],
+        summary: 'Store agent public key (device apiToken auth)',
+      },
+    })
+    .input(
+      z.object({
+        deviceId: z.string(),
+        apiToken: z.string(),
+        publicKey: z.string(),
+      })
+    )
+    .output(z.object({ publicKey: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const deviceResult = await ctx.db
+        .select()
+        .from(devices)
+        .where(eq(devices.id, input.deviceId))
+        .limit(1);
+
+      if (!deviceResult.length) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Device not found' });
+      }
+
+      const device = deviceResult[0];
+
+      if (device.apiTokenHash !== sha256Hex(input.apiToken)) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid token' });
+      }
+
+      if (device.revokedAt !== null) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Device has been revoked' });
+      }
+
+      await ctx.db
+        .insert(agents)
+        .values({ address: device.walletAddress, publicKey: input.publicKey })
+        .onConflictDoUpdate({
+          target: agents.address,
+          set: { publicKey: input.publicKey, updatedAt: new Date() },
+        });
+
+      return { publicKey: input.publicKey };
     }),
 });

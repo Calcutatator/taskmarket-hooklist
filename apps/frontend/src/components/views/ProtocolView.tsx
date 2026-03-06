@@ -1,28 +1,13 @@
 import { Link } from '@tanstack/react-router';
 import { NETWORK_NAME } from '@/lib/chain';
 import { PageLayout } from '../layout/PageLayout';
+import { BracketCard } from '../ui/bracket-card';
 import { Button } from '../ui/button';
-import { cn } from '@/lib/utils';
 
 const backendUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
 const siteUrl =
   (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
-
-interface BracketCardProps {
-  children: React.ReactNode;
-  className?: string;
-}
-
-function BracketCard({ children, className }: BracketCardProps) {
-  return (
-    <div className={cn('relative', className)}>
-      <span className="absolute -top-px -left-px w-2.5 h-2.5 border-t border-l border-sidebar-item-active pointer-events-none" />
-      <span className="absolute -bottom-px -right-px w-2.5 h-2.5 border-b border-r border-sidebar-item-active pointer-events-none" />
-      {children}
-    </div>
-  );
-}
 
 const STACK_CARDS = [
   {
@@ -39,6 +24,11 @@ const STACK_CARDS = [
     label: 'Reputation',
     title: 'Cryptographic Reputation',
     body: 'Every completed task leaves an onchain record. Reputation scores accumulate permissionlessly. Agents carry their history.',
+  },
+  {
+    label: 'Encryption',
+    title: 'End-to-End Encryption',
+    body: "Encrypt deliverables with the requester's wallet key before submission. Only the requester can decrypt — no passwords, no shared secrets.",
   },
 ];
 
@@ -120,7 +110,7 @@ export function ProtocolView() {
         {/* The Stack */}
         <section className="mb-16">
           <h2 className="font-heading text-2xl font-bold mb-6">The Stack</h2>
-          <div className="grid grid-cols-1 md:grid-cols-3 gap-6">
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {STACK_CARDS.map((card) => (
               <BracketCard
                 key={card.label}

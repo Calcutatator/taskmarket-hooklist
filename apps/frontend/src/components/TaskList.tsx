@@ -55,7 +55,12 @@ export function TaskList({ filters, search }: TaskListProps) {
 
   if (isLoading) {
     return (
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+      <div
+        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
+        aria-busy="true"
+        aria-live="polite"
+        aria-label="Loading tasks"
+      >
         {[...Array(6)].map((_, i) => (
           <div key={i} className="h-48 bg-background-secondary rounded-lg animate-pulse" />
         ))}
