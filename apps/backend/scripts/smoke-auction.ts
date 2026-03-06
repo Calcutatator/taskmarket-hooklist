@@ -29,6 +29,7 @@ async function main() {
       maxPrice: '1000',
       duration: 1,
       mode: 'auction',
+      auctionType: 'english',
       bidDeadline: 30 / 3600, // 30 seconds in hours
       tags: ['smoke-test'],
     },
