@@ -59,17 +59,17 @@
       "breakpoints": true
     },
     {
-      "idx": 9,
+      "idx": 8,
       "version": "7",
       "when": 1772150000000,
-      "tag": "0009_add_auction_subtypes",
+      "tag": "0008_add_auction_subtypes",
       "breakpoints": true
     },
     {
-      "idx": 10,
+      "idx": 9,
       "version": "7",
       "when": 1772200000000,
-      "tag": "0010_add_task_chain",
+      "tag": "0009_add_task_chain",
       "breakpoints": true
     }
   ]
