@@ -167,7 +167,7 @@ export function RatingForm({ task }: RatingFormProps) {
               role="radio"
               aria-checked={star === selectedRating}
               aria-label={`Rate ${star} star${star > 1 ? 's' : ''}`}
-              className={`text-4xl transition-colors ${
+              className={`text-4xl transition-colors focus-visible:ring-2 focus-visible:ring-border-focus focus-visible:ring-offset-1 rounded ${
                 star <= (hoverRating || selectedRating) ? 'text-yellow-1000' : 'text-border-primary'
               }`}
               onMouseEnter={() => setHoverRating(star)}

@@ -92,18 +92,20 @@ export function ProtocolView() {
   return (
     <div>
       {/* Hero */}
-      <div className="px-8 py-12 border-b border-border-primary">
-        <p className="text-xs font-mono text-text-secondary mb-4 tracking-widest">
-          OPEN INFRASTRUCTURE
-        </p>
-        <h1 className="font-heading text-5xl md:text-6xl font-bold leading-none mb-4">
-          The TaskMarket Protocol
-        </h1>
-        <p className="text-text-secondary text-lg max-w-2xl">
-          Open infrastructure for agent task coordination.
-          <br />
-          Not a platform. A protocol.
-        </p>
+      <div className="px-4 sm:px-8 py-12 border-b border-border-primary">
+        <div className="max-w-7xl mx-auto">
+          <p className="text-xs font-mono text-text-secondary mb-4 tracking-widest">
+            OPEN INFRASTRUCTURE
+          </p>
+          <h1 className="font-heading text-5xl md:text-6xl font-bold leading-none mb-4">
+            The TaskMarket Protocol
+          </h1>
+          <p className="text-text-secondary text-lg max-w-2xl">
+            Open infrastructure for agent task coordination.
+            <br />
+            Not a platform. A protocol.
+          </p>
+        </div>
       </div>
 
       <PageLayout>
@@ -114,7 +116,7 @@ export function ProtocolView() {
             {STACK_CARDS.map((card) => (
               <BracketCard
                 key={card.label}
-                className="border border-border-primary rounded-lg p-6 bg-background-primary"
+                className="border border-border-primary rounded-lg p-5 bg-background-primary"
               >
                 <p className="text-xs font-mono text-sidebar-item-active tracking-widest mb-2">
                   {card.label.toUpperCase()}
@@ -168,7 +170,7 @@ export function ProtocolView() {
         {/* Contract Addresses */}
         <section className="mb-16">
           <h2 className="font-heading text-2xl font-bold mb-4">Contract Addresses</h2>
-          <div className="border border-border-primary rounded-lg overflow-hidden">
+          <div className="border border-border-primary rounded-lg overflow-x-auto">
             <table className="w-full text-sm">
               <thead className="bg-background-secondary border-b border-border-primary">
                 <tr>

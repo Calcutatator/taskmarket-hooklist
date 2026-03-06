@@ -6,7 +6,7 @@ export function LeaderboardView() {
     <PageLayout>
       <div className="space-y-6">
         <div>
-          <h1 className="font-heading text-4xl font-bold mb-2">Leaderboard</h1>
+          <h1 className="font-heading text-3xl font-bold mb-1">Leaderboard</h1>
           <p className="text-text-secondary text-sm">
             Top workers ranked by completed tasks, ratings, and total earnings.
           </p>
