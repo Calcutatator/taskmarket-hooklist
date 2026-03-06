@@ -30,6 +30,7 @@ help:
 	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
 
 init:
 	$(ENV_LOADER) && pnpm install
@@ -70,6 +71,23 @@ deploy:
 		else \
 			echo "Proxy verification response: $$RESP"; \
 		fi; \
+	fi
+
+upgrade:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make upgrade <testnet|mainnet>"; \
+		exit 1; \
 	fi
 
 release:
