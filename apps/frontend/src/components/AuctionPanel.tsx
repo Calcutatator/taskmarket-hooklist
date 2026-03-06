@@ -54,7 +54,7 @@ export function AuctionPanel({ task }: AuctionPanelProps) {
   const { data: bids } = trpc.bids.listByTask.useQuery({ taskId: task.id });
 
   const now = new Date();
-  const deadlinePassed = task.bidDeadline ? now >= new Date(task.bidDeadline) : true;
+  const deadlinePassed = task.bidDeadline ? now >= new Date(task.bidDeadline) : false;
   const isSealed =
     task.auctionType === 'reverse_english' && task.status === 'open' && !deadlinePassed;
 

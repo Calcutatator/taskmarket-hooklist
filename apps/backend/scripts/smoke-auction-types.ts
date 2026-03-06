@@ -100,7 +100,10 @@ async function smokeReverseEnglish(requester: Account, worker: Account) {
   const revealedBids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{
     price: string | null;
   }>;
-  if (revealedBids[0]?.price === null) {
+  if (revealedBids.length === 0) {
+    throw new Error('Expected revealed bids after deadline, got none');
+  }
+  if (revealedBids[0].price === null) {
     throw new Error('Expected revealed bid price after deadline, got null');
   }
   ok('bid revealed after deadline', revealedBids[0].price);

@@ -197,18 +197,6 @@ export const acceptanceRouter = router({
       const fileContent = JSON.stringify(feedbackData, null, 2);
       const feedbackHash = keccak256(toBytes(fileContent)) as `0x${string}`;
 
-      await ctx.db.insert(feedbacks).values({
-        id: feedbackId,
-        taskId: input.taskId,
-        workerAddress: input.worker,
-        workerAgentId: workerAgentResult[0]?.agentId ?? null,
-        requesterAddress: payer,
-        requesterAgentId: task.requesterAgentId ?? null,
-        rating: input.rating,
-        feedbackText: input.feedbackText ?? null,
-        fileContent,
-      });
-
       const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
@@ -219,10 +207,19 @@ export const acceptanceRouter = router({
         task.contractAddress
       );
 
-      await ctx.db
-        .update(feedbacks)
-        .set({ ratingTxHash, ratingBlockNumber })
-        .where(eq(feedbacks.id, feedbackId));
+      await ctx.db.insert(feedbacks).values({
+        id: feedbackId,
+        taskId: input.taskId,
+        workerAddress: input.worker,
+        workerAgentId: workerAgentResult[0]?.agentId ?? null,
+        requesterAddress: payer,
+        requesterAgentId: task.requesterAgentId ?? null,
+        rating: input.rating,
+        feedbackText: input.feedbackText ?? null,
+        fileContent,
+        ratingTxHash,
+        ratingBlockNumber,
+      });
 
       await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
 

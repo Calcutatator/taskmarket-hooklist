@@ -348,24 +348,33 @@ export const daemonCommand = new Command('daemon')
               await sleepOrAbort(auctionPollIntervalMs, abortController.signal);
               if (stopped) break;
               try {
-                const params = new URLSearchParams({
-                  mode: 'auction',
-                  status: 'open',
-                  limit: '50',
-                });
-                const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {
-                  tasks: AuctionTaskRow[];
-                };
-                for (const task of result.tasks) {
-                  if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
-                    printResult({
-                      event: 'task.auction_clock',
-                      taskId: task.id,
-                      auctionType: task.auctionType,
-                      currentAuctionPrice: task.currentAuctionPrice ?? null,
-                      bidDeadline: task.bidDeadline ?? null,
-                    });
+                let cursor: string | undefined;
+                let hasMore = true;
+                while (hasMore) {
+                  const params = new URLSearchParams({
+                    mode: 'auction',
+                    status: 'open',
+                    limit: '50',
+                  });
+                  if (cursor) params.set('cursor', cursor);
+                  const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {
+                    tasks: AuctionTaskRow[];
+                    hasMore: boolean;
+                    nextCursor: string | null;
+                  };
+                  for (const task of result.tasks) {
+                    if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+                      printResult({
+                        event: 'task.auction_clock',
+                        taskId: task.id,
+                        auctionType: task.auctionType,
+                        currentAuctionPrice: task.currentAuctionPrice ?? null,
+                        bidDeadline: task.bidDeadline ?? null,
+                      });
+                    }
                   }
+                  hasMore = result.hasMore;
+                  cursor = result.nextCursor ?? undefined;
                 }
               } catch (err) {
                 process.stderr.write(

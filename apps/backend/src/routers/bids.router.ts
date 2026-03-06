@@ -339,7 +339,15 @@ export const bidsRouter = router({
         }
       }
 
-      // Atomic race-condition guard: update status to 'claimed' only if still 'open'
+      // Call contract first — if it reverts, DB is untouched and the task stays open
+      await contractAcceptAuction(
+        input.taskId as `0x${string}`,
+        workerAddress as `0x${string}`,
+        clockPrice,
+        task.contractAddress
+      );
+
+      // Conditional DB update: only succeeds if task is still 'open' (race guard)
       const updated = await ctx.db
         .update(tasks)
         .set({
@@ -354,14 +362,6 @@ export const bidsRouter = router({
       if (!updated || updated.length === 0) {
         throw new Error('Auction already claimed by another worker');
       }
-
-      // Atomically award the auction to this worker at the clock price
-      await contractAcceptAuction(
-        input.taskId as `0x${string}`,
-        workerAddress as `0x${string}`,
-        clockPrice,
-        task.contractAddress
-      );
 
       // Record the bid in DB
       await ctx.db.insert(bids).values({
