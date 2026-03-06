@@ -33,7 +33,7 @@ help:
 
 init:
 	$(ENV_LOADER) && pnpm install
-	cd packages/contracts && forge install
+	git submodule update --init --recursive
 
 install: init
 

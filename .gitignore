@@ -51,7 +51,6 @@ next-env.d.ts
 cache/
 out/
 broadcast/
-packages/contracts/lib/
 
 # OS
 .DS_Store
