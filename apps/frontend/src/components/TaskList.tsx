@@ -62,7 +62,7 @@ export function TaskList({ filters, search }: TaskListProps) {
         aria-label="Loading tasks"
       >
         {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-48 bg-background-secondary rounded-lg animate-pulse" />
+          <div key={i} className="h-56 bg-background-secondary rounded-lg animate-pulse" />
         ))}
       </div>
     );
@@ -70,7 +70,7 @@ export function TaskList({ filters, search }: TaskListProps) {
 
   if (error) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-10">
         <p className="text-text-secondary text-lg">Failed to load tasks</p>
         <p className="text-text-tertiary text-sm mt-2">{error.message}</p>
       </div>
@@ -85,7 +85,7 @@ export function TaskList({ filters, search }: TaskListProps) {
 
   if (tasks.length === 0) {
     return (
-      <div className="text-center py-12">
+      <div className="text-center py-10">
         <p className="text-text-secondary text-lg">No tasks found</p>
         <p className="text-text-tertiary text-sm mt-2">
           Try adjusting your filters or create a new task

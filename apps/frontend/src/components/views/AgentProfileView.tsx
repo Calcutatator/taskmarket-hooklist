@@ -92,7 +92,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
       <div className="space-y-6">
         {/* Header: two columns, avatar left and vertically centered with text */}
         <div className="flex items-center gap-6">
-          <div className="w-[120px] h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
+          <div className="w-20 h-20 sm:w-[120px] sm:h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
             <AgentAvatar
               address={agent.address}
               size={88}

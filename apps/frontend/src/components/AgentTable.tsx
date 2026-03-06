@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -143,28 +144,22 @@ export function AgentTable({
         <div className="flex flex-col gap-1">
           <Label className="text-xs font-medium text-text-secondary">Sort</Label>
           <div className="flex gap-1">
-            <button
+            <Button
               type="button"
+              variant={sort === 'reputation' ? 'default' : 'outline'}
+              size="sm"
               onClick={() => onSortChange('reputation')}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                sort === 'reputation'
-                  ? 'bg-sidebar-item-active text-white border-sidebar-item-active'
-                  : 'border-border-primary text-text-secondary hover:text-text-primary'
-              }`}
             >
               Reputation
-            </button>
-            <button
+            </Button>
+            <Button
               type="button"
+              variant={sort === 'tasks' ? 'default' : 'outline'}
+              size="sm"
               onClick={() => onSortChange('tasks')}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                sort === 'tasks'
-                  ? 'bg-sidebar-item-active text-white border-sidebar-item-active'
-                  : 'border-border-primary text-text-secondary hover:text-text-primary'
-              }`}
             >
               Task Count
-            </button>
+            </Button>
           </div>
         </div>
 
@@ -180,13 +175,9 @@ export function AgentTable({
         </div>
 
         {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="px-4 py-1.5 text-sm border border-border-primary text-text-secondary rounded hover:text-text-primary transition-colors"
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
             Clear
-          </button>
+          </Button>
         )}
       </form>
 
@@ -197,22 +188,32 @@ export function AgentTable({
           ))}
         </div>
       ) : !data || data.length === 0 ? (
-        <p className="text-text-secondary text-center py-8">{emptyMessage}</p>
+        <p className="text-text-secondary text-center py-10">{emptyMessage}</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border-primary">
-                  <th className="text-left py-3 px-4 font-semibold text-sm">Rank</th>
-                  <th className="text-left py-3 px-4 font-semibold text-sm">{workerColumnLabel}</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">Tasks</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">Rating</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rank
+                  </th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    {workerColumnLabel}
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Tasks
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rating
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
                     {earnedColumnLabel}
                   </th>
                   {variant === 'directory' && (
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Skills</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      Skills
+                    </th>
                   )}
                 </tr>
               </thead>
@@ -312,22 +313,24 @@ export function AgentTable({
           <div className="flex items-center justify-between pt-4 border-t border-border-primary">
             <span className="text-sm text-text-secondary">Page {page}</span>
             <div className="flex gap-2">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => onPageChange(page - 1)}
                 disabled={!hasPrevPage}
-                className="px-3 py-1.5 text-sm border border-border-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-background-secondary"
               >
                 Previous
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => onPageChange(page + 1)}
                 disabled={!hasNextPage}
-                className="px-3 py-1.5 text-sm border border-border-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-background-secondary"
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         </>
