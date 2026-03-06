@@ -33,6 +33,7 @@ help:
 
 init:
 	$(ENV_LOADER) && pnpm install
+	cd packages/contracts && forge install
 
 install: init
 
