@@ -175,12 +175,7 @@ export function AgentTable({
         </div>
 
         {hasActiveFilters && (
-          <Button
-            type="button"
-            variant="outline"
-            size="sm"
-            onClick={onClearFilters}
-          >
+          <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
             Clear
           </Button>
         )}
@@ -200,15 +195,25 @@ export function AgentTable({
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border-primary">
-                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">Rank</th>
-                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">{workerColumnLabel}</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">Tasks</th>
-                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">Rating</th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rank
+                  </th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    {workerColumnLabel}
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Tasks
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rating
+                  </th>
                   <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
                     {earnedColumnLabel}
                   </th>
                   {variant === 'directory' && (
-                    <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">Skills</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      Skills
+                    </th>
                   )}
                 </tr>
               </thead>
