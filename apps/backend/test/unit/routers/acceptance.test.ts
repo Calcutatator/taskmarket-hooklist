@@ -170,9 +170,9 @@ describe('acceptance router', () => {
 
       expect(result.success).toBe(true);
       expect(contractRateTask).toHaveBeenCalledOnce();
-      // update feedbacks (ratingTxHash) + update tasks (rating) + update agents (stats) = 3 updates
-      expect(ctx.db.update).toHaveBeenCalledTimes(3);
-      // insert feedback
+      // update tasks (rating) + update agents (stats) = 2 updates (feedback tx hash is in the insert)
+      expect(ctx.db.update).toHaveBeenCalledTimes(2);
+      // insert feedback (with ratingTxHash already populated)
       expect(ctx.db.insert).toHaveBeenCalledTimes(1);
     });
   });
