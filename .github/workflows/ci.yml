@@ -45,6 +45,9 @@ jobs:
 
       - run: pnpm install --frozen-lockfile
 
+      - name: Install Foundry dependencies
+        run: cd packages/contracts && forge install
+
       - run: pnpm turbo build
 
       - run: pnpm turbo lint:check
