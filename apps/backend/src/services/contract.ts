@@ -18,6 +18,8 @@ const MARKET_ABI = parseAbi([
   'function submitBid(bytes32,address,uint256)',
   'function selectLowestBidder(bytes32)',
   'function acceptAuction(bytes32,address,uint256)',
+  'function cancelTask(bytes32,address)',
+  'function updateTask(bytes32,address,uint256,uint256,uint256,uint256)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const REGISTERED_EVENT = parseAbiItem(
@@ -320,6 +322,85 @@ export async function contractTransferWithAuthorization(
   assertSuccess(
     await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
     'transferWithAuthorization'
+  );
+  return hash;
+}
+
+export async function contractCancelTask(
+  taskId: `0x${string}`,
+  requester: `0x${string}`,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+  const hash = await client.writeContract({
+    address: resolveContractAddress(contractAddress),
+    abi: MARKET_ABI,
+    functionName: 'cancelTask',
+    args: [taskId, requester],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'cancelTask'
+  );
+  return hash;
+}
+
+export async function contractUpdateTask(
+  taskId: `0x${string}`,
+  requester: `0x${string}`,
+  newReward: bigint,
+  newExpiryTime: bigint,
+  newBidDeadline: bigint,
+  newPitchDeadline: bigint,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const { client, account } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+
+  // If reward is increasing, ensure server has sufficient USDC approval
+  if (newReward > 0n) {
+    const allowance = await publicClient.readContract({
+      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [account.address, resolveContractAddress(contractAddress)],
+    });
+    if ((allowance as bigint) < newReward) {
+      const approveTx = await client.writeContract({
+        address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [
+          resolveContractAddress(contractAddress),
+          BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+        ],
+        ...gas,
+      });
+      assertSuccess(
+        await publicClient.waitForTransactionReceipt({
+          hash: approveTx,
+          timeout: TX_RECEIPT_TIMEOUT,
+        }),
+        'approve'
+      );
+    }
+  }
+
+  const hash = await client.writeContract({
+    address: resolveContractAddress(contractAddress),
+    abi: MARKET_ABI,
+    functionName: 'updateTask',
+    args: [taskId, requester, newReward, newExpiryTime, newBidDeadline, newPitchDeadline],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'updateTask'
   );
   return hash;
 }

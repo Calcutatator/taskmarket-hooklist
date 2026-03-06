@@ -35,7 +35,8 @@
     "smoke:withdraw": "tsx scripts/smoke-withdraw.ts",
     "smoke:encryption": "tsx scripts/smoke-encryption.ts",
     "smoke:xmtp": "tsx scripts/smoke-xmtp.ts",
-    "smoke:auction-types": "tsx scripts/smoke-auction-types.ts"
+    "smoke:auction-types": "tsx scripts/smoke-auction-types.ts",
+    "smoke:cancel-update": "tsx scripts/smoke-cancel-update.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

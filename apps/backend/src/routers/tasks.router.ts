@@ -4,6 +4,8 @@ import {
   TaskListInputSchema,
   TaskListResponseSchema,
   TaskDetailResponseSchema,
+  CancelTaskInputSchema,
+  UpdateTaskInputSchema,
   type PendingAction,
   type TaskStatusType,
   type TaskModeType,
@@ -13,7 +15,12 @@ import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
 import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
-import { contractCreateTask, MODE_MAP } from '../services/contract';
+import {
+  contractCreateTask,
+  contractCancelTask,
+  contractUpdateTask,
+  MODE_MAP,
+} from '../services/contract';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 
@@ -41,10 +48,23 @@ function computePendingActions(task: {
   const now = new Date();
 
   switch (task.status) {
-    case 'open':
+    case 'open': {
+      const canCancel = task.mode !== 'auction' || task.bidCount === 0;
+      const managementActions: PendingAction[] = canCancel
+        ? [
+            { role: 'requester', action: 'cancel', command: `taskmarket task cancel ${id}` },
+            {
+              role: 'requester',
+              action: 'update',
+              command: `taskmarket task update ${id} [--reward <usdc>] [--extend-expiry <seconds>]`,
+            },
+          ]
+        : [];
+
       switch (task.mode) {
         case 'bounty':
           return [
+            ...managementActions,
             {
               role: 'worker',
               action: 'submit',
@@ -52,9 +72,13 @@ function computePendingActions(task: {
             },
           ];
         case 'claim':
-          return [{ role: 'worker', action: 'claim', command: `taskmarket task claim ${id}` }];
+          return [
+            ...managementActions,
+            { role: 'worker', action: 'claim', command: `taskmarket task claim ${id}` },
+          ];
         case 'pitch': {
           const actions: PendingAction[] = [
+            ...managementActions,
             {
               role: 'worker',
               action: 'pitch',
@@ -72,6 +96,7 @@ function computePendingActions(task: {
         }
         case 'benchmark':
           return [
+            ...managementActions,
             {
               role: 'worker',
               action: 'submit_proof',
@@ -139,6 +164,7 @@ function computePendingActions(task: {
         default:
           return [];
       }
+    }
     case 'claimed':
       return [
         { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
@@ -566,6 +592,245 @@ export const tasksRouter = router({
           auctionType: task.auctionType,
           currentClockPrice: clockPrice,
           currentLowestBid,
+        }),
+      };
+    }),
+
+  cancel: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/cancel',
+        tags: ['Tasks'],
+        summary: 'Cancel an open task (X402 required)',
+      },
+    })
+    .input(CancelTaskInputSchema)
+    .output(z.object({ txHash: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new Error('Task not found');
+      }
+
+      const task = taskResult[0];
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can cancel');
+      }
+
+      if (task.status !== 'open') {
+        throw new Error('Task not open');
+      }
+
+      if (task.mode === 'auction') {
+        const bidCount = await ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(bids)
+          .where(eq(bids.taskId, input.taskId));
+        if (Number(bidCount[0]?.count ?? 0) > 0) {
+          throw new Error('Bids exist — cannot cancel auction with bids');
+        }
+      }
+
+      const txHash = await contractCancelTask(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        task.contractAddress
+      );
+
+      await ctx.db
+        .update(tasks)
+        .set({ status: 'cancelled', cancelledAt: new Date() })
+        .where(eq(tasks.id, input.taskId));
+
+      return { txHash };
+    }),
+
+  update: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/update',
+        tags: ['Tasks'],
+        summary: 'Update an open task (X402 required)',
+      },
+    })
+    .input(UpdateTaskInputSchema)
+    .output(TaskDetailResponseSchema.nullable())
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new Error('Task not found');
+      }
+
+      const task = taskResult[0];
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can update');
+      }
+
+      if (task.status !== 'open') {
+        throw new Error('Task not open');
+      }
+
+      if (task.mode === 'auction') {
+        const bidCount = await ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(bids)
+          .where(eq(bids.taskId, input.taskId));
+        if (Number(bidCount[0]?.count ?? 0) > 0) {
+          throw new Error('Bids exist — cannot update auction with bids');
+        }
+      }
+
+      const effectiveReward = input.reward ?? task.reward;
+      if (input.auctionFloorPrice && BigInt(input.auctionFloorPrice) > BigInt(effectiveReward)) {
+        throw new Error('auctionFloorPrice must be <= reward');
+      }
+      if (input.auctionStartPrice && BigInt(input.auctionStartPrice) > BigInt(effectiveReward)) {
+        throw new Error('auctionStartPrice must be <= reward');
+      }
+
+      const newReward = input.reward ? BigInt(input.reward) : 0n;
+      const newExpiryTime = input.expiryTime ? BigInt(input.expiryTime) : 0n;
+      const newBidDeadline = input.bidDeadline ? BigInt(input.bidDeadline) : 0n;
+      const newPitchDeadline = input.pitchDeadline ? BigInt(input.pitchDeadline) : 0n;
+
+      const hasOnChainChange =
+        (newReward !== 0n && newReward !== BigInt(task.reward)) ||
+        newExpiryTime !== 0n ||
+        newBidDeadline !== 0n ||
+        newPitchDeadline !== 0n;
+
+      if (hasOnChainChange) {
+        await contractUpdateTask(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          newReward,
+          newExpiryTime,
+          newBidDeadline,
+          newPitchDeadline,
+          task.contractAddress
+        );
+      }
+
+      const dbUpdate: Record<string, unknown> = {};
+      if (input.reward && input.reward !== task.reward) {
+        dbUpdate.reward = input.reward;
+      }
+      if (input.expiryTime) {
+        dbUpdate.expiryTime = new Date(input.expiryTime * 1000);
+      }
+      if (input.bidDeadline) {
+        dbUpdate.bidDeadline = new Date(input.bidDeadline * 1000);
+      }
+      if (input.pitchDeadline) {
+        dbUpdate.pitchDeadline = new Date(input.pitchDeadline * 1000);
+      }
+      if (input.auctionFloorPrice !== undefined) {
+        dbUpdate.auctionFloorPrice = input.auctionFloorPrice;
+      }
+      if (input.auctionStartPrice !== undefined) {
+        dbUpdate.auctionStartPrice = input.auctionStartPrice;
+      }
+      if (input.description !== undefined) {
+        dbUpdate.description = input.description;
+      }
+      if (input.tags !== undefined) {
+        dbUpdate.tags = input.tags;
+      }
+      if (input.metricDescription !== undefined) {
+        dbUpdate.metricDescription = input.metricDescription;
+      }
+
+      if (Object.keys(dbUpdate).length > 0) {
+        await ctx.db.update(tasks).set(dbUpdate).where(eq(tasks.id, input.taskId));
+      }
+
+      // Return updated task
+      const updated = await ctx.db.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
+      if (updated.length === 0) return null;
+      const t = updated[0];
+
+      const bidCountResult =
+        t.mode === 'auction'
+          ? await ctx.db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(bids)
+              .where(eq(bids.taskId, t.id))
+          : null;
+      const auctionBidCount = bidCountResult ? Number(bidCountResult[0]?.count ?? 0) : null;
+
+      return {
+        id: t.id,
+        requester: t.requester,
+        requesterPubkey: t.requesterPubkey,
+        description: t.description,
+        reward: t.reward,
+        escrowTxHash: t.escrowTxHash,
+        createdAt: t.createdAt.toISOString(),
+        expiryTime: t.expiryTime.toISOString(),
+        status: t.status as TaskStatusType,
+        tags: t.tags,
+        worker: t.worker,
+        rating: t.rating,
+        mode: t.mode as TaskModeType,
+        stakeRequired: t.stakeRequired === 1,
+        stakeBps: t.stakeBps,
+        pitchDeadline: t.pitchDeadline?.toISOString() || null,
+        bidDeadline: t.bidDeadline?.toISOString() || null,
+        maxPrice: t.maxPrice ?? null,
+        metricDescription: t.metricDescription,
+        metricTarget: t.metricTarget,
+        claimedBy: t.claimedBy,
+        claimedAt: t.claimedAt?.toISOString() || null,
+        platformFeeBps: t.platformFeeBps,
+        submissionCount: 0,
+        pitchCount: 0,
+        requesterAgentId: t.requesterAgentId ?? null,
+        auctionType: (t.auctionType as AuctionTypeValue | null) ?? null,
+        auctionStartPrice: t.auctionStartPrice ?? null,
+        auctionFloorPrice: t.auctionFloorPrice ?? null,
+        currentAuctionPrice: null,
+        auctionBidCount,
+        auctionPriceReachesFloorAt: null,
+        auctionPriceReachesMaxAt: null,
+        currentLowestBid: null,
+        pendingActions: computePendingActions({
+          id: t.id,
+          status: t.status,
+          mode: t.mode,
+          rating: t.rating,
+          pitchCount: 0,
+          bidCount: auctionBidCount ?? 0,
+          expiryTime: t.expiryTime,
+          bidDeadline: t.bidDeadline,
+          claimedBy: t.claimedBy,
+          worker: t.worker,
+          auctionType: t.auctionType,
+          currentClockPrice: null,
+          currentLowestBid: null,
         }),
       };
     }),

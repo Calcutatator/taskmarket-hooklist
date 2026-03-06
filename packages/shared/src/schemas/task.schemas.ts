@@ -11,6 +11,7 @@ export const TaskStatus = z.enum([
   'completed',
   'expired',
   'disputed',
+  'cancelled',
 ]);
 
 export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
@@ -85,6 +86,7 @@ export const TaskListInputSchema = z.object({
       'completed',
       'expired',
       'disputed',
+      'cancelled',
     ])
     .optional()
     .default('ALL'),
@@ -122,6 +124,23 @@ export const PendingActionSchema = z.object({
 
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
+});
+
+export const CancelTaskInputSchema = z.object({
+  taskId: z.string(),
+});
+
+export const UpdateTaskInputSchema = z.object({
+  taskId: z.string(),
+  reward: z.string().optional(),
+  expiryTime: z.number().optional(),
+  bidDeadline: z.number().optional(),
+  pitchDeadline: z.number().optional(),
+  auctionFloorPrice: z.string().optional(),
+  auctionStartPrice: z.string().optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  metricDescription: z.string().optional(),
 });
 
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;

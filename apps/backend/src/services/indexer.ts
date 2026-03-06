@@ -50,6 +50,12 @@ const STAKE_RETURNED_EVENT = parseAbiItem(
   'event StakeReturned(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
 );
 const TASK_REOPENED_EVENT = parseAbiItem('event TaskReopened(bytes32 indexed taskId)');
+const TASK_CANCELLED_EVENT = parseAbiItem(
+  'event TaskCancelled(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
+);
+const TASK_UPDATED_EVENT = parseAbiItem(
+  'event TaskUpdated(bytes32 indexed taskId, uint256 newReward, uint256 newExpiryTime)'
+);
 
 const METADATA_SET_EVENT = parseAbiItem(
   'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
@@ -214,6 +220,31 @@ async function processTaskExpiredEvent(log: EventLog): Promise<void> {
   console.log(`TaskExpired event: ${taskId}`);
 }
 
+async function processTaskCancelledEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
+
+  await db
+    .update(tasks)
+    .set({ status: 'cancelled', cancelledAt: new Date() })
+    .where(eq(tasks.id, taskId as string));
+
+  console.log(`TaskCancelled event: ${taskId}`);
+}
+
+async function processTaskUpdatedEvent(log: EventLog): Promise<void> {
+  const { taskId, newReward, newExpiryTime } = log.args;
+
+  await db
+    .update(tasks)
+    .set({
+      reward: (newReward as bigint).toString(),
+      expiryTime: new Date(Number(newExpiryTime as bigint) * 1000),
+    })
+    .where(eq(tasks.id, taskId as string));
+
+  console.log(`TaskUpdated event: ${taskId}`);
+}
+
 async function processTaskReopenedEvent(log: EventLog): Promise<void> {
   const { taskId } = log.args;
 
@@ -246,6 +277,8 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       STAKE_FORFEITED_EVENT,
       STAKE_RETURNED_EVENT,
       TASK_REOPENED_EVENT,
+      TASK_CANCELLED_EVENT,
+      TASK_UPDATED_EVENT,
     ] as any,
   })) as unknown as EventLog[];
 
@@ -265,6 +298,10 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
         await processTaskExpiredEvent(log);
       } else if (log.eventName === 'TaskReopened') {
         await processTaskReopenedEvent(log);
+      } else if (log.eventName === 'TaskCancelled') {
+        await processTaskCancelledEvent(log);
+      } else if (log.eventName === 'TaskUpdated') {
+        await processTaskUpdatedEvent(log);
       }
     } catch (error) {
       console.error(`Error processing event ${log.eventName}:`, error);

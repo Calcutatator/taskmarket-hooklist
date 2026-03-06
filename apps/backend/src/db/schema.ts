@@ -44,6 +44,7 @@ export const tasks = pgTable(
     requesterAgentId: text('requester_agent_id'),
     chainId: integer('chain_id'),
     contractAddress: text('contract_address'),
+    cancelledAt: timestamp('cancelled_at'),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),

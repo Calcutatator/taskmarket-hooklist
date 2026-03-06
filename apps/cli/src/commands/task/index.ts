@@ -14,6 +14,8 @@ import { auctionAcceptCmd } from './auction-accept.js';
 import { submissionsCmd } from './submissions.js';
 import { selectWinnerCmd } from './select-winner.js';
 import { downloadCmd } from './download.js';
+import { cancelCmd } from './cancel.js';
+import { updateCmd } from './update.js';
 
 export const taskCommand = new Command('task').description('Manage tasks');
 
@@ -32,3 +34,5 @@ taskCommand.addCommand(auctionAcceptCmd);
 taskCommand.addCommand(submissionsCmd);
 taskCommand.addCommand(selectWinnerCmd);
 taskCommand.addCommand(downloadCmd);
+taskCommand.addCommand(cancelCmd);
+taskCommand.addCommand(updateCmd);

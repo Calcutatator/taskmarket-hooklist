@@ -59,7 +59,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         PendingApproval,
         Accepted,
         Expired,
-        Disputed
+        Disputed,
+        Cancelled
     }
 
     struct Task {
@@ -131,6 +132,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
     event AuthorizedServerUpdated(address newServer);
     event ReputationRegistryUpdated(address newRegistry);
     event BidSubmitted(bytes32 indexed taskId, address indexed worker, uint256 price);
+    event TaskCancelled(bytes32 indexed taskId, address indexed requester, uint256 refundAmount);
+    event TaskUpdated(bytes32 indexed taskId, uint256 newReward, uint256 newExpiryTime);
 
     modifier onlyServer() {
         require(msg.sender == authorizedServer, "Not authorized server");
@@ -484,7 +487,10 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
     }
 
     /**
-     * @notice Refund expired task reward to requester
+     * @notice Refund expired task reward to requester.
+     *         Special case: if an auction task has a selected winner (status=Claimed) and the
+     *         requester never called acceptSubmission before expiry, this function auto-pays
+     *         the winner at the agreed price rather than refunding the full reward.
      * @param taskId Task identifier
      */
     function refundExpired(bytes32 taskId) external nonReentrant {
@@ -492,6 +498,29 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         require(task.requester != address(0), "Task does not exist");
         require(block.timestamp > task.expiryTime, "Task not expired");
         require(task.status != TaskStatus.Accepted, "Task already accepted");
+        require(task.status != TaskStatus.Cancelled, "Task cancelled");
+
+        // Auction winner selected but requester abandoned — auto-pay the worker at the agreed price.
+        // Must be handled before setting status=Expired so the correct status is stored.
+        if (task.mode == TaskMode.Auction && task.status == TaskStatus.Claimed) {
+            uint256 fee = (task.stakeAmount * task.feeBps) / 10000;
+            uint256 workerPayment = task.stakeAmount - fee;
+            task.status = TaskStatus.Accepted;
+            workerStats[task.worker].completedTasks++;
+            if (workerPayment > 0) {
+                require(usdcToken.transfer(task.worker, workerPayment), "Worker payment failed");
+            }
+            if (fee > 0) {
+                require(usdcToken.transfer(feeRecipient, fee), "Fee transfer failed");
+                totalFeesCollected += fee;
+            }
+            uint256 refund = task.reward - task.stakeAmount;
+            if (refund > 0) {
+                require(usdcToken.transfer(task.requester, refund), "Requester refund failed");
+            }
+            emit TaskAccepted(taskId, task.requester, task.worker, workerPayment, fee);
+            return;
+        }
 
         task.status = TaskStatus.Expired;
         uint256 refundAmount = task.reward;
@@ -504,6 +533,92 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         }
 
         emit TaskExpired(taskId, task.requester, refundAmount);
+    }
+
+    /**
+     * @notice Cancel an open task and refund the escrowed reward to the requester.
+     *         Auction tasks may only be cancelled if no bids have been submitted.
+     * @param taskId Task identifier
+     * @param requester Real requester wallet (must match task.requester)
+     */
+    function cancelTask(bytes32 taskId, address requester) external onlyServer nonReentrant {
+        Task storage task = tasks[taskId];
+        require(task.requester != address(0), "Task does not exist");
+        require(requester == task.requester, "Not requester");
+        require(task.status == TaskStatus.Open, "Task not open");
+        if (task.mode == TaskMode.Auction) {
+            require(taskBids[taskId].length == 0, "Bids exist");
+        }
+        task.status = TaskStatus.Cancelled;
+        uint256 refundAmount = task.reward;
+        require(usdcToken.transfer(task.requester, refundAmount), "Refund failed");
+        emit TaskCancelled(taskId, task.requester, refundAmount);
+    }
+
+    /**
+     * @notice Update an open task's parameters.
+     *         Pass 0 for any field to leave it unchanged.
+     *         Auction tasks may only be updated if no bids have been submitted.
+     *         auctionFloorPrice and auctionStartPrice are DB-only fields updated by the backend.
+     * @param taskId Task identifier
+     * @param requester Real requester wallet (must match task.requester)
+     * @param newReward New reward amount (0 = no change); if higher, server must have USDC approval
+     * @param newExpiryTime New absolute expiry Unix timestamp (0 = no change); must be in future
+     * @param newBidDeadline New absolute bid deadline Unix timestamp (auction only, 0 = no change)
+     * @param newPitchDeadline New absolute pitch deadline Unix timestamp (pitch only, 0 = no change)
+     */
+    function updateTask(
+        bytes32 taskId,
+        address requester,
+        uint256 newReward,
+        uint256 newExpiryTime,
+        uint256 newBidDeadline,
+        uint256 newPitchDeadline
+    ) external onlyServer nonReentrant {
+        Task storage task = tasks[taskId];
+        require(task.requester != address(0), "Task does not exist");
+        require(requester == task.requester, "Not requester");
+        require(task.status == TaskStatus.Open, "Task not open");
+        if (task.mode == TaskMode.Auction) {
+            require(taskBids[taskId].length == 0, "Bids exist");
+        }
+
+        uint256 originalReward = task.reward;
+        uint256 originalExpiryTime = task.expiryTime;
+
+        if (newReward != 0 && newReward != task.reward) {
+            if (newReward > task.reward) {
+                uint256 additional = newReward - task.reward;
+                require(usdcToken.transferFrom(msg.sender, address(this), additional), "USDC transfer failed");
+            } else {
+                uint256 refund = task.reward - newReward;
+                require(usdcToken.transfer(task.requester, refund), "USDC refund failed");
+            }
+            task.reward = newReward;
+            if (task.mode == TaskMode.Auction) {
+                task.maxPrice = newReward;
+            }
+        }
+        if (newExpiryTime != 0) {
+            require(newExpiryTime > block.timestamp, "Expiry must be in future");
+            task.expiryTime = newExpiryTime;
+        }
+        if (newBidDeadline != 0 && task.mode == TaskMode.Auction) {
+            require(newBidDeadline > block.timestamp, "Bid deadline must be in future");
+            task.bidDeadline = newBidDeadline;
+        }
+        if (newPitchDeadline != 0 && task.mode == TaskMode.Pitch) {
+            require(newPitchDeadline > block.timestamp, "Pitch deadline must be in future");
+            task.pitchDeadline = newPitchDeadline;
+        }
+
+        bool changed = (newReward != 0 && newReward != originalReward)
+            || (newExpiryTime != 0 && newExpiryTime != originalExpiryTime)
+            || (newBidDeadline != 0 && task.mode == TaskMode.Auction)
+            || (newPitchDeadline != 0 && task.mode == TaskMode.Pitch);
+        if (changed) {
+            emit TaskUpdated(taskId, task.reward, task.expiryTime);
+        }
     }
 
     /**
