@@ -30,6 +30,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - uses: pnpm/action-setup@v2
         with:
@@ -44,9 +46,6 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - run: pnpm install --frozen-lockfile
-
-      - name: Install Foundry dependencies
-        run: cd packages/contracts && forge install
 
       - run: pnpm turbo build
 
