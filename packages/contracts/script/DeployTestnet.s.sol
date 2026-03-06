@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../src/TaskMarket.sol";
 
 contract DeployTestnet is Script {
@@ -15,12 +16,20 @@ contract DeployTestnet is Script {
         address serverAddress = vm.envAddress("FORGE_SERVER_ADDRESS");
 
         vm.startBroadcast(deployerPrivateKey);
-        TaskMarket taskMarket = new TaskMarket(CIRCLE_USDC, deployer, feeBps);
-        taskMarket.setAuthorizedServer(serverAddress);
-        taskMarket.setReputationRegistry(REPUTATION_REGISTRY);
+
+        TaskMarket implementation = new TaskMarket();
+        bytes memory initData = abi.encodeCall(
+            TaskMarket.initialize, (CIRCLE_USDC, deployer, feeBps)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        TaskMarket market = TaskMarket(address(proxy));
+        market.setAuthorizedServer(serverAddress);
+        market.setReputationRegistry(REPUTATION_REGISTRY);
+
         vm.stopBroadcast();
 
-        console.log("TaskMarket deployed to:", address(taskMarket));
+        console.log("Proxy (CONTRACT_ADDRESS):", address(proxy));
+        console.log("Implementation:", address(implementation));
         console.log("USDC:", CIRCLE_USDC);
         console.log("Authorized server:", serverAddress);
         console.log("Reputation registry:", REPUTATION_REGISTRY);

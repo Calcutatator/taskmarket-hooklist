@@ -25,7 +25,32 @@ const TASK_MODES = [
   {
     value: 'auction',
     label: 'Auction',
-    description: 'Workers bid down from your max price',
+    description: 'Workers bid down from your max price; choose subtype',
+  },
+] as const;
+
+const AUCTION_SUBTYPES = [
+  {
+    value: 'english',
+    label: 'English (Open Bids)',
+    description: 'Open bids — each must undercut the current lowest. Lowest at deadline wins.',
+  },
+  {
+    value: 'reverse_english',
+    label: 'Reverse English (Sealed Bids)',
+    description: 'Sealed bids — prices hidden until deadline. Lowest at deadline wins.',
+  },
+  {
+    value: 'dutch',
+    label: 'Dutch (Descending Clock)',
+    description:
+      'Clock descends from max price to floor. First worker to accept at current price wins.',
+  },
+  {
+    value: 'reverse_dutch',
+    label: 'Reverse Dutch (Ascending Clock)',
+    description:
+      'Clock ascends from start price to max. First worker to accept at current price wins.',
   },
 ] as const;
 
@@ -51,6 +76,7 @@ export function CreateTaskForm() {
 
   const mode = form.watch('mode');
   const stakeRequired = form.watch('stakeRequired');
+  const auctionType = form.watch('auctionType');
 
   const onSubmit = async (data: TaskCreate) => {
     if (!address) return;
@@ -64,6 +90,28 @@ export function CreateTaskForm() {
       // Convert maxPrice to base units if provided
       if (data.maxPrice) {
         body.maxPrice = parseUnits(data.maxPrice, 6).toString();
+      }
+
+      if (data.mode === 'auction') {
+        if (!data.auctionType) {
+          form.setError('auctionType', { message: 'Auction type is required' });
+          return;
+        }
+        if (data.auctionType === 'reverse_dutch' && !data.auctionStartPrice) {
+          form.setError('auctionStartPrice', {
+            message: 'Start price is required for reverse dutch',
+          });
+          return;
+        }
+      }
+      if (data.auctionType) {
+        body.auctionType = data.auctionType;
+      }
+      if (data.auctionStartPrice) {
+        body.auctionStartPrice = parseUnits(data.auctionStartPrice, 6).toString();
+      }
+      if (data.auctionFloorPrice) {
+        body.auctionFloorPrice = parseUnits(data.auctionFloorPrice, 6).toString();
       }
 
       // Step 1: Probe the endpoint to get 402 payment requirements
@@ -414,6 +462,33 @@ export function CreateTaskForm() {
                 <h3 className="font-heading font-semibold">Auction Mode Settings</h3>
                 <FormField
                   control={form.control}
+                  name="auctionType"
+                  render={({ field }) => (
+                    <FormItem>
+                      <FormLabel>Auction Subtype (required)</FormLabel>
+                      <Select onValueChange={field.onChange} value={field.value ?? ''}>
+                        <FormControl>
+                          <SelectTrigger>
+                            <SelectValue placeholder="Select auction subtype">
+                              {AUCTION_SUBTYPES.find((t) => t.value === field.value)?.label}
+                            </SelectValue>
+                          </SelectTrigger>
+                        </FormControl>
+                        <SelectContent>
+                          {AUCTION_SUBTYPES.map((t) => (
+                            <SelectItem key={t.value} value={t.value} textValue={t.label}>
+                              <p className="font-semibold">{t.label}</p>
+                              <p className="text-sm text-text-secondary">{t.description}</p>
+                            </SelectItem>
+                          ))}
+                        </SelectContent>
+                      </Select>
+                      <FormMessage />
+                    </FormItem>
+                  )}
+                />
+                <FormField
+                  control={form.control}
                   name="bidDeadline"
                   render={({ field }) => (
                     <FormItem>
@@ -430,6 +505,40 @@ export function CreateTaskForm() {
                     </FormItem>
                   )}
                 />
+                {(auctionType === 'dutch' || auctionType === 'reverse_dutch') && (
+                  <FormField
+                    control={form.control}
+                    name="auctionFloorPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>
+                          {auctionType === 'dutch'
+                            ? 'Floor Price (USDC) — clock stops here'
+                            : 'Floor Price (USDC) — optional lower bound'}
+                        </FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.000001" placeholder="0.00" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
+                {auctionType === 'reverse_dutch' && (
+                  <FormField
+                    control={form.control}
+                    name="auctionStartPrice"
+                    render={({ field }) => (
+                      <FormItem>
+                        <FormLabel>Start Price (USDC) — clock begins here (required)</FormLabel>
+                        <FormControl>
+                          <Input type="number" step="0.000001" placeholder="0.001" {...field} />
+                        </FormControl>
+                        <FormMessage />
+                      </FormItem>
+                    )}
+                  />
+                )}
               </div>
             )}
 

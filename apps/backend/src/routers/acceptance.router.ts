@@ -61,7 +61,8 @@ export const acceptanceRouter = router({
       const txHash = await contractAcceptSubmission(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
-        input.worker as `0x${string}`
+        input.worker as `0x${string}`,
+        task.contractAddress
       );
 
       await ctx.db
@@ -214,7 +215,8 @@ export const acceptanceRouter = router({
         input.rating,
         workerAgentId,
         feedbackURI,
-        feedbackHash
+        feedbackHash,
+        task.contractAddress
       );
 
       await ctx.db

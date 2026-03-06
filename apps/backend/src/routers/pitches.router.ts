@@ -172,7 +172,8 @@ export const pitchesRouter = router({
       await contractSelectWorker(
         input.taskId as `0x${string}`,
         task.requester as `0x${string}`,
-        input.workerAddress as `0x${string}`
+        input.workerAddress as `0x${string}`,
+        task.contractAddress
       );
 
       await ctx.db

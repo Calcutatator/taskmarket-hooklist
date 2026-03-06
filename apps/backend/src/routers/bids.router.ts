@@ -1,10 +1,16 @@
 import { router, publicProcedure } from '../trpc';
-import { BidCreateSchema, BidResponseSchema } from '@taskmarket/shared';
+import { BidCreateSchema, BidResponseSchema, AuctionAcceptSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { bids, tasks, agents } from '../db/schema';
-import { eq, asc } from 'drizzle-orm';
+import { eq, asc, and, gt, sql } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { contractSubmitBid, contractSelectLowestBidder } from '../services/contract';
+import {
+  contractSubmitBid,
+  contractSelectLowestBidder,
+  contractAcceptAuction,
+} from '../services/contract';
+import { authenticateXmtpDevice } from '../services/xmtp-auth';
+import { computeClockPrice } from '../lib/auction';
 
 export const bidsRouter = router({
   submit: publicProcedure
@@ -52,20 +58,80 @@ export const bidsRouter = router({
         throw new Error('Bid exceeds max price');
       }
 
+      // Dutch and reverse_dutch use auction-accept, not bid
+      if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+        throw new Error(
+          `This auction type (${task.auctionType}) uses auction-accept, not bid. Run: taskmarket task auction-accept ${task.id}`
+        );
+      }
+
+      // English: new bid must undercut the current lowest bid
+      if (task.auctionType === 'english') {
+        const lowestBid = await ctx.db
+          .select()
+          .from(bids)
+          .where(eq(bids.taskId, input.taskId))
+          .orderBy(asc(bids.price))
+          .limit(1);
+
+        if (lowestBid.length > 0) {
+          const currentLowest = BigInt(lowestBid[0].price);
+          if (BigInt(input.price) >= currentLowest) {
+            throw new Error(
+              `Bid must undercut the current lowest bid of ${lowestBid[0].price} base units`
+            );
+          }
+        }
+      }
+
+      // Reverse English: re-bid must be lower than worker's own previous bid
+      if (task.auctionType === 'reverse_english') {
+        const existingBid = await ctx.db
+          .select()
+          .from(bids)
+          .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)))
+          .limit(1);
+
+        if (existingBid.length > 0) {
+          if (BigInt(input.price) >= BigInt(existingBid[0].price)) {
+            throw new Error(
+              `Re-bid must be lower than your current bid of ${existingBid[0].price} base units`
+            );
+          }
+        }
+      }
+
       await contractSubmitBid(
         input.taskId as `0x${string}`,
         workerAddress as `0x${string}`,
-        BigInt(input.price)
+        BigInt(input.price),
+        task.contractAddress
       );
 
-      const bidId = randomUUID();
+      // Upsert: if worker already has a bid on this task, replace it (English and Reverse English).
+      // The DB unique constraint on (task_id, worker_address) enforces one bid per worker per task.
+      const existingBids = await ctx.db
+        .select()
+        .from(bids)
+        .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)))
+        .limit(1);
 
-      await ctx.db.insert(bids).values({
-        id: bidId,
-        taskId: input.taskId,
-        workerAddress,
-        price: input.price,
-      });
+      let bidId: string;
+      if (existingBids.length > 0) {
+        bidId = existingBids[0].id;
+        await ctx.db
+          .update(bids)
+          .set({ price: input.price, createdAt: new Date() })
+          .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)));
+      } else {
+        bidId = randomUUID();
+        await ctx.db.insert(bids).values({
+          id: bidId,
+          taskId: input.taskId,
+          workerAddress,
+          price: input.price,
+        });
+      }
 
       return { success: true, bidId };
     }),
@@ -79,9 +145,23 @@ export const bidsRouter = router({
         summary: 'List bids for an auction task',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(z.object({ taskId: z.string(), callerAddress: z.string().optional() }))
     .output(z.array(BidResponseSchema))
     .query(async ({ input, ctx }) => {
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      const task = taskResult[0] ?? null;
+      const now = new Date();
+      const deadlinePassed = task?.bidDeadline ? now >= task.bidDeadline : true;
+
+      // For reverse_english before deadline: bids are fully sealed
+      const isSealed =
+        task?.auctionType === 'reverse_english' && task?.status === 'open' && !deadlinePassed;
+
       const results = await ctx.db
         .select()
         .from(bids)
@@ -90,6 +170,20 @@ export const bidsRouter = router({
 
       return Promise.all(
         results.map(async (bid) => {
+          if (isSealed) {
+            // Hide price and address before deadline for sealed bids
+            return {
+              id: bid.id,
+              taskId: bid.taskId,
+              workerAddress: null,
+              price: null,
+              createdAt: bid.createdAt.toISOString(),
+              workerAgentId: null,
+              isMyBid:
+                input.callerAddress != null ? bid.workerAddress === input.callerAddress : undefined,
+            };
+          }
+
           const agentResult = await ctx.db
             .select()
             .from(agents)
@@ -103,6 +197,8 @@ export const bidsRouter = router({
             price: bid.price,
             createdAt: bid.createdAt.toISOString(),
             workerAgentId: agentResult[0]?.agentId ?? null,
+            isMyBid:
+              input.callerAddress != null ? bid.workerAddress === input.callerAddress : undefined,
           };
         })
       );
@@ -144,7 +240,14 @@ export const bidsRouter = router({
         throw new Error('Bid deadline has not passed yet');
       }
 
-      await contractSelectLowestBidder(input.taskId as `0x${string}`);
+      // Dutch/Reverse Dutch use auction-accept for immediate selection
+      if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+        throw new Error(
+          `${task.auctionType} auctions use auction-accept for immediate selection, not select-winner`
+        );
+      }
+
+      await contractSelectLowestBidder(input.taskId as `0x${string}`, task.contractAddress);
 
       const lowestBid = await ctx.db
         .select()
@@ -168,5 +271,183 @@ export const bidsRouter = router({
         .where(eq(tasks.id, input.taskId));
 
       return { success: true, workerAddress: winner.workerAddress };
+    }),
+
+  auctionAccept: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/bids/accept',
+        tags: ['Tasks'],
+        summary:
+          'Accept current clock price on a dutch or reverse_dutch auction task (X402 required)',
+      },
+    })
+    .input(AuctionAcceptSchema)
+    .output(
+      z.object({ success: z.boolean(), acceptedPrice: z.string(), workerAddress: z.string() })
+    )
+    .mutation(async ({ input, ctx }) => {
+      const workerAddress: string = ctx.res.locals.payer;
+      if (!workerAddress) {
+        throw new Error('Worker address required');
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new Error('Task not found');
+      }
+
+      const task = taskResult[0];
+
+      if (task.mode !== 'auction') {
+        throw new Error('Not an auction task');
+      }
+
+      if (task.auctionType !== 'dutch' && task.auctionType !== 'reverse_dutch') {
+        throw new Error(
+          `auction-accept is only for dutch and reverse_dutch auctions. This task is ${task.auctionType || 'untyped'}.`
+        );
+      }
+
+      if (task.status !== 'open') {
+        throw new Error('Task is not open');
+      }
+
+      if (task.bidDeadline && new Date() >= task.bidDeadline) {
+        throw new Error('Bid deadline has passed — auction clock has expired');
+      }
+
+      const now = new Date();
+      const clockPrice = computeClockPrice(task, now);
+      if (clockPrice === null) {
+        throw new Error('Could not compute current clock price');
+      }
+
+      // Optional minPrice guard
+      if (input.minPrice) {
+        const minPrice = BigInt(input.minPrice);
+        if (clockPrice < minPrice) {
+          throw new Error(
+            `Clock price (${clockPrice} base units) is below your minimum (${minPrice} base units). Current price: ${clockPrice}`
+          );
+        }
+      }
+
+      // Atomic race-condition guard: update status to 'claimed' only if still 'open'
+      const updated = await ctx.db
+        .update(tasks)
+        .set({
+          status: 'claimed',
+          worker: workerAddress,
+          claimedBy: workerAddress,
+          claimedAt: now,
+        })
+        .where(and(eq(tasks.id, input.taskId), eq(tasks.status, 'open')))
+        .returning();
+
+      if (!updated || updated.length === 0) {
+        throw new Error('Auction already claimed by another worker');
+      }
+
+      // Atomically award the auction to this worker at the clock price
+      await contractAcceptAuction(
+        input.taskId as `0x${string}`,
+        workerAddress as `0x${string}`,
+        clockPrice,
+        task.contractAddress
+      );
+
+      // Record the bid in DB
+      await ctx.db.insert(bids).values({
+        id: randomUUID(),
+        taskId: input.taskId,
+        workerAddress,
+        price: clockPrice.toString(),
+      });
+
+      return {
+        success: true,
+        acceptedPrice: clockPrice.toString(),
+        workerAddress,
+      };
+    }),
+
+  myBids: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/bids/my',
+        tags: ['Tasks'],
+        summary: 'List my active pending bids on auction tasks',
+      },
+    })
+    .input(
+      z.object({
+        deviceId: z.string(),
+        apiToken: z.string(),
+      })
+    )
+    .output(
+      z.array(
+        z.object({
+          taskId: z.string(),
+          auctionType: z.string().nullable(),
+          myBidPrice: z.string(),
+          currentLowestBid: z.string().nullable(),
+          bidDeadline: z.string().nullable(),
+          bidCount: z.number(),
+          taskStatus: z.string(),
+        })
+      )
+    )
+    .query(async ({ input, ctx }) => {
+      const device = await authenticateXmtpDevice(ctx, {
+        deviceId: input.deviceId,
+        apiToken: input.apiToken,
+      });
+
+      const now = new Date();
+
+      // Single query: join my bids to their tasks, filter to open tasks with active deadline,
+      // aggregate bid count and lowest bid per task in one pass.
+      const rows = await ctx.db
+        .select({
+          taskId: tasks.id,
+          auctionType: tasks.auctionType,
+          bidDeadline: tasks.bidDeadline,
+          taskStatus: tasks.status,
+          myBidPrice: bids.price,
+          bidCount: sql<number>`count(*) over (partition by ${bids.taskId})::int`,
+          lowestBid: sql<
+            string | null
+          >`min(${bids.price}::numeric) over (partition by ${bids.taskId})::text`,
+        })
+        .from(bids)
+        .innerJoin(tasks, eq(bids.taskId, tasks.id))
+        .where(
+          and(
+            eq(bids.workerAddress, device.walletAddress),
+            eq(tasks.status, 'open'),
+            gt(tasks.bidDeadline, now)
+          )
+        )
+        .orderBy(asc(tasks.bidDeadline));
+
+      return rows.map((row) => ({
+        taskId: row.taskId,
+        auctionType: row.auctionType,
+        myBidPrice: row.myBidPrice,
+        // For English show the current lowest bid; for others it's not relevant
+        currentLowestBid: row.auctionType === 'english' ? row.lowestBid : null,
+        bidDeadline: row.bidDeadline?.toISOString() ?? null,
+        bidCount: row.bidCount,
+        taskStatus: row.taskStatus,
+      }));
     }),
 });

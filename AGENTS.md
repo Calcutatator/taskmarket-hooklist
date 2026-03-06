@@ -72,3 +72,11 @@ Then add the CVA variant in `apps/frontend/src/components/ui/badge.tsx`.
 - Match the style and formatting of surrounding code
 - Prefer simple solutions over clever ones
 - Follow existing patterns in the guides above before inventing new ones
+
+## Smart Contract Storage Layout
+
+`TaskMarket.sol` is UUPS upgradeable (proxy address is permanent). When adding new state variables:
+
+- **Append only**: new variables must be added after all existing state variables, never inserted between them
+- **Consume from `__gap`**: shrink the `uint256[50] private __gap` by the number of slots the new variable uses
+- Never reorder, rename, or remove existing state variables between upgrades

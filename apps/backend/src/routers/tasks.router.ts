@@ -5,13 +5,17 @@ import {
   TaskListResponseSchema,
   TaskDetailResponseSchema,
   type PendingAction,
+  type TaskStatusType,
+  type TaskModeType,
+  type AuctionTypeValue,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { tasks, submissions, proposals, agents } from '../db/schema';
-import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps } from 'drizzle-orm';
+import { tasks, submissions, proposals, agents, bids } from '../db/schema';
+import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc } from 'drizzle-orm';
 import { randomBytes } from 'crypto';
 import { contractCreateTask, MODE_MAP } from '../services/contract';
 import { getServerConfig } from '../config/env';
+import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 
 function computePendingActions(task: {
   id: string;
@@ -19,9 +23,14 @@ function computePendingActions(task: {
   mode: string;
   rating: number | null;
   pitchCount: number;
+  bidCount: number;
   expiryTime: Date;
+  bidDeadline: Date | null;
   claimedBy: string | null;
   worker: string | null;
+  auctionType: string | null;
+  currentClockPrice: bigint | null;
+  currentLowestBid: string | null;
 }): PendingAction[] {
   if (task.status === 'open' && task.expiryTime < new Date()) {
     return [];
@@ -29,6 +38,7 @@ function computePendingActions(task: {
 
   const id = task.id;
   const workerAddr = task.worker ?? task.claimedBy;
+  const now = new Date();
 
   switch (task.status) {
     case 'open':
@@ -68,10 +78,64 @@ function computePendingActions(task: {
               command: `taskmarket task proof ${id} --data <data> --type <type>`,
             },
           ];
-        case 'auction':
+        case 'auction': {
+          const deadlinePassed = task.bidDeadline && now >= task.bidDeadline;
+
+          if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+            if (deadlinePassed) {
+              // No more actions — clock window closed with no taker
+              return [];
+            }
+            const priceStr =
+              task.currentClockPrice !== null
+                ? (Number(task.currentClockPrice) / 1_000_000).toFixed(6)
+                : '?';
+            return [
+              {
+                role: 'worker',
+                action: 'auction_accept',
+                command: `taskmarket task auction-accept ${id} # current price: $${priceStr}`,
+              },
+            ];
+          }
+
+          // English / Reverse English
+          if (deadlinePassed) {
+            if (task.bidCount > 0) {
+              return [
+                {
+                  role: 'requester',
+                  action: 'select_winner',
+                  command: `taskmarket task select-winner ${id}`,
+                },
+              ];
+            }
+            return [];
+          }
+
+          if (task.auctionType === 'english') {
+            const lowestComment =
+              task.currentLowestBid !== null
+                ? ` # current lowest: $${(Number(task.currentLowestBid) / 1_000_000).toFixed(6)}`
+                : '';
+            return [
+              {
+                role: 'worker',
+                action: 'bid',
+                command: `taskmarket task bid ${id} --price <n>${lowestComment}`,
+              },
+            ];
+          }
+
+          // reverse_english
           return [
-            { role: 'worker', action: 'bid', command: `taskmarket task bid ${id} --price <n>` },
+            {
+              role: 'worker',
+              action: 'bid',
+              command: `taskmarket task bid ${id} --price <n> # ${task.bidCount} sealed bid(s) placed`,
+            },
           ];
+        }
         default:
           return [];
       }
@@ -152,8 +216,18 @@ export const tasksRouter = router({
         throw new Error('Payment required: missing payer');
       }
 
-      if (input.mode === 'auction' && !input.maxPrice) {
-        throw new Error('maxPrice is required for auction mode');
+      if (input.mode === 'auction') {
+        if (!input.maxPrice) {
+          throw new Error('maxPrice is required for auction mode');
+        }
+        if (!input.auctionType) {
+          throw new Error(
+            'auctionType is required for auction mode (dutch, english, reverse_dutch, reverse_english)'
+          );
+        }
+        if (input.auctionType === 'reverse_dutch' && !input.auctionStartPrice) {
+          throw new Error('auctionStartPrice is required for reverse_dutch auction type');
+        }
       }
 
       const config = getServerConfig();
@@ -216,10 +290,15 @@ export const tasksRouter = router({
           ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
           : null,
         maxPrice: input.maxPrice ?? null,
+        auctionType: input.auctionType ?? null,
+        auctionStartPrice: input.auctionStartPrice ?? null,
+        auctionFloorPrice: input.auctionFloorPrice ?? null,
         metricDescription: input.metricDescription ?? null,
         metricTarget: input.metricTarget ?? null,
         platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
         requesterAgentId: requesterAgent[0]?.agentId ?? null,
+        chainId: config.CHAIN_ID,
+        contractAddress: config.CONTRACT_ADDRESS,
       });
 
       return { success: true, taskId };
@@ -231,6 +310,7 @@ export const tasksRouter = router({
     .output(TaskListResponseSchema)
     .query(async ({ input, ctx }) => {
       const limit = input.limit || 20;
+      const now = new Date();
 
       const conditions = [];
       if (input.status && input.status !== 'ALL') {
@@ -238,6 +318,9 @@ export const tasksRouter = router({
       }
       if (input.mode && input.mode !== 'ALL') {
         conditions.push(eq(tasks.mode, input.mode));
+      }
+      if (input.auctionType) {
+        conditions.push(eq(tasks.auctionType, input.auctionType));
       }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
@@ -249,7 +332,6 @@ export const tasksRouter = router({
         conditions.push(sql`${tasks.reward} <= ${input.maxReward}`);
       }
       if (input.deadlineHours) {
-        const now = new Date();
         const cutoff = new Date(Date.now() + input.deadlineHours * 3_600_000);
         conditions.push(gt(tasks.expiryTime, now));
         conditions.push(lte(tasks.expiryTime, cutoff));
@@ -258,13 +340,13 @@ export const tasksRouter = router({
         conditions.push(lt(tasks.createdAt, new Date(input.cursor)));
       }
 
-      let query = ctx.db.select().from(tasks);
-      if (conditions.length > 0) {
-        query = query.where(and(...conditions)) as any;
-      }
-      query = query.orderBy(desc(tasks.createdAt)).limit(limit + 1) as any;
+      const results = await ctx.db
+        .select()
+        .from(tasks)
+        .where(conditions.length > 0 ? and(...conditions) : undefined)
+        .orderBy(desc(tasks.createdAt))
+        .limit(limit + 1);
 
-      const results = await query;
       const hasMore = results.length > limit;
       const tasksList = hasMore ? results.slice(0, limit) : results;
 
@@ -280,6 +362,33 @@ export const tasksRouter = router({
             .from(proposals)
             .where(eq(proposals.taskId, task.id));
 
+          let auctionBidCount: number | null = null;
+          let currentAuctionPrice: string | null = null;
+          let currentLowestBid: string | null = null;
+
+          if (task.mode === 'auction') {
+            const bidCountResult = await ctx.db
+              .select({ count: sql<number>`count(*)::int` })
+              .from(bids)
+              .where(eq(bids.taskId, task.id));
+            auctionBidCount = Number(bidCountResult[0]?.count ?? 0);
+
+            if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+              const price = computeClockPrice(task, now);
+              currentAuctionPrice = price !== null ? price.toString() : null;
+            }
+
+            if (task.auctionType === 'english') {
+              const lowestBid = await ctx.db
+                .select()
+                .from(bids)
+                .where(eq(bids.taskId, task.id))
+                .orderBy(asc(bids.price))
+                .limit(1);
+              currentLowestBid = lowestBid[0]?.price ?? null;
+            }
+          }
+
           return {
             id: task.id,
             requester: task.requester,
@@ -289,11 +398,11 @@ export const tasksRouter = router({
             escrowTxHash: task.escrowTxHash,
             createdAt: task.createdAt.toISOString(),
             expiryTime: task.expiryTime.toISOString(),
-            status: task.status as any,
+            status: task.status as TaskStatusType,
             tags: task.tags,
             worker: task.worker,
             rating: task.rating,
-            mode: task.mode as any,
+            mode: task.mode as TaskModeType,
             stakeRequired: task.stakeRequired === 1,
             stakeBps: task.stakeBps,
             pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -307,6 +416,12 @@ export const tasksRouter = router({
             submissionCount: Number(submissionCount[0]?.count || 0),
             pitchCount: Number(pitchCount[0]?.count || 0),
             requesterAgentId: task.requesterAgentId ?? null,
+            auctionType: (task.auctionType as AuctionTypeValue | null) ?? null,
+            auctionStartPrice: task.auctionStartPrice ?? null,
+            auctionFloorPrice: task.auctionFloorPrice ?? null,
+            currentAuctionPrice,
+            auctionBidCount,
+            currentLowestBid,
           };
         })
       );
@@ -337,6 +452,7 @@ export const tasksRouter = router({
       }
 
       const task = result[0];
+      const now = new Date();
 
       const submissionCount = await ctx.db
         .select({ count: sql<number>`count(*)` })
@@ -356,6 +472,49 @@ export const tasksRouter = router({
             .where(eq(agents.address, workerAddress))
             .limit(1)
         : [];
+
+      // Auction-specific computed fields
+      let auctionBidCount: number | null = null;
+      let currentAuctionPrice: string | null = null;
+      let auctionPriceReachesFloorAt: string | null = null;
+      let auctionPriceReachesMaxAt: string | null = null;
+      let currentLowestBid: string | null = null;
+
+      if (task.mode === 'auction') {
+        const bidCountResult = await ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(bids)
+          .where(eq(bids.taskId, task.id));
+        auctionBidCount = Number(bidCountResult[0]?.count ?? 0);
+
+        if (task.auctionType === 'dutch') {
+          const price = computeClockPrice(task, now);
+          currentAuctionPrice = price !== null ? price.toString() : null;
+          const floorPrice = task.auctionFloorPrice ? BigInt(task.auctionFloorPrice) : 0n;
+          auctionPriceReachesFloorAt = computePriceTimestamp(task, floorPrice);
+        } else if (task.auctionType === 'reverse_dutch') {
+          const price = computeClockPrice(task, now);
+          currentAuctionPrice = price !== null ? price.toString() : null;
+          const maxPrice = task.maxPrice ? BigInt(task.maxPrice) : 0n;
+          auctionPriceReachesMaxAt = computePriceTimestamp(task, maxPrice);
+        } else if (task.auctionType === 'english') {
+          const lowestBid = await ctx.db
+            .select()
+            .from(bids)
+            .where(eq(bids.taskId, task.id))
+            .orderBy(asc(bids.price))
+            .limit(1);
+          currentLowestBid = lowestBid[0]?.price ?? null;
+        }
+      }
+
+      const pitchCountNum = Number(pitchCount[0]?.count || 0);
+      const clockPrice =
+        task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch'
+          ? currentAuctionPrice !== null
+            ? BigInt(currentAuctionPrice)
+            : null
+          : null;
 
       return {
         id: task.id,
@@ -382,18 +541,31 @@ export const tasksRouter = router({
         claimedAt: task.claimedAt?.toISOString() || null,
         platformFeeBps: task.platformFeeBps,
         submissionCount: Number(submissionCount[0]?.count || 0),
-        pitchCount: Number(pitchCount[0]?.count || 0),
+        pitchCount: pitchCountNum,
         requesterAgentId: task.requesterAgentId ?? null,
         workerAgentId: workerAgent[0]?.agentId ?? null,
+        auctionType: (task.auctionType as any) ?? null,
+        auctionStartPrice: task.auctionStartPrice ?? null,
+        auctionFloorPrice: task.auctionFloorPrice ?? null,
+        currentAuctionPrice,
+        auctionBidCount,
+        auctionPriceReachesFloorAt,
+        auctionPriceReachesMaxAt,
+        currentLowestBid,
         pendingActions: computePendingActions({
           id: task.id,
           status: task.status,
           mode: task.mode,
           rating: task.rating,
-          pitchCount: Number(pitchCount[0]?.count || 0),
+          pitchCount: pitchCountNum,
+          bidCount: auctionBidCount ?? 0,
           expiryTime: task.expiryTime,
+          bidDeadline: task.bidDeadline,
           claimedBy: task.claimedBy,
           worker: task.worker,
+          auctionType: task.auctionType,
+          currentClockPrice: clockPrice,
+          currentLowestBid,
         }),
       };
     }),

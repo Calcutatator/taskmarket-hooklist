@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp
+.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-auction-types
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -27,7 +27,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 
@@ -38,19 +38,37 @@ install: init
 
 deploy:
 	@$(ENV_LOADER) && \
+	TMPFILE=$$(mktemp) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		CHAINID=84532; \
 		cd packages/contracts && forge script script/DeployTestnet.s.sol:DeployTestnet \
 			--rpc-url base_sepolia \
 			--broadcast \
-			--verify; \
+			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		CHAINID=8453; \
 		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
 			--rpc-url base \
 			--broadcast \
-			--verify; \
+			--verify 2>&1 | tee $$TMPFILE; \
 	else \
+		rm -f $$TMPFILE; \
 		echo "Usage: make deploy <testnet|mainnet>"; \
 		exit 1; \
+	fi; \
+	PROXY=$$(grep "Proxy (CONTRACT_ADDRESS):" $$TMPFILE | awk '{print $$NF}'); \
+	rm -f $$TMPFILE; \
+	if [ -n "$$PROXY" ]; then \
+		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
+		RESP=$$(curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=verifyproxycontract&address=$$PROXY&apikey=$$FORGE_ETHERSCAN_API_KEY") && \
+		GUID=$$(echo "$$RESP" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4) && \
+		if [ -n "$$GUID" ]; then \
+			echo "Proxy verification submitted (GUID: $$GUID). Waiting 10s..." && \
+			sleep 10 && \
+			curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=checkproxyverification&guid=$$GUID&apikey=$$FORGE_ETHERSCAN_API_KEY" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4; \
+		else \
+			echo "Proxy verification response: $$RESP"; \
+		fi; \
 	fi
 
 release:
@@ -311,8 +329,10 @@ smoke:
 		cd apps/backend && pnpm smoke:xmtp; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
 		cd apps/cli && pnpm smoke:xmtp-live; \
+	elif [ "$(word 1,$(ARGS))" = "auction-types" ]; then \
+		cd apps/backend && pnpm smoke:auction-types; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live>"; \
 		exit 1; \
 	fi
 

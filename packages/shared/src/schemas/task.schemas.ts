@@ -13,6 +13,8 @@ export const TaskStatus = z.enum([
   'disputed',
 ]);
 
+export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
+
 export const TaskCreateSchema = z.object({
   description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
   reward: z.string().min(1, 'Reward is required'),
@@ -26,6 +28,9 @@ export const TaskCreateSchema = z.object({
   maxPrice: z.string().optional(),
   metricDescription: z.string().max(500).optional(),
   metricTarget: z.string().max(200).optional(),
+  auctionType: AuctionType.optional(),
+  auctionStartPrice: z.string().optional(),
+  auctionFloorPrice: z.string().optional(),
 });
 
 export const TaskResponseSchema = z.object({
@@ -56,6 +61,14 @@ export const TaskResponseSchema = z.object({
   pitchCount: z.number().optional().default(0),
   requesterAgentId: z.string().nullable().optional(),
   workerAgentId: z.string().nullable().optional(),
+  auctionType: AuctionType.nullable().optional(),
+  auctionStartPrice: z.string().nullable().optional(),
+  auctionFloorPrice: z.string().nullable().optional(),
+  currentAuctionPrice: z.string().nullable().optional(),
+  auctionBidCount: z.number().nullable().optional(),
+  auctionPriceReachesFloorAt: z.string().nullable().optional(),
+  auctionPriceReachesMaxAt: z.string().nullable().optional(),
+  currentLowestBid: z.string().nullable().optional(),
 });
 
 export const TaskListInputSchema = z.object({
@@ -79,6 +92,7 @@ export const TaskListInputSchema = z.object({
     .enum(['ALL', 'bounty', 'claim', 'pitch', 'benchmark', 'auction'])
     .optional()
     .default('ALL'),
+  auctionType: AuctionType.optional(),
   tags: z.array(z.string()).optional(),
   minReward: z.string().optional(),
   maxReward: z.string().optional(),
@@ -118,5 +132,6 @@ export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
 export type TaskModeType = z.infer<typeof TaskMode>;
+export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

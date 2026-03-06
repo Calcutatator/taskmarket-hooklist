@@ -105,6 +105,10 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Submit bid' })
 );
 app.post(
+  '/api/tasks/:taskId/bids/accept',
+  x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
+);
+app.post(
   '/api/identity/register',
   x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
 );

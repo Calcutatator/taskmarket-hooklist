@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
+import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../src/TaskMarket.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
@@ -43,7 +44,13 @@ contract TaskMarketTest is Test {
     function setUp() public {
         vm.startPrank(owner);
         usdc = new MockERC20();
-        market = new TaskMarket(address(usdc), feeRecipient, defaultFeeBps);
+
+        TaskMarket implementation = new TaskMarket();
+        bytes memory initData = abi.encodeCall(
+            TaskMarket.initialize, (address(usdc), feeRecipient, defaultFeeBps)
+        );
+        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
+        market = TaskMarket(address(proxy));
         market.setAuthorizedServer(server);
         vm.stopPrank();
 
@@ -463,19 +470,21 @@ contract TaskMarketTest is Test {
     }
 
     // -----------------------------------------------------------------------
-    // Constructor validation
+    // Constructor validation (now via proxy deploy)
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_Constructor_ZeroFeeRecipient() public {
-        vm.prank(owner);
+        TaskMarket impl = new TaskMarket();
+        bytes memory initData = abi.encodeCall(TaskMarket.initialize, (address(usdc), address(0), defaultFeeBps));
         vm.expectRevert("Invalid fee recipient");
-        new TaskMarket(address(usdc), address(0), defaultFeeBps);
+        new ERC1967Proxy(address(impl), initData);
     }
 
     function test_RevertWhen_Constructor_FeeBpsTooHigh() public {
-        vm.prank(owner);
+        TaskMarket impl = new TaskMarket();
+        bytes memory initData = abi.encodeCall(TaskMarket.initialize, (address(usdc), feeRecipient, 10001));
         vm.expectRevert("Fee BPS too high");
-        new TaskMarket(address(usdc), feeRecipient, 10001);
+        new ERC1967Proxy(address(impl), initData);
     }
 
     // -----------------------------------------------------------------------
@@ -794,5 +803,126 @@ contract TaskMarketTest is Test {
         TaskMarket.Task memory task2 = market.getTask(TASK_ID_2);
         assertEq(task1.worker, worker1);
         assertEq(task2.worker, worker1);
+    }
+
+    // -----------------------------------------------------------------------
+    // acceptAuction — 5 new tests
+    // -----------------------------------------------------------------------
+
+    function test_AcceptAuction_success() public {
+        uint256 bidDeadline = 1 days;
+        uint256 acceptPrice = 40 * 10 ** 6; // below maxPrice
+
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
+        vm.stopPrank();
+
+        vm.prank(server);
+        vm.expectEmit(true, true, false, true);
+        emit TaskMarket.BidSubmitted(TASK_ID_1, worker1, acceptPrice);
+        vm.expectEmit(true, true, false, false);
+        emit TaskMarket.TaskWorkerSelected(TASK_ID_1, worker1);
+        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+
+        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
+        assertEq(task.worker, worker1);
+        assertEq(task.stakeAmount, acceptPrice);
+    }
+
+    function test_AcceptAuction_thenAcceptSubmission() public {
+        uint256 bidDeadline = 1 days;
+        uint256 acceptPrice = 40 * 10 ** 6;
+
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
+        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+        vm.stopPrank();
+
+        uint256 fee = (acceptPrice * defaultFeeBps) / 10000;
+        uint256 expectedWorkerPayment = acceptPrice - fee;
+        uint256 expectedRefund = REWARD - acceptPrice;
+
+        uint256 workerBalanceBefore = usdc.balanceOf(worker1);
+        uint256 requesterBalanceBefore = usdc.balanceOf(requester);
+
+        vm.prank(server);
+        market.acceptSubmission(TASK_ID_1, requester, worker1);
+
+        assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment);
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + expectedRefund);
+
+        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
+    }
+
+    function test_AcceptAuction_priceExceedsMax() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
+        vm.stopPrank();
+
+        vm.prank(server);
+        vm.expectRevert("Price exceeds max price");
+        market.acceptAuction(TASK_ID_1, worker1, REWARD + 1);
+    }
+
+    function test_AcceptAuction_notAuction() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        vm.stopPrank();
+
+        vm.prank(server);
+        vm.expectRevert("Not an Auction task");
+        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+    }
+
+    function test_AcceptAuction_notOpen() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
+        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+        vm.stopPrank();
+
+        vm.prank(server);
+        vm.expectRevert("Task not open");
+        market.acceptAuction(TASK_ID_1, worker2, REWARD / 3);
+    }
+
+    // -----------------------------------------------------------------------
+    // UUPS Upgrade — 2 new tests
+    // -----------------------------------------------------------------------
+
+    function test_Upgrade_preservesState() public {
+        // Create a task and accept an auction on v1 proxy
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
+        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+        vm.stopPrank();
+
+        // Upgrade: deploy new implementation, upgrade proxy
+        vm.prank(owner);
+        TaskMarket newImpl = new TaskMarket();
+        vm.prank(owner);
+        market.upgradeToAndCall(address(newImpl), "");
+
+        // State must survive upgrade
+        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        assertEq(task.requester, requester);
+        assertEq(task.worker, worker1);
+        assertEq(task.stakeAmount, REWARD / 2);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
+        assertEq(uint256(task.mode), uint256(TaskMarket.TaskMode.Auction));
+    }
+
+    function test_Upgrade_onlyOwner() public {
+        TaskMarket newImpl = new TaskMarket();
+        vm.prank(alice);
+        vm.expectRevert();
+        market.upgradeToAndCall(address(newImpl), "");
     }
 }

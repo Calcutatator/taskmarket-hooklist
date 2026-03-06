@@ -17,6 +17,7 @@ const MARKET_ABI = parseAbi([
   'function rateTask(bytes32,address,uint8,uint256,string,bytes32)',
   'function submitBid(bytes32,address,uint256)',
   'function selectLowestBidder(bytes32)',
+  'function acceptAuction(bytes32,address,uint256)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const REGISTERED_EVENT = parseAbiItem(
@@ -33,6 +34,11 @@ export const MODE_MAP: Record<string, number> = {
 
 const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const GAS_MULTIPLIER = 2n;
+
+/** Resolve the contract address to use: prefer task-specific address, fall back to config. */
+function resolveContractAddress(override?: string | null): `0x${string}` {
+  return (override ?? getServerConfig().CONTRACT_ADDRESS) as `0x${string}`;
+}
 
 function getPublicClient() {
   const config = getServerConfig();
@@ -124,14 +130,14 @@ export async function contractCreateTask(
 export async function contractSubmitBid(
   taskId: `0x${string}`,
   worker: `0x${string}`,
-  price: bigint
+  price: bigint,
+  contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'submitBid',
     args: [taskId, worker, price],
@@ -144,13 +150,15 @@ export async function contractSubmitBid(
   return hash;
 }
 
-export async function contractSelectLowestBidder(taskId: `0x${string}`): Promise<`0x${string}`> {
-  const config = getServerConfig();
+export async function contractSelectLowestBidder(
+  taskId: `0x${string}`,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'selectLowestBidder',
     args: [taskId],
@@ -163,17 +171,40 @@ export async function contractSelectLowestBidder(taskId: `0x${string}`): Promise
   return hash;
 }
 
-export async function contractClaimTask(
+export async function contractAcceptAuction(
   taskId: `0x${string}`,
   worker: `0x${string}`,
-  stakeAmount: bigint
+  price: bigint,
+  contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
+    abi: MARKET_ABI,
+    functionName: 'acceptAuction',
+    args: [taskId, worker, price],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'acceptAuction'
+  );
+  return hash;
+}
+
+export async function contractClaimTask(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  stakeAmount: bigint,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+  const hash = await client.writeContract({
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'claimTask',
     args: [taskId, worker, stakeAmount],
@@ -189,14 +220,14 @@ export async function contractClaimTask(
 export async function contractSelectWorker(
   taskId: `0x${string}`,
   requester: `0x${string}`,
-  worker: `0x${string}`
+  worker: `0x${string}`,
+  contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'selectWorker',
     args: [taskId, requester, worker],
@@ -212,14 +243,14 @@ export async function contractSelectWorker(
 export async function contractAcceptSubmission(
   taskId: `0x${string}`,
   requester: `0x${string}`,
-  worker: `0x${string}`
+  worker: `0x${string}`,
+  contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'acceptSubmission',
     args: [taskId, requester, worker],
@@ -238,14 +269,14 @@ export async function contractRateTask(
   rating: number,
   workerAgentId: bigint,
   feedbackURI: string,
-  feedbackHash: `0x${string}`
+  feedbackHash: `0x${string}`,
+  contractAddress?: string | null
 ): Promise<{ hash: `0x${string}`; blockNumber: number }> {
-  const config = getServerConfig();
   const { client } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
   const hash = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+    address: resolveContractAddress(contractAddress),
     abi: MARKET_ABI,
     functionName: 'rateTask',
     args: [taskId, requester, rating, workerAgentId, feedbackURI, feedbackHash],

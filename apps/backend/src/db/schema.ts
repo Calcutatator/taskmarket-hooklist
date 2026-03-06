@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   numeric,
   serial,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 export const tasks = pgTable(
@@ -32,12 +33,17 @@ export const tasks = pgTable(
     pitchDeadline: timestamp('pitch_deadline'),
     bidDeadline: timestamp('bid_deadline'),
     maxPrice: numeric('max_price', { precision: 78, scale: 0 }),
+    auctionType: text('auction_type'),
+    auctionStartPrice: numeric('auction_start_price', { precision: 78, scale: 0 }),
+    auctionFloorPrice: numeric('auction_floor_price', { precision: 78, scale: 0 }),
     metricDescription: text('metric_description'),
     metricTarget: text('metric_target'),
     claimedBy: text('claimed_by'),
     claimedAt: timestamp('claimed_at'),
     platformFeeBps: smallint('platform_fee_bps').notNull().default(500),
     requesterAgentId: text('requester_agent_id'),
+    chainId: integer('chain_id'),
+    contractAddress: text('contract_address'),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
@@ -190,6 +196,7 @@ export const bids = pgTable(
     taskIdIdx: index('idx_bids_task').on(table.taskId),
     workerIdx: index('idx_bids_worker').on(table.workerAddress),
     priceIdx: index('idx_bids_price').on(table.price),
+    taskWorkerUnique: unique('bids_task_worker_unique').on(table.taskId, table.workerAddress),
   })
 );
 

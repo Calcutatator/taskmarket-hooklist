@@ -17,6 +17,12 @@ interface TaskRow {
   tags: string[];
 }
 
+interface AuctionTaskRow extends TaskRow {
+  auctionType?: string | null;
+  currentAuctionPrice?: string | null;
+  bidDeadline?: string | null;
+}
+
 interface InboxResult {
   asRequester: TaskRow[];
   asWorker: TaskRow[];
@@ -79,6 +85,11 @@ export const daemonCommand = new Command('daemon')
   .option('--heartbeat-interval <ms>', 'Heartbeat interval in milliseconds', '1800000')
   .option('--inbox-interval <ms>', 'Inbox poll interval in milliseconds', '15000')
   .option('--task-interval <ms>', 'New task poll interval in milliseconds', '60000')
+  .option(
+    '--auction-poll-interval <ms>',
+    'Poll interval for clock-based auction tasks (dutch/reverse_dutch) in milliseconds',
+    '15000'
+  )
   .option('--task-filters <json>', 'JSON filter object for new-task discovery')
   .option('--no-xmtp', 'Disable XMTP stream and heartbeat')
   .action(
@@ -86,12 +97,14 @@ export const daemonCommand = new Command('daemon')
       heartbeatInterval: string;
       inboxInterval: string;
       taskInterval: string;
+      auctionPollInterval: string;
       taskFilters?: string;
       xmtp: boolean;
     }) => {
       const heartbeatIntervalMs = Number(opts.heartbeatInterval);
       const inboxIntervalMs = Number(opts.inboxInterval);
       const taskIntervalMs = Number(opts.taskInterval);
+      const auctionPollIntervalMs = Number(opts.auctionPollInterval);
 
       if (!Number.isFinite(heartbeatIntervalMs) || heartbeatIntervalMs <= 0) {
         throw new Error('--heartbeat-interval must be a positive number');
@@ -101,6 +114,9 @@ export const daemonCommand = new Command('daemon')
       }
       if (!Number.isFinite(taskIntervalMs) || taskIntervalMs <= 0) {
         throw new Error('--task-interval must be a positive number');
+      }
+      if (!Number.isFinite(auctionPollIntervalMs) || auctionPollIntervalMs <= 0) {
+        throw new Error('--auction-poll-interval must be a positive number');
       }
 
       let taskFilters: Record<string, unknown> = {};
@@ -327,7 +343,39 @@ export const daemonCommand = new Command('daemon')
             }
           };
 
-          await Promise.allSettled([inboxPollLoop(), newTaskPollLoop()]);
+          const auctionPollLoop = async (): Promise<void> => {
+            while (!stopped) {
+              await sleepOrAbort(auctionPollIntervalMs, abortController.signal);
+              if (stopped) break;
+              try {
+                const params = new URLSearchParams({
+                  mode: 'auction',
+                  status: 'open',
+                  limit: '50',
+                });
+                const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {
+                  tasks: AuctionTaskRow[];
+                };
+                for (const task of result.tasks) {
+                  if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+                    printResult({
+                      event: 'task.auction_clock',
+                      taskId: task.id,
+                      auctionType: task.auctionType,
+                      currentAuctionPrice: task.currentAuctionPrice ?? null,
+                      bidDeadline: task.bidDeadline ?? null,
+                    });
+                  }
+                }
+              } catch (err) {
+                process.stderr.write(
+                  `Auction poll failed: ${err instanceof Error ? err.message : String(err)}\n`
+                );
+              }
+            }
+          };
+
+          await Promise.allSettled([inboxPollLoop(), newTaskPollLoop(), auctionPollLoop()]);
         };
 
         await Promise.allSettled([xmtpLoop(), heartbeatLoop(), taskPollLoop()]);

@@ -61,7 +61,8 @@ export const claimsRouter = router({
       const stakeTxHash = await contractClaimTask(
         input.taskId as `0x${string}`,
         input.workerAddress as `0x${string}`,
-        0n
+        0n,
+        task.contractAddress
       );
 
       const claimId = randomUUID();

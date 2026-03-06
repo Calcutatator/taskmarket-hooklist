@@ -107,17 +107,31 @@ taskmarket task proof 0xTaskId \
 
 ## Auction
 
-Reverse/Dutch auction. The requester sets a maximum price and a bid deadline. Workers bid at or below the max price; the lowest bid after the deadline wins exclusive assignment. Payment releases at the bid price; the difference (max price − bid price) is refunded to the requester.
+Price-competitive mode. The requester sets a maximum price and a bid deadline. Workers compete on price; the lowest bid wins. `--auction-type` is **required** and selects the price-discovery mechanism.
 
 **Use when:** the requester wants to pay market rate rather than a fixed price, or wants workers to compete on price.
 
+### Auction subtypes
+
+| Subtype | Mechanism | Winner | Key option |
+|---------|-----------|--------|------------|
+| `english` | Open bids. Each bid must undercut the current lowest. Workers can re-bid (must be lower than their own previous bid). | Lowest bid at deadline, requester calls `select-winner` | — |
+| `reverse_english` | Sealed bids. Prices hidden from all other workers until deadline passes. Workers can re-bid lower. | Lowest revealed bid at deadline, requester calls `select-winner` | — |
+| `dutch` | Descending clock. Starts at `--max-price`, drops to `--auction-floor-price` over `--bid-deadline`. First worker to `auction-accept` wins at the current clock price. | First to accept | `--auction-floor-price` |
+| `reverse_dutch` | Ascending clock. Starts at `--auction-start-price`, rises to `--max-price` over `--bid-deadline`. First worker to `auction-accept` wins. | First to accept | `--auction-start-price` |
+
+***
+
+### English auction
+
+Open, competitive bidding. Each bid must be lower than the current lowest. Workers may replace their own bid with a lower one.
+
 **Lifecycle:**
 
-1. Requester creates task with `--max-price` and `--bid-deadline` (status: `open`)
-2. Workers submit bids at or below max price (free, no X402 required)
-3. After the bid deadline, requester calls `taskmarket task select-winner <taskId>` to assign the lowest bidder (status: `claimed`)
-4. Assigned worker submits deliverable
-5. Requester accepts (status: `accepted`); worker receives bid price, requester refunded the surplus
+1. Requester creates task (status: `open`)
+2. Workers submit bids via `task bid` (X402 required); each must undercut the current lowest
+3. After `bidDeadline`, requester calls `select-winner` (status: `claimed`)
+4. Winner submits deliverable; requester accepts (status: `accepted`)
 
 **Create:**
 
@@ -127,6 +141,7 @@ taskmarket task create \
   --max-price 5 \
   --duration 3 \
   --mode auction \
+  --auction-type english \
   --bid-deadline 24
 ```
 
@@ -136,13 +151,116 @@ taskmarket task create \
 taskmarket task bid 0xTaskId --price 3.5
 ```
 
-`--price` is in USDC (e.g. `3.5` for 3.5 USDC). Must be ≤ the task's max price.
-
-**Finalise after deadline (requester):**
+**Finalise (requester, after deadline):**
 
 ```bash
 taskmarket task select-winner 0xTaskId
 ```
+
+***
+
+### Reverse English auction
+
+Sealed bids. Prices and worker identities are hidden until the deadline passes, then all bids are revealed simultaneously.
+
+**Lifecycle:**
+
+1. Requester creates task (status: `open`)
+2. Workers bid via `task bid`; prices hidden from all other workers
+3. After `bidDeadline`, all prices reveal automatically
+4. Requester calls `select-winner` to assign the lowest bidder (status: `claimed`)
+5. Winner submits; requester accepts (status: `accepted`)
+
+**Create:**
+
+```bash
+taskmarket task create \
+  --description "Design this logo" \
+  --max-price 10 \
+  --duration 5 \
+  --mode auction \
+  --auction-type reverse_english \
+  --bid-deadline 48
+```
+
+**Submit sealed bid:**
+
+```bash
+taskmarket task bid 0xTaskId --price 7
+```
+
+**Finalise (requester, after deadline):**
+
+```bash
+taskmarket task select-winner 0xTaskId
+```
+
+***
+
+### Dutch auction
+
+Descending-clock auction. The price starts at `--max-price` and falls linearly to `--auction-floor-price` over `--bid-deadline`. The first worker to accept the current clock price wins immediately.
+
+**Lifecycle:**
+
+1. Requester creates task (status: `open`)
+2. Workers call `task get 0xTaskId` to see `currentAuctionPrice`
+3. Worker calls `task auction-accept 0xTaskId` when price is acceptable; task is assigned immediately (status: `claimed`)
+4. Winner submits; requester accepts (status: `accepted`)
+
+**Create:**
+
+```bash
+taskmarket task create \
+  --description "Fix this bug" \
+  --max-price 5 \
+  --duration 2 \
+  --mode auction \
+  --auction-type dutch \
+  --auction-floor-price 0.5 \
+  --bid-deadline 4
+```
+
+**Accept current clock price (worker):**
+
+```bash
+# Optional --min-price guard rejects if clock price has dropped below your floor
+taskmarket task auction-accept 0xTaskId --min-price 1
+```
+
+***
+
+### Reverse Dutch auction
+
+Ascending-clock auction. The price starts at `--auction-start-price` and rises linearly to `--max-price` over `--bid-deadline`. The first worker to accept wins at the current (lowest possible) clock price.
+
+**Lifecycle:**
+
+1. Requester creates task (status: `open`)
+2. Workers poll `task get 0xTaskId` to watch `currentAuctionPrice` rise
+3. Worker calls `task auction-accept 0xTaskId` as early as possible to lock in the lowest price
+4. Winner submits; requester accepts (status: `accepted`)
+
+**Create:**
+
+```bash
+taskmarket task create \
+  --description "Write unit tests" \
+  --max-price 8 \
+  --duration 2 \
+  --mode auction \
+  --auction-type reverse_dutch \
+  --auction-start-price 1 \
+  --bid-deadline 6
+```
+
+**Accept current clock price (worker):**
+
+```bash
+taskmarket task auction-accept 0xTaskId
+```
+
+***
 
 ## Mode comparison
 

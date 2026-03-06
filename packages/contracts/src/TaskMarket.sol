@@ -3,7 +3,9 @@ pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
-import "@openzeppelin/contracts/access/Ownable.sol";
+import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import {UUPSUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/UUPSUpgradeable.sol";
+import {OwnableUpgradeable} from "openzeppelin-contracts-upgradeable/contracts/access/OwnableUpgradeable.sol";
 
 interface IReputationRegistry {
     function giveFeedback(
@@ -25,9 +27,19 @@ interface IReputationRegistry {
  *      All mutating functions are called by the authorized server wallet, which passes
  *      the real requester/worker addresses explicitly. This ensures on-chain records
  *      attribute activity to the actual participants, not the server.
+ *
+ *      UUPS upgradeable — proxy address is permanent; only the implementation changes on upgrades.
+ *      Storage layout rule: new state variables MUST be appended after existing ones and MUST
+ *      consume slots from __gap (shrink __gap by the number of slots used). Never insert between
+ *      existing variables.
  */
-contract TaskMarket is ReentrancyGuard, Ownable {
-    IERC20 public immutable usdcToken;
+contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSUpgradeable {
+    /// @custom:oz-upgrades-unsafe-allow constructor
+    constructor() {
+        _disableInitializers();
+    }
+
+    IERC20 public usdcToken;
 
     /// @notice Server wallet authorized to call mutating functions on behalf of users
     address public authorizedServer;
@@ -90,6 +102,9 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     uint256 public totalFeesCollected;
     address public reputationRegistry;
 
+    // Reserve 50 slots for future state variables. Consume from this gap when adding new vars.
+    uint256[50] private __gap;
+
     event TaskCreated(
         bytes32 indexed taskId,
         address indexed requester,
@@ -123,18 +138,29 @@ contract TaskMarket is ReentrancyGuard, Ownable {
     }
 
     /**
-     * @notice Constructor
+     * @notice Initialize the proxy (replaces constructor for UUPS pattern)
      * @param _usdcToken USDC token address on Base
      * @param _feeRecipient Address to receive platform fees
      * @param _defaultFeeBps Default platform fee in basis points (500 = 5%)
      */
-    constructor(address _usdcToken, address _feeRecipient, uint16 _defaultFeeBps) Ownable(msg.sender) {
+    function initialize(
+        address _usdcToken,
+        address _feeRecipient,
+        uint16 _defaultFeeBps
+    ) public initializer {
+        __Ownable_init(msg.sender);
         require(_feeRecipient != address(0), "Invalid fee recipient");
         require(_defaultFeeBps <= 10000, "Fee BPS too high");
         usdcToken = IERC20(_usdcToken);
         feeRecipient = _feeRecipient;
         defaultFeeBps = _defaultFeeBps;
     }
+
+    /**
+     * @notice Authorize upgrade — only owner may upgrade the implementation
+     * @dev Required by UUPSUpgradeable
+     */
+    function _authorizeUpgrade(address newImplementation) internal override onlyOwner {}
 
     /**
      * @notice Set the ERC-8004 reputation registry address (owner only)
@@ -299,6 +325,28 @@ contract TaskMarket is ReentrancyGuard, Ownable {
         task.status = TaskStatus.Claimed;
 
         emit TaskWorkerSelected(taskId, lowestBidder);
+    }
+
+    /**
+     * @notice Directly award an open auction task to a worker at a given price.
+     *         Used by clock-based auction subtypes (dutch, reverse_dutch) where
+     *         the first worker to accept the current clock price wins immediately.
+     *         The server enforces clock timing off-chain before calling this.
+     * @param taskId Task identifier
+     * @param worker Worker address accepting the clock price
+     * @param price  Accepted price in USDC base units (must be <= task.maxPrice)
+     */
+    function acceptAuction(bytes32 taskId, address worker, uint256 price) external onlyServer {
+        Task storage task = tasks[taskId];
+        require(task.requester != address(0), "Task does not exist");
+        require(task.mode == TaskMode.Auction, "Not an Auction task");
+        require(task.status == TaskStatus.Open, "Task not open");
+        require(price <= task.maxPrice, "Price exceeds max price");
+        task.worker = worker;
+        task.stakeAmount = price;
+        task.status = TaskStatus.Claimed;
+        emit BidSubmitted(taskId, worker, price);
+        emit TaskWorkerSelected(taskId, worker);
     }
 
     /**
