@@ -1,3 +1,4 @@
+import { useRef, useEffect } from 'react';
 import { Link, useRouterState } from '@tanstack/react-router';
 import { ListTodo, BarChart2, BookOpen, Sun, Moon, Wallet, Users } from 'lucide-react';
 import { useAccount, useDisconnect } from 'wagmi';
@@ -102,6 +103,20 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
                 >
                   <section.icon size={18} />
                 </Link>
+              ) : section.items.length === 1 ? (
+                <Link
+                  to={section.items[0].to}
+                  onClick={onClose}
+                  className={cn(
+                    'flex items-center px-4 py-2 gap-2 text-sm font-medium transition-colors',
+                    isActive(section.items[0].to)
+                      ? 'text-sidebar-item-active'
+                      : 'text-sidebar-item-text hover:bg-sidebar-item-hover hover:text-text-primary'
+                  )}
+                >
+                  <section.icon size={14} className="shrink-0" />
+                  {section.items[0].label}
+                </Link>
               ) : (
                 <>
                   <div className="flex items-center gap-2 px-4 mb-1">
@@ -184,6 +199,16 @@ function SidebarContent({ collapsed, onClose }: SidebarContentProps) {
 export function Sidebar() {
   const { state, mobileOpen, closeMobile } = useSidebar();
   const collapsed = state === 'collapsed';
+  const mobileAsideRef = useRef<HTMLElement>(null);
+
+  useEffect(() => {
+    if (mobileOpen && mobileAsideRef.current) {
+      const firstFocusable = mobileAsideRef.current.querySelector<HTMLElement>(
+        'a[href], button:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      );
+      firstFocusable?.focus();
+    }
+  }, [mobileOpen]);
 
   return (
     <>
@@ -204,8 +229,12 @@ export function Sidebar() {
           mobileOpen ? 'opacity-100 pointer-events-auto' : 'opacity-0 pointer-events-none'
         )}
       >
-        <div className="absolute inset-0 bg-black/50" onClick={closeMobile} />
+        <div className="absolute inset-0 bg-black/50" onClick={closeMobile} aria-hidden="true" />
         <aside
+          ref={mobileAsideRef}
+          role="dialog"
+          aria-modal="true"
+          aria-label="Navigation menu"
           className={cn(
             'absolute left-0 top-0 bottom-0 w-72 bg-sidebar-bg border-r border-sidebar-border flex flex-col transition-transform duration-200',
             mobileOpen ? 'translate-x-0' : '-translate-x-full'
