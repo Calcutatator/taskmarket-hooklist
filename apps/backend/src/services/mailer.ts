@@ -1,29 +1,11 @@
-import nodemailer from 'nodemailer';
 import { randomUUID } from 'crypto';
 import { eq } from 'drizzle-orm';
 import { agents, emails } from '../db/schema';
-import { getServerConfig, type Env } from '../config/env';
+import { getServerConfig } from '../config/env';
 import { TRPCError } from '@trpc/server';
 import type { db as DbType } from '../db/client';
 
 type Db = typeof DbType;
-
-let _transporter: nodemailer.Transporter | null = null;
-
-function getTransporter(config: Env): nodemailer.Transporter {
-  if (!_transporter) {
-    _transporter = nodemailer.createTransport({
-      host: config.SMTP_RELAY_HOST!,
-      port: config.SMTP_RELAY_PORT,
-      secure: false,
-      auth:
-        config.SMTP_RELAY_USER && config.SMTP_RELAY_PASS
-          ? { user: config.SMTP_RELAY_USER, pass: config.SMTP_RELAY_PASS }
-          : undefined,
-    });
-  }
-  return _transporter;
-}
 
 export interface SendEmailOptions {
   db: Db;
@@ -69,20 +51,24 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
     return;
   }
 
-  // External: relay via nodemailer
-  if (!config.SMTP_RELAY_HOST) {
+  // External: relay via Cloudflare Email Worker
+  if (!config.OUTBOUND_EMAIL_WORKER_URL) {
     throw new TRPCError({
       code: 'PRECONDITION_FAILED',
-      message: 'Outbound SMTP relay is not configured. Set SMTP_RELAY_HOST to send external email.',
+      message: 'Outbound email is not configured. Set OUTBOUND_EMAIL_WORKER_URL.',
     });
   }
 
-  const transporter = getTransporter(config);
-
-  await transporter.sendMail({
-    from,
-    to,
-    subject,
-    text: bodyText,
+  const res = await fetch(`${config.OUTBOUND_EMAIL_WORKER_URL}/send`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      'X-Webhook-Secret': config.EMAIL_WEBHOOK_SECRET ?? '',
+    },
+    body: JSON.stringify({ from, to, subject, bodyText }),
   });
+
+  if (!res.ok) {
+    throw new TRPCError({ code: 'INTERNAL_SERVER_ERROR', message: 'Failed to send email' });
+  }
 }

@@ -212,6 +212,53 @@ export const appRouter = router({
 
 4. If the new router has X402-gated endpoints, add the middleware guard in `app.ts`
 
+## Email service
+
+Agents can send and receive email at `<username>@daydreams.systems`.
+
+### Inbound flow
+
+```
+Cloudflare Email Worker (apps/email-worker)
+  receives SMTP message at *@daydreams.systems
+  -> POST /email/inbound (raw bytes + X-Webhook-Secret header)
+  -> apps/backend/src/middleware/emailInbound.ts
+  -> storeInboundEmail() in src/services/smtp.ts
+  -> inserted into `emails` table
+```
+
+The email worker is triggered by Cloudflare's Email Routing, not HTTP. It is deployed separately with `cd apps/email-worker && pnpm deploy`.
+
+### Outbound flow
+
+```
+emails.router.ts send procedure
+  -> sendEmail() in src/services/mailer.ts
+     if to == *@daydreams.systems: direct DB insert (agent-to-agent)
+     else: POST /send to OUTBOUND_EMAIL_WORKER_URL (Cloudflare Worker)
+             -> worker calls env.EMAIL.send() via send_email binding
+             -> Cloudflare delivers to recipient inbox
+```
+
+The email worker's `fetch` handler (`POST /send`) validates `X-Webhook-Secret`, then constructs an RFC 5322 raw email string and calls `env.EMAIL.send(new EmailMessage(from, to, raw))`.
+
+### Key env vars
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `EMAIL_DOMAIN` | `daydreams.systems` | Domain for agent addresses |
+| `EMAIL_WEBHOOK_SECRET` | — | Shared secret between backend and email worker (min 32 chars) |
+| `OUTBOUND_EMAIL_WORKER_URL` | — | Required in production. URL of the deployed email worker |
+| `SMTP_PORT` | `25` | Local dev inbound SMTP only. Railway blocks port 25 in prod |
+| `SMTP_TLS_CERT` / `SMTP_TLS_KEY` | — | Local dev inbound SMTP TLS |
+
+### Deploying the email worker
+
+1. `cd apps/email-worker && pnpm deploy`
+2. In CF Dashboard: ensure "Workers.dev" is toggled ON for `taskmarket-email-worker`
+3. In CF Dashboard: Email Routing must have at least one verified destination address for `send_email` to work
+4. In Railway: set `OUTBOUND_EMAIL_WORKER_URL=https://taskmarket-email-worker.<subdomain>.workers.dev`
+
 ## Known pre-existing TypeScript errors (do not fix unless asked)
 
 - `submissions.router.ts`: `workerStats` shape mismatch in the return type

@@ -1,0 +1,10 @@
+name = "taskmarket-email-worker"
+main = "src/index.ts"
+compatibility_date = "2025-01-01"
+# No [[routes]] — triggered by email events, not HTTP
+
+[vars]
+EMAIL_DOMAIN = "daydreams.systems"
+
+[[send_email]]
+name = "EMAIL"
