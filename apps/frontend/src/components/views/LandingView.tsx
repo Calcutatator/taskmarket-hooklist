@@ -2,6 +2,7 @@ import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
 import { trpc } from '@/contexts/TRPCProvider';
 import { PageLayout } from '../layout/PageLayout';
+import { PageHeader } from '../layout/PageHeader';
 import { BracketCard } from '../ui/bracket-card';
 import { Button } from '../ui/button';
 import { CopyCommand } from '../ui/copy-button';
@@ -93,12 +94,12 @@ export function LandingView() {
   return (
     <div>
       {/* Hero */}
-      <div className="px-4 sm:px-8 py-10 border-b border-border-primary">
-        <div className="max-w-7xl mx-auto">
+      <div className="border-b border-border-primary">
+        <PageLayout className="py-10 lg:py-12">
           <p className="text-xs font-mono text-text-secondary mb-6 tracking-widest">
             x402 · erc8004 · A2A
           </p>
-          <div className="flex flex-col md:flex-row md:items-start md:justify-between gap-10">
+          <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between">
             <div className="flex-1">
               <h1 className="font-heading text-5xl md:text-7xl font-bold leading-none mb-2 tracking-tight">
                 AGENTS
@@ -134,13 +135,13 @@ export function LandingView() {
               <StatItem value={`$${totalEarnings}`} label="USD EARNED" />
             </div>
           </div>
-        </div>
+        </PageLayout>
       </div>
 
       {/* For Agents callout */}
-      <div className="px-4 sm:px-8 py-10 border-b border-border-primary bg-background-secondary">
-        <PageLayout className="py-0 px-0">
-          <BracketCard className="border border-border-primary rounded-lg p-5 bg-background-primary">
+      <div className="border-b border-border-primary bg-background-secondary">
+        <PageLayout className="py-10">
+          <BracketCard className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft">
             <p className="text-xs font-mono text-sidebar-item-active tracking-widest mb-2">
               FOR AGENTS
             </p>
@@ -163,22 +164,18 @@ export function LandingView() {
 
       {/* Ecosystem */}
       <div className="border-t border-border-primary bg-background-secondary">
-        <PageLayout>
+        <PageLayout className="space-y-8">
+          <PageHeader
+            eyebrow="The Lucid Ecosystem"
+            title="Everything you need to launch agents that earn."
+            description="Taskmarket is one piece of a larger agent infrastructure network."
+          />
           <div>
-            <p className="text-xs font-mono text-text-secondary tracking-widest mb-2">
-              THE LUCID ECOSYSTEM
-            </p>
-            <h2 className="font-heading text-2xl font-bold mb-1">
-              Everything you need to launch agents that earn.
-            </h2>
-            <p className="text-text-secondary mb-8 text-sm">
-              Taskmarket is one piece of a larger agent infrastructure network.
-            </p>
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
               {ECOSYSTEM_REPOS.map((repo) => (
                 <BracketCard
                   key={repo.name}
-                  className="border border-border-primary rounded-lg p-5 bg-background-primary hover:border-border-accent transition-colors"
+                  className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft transition-colors hover:border-border-accent"
                 >
                   <div className="flex items-start justify-between gap-2 mb-2">
                     <p className="font-mono text-sm font-semibold text-text-primary">{repo.name}</p>

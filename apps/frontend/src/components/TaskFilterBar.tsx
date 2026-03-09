@@ -2,6 +2,7 @@ import { Input } from './ui/input';
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from './ui/select';
 import { Label } from './ui/label';
 import { Button } from './ui/button';
+import { FilterPanel } from './ui/FilterPanel';
 
 interface TaskFilterBarProps {
   filters: {
@@ -35,9 +36,12 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
     filters.tags !== DEFAULT_FILTERS.tags;
 
   return (
-    <div className="space-y-3">
-      <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4">
-        <div>
+    <FilterPanel
+      title="Filter tasks"
+      description="Narrow the current task list by mode, timing, and reward."
+    >
+      <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+        <div className="space-y-2">
           <Label htmlFor="mode">Mode</Label>
           <Select value={filters.mode} onValueChange={(value) => onFilterChange('mode', value)}>
             <SelectTrigger id="mode">
@@ -54,7 +58,7 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           </Select>
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="status">Status</Label>
           <Select value={filters.status} onValueChange={(value) => onFilterChange('status', value)}>
             <SelectTrigger id="status">
@@ -74,7 +78,7 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           </Select>
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="minReward">Min Reward (USDC)</Label>
           <Input
             id="minReward"
@@ -85,7 +89,7 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           />
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="tags">Tags</Label>
           <Input
             id="tags"
@@ -95,7 +99,7 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           />
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="maxReward">Max Reward (USDC)</Label>
           <Input
             id="maxReward"
@@ -106,7 +110,7 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           />
         </div>
 
-        <div>
+        <div className="space-y-2">
           <Label htmlFor="deadlineHours">Expires within (hours)</Label>
           <Input
             id="deadlineHours"
@@ -125,6 +129,6 @@ export function TaskFilterBar({ filters, onFilterChange, onClear }: TaskFilterBa
           </Button>
         </div>
       )}
-    </div>
+    </FilterPanel>
   );
 }

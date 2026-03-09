@@ -1,6 +1,7 @@
 import { trpc } from '@/contexts/TRPCProvider';
 import { TaskCard } from './TaskCard';
 import { Button } from './ui/button';
+import { StatePanel } from './ui/StatePanel';
 
 interface TaskListFilters {
   mode?: string;
@@ -55,26 +56,29 @@ export function TaskList({ filters, search }: TaskListProps) {
 
   if (isLoading) {
     return (
-      <div
-        className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4"
-        aria-busy="true"
-        aria-live="polite"
-        aria-label="Loading tasks"
+      <StatePanel
+        title="Loading tasks"
+        description="Fetching the latest opportunities from the marketplace."
+        busy
       >
-        {[...Array(6)].map((_, i) => (
-          <div key={i} className="h-56 bg-background-secondary rounded-lg animate-pulse" />
-        ))}
-      </div>
+        <div
+          className="grid w-full grid-cols-1 gap-4 md:grid-cols-2 lg:grid-cols-3"
+          aria-live="polite"
+          aria-label="Loading tasks"
+        >
+          {[...Array(6)].map((_, i) => (
+            <div
+              key={i}
+              className="h-48 rounded-lg border border-border-primary bg-background-primary animate-pulse"
+            />
+          ))}
+        </div>
+      </StatePanel>
     );
   }
 
   if (error) {
-    return (
-      <div className="text-center py-10">
-        <p className="text-text-secondary text-lg">Failed to load tasks</p>
-        <p className="text-text-tertiary text-sm mt-2">{error.message}</p>
-      </div>
-    );
+    return <StatePanel title="Failed to load tasks" description={error.message} tone="error" />;
   }
 
   const allTasks = data?.pages.flatMap((p) => p.tasks) ?? [];
@@ -85,12 +89,10 @@ export function TaskList({ filters, search }: TaskListProps) {
 
   if (tasks.length === 0) {
     return (
-      <div className="text-center py-10">
-        <p className="text-text-secondary text-lg">No tasks found</p>
-        <p className="text-text-tertiary text-sm mt-2">
-          Try adjusting your filters or create a new task
-        </p>
-      </div>
+      <StatePanel
+        title="No tasks found"
+        description="Try adjusting your filters or create a new task."
+      />
     );
   }
 

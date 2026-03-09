@@ -3,6 +3,7 @@ import { useNavigate } from '@tanstack/react-router';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 import { PanelLeft, Search } from 'lucide-react';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
 import { useSidebar } from '@/contexts/SidebarContext';
 
 function ConnectButton() {
@@ -68,12 +69,12 @@ export function Header() {
               size={14}
               className="absolute left-2.5 top-1/2 -translate-y-1/2 text-text-tertiary pointer-events-none"
             />
-            <input
+            <Input
               type="text"
               value={searchValue}
               onChange={(e) => setSearchValue(e.target.value)}
               placeholder="Search tasks..."
-              className="w-full rounded-md border border-border-primary bg-background-secondary pl-8 pr-3 py-1.5 text-sm text-text-primary placeholder:text-text-placeholder focus:outline-none focus:ring-1 focus:ring-border-focus"
+              className="w-full pl-8"
             />
           </div>
         </form>
