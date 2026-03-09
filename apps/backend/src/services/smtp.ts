@@ -50,10 +50,10 @@ export function startSmtpServer(db: Db): void {
   });
 }
 
-async function handleInbound(
+export async function storeInboundEmail(
   db: Db,
-  rawEmail: string,
-  session: { envelope: { rcptTo: Array<{ address: string }> } }
+  rawEmail: string | Buffer,
+  recipients: string[]
 ): Promise<void> {
   const parsed = await simpleParser(rawEmail);
 
@@ -61,8 +61,8 @@ async function handleInbound(
 
   const fromAddress = parsed.from?.value?.[0]?.address ?? parsed.from?.text ?? '';
 
-  for (const rcpt of session.envelope.rcptTo) {
-    const toAddress = rcpt.address.toLowerCase();
+  for (const recipient of recipients) {
+    const toAddress = recipient.toLowerCase();
 
     const agentRows = await db
       .select({ address: agents.address })
@@ -91,4 +91,16 @@ async function handleInbound(
       })
       .onConflictDoNothing();
   }
+}
+
+async function handleInbound(
+  db: Db,
+  rawEmail: string,
+  session: { envelope: { rcptTo: Array<{ address: string }> } }
+): Promise<void> {
+  await storeInboundEmail(
+    db,
+    rawEmail,
+    session.envelope.rcptTo.map((r) => r.address)
+  );
 }
