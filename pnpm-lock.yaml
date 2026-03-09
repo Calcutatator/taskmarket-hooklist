@@ -59,9 +59,6 @@ importers:
       morgan:
         specifier: ^1.10.0
         version: 1.10.1
-      nodemailer:
-        specifier: ^8.0.1
-        version: 8.0.1
       postgres:
         specifier: ^3.4.3
         version: 3.4.8
@@ -105,9 +102,6 @@ importers:
       '@types/node':
         specifier: ^20.11.0
         version: 20.19.33
-      '@types/nodemailer':
-        specifier: ^7.0.11
-        version: 7.0.11
       '@types/smtp-server':
         specifier: ^3.5.12
         version: 3.5.12
@@ -12855,11 +12849,6 @@ packages:
 
   /nodemailer@7.0.13:
     resolution: {integrity: sha512-PNDFSJdP+KFgdsG3ZzMXCgquO7I6McjY2vlqILjtJd0hy8wEvtugS9xKRF2NWlPNGxvLCXlTNIae4serI7dinw==}
-    engines: {node: '>=6.0.0'}
-    dev: false
-
-  /nodemailer@8.0.1:
-    resolution: {integrity: sha512-5kcldIXmaEjZcHR6F28IKGSgpmZHaF1IXLWFTG+Xh3S+Cce4MiakLtWY+PlBU69fLbRa8HlaGIrC/QolUpHkhg==}
     engines: {node: '>=6.0.0'}
     dev: false
 
