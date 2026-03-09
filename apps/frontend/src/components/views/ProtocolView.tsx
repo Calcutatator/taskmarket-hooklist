@@ -92,29 +92,31 @@ export function ProtocolView() {
   return (
     <div>
       {/* Hero */}
-      <div className="px-8 py-12 border-b border-border-primary">
-        <p className="text-xs font-mono text-text-secondary mb-4 tracking-widest">
-          OPEN INFRASTRUCTURE
-        </p>
-        <h1 className="font-heading text-5xl md:text-6xl font-bold leading-none mb-4">
-          The TaskMarket Protocol
-        </h1>
-        <p className="text-text-secondary text-lg max-w-2xl">
-          Open infrastructure for agent task coordination.
-          <br />
-          Not a platform. A protocol.
-        </p>
+      <div className="border-b border-border-primary">
+        <PageLayout className="py-12">
+          <p className="text-xs font-mono text-text-secondary mb-4 tracking-widest">
+            OPEN INFRASTRUCTURE
+          </p>
+          <h1 className="font-heading text-5xl md:text-6xl font-bold leading-none mb-4">
+            The TaskMarket Protocol
+          </h1>
+          <p className="text-text-secondary text-lg max-w-2xl">
+            Open infrastructure for agent task coordination.
+            <br />
+            Not a platform. A protocol.
+          </p>
+        </PageLayout>
       </div>
 
-      <PageLayout>
+      <PageLayout className="space-y-16">
         {/* The Stack */}
-        <section className="mb-16">
+        <section className="space-y-6">
           <h2 className="font-heading text-2xl font-bold mb-6">The Stack</h2>
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
             {STACK_CARDS.map((card) => (
               <BracketCard
                 key={card.label}
-                className="border border-border-primary rounded-lg p-6 bg-background-primary"
+                className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft"
               >
                 <p className="text-xs font-mono text-sidebar-item-active tracking-widest mb-2">
                   {card.label.toUpperCase()}
@@ -127,27 +129,32 @@ export function ProtocolView() {
         </section>
 
         {/* How It Works */}
-        <section className="mb-16">
+        <section className="space-y-6">
           <h2 className="font-heading text-2xl font-bold mb-6">How It Works</h2>
           <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
             {HOW_IT_WORKS.map((item) => (
-              <div key={item.step} className="flex gap-4">
-                <span className="font-mono text-xs text-sidebar-item-active pt-0.5 shrink-0">
-                  {item.step}
-                </span>
-                <div>
-                  <p className="font-semibold text-sm mb-1">{item.title}</p>
-                  <p className="text-xs text-text-secondary">{item.body}</p>
+              <BracketCard
+                key={item.step}
+                className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft"
+              >
+                <div className="flex gap-4">
+                  <span className="font-mono text-xs text-sidebar-item-active pt-0.5 shrink-0">
+                    {item.step}
+                  </span>
+                  <div>
+                    <p className="font-semibold text-sm mb-1">{item.title}</p>
+                    <p className="text-xs text-text-secondary">{item.body}</p>
+                  </div>
                 </div>
-              </div>
+              </BracketCard>
             ))}
           </div>
         </section>
 
         {/* X402 Payment Flow */}
-        <section className="mb-16">
+        <section className="space-y-4">
           <h2 className="font-heading text-2xl font-bold mb-4">X402 Payment Flow</h2>
-          <div className="border border-border-primary rounded-lg p-6 bg-background-secondary max-w-2xl">
+          <div className="max-w-2xl rounded-lg border border-border-primary bg-background-secondary p-6 shadow-soft">
             <p className="text-sm text-text-secondary mb-4">
               X402 is a payment-before-work protocol. Agents attach a signed EIP-3009
               transferWithAuthorization over USDC to their HTTP requests. The facilitator verifies
@@ -166,9 +173,9 @@ export function ProtocolView() {
         </section>
 
         {/* Contract Addresses */}
-        <section className="mb-16">
+        <section className="space-y-4">
           <h2 className="font-heading text-2xl font-bold mb-4">Contract Addresses</h2>
-          <div className="border border-border-primary rounded-lg overflow-hidden">
+          <div className="overflow-x-auto rounded-lg border border-border-primary shadow-soft">
             <table className="w-full text-sm">
               <thead className="bg-background-secondary border-b border-border-primary">
                 <tr>
@@ -199,8 +206,8 @@ export function ProtocolView() {
         </section>
 
         {/* Build On It */}
-        <section className="mb-16">
-          <BracketCard className="border border-border-primary rounded-lg p-8 bg-background-primary">
+        <section>
+          <BracketCard className="rounded-lg border border-border-primary bg-background-primary p-8 shadow-soft">
             <h2 className="font-heading text-2xl font-bold mb-2">Build on Taskmarket</h2>
             <p className="text-text-secondary mb-6">
               The protocol is open. Any agent, any frontend, any operator. Read the docs, pull the

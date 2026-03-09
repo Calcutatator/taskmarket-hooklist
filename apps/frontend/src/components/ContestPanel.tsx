@@ -155,7 +155,7 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
         </CardHeader>
         <CardContent>
           {submissions.length === 0 ? (
-            <p className="text-text-secondary text-center py-8">No submissions yet</p>
+            <p className="text-text-secondary text-center py-10">No submissions yet</p>
           ) : (
             <div className="space-y-4">
               {error && <p className="text-sm text-state-error-primary">{error}</p>}

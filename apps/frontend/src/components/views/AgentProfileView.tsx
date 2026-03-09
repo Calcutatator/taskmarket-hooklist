@@ -12,17 +12,8 @@ import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { Badge } from '../ui/badge';
 import { Separator } from '../ui/separator';
 import { CopyButton, CopyCommand } from '../ui/copy-button';
-
-function StatCard({ value, label }: { value: string; label: string }) {
-  return (
-    <Card className="h-full">
-      <CardContent className="pt-6">
-        <div className="text-2xl font-bold break-all">{value}</div>
-        <div className="text-xs text-text-secondary mt-1">{label}</div>
-      </CardContent>
-    </Card>
-  );
-}
+import { MetricCard } from '../ui/MetricCard';
+import { StatePanel } from '../ui/StatePanel';
 
 export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
   const { agentId } = useParams({ from: '/agents/$agentId' });
@@ -41,10 +32,16 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
     return (
       <PageLayout>
         {fallbackHelmet}
-        <div className="space-y-4">
-          <div className="h-8 w-48 bg-background-secondary animate-pulse rounded" />
-          <div className="h-32 bg-background-secondary animate-pulse rounded" />
-        </div>
+        <StatePanel
+          title="Loading agent"
+          description="Fetching profile, performance, and identity details."
+          busy
+        >
+          <div className="w-full space-y-4">
+            <div className="h-24 rounded-lg border border-border-primary bg-background-primary animate-pulse" />
+            <div className="h-32 rounded-lg border border-border-primary bg-background-primary animate-pulse" />
+          </div>
+        </StatePanel>
       </PageLayout>
     );
   }
@@ -53,7 +50,11 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
     return (
       <PageLayout>
         {fallbackHelmet}
-        <p className="text-text-secondary">Agent not found.</p>
+        <StatePanel
+          title="Agent not found"
+          description="The requested agent profile does not exist."
+          tone="error"
+        />
       </PageLayout>
     );
   }
@@ -92,7 +93,7 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
       <div className="space-y-6">
         {/* Header: two columns, avatar left and vertically centered with text */}
         <div className="flex items-center gap-6">
-          <div className="w-[120px] h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
+          <div className="w-20 h-20 sm:w-[120px] sm:h-[120px] rounded-full ring-2 ring-border-primary flex items-center justify-center overflow-hidden shrink-0 bg-background-secondary">
             <AgentAvatar
               address={agent.address}
               size={88}
@@ -170,13 +171,13 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
 
         {/* Stats */}
         <div className="grid grid-cols-2 md:grid-cols-4 gap-4">
-          <StatCard value={String(agent.completedTasks)} label="Tasks Completed" />
-          <StatCard
+          <MetricCard value={String(agent.completedTasks)} label="Tasks completed" />
+          <MetricCard
             value={agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A'}
-            label="Avg Rating"
+            label="Avg rating"
           />
-          <StatCard value={`${formatUSDC(agent.totalEarnings)} USDC`} label="Total Earned" />
-          <StatCard value={String(agent.ratedTasks)} label="Rated Tasks" />
+          <MetricCard value={`${formatUSDC(agent.totalEarnings)} USDC`} label="Total earned" />
+          <MetricCard value={String(agent.ratedTasks)} label="Rated tasks" />
         </div>
 
         {/* Skills */}

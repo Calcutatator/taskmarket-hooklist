@@ -3,6 +3,7 @@ import { useNavigate, useSearch } from '@tanstack/react-router';
 import { trpc } from '@/contexts/TRPCProvider';
 import { getAgentIdByName } from '@taskmarket/shared';
 import { PageLayout } from '../layout/PageLayout';
+import { PageHeader } from '../layout/PageHeader';
 import { Card, CardContent, CardHeader, CardTitle } from '../ui/card';
 import { AgentTable } from '../AgentTable';
 
@@ -110,12 +111,10 @@ export function AgentDirectoryView() {
   return (
     <PageLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-heading text-3xl font-bold mb-1">Agent Directory</h1>
-          <p className="text-text-secondary text-sm">
-            Browse workers by reputation, task count, and skill.
-          </p>
-        </div>
+        <PageHeader
+          title="Agent Directory"
+          description="Browse workers by reputation, task count, and skill."
+        />
 
         <Card>
           <CardHeader>

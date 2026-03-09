@@ -1,4 +1,5 @@
 import { Link } from '@tanstack/react-router';
+import { Button } from './ui/button';
 import { Input } from './ui/input';
 import { Label } from './ui/label';
 import { NativeSelect } from './ui/native-select';
@@ -7,6 +8,8 @@ import { formatUSDC } from '@/lib/format';
 import { IdentityBadge } from './IdentityBadge';
 import { AgentAvatar } from './AgentAvatar';
 import { getAgentName } from '@taskmarket/shared';
+import { FilterPanel } from './ui/FilterPanel';
+import { Badge } from './ui/badge';
 
 interface AgentTableRow {
   agentId: string | null;
@@ -80,115 +83,117 @@ export function AgentTable({
   const emptyMessage = variant === 'leaderboard' ? 'No workers found.' : 'No agents found.';
   const workerColumnLabel = variant === 'leaderboard' ? 'Worker' : 'Agent';
   const earnedColumnLabel = variant === 'leaderboard' ? 'Total Earned' : 'Earned';
+  const filterTitle = variant === 'leaderboard' ? 'Filter rankings' : 'Filter agents';
+  const filterDescription =
+    variant === 'leaderboard'
+      ? 'Adjust sorting, thresholds, and query terms for the current rankings.'
+      : 'Refine the current directory by reputation, skills, and activity.';
 
   return (
     <div className="space-y-4">
-      <form onSubmit={onSearchSubmit} className="flex flex-wrap gap-3 items-end">
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Search</Label>
-          <Input
-            type="text"
-            placeholder={searchPlaceholder}
-            value={searchInput}
-            onChange={(e) => onSearchChange(e.target.value)}
-            className="h-auto py-1.5 w-56"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Skill</Label>
-          <Input
-            type="text"
-            placeholder="e.g. python"
-            value={skillInput}
-            onChange={(e) => onSkillChange(e.target.value)}
-            className="h-auto py-1.5 w-36"
-          />
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Min Rating</Label>
-          <NativeSelect
-            value={minRating ?? ''}
-            onChange={(e) => {
-              const val = e.target.value === '' ? undefined : Number(e.target.value);
-              onMinRatingChange(val);
-            }}
-          >
-            {MIN_RATING_OPTIONS.map((o) => (
-              <option key={o.label} value={o.value ?? ''}>
-                {o.label}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Min Tasks</Label>
-          <NativeSelect
-            value={minTasks ?? ''}
-            onChange={(e) => {
-              const val = e.target.value === '' ? undefined : Number(e.target.value);
-              onMinTasksChange(val);
-            }}
-          >
-            {MIN_TASKS_OPTIONS.map((o) => (
-              <option key={o.label} value={o.value ?? ''}>
-                {o.label}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
-
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Sort</Label>
-          <div className="flex gap-1">
-            <button
-              type="button"
-              onClick={() => onSortChange('reputation')}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                sort === 'reputation'
-                  ? 'bg-sidebar-item-active text-white border-sidebar-item-active'
-                  : 'border-border-primary text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              Reputation
-            </button>
-            <button
-              type="button"
-              onClick={() => onSortChange('tasks')}
-              className={`px-3 py-1.5 text-sm rounded border transition-colors ${
-                sort === 'tasks'
-                  ? 'bg-sidebar-item-active text-white border-sidebar-item-active'
-                  : 'border-border-primary text-text-secondary hover:text-text-primary'
-              }`}
-            >
-              Task Count
-            </button>
+      <FilterPanel title={filterTitle} description={filterDescription}>
+        <form onSubmit={onSearchSubmit} className="grid grid-cols-1 gap-4 lg:grid-cols-6">
+          <div className="space-y-2 lg:col-span-2">
+            <Label className="text-xs font-medium text-text-secondary">Search</Label>
+            <Input
+              type="text"
+              placeholder={searchPlaceholder}
+              value={searchInput}
+              onChange={(e) => onSearchChange(e.target.value)}
+            />
           </div>
-        </div>
 
-        <div className="flex flex-col gap-1">
-          <Label className="text-xs font-medium text-text-secondary">Per page</Label>
-          <NativeSelect value={pageSize} onChange={(e) => onPageSizeChange(Number(e.target.value))}>
-            {PAGE_SIZE_OPTIONS.map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </NativeSelect>
-        </div>
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-text-secondary">Skill</Label>
+            <Input
+              type="text"
+              placeholder="e.g. python"
+              value={skillInput}
+              onChange={(e) => onSkillChange(e.target.value)}
+            />
+          </div>
 
-        {hasActiveFilters && (
-          <button
-            type="button"
-            onClick={onClearFilters}
-            className="px-4 py-1.5 text-sm border border-border-primary text-text-secondary rounded hover:text-text-primary transition-colors"
-          >
-            Clear
-          </button>
-        )}
-      </form>
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-text-secondary">Min Rating</Label>
+            <NativeSelect
+              value={minRating ?? ''}
+              onChange={(e) => {
+                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                onMinRatingChange(val);
+              }}
+            >
+              {MIN_RATING_OPTIONS.map((o) => (
+                <option key={o.label} value={o.value ?? ''}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-text-secondary">Min Tasks</Label>
+            <NativeSelect
+              value={minTasks ?? ''}
+              onChange={(e) => {
+                const val = e.target.value === '' ? undefined : Number(e.target.value);
+                onMinTasksChange(val);
+              }}
+            >
+              {MIN_TASKS_OPTIONS.map((o) => (
+                <option key={o.label} value={o.value ?? ''}>
+                  {o.label}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2">
+            <Label className="text-xs font-medium text-text-secondary">Per page</Label>
+            <NativeSelect
+              value={pageSize}
+              onChange={(e) => onPageSizeChange(Number(e.target.value))}
+            >
+              {PAGE_SIZE_OPTIONS.map((n) => (
+                <option key={n} value={n}>
+                  {n}
+                </option>
+              ))}
+            </NativeSelect>
+          </div>
+
+          <div className="space-y-2 lg:col-span-6">
+            <div className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-text-secondary">Sort</Label>
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    type="button"
+                    variant={sort === 'reputation' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => onSortChange('reputation')}
+                  >
+                    Reputation
+                  </Button>
+                  <Button
+                    type="button"
+                    variant={sort === 'tasks' ? 'default' : 'outline'}
+                    size="sm"
+                    onClick={() => onSortChange('tasks')}
+                  >
+                    Task Count
+                  </Button>
+                </div>
+              </div>
+
+              {hasActiveFilters && (
+                <Button type="button" variant="outline" size="sm" onClick={onClearFilters}>
+                  Clear filters
+                </Button>
+              )}
+            </div>
+          </div>
+        </form>
+      </FilterPanel>
 
       {isLoading ? (
         <div className="space-y-2">
@@ -197,22 +202,32 @@ export function AgentTable({
           ))}
         </div>
       ) : !data || data.length === 0 ? (
-        <p className="text-text-secondary text-center py-8">{emptyMessage}</p>
+        <p className="text-text-secondary text-center py-10">{emptyMessage}</p>
       ) : (
         <>
           <div className="overflow-x-auto">
             <table className="w-full">
               <thead>
                 <tr className="border-b border-border-primary">
-                  <th className="text-left py-3 px-4 font-semibold text-sm">Rank</th>
-                  <th className="text-left py-3 px-4 font-semibold text-sm">{workerColumnLabel}</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">Tasks</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">Rating</th>
-                  <th className="text-right py-3 px-4 font-semibold text-sm">
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rank
+                  </th>
+                  <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    {workerColumnLabel}
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Tasks
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                    Rating
+                  </th>
+                  <th className="text-right py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
                     {earnedColumnLabel}
                   </th>
                   {variant === 'directory' && (
-                    <th className="text-left py-3 px-4 font-semibold text-sm">Skills</th>
+                    <th className="text-left py-3 px-4 text-xs font-medium text-text-secondary uppercase tracking-wider">
+                      Skills
+                    </th>
                   )}
                 </tr>
               </thead>
@@ -288,12 +303,9 @@ export function AgentTable({
                       <td className="py-3 px-4">
                         <div className="flex flex-wrap gap-1">
                           {row.skills.slice(0, 5).map((skill: string) => (
-                            <span
-                              key={skill}
-                              className="px-1.5 py-0.5 text-xs rounded bg-background-secondary text-text-secondary border border-border-primary"
-                            >
+                            <Badge key={skill} variant="outline" className="px-2 py-1 font-medium">
                               {skill}
-                            </span>
+                            </Badge>
                           ))}
                           {row.skills.length > 5 && (
                             <span className="text-xs text-text-secondary">
@@ -312,22 +324,24 @@ export function AgentTable({
           <div className="flex items-center justify-between pt-4 border-t border-border-primary">
             <span className="text-sm text-text-secondary">Page {page}</span>
             <div className="flex gap-2">
-              <button
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => onPageChange(page - 1)}
                 disabled={!hasPrevPage}
-                className="px-3 py-1.5 text-sm border border-border-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-background-secondary"
               >
                 Previous
-              </button>
-              <button
+              </Button>
+              <Button
                 type="button"
+                variant="outline"
+                size="sm"
                 onClick={() => onPageChange(page + 1)}
                 disabled={!hasNextPage}
-                className="px-3 py-1.5 text-sm border border-border-primary rounded transition-colors disabled:opacity-40 disabled:cursor-not-allowed hover:enabled:bg-background-secondary"
               >
                 Next
-              </button>
+              </Button>
             </div>
           </div>
         </>

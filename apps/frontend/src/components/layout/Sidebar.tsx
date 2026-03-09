@@ -236,7 +236,7 @@ export function Sidebar() {
           aria-modal="true"
           aria-label="Navigation menu"
           className={cn(
-            'absolute left-0 top-0 bottom-0 w-72 bg-sidebar-bg border-r border-sidebar-border flex flex-col transition-transform duration-200',
+            'absolute left-0 top-0 bottom-0 w-64 bg-sidebar-bg border-r border-sidebar-border flex flex-col transition-transform duration-200',
             mobileOpen ? 'translate-x-0' : '-translate-x-full'
           )}
         >
