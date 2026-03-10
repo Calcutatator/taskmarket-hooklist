@@ -4,7 +4,14 @@ import { createMockCtx, makeChain } from '../helpers';
 // Mock contract service before importing router
 vi.mock('../../../src/services/contract', () => ({
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
-  MODE_MAP: { bounty: 0, claim: 1, pitch: 2, benchmark: 3, auction: 4 },
+  precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
+  MODE_MAP: {
+    bounty: '0x00000001',
+    claim: '0x00000002',
+    pitch: '0x00000003',
+    benchmark: '0x00000004',
+    auction: '0x00000005',
+  },
 }));
 
 // Mock config so no real env vars are needed
@@ -94,8 +101,8 @@ describe('tasks router', () => {
 
       await caller.create({ ...baseTaskInput, mode: 'claim' });
 
-      const [, , , , mode] = (contractCreateTask as any).mock.calls[0];
-      expect(mode).toBe(1); // MODE_MAP.claim
+      const [, , , mode] = (contractCreateTask as any).mock.calls[0];
+      expect(mode).toBe('0x00000002'); // MODE_MAP.claim
     });
   });
 
