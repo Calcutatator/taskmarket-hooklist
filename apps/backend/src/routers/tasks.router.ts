@@ -14,12 +14,12 @@ import {
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
 import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc } from 'drizzle-orm';
-import { randomBytes } from 'crypto';
 import {
   contractCreateTask,
   contractCancelTask,
   contractUpdateTask,
   MODE_MAP,
+  precomputeTaskId,
 } from '../services/contract';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
@@ -257,28 +257,30 @@ export const tasksRouter = router({
       }
 
       const config = getServerConfig();
-      const taskId = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
       const reward = BigInt(input.reward);
       const durationSecs = BigInt(input.duration * 3600);
-      const mode = MODE_MAP[input.mode ?? 'bounty'] ?? 0;
+      const mode = MODE_MAP[input.mode ?? 'bounty'] ?? MODE_MAP['bounty']!;
 
       const pitchDeadlineSecs =
         input.mode === 'pitch'
           ? input.pitchDeadline
             ? BigInt(input.pitchDeadline)
             : durationSecs
-          : 0n;
+          : BigInt(0);
 
       const bidDeadlineSecs =
         input.mode === 'auction'
           ? input.bidDeadline
             ? BigInt(input.bidDeadline * 3600)
             : durationSecs
-          : 0n;
+          : BigInt(0);
+
+      // Pre-compute the contract-generated task ID by reading requesterNonce from chain.
+      // The contract generates: keccak256(abi.encode(chainId, address(this), requester, nonce))
+      const taskId = await precomputeTaskId(payer as `0x${string}`, config.CONTRACT_ADDRESS);
 
       const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
       const escrowTxHash = await contractCreateTask(
-        taskId,
         payer as `0x${string}`,
         reward,
         durationSecs,

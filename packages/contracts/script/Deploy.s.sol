@@ -22,7 +22,7 @@ contract DeployScript is Script {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         TaskMarket market = TaskMarket(address(proxy));
-        market.setAuthorizedServer(serverAddress);
+        market.addForwarder(serverAddress);
         market.setReputationRegistry(reputationRegistry);
 
         console.log("Proxy (CONTRACT_ADDRESS):", address(proxy));
@@ -31,7 +31,7 @@ contract DeployScript is Script {
         console.log("Fee Recipient:", feeRecipient);
         console.log("Default Fee BPS:", defaultFeeBps);
         console.log("Reputation registry:", reputationRegistry);
-        console.log("Authorized server:", serverAddress);
+        console.log("Trusted forwarder:", serverAddress);
 
         vm.stopBroadcast();
     }

@@ -1,4 +1,12 @@
-import { createPublicClient, http, parseAbi, parseAbiItem, decodeEventLog } from 'viem';
+import {
+  createPublicClient,
+  http,
+  parseAbi,
+  parseAbiItem,
+  decodeEventLog,
+  keccak256,
+  encodeAbiParameters,
+} from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { createServerWallet } from '../lib/wallet';
 import { getServerConfig } from '../config/env';
@@ -10,28 +18,44 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(bytes32,address,uint256,uint256,uint8,uint256,uint256)',
+  'function createTask(address,uint256,uint256,bytes4,uint256,uint256) returns (bytes32)',
   'function claimTask(bytes32,address,uint256)',
   'function selectWorker(bytes32,address,address)',
   'function acceptSubmission(bytes32,address,address)',
   'function rateTask(bytes32,address,uint8,uint256,string,bytes32)',
+  'function submitWork(bytes32,address,bytes32)',
   'function submitBid(bytes32,address,uint256)',
   'function selectLowestBidder(bytes32)',
   'function acceptAuction(bytes32,address,uint256)',
   'function cancelTask(bytes32,address)',
   'function updateTask(bytes32,address,uint256,uint256,uint256,uint256)',
+  'function addForwarder(address)',
+  'function removeForwarder(address)',
+  'function trustedForwarders(address) view returns (bool)',
+  'function requesterNonce(address) view returns (uint256)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const REGISTERED_EVENT = parseAbiItem(
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
 );
 
-export const MODE_MAP: Record<string, number> = {
-  bounty: 0,
-  claim: 1,
-  pitch: 2,
-  benchmark: 3,
-  auction: 4,
+/**
+ * Compute the bytes4 mode selector for a TMP mode name.
+ * Mirrors the Solidity: bytes4(keccak256("TMP.mode.<name>"))
+ */
+function tmpModeBytes4(modeName: string): `0x${string}` {
+  const hex = ('0x' + Buffer.from(modeName, 'utf8').toString('hex')) as `0x${string}`;
+  const hash = keccak256(hex);
+  return hash.slice(0, 10) as `0x${string}`; // '0x' + 8 hex chars = 4 bytes
+}
+
+/** Canonical bytes4 mode selectors matching on-chain constants */
+export const MODE_MAP: Record<string, `0x${string}`> = {
+  bounty: tmpModeBytes4('TMP.mode.bounty'),
+  claim: tmpModeBytes4('TMP.mode.claim'),
+  pitch: tmpModeBytes4('TMP.mode.pitch'),
+  benchmark: tmpModeBytes4('TMP.mode.benchmark'),
+  auction: tmpModeBytes4('TMP.mode.auction'),
 };
 
 const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
@@ -62,12 +86,39 @@ function assertSuccess(receipt: { status: string }, label: string) {
   }
 }
 
+/**
+ * Pre-compute the contract-generated task ID using the current requester nonce.
+ * The contract generates: keccak256(abi.encode(chainId, contractAddress, requester, nonce))
+ * Call this BEFORE contractCreateTask to know the ID before it's on-chain.
+ */
+export async function precomputeTaskId(
+  requester: `0x${string}`,
+  contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const addr = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+
+  const nonce = (await publicClient.readContract({
+    address: addr,
+    abi: MARKET_ABI,
+    functionName: 'requesterNonce',
+    args: [requester],
+  })) as bigint;
+
+  return keccak256(
+    encodeAbiParameters(
+      [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }],
+      [BigInt(config.CHAIN_ID), addr, requester, nonce]
+    )
+  ) as `0x${string}`;
+}
+
 export async function contractCreateTask(
-  taskId: `0x${string}`,
   requester: `0x${string}`,
   reward: bigint,
   durationSecs: bigint,
-  mode: number,
+  mode: `0x${string}`,
   pitchDeadlineSecs: bigint = 0n,
   bidDeadlineSecs: bigint = 0n,
   paymentTxHash?: `0x${string}`
@@ -119,7 +170,14 @@ export async function contractCreateTask(
     address: config.CONTRACT_ADDRESS as `0x${string}`,
     abi: MARKET_ABI,
     functionName: 'createTask',
-    args: [taskId, requester, reward, durationSecs, mode, pitchDeadlineSecs, bidDeadlineSecs],
+    args: [
+      requester,
+      reward,
+      durationSecs,
+      mode as `0x${string}`,
+      pitchDeadlineSecs,
+      bidDeadlineSecs,
+    ],
     ...gas,
   });
   assertSuccess(

@@ -23,7 +23,7 @@ contract DeployTestnet is Script {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         TaskMarket market = TaskMarket(address(proxy));
-        market.setAuthorizedServer(serverAddress);
+        market.addForwarder(serverAddress);
         market.setReputationRegistry(REPUTATION_REGISTRY);
 
         vm.stopBroadcast();
@@ -31,7 +31,7 @@ contract DeployTestnet is Script {
         console.log("Proxy (CONTRACT_ADDRESS):", address(proxy));
         console.log("Implementation:", address(implementation));
         console.log("USDC:", CIRCLE_USDC);
-        console.log("Authorized server:", serverAddress);
+        console.log("Trusted forwarder:", serverAddress);
         console.log("Reputation registry:", REPUTATION_REGISTRY);
     }
 }

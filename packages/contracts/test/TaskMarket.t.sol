@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "../src/TaskMarket.sol";
+import "../src/interfaces/ITMP.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 
 contract MockERC20 is ERC20 {
@@ -33,13 +34,14 @@ contract TaskMarketTest is Test {
 
     uint16 public defaultFeeBps = 500;
 
-    bytes32 public constant TASK_ID_1 = keccak256("task1");
-    bytes32 public constant TASK_ID_2 = keccak256("task2");
-    bytes32 public constant TASK_ID_3 = keccak256("task3");
-    bytes32 public constant TASK_ID_4 = keccak256("task4");
-
     uint256 public constant REWARD = 100 * 10 ** 6;
     uint256 public constant DURATION = 7 days;
+
+    /// @dev Helper: pre-compute the next contract-generated task ID for a given requester
+    function _nextTaskId(address _requester) internal view returns (bytes32) {
+        uint256 nonce = market.requesterNonce(_requester);
+        return keccak256(abi.encode(block.chainid, address(market), _requester, nonce));
+    }
 
     function setUp() public {
         vm.startPrank(owner);
@@ -51,7 +53,7 @@ contract TaskMarketTest is Test {
         );
         ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
         market = TaskMarket(address(proxy));
-        market.setAuthorizedServer(server);
+        market.addForwarder(server);
         vm.stopPrank();
 
         // Server holds USDC to escrow on behalf of requesters (received via X402)
@@ -64,30 +66,70 @@ contract TaskMarketTest is Test {
         assertEq(address(market.usdcToken()), address(usdc));
         assertEq(market.feeRecipient(), feeRecipient);
         assertEq(market.defaultFeeBps(), defaultFeeBps);
-        assertEq(market.authorizedServer(), server);
+        assertTrue(market.trustedForwarders(server));
     }
+
+    // -----------------------------------------------------------------------
+    // ERC-165 / supportsInterface
+    // -----------------------------------------------------------------------
+
+    function test_SupportsInterface_ITMP() public view {
+        assertTrue(market.supportsInterface(type(ITMP).interfaceId));
+    }
+
+    function test_SupportsInterface_ERC165() public view {
+        assertTrue(market.supportsInterface(type(IERC165).interfaceId));
+    }
+
+    function test_SupportsInterface_Unknown() public view {
+        assertFalse(market.supportsInterface(bytes4(0xdeadbeef)));
+    }
+
+    // -----------------------------------------------------------------------
+    // createTask — basic happy paths
+    // -----------------------------------------------------------------------
 
     function test_CreateTask_Bounty() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
 
-        vm.expectEmit(true, true, false, true);
-        emit TaskMarket.TaskCreated(TASK_ID_1, requester, REWARD, block.timestamp + DURATION, TaskMarket.TaskMode.Bounty);
+        bytes32 expectedId = _nextTaskId(requester);
 
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        vm.expectEmit(true, true, false, true);
+        emit TaskMarket.TaskCreated(expectedId, requester, REWARD, block.timestamp + DURATION, market.BOUNTY());
+
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        assertEq(taskId, expectedId);
+
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
         assertEq(task.reward, REWARD);
-        assertEq(uint256(task.mode), uint256(TaskMarket.TaskMode.Bounty));
+        assertEq(task.mode, market.BOUNTY());
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Open));
+    }
+
+    function test_CreateTask_RequesterNonceIncrements() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD * 3);
+
+        assertEq(market.requesterNonce(requester), 0);
+
+        bytes32 id1 = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        assertEq(market.requesterNonce(requester), 1);
+
+        bytes32 id2 = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        assertEq(market.requesterNonce(requester), 2);
+
+        assertTrue(id1 != id2);
+        vm.stopPrank();
     }
 
     function test_AcceptSubmission_Bounty() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         uint256 expectedFee = (REWARD * defaultFeeBps) / 10000;
@@ -97,12 +139,12 @@ contract TaskMarketTest is Test {
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
         vm.prank(server);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
 
         assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + expectedFee);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
         assertEq(task.worker, worker1);
 
@@ -113,7 +155,7 @@ contract TaskMarketTest is Test {
     function test_ClaimTask_Claim() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         uint256 stakeAmount = REWARD / 10;
@@ -122,12 +164,12 @@ contract TaskMarketTest is Test {
         usdc.approve(address(market), stakeAmount);
 
         vm.expectEmit(true, true, false, true);
-        emit TaskMarket.TaskClaimed(TASK_ID_2, worker1, stakeAmount);
+        emit TaskMarket.TaskClaimed(taskId, worker1, stakeAmount);
 
-        market.claimTask(TASK_ID_2, worker1, stakeAmount);
+        market.claimTask(taskId, worker1, stakeAmount);
         vm.stopPrank();
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_2);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
         assertEq(task.claimer, worker1);
         assertEq(task.stakeAmount, stakeAmount);
@@ -136,14 +178,14 @@ contract TaskMarketTest is Test {
     function test_AcceptSubmission_Claim_ReturnsStake() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         uint256 stakeAmount = REWARD / 10;
 
         vm.startPrank(server);
         usdc.approve(address(market), stakeAmount);
-        market.claimTask(TASK_ID_2, worker1, stakeAmount);
+        market.claimTask(taskId, worker1, stakeAmount);
         vm.stopPrank();
 
         uint256 expectedFee = (REWARD * defaultFeeBps) / 10000;
@@ -151,7 +193,7 @@ contract TaskMarketTest is Test {
         uint256 workerBalanceBefore = usdc.balanceOf(worker1);
 
         vm.prank(server);
-        market.acceptSubmission(TASK_ID_2, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
 
         assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment + stakeAmount);
     }
@@ -159,14 +201,14 @@ contract TaskMarketTest is Test {
     function test_ForfeitAndReopen_Claim() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         uint256 stakeAmount = REWARD / 10;
 
         vm.startPrank(server);
         usdc.approve(address(market), stakeAmount);
-        market.claimTask(TASK_ID_2, worker1, stakeAmount);
+        market.claimTask(taskId, worker1, stakeAmount);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -174,11 +216,11 @@ contract TaskMarketTest is Test {
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
         vm.prank(server);
-        market.forfeitAndReopen(TASK_ID_2, requester);
+        market.forfeitAndReopen(taskId, requester);
 
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + stakeAmount);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_2);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Open));
         assertEq(task.claimer, address(0));
         assertEq(task.stakeAmount, 0);
@@ -189,16 +231,16 @@ contract TaskMarketTest is Test {
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, pitchDeadline, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), pitchDeadline, 0);
         vm.stopPrank();
 
         vm.expectEmit(true, true, false, false);
-        emit TaskMarket.TaskWorkerSelected(TASK_ID_3, worker1);
+        emit TaskMarket.TaskWorkerSelected(taskId, worker1);
 
         vm.prank(server);
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        market.selectWorker(taskId, requester, worker1);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_3);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.WorkerSelected));
         assertEq(task.worker, worker1);
     }
@@ -208,54 +250,54 @@ contract TaskMarketTest is Test {
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, pitchDeadline, 0);
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), pitchDeadline, 0);
+        market.selectWorker(taskId, requester, worker1);
         vm.stopPrank();
 
         uint256 expectedFee = (REWARD * defaultFeeBps) / 10000;
         uint256 expectedWorkerPayment = REWARD - expectedFee;
 
         vm.prank(server);
-        market.acceptSubmission(TASK_ID_3, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
 
         assertEq(usdc.balanceOf(worker1) - 1000 * 10 ** 6, expectedWorkerPayment);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_3);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
     }
 
     function test_AcceptSubmission_Benchmark() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_4, requester, REWARD, DURATION, TaskMarket.TaskMode.Benchmark, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BENCHMARK(), 0, 0);
         vm.stopPrank();
 
         uint256 expectedFee = (REWARD * defaultFeeBps) / 10000;
         uint256 expectedWorkerPayment = REWARD - expectedFee;
 
         vm.prank(server);
-        market.acceptSubmission(TASK_ID_4, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
 
         assertEq(usdc.balanceOf(worker1) - 1000 * 10 ** 6, expectedWorkerPayment);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_4);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
     }
 
     function test_RateTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
         vm.stopPrank();
 
         vm.expectEmit(true, true, false, true);
-        emit TaskMarket.TaskRated(TASK_ID_1, worker1, 5);
+        emit TaskMarket.TaskRated(taskId, worker1, 5);
 
         vm.prank(server);
-        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
+        market.rateTask(taskId, requester, 5, 0, "", bytes32(0));
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.rating, 5);
 
         (,uint256 avgRating, uint256 ratedTasks) = market.getWorkerStats(worker1);
@@ -266,18 +308,18 @@ contract TaskMarketTest is Test {
     function test_RefundExpired() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
-        market.refundExpired(TASK_ID_1);
+        market.refundExpired(taskId);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Expired));
     }
 
@@ -308,52 +350,52 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_ClaimNonClaimTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert();
-        market.claimTask(TASK_ID_1, worker1, REWARD / 10);
+        market.claimTask(taskId, worker1, REWARD / 10);
         vm.stopPrank();
     }
 
     function test_RevertWhen_SelectWorkerNonPitchTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert();
-        market.selectWorker(TASK_ID_1, requester, worker1);
+        market.selectWorker(taskId, requester, worker1);
         vm.stopPrank();
     }
 
     function test_RevertWhen_ForfeitTooEarly() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD + REWARD / 10);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, REWARD / 10);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, REWARD / 10);
         vm.expectRevert();
-        market.forfeitAndReopen(TASK_ID_2, requester);
+        market.forfeitAndReopen(taskId, requester);
         vm.stopPrank();
     }
 
     function test_RevertWhen_AcceptExpiredTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(server);
         vm.expectRevert();
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
     }
 
     function test_RevertWhen_RateTaskTwice() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
-        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
+        market.rateTask(taskId, requester, 5, 0, "", bytes32(0));
         vm.expectRevert();
-        market.rateTask(TASK_ID_1, requester, 4, 0, "", bytes32(0));
+        market.rateTask(taskId, requester, 4, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -364,109 +406,125 @@ contract TaskMarketTest is Test {
     address public alice = address(7);
 
     function test_RevertWhen_NonServer_CreateTask() public {
+        bytes4 bounty = market.BOUNTY();
         usdc.mint(alice, REWARD);
         vm.startPrank(alice);
         usdc.approve(address(market), REWARD);
-        vm.expectRevert("Not authorized server");
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        vm.expectRevert("Not trusted forwarder");
+        market.createTask(requester, REWARD, DURATION, bounty, 0, 0);
         vm.stopPrank();
     }
 
     function test_RevertWhen_NonServer_ClaimTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.claimTask(TASK_ID_2, worker1, 0);
+        vm.expectRevert("Not trusted forwarder");
+        market.claimTask(taskId, worker1, 0);
     }
 
     function test_RevertWhen_NonServer_SelectWorker() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, 2 days, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        vm.expectRevert("Not trusted forwarder");
+        market.selectWorker(taskId, requester, worker1);
     }
 
     function test_RevertWhen_NonServer_AcceptSubmission() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        vm.expectRevert("Not trusted forwarder");
+        market.acceptSubmission(taskId, requester, worker1);
     }
 
     function test_RevertWhen_NonServer_ForfeitAndReopen() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD + REWARD / 10);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, REWARD / 10);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, REWARD / 10);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.forfeitAndReopen(TASK_ID_2, requester);
+        vm.expectRevert("Not trusted forwarder");
+        market.forfeitAndReopen(taskId, requester);
     }
 
     function test_RevertWhen_NonServer_RateTask() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.rateTask(TASK_ID_1, requester, 5, 0, "", bytes32(0));
+        vm.expectRevert("Not trusted forwarder");
+        market.rateTask(taskId, requester, 5, 0, "", bytes32(0));
     }
 
     // -----------------------------------------------------------------------
-    // setAuthorizedServer
+    // addForwarder / removeForwarder
     // -----------------------------------------------------------------------
 
-    function test_SetAuthorizedServer() public {
+    function test_AddForwarder() public {
         address newServer = address(8);
 
         vm.startPrank(owner);
-        vm.expectEmit(false, false, false, true);
-        emit TaskMarket.AuthorizedServerUpdated(newServer);
-        market.setAuthorizedServer(newServer);
+        vm.expectEmit(true, false, false, true);
+        emit TaskMarket.ForwarderUpdated(newServer, true);
+        market.addForwarder(newServer);
         vm.stopPrank();
 
-        assertEq(market.authorizedServer(), newServer);
+        assertTrue(market.trustedForwarders(newServer));
 
-        // Confirm new server can call a server-only function
+        // Confirm new forwarder can call a server-only function
         usdc.mint(newServer, REWARD);
         vm.startPrank(newServer);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
     }
 
-    function test_RevertWhen_SetAuthorizedServer_ZeroAddress() public {
+    function test_RemoveForwarder() public {
+        bytes4 bounty = market.BOUNTY();
         vm.prank(owner);
-        vm.expectRevert("Invalid server address");
-        market.setAuthorizedServer(address(0));
+        market.removeForwarder(server);
+
+        assertFalse(market.trustedForwarders(server));
+
+        usdc.mint(server, REWARD);
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        vm.expectRevert("Not trusted forwarder");
+        market.createTask(requester, REWARD, DURATION, bounty, 0, 0);
+        vm.stopPrank();
     }
 
-    function test_RevertWhen_NonOwner_SetAuthorizedServer() public {
+    function test_RevertWhen_AddForwarder_ZeroAddress() public {
+        vm.prank(owner);
+        vm.expectRevert("Invalid forwarder address");
+        market.addForwarder(address(0));
+    }
+
+    function test_RevertWhen_NonOwner_AddForwarder() public {
         vm.prank(alice);
         vm.expectRevert();
-        market.setAuthorizedServer(address(8));
+        market.addForwarder(address(8));
     }
 
     // -----------------------------------------------------------------------
@@ -492,35 +550,37 @@ contract TaskMarketTest is Test {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_CreateTask_ZeroRequester() public {
+        bytes4 bounty = market.BOUNTY();
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
         vm.expectRevert("Invalid requester");
-        market.createTask(TASK_ID_1, address(0), REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        market.createTask(address(0), REWARD, DURATION, bounty, 0, 0);
         vm.stopPrank();
     }
 
     function test_RevertWhen_CreateTask_ZeroReward() public {
+        bytes4 bounty = market.BOUNTY();
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
         vm.expectRevert("Reward must be greater than 0");
-        market.createTask(TASK_ID_1, requester, 0, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        market.createTask(requester, 0, DURATION, bounty, 0, 0);
         vm.stopPrank();
     }
 
     function test_RevertWhen_CreateTask_ZeroDuration() public {
+        bytes4 bounty = market.BOUNTY();
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
         vm.expectRevert("Duration must be greater than 0");
-        market.createTask(TASK_ID_1, requester, REWARD, 0, TaskMarket.TaskMode.Bounty, 0, 0);
+        market.createTask(requester, REWARD, 0, bounty, 0, 0);
         vm.stopPrank();
     }
 
-    function test_RevertWhen_CreateTask_DuplicateId() public {
+    function test_RevertWhen_CreateTask_InvalidMode() public {
         vm.startPrank(server);
-        usdc.approve(address(market), REWARD * 2);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.expectRevert("Task already exists");
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        usdc.approve(address(market), REWARD);
+        vm.expectRevert("Invalid mode");
+        market.createTask(requester, REWARD, DURATION, bytes4(0xdeadbeef), 0, 0);
         vm.stopPrank();
     }
 
@@ -531,23 +591,23 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_ClaimTask_TaskExpired() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(server);
         vm.expectRevert("Task expired");
-        market.claimTask(TASK_ID_2, worker1, 0);
+        market.claimTask(taskId, worker1, 0);
     }
 
     function test_RevertWhen_ClaimTask_AlreadyClaimed() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, 0);
         vm.expectRevert("Task not available");
-        market.claimTask(TASK_ID_2, worker2, 0);
+        market.claimTask(taskId, worker2, 0);
         vm.stopPrank();
     }
 
@@ -558,42 +618,42 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_SelectWorker_WrongRequester() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, 2 days, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
         vm.expectRevert("Not requester");
-        market.selectWorker(TASK_ID_3, worker2, worker1);
+        market.selectWorker(taskId, worker2, worker1);
         vm.stopPrank();
     }
 
     function test_RevertWhen_AcceptSubmission_WrongRequester() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert("Not requester");
-        market.acceptSubmission(TASK_ID_1, worker2, worker1);
+        market.acceptSubmission(taskId, worker2, worker1);
         vm.stopPrank();
     }
 
     function test_RevertWhen_ForfeitAndReopen_WrongRequester() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD + REWARD / 10);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, REWARD / 10);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, REWARD / 10);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.prank(server);
         vm.expectRevert("Not requester");
-        market.forfeitAndReopen(TASK_ID_2, worker2);
+        market.forfeitAndReopen(taskId, worker2);
     }
 
     function test_RevertWhen_RateTask_WrongRequester() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
         vm.expectRevert("Not requester");
-        market.rateTask(TASK_ID_1, worker2, 5, 0, "", bytes32(0));
+        market.rateTask(taskId, worker2, 5, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -604,23 +664,23 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_SelectWorker_DeadlinePassed() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, 1 days, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 1 days, 0);
         vm.stopPrank();
 
         vm.warp(block.timestamp + 1 days + 1);
 
         vm.prank(server);
         vm.expectRevert("Pitch deadline passed");
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        market.selectWorker(taskId, requester, worker1);
     }
 
     function test_RevertWhen_SelectWorker_NotOpen() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, 2 days, 0);
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        market.selectWorker(taskId, requester, worker1);
         vm.expectRevert("Task not available");
-        market.selectWorker(TASK_ID_3, requester, worker2);
+        market.selectWorker(taskId, requester, worker2);
         vm.stopPrank();
     }
 
@@ -631,20 +691,122 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_AcceptSubmission_Claim_WrongClaimer() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, 0);
         vm.expectRevert("Worker must be claimer");
-        market.acceptSubmission(TASK_ID_2, requester, worker2);
+        market.acceptSubmission(taskId, requester, worker2);
         vm.stopPrank();
     }
 
     function test_RevertWhen_AcceptSubmission_Pitch_WrongWorker() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, 2 days, 0);
-        market.selectWorker(TASK_ID_3, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        market.selectWorker(taskId, requester, worker1);
         vm.expectRevert("Worker mismatch");
-        market.acceptSubmission(TASK_ID_3, requester, worker2);
+        market.acceptSubmission(taskId, requester, worker2);
+        vm.stopPrank();
+    }
+
+    // -----------------------------------------------------------------------
+    // submitWork
+    // -----------------------------------------------------------------------
+
+    function test_SubmitWork_Bounty_SetsPendingApproval() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        bytes32 deliverable = keccak256("my work artifact");
+
+        vm.expectEmit(true, true, false, true);
+        emit TaskMarket.TaskSubmitted(taskId, worker1, deliverable);
+
+        market.submitWork(taskId, worker1, deliverable);
+        vm.stopPrank();
+
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.PendingApproval));
+        assertEq(task.deliverable, deliverable);
+    }
+
+    function test_SubmitWork_Benchmark_SetsPendingApproval() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BENCHMARK(), 0, 0);
+        bytes32 deliverable = keccak256("benchmark result");
+
+        market.submitWork(taskId, worker1, deliverable);
+        vm.stopPrank();
+
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.PendingApproval));
+        assertEq(task.deliverable, deliverable);
+    }
+
+    function test_SubmitWork_Claim_NoStateChange() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, 0);
+
+        bytes32 deliverable = keccak256("claim work");
+        market.submitWork(taskId, worker1, deliverable);
+        vm.stopPrank();
+
+        TaskMarket.Task memory task = market.getTask(taskId);
+        // State stays Claimed
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
+        assertEq(task.deliverable, deliverable);
+    }
+
+    function test_SubmitWork_Pitch_NoStateChange() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        market.selectWorker(taskId, requester, worker1);
+
+        bytes32 deliverable = keccak256("pitch work");
+        market.submitWork(taskId, worker1, deliverable);
+        vm.stopPrank();
+
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.WorkerSelected));
+        assertEq(task.deliverable, deliverable);
+    }
+
+    function test_SubmitWork_ThenAcceptSubmission_Bounty() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.submitWork(taskId, worker1, keccak256("work"));
+        market.acceptSubmission(taskId, requester, worker1);
+        vm.stopPrank();
+
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
+    }
+
+    function test_RevertWhen_SubmitWork_TaskExpired() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        vm.stopPrank();
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.prank(server);
+        vm.expectRevert("Task expired");
+        market.submitWork(taskId, worker1, keccak256("work"));
+    }
+
+    function test_RevertWhen_SubmitWork_Claim_WrongWorker() public {
+        vm.startPrank(server);
+        usdc.approve(address(market), REWARD);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, 0);
+
+        vm.expectRevert("Worker must be claimer");
+        market.submitWork(taskId, worker2, keccak256("work"));
         vm.stopPrank();
     }
 
@@ -655,29 +817,19 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_RateTask_NotAccepted() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert("Task not accepted");
-        market.rateTask(TASK_ID_1, requester, 3, 0, "", bytes32(0));
+        market.rateTask(taskId, requester, 3, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
-    function test_RevertWhen_RateTask_InvalidRating_Zero() public {
+    function test_RevertWhen_RateTask_InvalidRating() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
         vm.expectRevert("Rating must be 0-100");
-        market.rateTask(TASK_ID_1, requester, 101, 0, "", bytes32(0));
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_RateTask_InvalidRating_Six() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
-        vm.expectRevert("Rating must be 0-100");
-        market.rateTask(TASK_ID_1, requester, 101, 0, "", bytes32(0));
+        market.rateTask(taskId, requester, 101, 0, "", bytes32(0));
         vm.stopPrank();
     }
 
@@ -688,11 +840,11 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_RefundExpired_NotYetExpired() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.expectRevert("Task not expired");
-        market.refundExpired(TASK_ID_1);
+        market.refundExpired(taskId);
     }
 
     function test_RevertWhen_RefundExpired_TaskDoesNotExist() public {
@@ -703,14 +855,14 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_RefundExpired_AlreadyAccepted() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        market.acceptSubmission(taskId, requester, worker1);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         vm.expectRevert("Task already accepted");
-        market.refundExpired(TASK_ID_1);
+        market.refundExpired(taskId);
     }
 
     function test_RefundExpired_Claim_ReturnsStake() public {
@@ -718,8 +870,8 @@ contract TaskMarketTest is Test {
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD + stakeAmount);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, stakeAmount);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, stakeAmount);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -727,11 +879,9 @@ contract TaskMarketTest is Test {
         uint256 worker1BalanceBefore = usdc.balanceOf(worker1);
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
-        market.refundExpired(TASK_ID_2);
+        market.refundExpired(taskId);
 
-        // Requester gets reward back
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        // Worker gets stake back
         assertEq(usdc.balanceOf(worker1), worker1BalanceBefore + stakeAmount);
     }
 
@@ -742,18 +892,18 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_ForfeitAndReopen_NotClaim() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert("Not a Claim task");
-        market.forfeitAndReopen(TASK_ID_1, requester);
+        market.forfeitAndReopen(taskId, requester);
         vm.stopPrank();
     }
 
     function test_RevertWhen_ForfeitAndReopen_NotClaimed() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.expectRevert("Task not claimed");
-        market.forfeitAndReopen(TASK_ID_2, requester);
+        market.forfeitAndReopen(taskId, requester);
         vm.stopPrank();
     }
 
@@ -787,45 +937,44 @@ contract TaskMarketTest is Test {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD * 2);
 
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, 0);
+        bytes32 taskId1 = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        bytes32 taskId2 = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId2, worker1, 0);
 
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
-        market.acceptSubmission(TASK_ID_2, requester, worker1);
+        market.acceptSubmission(taskId1, requester, worker1);
+        market.acceptSubmission(taskId2, requester, worker1);
         vm.stopPrank();
 
         (uint256 completedTasks,,) = market.getWorkerStats(worker1);
         assertEq(completedTasks, 2);
 
-        // Verify both tasks show worker1 as the worker
-        TaskMarket.Task memory task1 = market.getTask(TASK_ID_1);
-        TaskMarket.Task memory task2 = market.getTask(TASK_ID_2);
-        assertEq(task1.worker, worker1);
-        assertEq(task2.worker, worker1);
+        TaskMarket.Task memory t1 = market.getTask(taskId1);
+        TaskMarket.Task memory t2 = market.getTask(taskId2);
+        assertEq(t1.worker, worker1);
+        assertEq(t2.worker, worker1);
     }
 
     // -----------------------------------------------------------------------
-    // acceptAuction — 5 new tests
+    // acceptAuction tests
     // -----------------------------------------------------------------------
 
     function test_AcceptAuction_success() public {
         uint256 bidDeadline = 1 days;
-        uint256 acceptPrice = 40 * 10 ** 6; // below maxPrice
+        uint256 acceptPrice = 40 * 10 ** 6;
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
         vm.stopPrank();
 
         vm.prank(server);
         vm.expectEmit(true, true, false, true);
-        emit TaskMarket.BidSubmitted(TASK_ID_1, worker1, acceptPrice);
+        emit TaskMarket.BidSubmitted(taskId, worker1, acceptPrice);
         vm.expectEmit(true, true, false, false);
-        emit TaskMarket.TaskWorkerSelected(TASK_ID_1, worker1);
-        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+        emit TaskMarket.TaskWorkerSelected(taskId, worker1);
+        market.acceptAuction(taskId, worker1, acceptPrice);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
         assertEq(task.worker, worker1);
         assertEq(task.stakeAmount, acceptPrice);
@@ -837,8 +986,8 @@ contract TaskMarketTest is Test {
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
+        market.acceptAuction(taskId, worker1, acceptPrice);
         vm.stopPrank();
 
         uint256 fee = (acceptPrice * defaultFeeBps) / 10000;
@@ -849,74 +998,71 @@ contract TaskMarketTest is Test {
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         vm.prank(server);
-        market.acceptSubmission(TASK_ID_1, requester, worker1);
+        market.acceptSubmission(taskId, requester, worker1);
 
         assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + expectedRefund);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
     }
 
     function test_AcceptAuction_priceExceedsMax() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
         vm.stopPrank();
 
         vm.prank(server);
         vm.expectRevert("Price exceeds max price");
-        market.acceptAuction(TASK_ID_1, worker1, REWARD + 1);
+        market.acceptAuction(taskId, worker1, REWARD + 1);
     }
 
     function test_AcceptAuction_notAuction() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.prank(server);
         vm.expectRevert("Not an Auction task");
-        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+        market.acceptAuction(taskId, worker1, REWARD / 2);
     }
 
     function test_AcceptAuction_notOpen() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
-        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        market.acceptAuction(taskId, worker1, REWARD / 2);
         vm.stopPrank();
 
         vm.prank(server);
         vm.expectRevert("Task not open");
-        market.acceptAuction(TASK_ID_1, worker2, REWARD / 3);
+        market.acceptAuction(taskId, worker2, REWARD / 3);
     }
 
     // -----------------------------------------------------------------------
-    // UUPS Upgrade — 2 new tests
+    // UUPS Upgrade tests
     // -----------------------------------------------------------------------
 
     function test_Upgrade_preservesState() public {
-        // Create a task and accept an auction on v1 proxy
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, 1 days);
-        market.acceptAuction(TASK_ID_1, worker1, REWARD / 2);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        market.acceptAuction(taskId, worker1, REWARD / 2);
         vm.stopPrank();
 
-        // Upgrade: deploy new implementation, upgrade proxy
         vm.prank(owner);
         TaskMarket newImpl = new TaskMarket();
         vm.prank(owner);
         market.upgradeToAndCall(address(newImpl), "");
 
-        // State must survive upgrade
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
         assertEq(task.worker, worker1);
         assertEq(task.stakeAmount, REWARD / 2);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Claimed));
-        assertEq(uint256(task.mode), uint256(TaskMarket.TaskMode.Auction));
+        assertEq(task.mode, market.AUCTION());
     }
 
     function test_Upgrade_onlyOwner() public {
@@ -927,23 +1073,23 @@ contract TaskMarketTest is Test {
     }
 
     // -----------------------------------------------------------------------
-    // refundExpired auction bug fix tests
+    // refundExpired auction tests
     // -----------------------------------------------------------------------
 
     function test_RefundExpired_Auction_NoWinner() public {
         uint256 bidDeadline = 1 days;
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
-        market.refundExpired(TASK_ID_1);
+        market.refundExpired(taskId);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Expired));
     }
 
@@ -953,8 +1099,8 @@ contract TaskMarketTest is Test {
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
+        market.acceptAuction(taskId, worker1, acceptPrice);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -968,14 +1114,14 @@ contract TaskMarketTest is Test {
         uint256 feeRecipientBalanceBefore = usdc.balanceOf(feeRecipient);
 
         vm.expectEmit(true, true, true, true);
-        emit TaskMarket.TaskAccepted(TASK_ID_1, requester, worker1, expectedWorkerPayment, fee);
-        market.refundExpired(TASK_ID_1);
+        emit TaskMarket.TaskAccepted(taskId, requester, worker1, expectedWorkerPayment, fee);
+        market.refundExpired(taskId);
 
         assertEq(usdc.balanceOf(worker1), worker1BalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + expectedRequesterRefund);
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + fee);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
 
         (uint256 completedTasks,,) = market.getWorkerStats(worker1);
@@ -984,12 +1130,12 @@ contract TaskMarketTest is Test {
 
     function test_RefundExpired_Auction_WithWinner_ZeroRefund() public {
         uint256 bidDeadline = 1 days;
-        uint256 acceptPrice = REWARD; // Winner at exactly maxPrice
+        uint256 acceptPrice = REWARD;
 
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        market.acceptAuction(TASK_ID_1, worker1, acceptPrice);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
+        market.acceptAuction(taskId, worker1, acceptPrice);
         vm.stopPrank();
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -1000,12 +1146,12 @@ contract TaskMarketTest is Test {
         uint256 worker1BalanceBefore = usdc.balanceOf(worker1);
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
-        market.refundExpired(TASK_ID_1);
+        market.refundExpired(taskId);
 
         assertEq(usdc.balanceOf(worker1), worker1BalanceBefore + expectedWorkerPayment);
-        assertEq(usdc.balanceOf(requester), requesterBalanceBefore); // no refund
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore);
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Accepted));
     }
 
@@ -1016,35 +1162,35 @@ contract TaskMarketTest is Test {
     function test_CancelTask_Bounty() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         vm.expectEmit(true, true, false, true);
-        emit TaskMarket.TaskCancelled(TASK_ID_1, requester, REWARD);
+        emit TaskMarket.TaskCancelled(taskId, requester, REWARD);
 
         vm.prank(server);
-        market.cancelTask(TASK_ID_1, requester);
+        market.cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Cancelled));
     }
 
     function test_CancelTask_Claim() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         vm.stopPrank();
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         vm.prank(server);
-        market.cancelTask(TASK_ID_2, requester);
+        market.cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(TASK_ID_2);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Cancelled));
     }
 
@@ -1052,16 +1198,16 @@ contract TaskMarketTest is Test {
         uint256 bidDeadline = 1 days;
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
         vm.stopPrank();
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         vm.prank(server);
-        market.cancelTask(TASK_ID_1, requester);
+        market.cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.Cancelled));
     }
 
@@ -1069,41 +1215,41 @@ contract TaskMarketTest is Test {
         uint256 bidDeadline = 1 days;
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        market.submitBid(TASK_ID_1, worker1, REWARD / 2);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidDeadline);
+        market.submitBid(taskId, worker1, REWARD / 2);
         vm.expectRevert("Bids exist");
-        market.cancelTask(TASK_ID_1, requester);
+        market.cancelTask(taskId, requester);
         vm.stopPrank();
     }
 
     function test_RevertWhen_CancelTask_NotOpen_Claimed() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        market.claimTask(taskId, worker1, 0);
         vm.expectRevert("Task not open");
-        market.cancelTask(TASK_ID_2, requester);
+        market.cancelTask(taskId, requester);
         vm.stopPrank();
     }
 
     function test_RevertWhen_CancelTask_WrongRequester() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.expectRevert("Not requester");
-        market.cancelTask(TASK_ID_1, worker1);
+        market.cancelTask(taskId, worker1);
         vm.stopPrank();
     }
 
     function test_RevertWhen_CancelTask_NonServer() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.cancelTask(TASK_ID_1, requester);
+        vm.expectRevert("Not trusted forwarder");
+        market.cancelTask(taskId, requester);
     }
 
     function test_RevertWhen_CancelTask_DoesNotExist() public {
@@ -1119,182 +1265,35 @@ contract TaskMarketTest is Test {
     function test_UpdateTask_RewardIncrease() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        // Approve additional for update
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         usdc.approve(address(market), REWARD);
 
         uint256 newReward = REWARD * 2;
         vm.expectEmit(true, false, false, false);
-        emit TaskMarket.TaskUpdated(TASK_ID_1, newReward, block.timestamp + DURATION);
+        emit TaskMarket.TaskUpdated(taskId, newReward, block.timestamp + DURATION);
 
-        market.updateTask(TASK_ID_1, requester, newReward, 0, 0, 0);
+        market.updateTask(taskId, requester, newReward, 0, 0, 0);
         vm.stopPrank();
 
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.reward, newReward);
     }
 
     function test_UpdateTask_RewardDecrease() public {
         vm.startPrank(server);
         usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
+        bytes32 taskId = market.createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         vm.stopPrank();
 
         uint256 newReward = REWARD / 2;
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, newReward, 0, 0, 0);
+        market.updateTask(taskId, requester, newReward, 0, 0, 0);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + (REWARD - newReward));
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
+
+        TaskMarket.Task memory task = market.getTask(taskId);
         assertEq(task.reward, newReward);
-    }
-
-    function test_UpdateTask_ExpiryTime() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        uint256 newExpiry = block.timestamp + DURATION * 2;
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, 0, newExpiry, 0, 0);
-
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
-        assertEq(task.expiryTime, newExpiry);
-    }
-
-    function test_UpdateTask_BidDeadline_Auction() public {
-        uint256 bidDeadline = 1 days;
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        vm.stopPrank();
-
-        uint256 newBidDeadline = block.timestamp + 2 days;
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, 0, 0, newBidDeadline, 0);
-
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
-        assertEq(task.bidDeadline, newBidDeadline);
-    }
-
-    function test_UpdateTask_PitchDeadline_Pitch() public {
-        uint256 pitchDeadline = 2 days;
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_3, requester, REWARD, DURATION, TaskMarket.TaskMode.Pitch, pitchDeadline, 0);
-        vm.stopPrank();
-
-        uint256 newPitchDeadline = block.timestamp + 3 days;
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_3, requester, 0, 0, 0, newPitchDeadline);
-
-        TaskMarket.Task memory task = market.getTask(TASK_ID_3);
-        assertEq(task.pitchDeadline, newPitchDeadline);
-    }
-
-    function test_UpdateTask_NoChange_ZeroArgs() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        TaskMarket.Task memory taskBefore = market.getTask(TASK_ID_1);
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, 0, 0, 0, 0);
-
-        TaskMarket.Task memory taskAfter = market.getTask(TASK_ID_1);
-        assertEq(taskAfter.reward, taskBefore.reward);
-        assertEq(taskAfter.expiryTime, taskBefore.expiryTime);
-    }
-
-    function test_UpdateTask_RewardSameValue() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        uint256 serverBalanceBefore = usdc.balanceOf(server);
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, REWARD, 0, 0, 0);
-
-        assertEq(usdc.balanceOf(server), serverBalanceBefore);
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
-        assertEq(task.reward, REWARD);
-    }
-
-    function test_UpdateTask_ZeroRewardIsNoop() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        vm.prank(server);
-        market.updateTask(TASK_ID_1, requester, 0, 0, 0, 0);
-
-        TaskMarket.Task memory task = market.getTask(TASK_ID_1);
-        assertEq(task.reward, REWARD);
-    }
-
-    function test_RevertWhen_UpdateTask_AuctionHasBids() public {
-        uint256 bidDeadline = 1 days;
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Auction, 0, bidDeadline);
-        market.submitBid(TASK_ID_1, worker1, REWARD / 2);
-        vm.expectRevert("Bids exist");
-        market.updateTask(TASK_ID_1, requester, 0, block.timestamp + DURATION * 2, 0, 0);
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_UpdateTask_NotOpen() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_2, requester, REWARD, DURATION, TaskMarket.TaskMode.Claim, 0, 0);
-        market.claimTask(TASK_ID_2, worker1, 0);
-        vm.expectRevert("Task not open");
-        market.updateTask(TASK_ID_2, requester, 0, block.timestamp + DURATION * 2, 0, 0);
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_UpdateTask_WrongRequester() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.expectRevert("Not requester");
-        market.updateTask(TASK_ID_1, worker1, 0, block.timestamp + DURATION * 2, 0, 0);
-        vm.stopPrank();
-    }
-
-    function test_RevertWhen_UpdateTask_NonServer() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        vm.prank(alice);
-        vm.expectRevert("Not authorized server");
-        market.updateTask(TASK_ID_1, requester, 0, block.timestamp + DURATION * 2, 0, 0);
-    }
-
-    function test_RevertWhen_UpdateTask_ExpiryInPast() public {
-        vm.startPrank(server);
-        usdc.approve(address(market), REWARD);
-        market.createTask(TASK_ID_1, requester, REWARD, DURATION, TaskMarket.TaskMode.Bounty, 0, 0);
-        vm.stopPrank();
-
-        // Warp forward so block.timestamp > 1, allowing a non-zero past timestamp
-        vm.warp(1000);
-
-        vm.prank(server);
-        vm.expectRevert("Expiry must be in future");
-        market.updateTask(TASK_ID_1, requester, 0, block.timestamp - 1, 0, 0);
     }
 }
