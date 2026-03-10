@@ -1,0 +1,31 @@
+name: Sync contracts to taskmarket-contracts
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - "packages/contracts/**"
+
+jobs:
+  sync:
+    name: Publish packages/contracts mirror
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Push packages/contracts to taskmarket-contracts
+        uses: s0/git-publish-subdir-action@develop
+        env:
+          REPO: git@github.com:daydreamsai/taskmarket-contracts.git
+          BRANCH: main
+          FOLDER: packages/contracts
+          SSH_PRIVATE_KEY: ${{ secrets.CONTRACTS_DEPLOY_KEY }}
+          MESSAGE: "sync: {msg}"
+
+# One-time setup required:
+# 1. ssh-keygen -t ed25519 -C "taskmarket-contracts deploy key"
+# 2. Add PUBLIC key to: https://github.com/daydreamsai/taskmarket-contracts/settings/keys (write access)
+# 3. Add PRIVATE key as secret: https://github.com/daydreamsai/taskmarket/settings/secrets/actions
+#    Secret name: CONTRACTS_DEPLOY_KEY
