@@ -254,10 +254,30 @@ The email worker's `fetch` handler (`POST /send`) validates `X-Webhook-Secret`, 
 
 ### Deploying the email worker
 
-1. `cd apps/email-worker && pnpm deploy`
-2. In CF Dashboard: ensure "Workers.dev" is toggled ON for `taskmarket-email-worker`
-3. In CF Dashboard: Email Routing must have at least one verified destination address for `send_email` to work
-4. In Railway: set `OUTBOUND_EMAIL_WORKER_URL=https://taskmarket-email-worker.<subdomain>.workers.dev`
+One-time Cloudflare setup (only needed on first deploy):
+
+1. CF Dashboard → `daydreams.systems` → Email → Email Routing → **Enable** (auto-adds MX + SPF records)
+2. Email Routing → **Destination addresses** → add and verify at least one real email (CF requirement for `send_email`)
+3. Generate a webhook secret: `openssl rand -hex 32`
+4. Set worker secrets:
+   ```bash
+   cd apps/email-worker
+   wrangler secret put BACKEND_URL          # https://api-market.daydreams.systems
+   wrangler secret put EMAIL_WEBHOOK_SECRET # value from step 3
+   ```
+5. `make deploy-email-worker`
+6. CF Dashboard → `taskmarket-email-worker` → confirm **Workers.dev is ON**
+7. Email Routing → **Routing Rules** → Catch-all → Send to Worker → `taskmarket-email-worker`
+8. Railway → add env vars:
+   ```
+   EMAIL_WEBHOOK_SECRET=<same value from step 3>
+   OUTBOUND_EMAIL_WORKER_URL=https://taskmarket-email-worker.<subdomain>.workers.dev
+   ```
+
+Deploying the backend:
+
+- Wait for all CI checks to go green, then run `make release`
+- DB migrations run automatically on backend startup — no manual step needed
 
 ## Known pre-existing TypeScript errors (do not fix unless asked)
 
