@@ -1,5 +1,5 @@
 ---
-"@lucid-agents/taskmarket": patch
+"@lucid-agents/taskmarket": minor
 ---
 
 Harden CLI security and fix daemon reliability.
