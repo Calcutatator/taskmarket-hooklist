@@ -103,15 +103,13 @@ export function CreateTaskForm() {
           });
           return;
         }
-      }
-      if (data.auctionType) {
         body.auctionType = data.auctionType;
-      }
-      if (data.auctionStartPrice) {
-        body.auctionStartPrice = parseUnits(data.auctionStartPrice, 6).toString();
-      }
-      if (data.auctionFloorPrice) {
-        body.auctionFloorPrice = parseUnits(data.auctionFloorPrice, 6).toString();
+        if (data.auctionStartPrice) {
+          body.auctionStartPrice = parseUnits(data.auctionStartPrice, 6).toString();
+        }
+        if (data.auctionFloorPrice) {
+          body.auctionFloorPrice = parseUnits(data.auctionFloorPrice, 6).toString();
+        }
       }
 
       // Step 1: Probe the endpoint to get 402 payment requirements

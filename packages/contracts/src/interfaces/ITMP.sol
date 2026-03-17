@@ -101,6 +101,13 @@ interface ITMP is IERC165 {
         uint256 refundAmount
     );
 
+    /// @notice Emitted when a requester cancels an open task and receives a refund.
+    event TaskCancelled(
+        bytes32 indexed taskId,
+        address indexed requester,
+        uint256 refundAmount
+    );
+
     // -------------------------------------------------------------------------
     // Required functions
     // -------------------------------------------------------------------------

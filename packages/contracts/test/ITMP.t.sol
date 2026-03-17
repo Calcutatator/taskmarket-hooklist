@@ -377,8 +377,15 @@ contract ITMPCompliance is Test {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1)));
 
-        // Should succeed at 0 (sentinel for unrated, but allowed as a value)
+        ITMP.WorkerStats memory before = market.getWorkerStats(worker1);
+
+        // rating=0 is the sentinel value for "unrated" but is still a valid call;
+        // ratedTasks increments and totalStars increases by 0.
         _relay(requester, 0, abi.encodeCall(market.rateTask, (taskId, 0, 0, "", bytes32(0))));
+
+        ITMP.WorkerStats memory after_ = market.getWorkerStats(worker1);
+        assertEq(after_.ratedTasks,  before.ratedTasks + 1, "ratedTasks must increment");
+        assertEq(after_.totalStars,  before.totalStars,     "totalStars must not change for rating=0");
     }
 
     function test_Compliance_RateTask_WorkerStatsUpdated() public {
