@@ -52,8 +52,9 @@ interface ITMP is IERC165 {
         uint256 bidDeadline;
         uint256 maxPrice;
         bytes32 deliverable;
-        bytes32 contentHash;  // Optional: keccak256 of off-chain task description
-        string  contentURI;   // Optional: URI pointing to extended task metadata
+        bytes32 contentHash;    // Optional: keccak256 of off-chain task description
+        string  contentURI;     // Optional: URI pointing to extended task metadata
+        bytes4  auctionSubtype; // Auction subtype selector (zero for non-auction tasks)
     }
 
     /// @notice Worker performance statistics.
@@ -111,10 +112,13 @@ interface ITMP is IERC165 {
     ///         The USDC reward MUST be transferred to this contract by the forwarder before this call.
     /// @param reward        USDC reward amount (6 decimals); for Auction = max price
     /// @param duration      Task lifetime in seconds
-    /// @param mode          4-byte mode selector (see ITMPMode for canonical values)
-    /// @param pitchDeadline Seconds from now for pitch acceptance (Pitch mode only, 0 otherwise)
-    /// @param bidDeadline   Seconds from now for bid submission (Auction mode only, 0 otherwise)
-    /// @return taskId       Contract-generated canonical task identifier
+    /// @param mode            4-byte mode selector (see ITMPMode for canonical values)
+    /// @param pitchDeadline   Seconds from now for pitch acceptance (Pitch mode only, 0 otherwise)
+    /// @param bidDeadline     Seconds from now for bid submission (Auction mode only, 0 otherwise)
+    /// @param contentHash     Optional keccak256 of off-chain task description (bytes32(0) if unused)
+    /// @param contentURI      Optional URI pointing to extended task metadata (empty string if unused)
+    /// @param auctionSubtype  Auction subtype selector (see ITMPMode; bytes4(0) for non-auction tasks)
+    /// @return taskId         Contract-generated canonical task identifier
     function createTask(
         uint256 reward,
         uint256 duration,
@@ -122,7 +126,8 @@ interface ITMP is IERC165 {
         uint256 pitchDeadline,
         uint256 bidDeadline,
         bytes32 contentHash,
-        string  calldata contentURI
+        string  calldata contentURI,
+        bytes4  auctionSubtype
     ) external returns (bytes32 taskId);
 
     /// @notice Accept a worker's submission and release escrowed payment.

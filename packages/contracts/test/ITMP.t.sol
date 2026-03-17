@@ -121,8 +121,12 @@ contract ITMPCompliance is Test {
     }
 
     function _createTask(address _req, uint256 _reward, uint256 _dur, bytes4 _mode, uint256 _pd, uint256 _bd) internal returns (bytes32) {
+        return _createTask(_req, _reward, _dur, _mode, _pd, _bd, bytes4(0));
+    }
+
+    function _createTask(address _req, uint256 _reward, uint256 _dur, bytes4 _mode, uint256 _pd, uint256 _bd, bytes4 _auctionSubtype) internal returns (bytes32) {
         return abi.decode(
-            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, _pd, _bd, bytes32(0), ""))),
+            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, _pd, _bd, bytes32(0), "", _auctionSubtype))),
             (bytes32)
         );
     }
@@ -310,7 +314,7 @@ contract ITMPCompliance is Test {
 
     function test_Compliance_Auction_SelectLowestBidder() public {
         uint256 bidWindow = 1 days;
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidWindow);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, bidWindow, market.AUCTION_ENGLISH());
 
         // Submit bids
         _relay(worker1, 0, abi.encodeCall(market.submitBid, (taskId, 80e6)));
@@ -338,7 +342,7 @@ contract ITMPCompliance is Test {
     }
 
     function test_Compliance_Auction_AcceptAuction_ShortCircuit() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
 
         // acceptAuction directly selects winner
         _relay(worker1, 0, abi.encodeCall(market.acceptAuction, (taskId, 50e6)));
@@ -453,7 +457,7 @@ contract ITMPCompliance is Test {
         bytes32 taskId1 = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
 
         bytes32 taskId2 = abi.decode(
-            fwd2.relay(address(market), requester, REWARD, abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""))),
+            fwd2.relay(address(market), requester, REWARD, abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)))),
             (bytes32)
         );
 
@@ -466,7 +470,7 @@ contract ITMPCompliance is Test {
 
         assertFalse(market.trustedForwarders(address(fwd)));
 
-        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Not trusted forwarder");
         fwd.relay(address(market), requester, REWARD, data);
     }
@@ -488,7 +492,8 @@ contract ITMPCompliance is Test {
             DURATION,
             mode,
             mode == market.PITCH() ? 1 days : 0,
-            mode == market.AUCTION() ? 1 days : 0
+            mode == market.AUCTION() ? 1 days : 0,
+            mode == market.AUCTION() ? market.AUCTION_DUTCH() : bytes4(0)
         );
 
         TaskMarket.Task memory task = market.getTask(taskId);

@@ -19,6 +19,7 @@ import {
   contractCancelTask,
   contractUpdateTask,
   MODE_MAP,
+  AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
 } from '../services/contract';
 import { getServerConfig } from '../config/env';
@@ -282,6 +283,11 @@ export const tasksRouter = router({
       // The contract generates: keccak256(abi.encode(chainId, address(this), requester, nonce))
       const taskId = await precomputeTaskId(payer as `0x${string}`, config.CONTRACT_ADDRESS);
 
+      const auctionSubtype =
+        input.mode === 'auction' && input.auctionType
+          ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
+          : ('0x00000000' as `0x${string}`);
+
       const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
       const escrowTxHash = await contractCreateTask(
         payer as `0x${string}`,
@@ -290,6 +296,7 @@ export const tasksRouter = router({
         mode,
         pitchDeadlineSecs,
         bidDeadlineSecs,
+        auctionSubtype,
         paymentTxHash
       );
 

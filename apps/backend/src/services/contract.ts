@@ -20,7 +20,7 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string) returns (bytes32)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address)',
@@ -64,6 +64,14 @@ export const MODE_MAP: Record<string, `0x${string}`> = {
   pitch: tmpModeBytes4('TMP.mode.pitch'),
   benchmark: tmpModeBytes4('TMP.mode.benchmark'),
   auction: tmpModeBytes4('TMP.mode.auction'),
+};
+
+/** Canonical bytes4 auction subtype selectors matching on-chain constants */
+export const AUCTION_SUBTYPE_MAP: Record<string, `0x${string}`> = {
+  dutch: tmpModeBytes4('TMP.auction.dutch'),
+  english: tmpModeBytes4('TMP.auction.english'),
+  reverse_dutch: tmpModeBytes4('TMP.auction.reverse_dutch'),
+  reverse_english: tmpModeBytes4('TMP.auction.reverse_english'),
 };
 
 const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
@@ -196,6 +204,7 @@ export async function contractCreateTask(
   mode: `0x${string}`,
   pitchDeadlineSecs: bigint = 0n,
   bidDeadlineSecs: bigint = 0n,
+  auctionSubtype: `0x${string}` = '0x00000000',
   paymentTxHash?: `0x${string}`
 ): Promise<`0x${string}`> {
   const publicClient = getPublicClient();
@@ -218,6 +227,7 @@ export async function contractCreateTask(
       bidDeadlineSecs,
       '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
       '',
+      auctionSubtype,
     ],
   });
   return relayThroughForwarder(requester, reward, data);

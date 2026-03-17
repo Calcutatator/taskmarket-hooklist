@@ -12,6 +12,12 @@ vi.mock('../../../src/services/contract', () => ({
     benchmark: '0x00000004',
     auction: '0x00000005',
   },
+  AUCTION_SUBTYPE_MAP: {
+    dutch: '0x00000011',
+    english: '0x00000012',
+    reverse_dutch: '0x00000013',
+    reverse_english: '0x00000014',
+  },
 }));
 
 // Mock config so no real env vars are needed

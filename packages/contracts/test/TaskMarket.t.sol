@@ -129,8 +129,12 @@ contract TaskMarketTest is Test {
     }
 
     function _createTask(address _req, uint256 _reward, uint256 _dur, bytes4 _mode, uint256 _pd, uint256 _bd) internal returns (bytes32) {
+        return _createTask(_req, _reward, _dur, _mode, _pd, _bd, bytes4(0));
+    }
+
+    function _createTask(address _req, uint256 _reward, uint256 _dur, bytes4 _mode, uint256 _pd, uint256 _bd, bytes4 _auctionSubtype) internal returns (bytes32) {
         return abi.decode(
-            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, _pd, _bd, bytes32(0), ""))),
+            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, _pd, _bd, bytes32(0), "", _auctionSubtype))),
             (bytes32)
         );
     }
@@ -453,7 +457,7 @@ contract TaskMarketTest is Test {
         bytes4 bounty = market.BOUNTY();
         vm.prank(alice);
         vm.expectRevert("Not trusted forwarder");
-        market.createTask(REWARD, DURATION, bounty, 0, 0, bytes32(0), "");
+        market.createTask(REWARD, DURATION, bounty, 0, 0, bytes32(0), "", bytes4(0));
     }
 
     function test_RevertWhen_NonServer_ClaimTask() public {
@@ -517,7 +521,7 @@ contract TaskMarketTest is Test {
         assertTrue(market.trustedForwarders(address(newForwarder)));
 
         bytes32 taskId = abi.decode(
-            newForwarder.relay(address(market), requester, REWARD, abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""))),
+            newForwarder.relay(address(market), requester, REWARD, abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)))),
             (bytes32)
         );
 
@@ -531,7 +535,7 @@ contract TaskMarketTest is Test {
 
         assertFalse(market.trustedForwarders(address(forwarder)));
 
-        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Not trusted forwarder");
         forwarder.relay(address(market), requester, REWARD, data);
     }
@@ -571,27 +575,45 @@ contract TaskMarketTest is Test {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_CreateTask_ZeroRequester() public {
-        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Invalid requester");
         forwarder.relay(address(market), address(0), REWARD, data);
     }
 
     function test_RevertWhen_CreateTask_ZeroReward() public {
-        bytes memory data = abi.encodeCall(market.createTask, (0, DURATION, market.BOUNTY(), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (0, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Reward must be greater than 0");
         forwarder.relay(address(market), requester, 0, data);
     }
 
     function test_RevertWhen_CreateTask_ZeroDuration() public {
-        bytes memory data = abi.encodeCall(market.createTask, (REWARD, 0, market.BOUNTY(), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, 0, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Duration must be greater than 0");
         forwarder.relay(address(market), requester, REWARD, data);
     }
 
     function test_RevertWhen_CreateTask_InvalidMode() public {
-        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, bytes4(0xdeadbeef), 0, 0, bytes32(0), ""));
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, bytes4(0xdeadbeef), 0, 0, bytes32(0), "", bytes4(0)));
         vm.expectRevert("Invalid mode");
         forwarder.relay(address(market), requester, REWARD, data);
+    }
+
+    function test_RevertWhen_CreateTask_Auction_InvalidSubtype() public {
+        bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.AUCTION(), 0, 1 days, bytes32(0), "", bytes4(0xdeadbeef)));
+        vm.expectRevert("Invalid auction subtype");
+        forwarder.relay(address(market), requester, REWARD, data);
+    }
+
+    function test_CreateTask_Auction_StoresSubtype() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_ENGLISH());
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(task.auctionSubtype, market.AUCTION_ENGLISH());
+    }
+
+    function test_CreateTask_NonAuction_SubtypeZero() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(task.auctionSubtype, bytes4(0));
     }
 
     // -----------------------------------------------------------------------
@@ -884,7 +906,7 @@ contract TaskMarketTest is Test {
 
     function test_AcceptAuction_success() public {
         uint256 acceptPrice = 40 * 10 ** 6;
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
 
         vm.expectEmit(true, true, false, true);
         emit TaskMarket.BidSubmitted(taskId, worker1, acceptPrice);
@@ -900,7 +922,7 @@ contract TaskMarketTest is Test {
 
     function test_AcceptAuction_thenAcceptSubmission() public {
         uint256 acceptPrice = 40 * 10 ** 6;
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, acceptPrice);
 
         uint256 fee = (acceptPrice * defaultFeeBps) / 10000;
@@ -920,7 +942,7 @@ contract TaskMarketTest is Test {
     }
 
     function test_AcceptAuction_priceExceedsMax() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         vm.expectRevert("Price exceeds max price");
         forwarder.relay(address(market), worker1, 0, abi.encodeCall(market.acceptAuction, (taskId, REWARD + 1)));
     }
@@ -932,7 +954,7 @@ contract TaskMarketTest is Test {
     }
 
     function test_AcceptAuction_notOpen() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, REWARD / 2);
 
         vm.expectRevert("Task not open");
@@ -944,7 +966,7 @@ contract TaskMarketTest is Test {
     // -----------------------------------------------------------------------
 
     function test_Upgrade_preservesState() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, REWARD / 2);
 
         vm.prank(owner);
@@ -972,7 +994,7 @@ contract TaskMarketTest is Test {
     // -----------------------------------------------------------------------
 
     function test_RefundExpired_Auction_NoWinner() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         vm.warp(block.timestamp + DURATION + 1);
 
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
@@ -985,7 +1007,7 @@ contract TaskMarketTest is Test {
 
     function test_RefundExpired_Auction_WithWinner() public {
         uint256 acceptPrice = 40 * 10 ** 6;
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, acceptPrice);
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -1014,7 +1036,7 @@ contract TaskMarketTest is Test {
 
     function test_RefundExpired_Auction_WithWinner_ZeroRefund() public {
         uint256 acceptPrice = REWARD;
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, acceptPrice);
 
         vm.warp(block.timestamp + DURATION + 1);
@@ -1064,7 +1086,7 @@ contract TaskMarketTest is Test {
     }
 
     function test_CancelTask_Auction_NoBids() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         uint256 requesterBalanceBefore = usdc.balanceOf(requester);
 
         _cancelTask(taskId, requester);
@@ -1075,7 +1097,7 @@ contract TaskMarketTest is Test {
     }
 
     function test_RevertWhen_CancelTask_AuctionHasBids() public {
-        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _submitBid(taskId, worker1, REWARD / 2);
         vm.expectRevert("Bids exist");
         forwarder.relay(address(market), requester, 0, abi.encodeCall(market.cancelTask, (taskId)));

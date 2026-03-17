@@ -11,7 +11,17 @@ import {ITMP} from "./interfaces/ITMP.sol";
 import {IPGTRForwarder} from "./interfaces/IPGTRForwarder.sol";
 import {IReputationRegistry} from "./interfaces/IReputationRegistry.sol";
 import {ITMPReputation} from "./interfaces/ITMPReputation.sol";
-import {TMP_BOUNTY, TMP_CLAIM, TMP_PITCH, TMP_BENCHMARK, TMP_AUCTION} from "./interfaces/ITMPMode.sol";
+import {
+    TMP_BOUNTY,
+    TMP_CLAIM,
+    TMP_PITCH,
+    TMP_BENCHMARK,
+    TMP_AUCTION,
+    TMP_AUCTION_DUTCH,
+    TMP_AUCTION_ENGLISH,
+    TMP_AUCTION_REVERSE_DUTCH,
+    TMP_AUCTION_REVERSE_ENGLISH
+} from "./interfaces/ITMPMode.sol";
 
 /**
  * @title TaskMarket
@@ -46,7 +56,11 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
     bytes4 public constant CLAIM     = TMP_CLAIM;
     bytes4 public constant PITCH     = TMP_PITCH;
     bytes4 public constant BENCHMARK = TMP_BENCHMARK;
-    bytes4 public constant AUCTION   = TMP_AUCTION;
+    bytes4 public constant AUCTION          = TMP_AUCTION;
+    bytes4 public constant AUCTION_DUTCH           = TMP_AUCTION_DUTCH;
+    bytes4 public constant AUCTION_ENGLISH         = TMP_AUCTION_ENGLISH;
+    bytes4 public constant AUCTION_REVERSE_DUTCH   = TMP_AUCTION_REVERSE_DUTCH;
+    bytes4 public constant AUCTION_REVERSE_ENGLISH = TMP_AUCTION_REVERSE_ENGLISH;
 
     // -------------------------------------------------------------------------
     // Types
@@ -82,6 +96,7 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         bytes32 deliverable;
         bytes32 contentHash;
         string  contentURI;
+        bytes4  auctionSubtype; // Auction subtype selector (zero for non-auction tasks)
     }
 
     struct Bid {
@@ -296,10 +311,13 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
      *         The USDC reward MUST be transferred to this contract by the forwarder before calling.
      * @param reward        USDC reward (6 decimals); for Auction = max price
      * @param duration      Task lifetime in seconds
-     * @param mode          4-byte mode selector (use BOUNTY/CLAIM/PITCH/BENCHMARK/AUCTION)
-     * @param pitchDeadline Seconds from now for pitch window (Pitch mode only, 0 otherwise)
-     * @param bidDeadline   Seconds from now for bid window (Auction mode only, 0 otherwise)
-     * @return taskId       Contract-generated canonical task identifier
+     * @param mode            4-byte mode selector (use BOUNTY/CLAIM/PITCH/BENCHMARK/AUCTION)
+     * @param pitchDeadline   Seconds from now for pitch window (Pitch mode only, 0 otherwise)
+     * @param bidDeadline     Seconds from now for bid window (Auction mode only, 0 otherwise)
+     * @param contentHash     Optional keccak256 of off-chain task description (bytes32(0) if unused)
+     * @param contentURI      Optional URI pointing to extended task metadata (empty string if unused)
+     * @param auctionSubtype  Auction subtype selector (bytes4(0) for non-auction tasks)
+     * @return taskId         Contract-generated canonical task identifier
      */
     function createTask(
         uint256 reward,
@@ -308,7 +326,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         uint256 pitchDeadline,
         uint256 bidDeadline,
         bytes32 contentHash,
-        string  calldata contentURI
+        string  calldata contentURI,
+        bytes4  auctionSubtype
     ) external onlyTrustedForwarder returns (bytes32 taskId) {
         address requester = _effectiveSender();
         require(requester != address(0), "Invalid requester");
@@ -318,6 +337,15 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
             mode == BOUNTY || mode == CLAIM || mode == PITCH || mode == BENCHMARK || mode == AUCTION,
             "Invalid mode"
         );
+        if (mode == AUCTION) {
+            require(
+                auctionSubtype == AUCTION_DUTCH
+                    || auctionSubtype == AUCTION_ENGLISH
+                    || auctionSubtype == AUCTION_REVERSE_DUTCH
+                    || auctionSubtype == AUCTION_REVERSE_ENGLISH,
+                "Invalid auction subtype"
+            );
+        }
 
         taskId = keccak256(abi.encode(block.chainid, address(this), requester, requesterNonce[requester]++));
 
@@ -342,7 +370,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
             maxPrice: mode == AUCTION ? reward : 0,
             deliverable: bytes32(0),
             contentHash: contentHash,
-            contentURI: contentURI
+            contentURI: contentURI,
+            auctionSubtype: mode == AUCTION ? auctionSubtype : bytes4(0)
         });
 
         emit TaskCreated(taskId, requester, reward, block.timestamp + duration, mode);
