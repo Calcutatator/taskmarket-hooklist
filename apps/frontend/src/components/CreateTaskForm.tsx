@@ -97,6 +97,12 @@ export function CreateTaskForm() {
           form.setError('auctionType', { message: 'Auction type is required' });
           return;
         }
+        if (data.auctionType === 'dutch' && !data.auctionFloorPrice) {
+          form.setError('auctionFloorPrice', {
+            message: 'Floor price is required for dutch',
+          });
+          return;
+        }
         if (data.auctionType === 'reverse_dutch' && !data.auctionStartPrice) {
           form.setError('auctionStartPrice', {
             message: 'Start price is required for reverse dutch',
