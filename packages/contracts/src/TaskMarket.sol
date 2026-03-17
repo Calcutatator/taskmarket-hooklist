@@ -762,6 +762,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
 
         uint256 originalReward = task.reward;
         uint256 originalExpiryTime = task.expiryTime;
+        uint256 originalBidDeadline = task.bidDeadline;
+        uint256 originalPitchDeadline = task.pitchDeadline;
 
         if (newReward != 0 && newReward != task.reward) {
             if (newReward > task.reward) {
@@ -790,8 +792,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
 
         bool changed = (newReward != 0 && newReward != originalReward)
             || (newExpiryTime != 0 && newExpiryTime != originalExpiryTime)
-            || (newBidDeadline != 0 && task.mode == AUCTION)
-            || (newPitchDeadline != 0 && task.mode == PITCH);
+            || (newBidDeadline != 0 && newBidDeadline != originalBidDeadline && task.mode == AUCTION)
+            || (newPitchDeadline != 0 && newPitchDeadline != originalPitchDeadline && task.mode == PITCH);
         if (changed) {
             emit TaskUpdated(taskId, task.reward, task.expiryTime);
         }
