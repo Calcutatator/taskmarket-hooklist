@@ -92,11 +92,6 @@
         "internalType": "bytes32"
       },
       {
-        "name": "worker",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "price",
         "type": "uint256",
         "internalType": "uint256"
@@ -113,11 +108,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
       },
       {
         "name": "worker",
@@ -149,11 +139,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -169,11 +154,6 @@
         "internalType": "bytes32"
       },
       {
-        "name": "worker",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "stakeAmount",
         "type": "uint256",
         "internalType": "uint256"
@@ -186,11 +166,6 @@
     "type": "function",
     "name": "createTask",
     "inputs": [
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
-      },
       {
         "name": "reward",
         "type": "uint256",
@@ -215,6 +190,16 @@
         "name": "bidDeadline",
         "type": "uint256",
         "internalType": "uint256"
+      },
+      {
+        "name": "contentHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "contentURI",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "outputs": [
@@ -260,11 +245,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
       }
     ],
     "outputs": [],
@@ -401,6 +381,16 @@
             "name": "deliverable",
             "type": "bytes32",
             "internalType": "bytes32"
+          },
+          {
+            "name": "contentHash",
+            "type": "bytes32",
+            "internalType": "bytes32"
+          },
+          {
+            "name": "contentURI",
+            "type": "string",
+            "internalType": "string"
           }
         ]
       }
@@ -419,19 +409,26 @@
     ],
     "outputs": [
       {
-        "name": "completedTasks",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "avgRating",
-        "type": "uint256",
-        "internalType": "uint256"
-      },
-      {
-        "name": "ratedTasks",
-        "type": "uint256",
-        "internalType": "uint256"
+        "name": "",
+        "type": "tuple",
+        "internalType": "struct ITMP.WorkerStats",
+        "components": [
+          {
+            "name": "completedTasks",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "ratedTasks",
+            "type": "uint256",
+            "internalType": "uint256"
+          },
+          {
+            "name": "totalStars",
+            "type": "uint256",
+            "internalType": "uint256"
+          }
+        ]
       }
     ],
     "stateMutability": "view"
@@ -458,6 +455,25 @@
     ],
     "outputs": [],
     "stateMutability": "nonpayable"
+  },
+  {
+    "type": "function",
+    "name": "isTrustedForwarder",
+    "inputs": [
+      {
+        "name": "addr",
+        "type": "address",
+        "internalType": "address"
+      }
+    ],
+    "outputs": [
+      {
+        "name": "",
+        "type": "bool",
+        "internalType": "bool"
+      }
+    ],
+    "stateMutability": "view"
   },
   {
     "type": "function",
@@ -493,11 +509,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
       },
       {
         "name": "rating",
@@ -611,11 +622,6 @@
         "internalType": "bytes32"
       },
       {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "worker",
         "type": "address",
         "internalType": "address"
@@ -692,11 +698,6 @@
         "internalType": "bytes32"
       },
       {
-        "name": "worker",
-        "type": "address",
-        "internalType": "address"
-      },
-      {
         "name": "price",
         "type": "uint256",
         "internalType": "uint256"
@@ -713,11 +714,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "worker",
-        "type": "address",
-        "internalType": "address"
       },
       {
         "name": "deliverable",
@@ -871,6 +867,16 @@
         "name": "deliverable",
         "type": "bytes32",
         "internalType": "bytes32"
+      },
+      {
+        "name": "contentHash",
+        "type": "bytes32",
+        "internalType": "bytes32"
+      },
+      {
+        "name": "contentURI",
+        "type": "string",
+        "internalType": "string"
       }
     ],
     "stateMutability": "view"
@@ -928,11 +934,6 @@
         "name": "taskId",
         "type": "bytes32",
         "internalType": "bytes32"
-      },
-      {
-        "name": "requester",
-        "type": "address",
-        "internalType": "address"
       },
       {
         "name": "newReward",

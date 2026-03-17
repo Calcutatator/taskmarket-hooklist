@@ -4,7 +4,7 @@ import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { contractClaimTask } from '../services/contract';
+import { contractClaimTask, contractForfeitAndReopen } from '../services/contract';
 import { recoverMessageAddress } from 'viem';
 import { TRPCError } from '@trpc/server';
 
@@ -86,6 +86,84 @@ export const claimsRouter = router({
         .where(eq(tasks.id, input.taskId));
 
       return { success: true, claimId };
+    }),
+
+  forfeit: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/forfeit',
+        tags: ['Tasks'],
+        summary: 'Forfeit an expired claim and reopen the task (requester only)',
+      },
+    })
+    .input(
+      z.object({
+        taskId: z.string().min(1),
+        requesterAddress: z.string().min(1),
+        signature: z.string().min(1),
+      })
+    )
+    .output(z.object({ txHash: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      const task = taskResult[0];
+
+      if (task.mode !== 'claim') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not a Claim task' });
+      }
+
+      if (task.status !== 'claimed') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not currently claimed' });
+      }
+
+      if (task.requester.toLowerCase() !== input.requesterAddress.toLowerCase()) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the task requester can forfeit' });
+      }
+
+      const message = `taskmarket:forfeit:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.requesterAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match requester address',
+        });
+      }
+
+      const txHash = await contractForfeitAndReopen(
+        input.taskId as `0x${string}`,
+        input.requesterAddress as `0x${string}`,
+        task.contractAddress
+      );
+
+      await ctx.db
+        .update(claims)
+        .set({ status: 'forfeited' })
+        .where(eq(claims.taskId, input.taskId));
+
+      await ctx.db
+        .update(tasks)
+        .set({ status: 'open', claimedBy: null, claimedAt: null })
+        .where(eq(tasks.id, input.taskId));
+
+      return { txHash };
     }),
 
   getByTask: publicProcedure

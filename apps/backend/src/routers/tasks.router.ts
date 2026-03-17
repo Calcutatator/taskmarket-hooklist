@@ -254,6 +254,9 @@ export const tasksRouter = router({
         if (input.auctionType === 'reverse_dutch' && !input.auctionStartPrice) {
           throw new Error('auctionStartPrice is required for reverse_dutch auction type');
         }
+        if (input.auctionType === 'dutch' && !input.auctionFloorPrice) {
+          throw new Error('auctionFloorPrice is required for dutch auction type');
+        }
       }
 
       const config = getServerConfig();
@@ -733,6 +736,7 @@ export const tasksRouter = router({
           newExpiryTime,
           newBidDeadline,
           newPitchDeadline,
+          BigInt(task.reward),
           task.contractAddress
         );
       }
@@ -784,6 +788,16 @@ export const tasksRouter = router({
           : null;
       const auctionBidCount = bidCountResult ? Number(bidCountResult[0]?.count ?? 0) : null;
 
+      const updatedSubmissionCount = await ctx.db
+        .select({ count: sql<number>`count(*)` })
+        .from(submissions)
+        .where(eq(submissions.taskId, t.id));
+
+      const updatedPitchCount = await ctx.db
+        .select({ count: sql<number>`count(*)` })
+        .from(proposals)
+        .where(eq(proposals.taskId, t.id));
+
       return {
         id: t.id,
         requester: t.requester,
@@ -808,8 +822,8 @@ export const tasksRouter = router({
         claimedBy: t.claimedBy,
         claimedAt: t.claimedAt?.toISOString() || null,
         platformFeeBps: t.platformFeeBps,
-        submissionCount: 0,
-        pitchCount: 0,
+        submissionCount: Number(updatedSubmissionCount[0]?.count || 0),
+        pitchCount: Number(updatedPitchCount[0]?.count || 0),
         requesterAgentId: t.requesterAgentId ?? null,
         auctionType: (t.auctionType as AuctionTypeValue | null) ?? null,
         auctionStartPrice: t.auctionStartPrice ?? null,
@@ -824,7 +838,7 @@ export const tasksRouter = router({
           status: t.status,
           mode: t.mode,
           rating: t.rating,
-          pitchCount: 0,
+          pitchCount: Number(updatedPitchCount[0]?.count || 0),
           bidCount: auctionBidCount ?? 0,
           expiryTime: t.expiryTime,
           bidDeadline: t.bidDeadline,

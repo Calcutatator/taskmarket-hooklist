@@ -1,3 +1,4 @@
+import { randomBytes } from 'crypto';
 import {
   createPublicClient,
   http,
@@ -6,6 +7,7 @@ import {
   decodeEventLog,
   keccak256,
   encodeAbiParameters,
+  encodeFunctionData,
 } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { createServerWallet } from '../lib/wallet';
@@ -18,21 +20,27 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(address,uint256,uint256,bytes4,uint256,uint256) returns (bytes32)',
-  'function claimTask(bytes32,address,uint256)',
-  'function selectWorker(bytes32,address,address)',
-  'function acceptSubmission(bytes32,address,address)',
-  'function rateTask(bytes32,address,uint8,uint256,string,bytes32)',
-  'function submitWork(bytes32,address,bytes32)',
-  'function submitBid(bytes32,address,uint256)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string) returns (bytes32)',
+  'function claimTask(bytes32,uint256)',
+  'function selectWorker(bytes32,address)',
+  'function acceptSubmission(bytes32,address)',
+  'function rateTask(bytes32,uint8,uint256,string,bytes32)',
+  'function submitWork(bytes32,bytes32)',
+  'function submitBid(bytes32,uint256)',
   'function selectLowestBidder(bytes32)',
-  'function acceptAuction(bytes32,address,uint256)',
-  'function cancelTask(bytes32,address)',
-  'function updateTask(bytes32,address,uint256,uint256,uint256,uint256)',
+  'function acceptAuction(bytes32,uint256)',
+  'function cancelTask(bytes32)',
+  'function updateTask(bytes32,uint256,uint256,uint256,uint256)',
+  'function forfeitAndReopen(bytes32)',
   'function addForwarder(address)',
   'function removeForwarder(address)',
   'function trustedForwarders(address) view returns (bool)',
   'function requesterNonce(address) view returns (uint256)',
+]);
+
+// ERC-8194 PGTR forwarder ABI — TaskMarketForwarder.relay()
+const FORWARDER_ABI = parseAbi([
+  'function relay(address pgtrSenderAddr, uint256 paymentAmount, uint256 validBefore, bytes32 receiptNonce, bytes calldata data)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
 const REGISTERED_EVENT = parseAbiItem(
@@ -60,10 +68,13 @@ export const MODE_MAP: Record<string, `0x${string}`> = {
 
 const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const GAS_MULTIPLIER = 2n;
+// Receipt validity window for relay calls (5 minutes)
+const RELAY_VALID_WINDOW_SECS = 300;
 
-/** Resolve the contract address to use: prefer task-specific address, fall back to config. */
-function resolveContractAddress(override?: string | null): `0x${string}` {
-  return (override ?? getServerConfig().CONTRACT_ADDRESS) as `0x${string}`;
+function resolveForwarderAddress(): `0x${string}` {
+  const addr = getServerConfig().FORWARDER_ADDRESS;
+  if (!addr) throw new Error('FORWARDER_ADDRESS is not configured');
+  return addr as `0x${string}`;
 }
 
 function getPublicClient() {
@@ -84,6 +95,70 @@ function assertSuccess(receipt: { status: string }, label: string) {
   if (receipt.status !== 'success') {
     throw new Error(`Contract tx reverted: ${label}`);
   }
+}
+
+/**
+ * Route a TaskMarket call through the PGTR forwarder (ERC-8194).
+ * Approves forwarder to spend USDC if paymentAmount > 0, then calls relay().
+ *
+ * @param pgtrSenderAddr  The authenticated actor (requester or worker wallet).
+ * @param paymentAmount   USDC to transfer from server to TaskMarket escrow (0 for no payment).
+ * @param data            ABI-encoded calldata for the TaskMarket function.
+ */
+async function relayThroughForwarder(
+  pgtrSenderAddr: `0x${string}`,
+  paymentAmount: bigint,
+  data: `0x${string}`
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const { client, account } = createServerWallet();
+  const publicClient = getPublicClient();
+  const forwarderAddr = resolveForwarderAddress();
+  const gas = await getGasParams(publicClient);
+
+  if (paymentAmount > 0n) {
+    const allowance = (await publicClient.readContract({
+      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+      abi: ERC20_ABI,
+      functionName: 'allowance',
+      args: [account.address, forwarderAddr],
+    })) as bigint;
+    if (allowance < paymentAmount) {
+      const approveTx = await client.writeContract({
+        address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+        abi: ERC20_ABI,
+        functionName: 'approve',
+        args: [
+          forwarderAddr,
+          BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
+        ],
+        ...gas,
+      });
+      assertSuccess(
+        await publicClient.waitForTransactionReceipt({
+          hash: approveTx,
+          timeout: TX_RECEIPT_TIMEOUT,
+        }),
+        'approve'
+      );
+    }
+  }
+
+  const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
+  const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+
+  const hash = await client.writeContract({
+    address: forwarderAddr,
+    abi: FORWARDER_ABI,
+    functionName: 'relay',
+    args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'relay'
+  );
+  return hash;
 }
 
 /**
@@ -123,8 +198,6 @@ export async function contractCreateTask(
   bidDeadlineSecs: bigint = 0n,
   paymentTxHash?: `0x${string}`
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
-  const { client } = createServerWallet();
   const publicClient = getPublicClient();
 
   if (paymentTxHash) {
@@ -134,193 +207,104 @@ export async function contractCreateTask(
     });
   }
 
-  const gas = await getGasParams(publicClient);
-
-  // Check current allowance — only approve if insufficient.
-  // Approves MAX_UINT256 so subsequent tasks never need another approve tx,
-  // and avoids RPC state-lag races where the simulation sees stale allowance=0.
-  const { account } = createServerWallet();
-  const allowance = await publicClient.readContract({
-    address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
-    abi: ERC20_ABI,
-    functionName: 'allowance',
-    args: [account.address, config.CONTRACT_ADDRESS as `0x${string}`],
-  });
-  if ((allowance as bigint) < reward) {
-    const approveTx = await client.writeContract({
-      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'approve',
-      args: [
-        config.CONTRACT_ADDRESS as `0x${string}`,
-        BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
-      ],
-      ...gas,
-    });
-    assertSuccess(
-      await publicClient.waitForTransactionReceipt({
-        hash: approveTx,
-        timeout: TX_RECEIPT_TIMEOUT,
-      }),
-      'approve'
-    );
-  }
-
-  const createTx = await client.writeContract({
-    address: config.CONTRACT_ADDRESS as `0x${string}`,
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'createTask',
     args: [
-      requester,
       reward,
       durationSecs,
       mode as `0x${string}`,
       pitchDeadlineSecs,
       bidDeadlineSecs,
+      '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+      '',
     ],
-    ...gas,
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash: createTx, timeout: TX_RECEIPT_TIMEOUT }),
-    'createTask'
-  );
-  return createTx;
+  return relayThroughForwarder(requester, reward, data);
 }
 
 export async function contractSubmitBid(
   taskId: `0x${string}`,
   worker: `0x${string}`,
   price: bigint,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'submitBid',
-    args: [taskId, worker, price],
-    ...gas,
+    args: [taskId, price],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'submitBid'
-  );
-  return hash;
+  return relayThroughForwarder(worker, 0n, data);
 }
 
 export async function contractSelectLowestBidder(
   taskId: `0x${string}`,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const { address } = createServerWallet();
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'selectLowestBidder',
     args: [taskId],
-    ...gas,
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'selectLowestBidder'
-  );
-  return hash;
+  // selectLowestBidder has no user principal — server address is the acting pgtrSender
+  return relayThroughForwarder(address, 0n, data);
 }
 
 export async function contractAcceptAuction(
   taskId: `0x${string}`,
   worker: `0x${string}`,
   price: bigint,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptAuction',
-    args: [taskId, worker, price],
-    ...gas,
+    args: [taskId, price],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'acceptAuction'
-  );
-  return hash;
+  return relayThroughForwarder(worker, 0n, data);
 }
 
 export async function contractClaimTask(
   taskId: `0x${string}`,
   worker: `0x${string}`,
   stakeAmount: bigint,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'claimTask',
-    args: [taskId, worker, stakeAmount],
-    ...gas,
+    args: [taskId, stakeAmount],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'claimTask'
-  );
-  return hash;
+  return relayThroughForwarder(worker, stakeAmount, data);
 }
 
 export async function contractSelectWorker(
   taskId: `0x${string}`,
   requester: `0x${string}`,
   worker: `0x${string}`,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'selectWorker',
-    args: [taskId, requester, worker],
-    ...gas,
+    args: [taskId, worker],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'selectWorker'
-  );
-  return hash;
+  return relayThroughForwarder(requester, 0n, data);
 }
 
 export async function contractAcceptSubmission(
   taskId: `0x${string}`,
   requester: `0x${string}`,
   worker: `0x${string}`,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptSubmission',
-    args: [taskId, requester, worker],
-    ...gas,
+    args: [taskId, worker],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'acceptSubmission'
-  );
-  return hash;
+  return relayThroughForwarder(requester, 0n, data);
 }
 
 export async function contractRateTask(
@@ -330,23 +314,19 @@ export async function contractRateTask(
   workerAgentId: bigint,
   feedbackURI: string,
   feedbackHash: `0x${string}`,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<{ hash: `0x${string}`; blockNumber: number }> {
-  const { client } = createServerWallet();
   const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'rateTask',
-    args: [taskId, requester, rating, workerAgentId, feedbackURI, feedbackHash],
-    ...gas,
+    args: [taskId, rating, workerAgentId, feedbackURI, feedbackHash],
   });
+  const hash = await relayThroughForwarder(requester, 0n, data);
   const receipt = await publicClient.waitForTransactionReceipt({
     hash,
     timeout: TX_RECEIPT_TIMEOUT,
   });
-  assertSuccess(receipt, 'rateTask');
   return { hash, blockNumber: Number(receipt.blockNumber) };
 }
 
@@ -384,26 +364,44 @@ export async function contractTransferWithAuthorization(
   return hash;
 }
 
+export async function contractSubmitWork(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  deliverable: `0x${string}`,
+  _contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'submitWork',
+    args: [taskId, deliverable],
+  });
+  return relayThroughForwarder(worker, 0n, data);
+}
+
+export async function contractForfeitAndReopen(
+  taskId: `0x${string}`,
+  requester: `0x${string}`,
+  _contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'forfeitAndReopen',
+    args: [taskId],
+  });
+  return relayThroughForwarder(requester, 0n, data);
+}
+
 export async function contractCancelTask(
   taskId: `0x${string}`,
   requester: `0x${string}`,
-  contractAddress?: string | null
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const { client } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'cancelTask',
-    args: [taskId, requester],
-    ...gas,
+    args: [taskId],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'cancelTask'
-  );
-  return hash;
+  return relayThroughForwarder(requester, 0n, data);
 }
 
 export async function contractUpdateTask(
@@ -413,54 +411,17 @@ export async function contractUpdateTask(
   newExpiryTime: bigint,
   newBidDeadline: bigint,
   newPitchDeadline: bigint,
-  contractAddress?: string | null
+  currentReward: bigint = 0n,
+  _contractAddress?: string | null
 ): Promise<`0x${string}`> {
-  const config = getServerConfig();
-  const { client, account } = createServerWallet();
-  const publicClient = getPublicClient();
-  const gas = await getGasParams(publicClient);
-
-  // If reward is increasing, ensure server has sufficient USDC approval
-  if (newReward > 0n) {
-    const allowance = await publicClient.readContract({
-      address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
-      abi: ERC20_ABI,
-      functionName: 'allowance',
-      args: [account.address, resolveContractAddress(contractAddress)],
-    });
-    if ((allowance as bigint) < newReward) {
-      const approveTx = await client.writeContract({
-        address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
-        abi: ERC20_ABI,
-        functionName: 'approve',
-        args: [
-          resolveContractAddress(contractAddress),
-          BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
-        ],
-        ...gas,
-      });
-      assertSuccess(
-        await publicClient.waitForTransactionReceipt({
-          hash: approveTx,
-          timeout: TX_RECEIPT_TIMEOUT,
-        }),
-        'approve'
-      );
-    }
-  }
-
-  const hash = await client.writeContract({
-    address: resolveContractAddress(contractAddress),
+  const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'updateTask',
-    args: [taskId, requester, newReward, newExpiryTime, newBidDeadline, newPitchDeadline],
-    ...gas,
+    args: [taskId, newReward, newExpiryTime, newBidDeadline, newPitchDeadline],
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'updateTask'
-  );
-  return hash;
+  // Additional payment = reward increase (forwarder transfers the delta to TaskMarket escrow)
+  const additionalPayment = newReward > currentReward ? newReward - currentReward : 0n;
+  return relayThroughForwarder(requester, additionalPayment, data);
 }
 
 export async function contractRegisterIdentity(): Promise<bigint> {

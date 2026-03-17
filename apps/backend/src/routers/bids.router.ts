@@ -11,6 +11,12 @@ import {
 } from '../services/contract';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { computeClockPrice } from '../lib/auction';
+import { TRPCError } from '@trpc/server';
+
+function headerValue(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
 
 export const bidsRouter = router({
   submit: publicProcedure
@@ -390,7 +396,6 @@ export const bidsRouter = router({
     .input(
       z.object({
         deviceId: z.string(),
-        apiToken: z.string(),
       })
     )
     .output(
@@ -407,9 +412,16 @@ export const bidsRouter = router({
       )
     )
     .query(async ({ input, ctx }) => {
+      const apiToken = headerValue(ctx.req.headers['x-taskmarket-api-token']);
+      if (!apiToken) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Missing x-taskmarket-api-token header',
+        });
+      }
       const device = await authenticateXmtpDevice(ctx, {
         deviceId: input.deviceId,
-        apiToken: input.apiToken,
+        apiToken,
       });
 
       const now = new Date();

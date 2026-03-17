@@ -373,8 +373,8 @@ export const daemonCommand = new Command('daemon')
                       });
                     }
                   }
-                  hasMore = result.hasMore;
                   cursor = result.nextCursor ?? undefined;
+                  hasMore = result.hasMore && cursor !== undefined;
                 }
               } catch (err) {
                 process.stderr.write(

@@ -16,7 +16,7 @@ jobs:
           fetch-depth: 0
 
       - name: Push packages/contracts to taskmarket-contracts
-        uses: s0/git-publish-subdir-action@develop
+        uses: s0/git-publish-subdir-action@92faf786f11dfa44fc366ac3eb274d193ca1af7e  # v2.6.0
         env:
           REPO: git@github.com:daydreamsai/taskmarket-contracts.git
           BRANCH: main

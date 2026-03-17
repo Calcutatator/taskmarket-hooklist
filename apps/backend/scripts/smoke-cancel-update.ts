@@ -147,10 +147,8 @@ async function main() {
   } catch (err) {
     if (err instanceof Error && err.message.includes('Bids exist')) {
       ok('error caught', 'Bids exist');
-    } else if (err instanceof Error && err.message.includes('Expected cancel to fail')) {
-      throw err;
     } else {
-      ok('error caught', (err as Error).message);
+      throw err;
     }
   }
 
@@ -180,10 +178,8 @@ async function main() {
   } catch (err) {
     if (err instanceof Error && err.message.includes('Task not open')) {
       ok('error caught', 'Task not open');
-    } else if (err instanceof Error && err.message.includes('Expected cancel to fail')) {
-      throw err;
     } else {
-      ok('error caught', (err as Error).message);
+      throw err;
     }
   }
 

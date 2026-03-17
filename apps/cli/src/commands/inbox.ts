@@ -49,11 +49,10 @@ export const inboxCommand = new Command('inbox')
     try {
       const keystore = await loadKeystore();
       if (keystore.deviceId && keystore.apiToken) {
-        const params = new URLSearchParams({
-          deviceId: keystore.deviceId,
-          apiToken: keystore.apiToken,
-        });
-        pendingBids = (await apiGet(`/api/bids/my?${params.toString()}`)) as PendingBid[];
+        const params = new URLSearchParams({ deviceId: keystore.deviceId });
+        pendingBids = (await apiGet(`/api/bids/my?${params.toString()}`, {
+          headers: { 'x-taskmarket-api-token': keystore.apiToken },
+        })) as PendingBid[];
       }
     } catch {
       // Non-fatal: include inbox tasks without pending bids

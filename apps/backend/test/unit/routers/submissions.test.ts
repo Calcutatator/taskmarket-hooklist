@@ -16,6 +16,10 @@ vi.mock('viem', async (importOriginal) => {
   };
 });
 
+vi.mock('../../../src/services/contract', () => ({
+  contractSubmitWork: vi.fn().mockResolvedValue('0xsubmittx'),
+}));
+
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { recoverMessageAddress } from 'viem';
 

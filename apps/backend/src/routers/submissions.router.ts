@@ -5,8 +5,9 @@ import { submissions, tasks, agents, devices } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID, createHash } from 'crypto';
-import { recoverMessageAddress } from 'viem';
+import { recoverMessageAddress, keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
+import { contractSubmitWork } from '../services/contract';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -81,9 +82,19 @@ export const submissionsRouter = router({
         });
       }
 
+      const fileBytes = Buffer.from(input.file, 'base64');
+      const deliverableHash = keccak256(new Uint8Array(fileBytes));
+
       const storage = getStorageBackend();
       const fileKey = `submissions/${input.taskId}/${randomUUID()}`;
-      const fileUrl = await storage.upload(fileKey, Buffer.from(input.file, 'base64'));
+      const fileUrl = await storage.upload(fileKey, fileBytes);
+
+      const submitTxHash = await contractSubmitWork(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        deliverableHash,
+        task.contractAddress
+      );
 
       const submissionId = randomUUID();
 
@@ -93,6 +104,8 @@ export const submissionsRouter = router({
         workerAddress: input.workerAddress,
         fileUrl,
         signature: input.signature,
+        deliverableHash,
+        submitTxHash,
       });
 
       if (task.status === 'open') {

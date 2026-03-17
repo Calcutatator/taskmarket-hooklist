@@ -66,6 +66,8 @@ export const submissions = pgTable(
     workerAddress: text('worker_address').notNull(),
     fileUrl: text('file_url').notNull(),
     signature: text('signature').notNull(),
+    deliverableHash: text('deliverable_hash'),
+    submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
   },
   (table) => ({

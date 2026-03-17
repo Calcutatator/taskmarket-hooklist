@@ -135,6 +135,100 @@ describe('tasks router', () => {
     });
   });
 
+  describe('create auction validation', () => {
+    it('throws when auction mode is missing maxPrice', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(
+        caller.create({ ...baseTaskInput, mode: 'auction', auctionType: 'english' })
+      ).rejects.toThrow('maxPrice is required for auction mode');
+    });
+
+    it('throws when auction mode is missing auctionType', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(
+        caller.create({ ...baseTaskInput, mode: 'auction', maxPrice: '1000000' })
+      ).rejects.toThrow('auctionType is required for auction mode');
+    });
+
+    it('throws when dutch auction is missing auctionFloorPrice', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(
+        caller.create({
+          ...baseTaskInput,
+          mode: 'auction',
+          maxPrice: '1000000',
+          auctionType: 'dutch',
+        })
+      ).rejects.toThrow('auctionFloorPrice is required for dutch auction type');
+    });
+
+    it('throws when reverse_dutch auction is missing auctionStartPrice', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(
+        caller.create({
+          ...baseTaskInput,
+          mode: 'auction',
+          maxPrice: '1000000',
+          auctionType: 'reverse_dutch',
+        })
+      ).rejects.toThrow('auctionStartPrice is required for reverse_dutch auction type');
+    });
+
+    it('creates dutch auction with all required fields', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.create({
+        ...baseTaskInput,
+        mode: 'auction',
+        maxPrice: '1000000',
+        auctionType: 'dutch',
+        auctionFloorPrice: '500000',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('creates reverse_dutch auction with all required fields', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.create({
+        ...baseTaskInput,
+        mode: 'auction',
+        maxPrice: '1000000',
+        auctionType: 'reverse_dutch',
+        auctionStartPrice: '200000',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('creates english auction with only maxPrice and auctionType', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.create({
+        ...baseTaskInput,
+        mode: 'auction',
+        maxPrice: '1000000',
+        auctionType: 'english',
+      });
+      expect(result.success).toBe(true);
+    });
+
+    it('creates reverse_english auction with only maxPrice and auctionType', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.create({
+        ...baseTaskInput,
+        mode: 'auction',
+        maxPrice: '1000000',
+        auctionType: 'reverse_english',
+      });
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('list', () => {
     it('returns tasks list with hasMore=false when results fit within limit', async () => {
       const ctx = createMockCtx();
