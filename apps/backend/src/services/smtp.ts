@@ -35,8 +35,16 @@ export function startSmtpServer(db: Db): void {
   };
 
   if (config.SMTP_TLS_CERT && config.SMTP_TLS_KEY) {
-    serverOptions.cert = readFileSync(config.SMTP_TLS_CERT);
-    serverOptions.key = readFileSync(config.SMTP_TLS_KEY);
+    try {
+      serverOptions.cert = readFileSync(config.SMTP_TLS_CERT);
+      serverOptions.key = readFileSync(config.SMTP_TLS_KEY);
+    } catch (err) {
+      logger.error(
+        `[smtp] Failed to load TLS cert/key (cert=${config.SMTP_TLS_CERT}, key=${config.SMTP_TLS_KEY})`,
+        err
+      );
+      process.exit(1);
+    }
   }
 
   const server = new SMTPServer(serverOptions);

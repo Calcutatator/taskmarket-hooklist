@@ -1,3 +1,4 @@
+import { timingSafeEqual } from 'crypto';
 import type { Request, Response } from 'express';
 import { EmailInboundHeadersSchema } from '@taskmarket/shared';
 import { storeInboundEmail } from '../services/smtp';
@@ -13,10 +14,16 @@ export async function emailInboundHandler(req: Request, res: Response): Promise<
   }
 
   const config = getServerConfig();
-  if (
-    !config.EMAIL_WEBHOOK_SECRET ||
-    parsed.data['x-webhook-secret'] !== config.EMAIL_WEBHOOK_SECRET
-  ) {
+  const secret = config.EMAIL_WEBHOOK_SECRET;
+  const provided = parsed.data['x-webhook-secret'];
+  let secretValid = false;
+  if (secret && provided) {
+    const secretBuf = Buffer.from(secret, 'utf8');
+    const providedBuf = Buffer.from(provided, 'utf8');
+    secretValid =
+      secretBuf.length === providedBuf.length && timingSafeEqual(secretBuf, providedBuf);
+  }
+  if (!secretValid) {
     res.status(401).json({ ok: false, error: 'Invalid webhook secret' });
     return;
   }

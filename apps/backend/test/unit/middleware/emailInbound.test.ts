@@ -109,10 +109,19 @@ describe('emailInboundHandler', () => {
   it('returns 200 (silent skip) when recipient is unknown', async () => {
     // storeInboundEmail resolves normally — unknown recipients are silently skipped inside it
     vi.mocked(storeInboundEmail).mockResolvedValue(undefined);
-    const { req, res, jsonSpy } = makeReqRes({});
+    const { req, res, jsonSpy } = makeReqRes({
+      headers: {
+        'x-webhook-secret': VALID_SECRET,
+        'x-email-from': VALID_FROM,
+        'x-email-to': 'unknown@daydreams.systems',
+      },
+    });
 
     await emailInboundHandler(req, res);
 
+    expect(storeInboundEmail).toHaveBeenCalledWith({}, expect.anything(), [
+      'unknown@daydreams.systems',
+    ]);
     expect(jsonSpy).toHaveBeenCalledWith({ ok: true });
   });
 });
