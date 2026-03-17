@@ -6,5 +6,3 @@ compatibility_date = "2025-01-01"
 [vars]
 EMAIL_DOMAIN = "daydreams.systems"
 
-[[send_email]]
-name = "EMAIL"

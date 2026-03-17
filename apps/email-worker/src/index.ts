@@ -1,10 +1,8 @@
-import { EmailMessage } from 'cloudflare:email';
-
 interface Env {
   BACKEND_URL: string;
   EMAIL_WEBHOOK_SECRET: string;
   EMAIL_DOMAIN: string;
-  EMAIL: { send(message: EmailMessage): Promise<void> };
+  RESEND_API_KEY: string;
 }
 
 export default {
@@ -74,22 +72,22 @@ export default {
       );
     }
 
-    const messageId = `${crypto.randomUUID()}@${env.EMAIL_DOMAIN}`;
-    const date = new Date().toUTCString();
-    const raw = [
-      `From: <${from}>`,
-      `To: <${to}>`,
-      `Subject: ${subject}`,
-      `Message-ID: <${messageId}>`,
-      `Date: ${date}`,
-      `MIME-Version: 1.0`,
-      `Content-Type: text/plain; charset=utf-8`,
-      ``,
-      bodyText,
-    ].join('\r\n');
+    const res = await fetch('https://api.resend.com/emails', {
+      method: 'POST',
+      headers: {
+        Authorization: `Bearer ${env.RESEND_API_KEY}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ from, to, subject, text: bodyText }),
+    });
 
-    const message = new EmailMessage(from, to, raw);
-    await env.EMAIL.send(message);
+    if (!res.ok) {
+      const err = await res.text();
+      return new Response(JSON.stringify({ ok: false, error: `Resend error: ${err}` }), {
+        status: 502,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
 
     return new Response(JSON.stringify({ ok: true }), {
       status: 200,
