@@ -97,6 +97,8 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         bytes32 contentHash;
         string  contentURI;
         bytes4  auctionSubtype; // Auction subtype selector (zero for non-auction tasks)
+        address lowestBidder;   // Running lowest bidder (english/reverse_english subtypes)
+        uint256 lowestBidPrice; // Running lowest bid price
     }
 
     struct Bid {
@@ -288,7 +290,12 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
      * @dev Returns the authenticated actor for this call.
      *      If called by a trusted PGTR forwarder, returns forwarder.pgtrSender().
      *      Otherwise returns msg.sender.
-     *      In practice, onlyTrustedForwarder ensures this always queries pgtrSender().
+     *
+     *      NOTE: All mutating functions carry onlyTrustedForwarder, so the msg.sender
+     *      branch is unreachable in the current implementation. It is retained as a
+     *      defensive fallback for: (a) view-context callers that do not carry the
+     *      modifier, and (b) any future non-forwarded extensions that may be added
+     *      without onlyTrustedForwarder.
      */
     function _effectiveSender() internal view returns (address) {
         if (trustedForwarders[msg.sender]) {
@@ -371,7 +378,9 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
             deliverable: bytes32(0),
             contentHash: contentHash,
             contentURI: contentURI,
-            auctionSubtype: mode == AUCTION ? auctionSubtype : bytes4(0)
+            auctionSubtype: mode == AUCTION ? auctionSubtype : bytes4(0),
+            lowestBidder: address(0),
+            lowestBidPrice: 0
         });
 
         emit TaskCreated(taskId, requester, reward, block.timestamp + duration, mode);
@@ -435,6 +444,12 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         require(block.timestamp < task.bidDeadline, "Bid deadline passed");
         require(price <= task.maxPrice, "Bid exceeds max price");
 
+        // Maintain running minimum for O(1) winner selection in selectLowestBidder
+        if (taskBids[taskId].length == 0 || price < task.lowestBidPrice) {
+            task.lowestBidPrice = price;
+            task.lowestBidder = worker;
+        }
+
         taskBids[taskId].push(Bid({ worker: worker, price: price }));
 
         emit BidSubmitted(taskId, worker, price);
@@ -443,8 +458,7 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
     /**
      * @notice Select the lowest bidder after bid deadline.
      * @param taskId Task identifier
-     * @dev O(n) scan over bids. Implementations SHOULD maintain a running minimum
-     *      in submitBid() for O(1) selection in high-bid-count scenarios.
+     * @dev O(1): submitBid() maintains a running minimum in task.lowestBidder/lowestBidPrice.
      */
     function selectLowestBidder(bytes32 taskId) external onlyTrustedForwarder {
         Task storage task = tasks[taskId];
@@ -452,25 +466,13 @@ contract TaskMarket is Initializable, OwnableUpgradeable, ReentrancyGuard, UUPSU
         require(task.mode == AUCTION, "Not an Auction task");
         require(task.status == TaskStatus.Open, "Task not open");
         require(block.timestamp >= task.bidDeadline, "Bid deadline not passed");
+        require(task.lowestBidder != address(0), "No bids submitted");
 
-        Bid[] storage bids = taskBids[taskId];
-        require(bids.length > 0, "No bids submitted");
-
-        uint256 lowestPrice = bids[0].price;
-        address lowestBidder = bids[0].worker;
-
-        for (uint256 i = 1; i < bids.length; i++) {
-            if (bids[i].price < lowestPrice) {
-                lowestPrice = bids[i].price;
-                lowestBidder = bids[i].worker;
-            }
-        }
-
-        task.worker = lowestBidder;
-        task.stakeAmount = lowestPrice;
+        task.worker = task.lowestBidder;
+        task.stakeAmount = task.lowestBidPrice;
         task.status = TaskStatus.Claimed;
 
-        emit TaskWorkerSelected(taskId, lowestBidder);
+        emit TaskWorkerSelected(taskId, task.lowestBidder);
     }
 
     /**
