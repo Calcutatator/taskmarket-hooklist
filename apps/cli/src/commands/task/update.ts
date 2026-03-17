@@ -4,7 +4,9 @@ import { apiGet } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
 
 function toBaseUnits(humanUsdc: string): string {
-  return BigInt(Math.round(parseFloat(humanUsdc) * 1_000_000)).toString();
+  const [intPart = '0', fracPart = ''] = humanUsdc.trim().split('.');
+  const padded = fracPart.slice(0, 6).padEnd(6, '0');
+  return (BigInt(intPart) * 1_000_000n + BigInt(padded)).toString();
 }
 
 export const updateCmd = new Command('update')
@@ -44,7 +46,6 @@ export const updateCmd = new Command('update')
         const task = (await apiGet(`/api/tasks/${taskId}`)) as Record<string, unknown> | null;
         if (!task) {
           printError(`Task not found: ${taskId}`);
-          return;
         }
         const currentExpiry = Math.floor(new Date(task.expiryTime as string).getTime() / 1000);
         body.expiryTime = currentExpiry + parseInt(opts.extendExpiry, 10);
@@ -54,18 +55,18 @@ export const updateCmd = new Command('update')
         const ts = Math.floor(new Date(opts.bidDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--bid-deadline must be in the future');
-          return;
+        } else {
+          body.bidDeadline = ts;
         }
-        body.bidDeadline = ts;
       }
 
       if (opts.pitchDeadline !== undefined) {
         const ts = Math.floor(new Date(opts.pitchDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--pitch-deadline must be in the future');
-          return;
+        } else {
+          body.pitchDeadline = ts;
         }
-        body.pitchDeadline = ts;
       }
 
       if (opts.auctionFloorPrice !== undefined) {

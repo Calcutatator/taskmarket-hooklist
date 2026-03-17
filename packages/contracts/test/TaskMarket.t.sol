@@ -784,6 +784,19 @@ contract TaskMarketTest is Test {
         forwarder.relay(address(market), worker2, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
     }
 
+    function test_RevertWhen_SubmitWork_Pitch_WrongWorker() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        _selectWorker(taskId, requester, worker1);
+
+        vm.expectRevert("Worker mismatch");
+        forwarder.relay(address(market), worker2, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+
+        // State must be unchanged
+        TaskMarket.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(TaskMarket.TaskStatus.WorkerSelected));
+        assertEq(task.deliverable, bytes32(0));
+    }
+
     // -----------------------------------------------------------------------
     // rateTask additional reverts
     // -----------------------------------------------------------------------
