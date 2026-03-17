@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp
+.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -27,9 +27,10 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
 	$(ENV_LOADER) && pnpm install
@@ -126,9 +127,11 @@ lint-check:
 		cd packages/shared && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt:check; \
+	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
+		cd apps/email-worker && pnpm lint:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-check <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make lint-check <backend|frontend|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -147,9 +150,11 @@ lint-fix:
 		cd packages/shared && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt; \
+	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
+		cd apps/email-worker && pnpm lint:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-fix <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -168,9 +173,11 @@ format-check:
 		cd packages/shared && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt:check; \
+	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
+		cd apps/email-worker && pnpm format:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make format-check <backend|frontend|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -189,9 +196,11 @@ format-fix:
 		cd packages/shared && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		cd packages/contracts && pnpm fmt; \
+	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
+		cd apps/email-worker && pnpm format:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make format-fix <backend|frontend|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -208,9 +217,11 @@ type-check:
 		cd apps/frontend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
+		cd apps/email-worker && pnpm type-check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|shared|all>"; \
+		echo "Usage: make type-check <backend|frontend|shared|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -311,8 +322,10 @@ smoke:
 		cd apps/backend && pnpm smoke:xmtp; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
 		cd apps/cli && pnpm smoke:xmtp-live; \
+	elif [ "$(word 1,$(ARGS))" = "email" ]; then \
+		cd apps/backend && pnpm smoke:email; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email>"; \
 		exit 1; \
 	fi
 
@@ -332,6 +345,9 @@ pre-commit:
 	@echo "Checking types..."
 	@$(MAKE) type-check all || (echo "Type check failed." && exit 1)
 	@echo "All pre-commit checks passed."
+
+deploy-email-worker:
+	$(ENV_LOADER) && cd apps/email-worker && pnpm deploy
 
 # Catch-all for extra arguments (e.g. make start backend)
 %:

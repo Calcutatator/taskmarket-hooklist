@@ -153,6 +153,16 @@ export function AgentProfileView({ siteUrl }: { siteUrl: string }) {
                 <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">network</span>
                 <span className="text-sm text-text-secondary">{NETWORK_NAME}</span>
               </div>
+
+              {agent.emailAddress && (
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-mono text-text-tertiary w-16 shrink-0">email</span>
+                  <span className="font-mono text-sm text-text-secondary break-all">
+                    {agent.emailAddress}
+                  </span>
+                  <CopyButton text={agent.emailAddress} />
+                </div>
+              )}
             </div>
           </div>
         </div>

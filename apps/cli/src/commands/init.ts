@@ -6,8 +6,8 @@ import {
   keystoreExists,
   loadKeystore,
 } from '../lib/keystore.js';
-import { API_URL, apiGet } from '../lib/api.js';
-import { printResult } from '../lib/output.js';
+import { API_URL, apiGet, apiPost } from '../lib/api.js';
+import { printResult, printError } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
 import { deriveCompressedPublicKey } from '../lib/encryption.js';
 
@@ -19,12 +19,52 @@ type NetworkInfo = {
   explorerUrl: string;
 };
 
+async function tryRegisterEmail(
+  deviceId: string,
+  apiToken: string,
+  username: string,
+  explicit: boolean
+): Promise<string | null> {
+  try {
+    const reg = (await apiPost('/api/emails/register', {
+      deviceId,
+      apiToken,
+      username,
+    })) as { emailAddress: string };
+    return reg.emailAddress;
+  } catch (err: unknown) {
+    if (explicit) {
+      const msg = err instanceof Error ? err.message : String(err);
+      process.stderr.write(
+        JSON.stringify({
+          ok: false,
+          error: `Email registration failed: ${msg}. Run: taskmarket email register --username ${username}`,
+        }) + '\n'
+      );
+    }
+    return null;
+  }
+}
+
 export const initCommand = new Command('init')
   .description('Create and register a new agent wallet (safe to re-run)')
-  .action(async () => {
+  .option(
+    '--email <username>',
+    'Claim a custom email username (default: auto-generated from agent ID)'
+  )
+  .action(async (opts: { email?: string }) => {
+    // Fail-fast availability check for explicit --email before doing any other work
+    if (opts.email) {
+      const check = (await apiGet(
+        `/api/emails/check-username?username=${encodeURIComponent(opts.email)}`
+      )) as { available: boolean };
+      if (!check.available) {
+        printError(`Email username "${opts.email}" is not available.`);
+      }
+    }
+
     if (await keystoreExists()) {
       const keystore = await loadKeystore();
-      // Poll for agentId if not yet assigned (background registration in progress)
       let agentId = keystore.agentId;
       if (!agentId) {
         agentId = await pollAgentId(keystore.walletAddress);
@@ -43,11 +83,36 @@ export const initCommand = new Command('init')
         // Non-fatal
       }
 
+      // Check for existing email first
+      let emailAddress: string | null = null;
+      try {
+        const existing = (await apiGet(`/api/agents/stats?address=${keystore.walletAddress}`)) as {
+          emailAddress?: string | null;
+        };
+        emailAddress = existing.emailAddress ?? null;
+      } catch {
+        // Non-fatal
+      }
+
+      if (!emailAddress) {
+        const username =
+          opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
+        if (username) {
+          emailAddress = await tryRegisterEmail(
+            keystore.deviceId,
+            keystore.apiToken,
+            username,
+            !!opts.email
+          );
+        }
+      }
+
       printResult({
         address: keystore.walletAddress,
         agentId,
         network: networkInfo?.networkName,
         chainId: networkInfo?.chainId,
+        emailAddress,
       });
       return;
     }
@@ -55,7 +120,6 @@ export const initCommand = new Command('init')
     const { privateKey, address } = generateKeypair();
     const publicKey = deriveCompressedPublicKey(privateKey);
 
-    // Register device with backend
     const res = await fetch(`${API_URL}/api/devices`, {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
@@ -81,7 +145,6 @@ export const initCommand = new Command('init')
 
     const encryptedKey = encryptPrivateKey(deviceEncryptionKey, privateKey);
 
-    // agentId may be null if on-chain registration is still pending — poll for it
     let agentId: string | null = initialAgentId;
     await saveKeystore({ encryptedKey, walletAddress: address, deviceId, apiToken, agentId });
 
@@ -93,7 +156,6 @@ export const initCommand = new Command('init')
       }
     }
 
-    // Fetch network info to show funding details
     let networkInfo: NetworkInfo | undefined;
     try {
       const response = (await apiGet('/trpc/network.info')) as {
@@ -101,13 +163,20 @@ export const initCommand = new Command('init')
       };
       networkInfo = response.result.data;
     } catch {
-      // Non-fatal — show fallback text if backend unreachable
+      // Non-fatal
     }
+
+    const username =
+      opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
+    const emailAddress = username
+      ? await tryRegisterEmail(deviceId, apiToken, username, !!opts.email)
+      : null;
 
     printResult({
       address,
       agentId,
       network: networkInfo?.networkName,
       chainId: networkInfo?.chainId,
+      emailAddress,
     });
   });

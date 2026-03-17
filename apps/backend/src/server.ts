@@ -6,7 +6,8 @@ import { app } from './app';
 import { logger } from './lib/logger';
 import { getServerConfig } from './config/env';
 import { startIndexer } from './services/indexer';
-import { migrationClient } from './db/client';
+import { startSmtpServer } from './services/smtp';
+import { migrationClient, db } from './db/client';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -27,6 +28,7 @@ migrate(migrationDb, { migrationsFolder })
       logger.info(`Environment: ${config.NODE_ENV}`);
 
       await startIndexer();
+      startSmtpServer(db);
     });
   })
   .catch((err) => {

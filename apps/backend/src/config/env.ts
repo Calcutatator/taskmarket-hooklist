@@ -50,6 +50,13 @@ const envSchema = z
     XMTP_ENABLED: strictBooleanFromEnv.default(false),
     XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
+    // Email
+    EMAIL_DOMAIN: z.string().default('daydreams.systems'),
+    EMAIL_WEBHOOK_SECRET: z.string().min(32).optional(),
+    OUTBOUND_EMAIL_WORKER_URL: z.string().url().optional(),
+    SMTP_PORT: z.coerce.number().default(25),
+    SMTP_TLS_CERT: z.string().optional(),
+    SMTP_TLS_KEY: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
@@ -83,6 +90,14 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           message: 'PLATFORM_MASTER_KEY must not be the default zero key in production',
           path: ['PLATFORM_MASTER_KEY'],
+        });
+      }
+
+      if (!data.OUTBOUND_EMAIL_WORKER_URL) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'OUTBOUND_EMAIL_WORKER_URL is required in production',
+          path: ['OUTBOUND_EMAIL_WORKER_URL'],
         });
       }
     }

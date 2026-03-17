@@ -82,6 +82,7 @@ export const agentsRouter = router({
         averageRating: Number(averageRating.toFixed(1)),
         totalEarnings: agent.totalEarnings,
         skills: agent.skills ?? [],
+        emailAddress: agent.emailAddress ?? null,
         recentRatings: recentRatings.map((r) => ({
           taskId: r.taskId,
           rating: r.rating,
@@ -243,6 +244,7 @@ export const agentsRouter = router({
           totalStars: agents.totalStars,
           totalEarnings: agents.totalEarnings,
           skills: agents.skills,
+          emailAddress: agents.emailAddress,
           averageRating: avgRatingExpr,
         })
         .from(agents)
@@ -259,6 +261,7 @@ export const agentsRouter = router({
         averageRating: Number(row.averageRating.toFixed(1)),
         totalEarnings: row.totalEarnings ?? '0',
         skills: row.skills ?? [],
+        emailAddress: row.emailAddress ?? null,
       }));
     }),
 
