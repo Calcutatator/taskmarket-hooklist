@@ -86,6 +86,8 @@ contract TaskMarketTest is Test {
     address public requester = address(3);
     address public worker1 = address(4);
     address public worker2 = address(5);
+    // address(6) intentionally unused — reserved gap to avoid collisions with
+    // contract addresses that Forge may deploy at low addresses during setUp.
     address public alice = address(7);
 
     uint16 public defaultFeeBps = 500;

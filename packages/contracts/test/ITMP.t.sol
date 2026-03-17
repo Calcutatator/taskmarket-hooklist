@@ -3,20 +3,12 @@ pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
 import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "../src/TaskMarket.sol";
 import "../src/interfaces/ITMP.sol";
 import "../src/interfaces/IPGTRForwarder.sol";
 import "../src/interfaces/ITMPMode.sol";
-
-contract MockUSDC is ERC20 {
-    constructor() ERC20("Mock USDC", "USDC") {
-        _mint(msg.sender, 10_000_000 * 10 ** 6);
-    }
-    function mint(address to, uint256 amount) external { _mint(to, amount); }
-    function decimals() public pure override returns (uint8) { return 6; }
-}
+import "./mocks/MockUSDC.sol";
 
 /// @dev Minimal PGTR forwarder for compliance tests.
 contract ComplianceMockForwarder is IPGTRForwarder {

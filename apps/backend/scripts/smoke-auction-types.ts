@@ -13,6 +13,13 @@
  */
 import { log, ok, get, x402Post, getAccounts, type Account, API_URL } from './_x402.ts';
 
+// How long to wait after the bid deadline before asserting it has passed.
+// Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
+const AUCTION_DEADLINE_BUFFER_MS = parseInt(
+  process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000',
+  10
+);
+
 async function sleep(ms: number): Promise<void> {
   return new Promise((r) => setTimeout(r, ms));
 }
@@ -49,8 +56,8 @@ async function smokeEnglish(requester: Account, worker: Account) {
   const bids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{ price: string }>;
   ok(`bid count`, bids.length >= 1);
 
-  console.log('  (Waiting 35s for deadline — not selecting winner in smoke to save gas)');
-  await sleep(35000);
+  console.log(`  (Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline — not selecting winner in smoke to save gas)`);
+  await sleep(AUCTION_DEADLINE_BUFFER_MS);
 
   const taskDetail = (await get(`/api/tasks/${taskId}`)) as { bidDeadline: string };
   ok('bidDeadline passed', new Date(taskDetail.bidDeadline) < new Date());
@@ -94,8 +101,8 @@ async function smokeReverseEnglish(requester: Account, worker: Account) {
   }
   ok('bid is sealed (price=null)', true);
 
-  log('4/4', 'Waiting 35s for deadline, then verifying bids are revealed...');
-  await sleep(35000);
+  log('4/4', `Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline, then verifying bids are revealed...`);
+  await sleep(AUCTION_DEADLINE_BUFFER_MS);
 
   const revealedBids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{
     price: string | null;
