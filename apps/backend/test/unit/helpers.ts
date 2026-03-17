@@ -11,6 +11,7 @@ export function makeChain(resolveValue: any = undefined) {
     where: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
+    groupBy: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
     returning: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),

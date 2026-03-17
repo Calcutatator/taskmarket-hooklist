@@ -12,11 +12,12 @@ export const auctionAcceptCmd = new Command('auction-accept')
   .action(async (taskId: string, opts: { minPrice?: string }) => {
     const body: Record<string, unknown> = { taskId };
     if (opts.minPrice) {
-      const parsed = parseFloat(opts.minPrice);
-      if (!Number.isFinite(parsed)) {
+      const [intPart = '0', fracPart = ''] = opts.minPrice.trim().split('.');
+      if (!/^\d+$/.test(intPart) || (fracPart && !/^\d+$/.test(fracPart))) {
         throw new Error(`--min-price: invalid number "${opts.minPrice}"`);
       }
-      body.minPrice = String(Math.round(parsed * 1e6));
+      const padded = fracPart.slice(0, 6).padEnd(6, '0');
+      body.minPrice = (BigInt(intPart) * 1_000_000n + BigInt(padded)).toString();
     }
     const result = (await x402Post(`/api/tasks/${taskId}/bids/accept`, body)) as {
       acceptedPrice: string;

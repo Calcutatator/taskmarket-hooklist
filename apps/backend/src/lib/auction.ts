@@ -23,15 +23,16 @@ export function computeClockPrice(task: AuctionTask, now: Date): bigint | null {
   const total = end - start;
   if (total <= 0) return null;
 
-  const elapsed = Math.min(Math.max(now.getTime() - start, 0), total);
-  const progress = elapsed / total; // 0.0 at start, 1.0 at deadline
+  const rawElapsed = now.getTime() - start;
+  const elapsedMs = BigInt(Math.min(Math.max(rawElapsed, 0), total));
+  const totalMs = BigInt(total);
 
   const maxPrice = BigInt(task.maxPrice);
 
   if (task.auctionType === 'dutch') {
     const floorPrice = task.auctionFloorPrice ? BigInt(task.auctionFloorPrice) : 0n;
     const range = maxPrice - floorPrice;
-    const drop = BigInt(Math.round(Number(range) * progress));
+    const drop = (range * elapsedMs) / totalMs;
     const price = maxPrice - drop;
     return price < floorPrice ? floorPrice : price;
   }
@@ -39,7 +40,7 @@ export function computeClockPrice(task: AuctionTask, now: Date): bigint | null {
   if (task.auctionType === 'reverse_dutch') {
     const startPrice = task.auctionStartPrice ? BigInt(task.auctionStartPrice) : 0n;
     const range = maxPrice - startPrice;
-    const rise = BigInt(Math.round(Number(range) * progress));
+    const rise = (range * elapsedMs) / totalMs;
     const price = startPrice + rise;
     return price > maxPrice ? maxPrice : price;
   }

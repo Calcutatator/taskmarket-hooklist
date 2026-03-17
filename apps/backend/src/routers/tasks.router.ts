@@ -13,7 +13,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
-import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc } from 'drizzle-orm';
+import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc, inArray } from 'drizzle-orm';
 import {
   contractCreateTask,
   contractCancelTask,
@@ -388,81 +388,95 @@ export const tasksRouter = router({
       const hasMore = results.length > limit;
       const tasksList = hasMore ? results.slice(0, limit) : results;
 
-      const tasksWithCounts = await Promise.all(
-        tasksList.map(async (task) => {
-          const submissionCount = await ctx.db
-            .select({ count: sql<number>`count(*)` })
-            .from(submissions)
-            .where(eq(submissions.taskId, task.id));
+      // Batch all per-task counts in three queries instead of N*3 queries.
+      const listIds = tasksList.map((t) => t.id);
 
-          const pitchCount = await ctx.db
-            .select({ count: sql<number>`count(*)` })
-            .from(proposals)
-            .where(eq(proposals.taskId, task.id));
-
-          let auctionBidCount: number | null = null;
-          let currentAuctionPrice: string | null = null;
-          let currentLowestBid: string | null = null;
-
-          if (task.mode === 'auction') {
-            const bidCountResult = await ctx.db
-              .select({ count: sql<number>`count(*)::int` })
+      const [submissionCountRows, pitchCountRows, bidAggRows] = await Promise.all([
+        listIds.length > 0
+          ? ctx.db
+              .select({ taskId: submissions.taskId, count: sql<number>`count(*)::int` })
+              .from(submissions)
+              .where(inArray(submissions.taskId, listIds))
+              .groupBy(submissions.taskId)
+          : Promise.resolve([]),
+        listIds.length > 0
+          ? ctx.db
+              .select({ taskId: proposals.taskId, count: sql<number>`count(*)::int` })
+              .from(proposals)
+              .where(inArray(proposals.taskId, listIds))
+              .groupBy(proposals.taskId)
+          : Promise.resolve([]),
+        listIds.length > 0
+          ? ctx.db
+              .select({
+                taskId: bids.taskId,
+                count: sql<number>`count(*)::int`,
+                minPrice: sql<string | null>`min(${bids.price})`,
+              })
               .from(bids)
-              .where(eq(bids.taskId, task.id));
-            auctionBidCount = Number(bidCountResult[0]?.count ?? 0);
+              .where(inArray(bids.taskId, listIds))
+              .groupBy(bids.taskId)
+          : Promise.resolve([]),
+      ]);
 
-            if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
-              const price = computeClockPrice(task, now);
-              currentAuctionPrice = price !== null ? price.toString() : null;
-            }
+      const submissionCountMap = new Map(submissionCountRows.map((r) => [r.taskId, r.count]));
+      const pitchCountMap = new Map(pitchCountRows.map((r) => [r.taskId, r.count]));
+      const bidAggMap = new Map(bidAggRows.map((r) => [r.taskId, r]));
 
-            if (task.auctionType === 'english') {
-              const lowestBid = await ctx.db
-                .select()
-                .from(bids)
-                .where(eq(bids.taskId, task.id))
-                .orderBy(asc(bids.price))
-                .limit(1);
-              currentLowestBid = lowestBid[0]?.price ?? null;
-            }
+      const tasksWithCounts = tasksList.map((task) => {
+        let auctionBidCount: number | null = null;
+        let currentAuctionPrice: string | null = null;
+        let currentLowestBid: string | null = null;
+
+        if (task.mode === 'auction') {
+          const agg = bidAggMap.get(task.id);
+          auctionBidCount = agg ? Number(agg.count) : 0;
+
+          if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+            const price = computeClockPrice(task, now);
+            currentAuctionPrice = price !== null ? price.toString() : null;
           }
 
-          return {
-            id: task.id,
-            requester: task.requester,
-            requesterPubkey: task.requesterPubkey,
-            description: task.description,
-            reward: task.reward,
-            escrowTxHash: task.escrowTxHash,
-            createdAt: task.createdAt.toISOString(),
-            expiryTime: task.expiryTime.toISOString(),
-            status: task.status as TaskStatusType,
-            tags: task.tags,
-            worker: task.worker,
-            rating: task.rating,
-            mode: task.mode as TaskModeType,
-            stakeRequired: task.stakeRequired === 1,
-            stakeBps: task.stakeBps,
-            pitchDeadline: task.pitchDeadline?.toISOString() || null,
-            bidDeadline: task.bidDeadline?.toISOString() || null,
-            maxPrice: task.maxPrice ?? null,
-            metricDescription: task.metricDescription,
-            metricTarget: task.metricTarget,
-            claimedBy: task.claimedBy,
-            claimedAt: task.claimedAt?.toISOString() || null,
-            platformFeeBps: task.platformFeeBps,
-            submissionCount: Number(submissionCount[0]?.count || 0),
-            pitchCount: Number(pitchCount[0]?.count || 0),
-            requesterAgentId: task.requesterAgentId ?? null,
-            auctionType: (task.auctionType as AuctionTypeValue | null) ?? null,
-            auctionStartPrice: task.auctionStartPrice ?? null,
-            auctionFloorPrice: task.auctionFloorPrice ?? null,
-            currentAuctionPrice,
-            auctionBidCount,
-            currentLowestBid,
-          };
-        })
-      );
+          if (task.auctionType === 'english') {
+            currentLowestBid = bidAggMap.get(task.id)?.minPrice ?? null;
+          }
+        }
+
+        return {
+          id: task.id,
+          requester: task.requester,
+          requesterPubkey: task.requesterPubkey,
+          description: task.description,
+          reward: task.reward,
+          escrowTxHash: task.escrowTxHash,
+          createdAt: task.createdAt.toISOString(),
+          expiryTime: task.expiryTime.toISOString(),
+          status: task.status as TaskStatusType,
+          tags: task.tags,
+          worker: task.worker,
+          rating: task.rating,
+          mode: task.mode as TaskModeType,
+          stakeRequired: task.stakeRequired === 1,
+          stakeBps: task.stakeBps,
+          pitchDeadline: task.pitchDeadline?.toISOString() || null,
+          bidDeadline: task.bidDeadline?.toISOString() || null,
+          maxPrice: task.maxPrice ?? null,
+          metricDescription: task.metricDescription,
+          metricTarget: task.metricTarget,
+          claimedBy: task.claimedBy,
+          claimedAt: task.claimedAt?.toISOString() || null,
+          platformFeeBps: task.platformFeeBps,
+          submissionCount: Number(submissionCountMap.get(task.id) ?? 0),
+          pitchCount: Number(pitchCountMap.get(task.id) ?? 0),
+          requesterAgentId: task.requesterAgentId ?? null,
+          auctionType: (task.auctionType as AuctionTypeValue | null) ?? null,
+          auctionStartPrice: task.auctionStartPrice ?? null,
+          auctionFloorPrice: task.auctionFloorPrice ?? null,
+          currentAuctionPrice,
+          auctionBidCount,
+          currentLowestBid,
+        };
+      });
 
       return {
         tasks: tasksWithCounts,
@@ -786,6 +800,8 @@ export const tasksRouter = router({
       if (updated.length === 0) return null;
       const t = updated[0];
 
+      const updateNow = new Date();
+
       const bidCountResult =
         t.mode === 'auction'
           ? await ctx.db
@@ -794,6 +810,33 @@ export const tasksRouter = router({
               .where(eq(bids.taskId, t.id))
           : null;
       const auctionBidCount = bidCountResult ? Number(bidCountResult[0]?.count ?? 0) : null;
+
+      let updateCurrentAuctionPrice: string | null = null;
+      let updateAuctionPriceReachesFloorAt: string | null = null;
+      let updateAuctionPriceReachesMaxAt: string | null = null;
+      let updateCurrentLowestBid: string | null = null;
+
+      if (t.mode === 'auction') {
+        if (t.auctionType === 'dutch') {
+          const price = computeClockPrice(t, updateNow);
+          updateCurrentAuctionPrice = price !== null ? price.toString() : null;
+          const floorPrice = t.auctionFloorPrice ? BigInt(t.auctionFloorPrice) : 0n;
+          updateAuctionPriceReachesFloorAt = computePriceTimestamp(t, floorPrice);
+        } else if (t.auctionType === 'reverse_dutch') {
+          const price = computeClockPrice(t, updateNow);
+          updateCurrentAuctionPrice = price !== null ? price.toString() : null;
+          const maxPriceBig = t.maxPrice ? BigInt(t.maxPrice) : 0n;
+          updateAuctionPriceReachesMaxAt = computePriceTimestamp(t, maxPriceBig);
+        } else if (t.auctionType === 'english') {
+          const lowestBid = await ctx.db
+            .select()
+            .from(bids)
+            .where(eq(bids.taskId, t.id))
+            .orderBy(asc(bids.price))
+            .limit(1);
+          updateCurrentLowestBid = lowestBid[0]?.price ?? null;
+        }
+      }
 
       const updatedSubmissionCount = await ctx.db
         .select({ count: sql<number>`count(*)` })
@@ -835,11 +878,11 @@ export const tasksRouter = router({
         auctionType: (t.auctionType as AuctionTypeValue | null) ?? null,
         auctionStartPrice: t.auctionStartPrice ?? null,
         auctionFloorPrice: t.auctionFloorPrice ?? null,
-        currentAuctionPrice: null,
+        currentAuctionPrice: updateCurrentAuctionPrice,
         auctionBidCount,
-        auctionPriceReachesFloorAt: null,
-        auctionPriceReachesMaxAt: null,
-        currentLowestBid: null,
+        auctionPriceReachesFloorAt: updateAuctionPriceReachesFloorAt,
+        auctionPriceReachesMaxAt: updateAuctionPriceReachesMaxAt,
+        currentLowestBid: updateCurrentLowestBid,
         pendingActions: computePendingActions({
           id: t.id,
           status: t.status,
@@ -852,8 +895,9 @@ export const tasksRouter = router({
           claimedBy: t.claimedBy,
           worker: t.worker,
           auctionType: t.auctionType,
-          currentClockPrice: null,
-          currentLowestBid: null,
+          currentClockPrice:
+            updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
+          currentLowestBid: updateCurrentLowestBid,
         }),
       };
     }),

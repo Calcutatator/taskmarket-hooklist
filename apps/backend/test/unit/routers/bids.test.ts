@@ -502,9 +502,10 @@ describe('bids router', () => {
       expect(Number(result.acceptedPrice)).toBeGreaterThan(4990000);
     });
 
-    it('dutch: at t=100% price equals floorPrice', async () => {
+    it('dutch: near t=100% price is clamped to floorPrice', async () => {
       const ctx = createMockCtx(WORKER);
-      // Both createdAt and bidDeadline in the past = 100% elapsed
+      // createdAt 2h ago, bidDeadline 1s from now: elapsed / total ≈ 99.99%
+      // bidDeadline must remain in the future for auctionAccept to not throw "expired"
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({
@@ -512,9 +513,8 @@ describe('bids router', () => {
             maxPrice: '5000000',
             auctionFloorPrice: '1000000',
             status: 'open',
-            bidDeadline: new Date(Date.now() + 1000), // still open but 100% elapsed sim
             createdAt: new Date(Date.now() - 7200000), // 2h ago
-            // bidDeadline 1h ago would be elapsed, but need it in future for status check
+            bidDeadline: new Date(Date.now() + 1000),  // 1s from now
           }),
         ])
       );
@@ -522,7 +522,7 @@ describe('bids router', () => {
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
-      // Price is clamped to floorPrice minimum
+      // ~99.99% elapsed: price is near or at floorPrice; clamped to minimum 1000000
       expect(Number(result.acceptedPrice)).toBeGreaterThanOrEqual(1000000);
     });
   });
