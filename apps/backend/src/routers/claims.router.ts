@@ -153,15 +153,13 @@ export const claimsRouter = router({
         task.contractAddress
       );
 
-      await ctx.db
-        .update(claims)
-        .set({ status: 'forfeited' })
-        .where(eq(claims.taskId, input.taskId));
-
-      await ctx.db
-        .update(tasks)
-        .set({ status: 'open', claimedBy: null, claimedAt: null })
-        .where(eq(tasks.id, input.taskId));
+      await ctx.db.transaction(async (tx) => {
+        await tx.update(claims).set({ status: 'forfeited' }).where(eq(claims.taskId, input.taskId));
+        await tx
+          .update(tasks)
+          .set({ status: 'open', claimedBy: null, claimedAt: null })
+          .where(eq(tasks.id, input.taskId));
+      });
 
       return { txHash };
     }),

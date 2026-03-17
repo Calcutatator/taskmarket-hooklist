@@ -78,5 +78,5 @@ Then add the CVA variant in `apps/frontend/src/components/ui/badge.tsx`.
 `TaskMarket.sol` is UUPS upgradeable (proxy address is permanent). When adding new state variables:
 
 - **Append only**: new variables must be added after all existing state variables, never inserted between them
-- **Consume from `__gap`**: shrink the `uint256[50] private __gap` by the number of slots the new variable uses
+- **Consume from `__gap`**: shrink the `uint256[48] private __gap` by the number of slots the new variable uses (started at 50; trustedForwarders consumed 1 slot, requesterNonce consumed 1 slot)
 - Never reorder, rename, or remove existing state variables between upgrades

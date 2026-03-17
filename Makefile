@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-auction-types smoke-cancel-update
+.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-auction-types smoke-cancel-update
 
 help:
 	@echo "Taskmarket - Available targets:"
