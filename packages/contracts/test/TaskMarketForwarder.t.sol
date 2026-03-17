@@ -207,7 +207,7 @@ contract TaskMarketForwarderTest is Test {
         // Second relay with the same nonce must fail
         usdc.mint(server, REWARD); // re-fund so USDC is not the bottleneck
         vm.prank(server);
-        vm.expectRevert("Receipt already consumed");
+        vm.expectRevert(TaskMarketForwarder.ReceiptAlreadyConsumed.selector);
         forwarder.relay(requester, REWARD, _validBefore, nonce, data);
     }
 
@@ -242,7 +242,7 @@ contract TaskMarketForwarderTest is Test {
         uint256 expiredBefore = block.timestamp - 1;
 
         vm.prank(server);
-        vm.expectRevert("Receipt expired");
+        vm.expectRevert(TaskMarketForwarder.ReceiptExpired.selector);
         forwarder.relay(requester, REWARD, expiredBefore, _nonce(200), data);
     }
 

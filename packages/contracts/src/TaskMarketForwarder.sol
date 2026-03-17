@@ -2,6 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import "@openzeppelin/contracts/utils/ReentrancyGuard.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import {IPGTRForwarder} from "./interfaces/IPGTRForwarder.sol";
@@ -33,6 +34,8 @@ import {IPGTRForwarder} from "./interfaces/IPGTRForwarder.sol";
  *         receiptNonce, validBefore, taskMarket, selector) to prevent duplicate relays.
  */
 contract TaskMarketForwarder is IPGTRForwarder, ReentrancyGuard {
+    using SafeERC20 for IERC20;
+
     IERC20 public immutable usdc;
     address public immutable taskMarket;
 
@@ -68,6 +71,11 @@ contract TaskMarketForwarder is IPGTRForwarder, ReentrancyGuard {
     }
 
     /// @inheritdoc IPGTRForwarder
+    /// @dev This forwarder only trusts itself. External contracts that are PGTR
+    ///      destinations call this to verify that a given msg.sender is a legitimate
+    ///      PGTR forwarder before reading pgtrSender(). Returning true for address(this)
+    ///      means TaskMarket (or any other destination) can safely call
+    ///      IPGTRForwarder(msg.sender).pgtrSender() when msg.sender == address(this).
     function isTrustedForwarder(address addr) external view override returns (bool) {
         return addr == address(this);
     }
@@ -102,20 +110,17 @@ contract TaskMarketForwarder is IPGTRForwarder, ReentrancyGuard {
         bytes32 receiptNonce,
         bytes calldata data
     ) external nonReentrant {
-        require(block.timestamp <= validBefore, "Receipt expired");
+        if (block.timestamp > validBefore) revert ReceiptExpired();
 
         bytes4 selector = bytes4(data[:4]);
         bytes32 receiptHash = keccak256(abi.encode(
             block.chainid, pgtrSenderAddr, paymentAmount, receiptNonce, validBefore, taskMarket, selector
         ));
-        require(!consumedReceipts[receiptHash], "Receipt already consumed");
+        if (consumedReceipts[receiptHash]) revert ReceiptAlreadyConsumed();
         consumedReceipts[receiptHash] = true;
 
         if (paymentAmount > 0) {
-            require(
-                usdc.transferFrom(msg.sender, taskMarket, paymentAmount),
-                "USDC transfer failed"
-            );
+            usdc.safeTransferFrom(msg.sender, taskMarket, paymentAmount);
         }
 
         _pgtrSenderStorage = pgtrSenderAddr;
