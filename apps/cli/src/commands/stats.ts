@@ -27,6 +27,7 @@ export const statsCommand = new Command('stats')
         averageRating: number | null;
         totalEarnings: string;
         skills: string[];
+        emailAddress: string | null;
         recentRatings: Array<{ rating: number; feedbackText: string | null; createdAt: string }>;
       }>,
       apiGet(`/api/wallet/balance?address=${address}`) as Promise<{
@@ -45,6 +46,7 @@ export const statsCommand = new Command('stats')
       averageRating: result.averageRating,
       totalEarnings: result.totalEarnings,
       skills: result.skills,
+      emailAddress: result.emailAddress,
       recentRatings: result.recentRatings,
     });
   });

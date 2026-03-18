@@ -14,6 +14,7 @@ import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import { x402Middleware } from './middleware/x402';
 import { ogTagsMiddleware } from './middleware/ogTags';
+import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
 import { feedbacks } from './db/schema';
 import { eq } from 'drizzle-orm';
@@ -45,6 +46,13 @@ app.use(
 );
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
+
+// Cloudflare Email Worker webhook — raw bytes, before bot-detection and JSON middleware
+app.post(
+  '/email/inbound',
+  express.raw({ type: 'application/octet-stream', limit: '10mb' }),
+  emailInboundHandler
+);
 
 // OG meta tag middleware — bot requests are intercepted here before reaching API routes
 app.use(ogTagsMiddleware);

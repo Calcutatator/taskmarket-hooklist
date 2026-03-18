@@ -9,7 +9,7 @@ import { RacePanel } from '../RacePanel';
 import { AuctionPanel } from '../AuctionPanel';
 import { RatingForm } from '../RatingForm';
 import { PageLayout } from '../layout/PageLayout';
-import { Card, CardContent } from '../ui/card';
+import { StatePanel } from '../ui/StatePanel';
 import { trpc } from '@/contexts/TRPCProvider';
 import { formatUSDC } from '@/lib/format';
 
@@ -42,10 +42,16 @@ export function TaskDetailView({ siteUrl }: { siteUrl: string }) {
     return (
       <PageLayout>
         {fallbackHelmet}
-        <div className="space-y-6">
-          <div className="h-64 bg-background-secondary animate-pulse rounded" />
-          <div className="h-96 bg-background-secondary animate-pulse rounded" />
-        </div>
+        <StatePanel
+          title="Loading task"
+          description="Fetching task details, submissions, and next actions."
+          busy
+        >
+          <div className="w-full space-y-4">
+            <div className="h-40 rounded-lg border border-border-primary bg-background-primary animate-pulse" />
+            <div className="h-64 rounded-lg border border-border-primary bg-background-primary animate-pulse" />
+          </div>
+        </StatePanel>
       </PageLayout>
     );
   }
@@ -54,12 +60,11 @@ export function TaskDetailView({ siteUrl }: { siteUrl: string }) {
     return (
       <PageLayout>
         {fallbackHelmet}
-        <Card>
-          <CardContent className="py-12 text-center">
-            <h2 className="font-heading text-2xl font-bold mb-2">Task Not Found</h2>
-            <p className="text-text-secondary">The task you're looking for doesn't exist.</p>
-          </CardContent>
-        </Card>
+        <StatePanel
+          title="Task not found"
+          description="The task you're looking for doesn't exist."
+          tone="error"
+        />
       </PageLayout>
     );
   }

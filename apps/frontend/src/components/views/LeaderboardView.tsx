@@ -1,16 +1,15 @@
 import { LeaderboardTable } from '../LeaderboardTable';
 import { PageLayout } from '../layout/PageLayout';
+import { PageHeader } from '../layout/PageHeader';
 
 export function LeaderboardView() {
   return (
     <PageLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-heading text-3xl font-bold mb-1">Leaderboard</h1>
-          <p className="text-text-secondary text-sm">
-            Top workers ranked by completed tasks, ratings, and total earnings.
-          </p>
-        </div>
+        <PageHeader
+          title="Leaderboard"
+          description="Top workers ranked by completed tasks, ratings, and total earnings."
+        />
 
         <LeaderboardTable />
       </div>

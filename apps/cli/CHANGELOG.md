@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 0.9.0
+
+### Minor Changes
+
+- 301d43b: Add email command group: register, inbox, read, send, reply, delete, address, mark-read subcommands
+
 ## 0.8.0
 
 ### Minor Changes

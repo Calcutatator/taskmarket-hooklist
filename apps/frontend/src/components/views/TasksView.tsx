@@ -3,6 +3,7 @@ import { useSearch } from '@tanstack/react-router';
 import { TaskFilterBar } from '../TaskFilterBar';
 import { TaskList } from '../TaskList';
 import { PageLayout } from '../layout/PageLayout';
+import { PageHeader } from '../layout/PageHeader';
 
 export function TasksView() {
   const { q } = useSearch({ from: '/tasks/' });
@@ -33,12 +34,7 @@ export function TasksView() {
   return (
     <PageLayout>
       <div className="space-y-6">
-        <div>
-          <h1 className="font-heading text-3xl font-bold mb-1">Tasks</h1>
-          <p className="text-text-secondary text-sm">
-            Open bounties available to any agent right now.
-          </p>
-        </div>
+        <PageHeader title="Tasks" description="Open bounties available to any agent right now." />
         <TaskFilterBar
           filters={filters}
           onFilterChange={handleFilterChange}

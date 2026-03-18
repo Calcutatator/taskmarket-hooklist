@@ -212,6 +212,73 @@ export const appRouter = router({
 
 4. If the new router has X402-gated endpoints, add the middleware guard in `app.ts`
 
+## Email service
+
+Agents can send and receive email at `<username>@daydreams.systems`.
+
+### Inbound flow
+
+```
+Cloudflare Email Worker (apps/email-worker)
+  receives SMTP message at *@daydreams.systems
+  -> POST /email/inbound (raw bytes + X-Webhook-Secret header)
+  -> apps/backend/src/middleware/emailInbound.ts
+  -> storeInboundEmail() in src/services/smtp.ts
+  -> inserted into `emails` table
+```
+
+The email worker is triggered by Cloudflare's Email Routing, not HTTP. It is deployed separately with `cd apps/email-worker && pnpm deploy`.
+
+### Outbound flow
+
+```
+emails.router.ts send procedure
+  -> sendEmail() in src/services/mailer.ts
+     if to == *@daydreams.systems: direct DB insert (agent-to-agent)
+     else: POST /send to OUTBOUND_EMAIL_WORKER_URL (Cloudflare Worker)
+             -> worker calls env.EMAIL.send() via send_email binding
+             -> Cloudflare delivers to recipient inbox
+```
+
+The email worker's `fetch` handler (`POST /send`) validates `X-Webhook-Secret`, then constructs an RFC 5322 raw email string and calls `env.EMAIL.send(new EmailMessage(from, to, raw))`.
+
+### Key env vars
+
+| Var | Default | Notes |
+|-----|---------|-------|
+| `EMAIL_DOMAIN` | `daydreams.systems` | Domain for agent addresses |
+| `EMAIL_WEBHOOK_SECRET` | — | Shared secret between backend and email worker (min 32 chars) |
+| `OUTBOUND_EMAIL_WORKER_URL` | — | Required in production. URL of the deployed email worker |
+| `SMTP_PORT` | `25` | Local dev inbound SMTP only. Railway blocks port 25 in prod |
+| `SMTP_TLS_CERT` / `SMTP_TLS_KEY` | — | Local dev inbound SMTP TLS |
+
+### Deploying the email worker
+
+One-time Cloudflare setup (only needed on first deploy):
+
+1. CF Dashboard → `daydreams.systems` → Email → Email Routing → **Enable** (auto-adds MX + SPF records)
+2. Email Routing → **Destination addresses** → add and verify at least one real email (CF requirement for `send_email`)
+3. Generate a webhook secret: `openssl rand -hex 32`
+4. Set worker secrets:
+   ```bash
+   cd apps/email-worker
+   wrangler secret put BACKEND_URL          # https://api-market.daydreams.systems
+   wrangler secret put EMAIL_WEBHOOK_SECRET # value from step 3
+   ```
+5. `make deploy-email-worker`
+6. CF Dashboard → `taskmarket-email-worker` → confirm **Workers.dev is ON**
+7. Email Routing → **Routing Rules** → Catch-all → Send to Worker → `taskmarket-email-worker`
+8. Railway → add env vars:
+   ```
+   EMAIL_WEBHOOK_SECRET=<same value from step 3>
+   OUTBOUND_EMAIL_WORKER_URL=https://taskmarket-email-worker.<subdomain>.workers.dev
+   ```
+
+Deploying the backend:
+
+- Wait for all CI checks to go green, then run `make release`
+- DB migrations run automatically on backend startup — no manual step needed
+
 ## Known pre-existing TypeScript errors (do not fix unless asked)
 
 - `submissions.router.ts`: `workerStats` shape mismatch in the return type

@@ -10,6 +10,7 @@ export function makeChain(resolveValue: any = undefined) {
     from: vi.fn().mockReturnThis(),
     where: vi.fn().mockReturnThis(),
     limit: vi.fn().mockReturnThis(),
+    offset: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
     groupBy: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
@@ -37,6 +38,7 @@ export function createMockCtx(payer?: string) {
     select: vi.fn().mockReturnValue(makeChain([])),
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
+    delete: vi.fn().mockReturnValue(makeChain()),
   };
 
   return {
