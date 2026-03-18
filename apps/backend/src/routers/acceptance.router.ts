@@ -167,6 +167,8 @@ export const acceptanceRouter = router({
         ? BigInt(workerAgentResult[0].agentId)
         : 0n;
 
+      const raterAgentId = task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n;
+
       const feedbackId = randomUUID();
       const feedbackURI = `${config.BACKEND_URL}/api/feedback/${feedbackId}`;
 
@@ -202,6 +204,7 @@ export const acceptanceRouter = router({
         payer as `0x${string}`,
         input.rating,
         workerAgentId,
+        raterAgentId,
         feedbackURI,
         feedbackHash,
         task.contractAddress

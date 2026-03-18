@@ -8,18 +8,28 @@ export const rateCmd = new Command('rate')
   .requiredOption('--worker <addr>', 'Worker wallet address')
   .requiredOption('--rating <n>', 'Rating 0-100')
   .option('--feedback <text>', 'Optional feedback text')
-  .action(async (taskId: string, opts: { worker: string; rating: string; feedback?: string }) => {
-    const rating = parseInt(opts.rating, 10);
-    if (rating < 0 || rating > 100) {
-      printError('Rating must be between 0 and 100');
+  .option(
+    '--rater-agent-id <id>',
+    'ERC-8004 agent ID of the requester (overrides server-side lookup)'
+  )
+  .action(
+    async (
+      taskId: string,
+      opts: { worker: string; rating: string; feedback?: string; raterAgentId?: string }
+    ) => {
+      const rating = parseInt(opts.rating, 10);
+      if (rating < 0 || rating > 100) {
+        printError('Rating must be between 0 and 100');
+      }
+
+      const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
+        taskId,
+        worker: opts.worker,
+        rating,
+        ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
+        ...(opts.raterAgentId ? { raterAgentId: parseInt(opts.raterAgentId, 10) } : {}),
+      })) as { success: boolean; feedbackId: string };
+
+      printResult({ feedbackId: result.feedbackId });
     }
-
-    const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
-      taskId,
-      worker: opts.worker,
-      rating,
-      ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
-    })) as { success: boolean; feedbackId: string };
-
-    printResult({ feedbackId: result.feedbackId });
-  });
+  );

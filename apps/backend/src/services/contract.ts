@@ -24,7 +24,7 @@ const MARKET_ABI = parseAbi([
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address)',
-  'function rateTask(bytes32,uint8,uint256,string,bytes32)',
+  'function rateTask(bytes32,uint8,uint256,uint256,string,bytes32)',
   'function submitWork(bytes32,bytes32)',
   'function submitBid(bytes32,uint256)',
   'function selectLowestBidder(bytes32)',
@@ -322,6 +322,7 @@ export async function contractRateTask(
   requester: `0x${string}`,
   rating: number,
   workerAgentId: bigint,
+  raterAgentId: bigint,
   feedbackURI: string,
   feedbackHash: `0x${string}`,
   _contractAddress?: string | null
@@ -330,7 +331,7 @@ export async function contractRateTask(
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'rateTask',
-    args: [taskId, rating, workerAgentId, feedbackURI, feedbackHash],
+    args: [taskId, rating, workerAgentId, raterAgentId, feedbackURI, feedbackHash],
   });
   const hash = await relayThroughForwarder(requester, 0n, data);
   const receipt = await publicClient.waitForTransactionReceipt({

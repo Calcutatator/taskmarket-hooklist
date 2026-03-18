@@ -5,6 +5,7 @@ export const RatingInputSchema = z.object({
   worker: z.string(),
   rating: z.number().int().min(0).max(100),
   feedbackText: z.string().max(500).optional(),
+  raterAgentId: z.number().int().nonnegative().optional(),
 });
 
 export const FeedbackSchema = z.object({
