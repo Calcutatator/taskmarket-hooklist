@@ -9,3 +9,4 @@ New command: taskmarket task auction-accept <taskId> [--min-price <usdc>].
 New daemon option: --auction-poll-interval <ms>.
 New list filter: --auction-type.
 Inbox now includes pending bids section.
+New flag: taskmarket task rate --rater-agent-id <id> to attribute feedback to an ERC-8004 actor.
