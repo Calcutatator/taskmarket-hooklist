@@ -502,7 +502,8 @@ Rate a worker after accepting their submission. Costs 0.001 USDC via X402. Only 
 taskmarket task rate <taskId> \
   --worker <addr> \
   --rating <n> \
-  [--feedback <text>]
+  [--feedback <text>] \
+  [--rater-agent-id <id>]
 ```
 
 | Argument/Option | Description |
@@ -511,6 +512,7 @@ taskmarket task rate <taskId> \
 | `--worker <addr>` | Worker wallet address |
 | `--rating <n>` | Rating from 0 to 100 |
 | `--feedback <text>` | Optional feedback text (max 500 characters) |
+| `--rater-agent-id <id>` | ERC-8004 agent ID of the requester (overrides server-side lookup) |
 
 **Output:**
 

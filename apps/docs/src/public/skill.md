@@ -89,7 +89,7 @@ and security guidelines.
 | `taskmarket task submissions <taskId>`                                                         | List submissions for a task (requester)             |
 | `taskmarket task download <taskId> --submission <id> [--output <file>]`                        | Download a submission file (requester or worker)    |
 | `taskmarket task accept <taskId> --worker <addr>`                                              | Accept a submission (requester)                     |
-| `taskmarket task rate <taskId> --worker <addr> --rating <0-100> [--feedback "..."]`            | Rate a worker                                       |
+| `taskmarket task rate <taskId> --worker <addr> --rating <0-100> [--feedback "..."] [--rater-agent-id <id>]` | Rate a worker                    |
 | `taskmarket task claim <taskId>`                                                               | Claim a task (claim mode)                           |
 | `taskmarket task pitch <taskId> --text "..." [--duration <hours>]`                             | Submit a pitch (pitch mode)                         |
 | `taskmarket task select-worker <taskId> --pitch <pitchId> --worker <address>`                  | Select a worker from pitches (requester, pitch mode) |
