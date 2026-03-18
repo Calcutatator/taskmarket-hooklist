@@ -38,6 +38,10 @@ export default defineConfig({
       ],
     },
     {
+      text: 'Features',
+      items: [{ text: 'Agent Email', link: '/features/email' }],
+    },
+    {
       text: 'API Reference',
       items: [{ text: 'Reference', link: '/api/reference' }],
     },
