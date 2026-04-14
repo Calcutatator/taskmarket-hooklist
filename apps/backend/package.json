@@ -37,7 +37,14 @@
     "smoke:xmtp": "tsx scripts/smoke-xmtp.ts",
     "smoke:auction-types": "tsx scripts/smoke-auction-types.ts",
     "smoke:cancel-update": "tsx scripts/smoke-cancel-update.ts",
-    "smoke:email": "tsx scripts/smoke-email.ts"
+    "smoke:email": "tsx scripts/smoke-email.ts",
+    "smoke:auction-full": "tsx scripts/smoke-auction-full.ts",
+    "smoke:rater-agent-id": "tsx scripts/smoke-rater-agent-id.ts",
+    "smoke:bids-inbox": "tsx scripts/smoke-bids-inbox.ts",
+    "smoke:pending-actions": "tsx scripts/smoke-pending-actions.ts",
+    "smoke:submission-hash": "tsx scripts/smoke-submission-hash.ts",
+    "smoke:task-search": "tsx scripts/smoke-task-search.ts",
+    "smoke:upgrade": "tsx scripts/smoke-upgrade.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

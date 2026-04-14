@@ -15,6 +15,8 @@ export const SubmissionResponseSchema = z.object({
   signature: z.string(),
   submittedAt: z.string(),
   workerAgentId: z.string().nullable().optional(),
+  deliverableHash: z.string().nullable().optional(),
+  submitTxHash: z.string().nullable().optional(),
   workerStats: z
     .object({
       completedTasks: z.number(),

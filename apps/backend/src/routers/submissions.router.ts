@@ -153,6 +153,8 @@ export const submissionsRouter = router({
             signature: sub.signature,
             submittedAt: sub.submittedAt.toISOString(),
             workerAgentId: agent?.agentId ?? null,
+            deliverableHash: sub.deliverableHash ?? null,
+            submitTxHash: sub.submitTxHash ?? null,
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,
