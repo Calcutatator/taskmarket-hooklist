@@ -117,6 +117,14 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
 );
 app.post(
+  '/api/tasks/:taskId/cancel',
+  x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
+);
+app.post(
+  '/api/tasks/:taskId/update',
+  x402Middleware({ getAmount: () => '1000', description: 'Update task' })
+);
+app.post(
   '/api/identity/register',
   x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
 );

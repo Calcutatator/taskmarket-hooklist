@@ -5,7 +5,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-cancel-update.ts
  */
-import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -168,7 +168,12 @@ async function main() {
   ok('taskId', task6);
 
   log('6/7', 'Claiming task...');
-  await x402Post(`/api/tasks/${task6}/claim`, { taskId: task6, stakeAmount: '0' }, worker);
+  const claimSig6 = await worker.signMessage({ message: `taskmarket:claim:${task6}` });
+  await post(`/api/tasks/${task6}/claim`, {
+    taskId: task6,
+    workerAddress: worker.address,
+    signature: claimSig6,
+  });
   ok('claimed', true);
 
   log('6/7', 'Attempting cancel on claimed task (should fail)...');

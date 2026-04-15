@@ -39,13 +39,14 @@ function computePendingActions(task: {
   auctionType: string | null;
   currentClockPrice: bigint | null;
   currentLowestBid: string | null;
+  latestSubmissionWorker?: string | null;
 }): PendingAction[] {
   if (task.status === 'open' && task.expiryTime < new Date()) {
     return [];
   }
 
   const id = task.id;
-  const workerAddr = task.worker ?? task.claimedBy;
+  const workerAddr = task.worker ?? task.claimedBy ?? task.latestSubmissionWorker;
   const now = new Date();
 
   switch (task.status) {
@@ -511,6 +512,16 @@ export const tasksRouter = router({
         .from(submissions)
         .where(eq(submissions.taskId, task.id));
 
+      const latestSubmission =
+        task.status === 'pending_approval'
+          ? await ctx.db
+              .select({ workerAddress: submissions.workerAddress })
+              .from(submissions)
+              .where(eq(submissions.taskId, task.id))
+              .orderBy(desc(submissions.submittedAt))
+              .limit(1)
+          : [];
+
       const pitchCount = await ctx.db
         .select({ count: sql<number>`count(*)` })
         .from(proposals)
@@ -618,6 +629,7 @@ export const tasksRouter = router({
           auctionType: task.auctionType,
           currentClockPrice: clockPrice,
           currentLowestBid,
+          latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
         }),
       };
     }),

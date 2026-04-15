@@ -46,8 +46,13 @@ async function main() {
   ok('taskId', taskId);
 
   // 2. Worker claims the task
-  log('2/5', 'Worker claiming task (X402)...');
-  await x402Post(`/api/tasks/${taskId}/claim`, { taskId, stakeAmount: '0' }, worker);
+  log('2/5', 'Worker claiming task...');
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
   ok('claimed', true);
 
   // 3. Worker submits a known file payload

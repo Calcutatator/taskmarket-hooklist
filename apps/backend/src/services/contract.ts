@@ -78,6 +78,9 @@ const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
 const RELAY_VALID_WINDOW_SECS = 300;
+// Retry config for relay simulation failures (RPC read-after-write lag)
+const RELAY_MAX_RETRIES = 6;
+const RELAY_RETRY_DELAY_MS = 2000;
 
 function resolveForwarderAddress(): `0x${string}` {
   const addr = getServerConfig().FORWARDER_ADDRESS;
@@ -152,21 +155,41 @@ async function relayThroughForwarder(
     }
   }
 
-  const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
-  const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+  // Retry loop to handle RPC read-after-write lag: the node may confirm a receipt
+  // but simulation for the next call still sees the pre-tx state. Retrying after a
+  // short delay allows the node's state to catch up.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < RELAY_MAX_RETRIES; attempt++) {
+    if (attempt > 0) {
+      await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
+    }
 
-  const hash = await client.writeContract({
-    address: forwarderAddr,
-    abi: FORWARDER_ABI,
-    functionName: 'relay',
-    args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
-    ...gas,
-  });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'relay'
-  );
-  return hash;
+    const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
+    const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+
+    let hash: `0x${string}`;
+    try {
+      hash = await client.writeContract({
+        address: forwarderAddr,
+        abi: FORWARDER_ABI,
+        functionName: 'relay',
+        args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
+        ...gas,
+      });
+    } catch (err) {
+      // writeContract threw before sending — simulation failed. Retry.
+      lastError = err;
+      continue;
+    }
+
+    // Transaction was sent — wait for receipt. On-chain reverts are real errors.
+    assertSuccess(
+      await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+      'relay'
+    );
+    return hash;
+  }
+  throw lastError;
 }
 
 /**
@@ -456,22 +479,42 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   });
   assertSuccess(receipt, 'registerIdentity');
 
-  // Parse agentId from Registered(uint256 indexed agentId, ...) event
+  // Parse agentId from Registered(uint256 indexed agentId, ...) event.
+  // Retry up to 5 times in case RPC logs lag behind the confirmed receipt.
   const registryAddress = (config.ERC8004_IDENTITY_REGISTRY as string).toLowerCase();
-  for (const log of receipt.logs) {
-    if (log.address.toLowerCase() !== registryAddress) continue;
-    try {
-      const decoded = decodeEventLog({
-        abi: [REGISTERED_EVENT],
-        data: log.data,
-        topics: log.topics,
-      });
-      if (decoded.eventName === 'Registered') {
-        return (decoded.args as { agentId: bigint }).agentId;
+
+  function extractAgentId(logs: typeof receipt.logs): bigint | null {
+    for (const log of logs) {
+      if (log.address.toLowerCase() !== registryAddress) continue;
+      try {
+        const decoded = decodeEventLog({
+          abi: [REGISTERED_EVENT],
+          data: log.data,
+          topics: log.topics,
+        });
+        if (decoded.eventName === 'Registered') {
+          return (decoded.args as { agentId: bigint }).agentId;
+        }
+      } catch {
+        // not this event
       }
-    } catch {
-      // not this event
     }
+    return null;
+  }
+
+  const fromReceipt = extractAgentId(receipt.logs);
+  if (fromReceipt !== null) return fromReceipt;
+
+  // Logs missing from receipt — RPC lag. Re-fetch via getLogs for the specific block.
+  for (let attempt = 0; attempt < 5; attempt++) {
+    await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
+    const logs = await publicClient.getLogs({
+      address: config.ERC8004_IDENTITY_REGISTRY as `0x${string}`,
+      fromBlock: receipt.blockNumber,
+      toBlock: receipt.blockNumber,
+    });
+    const found = extractAgentId(logs);
+    if (found !== null) return found;
   }
 
   throw new Error('Registered event not found in registerIdentity receipt');

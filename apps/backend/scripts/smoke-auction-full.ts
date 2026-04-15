@@ -83,11 +83,11 @@ async function smokeDutchFull(requester: Account, worker: Account) {
   }
   ok('feedbackFile.value', feedbackFile.value);
 
-  const finalTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (finalTask.status !== 'rated') {
-    throw new Error(`Expected final status=rated, got ${finalTask.status}`);
+  const finalTask = (await get(`/api/tasks/${taskId}`)) as { status: string; rating: number | null };
+  if (finalTask.status !== 'accepted' || finalTask.rating === null) {
+    throw new Error(`Expected status=accepted with rating set, got status=${finalTask.status} rating=${finalTask.rating}`);
   }
-  ok('final status=rated', true);
+  ok('final status=accepted with rating', true);
 
   return taskId;
 }
@@ -193,11 +193,11 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   }
   ok('feedbackFile.value', feedbackFile.value);
 
-  const finalTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (finalTask.status !== 'rated') {
-    throw new Error(`Expected final status=rated, got ${finalTask.status}`);
+  const finalTask = (await get(`/api/tasks/${taskId}`)) as { status: string; rating: number | null };
+  if (finalTask.status !== 'accepted' || finalTask.rating === null) {
+    throw new Error(`Expected status=accepted with rating set, got status=${finalTask.status} rating=${finalTask.rating}`);
   }
-  ok('final status=rated', true);
+  ok('final status=accepted with rating', true);
 
   return taskId;
 }

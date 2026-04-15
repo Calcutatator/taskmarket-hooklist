@@ -146,10 +146,11 @@ async function main() {
 
   const ratedTask = (await get(`/api/tasks/${taskId}`)) as {
     status: string;
+    rating: number | null;
     pendingActions: PendingAction[];
   };
-  if (ratedTask.status !== 'rated') {
-    throw new Error(`Expected status=rated, got ${ratedTask.status}`);
+  if (ratedTask.status !== 'accepted' || ratedTask.rating === null) {
+    throw new Error(`Expected status=accepted with rating set, got status=${ratedTask.status} rating=${ratedTask.rating}`);
   }
   if (ratedTask.pendingActions.length !== 0) {
     throw new Error(`Expected empty pendingActions after rating. Got: ${JSON.stringify(ratedTask.pendingActions)}`);

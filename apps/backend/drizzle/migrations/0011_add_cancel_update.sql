@@ -1,1 +1,1 @@
-ALTER TABLE tasks ADD COLUMN cancelled_at timestamptz;
+ALTER TABLE tasks ADD COLUMN IF NOT EXISTS cancelled_at timestamptz;
