@@ -26,10 +26,7 @@ const envSchema = z
     BASE_RPC_URL: z.string().url('BASE_RPC_URL must be a valid URL'),
     CONTRACT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid contract address'),
     CONTRACT_DEPLOY_BLOCK: z.coerce.number().default(0),
-    FORWARDER_ADDRESS: z
-      .string()
-      .regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid forwarder address')
-      .optional(),
+    FORWARDER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid forwarder address'),
     USDC_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid USDC address'),
     DEFAULT_PLATFORM_FEE_BPS: z.coerce.number().min(0).max(10000).default(500),
     AWS_REGION: z.string().optional(),

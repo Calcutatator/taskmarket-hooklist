@@ -31,6 +31,7 @@ export function computeClockPrice(task: AuctionTask, now: Date): bigint | null {
 
   if (task.auctionType === 'dutch') {
     const floorPrice = task.auctionFloorPrice ? BigInt(task.auctionFloorPrice) : 0n;
+    if (floorPrice > maxPrice) return null;
     const range = maxPrice - floorPrice;
     const drop = (range * elapsedMs) / totalMs;
     const price = maxPrice - drop;
@@ -39,6 +40,7 @@ export function computeClockPrice(task: AuctionTask, now: Date): bigint | null {
 
   if (task.auctionType === 'reverse_dutch') {
     const startPrice = task.auctionStartPrice ? BigInt(task.auctionStartPrice) : 0n;
+    if (startPrice > maxPrice) return null;
     const range = maxPrice - startPrice;
     const rise = (range * elapsedMs) / totalMs;
     const price = startPrice + rise;
@@ -67,8 +69,8 @@ export function computePriceTimestamp(task: AuctionTask, targetPrice: bigint): s
     if (targetPrice >= maxPrice) return task.createdAt.toISOString();
     const range = maxPrice - floorPrice;
     if (range === 0n) return null;
-    const progressNum = Number(maxPrice - targetPrice) / Number(range);
-    return new Date(start + Math.round(progressNum * total)).toISOString();
+    const elapsedMs = Number(((maxPrice - targetPrice) * BigInt(total)) / range);
+    return new Date(start + elapsedMs).toISOString();
   }
 
   if (task.auctionType === 'reverse_dutch') {
@@ -77,8 +79,8 @@ export function computePriceTimestamp(task: AuctionTask, targetPrice: bigint): s
     if (targetPrice <= startPrice) return task.createdAt.toISOString();
     const range = maxPrice - startPrice;
     if (range === 0n) return null;
-    const progressNum = Number(targetPrice - startPrice) / Number(range);
-    return new Date(start + Math.round(progressNum * total)).toISOString();
+    const elapsedMs = Number(((targetPrice - startPrice) * BigInt(total)) / range);
+    return new Date(start + elapsedMs).toISOString();
   }
 
   return null;

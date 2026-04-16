@@ -186,7 +186,9 @@ export const bidsRouter = router({
               createdAt: bid.createdAt.toISOString(),
               workerAgentId: null,
               isMyBid:
-                input.callerAddress != null ? bid.workerAddress === input.callerAddress : undefined,
+                input.callerAddress != null
+                  ? bid.workerAddress.toLowerCase() === input.callerAddress.toLowerCase()
+                  : undefined,
             };
           }
 
@@ -204,7 +206,9 @@ export const bidsRouter = router({
             createdAt: bid.createdAt.toISOString(),
             workerAgentId: agentResult[0]?.agentId ?? null,
             isMyBid:
-              input.callerAddress != null ? bid.workerAddress === input.callerAddress : undefined,
+              input.callerAddress != null
+                ? bid.workerAddress.toLowerCase() === input.callerAddress.toLowerCase()
+                : undefined,
           };
         })
       );
@@ -426,8 +430,7 @@ export const bidsRouter = router({
 
       const now = new Date();
 
-      // Single query: join my bids to their tasks, filter to open tasks with active deadline,
-      // aggregate bid count and lowest bid per task in one pass.
+      // Correlated subqueries aggregate over ALL bids per task, not just the caller's.
       const rows = await ctx.db
         .select({
           taskId: tasks.id,
@@ -435,10 +438,10 @@ export const bidsRouter = router({
           bidDeadline: tasks.bidDeadline,
           taskStatus: tasks.status,
           myBidPrice: bids.price,
-          bidCount: sql<number>`count(*) over (partition by ${bids.taskId})::int`,
+          bidCount: sql<number>`(select count(*)::int from bids b2 where b2.task_id = ${bids.taskId})`,
           lowestBid: sql<
             string | null
-          >`min(${bids.price}::numeric) over (partition by ${bids.taskId})::text`,
+          >`(select min(b2.price::numeric)::text from bids b2 where b2.task_id = ${bids.taskId})`,
         })
         .from(bids)
         .innerJoin(tasks, eq(bids.taskId, tasks.id))
@@ -455,7 +458,7 @@ export const bidsRouter = router({
         taskId: row.taskId,
         auctionType: row.auctionType,
         myBidPrice: row.myBidPrice,
-        // For English show the current lowest bid; for others it's not relevant
+        // For English show the current lowest bid across all bidders; for others not relevant
         currentLowestBid: row.auctionType === 'english' ? row.lowestBid : null,
         bidDeadline: row.bidDeadline?.toISOString() ?? null,
         bidCount: row.bidCount,
