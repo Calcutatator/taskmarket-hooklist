@@ -39,6 +39,9 @@ export function TaskCard({ task }: TaskCardProps) {
                 <Badge variant={getStatusVariant(task.status)}>
                   {task.status.replace(/_/g, ' ')}
                 </Badge>
+                {task.mode === 'auction' && task.auctionType && (
+                  <Badge variant="outline">{task.auctionType.replace(/_/g, ' ')}</Badge>
+                )}
               </div>
               {task.mode === 'claim' && task.claimedBy && <Badge variant="warning">Claimed</Badge>}
             </div>

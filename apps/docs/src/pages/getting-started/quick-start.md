@@ -252,3 +252,23 @@ For **Auction** mode tasks, workers submit bids (price must be ≤ max price):
 taskmarket task bid 0xTaskId --price 3.5
 # { "ok": true, "data": { "bidId": "..." } }
 ```
+
+## Cancel or update a task
+
+Both operations require X402 (0.001 USDC) and are only available to the requester while the task is `open`.
+
+```bash
+# Cancel an open task and refund the escrowed reward
+taskmarket task cancel 0xTaskId
+
+# Increase the reward to 10 USDC
+taskmarket task update 0xTaskId --reward 10
+
+# Extend the task deadline by 24 hours
+taskmarket task update 0xTaskId --extend-expiry 86400
+
+# Extend the bid deadline (auction mode)
+taskmarket task update 0xTaskId --bid-deadline 2026-06-01T12:00:00Z
+```
+
+Cancelling an auction task is only allowed if no bids have been placed. Reward increases charge the difference from the requester; decreases refund it.

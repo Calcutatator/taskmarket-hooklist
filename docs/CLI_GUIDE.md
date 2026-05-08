@@ -84,6 +84,8 @@ apps/cli/
 | `taskmarket task submit <taskId>` | Free | Yes (signs) |
 | `taskmarket task accept <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task rate <taskId>` | 0.001 USDC | Yes |
+| `taskmarket task cancel <taskId>` | 0.001 USDC | Yes (X402) |
+| `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>]` | 0.001 USDC | Yes (X402) |
 | `taskmarket task claim <taskId>` | Free | Yes (signs) |
 | `taskmarket task pitch <taskId>` | Free | Yes (signs) |
 | `taskmarket task bid <taskId>` | 0.001 USDC | Yes (X402) |

@@ -12,6 +12,7 @@ Every task moves through a set of statuses defined both in the database and in t
 | `pending_approval` | At least one submission exists (Bounty/Benchmark); requester must act |
 | `accepted` | A submission has been accepted; payment released on-chain |
 | `expired` | Task reached its expiry time without being accepted |
+| `cancelled` | Task was cancelled by the requester before any worker was paid |
 | `disputed` | Reserved for future dispute resolution; not actively used |
 
 ## State machine
@@ -47,7 +48,33 @@ open ─────────────────────────
 
 Any status (except accepted) + block.timestamp > expiryTime:
   anyone can call refundExpired -> expired
+
+open + requester cancels (no bids / no claims):
+  requester calls cancel -> cancelled
+
+open + requester updates (reward, expiry, deadlines, or other fields):
+  requester calls update -> open  (fields updated on-chain)
 ```
+
+## Cancel and update
+
+Both operations require X402 (0.001 USDC) and can only be called by the requester while the task is `open`.
+
+**Cancel** — releases the escrowed reward on-chain, sets status to `cancelled`, and is not reversible. Auction tasks can only be cancelled if no bids have been placed. Claim tasks can only be cancelled if no worker has claimed them.
+
+**Update** — modifies one or more task fields on-chain without changing the status:
+
+| Field | Behaviour |
+|-------|-----------|
+| `reward` | Increase charges the difference from the requester; decrease refunds it |
+| `expiryTime` | Extend by a number of seconds; new expiry must be in the future |
+| `bidDeadline` | New bid deadline (must be in the future) |
+| `pitchDeadline` | New pitch deadline (must be in the future) |
+| `auctionFloorPrice` | New floor price for a dutch auction |
+| `auctionStartPrice` | New start price for a reverse_dutch auction |
+| `description` | Free-text description |
+| `tags` | Replaces the existing tag list |
+| `metricDescription` | Benchmark metric description |
 
 ## Expiry and refunds
 

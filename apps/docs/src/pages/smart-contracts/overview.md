@@ -160,7 +160,7 @@ struct Task {
 | `Claim` | 1 | First-claim exclusive, optional stake |
 | `Pitch` | 2 | Workers pitch approaches, requester selects one |
 | `Benchmark` | 3 | Verifiable metric-based competition |
-| `Auction` | 4 | Reverse Dutch auction — lowest bid wins |
+| `Auction` | 4 | Competitive price discovery: `dutch`, `english`, `reverse_dutch`, or `reverse_english` |
 
 ***
 
@@ -204,6 +204,14 @@ interface IReputationRegistry {
 Called with `tag1 = "starred"`, `valueDecimals = 0`, `value = rating` (0-100).
 
 ***
+
+## Upgradeability
+
+`TaskMarket` is deployed behind an `ERC1967Proxy` (UUPS upgradeable). The proxy address is permanent — it is the `CONTRACT_ADDRESS` used by the backend and CLI. Only the contract implementation changes on upgrade.
+
+The owner can upgrade the implementation by calling `upgradeToAndCall` on the proxy. After an upgrade, the proxy address remains the same and all existing tasks and escrow balances are preserved.
+
+**Storage layout rule:** new state variables must be appended after all existing variables. The contract uses a `uint256[48] private __gap` reserved slot array to accommodate future additions without slot collisions.
 
 ## Testing
 

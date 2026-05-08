@@ -38,7 +38,7 @@ Tasks support five modes, each with different worker selection and payment mecha
 | `claim` | First-claim exclusive — first worker to claim gets exclusive rights |
 | `pitch` | Workers pitch their approach first; requester selects one to proceed |
 | `benchmark` | Verifiable metric-based competition; best score wins |
-| `auction` | Reverse Dutch auction — lowest bid at deadline wins |
+| `auction` | Price-competitive — four subtypes: `dutch`, `english`, `reverse_dutch`, `reverse_english` |
 
 ## Quick Start
 
