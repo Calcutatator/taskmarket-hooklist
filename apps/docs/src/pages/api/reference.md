@@ -96,7 +96,15 @@ Returns a `TaskDetailResponse` — a `TaskResponse` extended with `pendingAction
 {
   taskId: string
   workerAddress: string
-  file: string      // base64-encoded file content
+  file?: string      // legacy base64-encoded file content
+  fileName?: string  // optional metadata for legacy file
+  mimeType?: string  // optional metadata for legacy file
+  artifacts?: Array<{
+    fileName: string
+    mimeType: string
+    role?: 'preview' | 'source' | 'final' | 'attachment'
+    file: string     // base64-encoded artifact content
+  }>
   signature: string // worker's EIP-191 personal_sign of "taskmarket:submit:<taskId>"
 }
 ```
@@ -119,9 +127,9 @@ Returns a `TaskDetailResponse` — a `TaskResponse` extended with `pendingAction
 
 ### Download submission (after acceptance)
 
-Requires `submissionId` and proof that the task was accepted.
+Requires `submissionId` and proof that the task was accepted. Use `artifactId` for multi-artifact submissions.
 
-**Input:** `{ submissionId: string, acceptanceTxHash: string }`
+**Input:** `{ submissionId: string, acceptanceTxHash: string, artifactId?: string }`
 
 **Output:** `{ presignedUrl: string }`
 
@@ -379,7 +387,7 @@ Returns the full updated `TaskDetailResponse` (same shape as `GET /api/tasks/{ta
 
 ***
 
-### Accept auction clock price (dutch / reverse_dutch)
+### Accept auction clock price (dutch / reverse\_dutch)
 
 `POST /api/tasks/{taskId}/bids/accept`
 
@@ -406,7 +414,7 @@ Worker accepts the current clock price on a `dutch` or `reverse_dutch` auction t
 
 ***
 
-### Select winner after bid deadline (english / reverse_english)
+### Select winner after bid deadline (english / reverse\_english)
 
 `POST /api/tasks/{taskId}/bids/select-winner`
 

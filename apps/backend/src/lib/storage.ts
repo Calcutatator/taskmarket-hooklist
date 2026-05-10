@@ -5,7 +5,7 @@ import { join, dirname } from 'path';
 import { getServerConfig } from '../config/env';
 
 export interface StorageBackend {
-  upload(key: string, data: Buffer): Promise<string>;
+  upload(key: string, data: Buffer, options?: { contentType?: string }): Promise<string>;
   getPresignedUrl(key: string, expiresIn?: number): Promise<string>;
 }
 
@@ -22,13 +22,13 @@ class S3Storage implements StorageBackend {
     this.bucket = config.AWS_S3_BUCKET!;
   }
 
-  async upload(key: string, data: Buffer): Promise<string> {
+  async upload(key: string, data: Buffer, options?: { contentType?: string }): Promise<string> {
     await this.client.send(
       new PutObjectCommand({
         Bucket: this.bucket,
         Key: key,
         Body: data,
-        ContentType: 'application/octet-stream',
+        ContentType: options?.contentType ?? 'application/octet-stream',
       })
     );
     return `s3://${this.bucket}/${key}`;
@@ -58,7 +58,12 @@ class LocalStorage implements StorageBackend {
   }
 
   async getPresignedUrl(key: string): Promise<string> {
-    return `http://localhost:3000/uploads/${key}`;
+    const uploadPrefix = this.uploadDir.replace(/^\.\//, '').replace(/\/+$/, '');
+    let objectKey = key.replace(/^file:\/\//, '').replace(/^\.\//, '');
+    if (objectKey.startsWith(`${uploadPrefix}/`)) {
+      objectKey = objectKey.slice(uploadPrefix.length + 1);
+    }
+    return `http://localhost:3000/uploads/${objectKey}`;
   }
 }
 

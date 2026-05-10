@@ -42,6 +42,7 @@
     "smoke:rater-agent-id": "tsx scripts/smoke-rater-agent-id.ts",
     "smoke:bids-inbox": "tsx scripts/smoke-bids-inbox.ts",
     "smoke:pending-actions": "tsx scripts/smoke-pending-actions.ts",
+    "smoke:artifacts": "tsx scripts/smoke-artifacts.ts",
     "smoke:submission-hash": "tsx scripts/smoke-submission-hash.ts",
     "smoke:task-search": "tsx scripts/smoke-task-search.ts",
     "smoke:upgrade": "tsx scripts/smoke-upgrade.ts"

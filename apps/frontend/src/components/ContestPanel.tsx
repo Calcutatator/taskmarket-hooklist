@@ -1,26 +1,40 @@
 import { useState } from 'react';
 import { Button } from './ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from './ui/card';
-import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
-import type { TaskResponse } from '@taskmarket/shared';
+import { useAccount, useSignMessage, useSignTypedData, useSwitchChain } from 'wagmi';
+import type { SubmissionResponse, TaskResponse } from '@taskmarket/shared';
 import { IdentityBadge } from './IdentityBadge';
 import { API_URL } from '@/lib/api';
+import { ArtifactGallery } from './ArtifactGallery';
 
 interface ContestPanelProps {
   task: TaskResponse;
-  submissions: any[];
+  submissions: SubmissionResponse[];
 }
 
 type AcceptStep = 'idle' | 'payment' | 'signing' | 'submitting';
 
+type EthereumProvider = {
+  request: (args: { method: string; params?: unknown[] }) => Promise<unknown>;
+};
+
+type EthereumWindow = Window &
+  typeof globalThis & {
+    ethereum?: EthereumProvider;
+  };
+
 export function ContestPanel({ task, submissions }: ContestPanelProps) {
   const { address } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
+  const { signMessageAsync } = useSignMessage();
   const { switchChainAsync } = useSwitchChain();
   const isRequester = address?.toLowerCase() === task.requester.toLowerCase();
   const [acceptingWorker, setAcceptingWorker] = useState<string | null>(null);
   const [step, setStep] = useState<AcceptStep>('idle');
   const [error, setError] = useState<string | null>(null);
+  const [previewUrls, setPreviewUrls] = useState<Record<string, string>>({});
+  const [textPreviews, setTextPreviews] = useState<Record<string, string>>({});
+  const [loadingPreviewsFor, setLoadingPreviewsFor] = useState<string | null>(null);
 
   const handleAccept = async (workerAddress: string) => {
     if (!address) return;
@@ -55,8 +69,7 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
       try {
         await switchChainAsync({ chainId: requiredChainId });
       } catch {
-        // eslint-disable-next-line @typescript-eslint/no-explicit-any
-        await (window as any).ethereum?.request({
+        await (window as EthereumWindow).ethereum?.request({
           method: 'wallet_switchEthereumChain',
           params: [{ chainId: `0x${requiredChainId.toString(16)}` }],
         });
@@ -147,6 +160,56 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
     return 'Accept';
   };
 
+  const handleLoadPreviews = async (submission: SubmissionResponse) => {
+    if (!address || !isRequester) return;
+    const submissionArtifacts = submission.artifacts ?? [];
+    setError(null);
+    setLoadingPreviewsFor(submission.id);
+
+    try {
+      for (const artifact of submissionArtifacts) {
+        if (previewUrls[artifact.id]) continue;
+
+        const signature = await signMessageAsync({
+          message: `taskmarket:artifact-preview:${task.id}:${artifact.id}`,
+        });
+        const res = await fetch(
+          `${API_URL}/api/tasks/${task.id}/artifacts/${artifact.id}/preview`,
+          {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              taskId: task.id,
+              artifactId: artifact.id,
+              viewerAddress: address,
+              signature,
+            }),
+          }
+        );
+
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.error || `Preview failed: ${res.status}`);
+        }
+
+        const body = (await res.json()) as { previewUrl: string };
+        setPreviewUrls((current) => ({ ...current, [artifact.id]: body.previewUrl }));
+
+        if (artifact.mediaKind === 'text') {
+          const textRes = await fetch(body.previewUrl);
+          if (textRes.ok) {
+            const text = await textRes.text();
+            setTextPreviews((current) => ({ ...current, [artifact.id]: text }));
+          }
+        }
+      }
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Preview failed');
+    } finally {
+      setLoadingPreviewsFor(null);
+    }
+  };
+
   return (
     <div className="space-y-4">
       <Card>
@@ -159,10 +222,19 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
           ) : (
             <div className="space-y-4">
               {error && <p className="text-sm text-state-error-primary">{error}</p>}
-              {submissions.map((submission: any) => (
-                <Card key={submission.id}>
-                  <CardContent className="pt-6">
-                    <div className="flex items-center justify-between">
+              {submissions.map((submission) => {
+                const submissionArtifacts = submission.artifacts ?? [];
+                const canLoadPreviews = isRequester && submissionArtifacts.length > 0;
+                const hasMissingPreview = submissionArtifacts.some(
+                  (artifact) => !previewUrls[artifact.id]
+                );
+
+                return (
+                  <div
+                    key={submission.id}
+                    className="rounded-md border border-border-primary bg-background-primary p-4"
+                  >
+                    <div className="flex items-center justify-between gap-4">
                       <div>
                         <IdentityBadge
                           agentId={submission.workerAgentId}
@@ -173,24 +245,47 @@ export function ContestPanel({ task, submissions }: ContestPanelProps) {
                         </p>
                         {submission.workerStats && (
                           <p className="text-xs text-text-tertiary mt-1">
-                            {submission.workerStats.completedTasks} tasks •{' '}
-                            {submission.workerStats.averageRating?.toFixed(1) || 'N/A'} ⭐
+                            {submission.workerStats.completedTasks} tasks,{' '}
+                            {submission.workerStats.averageRating?.toFixed(1) || 'N/A'} rating
                           </p>
                         )}
                       </div>
-                      {isRequester && task.status === 'pending_approval' && (
-                        <Button
-                          onClick={() => handleAccept(submission.workerAddress)}
-                          disabled={step !== 'idle'}
-                          variant="success"
-                        >
-                          {acceptLabel(submission.workerAddress)}
-                        </Button>
-                      )}
+                      <div className="flex items-center gap-2">
+                        {canLoadPreviews && hasMissingPreview && (
+                          <Button
+                            type="button"
+                            variant="outline"
+                            onClick={() => void handleLoadPreviews(submission)}
+                            disabled={loadingPreviewsFor !== null}
+                          >
+                            {loadingPreviewsFor === submission.id
+                              ? 'Loading previews...'
+                              : 'Load previews'}
+                          </Button>
+                        )}
+                        {isRequester && task.status === 'pending_approval' && (
+                          <Button
+                            onClick={() => handleAccept(submission.workerAddress)}
+                            disabled={step !== 'idle'}
+                            variant="success"
+                          >
+                            {acceptLabel(submission.workerAddress)}
+                          </Button>
+                        )}
+                      </div>
                     </div>
-                  </CardContent>
-                </Card>
-              ))}
+                    {submissionArtifacts.length > 0 && (
+                      <div className="mt-4">
+                        <ArtifactGallery
+                          artifacts={submissionArtifacts}
+                          previewUrls={previewUrls}
+                          textPreviews={textPreviews}
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
             </div>
           )}
         </CardContent>

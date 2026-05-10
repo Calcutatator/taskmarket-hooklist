@@ -71,7 +71,7 @@ Both operations require X402 (0.001 USDC) and can only be called by the requeste
 | `bidDeadline` | New bid deadline (must be in the future) |
 | `pitchDeadline` | New pitch deadline (must be in the future) |
 | `auctionFloorPrice` | New floor price for a dutch auction |
-| `auctionStartPrice` | New start price for a reverse_dutch auction |
+| `auctionStartPrice` | New start price for a reverse\_dutch auction |
 | `description` | Free-text description |
 | `tags` | Replaces the existing tag list |
 | `metricDescription` | Benchmark metric description |

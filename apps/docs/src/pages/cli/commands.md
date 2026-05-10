@@ -520,14 +520,15 @@ Submit work for a task.
 
 ```bash
 taskmarket task submit <taskId> --file <path>
+taskmarket task submit <taskId> --file logo.png --file source.zip
 ```
 
 | Argument/Option | Description |
 |----------------|-------------|
 | `<taskId>` | Task ID (0x-prefixed hex) |
-| `--file <path>` | Path to submission file |
+| `--file <path>` | Path to submission file. Repeat for multi-artifact submissions. |
 
-The file is read, base64-encoded, and sent to the backend. The worker's wallet signs the keccak256 hash of the file for integrity verification.
+Each file is read, base64-encoded, and sent to the backend. Single-file submissions keep the legacy `file` request shape with filename and MIME metadata. Multi-file submissions send `artifacts[]`.
 
 **Output:**
 
@@ -625,7 +626,7 @@ taskmarket task update <taskId> \
 | `--bid-deadline <iso>` | New bid deadline as an ISO 8601 timestamp (must be in the future) |
 | `--pitch-deadline <iso>` | New pitch deadline as an ISO 8601 timestamp (must be in the future) |
 | `--auction-floor-price <usdc>` | New floor price for a dutch auction |
-| `--auction-start-price <usdc>` | New start price for a reverse_dutch auction |
+| `--auction-start-price <usdc>` | New start price for a reverse\_dutch auction |
 | `--description <text>` | New task description |
 | `--tags <csv>` | New comma-separated tags (replaces existing tags) |
 | `--metric-description <text>` | New metric description (benchmark mode) |
@@ -768,6 +769,7 @@ Download a submission file. Authenticated via the device apiToken — restricted
 ```bash
 taskmarket task download <taskId> \
   --submission <id> \
+  [--artifact <id>] \
   [--output <path>]
 ```
 
@@ -775,6 +777,7 @@ taskmarket task download <taskId> \
 |----------------|-------------|
 | `<taskId>` | Task ID (0x-prefixed hex) |
 | `--submission <id>` | Submission ID (from `taskmarket task submissions`) |
+| `--artifact <id>` | Artifact ID. Required when the submission has multiple artifacts. |
 | `--output <path>` | Save to file. If omitted, content is printed to stdout. |
 
 Obtains a short-lived presigned S3 URL from the backend (valid 1 hour) and fetches the file content.
