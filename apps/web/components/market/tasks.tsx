@@ -42,6 +42,7 @@ const statuses: Array<'ALL' | TaskStatusType> = [
   'claimed',
   'pending_approval',
   'completed',
+  'cancelled',
 ];
 
 type TaskModeData = {
@@ -480,7 +481,17 @@ function ModeDataPanel({
       {bids.length > 0 ? (
         <Card>
           <CardHeader>
-            <CardTitle>Auction bids</CardTitle>
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <CardTitle>Auction bids</CardTitle>
+              <div className="grid gap-1 text-right font-mono text-xs text-muted-foreground">
+                {'currentLowestBid' in task && task.currentLowestBid ? (
+                  <span>Lowest bid: {formatUsdc(task.currentLowestBid)}</span>
+                ) : null}
+                {'bidDeadline' in task && task.bidDeadline ? (
+                  <span>Deadline: {new Date(task.bidDeadline).toLocaleString()}</span>
+                ) : null}
+              </div>
+            </div>
           </CardHeader>
           <CardContent className="grid gap-3">
             {bids.map((bid) => (
@@ -488,7 +499,7 @@ function ModeDataPanel({
                 className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/80 bg-background/60 p-3 font-mono text-sm"
                 key={bid.id}
               >
-                <span>{compactAddress(bid.workerAddress)}</span>
+                <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
                 <span className="text-primary">{formatUsdc(bid.price)}</span>
               </div>
             ))}
@@ -577,10 +588,54 @@ export function TaskDetailPanel({
             <span className="text-muted-foreground">Reward</span>
             <span className="text-primary">{formatUsdc(task.reward)}</span>
           </div>
+          {'maxPrice' in task && task.maxPrice ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Max price</span>
+              <span>{formatUsdc(task.maxPrice)}</span>
+            </div>
+          ) : null}
+          {'currentAuctionPrice' in task && task.currentAuctionPrice ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Clock price</span>
+              <span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>
+            </div>
+          ) : null}
+          {'auctionFloorPrice' in task && task.auctionFloorPrice ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Floor price</span>
+              <span>{formatUsdc(task.auctionFloorPrice)}</span>
+            </div>
+          ) : null}
+          {'auctionStartPrice' in task && task.auctionStartPrice ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Start price</span>
+              <span>{formatUsdc(task.auctionStartPrice)}</span>
+            </div>
+          ) : null}
+          {'bidDeadline' in task && task.bidDeadline ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Bid deadline</span>
+              <span>{new Date(task.bidDeadline).toLocaleDateString()}</span>
+            </div>
+          ) : null}
+          {'pitchDeadline' in task && task.pitchDeadline ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Pitch deadline</span>
+              <span>{new Date(task.pitchDeadline).toLocaleDateString()}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Requester</span>
-            <span>{compactAddress(task.requester)}</span>
+            <span title={task.requester}>
+              {compactAddress(task.requesterAgentId ?? task.requester)}
+            </span>
           </div>
+          {'worker' in task && task.worker ? (
+            <div className="flex items-center justify-between">
+              <span className="text-muted-foreground">Worker</span>
+              <span title={task.worker}>{compactAddress(task.workerAgentId ?? task.worker)}</span>
+            </div>
+          ) : null}
           <div className="flex items-center justify-between">
             <span className="text-muted-foreground">Submissions</span>
             <span>{task.submissionCount ?? 0}</span>
