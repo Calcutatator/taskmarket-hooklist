@@ -2,17 +2,7 @@
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
-import {
-  IconBolt,
-  IconClockHour4,
-  IconCoin,
-  IconFileText,
-  IconGavel,
-  IconLock,
-  IconTargetArrow,
-  IconTrophy,
-  IconUsers,
-} from '@tabler/icons-react';
+import { IconBolt, IconClockHour4, IconCoin, IconFileText } from '@tabler/icons-react';
 import { parseUnits } from 'viem';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
@@ -22,6 +12,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
 import { cn } from '@/lib/utils';
 
 const apiUrl = getBrowserApiBaseUrl();
@@ -45,63 +36,6 @@ type CreateTaskFormValues = {
 };
 
 type Step = 'form' | 'payment' | 'signing' | 'submitting';
-
-const taskModes = [
-  {
-    description: 'Open submission pool. Review completed work and select the strongest delivery.',
-    icon: IconTrophy,
-    label: 'Bounty',
-    value: 'bounty',
-  },
-  {
-    description:
-      'One worker reserves the task before starting. Useful when duplicate work is costly.',
-    icon: IconLock,
-    label: 'Claim',
-    value: 'claim',
-  },
-  {
-    description: 'Workers pitch an approach first. Choose the plan before execution begins.',
-    icon: IconUsers,
-    label: 'Pitch',
-    value: 'pitch',
-  },
-  {
-    description: 'Set a measurable outcome and pay the first worker who reaches it.',
-    icon: IconTargetArrow,
-    label: 'Benchmark',
-    value: 'benchmark',
-  },
-  {
-    description: 'Let workers compete on price with open, sealed, or clock-based bidding.',
-    icon: IconGavel,
-    label: 'Auction',
-    value: 'auction',
-  },
-] as const;
-
-const auctionTypes = [
-  {
-    description: 'Open undercutting until the deadline. Lowest valid bid wins.',
-    label: 'English',
-    value: 'english',
-  },
-  {
-    description: 'Sealed prices stay hidden until close. Lowest valid bid wins.',
-    label: 'Reverse English',
-    value: 'reverse_english',
-  },
-  {
-    description: 'Price descends from your max toward a floor until someone accepts.',
-    label: 'Dutch',
-    value: 'dutch',
-  },
-  {
-    description: 'Price rises from a start price until the first worker accepts.',
-    label: 'Reverse Dutch',
-    value: 'reverse_dutch',
-  },
-] as const;
 
 const stepCopy: Record<Step, { label: string; text: string }> = {
   form: {
@@ -327,9 +261,10 @@ export function CreateTaskClient() {
             ? 'Create task'
             : 'Connect wallet to create';
 
-  const currentMode = taskModes.find((taskMode) => taskMode.value === mode) ?? taskModes[0];
+  const currentMode =
+    taskModeOptions.find((taskMode) => taskMode.value === mode) ?? taskModeOptions[0];
   const currentAuctionType =
-    auctionTypes.find((type) => type.value === auctionType) ?? auctionTypes[0];
+    auctionTypeOptions.find((type) => type.value === auctionType) ?? auctionTypeOptions[0];
   const CurrentModeIcon = currentMode.icon;
   const StepIcon = step === 'form' ? IconFileText : step === 'payment' ? IconCoin : IconBolt;
 
@@ -419,7 +354,7 @@ export function CreateTaskClient() {
           <CardContent className="grid gap-5 pt-6">
             <input name="mode" type="hidden" value={mode} />
             <div aria-label="Task mode" className="grid gap-3 sm:grid-cols-2" role="radiogroup">
-              {taskModes.map((taskMode) => {
+              {taskModeOptions.map((taskMode) => {
                 const Icon = taskMode.icon;
                 const selected = taskMode.value === mode;
 
@@ -454,7 +389,7 @@ export function CreateTaskClient() {
                         {taskMode.label}
                       </span>
                       <span className="mt-2 block text-sm leading-5 text-muted-foreground">
-                        {taskMode.description}
+                        {taskMode.createDescription}
                       </span>
                     </span>
                   </button>
@@ -532,7 +467,7 @@ export function CreateTaskClient() {
                   className="grid gap-3 sm:grid-cols-2"
                   role="radiogroup"
                 >
-                  {auctionTypes.map((type) => {
+                  {auctionTypeOptions.map((type) => {
                     const selected = type.value === auctionType;
 
                     return (
@@ -630,7 +565,9 @@ export function CreateTaskClient() {
                 <div>
                   <p className="font-mono text-sm font-black uppercase">{currentMode.label}</p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
-                    {mode === 'auction' ? currentAuctionType.description : currentMode.description}
+                    {mode === 'auction'
+                      ? currentAuctionType.description
+                      : currentMode.createDescription}
                   </p>
                 </div>
               </div>

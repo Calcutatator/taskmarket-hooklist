@@ -1,14 +1,7 @@
 'use client';
 
 import type { TaskResponse, TaskModeType } from '@taskmarket/shared';
-import {
-  IconActivity,
-  IconGavel,
-  IconLock,
-  IconTargetArrow,
-  IconTrophy,
-  IconUsers,
-} from '@tabler/icons-react';
+import { IconActivity } from '@tabler/icons-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useMemo, useState } from 'react';
 
@@ -16,6 +9,7 @@ import { Badge } from '@/components/ui/badge';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { trpc } from '@/lib/api/client';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
+import { taskModeOptions } from '@/lib/market/task-mode-config';
 
 type LandingStats = {
   agentCount?: number;
@@ -33,11 +27,11 @@ type ModeTab = {
 
 const modeTabs: ModeTab[] = [
   { id: 'all', label: 'All', icon: IconActivity },
-  { id: 'bounty', label: 'Bounty', icon: IconTrophy },
-  { id: 'claim', label: 'Claim', icon: IconLock },
-  { id: 'pitch', label: 'Pitch', icon: IconUsers },
-  { id: 'benchmark', label: 'Benchmark', icon: IconTargetArrow },
-  { id: 'auction', label: 'Auction', icon: IconGavel },
+  ...taskModeOptions.map((mode) => ({
+    icon: mode.icon,
+    id: mode.value,
+    label: mode.label,
+  })),
 ];
 
 const easeOut = [0.16, 1, 0.3, 1] as const;

@@ -179,6 +179,7 @@ export function AgentTable({
 export function AgentLeaderboardPanel({
   agents,
   basePath = '/dashboard/leaderboard',
+  filterTitle = 'Filter rankings',
   hasNextPage,
   hasPrevPage,
   minRating,
@@ -188,10 +189,12 @@ export function AgentLeaderboardPanel({
   search,
   skill,
   sort,
+  tableVariant = 'leaderboard',
   profileBasePath = '/dashboard/agents',
 }: {
   agents: LeaderboardEntry[];
   basePath?: string;
+  filterTitle?: string;
   hasNextPage: boolean;
   hasPrevPage: boolean;
   minRating?: string;
@@ -201,6 +204,7 @@ export function AgentLeaderboardPanel({
   search?: string;
   skill?: string;
   sort: LeaderboardSort;
+  tableVariant?: 'directory' | 'leaderboard';
   profileBasePath?: string;
 }) {
   const state = { limit: pageSize, minRating, minTasks, page, search, skill, sort };
@@ -210,7 +214,7 @@ export function AgentLeaderboardPanel({
     <div className="grid gap-5">
       <Card>
         <CardHeader>
-          <CardTitle>Filter rankings</CardTitle>
+          <CardTitle>{filterTitle}</CardTitle>
         </CardHeader>
         <CardContent>
           <form action={normalizeBasePath(basePath)} className="grid gap-4 lg:grid-cols-6">
@@ -326,7 +330,7 @@ export function AgentLeaderboardPanel({
         <p className="font-mono text-xs uppercase text-muted-foreground">Page {page}</p>
       </div>
 
-      <AgentTable agents={agents} profileBasePath={profileBasePath} variant="leaderboard" />
+      <AgentTable agents={agents} profileBasePath={profileBasePath} variant={tableVariant} />
 
       <div className="flex items-center justify-between border-t border-border/75 pt-4">
         <span className="font-mono text-sm text-muted-foreground">Page {page}</span>

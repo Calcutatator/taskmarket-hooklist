@@ -1,7 +1,19 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TaskResponse } from '@taskmarket/shared';
 import { LandingPageContent } from './landing';
+
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    tasks: {
+      list: {
+        useQuery: (_input: unknown, options?: { initialData?: unknown }) => ({
+          data: options?.initialData,
+        }),
+      },
+    },
+  },
+}));
 
 const liveTask: TaskResponse = {
   auctionBidCount: 3,
@@ -129,7 +141,7 @@ describe('LandingPageContent', () => {
     expect(container.querySelector('[data-motion="landing-hero-actions"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-hero-install"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-section-burst"]')).toBeInTheDocument();
-    expect(container.querySelectorAll('[data-motion^="landing-section-"]')).toHaveLength(6);
+    expect(container.querySelectorAll('[data-motion^="landing-section-"]')).toHaveLength(3);
   });
 
   it('renders burst compute as the second landing section', () => {
@@ -152,28 +164,14 @@ describe('LandingPageContent', () => {
       screen.getByRole('heading', { name: /paid work for autonomous agents/i })
     );
     expect(burstSection).toContainElement(
-      screen.getByRole('heading', { name: /burst compute for task buyers/i })
+      screen.getByRole('heading', { name: /one task\. many agents\. one winner\./i })
     );
-    expect(within(burstSection as HTMLElement).getByText(/reach available agents/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/fund one task/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/work in parallel/i)).toBeVisible();
     expect(
-      within(burstSection as HTMLElement).getByText(/attempts vary with availability/i)
+      within(burstSection as HTMLElement).getByText(/best submission gets paid/i)
     ).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/settle the best receipt/i)).toBeVisible();
     expect(within(burstSection as HTMLElement).getByText(/live task routing/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^available agents$/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^opt in$/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^joined agents$/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^accepted receipt$/i)).toBeVisible();
-    expect(
-      within(burstSection as HTMLElement).queryByText(/^funded task$/i)
-    ).not.toBeInTheDocument();
-    expect(
-      within(burstSection as HTMLElement).queryByText(/^best receipt$/i)
-    ).not.toBeInTheDocument();
-    expect(
-      within(burstSection as HTMLElement).queryByText(/^variable pool$/i)
-    ).not.toBeInTheDocument();
-    expect(within(burstSection as HTMLElement).getByText(/currently available/i)).toBeVisible();
     expect(within(burstSection as HTMLElement).queryByText(/100x/i)).not.toBeInTheDocument();
   });
 
@@ -218,30 +216,23 @@ describe('LandingPageContent', () => {
       />
     );
 
-    const liveMarketHeading = screen.getByRole('heading', { name: /live market snapshot/i });
+    const liveMarketHeading = screen.getByRole('heading', { name: /open work, streaming/i });
     const liveMarketSection = liveMarketHeading.closest('section');
 
     expect(liveMarketHeading).toBeVisible();
     expect(liveMarketSection).not.toBeNull();
-    expect(screen.getByRole('heading', { name: /why this market works/i })).toBeVisible();
-    expect(screen.getByRole('heading', { name: /how the market moves/i })).toBeVisible();
-    expect(screen.getByRole('heading', { name: /pick the right mode/i })).toBeVisible();
     expect(screen.getByRole('heading', { name: /choose your path/i })).toBeVisible();
-    expect(screen.queryByRole('heading', { name: /market in action/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/^live market$/i)).toBeVisible();
-    expect(screen.queryByText(/sample market flow/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^live market pulse$/i)).toBeVisible();
     expect(
       screen.getByRole('link', { name: /build a typed parser for agent capability manifests/i })
     ).toHaveAttribute('href', '/dashboard/tasks/live-auction');
     expect(within(liveMarketSection as HTMLElement).getByText('850.000 USDC')).toBeVisible();
     expect(screen.getByText(/english auction/i)).toBeVisible();
-    expect(screen.getByText(/3 bids/i)).toBeVisible();
-    expect(screen.getByText(/2 submissions/i)).toBeVisible();
+    expect(within(liveMarketSection as HTMLElement).getByText('3')).toBeInTheDocument();
+    expect(within(liveMarketSection as HTMLElement).getByText(/^bids$/i)).toBeVisible();
+    expect(within(liveMarketSection as HTMLElement).getByText('2')).toBeInTheDocument();
+    expect(within(liveMarketSection as HTMLElement).getByText(/^subs$/i)).toBeVisible();
     expect(screen.getByText(/0x597b\.\.\.5e4B/i)).toBeVisible();
-    expect(screen.getByText(/^post funded task$/i)).toBeVisible();
-    expect(screen.getByText(/^agents compete$/i)).toBeVisible();
-    expect(screen.getByText(/^review output$/i)).toBeVisible();
-    expect(screen.getByText(/^settle usdc$/i)).toBeVisible();
   });
 
   it('renders an explicitly labeled sample flow when no live tasks exist', () => {
@@ -256,14 +247,9 @@ describe('LandingPageContent', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { name: /live market snapshot/i })).toBeVisible();
-    expect(screen.getByText(/sample snapshot/i)).toBeVisible();
-    expect(screen.getByText(/example data/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: /open work, streaming/i })).toBeVisible();
+    expect(screen.getByText(/no open tasks right now/i)).toBeVisible();
     expect(screen.queryByText(/no open tasks yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no tasks found/i)).not.toBeInTheDocument();
-    expect(screen.getByText(/^post funded task$/i)).toBeVisible();
-    expect(screen.getByText(/^agents compete$/i)).toBeVisible();
-    expect(screen.getByText(/^review output$/i)).toBeVisible();
-    expect(screen.getByText(/^settle usdc$/i)).toBeVisible();
   });
 });

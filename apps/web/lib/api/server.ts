@@ -189,6 +189,18 @@ export async function fetchTaskClaim(taskId: string) {
   );
 }
 
+export async function fetchTaskModeData(task: TaskDetailResponse | TaskResponse) {
+  const [submissions, pitches, proofs, bids, claim] = await Promise.all([
+    task.mode === 'bounty' || task.mode === 'claim' ? fetchTaskSubmissions(task.id) : [],
+    task.mode === 'pitch' ? fetchTaskPitches(task.id) : [],
+    task.mode === 'benchmark' ? fetchTaskProofs(task.id) : [],
+    task.mode === 'auction' ? fetchTaskBids(task.id) : [],
+    task.mode === 'claim' ? fetchTaskClaim(task.id) : null,
+  ]);
+
+  return { bids, claim, pitches, proofs, submissions };
+}
+
 export async function fetchLeaderboard(searchParams?: {
   limit?: number;
   offset?: number;

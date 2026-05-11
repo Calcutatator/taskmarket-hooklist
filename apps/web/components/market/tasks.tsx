@@ -28,6 +28,8 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import { compactAddress } from '@/lib/format';
+import { normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
+import type { ActiveFilter, TaskSearchParams } from '@/lib/market/task-filters';
 
 const modes: Array<'ALL' | TaskModeType> = [
   'ALL',
@@ -69,24 +71,6 @@ function formatUsdc(value: string | null | undefined) {
 
 function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
-}
-
-function normalizeBasePath(basePath: string) {
-  return basePath.replace(/\/+$/, '') || '/';
-}
-
-function hrefForFilters(mode?: string, status?: string, basePath = '/dashboard/tasks') {
-  const params = new URLSearchParams();
-  if (mode && mode !== 'ALL') {
-    params.set('mode', mode);
-  }
-  if (status && status !== 'ALL') {
-    params.set('status', status);
-  }
-
-  const query = params.toString();
-  const normalized = normalizeBasePath(basePath);
-  return query ? `${normalized}?${query}` : normalized;
 }
 
 export function TaskTable({
@@ -229,6 +213,15 @@ export function TaskFilterRail({
   selectedStatus?: 'ALL' | TaskStatusType | string;
   tags?: string;
 }) {
+  const currentFilters: TaskSearchParams = {
+    deadlineHours,
+    maxReward,
+    minReward,
+    mode: selectedMode,
+    status: selectedStatus,
+    tags,
+  };
+
   return (
     <aside className="grid gap-4 lg:sticky lg:top-20">
       <Card className="gap-4 bg-surface/45 py-4 shadow-none">
@@ -243,7 +236,7 @@ export function TaskFilterRail({
                 <a
                   className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedMode === mode}
-                  href={hrefForFilters(mode, selectedStatus, basePath)}
+                  href={taskFiltersHref(basePath, currentFilters, { mode })}
                   key={mode}
                 >
                   {mode === 'ALL' ? 'All modes' : labelize(mode)}
@@ -258,7 +251,7 @@ export function TaskFilterRail({
                 <a
                   className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedStatus === status}
-                  href={hrefForFilters(selectedMode, status, basePath)}
+                  href={taskFiltersHref(basePath, currentFilters, { status })}
                   key={status}
                 >
                   {status === 'ALL' ? 'All statuses' : labelize(status)}
@@ -333,6 +326,78 @@ export function TaskFilterRail({
         </CardContent>
       </Card>
     </aside>
+  );
+}
+
+export function TaskListPageContent({
+  activeFilters,
+  basePath = '/dashboard/tasks',
+  createHref = '/dashboard/tasks/new',
+  detailBasePath = '/dashboard/tasks',
+  filterParams,
+  listHref = '/dashboard/tasks',
+  tasks,
+}: {
+  activeFilters: ActiveFilter[];
+  basePath?: string;
+  createHref?: string;
+  detailBasePath?: string;
+  filterParams: {
+    deadlineHours?: string;
+    maxReward?: string;
+    minReward?: string;
+    selectedMode: string;
+    selectedStatus: string;
+    tags?: string;
+  };
+  listHref?: string;
+  tasks: TaskResponse[];
+}) {
+  return (
+    <div className="@container/main grid w-full grid-cols-[minmax(0,1fr)] items-start gap-6 px-4 py-4 md:gap-6 md:py-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-6">
+      <TaskFilterRail
+        basePath={basePath}
+        deadlineHours={filterParams.deadlineHours}
+        maxReward={filterParams.maxReward}
+        minReward={filterParams.minReward}
+        selectedMode={filterParams.selectedMode}
+        selectedStatus={filterParams.selectedStatus}
+        tags={filterParams.tags}
+      />
+      <section className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
+          <div>
+            <p className="font-mono text-xs uppercase text-primary">Marketplace</p>
+            <h1 className="mt-2 font-mono text-4xl font-black uppercase">Open tasks</h1>
+          </div>
+          <Button asChild>
+            <a href={createHref}>Post task</a>
+          </Button>
+        </div>
+        {activeFilters.length > 0 ? (
+          <div className="flex flex-wrap items-center gap-2">
+            <span className="font-mono text-xs uppercase text-muted-foreground">
+              Active filters
+            </span>
+            {activeFilters.map((filter) => (
+              <Badge key={`${filter.label}:${filter.value}`} variant="outline">
+                {filter.label}: {filter.value}
+              </Badge>
+            ))}
+            <Button asChild size="xs" variant="link">
+              <a href={listHref}>Clear filters</a>
+            </Button>
+          </div>
+        ) : null}
+        <TaskTable
+          createHref={createHref}
+          detailBasePath={detailBasePath}
+          hasActiveFilters={activeFilters.length > 0}
+          listHref={listHref}
+          tasks={tasks}
+        />
+      </section>
+    </div>
   );
 }
 

@@ -1,5 +1,6 @@
 import { AgentLeaderboardPanel } from '@/components/market/agents';
 import { fetchLeaderboard } from '@/lib/api/server';
+import { parseLeaderboardSearchParams } from '@/lib/market/leaderboard-params';
 
 type LeaderboardPageProps = {
   searchParams: Promise<{
@@ -13,53 +14,17 @@ type LeaderboardPageProps = {
   }>;
 };
 
-const pageSizes = [10, 20, 50];
-const minRatings = ['3', '4', '4.5'];
-const minTasksValues = ['5', '10', '50'];
-
-function parseSort(value?: string) {
-  return value === 'tasks' ? 'tasks' : 'reputation';
-}
-
-function parsePage(value?: string) {
-  const parsed = Number(value);
-  return Number.isInteger(parsed) && parsed > 1 ? parsed : 1;
-}
-
-function parsePageSize(value?: string) {
-  const parsed = Number(value);
-  return pageSizes.includes(parsed) ? parsed : 20;
-}
-
-function allowListed(value: string | undefined, allowed: string[]) {
-  return value && allowed.includes(value) ? value : undefined;
-}
-
-function numericValue(value?: string) {
-  if (!value) {
-    return undefined;
-  }
-
-  const parsed = Number(value);
-  return Number.isFinite(parsed) ? parsed : undefined;
-}
-
 export default async function LeaderboardPage({ searchParams }: LeaderboardPageProps) {
   const params = await searchParams;
-  const sort = parseSort(params.sort);
-  const page = parsePage(params.page);
-  const pageSize = parsePageSize(params.limit);
-  const minRating = allowListed(params.minRating, minRatings);
-  const minTasks = allowListed(params.minTasks, minTasksValues);
-  const offset = (page - 1) * pageSize;
+  const parsed = parseLeaderboardSearchParams(params);
   const agents = await fetchLeaderboard({
-    limit: pageSize,
-    minRating: numericValue(minRating),
-    minTasks: numericValue(minTasks),
-    offset,
-    search: params.search,
-    skill: params.skill,
-    sort,
+    limit: parsed.limit,
+    minRating: parsed.minRatingValue,
+    minTasks: parsed.minTasksValue,
+    offset: parsed.offset,
+    search: parsed.search,
+    skill: parsed.skill,
+    sort: parsed.sort,
   });
 
   return (
@@ -72,15 +37,15 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
       </div>
       <AgentLeaderboardPanel
         agents={agents}
-        hasNextPage={agents.length === pageSize}
-        hasPrevPage={page > 1}
-        minRating={minRating}
-        minTasks={minTasks}
-        page={page}
-        pageSize={pageSize}
-        search={params.search}
-        skill={params.skill}
-        sort={sort}
+        hasNextPage={agents.length === parsed.limit}
+        hasPrevPage={parsed.page > 1}
+        minRating={parsed.minRating}
+        minTasks={parsed.minTasks}
+        page={parsed.page}
+        pageSize={parsed.limit}
+        search={parsed.search}
+        skill={parsed.skill}
+        sort={parsed.sort}
       />
     </div>
   );

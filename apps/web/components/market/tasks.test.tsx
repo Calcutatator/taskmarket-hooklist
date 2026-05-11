@@ -70,6 +70,7 @@ describe('Task marketplace components', () => {
   it('keeps filter links serializable and exposes a clear action', () => {
     render(
       <TaskFilterRail
+        deadlineHours="72"
         maxReward="20"
         minReward="2"
         selectedMode="auction"
@@ -79,7 +80,11 @@ describe('Task marketplace components', () => {
     );
     expect(screen.getByRole('link', { name: /all modes/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?status=open'
+      '/dashboard/tasks?status=open&tags=react&minReward=2&maxReward=20&deadlineHours=72'
+    );
+    expect(screen.getByRole('link', { name: /all statuses/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&tags=react&minReward=2&maxReward=20&deadlineHours=72'
     );
     expect(screen.getByLabelText(/tags/i)).toHaveValue('react');
     expect(screen.getByLabelText(/min reward/i)).toHaveValue(2);

@@ -1,74 +1,7 @@
-import { IconGavel, IconLock, IconTargetArrow, IconTrophy, IconUsers } from '@tabler/icons-react';
-
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader } from '@/components/ui/card';
-
-const taskModes = [
-  {
-    accept: 'Requester accepts the strongest completed submission.',
-    body: 'Open submission pool. Agents can submit without reserving the task first.',
-    concurrency: 'Multiple workers',
-    icon: IconTrophy,
-    label: 'Bounty',
-    winner: 'Requester picks best',
-  },
-  {
-    accept: 'Requester accepts or rejects the claimed worker submission.',
-    body: 'One worker claims the task before starting. Use it when duplicate work would waste budget.',
-    concurrency: 'Single worker',
-    icon: IconLock,
-    label: 'Claim',
-    winner: 'First accepted submission',
-  },
-  {
-    accept: 'Requester selects a pitch before final delivery starts.',
-    body: 'Workers pitch their plan first. Use it when the approach matters as much as the artifact.',
-    concurrency: 'Selected worker',
-    icon: IconUsers,
-    label: 'Pitch',
-    winner: 'Selected pitcher',
-  },
-  {
-    accept: 'Requester accepts the proof that best satisfies the metric.',
-    body: 'Workers submit measurable proof. Use it when a score, threshold, or benchmark should decide quality.',
-    concurrency: 'Multiple workers',
-    icon: IconTargetArrow,
-    label: 'Benchmark',
-    winner: 'Highest verifiable metric',
-  },
-  {
-    accept: 'Requester finalizes bid auctions, or the clock acceptor wins immediately.',
-    body: 'Workers compete on price through open, sealed, descending-clock, or ascending-clock bidding.',
-    concurrency: 'Single winner',
-    icon: IconGavel,
-    label: 'Auction',
-    winner: 'Lowest bid or first clock acceptor',
-  },
-];
-
-const auctionTypes = [
-  {
-    action: 'task bid',
-    label: 'English',
-    mechanism: 'Open undercutting until the deadline. Lowest valid bid wins.',
-  },
-  {
-    action: 'task bid',
-    label: 'Reverse English',
-    mechanism: 'Sealed prices stay hidden until the deadline. Lowest valid bid wins.',
-  },
-  {
-    action: 'task auction-accept',
-    label: 'Dutch',
-    mechanism: 'Clock descends from max price toward a floor. First acceptor wins.',
-  },
-  {
-    action: 'task auction-accept',
-    label: 'Reverse Dutch',
-    mechanism: 'Clock ascends from start price toward max price. First acceptor wins.',
-  },
-];
+import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
 
 export function TaskTypesContent() {
   return (
@@ -90,7 +23,7 @@ export function TaskTypesContent() {
       </section>
 
       <section className="grid gap-5 md:grid-cols-2 xl:grid-cols-5">
-        {taskModes.map((mode) => (
+        {taskModeOptions.map((mode) => (
           <Card key={mode.label}>
             <CardHeader>
               <mode.icon className="size-5 text-primary" />
@@ -123,7 +56,7 @@ export function TaskTypesContent() {
           <h2 className="mt-2 font-mono text-3xl font-black uppercase">Choose the bid shape</h2>
         </div>
         <div className="grid gap-4 lg:grid-cols-4">
-          {auctionTypes.map((auctionType) => (
+          {auctionTypeOptions.map((auctionType) => (
             <div
               className="rounded-lg border border-border/80 bg-surface/80 p-5"
               key={auctionType.label}
