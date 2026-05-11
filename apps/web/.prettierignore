@@ -1,5 +1,4 @@
+public/
 .next/
-node_modules/
-coverage/
-out/
 next-env.d.ts
+node_modules/

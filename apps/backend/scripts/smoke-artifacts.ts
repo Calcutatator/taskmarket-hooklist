@@ -75,21 +75,14 @@ function assertNoPreviewUrls(payload: unknown): void {
   }
 }
 
-async function expectPreviewDenied(
-  taskId: string,
-  artifactId: string,
-  viewerAddress: string,
-  signature: string
-): Promise<void> {
-  const res = await fetch(`${API_URL}/api/tasks/${taskId}/artifacts/${artifactId}/preview`, {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ taskId, artifactId, viewerAddress, signature }),
-  });
-  if (res.ok) {
-    throw new Error('Expected non-requester artifact preview to be rejected');
+async function expectPublicPreviewWorks(taskId: string, artifactId: string): Promise<void> {
+  const res = await fetch(
+    `${API_URL}/api/tasks/${taskId}/artifacts/${artifactId}/preview?taskId=${taskId}&artifactId=${artifactId}`
+  );
+  if (!res.ok) {
+    throw new Error(`Expected public artifact preview to succeed, got ${res.status}`);
   }
-  ok('non-requester preview rejected', res.status);
+  ok('public preview accessible', res.status);
 }
 
 async function expectDevicePreviewDenied(
@@ -109,18 +102,10 @@ async function expectDevicePreviewDenied(
   ok('device preview without artifact rejected', res.status);
 }
 
-async function requestPreview(
-  taskId: string,
-  artifactId: string,
-  viewerAddress: string,
-  signature: string
-): Promise<string> {
-  const result = (await post(`/api/tasks/${taskId}/artifacts/${artifactId}/preview`, {
-    taskId,
-    artifactId,
-    viewerAddress,
-    signature,
-  })) as { previewUrl: string; expiresAt: string };
+async function requestPreview(taskId: string, artifactId: string): Promise<string> {
+  const result = (await get(
+    `/api/tasks/${taskId}/artifacts/${artifactId}/preview?taskId=${taskId}&artifactId=${artifactId}`
+  )) as { previewUrl: string; expiresAt: string };
 
   if (!result.previewUrl || !result.expiresAt) {
     throw new Error(`Invalid preview response: ${JSON.stringify(result)}`);
@@ -293,19 +278,13 @@ async function main() {
   }
   ok('device artifact preview URL', artifacts[0]!.fileName);
 
-  log('5/7', 'Verifying requester-only preview authorization...');
+  log('5/7', 'Verifying public artifact preview is accessible...');
   const firstArtifact = artifacts[0]!;
-  const workerPreviewSig = await worker.signMessage({
-    message: `taskmarket:artifact-preview:${taskId}:${firstArtifact.id}`,
-  });
-  await expectPreviewDenied(taskId, firstArtifact.id, worker.address, workerPreviewSig);
+  await expectPublicPreviewWorks(taskId, firstArtifact.id);
 
-  log('6/7', 'Fetching requester-signed preview URLs...');
+  log('6/7', 'Fetching public preview URLs for each artifact...');
   for (const artifact of artifacts) {
-    const previewSig = await requester.signMessage({
-      message: `taskmarket:artifact-preview:${taskId}:${artifact.id}`,
-    });
-    const previewUrl = await requestPreview(taskId, artifact.id, requester.address, previewSig);
+    const previewUrl = await requestPreview(taskId, artifact.id);
     const previewRes = await fetch(previewUrl);
     if (!previewRes.ok) {
       throw new Error(`Preview URL fetch failed for ${artifact.fileName}: ${previewRes.status}`);
