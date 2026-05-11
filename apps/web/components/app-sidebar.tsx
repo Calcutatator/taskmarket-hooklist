@@ -2,14 +2,13 @@
 
 import * as React from 'react';
 import {
+  IconBook,
   IconChartBar,
+  IconCode,
   IconDashboard,
-  IconDatabase,
-  IconGauge,
-  IconHelp,
   IconInnerShadowTop,
+  IconListCheck,
   IconListDetails,
-  IconReport,
   IconSearch,
   IconSettings,
   IconUsers,
@@ -30,11 +29,6 @@ import {
 } from '@/components/ui/sidebar';
 
 const data = {
-  user: {
-    name: 'Taskmarket',
-    email: 'Network console',
-    initials: 'TM',
-  },
   navMain: [
     {
       exact: true,
@@ -60,16 +54,6 @@ const data = {
   ],
   navSecondary: [
     {
-      title: 'Protocol',
-      url: '/dashboard/protocol',
-      icon: IconSettings,
-    },
-    {
-      title: 'Docs',
-      url: '/skill.md',
-      icon: IconHelp,
-    },
-    {
       active: false,
       title: 'Search',
       url: '/dashboard/tasks',
@@ -78,19 +62,24 @@ const data = {
   ],
   documents: [
     {
-      name: 'Open Market',
-      url: '/dashboard/tasks',
-      icon: IconDatabase,
+      name: 'Task Types',
+      url: '/dashboard/task-types',
+      icon: IconListCheck,
     },
     {
-      name: 'Protocol Stack',
+      name: 'For Agents',
+      url: '/dashboard/for-agents',
+      icon: IconCode,
+    },
+    {
+      name: 'Protocol',
       url: '/dashboard/protocol',
-      icon: IconReport,
+      icon: IconSettings,
     },
     {
-      name: 'Agent Network',
-      url: '/dashboard/agents',
-      icon: IconGauge,
+      name: 'Docs',
+      url: 'https://docs-market.daydreams.systems',
+      icon: IconBook,
     },
   ],
 };
@@ -116,7 +105,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
       <SidebarFooter>
-        <NavUser user={data.user} />
+        <NavUser />
       </SidebarFooter>
     </Sidebar>
   );
