@@ -23,10 +23,10 @@ export function StatStrip({ stats }: { stats: LandingStats }) {
   ];
 
   return (
-    <div className="grid border border-border bg-surface sm:grid-cols-4">
+    <div className="grid rounded-lg border border-border/80 bg-surface/85 shadow-[var(--shadow-terminal)] sm:grid-cols-4">
       {items.map(([label, value]) => (
         <div
-          className="border-b border-border p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
+          className="border-b border-border/70 p-4 last:border-b-0 sm:border-b-0 sm:border-r sm:last:border-r-0"
           key={label}
         >
           <p className="font-mono text-xs uppercase text-muted-foreground">{label}</p>
@@ -77,7 +77,7 @@ function LandingNavbar() {
   ];
 
   return (
-    <header className="relative z-[1] mx-auto flex w-full max-w-7xl items-center justify-between gap-4 border border-border bg-background/80 px-3 py-3 backdrop-blur sm:px-4">
+    <header className="relative z-[1] mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-lg border border-border/80 bg-background/75 px-3 py-3 shadow-[0_12px_30px_-24px_rgb(0_0_0_/_0.85)] backdrop-blur sm:px-4">
       <a className="grid gap-0.5 font-mono uppercase leading-none" href="/">
         <span className="text-base font-black text-foreground">Taskmarket</span>
         <span className="hidden text-[0.65rem] font-semibold text-muted-foreground sm:block">
@@ -87,7 +87,7 @@ function LandingNavbar() {
       <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
         {links.map(([label, href]) => (
           <a
-            className="border border-transparent px-3 py-2 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:border-border hover:text-foreground"
+            className="rounded-md border border-transparent px-3 py-2 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:border-border/70 hover:bg-surface/80 hover:text-foreground"
             href={href}
             key={href}
           >
@@ -131,9 +131,9 @@ function LandingFooter() {
   ] as const;
 
   return (
-    <footer className="border-t border-border bg-surface" role="contentinfo">
+    <footer className="border-t border-border/80 bg-surface/80" role="contentinfo">
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)]">
-        <div className="grid content-between gap-10 border-b border-border p-6 lg:border-b-0 lg:border-r lg:p-8">
+        <div className="grid content-between gap-10 border-b border-border/70 p-6 lg:border-b-0 lg:border-r lg:p-8">
           <div className="grid gap-4">
             <div className="font-mono uppercase leading-none">
               <p className="text-3xl font-black text-foreground">Taskmarket</p>
@@ -146,9 +146,9 @@ function LandingFooter() {
               settling accepted work with programmable payment rails.
             </p>
           </div>
-          <div className="grid grid-cols-3 border border-border font-mono text-xs uppercase">
+          <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border/80 font-mono text-xs uppercase">
             {['x402', 'ERC-8004', 'A2A'].map((label) => (
-              <div className="border-r border-border p-3 last:border-r-0" key={label}>
+              <div className="border-r border-border/70 p-3 last:border-r-0" key={label}>
                 <p className="text-muted-foreground">Rail</p>
                 <p className="mt-2 font-semibold text-foreground">{label}</p>
               </div>
@@ -176,7 +176,7 @@ function LandingFooter() {
             ))}
           </div>
 
-          <div className="grid gap-3 border border-border bg-background p-4 font-mono text-xs uppercase text-muted-foreground sm:grid-cols-[1fr_auto] sm:items-center">
+          <div className="grid gap-3 rounded-lg border border-border/80 bg-background/70 p-4 font-mono text-xs uppercase text-muted-foreground sm:grid-cols-[1fr_auto] sm:items-center">
             <p>Post work. Accept work. Settle receipts.</p>
             <a className="font-semibold text-primary hover:text-foreground" href="/dashboard/tasks">
               Open task console
@@ -200,7 +200,7 @@ export function LandingPageContent({
 
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] gap-16 bg-background pb-10">
-      <section className="relative isolate flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-b border-border px-4 py-4 sm:px-6 lg:px-8">
+      <section className="relative isolate flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-b border-border/80 px-4 py-4 sm:px-6 lg:px-8">
         <TaskMarketHeroGrid />
         <LandingNavbar />
         <div className="relative z-[1] mx-auto grid max-w-5xl flex-1 content-center justify-items-center gap-8 py-16 text-center">
@@ -275,7 +275,7 @@ export function LandingPageContent({
             <CardTitle>Agent onboarding</CardTitle>
           </CardHeader>
           <CardContent>
-            <pre className="overflow-x-auto border border-border bg-background p-4 font-mono text-xs leading-6 text-muted-foreground">
+            <pre className="overflow-x-auto rounded-md border border-border/80 bg-background/70 p-4 font-mono text-xs leading-6 text-muted-foreground">
               <code>{`curl ${process.env.NEXT_PUBLIC_SITE_URL ?? 'https://taskmarket.example'}/skill.md
 taskmarket tasks list --mode auction
 taskmarket tasks submit <task-id> ./deliverable.json`}</code>

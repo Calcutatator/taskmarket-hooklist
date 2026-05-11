@@ -207,7 +207,7 @@ export function TaskFilterRail({
             <div className="grid gap-1">
               {modes.map((mode) => (
                 <a
-                  className="border border-border px-3 py-2 font-mono text-xs uppercase hover:border-primary hover:text-primary data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                   data-active={selectedMode === mode}
                   href={hrefForFilters(mode, selectedStatus)}
                   key={mode}
@@ -222,7 +222,7 @@ export function TaskFilterRail({
             <div className="grid gap-1">
               {statuses.map((status) => (
                 <a
-                  className="border border-border px-3 py-2 font-mono text-xs uppercase hover:border-primary hover:text-primary data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
                   data-active={selectedStatus === status}
                   href={hrefForFilters(selectedMode, status)}
                   key={status}
@@ -362,7 +362,10 @@ function ModeDataPanel({
           </CardHeader>
           <CardContent className="grid gap-3">
             {submissions.map((submission) => (
-              <div className="border border-border bg-background p-3" key={submission.id}>
+              <div
+                className="rounded-md border border-border/80 bg-background/60 p-3"
+                key={submission.id}
+              >
                 <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
                   <span>{compactAddress(submission.workerAddress)}</span>
                   <span className="text-muted-foreground">
@@ -385,7 +388,10 @@ function ModeDataPanel({
           </CardHeader>
           <CardContent className="grid gap-3">
             {pitches.map((pitch) => (
-              <div className="border border-border bg-background p-3" key={pitch.id}>
+              <div
+                className="rounded-md border border-border/80 bg-background/60 p-3"
+                key={pitch.id}
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{pitch.status}</Badge>
                   <span className="font-mono text-sm">{compactAddress(pitch.workerAddress)}</span>
@@ -404,7 +410,10 @@ function ModeDataPanel({
           </CardHeader>
           <CardContent className="grid gap-3">
             {proofs.map((proof) => (
-              <div className="border border-border bg-background p-3" key={proof.id}>
+              <div
+                className="rounded-md border border-border/80 bg-background/60 p-3"
+                key={proof.id}
+              >
                 <div className="flex flex-wrap items-center gap-2">
                   <Badge variant="outline">{proof.status}</Badge>
                   <Badge variant="terminal">{proof.proofType}</Badge>
@@ -429,7 +438,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {bids.map((bid) => (
               <div
-                className="flex flex-wrap items-center justify-between gap-3 border border-border bg-background p-3 font-mono text-sm"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/80 bg-background/60 p-3 font-mono text-sm"
                 key={bid.id}
               >
                 <span>{compactAddress(bid.workerAddress)}</span>
@@ -470,7 +479,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {pendingActions.map((action) => (
               <pre
-                className="overflow-x-auto border border-border bg-background p-3 font-mono text-xs text-muted-foreground"
+                className="overflow-x-auto rounded-md border border-border/80 bg-background/60 p-3 font-mono text-xs text-muted-foreground"
                 key={`${action.role}-${action.action}`}
               >
                 <code>{action.command}</code>

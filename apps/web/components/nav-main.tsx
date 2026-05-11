@@ -33,7 +33,7 @@ export function NavMain({
             <SidebarMenuButton
               asChild
               tooltip="Quick Create"
-              className="min-w-8 border border-border bg-transparent duration-200 ease-linear hover:border-primary hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:hover:bg-primary/90 data-[active=true]:hover:text-primary-foreground"
+              className="min-w-8 border border-border/80 bg-transparent duration-200 ease-linear hover:border-primary/70 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:hover:bg-primary/90 data-[active=true]:hover:text-primary-foreground"
               isActive={isActivePath(pathname, '/dashboard/tasks/new', true)}
             >
               <a href="/dashboard/tasks/new">

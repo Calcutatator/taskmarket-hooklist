@@ -201,7 +201,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-rating">Min rating</Label>
               <select
-                className="h-10 border border-input bg-background px-3 py-2 font-mono text-sm text-foreground"
+                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={minRating ?? ''}
                 id="leaderboard-min-rating"
                 name="minRating"
@@ -216,7 +216,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-tasks">Min tasks</Label>
               <select
-                className="h-10 border border-input bg-background px-3 py-2 font-mono text-sm text-foreground"
+                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={minTasks ?? ''}
                 id="leaderboard-min-tasks"
                 name="minTasks"
@@ -231,7 +231,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-limit">Per page</Label>
               <select
-                className="h-10 border border-input bg-background px-3 py-2 font-mono text-sm text-foreground"
+                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={String(pageSize)}
                 id="leaderboard-limit"
                 name="limit"
@@ -270,14 +270,14 @@ export function AgentLeaderboardPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <a
-            className="border border-border px-3 py-2 font-mono text-xs uppercase hover:border-primary data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+            className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
             data-active={sort === 'reputation'}
             href={leaderboardHref(state, { page: 1, sort: 'reputation' })}
           >
             Reputation
           </a>
           <a
-            className="border border-border px-3 py-2 font-mono text-xs uppercase hover:border-primary data-[active=true]:border-primary data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+            className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
             data-active={sort === 'tasks'}
             href={leaderboardHref(state, { page: 1, sort: 'tasks' })}
           >
@@ -289,7 +289,7 @@ export function AgentLeaderboardPanel({
 
       <AgentTable agents={agents} variant="leaderboard" />
 
-      <div className="flex items-center justify-between border-t border-border pt-4">
+      <div className="flex items-center justify-between border-t border-border/75 pt-4">
         <span className="font-mono text-sm text-muted-foreground">Page {page}</span>
         <div className="flex gap-2">
           <Button asChild disabled={!hasPrevPage} variant="outline">
@@ -341,15 +341,15 @@ export function AgentProfilePanel({ agent }: { agent: AgentStats | LeaderboardEn
           <p className="font-mono text-xs text-muted-foreground">ERC-8004 token #{agent.agentId}</p>
         ) : null}
         <div className="grid gap-3 font-mono text-sm sm:grid-cols-3">
-          <div className="border border-border bg-background p-3">
+          <div className="rounded-md border border-border/80 bg-background/60 p-3">
             <p className="text-muted-foreground">Address</p>
             <p className="mt-1 break-all">{agent.address}</p>
           </div>
-          <div className="border border-border bg-background p-3">
+          <div className="rounded-md border border-border/80 bg-background/60 p-3">
             <p className="text-muted-foreground">Rated tasks</p>
             <p className="mt-1">{ratedTasks}</p>
           </div>
-          <div className="border border-border bg-background p-3">
+          <div className="rounded-md border border-border/80 bg-background/60 p-3">
             <p className="text-muted-foreground">Rating</p>
             <p className="mt-1">{agent.averageRating.toFixed(1)}</p>
           </div>
@@ -366,7 +366,7 @@ export function AgentProfilePanel({ agent }: { agent: AgentStats | LeaderboardEn
             <p className="font-mono text-xs uppercase text-muted-foreground">Recent ratings</p>
             {agent.recentRatings.map((rating) => (
               <a
-                className="flex items-center justify-between border border-border bg-background p-3 font-mono text-xs hover:border-primary"
+                className="flex items-center justify-between rounded-md border border-border/80 bg-background/60 p-3 font-mono text-xs transition-colors hover:border-primary/70 hover:bg-surface/70"
                 href={`/dashboard/tasks/${rating.taskId}`}
                 key={`${rating.taskId}-${rating.createdAt}`}
               >
