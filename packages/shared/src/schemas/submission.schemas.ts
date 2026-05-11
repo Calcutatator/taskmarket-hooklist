@@ -35,44 +35,12 @@ export const ArtifactResponseSchema = z.object({
   textPreview: z.string().optional(),
 });
 
-export const SubmissionCreateSchema = z
-  .object({
-    taskId: z.string(),
-    workerAddress: z.string(),
-    file: z.string().min(1, 'File is required').optional(),
-    fileName: z
-      .string()
-      .min(1, 'File name is required')
-      .max(255, 'File name is too long')
-      .optional(),
-    mimeType: z
-      .string()
-      .min(1, 'MIME type is required')
-      .max(120, 'MIME type is too long')
-      .optional(),
-    artifacts: z.array(ArtifactCreateSchema).min(1).max(20).optional(),
-    signature: z.string(),
-  })
-  .superRefine((value, ctx) => {
-    const hasLegacyFile = typeof value.file === 'string' && value.file.length > 0;
-    const hasArtifacts = Array.isArray(value.artifacts) && value.artifacts.length > 0;
-
-    if (hasLegacyFile && hasArtifacts) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'Provide either file or artifacts, not both',
-        path: ['artifacts'],
-      });
-    }
-
-    if (!hasLegacyFile && !hasArtifacts) {
-      ctx.addIssue({
-        code: z.ZodIssueCode.custom,
-        message: 'File or artifacts are required',
-        path: ['file'],
-      });
-    }
-  });
+export const SubmissionCreateSchema = z.object({
+  taskId: z.string(),
+  workerAddress: z.string(),
+  artifacts: z.array(ArtifactCreateSchema).min(1).max(20),
+  signature: z.string(),
+});
 
 export const SubmissionResponseSchema = z.object({
   id: z.string(),

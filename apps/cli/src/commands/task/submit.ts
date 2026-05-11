@@ -62,16 +62,7 @@ export const submitCmd = new Command('submit')
       const body: Record<string, unknown> = {
         workerAddress: keystore.walletAddress,
         signature,
-      };
-
-      if (opts.file.length === 1) {
-        const filePath = opts.file[0]!;
-        const fileContent = await fs.readFile(filePath);
-        body.file = fileContent.toString('base64');
-        body.fileName = basename(filePath);
-        body.mimeType = mimeTypeForPath(filePath);
-      } else {
-        body.artifacts = await Promise.all(
+        artifacts: await Promise.all(
           opts.file.map(async (filePath) => {
             const fileContent = await fs.readFile(filePath);
             return {
@@ -81,8 +72,8 @@ export const submitCmd = new Command('submit')
               file: fileContent.toString('base64'),
             };
           })
-        );
-      }
+        ),
+      };
 
       const result = (await apiPost(`/api/tasks/${taskId}/submissions`, {
         ...body,

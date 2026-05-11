@@ -268,26 +268,13 @@ export const submissionsRouter = router({
       const storage = getStorageBackend();
       const submissionId = randomUUID();
 
-      const artifactInputs =
-        input.artifacts && input.artifacts.length > 0
-          ? input.artifacts.map((artifact, index) => ({
-              fileName: artifact.fileName,
-              mimeType: artifact.mimeType,
-              role: artifact.role,
-              file: artifact.file,
-              displayOrder: index,
-              legacy: false,
-            }))
-          : [
-              {
-                fileName: input.fileName,
-                mimeType: input.mimeType,
-                role: 'attachment' as const,
-                file: input.file!,
-                displayOrder: 0,
-                legacy: true,
-              },
-            ];
+      const artifactInputs = input.artifacts.map((artifact, index) => ({
+        fileName: artifact.fileName,
+        mimeType: artifact.mimeType,
+        role: artifact.role,
+        file: artifact.file,
+        displayOrder: index,
+      }));
 
       const artifactRows: ArtifactInsertRow[] = [];
       for (const artifactInput of artifactInputs) {
@@ -321,10 +308,7 @@ export const submissionsRouter = router({
         });
       }
 
-      const deliverableHash =
-        artifactInputs.length === 1 && artifactInputs[0]?.legacy
-          ? artifactRows[0]!.keccak256Hash
-          : buildArtifactManifestHash(artifactRows);
+      const deliverableHash = buildArtifactManifestHash(artifactRows);
 
       const submitTxHash = await contractSubmitWork(
         input.taskId as `0x${string}`,

@@ -34,7 +34,14 @@ const SUB_ID = '00000000-0000-0000-0000-000000000001';
 const baseSubmitInput = {
   taskId: TASK_ID,
   workerAddress: WORKER,
-  file: Buffer.from('test file content').toString('base64'),
+  artifacts: [
+    {
+      fileName: 'submission.txt',
+      mimeType: 'text/plain',
+      role: 'attachment' as const,
+      file: Buffer.from('test file content').toString('base64'),
+    },
+  ],
   signature: '0xsig',
 };
 
@@ -153,7 +160,7 @@ describe('submissions router', () => {
             file: Buffer.from('<svg />').toString('base64'),
           },
         ],
-      } as any);
+      });
 
       expect(result.success).toBe(true);
       expect(storage.upload).toHaveBeenNthCalledWith(
@@ -184,56 +191,6 @@ describe('submissions router', () => {
           fileName: 'source.svg',
           mediaKind: 'image',
           displayOrder: 1,
-        }),
-      ]);
-    });
-
-    it('uses legacy single-file metadata to create a previewable artifact', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
-      const submissionInsert = makeChain();
-      const artifactInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(submissionInsert).mockReturnValueOnce(artifactInsert);
-
-      const caller = submissionsRouter.createCaller(ctx);
-      await caller.submit({
-        ...baseSubmitInput,
-        fileName: 'logo.png',
-        mimeType: 'image/png',
-      } as any);
-
-      expect(artifactInsert.values).toHaveBeenCalledWith([
-        expect.objectContaining({
-          fileName: 'logo.png',
-          mimeType: 'image/png',
-          mediaKind: 'image',
-        }),
-      ]);
-    });
-
-    it('sniffs legacy file media metadata when clients only provide file bytes', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
-      const submissionInsert = makeChain();
-      const artifactInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(submissionInsert).mockReturnValueOnce(artifactInsert);
-      const pngBytes = Buffer.from([
-        0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a, 0x00, 0x00, 0x00, 0x0d,
-      ]);
-
-      const caller = submissionsRouter.createCaller(ctx);
-      await caller.submit({
-        ...baseSubmitInput,
-        file: pngBytes.toString('base64'),
-      });
-
-      expect(artifactInsert.values).toHaveBeenCalledWith([
-        expect.objectContaining({
-          fileName: 'submission.png',
-          mimeType: 'image/png',
-          mediaKind: 'image',
         }),
       ]);
     });
