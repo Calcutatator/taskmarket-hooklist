@@ -1,5 +1,6 @@
 'use client';
 
+import { useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -14,9 +15,11 @@ function WalletButton() {
   const { address, isConnected } = useAccount();
   const { connect, connectors } = useConnect();
   const { disconnect } = useDisconnect();
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
   const firstConnector = connectors[0];
 
-  if (isConnected && address) {
+  if (mounted && isConnected && address) {
     return (
       <div className="flex items-center gap-2">
         <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
