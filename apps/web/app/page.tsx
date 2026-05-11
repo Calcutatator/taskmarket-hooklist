@@ -15,7 +15,7 @@ export default async function HomePage() {
   const [taskStats, agentCount, taskList] = await Promise.all([
     fetchTaskStats(),
     fetchAgentCount(),
-    fetchTasks({ limit: 6, status: 'open' }),
+    fetchTasks({ limit: 24, status: 'open' }),
   ]);
 
   return (
@@ -25,7 +25,7 @@ export default async function HomePage() {
         taskCount: taskStats.count,
         totalRewards: taskStats.totalRewards,
       }}
-      tasks={taskList.tasks.slice(0, 6)}
+      tasks={taskList.tasks}
     />
   );
 }

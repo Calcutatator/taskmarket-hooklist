@@ -87,6 +87,96 @@ describe('LandingPageContent', () => {
     );
   });
 
+  it('renders market value numbers inside the decorative hero animation', () => {
+    const { container } = render(
+      <LandingPageContent
+        stats={{
+          agentCount: 4,
+          taskCount: 12,
+          totalRewards: '25000000',
+        }}
+        tasks={[liveTask]}
+      />
+    );
+
+    const heroGrid = container.querySelector('[data-testid="task-market-hero-grid"]');
+
+    expect(heroGrid).not.toBeNull();
+    expect(within(heroGrid as HTMLElement).getByText('12')).toBeInTheDocument();
+    expect(within(heroGrid as HTMLElement).getByText('4')).toBeInTheDocument();
+    expect(within(heroGrid as HTMLElement).getByText('25 USDC')).toBeInTheDocument();
+    expect(within(heroGrid as HTMLElement).getByText('850 USDC')).toBeInTheDocument();
+    expect(within(heroGrid as HTMLElement).getByText(/open tasks/i)).toBeInTheDocument();
+    expect(within(heroGrid as HTMLElement).getByText(/reward/i)).toBeInTheDocument();
+  });
+
+  it('adds motion orchestration to the hero copy and landing sections', () => {
+    const { container } = render(
+      <LandingPageContent
+        stats={{
+          agentCount: 4,
+          taskCount: 12,
+          totalRewards: '25000000',
+        }}
+        tasks={[liveTask]}
+      />
+    );
+
+    expect(container.querySelector('[data-motion="landing-hero-copy"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-motion="landing-hero-title"]')).toContainElement(
+      screen.getByRole('heading', { name: /paid work for autonomous agents/i })
+    );
+    expect(container.querySelector('[data-motion="landing-hero-actions"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-motion="landing-hero-install"]')).toBeInTheDocument();
+    expect(container.querySelector('[data-motion="landing-section-burst"]')).toBeInTheDocument();
+    expect(container.querySelectorAll('[data-motion^="landing-section-"]')).toHaveLength(6);
+  });
+
+  it('renders burst compute as the second landing section', () => {
+    const { container } = render(
+      <LandingPageContent
+        stats={{
+          agentCount: 4,
+          taskCount: 12,
+          totalRewards: '25000000',
+        }}
+        tasks={[liveTask]}
+      />
+    );
+
+    const pageSections = Array.from(container.querySelectorAll('section'));
+    const hero = pageSections[0];
+    const burstSection = pageSections[1];
+
+    expect(hero).toContainElement(
+      screen.getByRole('heading', { name: /paid work for autonomous agents/i })
+    );
+    expect(burstSection).toContainElement(
+      screen.getByRole('heading', { name: /burst compute for task buyers/i })
+    );
+    expect(within(burstSection as HTMLElement).getByText(/reach available agents/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).getByText(/attempts vary with availability/i)
+    ).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/settle the best receipt/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/live task routing/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^available agents$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^opt in$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^joined agents$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^accepted receipt$/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^funded task$/i)
+    ).not.toBeInTheDocument();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^best receipt$/i)
+    ).not.toBeInTheDocument();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^variable pool$/i)
+    ).not.toBeInTheDocument();
+    expect(within(burstSection as HTMLElement).getByText(/currently available/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).queryByText(/100x/i)).not.toBeInTheDocument();
+  });
+
   it('renders the landing footer with market and protocol links', () => {
     render(
       <LandingPageContent
@@ -128,7 +218,11 @@ describe('LandingPageContent', () => {
       />
     );
 
-    expect(screen.getByRole('heading', { name: /live market snapshot/i })).toBeVisible();
+    const liveMarketHeading = screen.getByRole('heading', { name: /live market snapshot/i });
+    const liveMarketSection = liveMarketHeading.closest('section');
+
+    expect(liveMarketHeading).toBeVisible();
+    expect(liveMarketSection).not.toBeNull();
     expect(screen.getByRole('heading', { name: /why this market works/i })).toBeVisible();
     expect(screen.getByRole('heading', { name: /how the market moves/i })).toBeVisible();
     expect(screen.getByRole('heading', { name: /pick the right mode/i })).toBeVisible();
@@ -139,7 +233,7 @@ describe('LandingPageContent', () => {
     expect(
       screen.getByRole('link', { name: /build a typed parser for agent capability manifests/i })
     ).toHaveAttribute('href', '/dashboard/tasks/live-auction');
-    expect(screen.getByText('850.000 USDC')).toBeVisible();
+    expect(within(liveMarketSection as HTMLElement).getByText('850.000 USDC')).toBeVisible();
     expect(screen.getByText(/english auction/i)).toBeVisible();
     expect(screen.getByText(/3 bids/i)).toBeVisible();
     expect(screen.getByText(/2 submissions/i)).toBeVisible();

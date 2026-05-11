@@ -188,26 +188,251 @@ body {
 
 .task-market-hero-event {
   position: absolute;
-  top: calc(50% - 36px);
-  left: calc(50% - 36px);
-  width: 72px;
-  height: 72px;
+  top: calc(50% - 34px);
+  left: calc(50% - 56px);
+  display: flex;
+  width: 112px;
+  height: 68px;
+  flex-direction: column;
+  justify-content: space-between;
+  overflow: hidden;
+  padding: 0.65rem;
   border: 1px solid color-mix(in oklab, var(--foreground) 28%, transparent);
   border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--surface) 84%, transparent);
+  box-shadow:
+    0 18px 42px -34px rgb(0 0 0 / 0.9),
+    inset 0 1px 0 rgb(255 255 255 / 0.06);
+  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   opacity: 0;
   transform: translate(var(--event-x), var(--event-y)) scale(0.72);
   animation: task-market-hero-event var(--event-duration) cubic-bezier(0.16, 1, 0.3, 1) infinite;
   animation-delay: var(--event-delay);
+  will-change: opacity, transform;
+}
+
+.task-market-hero-event::before,
+.task-market-hero-event::after {
+  position: absolute;
+  content: '';
+  pointer-events: none;
+}
+
+.task-market-hero-event::before {
+  top: 0.5rem;
+  right: 0.5rem;
+  width: 0.42rem;
+  height: 0.42rem;
+  border-radius: 999px;
+  background: currentColor;
+  opacity: 0.62;
+}
+
+.task-market-hero-event::after {
+  inset: 0;
+  background: linear-gradient(
+    115deg,
+    transparent 0%,
+    transparent 35%,
+    rgb(255 255 255 / 0.13) 48%,
+    transparent 61%,
+    transparent 100%
+  );
+  transform: translateX(-140%);
+  animation: task-market-hero-scan var(--event-duration) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation-delay: var(--event-delay);
+}
+
+.task-market-hero-event__label,
+.task-market-hero-event__value {
+  position: relative;
+  z-index: 1;
+  line-height: 1;
+}
+
+.task-market-hero-event__label {
+  max-width: 9ch;
+  color: color-mix(in oklab, var(--muted-foreground) 86%, transparent);
+  font-size: 0.58rem;
+  font-weight: 800;
+  letter-spacing: 0;
+  text-transform: uppercase;
+}
+
+.task-market-hero-event__value {
+  color: var(--foreground);
+  font-size: 0.76rem;
+  font-weight: 900;
+  letter-spacing: 0;
+  overflow-wrap: anywhere;
+  text-transform: uppercase;
 }
 
 .task-market-hero-event--accepted {
+  color: var(--primary);
   background: color-mix(in oklab, var(--primary) 26%, transparent);
   border-color: color-mix(in oklab, var(--primary) 72%, var(--border));
 }
 
 .task-market-hero-event--submission {
+  color: var(--accent);
   background: color-mix(in oklab, var(--accent) 22%, transparent);
   border-color: color-mix(in oklab, var(--accent) 64%, var(--border));
+}
+
+.task-market-hero-event--volume {
+  color: var(--warning);
+  background: color-mix(in oklab, var(--warning) 18%, transparent);
+  border-color: color-mix(in oklab, var(--warning) 58%, var(--border));
+}
+
+.task-market-burst-flow {
+  position: relative;
+  display: grid;
+  grid-template-columns: minmax(4.25rem, 0.64fr) minmax(10rem, 1.5fr) minmax(4.25rem, 0.64fr);
+  align-items: stretch;
+  gap: clamp(0.6rem, 1.8vw, 1.1rem);
+  min-height: 16.25rem;
+  overflow: hidden;
+  padding: clamp(0.75rem, 2vw, 1rem);
+  border: 1px solid color-mix(in oklab, var(--border) 88%, transparent);
+  border-radius: var(--radius-lg);
+  background:
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--surface) 86%, transparent),
+      color-mix(in oklab, var(--background) 92%, transparent)
+    ),
+    radial-gradient(
+      ellipse at 58% 30%,
+      color-mix(in oklab, var(--primary) 18%, transparent),
+      transparent 56%
+    );
+}
+
+.task-market-burst-flow::before,
+.task-market-burst-flow::after {
+  position: absolute;
+  right: clamp(1.25rem, 8vw, 5rem);
+  left: clamp(1.25rem, 8vw, 5rem);
+  top: 50%;
+  height: 2px;
+  content: '';
+  pointer-events: none;
+}
+
+.task-market-burst-flow::before {
+  background: linear-gradient(
+    90deg,
+    color-mix(in oklab, var(--border) 82%, transparent),
+    color-mix(in oklab, var(--primary) 58%, transparent),
+    color-mix(in oklab, var(--accent) 58%, transparent)
+  );
+  opacity: 0.66;
+}
+
+.task-market-burst-flow::after {
+  background: linear-gradient(
+    90deg,
+    transparent,
+    color-mix(in oklab, var(--primary) 86%, transparent),
+    color-mix(in oklab, var(--accent) 70%, transparent),
+    transparent
+  );
+  opacity: 0;
+  transform: translateX(-38%) scaleX(0.22);
+  animation: task-market-burst-route 3.2s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+}
+
+.task-market-burst-stage {
+  position: relative;
+  z-index: 1;
+  display: grid;
+  align-content: center;
+  justify-items: center;
+  min-width: 0;
+}
+
+.task-market-burst-source,
+.task-market-burst-receipt,
+.task-market-burst-agent-lane {
+  position: relative;
+  z-index: 1;
+}
+
+.task-market-burst-source,
+.task-market-burst-receipt {
+  display: grid;
+  width: min(100%, 5.75rem);
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid color-mix(in oklab, var(--border) 86%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--surface) 86%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.05);
+}
+
+.task-market-burst-source::before {
+  width: 38%;
+  height: 38%;
+  border-radius: calc(var(--radius-sm) - 1px);
+  background: color-mix(in oklab, var(--primary) 42%, var(--foreground));
+  content: '';
+  opacity: 0.72;
+}
+
+.task-market-burst-receipt::before,
+.task-market-burst-receipt::after {
+  width: 44%;
+  height: 2px;
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--accent) 72%, var(--foreground));
+  content: '';
+}
+
+.task-market-burst-receipt {
+  gap: 0.28rem;
+}
+
+.task-market-burst-receipt::after {
+  width: 30%;
+  opacity: 0.58;
+}
+
+.task-market-burst-agent-lane {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  place-self: center;
+  width: min(100%, 16.5rem);
+  gap: clamp(0.38rem, 1.4vw, 0.6rem);
+  padding: clamp(0.65rem, 1.6vw, 1rem);
+  border: 1px solid color-mix(in oklab, var(--border) 78%, transparent);
+  border-radius: var(--radius-lg);
+  background: color-mix(in oklab, var(--background) 62%, transparent);
+  box-shadow: inset 0 1px 0 rgb(255 255 255 / 0.04);
+}
+
+.task-market-burst-agent {
+  aspect-ratio: 1;
+  min-width: 1.25rem;
+  border: 1px solid color-mix(in oklab, var(--muted-foreground) 22%, var(--border));
+  border-radius: 999px;
+  background: color-mix(in oklab, var(--muted-foreground) 16%, var(--surface));
+  opacity: 0.42;
+  transform: scale(0.86);
+  animation: task-market-burst-agent 3s cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation-delay: var(--burst-delay);
+  will-change: opacity, transform;
+}
+
+.task-market-burst-agent--joined {
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
+  background: color-mix(in oklab, var(--accent) 30%, var(--surface));
+}
+
+.task-market-burst-agent--accepted {
+  border-color: color-mix(in oklab, var(--primary) 58%, var(--border));
+  background: color-mix(in oklab, var(--primary) 42%, var(--surface));
 }
 
 @keyframes task-market-hero-event {
@@ -215,22 +440,85 @@ body {
   12%,
   100% {
     opacity: 0;
-    transform: translate(var(--event-x), var(--event-y)) scale(0.72);
+    transform: translate(var(--event-x), calc(var(--event-y) + 18px)) scale(0.72);
   }
 
   18% {
-    opacity: 0.68;
+    opacity: 0.72;
     transform: translate(var(--event-x), var(--event-y)) scale(1);
   }
 
   38% {
-    opacity: 0.32;
-    transform: translate(var(--event-x), var(--event-y)) scale(0.92);
+    opacity: 0.4;
+    transform: translate(var(--event-x), calc(var(--event-y) - 8px)) scale(0.94);
   }
 
   54% {
     opacity: 0;
-    transform: translate(var(--event-x), var(--event-y)) scale(0.76);
+    transform: translate(var(--event-x), calc(var(--event-y) - 18px)) scale(0.78);
+  }
+}
+
+@keyframes task-market-burst-agent {
+  0%,
+  100% {
+    opacity: 0.38;
+    transform: scale(0.86);
+  }
+
+  24% {
+    opacity: 0.9;
+    transform: scale(1);
+  }
+
+  48% {
+    opacity: 0.54;
+    transform: scale(0.94);
+  }
+}
+
+@keyframes task-market-burst-route {
+  0%,
+  100% {
+    opacity: 0;
+    transform: translateX(-38%) scaleX(0.22);
+  }
+
+  22%,
+  58% {
+    opacity: 0.92;
+  }
+
+  70% {
+    opacity: 0;
+    transform: translateX(38%) scaleX(0.48);
+  }
+}
+
+@keyframes task-market-hero-scan {
+  0%,
+  19%,
+  100% {
+    transform: translateX(-140%);
+  }
+
+  35%,
+  46% {
+    transform: translateX(140%);
+  }
+}
+
+@media (min-width: 768px) {
+  .task-market-hero-event {
+    top: calc(50% - 40px);
+    left: calc(50% - 68px);
+    width: 136px;
+    height: 80px;
+    padding: 0.75rem;
+  }
+
+  .task-market-hero-event__value {
+    font-size: 0.96rem;
   }
 }
 
@@ -238,6 +526,17 @@ body {
   .task-market-hero-event {
     opacity: 0.24;
     transform: translate(var(--event-x), var(--event-y)) scale(0.9);
+    animation: none;
+  }
+
+  .task-market-hero-event::after {
+    animation: none;
+  }
+
+  .task-market-burst-flow::after,
+  .task-market-burst-agent {
+    opacity: 0.58;
+    transform: none;
     animation: none;
   }
 }

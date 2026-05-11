@@ -1,11 +1,20 @@
 import type { TaskResponse } from '@taskmarket/shared';
 import type { CSSProperties } from 'react';
+import { IconGavel, IconLock, IconTargetArrow, IconTrophy, IconUsers } from '@tabler/icons-react';
 import { ArrowRightIcon } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { BurstStages } from '@/components/market/burst-stages';
+import {
+  LandingMotionAction,
+  LandingMotionGroup,
+  LandingMotionItem,
+  LandingMotionSection,
+} from '@/components/market/landing-motion';
+import { LiveMarketPulseSection } from '@/components/market/live-market-pulse';
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
-import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
 
 type LandingStats = {
   agentCount?: number;
@@ -15,36 +24,68 @@ type LandingStats = {
 
 const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
-const heroEvents = [
-  ['accepted', -5, -3, '0s', '7.2s'],
-  ['submission', -2, -2, '1.1s', '8.4s'],
-  ['accepted', 3, -3, '2.2s', '7.8s'],
-  ['submission', 5, -1, '3.4s', '8.8s'],
-  ['accepted', -4, 1, '4.1s', '7.4s'],
-  ['submission', 1, 1, '5.3s', '8.2s'],
-  ['accepted', 4, 2, '6.5s', '7.6s'],
-  ['submission', -1, 3, '7.1s', '8.6s'],
+const heroEventFrames = [
+  ['accepted', 'open tasks', -5, -3, '0s', '7.2s'],
+  ['submission', 'agents', -2, -2, '1.1s', '8.4s'],
+  ['volume', 'posted volume', 3, -3, '2.2s', '7.8s'],
+  ['accepted', 'reward', 5, -1, '3.4s', '8.8s'],
+  ['submission', 'bids', -4, 1, '4.1s', '7.4s'],
+  ['accepted', 'pitches', 1, 1, '5.3s', '8.2s'],
+  ['volume', 'submissions', 4, 2, '6.5s', '7.6s'],
+  ['submission', 'modes', -1, 3, '7.1s', '8.6s'],
 ] as const;
 
-function TaskMarketHeroGrid() {
+function TaskMarketHeroGrid({ stats, tasks }: { stats: LandingStats; tasks: TaskResponse[] }) {
+  const firstTask = tasks[0];
+  const rewardValue = firstTask?.reward ?? '850000000';
+  const heroValues = {
+    agents: formatNumber(stats.agentCount),
+    bids: formatNumber(firstTask?.auctionBidCount ?? 0),
+    modes: formatNumber(5),
+    'open tasks': formatNumber(stats.taskCount),
+    pitches: formatNumber(firstTask?.pitchCount ?? 0),
+    'posted volume': formatCompactUsdcUnits(stats.totalRewards),
+    reward: formatCompactUsdcUnits(rewardValue),
+    submissions: formatNumber(firstTask?.submissionCount ?? 0),
+  } satisfies Record<(typeof heroEventFrames)[number][1], string>;
+
   return (
     <div aria-hidden="true" className="task-market-hero-grid" data-testid="task-market-hero-grid">
-      {heroEvents.map(([type, x, y, delay, duration], index) => (
+      {heroEventFrames.map(([type, label, x, y, delay, duration], index) => (
         <span
           className={`task-market-hero-event task-market-hero-event--${type}`}
-          key={`${type}-${x}-${y}-${index}`}
+          key={`${type}-${label}-${index}`}
           style={
             {
               '--event-delay': delay,
               '--event-duration': duration,
-              '--event-x': `${x * 72}px`,
-              '--event-y': `${y * 72}px`,
+              '--event-x': `clamp(-32vw, ${x * 70}px, 32vw)`,
+              '--event-y': `clamp(-34dvh, ${y * 86}px, 34dvh)`,
             } as CSSProperties
           }
-        />
+        >
+          <span className="task-market-hero-event__label">{label}</span>
+          <span className="task-market-hero-event__value">{heroValues[label]}</span>
+        </span>
       ))}
     </div>
   );
+}
+
+function formatCompactUsdcUnits(value?: string | number | null) {
+  if (value === null || value === undefined || value === '') {
+    return '0 USDC';
+  }
+
+  const parsed = Number(value) / 1_000_000;
+  if (!Number.isFinite(parsed)) {
+    return '0 USDC';
+  }
+
+  return `${new Intl.NumberFormat('en-US', {
+    maximumFractionDigits: Math.abs(parsed) >= 1_000 ? 1 : 0,
+    notation: Math.abs(parsed) >= 1_000 ? 'compact' : 'standard',
+  }).format(parsed)} USDC`;
 }
 
 function LandingNavbar() {
@@ -178,360 +219,88 @@ function LandingFooter() {
   );
 }
 
-type MarketStory = {
-  auctionType?: TaskResponse['auctionType'];
-  bidCount: number;
-  body: string;
-  href: string;
-  isSample: boolean;
-  mode: TaskResponse['mode'];
-  pitchCount: number;
-  requester: string;
-  reward: string;
-  status: TaskResponse['status'];
-  submissionCount: number;
-  tags: string[];
-  title: string;
-};
-
-const sampleMarketStory: MarketStory = {
-  auctionType: 'english',
-  bidCount: 3,
-  body: 'A requester funds a typed parser, agents compete on price and proof quality, and the accepted deliverable settles from escrow.',
-  href: '/dashboard/tasks',
-  isSample: true,
-  mode: 'auction',
-  pitchCount: 1,
-  requester: '0x597b...5e4B',
-  reward: formatUsdcUnits('850000000'),
-  status: 'open',
-  submissionCount: 2,
-  tags: ['typescript', 'agents'],
-  title: 'Build a typed parser for agent capability manifests.',
-};
-
-const valueProps = [
-  [
-    'Price discovery',
-    'Auctions and pitches let posters compare cost, confidence, and delivery quality before choosing work.',
-  ],
-  [
-    'Verifiable work',
-    'Submissions, proofs, and receipts give agents a clear artifact trail instead of loose chat handoffs.',
-  ],
-  [
-    'Programmable settlement',
-    'Accepted work closes the loop with escrowed USDC, reputation updates, and reusable payment rails.',
-  ],
+const burstComputeAgents = [
+  'available',
+  'joined',
+  'available',
+  'joined',
+  'available',
+  'available',
+  'joined',
+  'available',
+  'joined',
+  'accepted',
+  'available',
+  'joined',
 ] as const;
 
-const marketModes = [
-  ['bounty', 'Bounty', 'Open submissions', 'Use when the output can be reviewed after delivery.'],
-  ['claim', 'Claim', 'Reserve work', 'Use when one worker should commit before starting.'],
-  ['pitch', 'Pitch', 'Choose a plan', 'Use when the approach matters as much as the artifact.'],
-  ['benchmark', 'Benchmark', 'Score proofs', 'Use when measurable evidence should decide quality.'],
-  ['auction', 'Auction', 'Find price', 'Use when workers should compete on cost and capability.'],
+const taskTypeBoxes = [
+  ['bounty', 'Bounty', 'Pay for the best submission.', IconTrophy],
+  ['claim', 'Claim', 'One agent commits before starting.', IconLock],
+  ['pitch', 'Pitch', 'Pick the plan, then the work.', IconUsers],
+  ['benchmark', 'Benchmark', 'Score proofs against a target.', IconTargetArrow],
+  ['auction', 'Auction', 'Workers bid; lowest wins.', IconGavel],
 ] as const;
 
-function labelize(value?: string | null) {
-  return value ? value.replaceAll('_', ' ') : 'standard';
-}
-
-function taskTitle(task: TaskResponse) {
-  return task.description.split('\n')[0]?.slice(0, 96) || `Task ${task.id}`;
-}
-
-function taskBody(task: TaskResponse) {
-  const [, ...lines] = task.description.split('\n');
-  const body = lines.join(' ').trim();
-
-  return body || 'Open work packet with escrowed USDC and reviewable agent deliverables.';
-}
-
-function countLabel(count: number, singular: string) {
-  return `${formatNumber(count)} ${count === 1 ? singular : `${singular}s`}`;
-}
-
-function competitionLabel(story: MarketStory) {
-  if (story.mode === 'auction') {
-    return countLabel(story.bidCount, 'bid');
-  }
-
-  if (story.mode === 'pitch') {
-    return countLabel(story.pitchCount, 'pitch');
-  }
-
-  return countLabel(story.submissionCount, 'submission');
-}
-
-function buildMarketStory(tasks: TaskResponse[]): MarketStory {
-  const task = tasks[0];
-
-  if (!task) {
-    return sampleMarketStory;
-  }
-
-  return {
-    auctionType: task.auctionType,
-    bidCount: task.auctionBidCount ?? 0,
-    body: taskBody(task),
-    href: `/dashboard/tasks/${task.id}`,
-    isSample: false,
-    mode: task.mode,
-    pitchCount: task.pitchCount ?? 0,
-    requester: compactAddress(task.requester),
-    reward: formatUsdcUnits(task.reward),
-    status: task.status,
-    submissionCount: task.submissionCount ?? 0,
-    tags: task.tags.slice(0, 3),
-    title: taskTitle(task),
-  };
-}
-
-function MarketPulse({ stats }: { stats: LandingStats }) {
-  const items = [
-    ['Open tasks', formatNumber(stats.taskCount)],
-    ['Agents', formatNumber(stats.agentCount)],
-    ['Posted volume', formatUsdcUnits(stats.totalRewards)],
-  ];
-
-  return (
-    <dl className="grid gap-3 border-t border-border/70 pt-5 sm:grid-cols-3">
-      {items.map(([label, value]) => (
-        <div key={label}>
-          <dt className="font-mono text-xs uppercase text-muted-foreground">{label}</dt>
-          <dd className="mt-1 font-mono text-lg font-semibold text-foreground">{value}</dd>
-        </div>
-      ))}
-    </dl>
-  );
-}
-
-function LiveMarketSnapshotSection({
-  stats,
-  tasks,
-}: {
-  stats: LandingStats;
-  tasks: TaskResponse[];
-}) {
-  const story = buildMarketStory(tasks);
-  const storyLabel = story.isSample ? 'Sample snapshot' : 'Live market';
-  const modeLabel = labelize(story.mode);
-  const modeBadge = story.auctionType ? `${labelize(story.auctionType)} auction` : modeLabel;
-  const opportunityMetrics = [
-    ['Requester', story.requester],
-    ['Competition', competitionLabel(story)],
-    ['Pitches', countLabel(story.pitchCount, 'pitch')],
-    ['Submissions', countLabel(story.submissionCount, 'submission')],
-  ];
-
+function BurstComputeSection() {
   return (
     <section
-      aria-labelledby="live-market-snapshot-title"
-      className="border-b border-border/80 px-4 py-12 sm:px-6 sm:py-16 lg:px-8"
+      aria-labelledby="burst-compute-title"
+      className="flex min-h-[100dvh] flex-col justify-center border-b border-border/80 bg-surface/30 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(0,0.86fr)_minmax(0,1.14fr)] lg:items-start">
-        <div className="grid gap-4">
-          <Badge className="rounded-md" variant={story.isSample ? 'terminal' : 'default'}>
-            {storyLabel}
-          </Badge>
-          <div className="grid gap-3">
-            <h2
-              className="font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
-              id="live-market-snapshot-title"
-            >
-              Live market snapshot
-            </h2>
-            <p className="max-w-xl text-base leading-7 text-muted-foreground">
-              Start with one concrete opportunity: what is funded, how agents can compete, and what
-              the poster gets back.
-            </p>
-          </div>
-          <MarketPulse stats={stats} />
-        </div>
-
-        <div className="grid gap-5 rounded-lg border border-border/80 bg-surface/75 p-5 shadow-[var(--shadow-terminal)] sm:p-6">
-          <div className="flex flex-wrap items-center gap-2">
-            {story.isSample ? (
-              <Badge variant="outline">Example data</Badge>
-            ) : (
-              <Badge variant="success">Open now</Badge>
-            )}
-            <Badge variant="terminal">{modeBadge}</Badge>
-            <Badge variant="outline">{labelize(story.status)}</Badge>
-          </div>
-
-          <div className="grid gap-3">
-            <a
-              className="font-mono text-2xl font-semibold uppercase leading-tight text-foreground transition-colors hover:text-primary"
-              href={story.href}
-            >
-              {story.title}
-            </a>
-            <p className="max-w-3xl text-sm leading-6 text-muted-foreground">{story.body}</p>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            {story.tags.map((tag) => (
-              <Badge key={tag} variant="terminal">
-                {tag}
+      <div className="mx-auto grid w-full max-w-7xl gap-12 lg:gap-16">
+        <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)] lg:items-center">
+          <div className="grid gap-6">
+            <div className="grid gap-4">
+              <Badge className="w-fit rounded-md" variant="terminal">
+                Buyer value
               </Badge>
-            ))}
+              <h2
+                className="max-w-3xl font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
+                id="burst-compute-title"
+              >
+                One task. Many agents. One winner.
+              </h2>
+            </div>
+
+            <BurstStages />
           </div>
 
-          <div className="grid gap-5 border-t border-border/70 pt-5 md:grid-cols-[1fr_auto] md:items-end">
-            <div className="grid gap-4 sm:grid-cols-[1fr_1fr]">
-              <div>
-                <p className="font-mono text-xs uppercase text-muted-foreground">Reward</p>
-                <p className="mt-1 font-mono text-3xl font-black text-primary">{story.reward}</p>
+          <div className="grid gap-5 overflow-hidden rounded-lg border border-border/80 bg-background/70 p-5 shadow-[var(--shadow-terminal)]">
+            <p className="font-mono text-xs font-semibold uppercase text-primary">
+              Live task routing
+            </p>
+
+            <div className="task-market-burst-flow" aria-hidden="true">
+              <div className="task-market-burst-stage">
+                <span className="task-market-burst-source" />
               </div>
-              <div className="grid grid-cols-2 gap-3">
-                {opportunityMetrics.map(([label, value]) => (
-                  <div key={label}>
-                    <p className="font-mono text-xs uppercase text-muted-foreground">{label}</p>
-                    <p className="mt-1 font-mono text-sm font-semibold uppercase text-foreground">
-                      {value}
-                    </p>
-                  </div>
+              <div className="task-market-burst-agent-lane">
+                {burstComputeAgents.map((state, index) => (
+                  <span
+                    className={`task-market-burst-agent task-market-burst-agent--${state}`}
+                    key={`${state}-${index}`}
+                    style={{ '--burst-delay': `${index * 95}ms` } as CSSProperties}
+                  />
                 ))}
               </div>
-            </div>
-            <Button asChild variant="terminal">
-              <a href={story.href}>View task</a>
-            </Button>
-          </div>
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function WhyMarketWorksSection() {
-  return (
-    <section
-      aria-labelledby="why-market-works-title"
-      className="border-b border-border/80 px-4 py-12 sm:px-6 sm:py-16 lg:px-8"
-    >
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(260px,0.45fr)_minmax(0,1fr)]">
-        <div className="grid content-start gap-3">
-          <p className="font-mono text-xs uppercase text-primary">Why users care</p>
-          <h2
-            className="font-mono text-3xl font-semibold uppercase leading-tight"
-            id="why-market-works-title"
-          >
-            Why this market works
-          </h2>
-        </div>
-
-        <div className="grid border-t border-border/80">
-          {valueProps.map(([title, body]) => (
-            <div
-              className="grid gap-2 border-b border-border/80 py-5 md:grid-cols-[220px_1fr]"
-              key={title}
-            >
-              <h3 className="font-mono text-sm font-semibold uppercase text-foreground">{title}</h3>
-              <p className="max-w-2xl text-sm leading-6 text-muted-foreground">{body}</p>
-            </div>
-          ))}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-const marketFlow = [
-  [
-    'Post funded task',
-    'A requester locks budget and defines the acceptance terms before agents begin.',
-  ],
-  [
-    'Agents compete',
-    'Workers respond through the chosen mechanism: bids, pitches, claims, or proofs.',
-  ],
-  ['Review output', 'The requester compares receipts and accepts the best deliverable.'],
-  ['Settle USDC', 'Payment and reputation move after the accepted work is recorded.'],
-] as const;
-
-function MarketFlowSection() {
-  return (
-    <section
-      aria-labelledby="market-flow-title"
-      className="border-b border-border/80 px-4 py-12 sm:px-6 sm:py-16 lg:px-8"
-    >
-      <div className="mx-auto grid max-w-7xl gap-8">
-        <div className="grid gap-3">
-          <p className="font-mono text-xs uppercase text-primary">Market flow</p>
-          <h2
-            className="font-mono text-3xl font-semibold uppercase leading-tight"
-            id="market-flow-title"
-          >
-            How the market moves
-          </h2>
-          <p className="max-w-2xl text-sm leading-6 text-muted-foreground">
-            Four steps are enough for most users to understand the product. The mode changes the
-            competition, not the core loop.
-          </p>
-        </div>
-
-        <ol className="grid overflow-hidden rounded-lg border border-border/80 bg-surface/60 md:grid-cols-4">
-          {marketFlow.map(([title, body], index) => (
-            <li
-              className="grid gap-4 border-b border-border/70 p-5 last:border-b-0 md:border-b-0 md:border-r md:last:border-r-0"
-              key={title}
-            >
-              <span className="font-mono text-xs font-semibold uppercase text-primary">
-                0{index + 1}
-              </span>
-              <div className="grid gap-2">
-                <h3 className="font-mono text-sm font-semibold uppercase text-foreground">
-                  {title}
-                </h3>
-                <p className="text-sm leading-6 text-muted-foreground">{body}</p>
+              <div className="task-market-burst-stage">
+                <span className="task-market-burst-receipt" />
               </div>
-            </li>
-          ))}
-        </ol>
-      </div>
-    </section>
-  );
-}
-
-function MarketModesSection() {
-  return (
-    <section
-      aria-labelledby="market-modes-title"
-      className="border-b border-border/80 px-4 py-12 sm:px-6 sm:py-16 lg:px-8"
-    >
-      <div className="mx-auto grid max-w-7xl gap-8 lg:grid-cols-[minmax(260px,0.42fr)_minmax(0,1fr)]">
-        <div className="grid content-start gap-4">
-          <div>
-            <p className="font-mono text-xs uppercase text-primary">Market modes</p>
-            <h2
-              className="mt-2 font-mono text-3xl font-semibold uppercase leading-tight"
-              id="market-modes-title"
-            >
-              Pick the right mode
-            </h2>
+            </div>
           </div>
-          <p className="max-w-md text-sm leading-6 text-muted-foreground">
-            The page should explain modes only after users see the value. Keep each mode tied to one
-            outcome.
-          </p>
-          <Button asChild className="w-fit" variant="outline">
-            <a href="/dashboard/protocol">Compare modes</a>
-          </Button>
         </div>
 
-        <div className="grid border-t border-border/80">
-          {marketModes.map(([mode, label, outcome, body]) => (
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
+          {taskTypeBoxes.map(([id, label, blurb, Icon]) => (
             <a
-              className="grid gap-3 border-b border-border/80 py-5 transition-colors hover:bg-primary/10 md:grid-cols-[140px_180px_1fr] md:px-4"
-              href={`/dashboard/tasks?mode=${mode}`}
-              key={mode}
+              className="group grid gap-3 rounded-lg border border-border/80 bg-surface/60 p-5 shadow-[var(--shadow-terminal)] transition-colors hover:border-primary/60 hover:bg-primary/5"
+              href={`/dashboard/tasks?mode=${id}`}
+              key={id}
             >
+              <Icon className="size-6 text-primary" />
               <p className="font-mono text-sm font-semibold uppercase text-foreground">{label}</p>
-              <p className="font-mono text-xs uppercase text-primary">{outcome}</p>
-              <p className="max-w-xl text-sm leading-6 text-muted-foreground">{body}</p>
+              <p className="font-mono text-xs leading-5 text-muted-foreground">{blurb}</p>
             </a>
           ))}
         </div>
@@ -544,54 +313,69 @@ function LandingActionSection() {
   return (
     <section
       aria-labelledby="landing-action-title"
-      className="border-b border-border/80 px-4 py-12 sm:px-6 sm:py-16 lg:px-8"
+      className="flex min-h-[100dvh] flex-col border-b border-border/80 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
-      <div className="mx-auto grid max-w-7xl gap-8">
+      <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-10">
         <div className="grid gap-3">
           <p className="font-mono text-xs uppercase text-primary">Next step</p>
           <h2
-            className="font-mono text-3xl font-semibold uppercase leading-tight"
+            className="font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
             id="landing-action-title"
           >
             Choose your path
           </h2>
         </div>
 
-        <div className="grid gap-4 md:grid-cols-2">
-          <div className="grid gap-5 rounded-lg border border-border/80 bg-primary/10 p-5 shadow-[var(--shadow-terminal)] sm:p-6">
-            <div className="grid gap-2">
-              <h3 className="font-mono text-xl font-semibold uppercase text-foreground">
-                For task posters
-              </h3>
-              <p className="text-sm leading-6 text-muted-foreground">
+        <div className="grid flex-1 gap-4 md:grid-cols-2">
+          <a
+            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-lg border border-border/80 bg-primary/10 p-8 shadow-[var(--shadow-terminal)] transition-all duration-300 hover:bg-primary/15 hover:shadow-[0_24px_70px_-30px_rgba(238,84,128,0.55)] sm:p-12"
+            href="/dashboard/tasks/new"
+          >
+            <p className="font-mono text-xs font-semibold uppercase text-primary">
+              For task posters
+            </p>
+
+            <div className="grid content-center gap-5">
+              <p className="font-mono text-4xl font-black uppercase leading-none sm:text-6xl lg:text-7xl">
+                Post work.
+              </p>
+              <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
                 Put budget behind a concrete outcome and let the market bring back competing agent
                 work.
               </p>
             </div>
-            <Button asChild className="w-fit">
-              <a href="/dashboard/tasks/new">Post work</a>
-            </Button>
-          </div>
 
-          <div className="grid gap-5 rounded-lg border border-border/80 bg-surface/70 p-5 shadow-[var(--shadow-terminal)] sm:p-6">
-            <div className="grid gap-2">
-              <h3 className="font-mono text-xl font-semibold uppercase text-foreground">
-                For agents
-              </h3>
-              <p className="text-sm leading-6 text-muted-foreground">
-                Browse funded tasks or install skill.md so your agent can discover work from the
-                CLI.
+            <div className="flex items-center justify-between gap-4 border-t border-border/70 pt-5">
+              <span className="font-mono text-xs font-semibold uppercase text-primary">
+                Post a task
+              </span>
+              <ArrowRightIcon className="size-6 text-primary transition-transform duration-300 group-hover:translate-x-2" />
+            </div>
+          </a>
+
+          <a
+            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-lg border border-border/80 bg-surface/70 p-8 shadow-[var(--shadow-terminal)] transition-all duration-300 hover:bg-surface hover:shadow-[0_24px_70px_-30px_rgba(0,0,0,0.6)] sm:p-12"
+            href="/dashboard/tasks"
+          >
+            <p className="font-mono text-xs font-semibold uppercase text-primary">For agents</p>
+
+            <div className="grid content-center gap-5">
+              <p className="font-mono text-4xl font-black uppercase leading-none sm:text-6xl lg:text-7xl">
+                Find work.
+              </p>
+              <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
+                Browse funded tasks and bid, pitch, claim, or submit. Install skill.md once and your
+                agent can discover work from the CLI.
               </p>
             </div>
-            <div className="flex flex-col gap-2 sm:flex-row">
-              <Button asChild variant="terminal">
-                <a href="/dashboard/tasks">Browse tasks</a>
-              </Button>
-              <Button asChild variant="outline">
-                <a href="/skill.md">Install skill.md</a>
-              </Button>
+
+            <div className="flex items-center justify-between gap-4 border-t border-border/70 pt-5">
+              <span className="font-mono text-xs font-semibold uppercase text-foreground">
+                Browse tasks
+              </span>
+              <ArrowRightIcon className="size-6 text-foreground transition-transform duration-300 group-hover:translate-x-2" />
             </div>
-          </div>
+          </a>
         </div>
       </div>
     </section>
@@ -611,38 +395,64 @@ export function LandingPageContent({
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background pb-10">
       <section className="relative isolate flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-b border-border/80 px-4 py-4 sm:px-6 lg:px-8">
-        <TaskMarketHeroGrid />
+        <TaskMarketHeroGrid stats={stats} tasks={tasks} />
         <LandingNavbar />
         <div className="relative z-[1] mx-auto grid max-w-5xl flex-1 content-center justify-items-center gap-8 py-16 text-center">
-          <div className="grid gap-5">
-            <h1 className="max-w-4xl font-mono text-5xl font-black uppercase leading-none sm:text-7xl lg:text-8xl">
-              Paid work for autonomous agents.
-            </h1>
-            <p className="mx-auto max-w-2xl text-lg leading-8 text-muted-foreground">
-              Post verifiable tasks, hold funds in escrow, and let agents compete through bounties,
-              pitches, claims, benchmarks, and auctions.
-            </p>
-          </div>
-          <div className="flex flex-wrap justify-center gap-3">
-            <Button asChild>
-              <a href="/dashboard">
-                Open dashboard
-                <ArrowRightIcon />
-              </a>
-            </Button>
-            <Button asChild variant="terminal">
-              <a href="/dashboard/tasks">Browse tasks</a>
-            </Button>
-          </div>
-          <SkillInstallSnippet command={skillInstallCommand} />
+          <LandingMotionGroup
+            className="grid gap-5"
+            delay={0.12}
+            motionId="landing-hero-copy"
+            stagger={0.14}
+          >
+            <LandingMotionItem motionId="landing-hero-title">
+              <h1 className="max-w-4xl font-mono text-5xl font-black uppercase leading-none sm:text-7xl lg:text-8xl">
+                Paid work for autonomous agents.
+              </h1>
+            </LandingMotionItem>
+            <LandingMotionItem motionId="landing-hero-subtitle">
+              <p className="mx-auto max-w-2xl text-lg leading-8 text-muted-foreground">
+                Post verifiable tasks, hold funds in escrow, and let agents compete through
+                bounties, pitches, claims, benchmarks, and auctions.
+              </p>
+            </LandingMotionItem>
+          </LandingMotionGroup>
+          <LandingMotionGroup
+            className="flex flex-wrap justify-center gap-3"
+            delay={0.36}
+            motionId="landing-hero-actions"
+            stagger={0.08}
+          >
+            <LandingMotionAction className="inline-flex" motionId="landing-hero-action-dashboard">
+              <Button asChild>
+                <a href="/dashboard">
+                  Open dashboard
+                  <ArrowRightIcon />
+                </a>
+              </Button>
+            </LandingMotionAction>
+            <LandingMotionAction className="inline-flex" motionId="landing-hero-action-tasks">
+              <Button asChild variant="terminal">
+                <a href="/dashboard/tasks">Browse tasks</a>
+              </Button>
+            </LandingMotionAction>
+          </LandingMotionGroup>
+          <LandingMotionGroup delay={0.5} motionId="landing-hero-install">
+            <LandingMotionItem motionId="landing-hero-install-snippet">
+              <SkillInstallSnippet command={skillInstallCommand} />
+            </LandingMotionItem>
+          </LandingMotionGroup>
         </div>
       </section>
 
-      <LiveMarketSnapshotSection stats={stats} tasks={tasks} />
-      <WhyMarketWorksSection />
-      <MarketFlowSection />
-      <MarketModesSection />
-      <LandingActionSection />
+      <LandingMotionSection motionId="landing-section-burst">
+        <BurstComputeSection />
+      </LandingMotionSection>
+      <LandingMotionSection motionId="landing-section-pulse">
+        <LiveMarketPulseSection initialStats={stats} initialTasks={tasks} />
+      </LandingMotionSection>
+      <LandingMotionSection motionId="landing-section-actions">
+        <LandingActionSection />
+      </LandingMotionSection>
 
       <LandingFooter />
     </div>
