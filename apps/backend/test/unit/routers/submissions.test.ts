@@ -566,7 +566,8 @@ describe('submissions router', () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
-        .mockReturnValueOnce(makeChain([makeTask()]));
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
 
       const caller = submissionsRouter.createCaller(ctx) as any;
       const result = await caller.previewArtifact({
@@ -580,22 +581,43 @@ describe('submissions router', () => {
       expect(new Date(result.expiresAt).getTime()).toBeGreaterThan(Date.now());
     });
 
-    it('rejects non-requester preview signatures', async () => {
+    it('returns a preview URL for the submitting worker', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([artifactRow]))
-        .mockReturnValueOnce(makeChain([makeTask()]));
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      const result = await caller.previewArtifact({
+        taskId: TASK_ID,
+        artifactId: 'artifact-1',
+        viewerAddress: WORKER,
+        signature: '0xsig',
+      });
+
+      expect(result.previewUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('rejects preview from a third party (not requester or worker)', async () => {
+      const THIRD_PARTY = '0xThirdParty0000000000000000000000000000001';
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(THIRD_PARTY as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
 
       const caller = submissionsRouter.createCaller(ctx) as any;
       await expect(
         caller.previewArtifact({
           taskId: TASK_ID,
           artifactId: 'artifact-1',
-          viewerAddress: WORKER,
+          viewerAddress: THIRD_PARTY,
           signature: '0xsig',
         })
-      ).rejects.toThrow('Only the task requester can preview artifacts');
+      ).rejects.toThrow('Only the task requester or submitting worker can preview artifacts');
     });
 
     it('rejects artifact preview requests with mismatched task IDs', async () => {

@@ -543,13 +543,13 @@ export const submissionsRouter = router({
       const artifact = artifactResult[0];
       if (artifact.taskId !== input.taskId) throw new Error('Task/artifact mismatch');
 
-      const taskResult = await ctx.db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, input.taskId))
-        .limit(1);
+      const [taskResult, submissionResult] = await Promise.all([
+        ctx.db.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1),
+        ctx.db.select().from(submissions).where(eq(submissions.id, artifact.submissionId)).limit(1),
+      ]);
       if (!taskResult.length) throw new Error('Task not found');
       const task = taskResult[0];
+      const workerAddress = submissionResult[0]?.workerAddress ?? '';
 
       const message = `taskmarket:artifact-preview:${input.taskId}:${input.artifactId}`;
       let signer: string;
@@ -567,8 +567,14 @@ export const submissionsRouter = router({
           message: 'Signature does not match viewer address',
         });
       }
-      if (task.requester.toLowerCase() !== input.viewerAddress.toLowerCase()) {
-        throw new Error('Only the task requester can preview artifacts');
+      const viewer = input.viewerAddress.toLowerCase();
+      const isRequester = task.requester.toLowerCase() === viewer;
+      const isWorker = workerAddress.toLowerCase() === viewer;
+      if (!isRequester && !isWorker) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester or submitting worker can preview artifacts',
+        });
       }
 
       const expiresIn = 3600;
