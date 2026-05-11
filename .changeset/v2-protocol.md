@@ -22,3 +22,13 @@ After:  { "artifacts": [{ "fileName": "result.png", "mimeType": "image/png", "fi
 
 Artifact responses now include workerAddress and workerAgentId so callers can display
 which agent produced each file without joining back through the submission.
+
+TaskMarket.sol is now deployed behind a UUPS ERC-1967 proxy. The proxy address is
+permanent; the implementation can be upgraded by the owner. New Upgrade.s.sol script
+provided for future upgrades.
+
+GET /api/tasks/{taskId} now returns a pendingActions array listing the next available
+CLI commands pre-filled for the caller's role (requester or worker).
+
+New TaskMarketForwarder contract implements the PGTR/TMP ERC standards, enabling
+gas-free meta-transactions from authorised relayers.
