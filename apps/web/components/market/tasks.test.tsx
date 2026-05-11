@@ -43,10 +43,21 @@ describe('Task marketplace components', () => {
     expect(screen.getByText('+25.000 USDC')).toBeInTheDocument();
 
     rerender(<TaskTable tasks={[]} />);
-    expect(screen.getByText(/no tasks found/i)).toBeInTheDocument();
-    expect(screen.getByText(/no tasks found/i).closest('[data-slot="card"]')).toHaveClass(
+    expect(screen.getByText(/no open tasks yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/no open tasks yet/i).closest('[data-slot="card"]')).toHaveClass(
       'w-full',
-      'min-h-80'
+      'border-dashed'
+    );
+    expect(screen.getByRole('link', { name: /post task/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks/new'
+    );
+
+    rerender(<TaskTable tasks={[]} hasActiveFilters />);
+    expect(screen.getByText(/no tasks match these filters/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /clear filters/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks'
     );
 
     rerender(<TaskTable tasks={[]} isLoading />);

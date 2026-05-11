@@ -83,10 +83,12 @@ function hrefForFilters(mode?: string, status?: string) {
 
 export function TaskTable({
   errorMessage,
+  hasActiveFilters = false,
   isLoading,
   tasks,
 }: {
   errorMessage?: string;
+  hasActiveFilters?: boolean;
   isLoading?: boolean;
   tasks: TaskResponse[];
 }) {
@@ -119,13 +121,29 @@ export function TaskTable({
 
   if (tasks.length === 0) {
     return (
-      <Card className="min-h-80 w-full justify-center">
-        <CardContent className="flex min-h-64 items-center justify-center">
-          <div className="grid max-w-sm gap-2 text-center">
-            <p className="font-mono text-sm uppercase text-muted-foreground">No tasks found</p>
-            <p className="text-sm text-muted-foreground">
-              Clear the filters or post a new task to seed the marketplace.
-            </p>
+      <Card className="w-full border-dashed bg-surface/50 py-10 shadow-none">
+        <CardContent className="flex items-center justify-center">
+          <div className="grid max-w-md gap-4 text-center">
+            <div className="grid gap-2">
+              <p className="font-mono text-sm font-semibold uppercase text-foreground">
+                {hasActiveFilters ? 'No tasks match these filters' : 'No open tasks yet'}
+              </p>
+              <p className="text-sm text-muted-foreground">
+                {hasActiveFilters
+                  ? 'Try clearing filters or post the first task for this market.'
+                  : 'Post the first task to seed the marketplace.'}
+              </p>
+            </div>
+            <div className="flex flex-col justify-center gap-2 sm:flex-row">
+              {hasActiveFilters ? (
+                <Button asChild variant="outline">
+                  <a href="/dashboard/tasks">Clear filters</a>
+                </Button>
+              ) : null}
+              <Button asChild>
+                <a href="/dashboard/tasks/new">Post task</a>
+              </Button>
+            </div>
           </div>
         </CardContent>
       </Card>
@@ -196,18 +214,18 @@ export function TaskFilterRail({
   tags?: string;
 }) {
   return (
-    <aside className="grid gap-4">
-      <Card>
-        <CardHeader>
-          <CardTitle>Filters</CardTitle>
+    <aside className="grid gap-4 lg:sticky lg:top-20">
+      <Card className="gap-4 bg-surface/45 py-4 shadow-none">
+        <CardHeader className="px-4">
+          <CardTitle className="text-sm">Filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-5">
+        <CardContent className="grid gap-4 px-4">
           <div className="grid gap-2">
             <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
-            <div className="grid gap-1">
+            <div className="grid grid-cols-2 gap-1">
               {modes.map((mode) => (
                 <a
-                  className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedMode === mode}
                   href={hrefForFilters(mode, selectedStatus)}
                   key={mode}
@@ -219,10 +237,10 @@ export function TaskFilterRail({
           </div>
           <div className="grid gap-2">
             <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
-            <div className="grid gap-1">
+            <div className="grid grid-cols-2 gap-1">
               {statuses.map((status) => (
                 <a
-                  className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+                  className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedStatus === status}
                   href={hrefForFilters(selectedMode, status)}
                   key={status}
@@ -285,13 +303,17 @@ export function TaskFilterRail({
                 type="number"
               />
             </div>
-            <Button type="submit" variant="terminal">
-              Apply filters
-            </Button>
+            <div className="grid grid-cols-2 gap-2">
+              <Button type="submit" variant="terminal">
+                Apply
+              </Button>
+              <Button asChild variant="outline">
+                <a aria-label="Clear filters" href="/dashboard/tasks">
+                  Clear
+                </a>
+              </Button>
+            </div>
           </form>
-          <Button asChild variant="outline">
-            <a href="/dashboard/tasks">Clear filters</a>
-          </Button>
         </CardContent>
       </Card>
     </aside>
