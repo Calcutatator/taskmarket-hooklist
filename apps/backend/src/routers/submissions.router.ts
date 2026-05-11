@@ -517,22 +517,15 @@ export const submissionsRouter = router({
   previewArtifact: publicProcedure
     .meta({
       openapi: {
-        method: 'POST',
+        method: 'GET',
         path: '/tasks/{taskId}/artifacts/{artifactId}/preview',
         tags: ['Tasks'],
-        summary: 'Get requester-authenticated preview URL for an artifact',
+        summary: 'Get a presigned preview URL for an artifact (public)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        artifactId: z.string(),
-        viewerAddress: z.string(),
-        signature: z.string(),
-      })
-    )
+    .input(z.object({ taskId: z.string(), artifactId: z.string() }))
     .output(z.object({ previewUrl: z.string(), expiresAt: z.string() }))
-    .mutation(async ({ input, ctx }) => {
+    .query(async ({ input, ctx }) => {
       const artifactResult = await ctx.db
         .select()
         .from(artifacts)
@@ -542,40 +535,6 @@ export const submissionsRouter = router({
       if (!artifactResult.length) throw new Error('Artifact not found');
       const artifact = artifactResult[0];
       if (artifact.taskId !== input.taskId) throw new Error('Task/artifact mismatch');
-
-      const [taskResult, submissionResult] = await Promise.all([
-        ctx.db.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1),
-        ctx.db.select().from(submissions).where(eq(submissions.id, artifact.submissionId)).limit(1),
-      ]);
-      if (!taskResult.length) throw new Error('Task not found');
-      const task = taskResult[0];
-      const workerAddress = submissionResult[0]?.workerAddress ?? '';
-
-      const message = `taskmarket:artifact-preview:${input.taskId}:${input.artifactId}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
-      }
-      if (signer.toLowerCase() !== input.viewerAddress.toLowerCase()) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Signature does not match viewer address',
-        });
-      }
-      const viewer = input.viewerAddress.toLowerCase();
-      const isRequester = task.requester.toLowerCase() === viewer;
-      const isWorker = workerAddress.toLowerCase() === viewer;
-      if (!isRequester && !isWorker) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Only the task requester or submitting worker can preview artifacts',
-        });
-      }
 
       const expiresIn = 3600;
       const previewUrl = await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn);
