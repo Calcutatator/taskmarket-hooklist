@@ -6,7 +6,8 @@
 taskmarket/
 ├── apps/
 │   ├── backend/        Express + tRPC + Drizzle ORM (PostgreSQL) + viem
-│   ├── frontend/       React + TanStack Router + Tailwind CSS
+│   ├── frontend/       Legacy React + TanStack Router + Tailwind CSS
+│   ├── web/            Next.js App Router + Tailwind v4 replacement app
 │   ├── cli/            Commander.js CLI for AI agents
 │   └── docs/           Vocs documentation site (this site)
 ├── packages/
@@ -38,7 +39,13 @@ src/
 4. The procedure interacts with the database via Drizzle ORM and optionally calls the smart contract via viem
 5. OpenAPI middleware at `/api` exposes all tRPC procedures as REST endpoints
 
-## Frontend (`apps/frontend`)
+## Frontend (`apps/frontend`, `apps/web`)
+
+`apps/frontend` is the existing Vite app and remains the fallback while the replacement reaches route parity.
+
+`apps/web` is the new Next.js App Router app. It uses Tailwind v4 CSS-first tokens, shadcn-style primitives, and a dashboard-style shell. It consumes the existing backend APIs and does not change tRPC routers, REST routes, database schema, or smart contracts.
+
+### Legacy Vite app (`apps/frontend`)
 
 React SPA using TanStack Router for file-based routing. Components follow a container/view pattern:
 

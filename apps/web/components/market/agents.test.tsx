@@ -1,0 +1,86 @@
+import { render, screen } from '@testing-library/react';
+import { describe, expect, it } from 'vitest';
+import { AgentLeaderboardPanel, AgentProfilePanel, AgentTable } from './agents';
+
+const entry = {
+  rank: 1,
+  address: '0x1111111111111111111111111111111111111111',
+  agentId: 'summarizer.bot',
+  completedTasks: 7,
+  averageRating: 4.8,
+  totalEarnings: '120000000',
+  skills: ['research', 'summary'],
+};
+
+describe('Agent components', () => {
+  it('renders leaderboard/profile links and ranking data', () => {
+    render(<AgentTable agents={[entry]} />);
+    expect(screen.getByRole('link', { name: /summarizer.bot/i })).toHaveAttribute(
+      'href',
+      '/dashboard/agents/summarizer.bot'
+    );
+    expect(screen.getByText('4.8')).toBeInTheDocument();
+    expect(screen.getByText('120.000 USDC')).toBeInTheDocument();
+  });
+
+  it('renders leaderboard filters, sort links, earnings, and pagination parity controls', () => {
+    render(
+      <AgentLeaderboardPanel
+        agents={[entry]}
+        hasNextPage
+        hasPrevPage
+        minRating="4"
+        minTasks="5"
+        page={2}
+        pageSize={20}
+        search="sum"
+        skill="research"
+        sort="tasks"
+      />
+    );
+
+    expect(screen.getByText('Filter rankings')).toBeInTheDocument();
+    expect(screen.getByLabelText(/search/i)).toHaveValue('sum');
+    expect(screen.getByLabelText(/skill/i)).toHaveValue('research');
+    expect(screen.getByLabelText(/min rating/i)).toHaveValue('4');
+    expect(screen.getByLabelText(/min tasks/i)).toHaveValue('5');
+    expect(screen.getByLabelText(/per page/i)).toHaveValue('20');
+    expect(screen.getByRole('link', { name: /reputation/i })).toHaveAttribute(
+      'href',
+      '/dashboard/leaderboard?sort=reputation&search=sum&skill=research&page=1&limit=20&minRating=4&minTasks=5'
+    );
+    expect(screen.getByRole('link', { name: /previous/i })).toHaveAttribute(
+      'href',
+      '/dashboard/leaderboard?sort=tasks&search=sum&skill=research&page=1&limit=20&minRating=4&minTasks=5'
+    );
+    expect(screen.getByRole('link', { name: /next/i })).toHaveAttribute(
+      'href',
+      '/dashboard/leaderboard?sort=tasks&search=sum&skill=research&page=3&limit=20&minRating=4&minTasks=5'
+    );
+    expect(screen.getByRole('link', { name: /clear filters/i })).toHaveAttribute(
+      'href',
+      '/dashboard/leaderboard?sort=tasks&limit=20'
+    );
+  });
+
+  it('uses leaderboard-specific worker labels and empty copy', () => {
+    render(
+      <AgentLeaderboardPanel
+        agents={[]}
+        hasNextPage={false}
+        hasPrevPage={false}
+        page={1}
+        pageSize={20}
+        sort="reputation"
+      />
+    );
+
+    expect(screen.getByText('No workers found.')).toBeInTheDocument();
+  });
+
+  it('renders a profile summary for a known agent', () => {
+    render(<AgentProfilePanel agent={entry} />);
+    expect(screen.getByRole('heading', { name: /summarizer.bot/i })).toBeInTheDocument();
+    expect(screen.getByText(/7 completed tasks/i)).toBeInTheDocument();
+  });
+});

@@ -2,9 +2,16 @@
 
 ## Overview
 
-The frontend is built with React, TanStack Router, Vite, and Tailwind CSS. It follows a container/view pattern and integrates with the backend via tRPC.
+Taskmarket currently has two human web surfaces:
+
+- `apps/frontend`: the legacy React, TanStack Router, Vite, and Tailwind CSS app. It remains the reference and fallback while route parity is built.
+- `apps/web`: the new production-bound Next.js App Router app. It uses Tailwind v4, shadcn-style primitives, and a dashboard shell while keeping backend contracts unchanged.
+
+Both apps integrate with the backend through the existing REST and tRPC APIs.
 
 ## Structure
+
+### Legacy Vite app
 
 ```
 apps/frontend/
@@ -27,6 +34,28 @@ apps/frontend/
 │   │   └── Header.tsx            Top bar with search and wallet connect
 │   └── lib/
 │       └── trpc.ts               tRPC client setup
+└── package.json
+```
+
+### Next.js replacement app
+
+```
+apps/web/
+├── app/                         Next.js App Router routes
+│   ├── page.tsx                 Landing page
+│   ├── tasks/                   Task marketplace, creation, and detail routes
+│   ├── agents/                  Agent directory and profile routes
+│   ├── leaderboard/             Agent rankings
+│   ├── protocol/                Protocol content
+│   ├── globals.css              Tailwind v4 CSS-first theme tokens
+│   └── providers.tsx            Client providers for theme, wallet, query, and tRPC
+├── components/
+│   ├── ui/                      shadcn-style primitives
+│   └── market/                  Taskmarket marketplace components
+├── lib/
+│   ├── api/                     Server REST fetchers and client tRPC setup
+│   └── web3/                    wagmi setup
+├── components.json              shadcn CLI configuration
 └── package.json
 ```
 
@@ -112,7 +141,7 @@ The sidebar layout is implemented across three files:
 
 ## Design tokens
 
-Design tokens live in `packages/design-system/tokens/`. To update a color:
+For `apps/frontend`, design tokens live in `packages/design-system/tokens/`. To update a color:
 
 1. Edit the token file in `packages/design-system/tokens/colors/`
 2. Run `make design-system` to regenerate and copy to the frontend
@@ -127,9 +156,13 @@ Never use hardcoded Tailwind color classes like `text-orange-900`. Use the seman
 | `text-primary` | Primary text |
 | `text-secondary` | Secondary/muted text |
 
+For `apps/web`, Tailwind v4 theme tokens live in `apps/web/app/globals.css` via CSS-first `@theme inline`. Do not use the Clafoutis generated files as inputs for the Next app.
+
 ## Wallet integration
 
 The frontend uses RainbowKit + wagmi for wallet connection. The `ConnectButton` component is from RainbowKit. Wallet address is available via `useAccount()` from wagmi.
+
+The Next app uses wagmi directly in client components. Keep wallet-dependent code behind `"use client"` boundaries and keep read-only public data in Server Components where practical.
 
 ## Adding a new page
 
@@ -152,6 +185,7 @@ export const Route = createFileRoute('/my-page')({
 
 ```bash
 make dev          # starts frontend at http://localhost:5173
+make start web    # starts the Next app at http://localhost:3001
 ```
 
 Or standalone:
@@ -159,4 +193,13 @@ Or standalone:
 ```bash
 cd apps/frontend
 pnpm dev
+```
+
+Use Makefile targets for checks:
+
+```bash
+make type-check web
+make lint-check web
+make format-check web
+make build web
 ```
