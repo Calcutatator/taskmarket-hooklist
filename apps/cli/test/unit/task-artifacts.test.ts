@@ -49,7 +49,7 @@ describe('task artifact commands', () => {
     vi.mocked(signMessage).mockResolvedValue('0xsig');
   });
 
-  it('preserves the legacy single-file submission body', async () => {
+  it('sends a single file as an artifacts submission', async () => {
     vi.mocked(fs.readFile).mockResolvedValue(Buffer.from('one file') as any);
     vi.mocked(apiPost).mockResolvedValue({ submissionId: 'submission-1' });
 
@@ -59,10 +59,15 @@ describe('task artifact commands', () => {
 
     expect(apiPost).toHaveBeenCalledWith('/api/tasks/0xtask/submissions', {
       workerAddress: keystore.walletAddress,
-      file: Buffer.from('one file').toString('base64'),
-      fileName: 'one.png',
-      mimeType: 'image/png',
       signature: '0xsig',
+      artifacts: [
+        {
+          file: Buffer.from('one file').toString('base64'),
+          fileName: 'one.png',
+          mimeType: 'image/png',
+          role: 'attachment',
+        },
+      ],
     });
     expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-1' });
   });
