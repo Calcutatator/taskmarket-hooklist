@@ -21,9 +21,10 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
+import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { cn } from '@/lib/utils';
 
-const apiUrl = process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:3000';
+const apiUrl = getBrowserApiBaseUrl();
 
 type CreateTaskFormValues = {
   auctionFloorPrice: string;

@@ -1,0 +1,122 @@
+- generic [active] [ref=e1]:
+  - main [ref=e3]:
+    - generic [ref=e5]:
+      - button "Toggle Sidebar" [ref=e6]:
+        - img
+        - generic [ref=e7]: Toggle Sidebar
+      - heading "Taskmarket Console" [level=1] [ref=e8]
+      - link "Post task" [ref=e10] [cursor=pointer]:
+        - /url: /dashboard/tasks/new
+    - generic [ref=e11]:
+      - generic [ref=e12]:
+        - generic [ref=e13]:
+          - paragraph [ref=e14]: Post work
+          - heading "Create task" [level=1] [ref=e15]
+          - paragraph [ref=e16]: Define the work, pick the market mechanism, and fund the reward in one signing flow.
+        - generic [ref=e17]:
+          - generic [ref=e18]:
+            - generic [ref=e19]: "01"
+            - text: Brief
+          - generic [ref=e20]:
+            - generic [ref=e21]: "02"
+            - text: Terms
+          - generic [ref=e22]:
+            - generic [ref=e23]: "03"
+            - text: Sign
+      - generic [ref=e24]:
+        - generic [ref=e25]:
+          - generic [ref=e26]:
+            - generic [ref=e28]:
+              - generic [ref=e29]:
+                - generic [ref=e30]: Task brief
+                - generic [ref=e31]: Write the acceptance criteria as if the worker only sees this panel.
+              - generic [ref=e32]: Required
+            - generic [ref=e33]:
+              - generic [ref=e34]:
+                - generic [ref=e35]: Description
+                - textbox "Description" [ref=e36]:
+                  - /placeholder: Define the goal, input materials, acceptance criteria, review process, and delivery format.
+                - paragraph [ref=e37]: Strong briefs include expected output, constraints, and what counts as done.
+              - generic [ref=e38]:
+                - generic [ref=e39]:
+                  - generic [ref=e40]: Reward
+                  - generic [ref=e41]:
+                    - img
+                    - spinbutton "Reward" [ref=e42]
+                - generic [ref=e43]:
+                  - generic [ref=e44]: Duration hours
+                  - generic [ref=e45]:
+                    - img
+                    - spinbutton "Duration hours" [ref=e46]: "72"
+                - generic [ref=e47]:
+                  - generic [ref=e48]: Tags
+                  - textbox "Tags" [ref=e49]:
+                    - /placeholder: research, code, audit
+          - generic [ref=e50]:
+            - generic [ref=e51]:
+              - generic [ref=e52]: Market mode
+              - generic [ref=e53]: Pick how workers compete for the reward.
+            - radiogroup "Task mode" [ref=e55]:
+              - radio "Selected Bounty Open submission pool. Review completed work and select the strongest delivery." [checked] [ref=e56]:
+                - generic [ref=e57]:
+                  - img [ref=e59]
+                  - generic [ref=e63]: Selected
+                - generic [ref=e64]:
+                  - generic [ref=e65]: Bounty
+                  - generic [ref=e66]: Open submission pool. Review completed work and select the strongest delivery.
+              - radio "Mode Claim One worker reserves the task before starting. Useful when duplicate work is costly." [ref=e67]:
+                - generic [ref=e68]:
+                  - img [ref=e70]
+                  - generic [ref=e74]: Mode
+                - generic [ref=e75]:
+                  - generic [ref=e76]: Claim
+                  - generic [ref=e77]: One worker reserves the task before starting. Useful when duplicate work is costly.
+              - radio "Mode Pitch Workers pitch an approach first. Choose the plan before execution begins." [ref=e78]:
+                - generic [ref=e79]:
+                  - img [ref=e81]
+                  - generic [ref=e86]: Mode
+                - generic [ref=e87]:
+                  - generic [ref=e88]: Pitch
+                  - generic [ref=e89]: Workers pitch an approach first. Choose the plan before execution begins.
+              - radio "Mode Benchmark Set a measurable outcome and pay the first worker who reaches it." [ref=e90]:
+                - generic [ref=e91]:
+                  - img [ref=e93]
+                  - generic [ref=e99]: Mode
+                - generic [ref=e100]:
+                  - generic [ref=e101]: Benchmark
+                  - generic [ref=e102]: Set a measurable outcome and pay the first worker who reaches it.
+              - radio "Mode Auction Let workers compete on price with open, sealed, or clock-based bidding." [ref=e103]:
+                - generic [ref=e104]:
+                  - img [ref=e106]
+                  - generic [ref=e111]: Mode
+                - generic [ref=e112]:
+                  - generic [ref=e113]: Auction
+                  - generic [ref=e114]: Let workers compete on price with open, sealed, or clock-based bidding.
+        - complementary [ref=e115]:
+          - generic [ref=e116]:
+            - generic [ref=e117]:
+              - generic [ref=e118]: Publish summary
+              - generic [ref=e119]: The task is created after the payment challenge is signed.
+            - generic [ref=e120]:
+              - generic [ref=e121]:
+                - generic [ref=e122]:
+                  - img [ref=e124]
+                  - generic [ref=e128]:
+                    - paragraph [ref=e129]: Bounty
+                    - paragraph [ref=e130]: Open submission pool. Review completed work and select the strongest delivery.
+                - generic [ref=e131]:
+                  - generic [ref=e132]:
+                    - generic [ref=e133]: Funding
+                    - generic [ref=e134]: USDC
+                  - generic [ref=e135]:
+                    - generic [ref=e136]: Network
+                    - generic [ref=e137]: Wallet
+              - generic [ref=e139]:
+                - img [ref=e141]
+                - generic [ref=e144]:
+                  - paragraph [ref=e145]: Ready
+                  - paragraph [ref=e146]: Submit when the brief and market terms are complete.
+              - button "Connect wallet to create" [disabled]
+              - paragraph [ref=e151]: Connect a wallet from the header before publishing this task.
+  - region "Notifications alt+T"
+  - alert [ref=e152]

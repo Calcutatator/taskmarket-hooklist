@@ -13,15 +13,38 @@ import type {
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@taskmarket/backend/src/router';
 
-const apiUrl =
-  process.env.TASKMARKET_API_URL ?? process.env.NEXT_PUBLIC_API_URL ?? 'http://127.0.0.1:3000';
+import { getServerApiBaseUrl } from '@/lib/api/config';
+
+const apiUrl = getServerApiBaseUrl();
+
+export class ApiConnectionError extends Error {
+  readonly path: string;
+  readonly status?: number;
+
+  constructor(message: string, options: { cause?: unknown; path: string; status?: number }) {
+    super(message);
+    this.name = 'ApiConnectionError';
+    this.cause = options.cause;
+    this.path = options.path;
+    this.status = options.status;
+  }
+}
 
 type TaskStats = {
   count: number;
   totalRewards: string;
 };
 
-async function readJson<T>(path: string, fallback: T): Promise<T> {
+function isNextDynamicServerError(error: unknown) {
+  return (
+    typeof error === 'object' &&
+    error !== null &&
+    'digest' in error &&
+    error.digest === 'DYNAMIC_SERVER_USAGE'
+  );
+}
+
+async function readJson<T>(path: string): Promise<T> {
   try {
     const response = await fetch(`${apiUrl}${path}`, {
       cache: 'no-store',
@@ -31,12 +54,25 @@ async function readJson<T>(path: string, fallback: T): Promise<T> {
     });
 
     if (!response.ok) {
-      return fallback;
+      throw new ApiConnectionError(`Taskmarket API request failed with ${response.status}`, {
+        path,
+        status: response.status,
+      });
     }
 
     return (await response.json()) as T;
-  } catch {
-    return fallback;
+  } catch (error) {
+    if (error instanceof ApiConnectionError) {
+      throw error;
+    }
+    if (isNextDynamicServerError(error)) {
+      throw error;
+    }
+
+    throw new ApiConnectionError('Taskmarket API request failed', {
+      cause: error,
+      path,
+    });
   }
 }
 
@@ -52,24 +88,24 @@ function makeServerTrpcClient() {
 
 async function trpcRead<T>(
   query: (client: ReturnType<typeof makeServerTrpcClient>) => Promise<T>,
-  fallback: T
+  path: string
 ) {
   try {
     return await query(makeServerTrpcClient());
-  } catch {
-    return fallback;
+  } catch (error) {
+    throw new ApiConnectionError('Taskmarket tRPC request failed', {
+      cause: error,
+      path,
+    });
   }
 }
 
 export async function fetchTaskStats() {
-  return readJson<TaskStats>('/api/tasks/stats', {
-    count: 0,
-    totalRewards: '0',
-  });
+  return readJson<TaskStats>('/api/tasks/stats');
 }
 
 export async function fetchAgentCount() {
-  const data = await readJson<{ count?: number }>('/api/agents/count', {});
+  const data = await readJson<{ count?: number }>('/api/agents/count');
   return data.count;
 }
 
@@ -110,37 +146,46 @@ export async function fetchTasks(searchParams?: {
   }
 
   const query = params.toString();
-  return readJson<TaskListResponse>(`/api/tasks${query ? `?${query}` : ''}`, {
-    hasMore: false,
-    nextCursor: null,
-    tasks: [],
-  });
+  return readJson<TaskListResponse>(`/api/tasks${query ? `?${query}` : ''}`);
 }
 
 export async function fetchTask(taskId: string) {
-  return readJson<TaskDetailResponse | null>(`/api/tasks/${taskId}`, null);
+  try {
+    return await readJson<TaskDetailResponse>(`/api/tasks/${taskId}`);
+  } catch (error) {
+    if (error instanceof ApiConnectionError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export async function fetchTaskSubmissions(taskId: string) {
-  return readJson<SubmissionResponse[]>(`/api/tasks/${taskId}/submissions`, []);
+  return readJson<SubmissionResponse[]>(`/api/tasks/${taskId}/submissions`);
 }
 
 export async function fetchTaskBids(taskId: string) {
-  return readJson<BidResponse[]>(`/api/tasks/${taskId}/bids`, []);
+  return readJson<BidResponse[]>(`/api/tasks/${taskId}/bids`);
 }
 
 export async function fetchTaskPitches(taskId: string) {
-  return trpcRead<PitchResponse[]>((client) => client.pitches.listByTask.query({ taskId }), []);
+  return trpcRead<PitchResponse[]>(
+    (client) => client.pitches.listByTask.query({ taskId }),
+    'pitches.listByTask'
+  );
 }
 
 export async function fetchTaskProofs(taskId: string) {
-  return trpcRead<ProofResponse[]>((client) => client.proofs.listByTask.query({ taskId }), []);
+  return trpcRead<ProofResponse[]>(
+    (client) => client.proofs.listByTask.query({ taskId }),
+    'proofs.listByTask'
+  );
 }
 
 export async function fetchTaskClaim(taskId: string) {
   return trpcRead<ClaimResponse | null>(
     (client) => client.claims.getByTask.query({ taskId }),
-    null
+    'claims.getByTask'
   );
 }
 
@@ -177,7 +222,7 @@ export async function fetchLeaderboard(searchParams?: {
   }
 
   const query = params.toString();
-  return readJson<LeaderboardEntry[]>(`/api/agents/leaderboard${query ? `?${query}` : ''}`, []);
+  return readJson<LeaderboardEntry[]>(`/api/agents/leaderboard${query ? `?${query}` : ''}`);
 }
 
 export async function fetchAgentStats(input: { address?: string; agentId?: string }) {
@@ -190,7 +235,14 @@ export async function fetchAgentStats(input: { address?: string; agentId?: strin
   }
 
   const query = params.toString();
-  return readJson<AgentStats | null>(`/api/agents/stats${query ? `?${query}` : ''}`, null);
+  try {
+    return await readJson<AgentStats>(`/api/agents/stats${query ? `?${query}` : ''}`);
+  } catch (error) {
+    if (error instanceof ApiConnectionError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
 }
 
 export const fallbackTasks: TaskResponse[] = [

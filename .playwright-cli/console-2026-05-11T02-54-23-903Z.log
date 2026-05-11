@@ -1,0 +1,33 @@
+[     120ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[     158ms] [LOG] [HMR] connected @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[   82246ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[   83001ms] [LOG] [Fast Refresh] done in 857ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  451842ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  452219ms] [LOG] [Fast Refresh] done in 437ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  477510ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  477579ms] [LOG] [Fast Refresh] done in 104ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  484453ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  484513ms] [LOG] [Fast Refresh] done in 43ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  515681ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  515719ms] [LOG] [Fast Refresh] done in 28ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  515974ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  516066ms] [LOG] [Fast Refresh] done in 51ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  516175ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[  516203ms] [LOG] [Fast Refresh] done in 129ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1249690ms] [LOG] [HMR] connected @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1565917ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1566922ms] [LOG] [Fast Refresh] done in 548ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1567318ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1567438ms] [LOG] [Fast Refresh] done in 220ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1816726ms] [LOG] [Fast Refresh] rebuilding @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1816727ms] [WARNING] [Fast Refresh] performing full reload
+
+Fast Refresh will perform a full reload when you edit a file that's imported by modules outside of the React rendering tree.
+You might have a file which exports a React component but also exports a value that is imported by a non-React component file.
+Consider migrating the non-React component export to a separate file and importing it into both files.
+
+It is also possible the parent component of the component you edited is a class component, which disables Fast Refresh.
+Fast Refresh requires at least one parent function component in your React tree. @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1816781ms] [LOG] [Fast Refresh] done in 100ms @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1816901ms] [INFO] %cDownload the React DevTools for a better development experience: https://react.dev/link/react-devtools font-weight:bold @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477
+[ 1816915ms] [LOG] [HMR] connected @ http://localhost:3001/_next/static/chunks/024k_next_dist_0q9~7dd._.js:2477

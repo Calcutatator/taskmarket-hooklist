@@ -1,6 +1,46 @@
+'use client';
+
+import { useAccount, useConnect, useDisconnect } from 'wagmi';
+
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+
+function compactAddress(address: string) {
+  return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function WalletButton() {
+  const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
+  const { disconnect } = useDisconnect();
+  const firstConnector = connectors[0];
+
+  if (isConnected && address) {
+    return (
+      <div className="flex items-center gap-2">
+        <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
+          {compactAddress(address)}
+        </span>
+        <Button onClick={() => disconnect()} size="sm" type="button" variant="outline">
+          Disconnect
+        </Button>
+      </div>
+    );
+  }
+
+  return (
+    <Button
+      disabled={!firstConnector}
+      onClick={() => firstConnector && connect({ connector: firstConnector })}
+      size="sm"
+      type="button"
+      variant="outline"
+    >
+      Connect wallet
+    </Button>
+  );
+}
 
 export function SiteHeader() {
   return (
@@ -10,6 +50,7 @@ export function SiteHeader() {
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
         <h1 className="text-base font-medium">Taskmarket Console</h1>
         <div className="ml-auto flex items-center gap-2">
+          <WalletButton />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a href="/skill.md" className="dark:text-foreground">
               Skill.md
