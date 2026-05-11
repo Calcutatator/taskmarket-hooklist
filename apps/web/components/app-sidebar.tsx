@@ -2,7 +2,6 @@
 
 import * as React from 'react';
 import {
-  IconBolt,
   IconChartBar,
   IconDashboard,
   IconDatabase,
@@ -47,12 +46,6 @@ const data = {
       title: 'Tasks',
       url: '/dashboard/tasks',
       icon: IconListDetails,
-    },
-    {
-      exact: true,
-      title: 'New Task',
-      url: '/dashboard/tasks/new',
-      icon: IconBolt,
     },
     {
       title: 'Agents',

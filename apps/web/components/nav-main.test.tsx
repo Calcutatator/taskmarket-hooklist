@@ -40,9 +40,6 @@ describe('NavMain', () => {
       'data-active',
       'false'
     );
-    expect(screen.getByRole('link', { name: /quick create/i }).parentElement).toHaveAttribute(
-      'data-active',
-      'false'
-    );
+    expect(screen.queryByRole('link', { name: /quick create/i })).not.toBeInTheDocument();
   });
 });
