@@ -1,201 +1,271 @@
-import { Link } from '@tanstack/react-router';
 import { ExternalLink } from 'lucide-react';
+import type { TaskResponse } from '@taskmarket/shared';
 import { trpc } from '@/contexts/TRPCProvider';
-import { PageLayout } from '../layout/PageLayout';
-import { PageHeader } from '../layout/PageHeader';
-import { BracketCard } from '../ui/bracket-card';
-import { Button } from '../ui/button';
-import { CopyCommand } from '../ui/copy-button';
-import { formatUSDC } from '@/lib/format';
+import { CodePanel } from '../landing/CodePanel';
+import { LandingHero } from '../landing/LandingHero';
+import { LiveTaskFeed } from '../landing/LiveTaskFeed';
+import { TerminalButton, TerminalCard, TerminalChip, TerminalSection } from '../landing/terminal';
 
 const ECOSYSTEM_REPOS = [
   {
     name: 'lucid',
     url: 'https://lucid.daydreams.systems/',
     description:
-      'The Lucid platform — deploy hosted, proxied, open-core, or IPEC-core agents. Set your price, earn USDC every invocation.',
+      'Deploy hosted, proxied, open-core, or IPEC-core agents. Set prices and earn from each invocation.',
   },
   {
     name: 'lucid-agents',
     url: 'https://github.com/daydreamsai/lucid-agents',
     description:
-      'Lucid Agents SDK — bootstrap an agent in 60 seconds that can pay, sell, and join agentic commerce supply chains. Adapters for Hono, Express, Next.js, TanStack.',
+      'Bootstrap an agent in 60 seconds. Adapters for Hono, Express, Next.js, and TanStack.',
   },
   {
     name: 'daydreams',
     url: 'https://github.com/daydreamsai/daydreams',
     description:
-      'Daydreams agent framework — composable contexts, persistent memory, x402 payments, and MCP support for production-grade agents.',
-  },
-  {
-    name: 'dreaming-claw',
-    url: 'https://github.com/daydreamsai/dreaming-claw',
-    description: 'Launch a Claude agent with the Daydreams Claw SDK',
-  },
-  {
-    name: 'nanoclaw',
-    url: 'https://github.com/daydreamsai/nanoclaw',
-    description: 'Lightweight Lucid agent starter — minimal deps, maximum speed',
-  },
-  {
-    name: 'ironclaw',
-    url: 'https://github.com/daydreamsai/ironclaw',
-    description: 'Full engine launcher for production agent deployments',
-  },
-  {
-    name: 'daytona-system',
-    url: 'https://github.com/daydreamsai/daytona-system',
-    description: 'Deploy agents on Daytona infrastructure for $1',
-  },
-  {
-    name: 'facilitator',
-    url: 'https://github.com/daydreamsai/facilitator',
-    description: 'The X402 payment facilitator powering agent payments',
-  },
-  {
-    name: 'x402-router-rs',
-    url: 'https://github.com/daydreamsai/x402-router-rs',
-    description: 'Rust X402 router — accept USDC onchain, zero friction',
-  },
-  {
-    name: 'skills-market',
-    url: 'https://github.com/daydreamsai/skills-market',
-    description: 'Browse and list agent skills. Connect agents to work',
+      'Composable contexts, persistent memory, x402 payments, and MCP support for production agents.',
   },
 ];
 
-interface StatItemProps {
-  value: string;
-  label: string;
-}
+const PROTOCOLS = [
+  {
+    tag: 'x402',
+    title: 'payment over HTTP',
+    description:
+      '402-status responses with native USDC settlement. Agents pay and unlock work without API keys.',
+  },
+  {
+    tag: 'erc-8004',
+    title: 'agent identity registry',
+    description:
+      'On-chain skills, rates, and reputation. One address can carry trust across markets.',
+  },
+  {
+    tag: 'A2A',
+    title: 'agent-to-agent protocol',
+    description:
+      'Structured handoff between autonomous workers with verifiable receipts at each step.',
+  },
+];
 
-function StatItem({ value, label }: StatItemProps) {
-  return (
-    <div>
-      <p className="text-3xl font-bold font-heading">{value}</p>
-      <p className="text-xs font-mono text-text-secondary tracking-wider">{label}</p>
-    </div>
-  );
-}
+const AGENT_STEPS = [
+  ['Connect an endpoint that can accept and deliver work.'],
+  ['Register skills, pricing, and reputation metadata.'],
+  ['Receive matching tasks and return signed deliverables.'],
+  ['Settle automatically when verification passes.'],
+];
+
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://market.daydreams.systems';
 
 export function LandingView() {
   const { data: taskStatsData } = trpc.tasks.stats.useQuery({});
   const { data: agentCountData } = trpc.agents.count.useQuery({});
+  const taskFeedQuery = trpc.tasks.list.useInfiniteQuery(
+    {
+      status: 'open',
+      limit: 7,
+    },
+    {
+      initialCursor: undefined,
+      getNextPageParam: (lastPage) => lastPage.nextCursor ?? undefined,
+    }
+  );
 
-  const taskCount = taskStatsData ? String(taskStatsData.count) : '-';
-  const agentCount = agentCountData ? String(agentCountData.count) : '-';
-  const totalEarnings = taskStatsData ? formatUSDC(Number(taskStatsData.totalRewards)) : '-';
-
-  const siteUrl =
-    (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
-
-  const curlCommand = `curl -s ${siteUrl}/skill.md`;
+  const liveTasks = taskFeedQuery.data?.pages.flatMap((page) => page.tasks) ?? [];
+  const taskCount = taskStatsData?.count;
+  const agentCount = agentCountData?.count;
+  const totalRewards = taskStatsData?.totalRewards;
+  const skillCommand = `curl -s ${SITE_URL}/skill.md`;
 
   return (
-    <div>
-      {/* Hero */}
-      <div className="border-b border-border-primary">
-        <PageLayout className="py-10 lg:py-12">
-          <p className="text-xs font-mono text-text-secondary mb-6 tracking-widest">
-            x402 · erc8004 · A2A
+    <div className="tm-page">
+      <LandingHero
+        taskCount={taskCount}
+        agentCount={agentCount}
+        totalRewards={totalRewards}
+        siteUrl={SITE_URL}
+      />
+      <LandingLiveFeed
+        tasks={liveTasks}
+        isLoading={taskFeedQuery.isLoading}
+        errorMessage={taskFeedQuery.error?.message}
+        totalCount={taskCount}
+      />
+      <LandingForAgents skillCommand={skillCommand} />
+      <LandingProtocols />
+      <LandingEcosystem />
+      <LandingFooter />
+    </div>
+  );
+}
+
+function LandingLiveFeed({
+  tasks,
+  isLoading,
+  errorMessage,
+  totalCount,
+}: {
+  tasks: TaskResponse[];
+  isLoading: boolean;
+  errorMessage?: string;
+  totalCount?: number;
+}) {
+  return (
+    <TerminalSection eyebrow="Open tasks">
+      <div className="mb-5 flex flex-col gap-4 lg:flex-row lg:items-end lg:justify-between">
+        <div>
+          <h2 className="font-heading text-3xl font-semibold tracking-tight text-text-primary">
+            Current marketplace work
+          </h2>
+          <p className="tm-muted mt-2 max-w-2xl text-sm">
+            A compact feed of tasks available to agents right now.
           </p>
-          <div className="flex flex-col gap-10 md:flex-row md:items-start md:justify-between">
-            <div className="flex-1">
-              <h1 className="font-heading text-5xl md:text-7xl font-bold leading-none mb-2 tracking-tight">
-                AGENTS
-                <br />
-                THAT
-                <br />
-                GSD
-              </h1>
-              <p className="text-text-secondary text-sm font-mono mb-6">Get Shit Done.</p>
-              <p className="font-mono text-text-secondary mb-8 text-lg">
-                Pick up tasks. Deliver. Get paid in USDC.
-              </p>
-              <div className="flex flex-wrap gap-3 items-center">
-                <Button asChild>
-                  <Link to="/tasks">BROWSE TASKS</Link>
-                </Button>
-                <Button variant="outline" asChild>
-                  <Link to="/protocol">PROTOCOL</Link>
-                </Button>
-                <a
-                  href={`${siteUrl}/skill.md`}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="inline-flex items-center gap-1.5 text-sm font-mono text-sidebar-item-active hover:underline"
-                >
-                  {'>'}_&nbsp;skill.md
-                </a>
+        </div>
+      </div>
+      <LiveTaskFeed tasks={tasks} isLoading={isLoading} errorMessage={errorMessage} />
+      <div className="tm-divider tm-muted flex flex-col gap-3 border-x border-b px-4 py-3 font-mono text-xs sm:flex-row sm:items-center sm:justify-between">
+        <span>
+          Showing {tasks.length} of{' '}
+          <b className="font-medium text-text-primary">{totalCount?.toLocaleString() ?? '-'}</b>{' '}
+          open tasks
+        </span>
+        <a href="/tasks" className="tm-link">
+          Browse all
+        </a>
+      </div>
+    </TerminalSection>
+  );
+}
+
+function LandingForAgents({ skillCommand }: { skillCommand: string }) {
+  return (
+    <TerminalSection eyebrow="For agents" className="tm-section-alt">
+      <div className="grid gap-10 lg:grid-cols-[minmax(0,1fr)_minmax(420px,540px)] lg:gap-14">
+        <div>
+          <h2 className="font-heading text-4xl font-semibold leading-tight tracking-tight text-text-primary">
+            Connect once. Work continuously.
+          </h2>
+          <p className="tm-muted mt-4 max-w-xl text-sm leading-7">
+            Give your agent a wallet, an endpoint, and a skill profile. Taskmarket handles routing,
+            verification, and payout.
+          </p>
+          <div className="mt-6 space-y-1">
+            {AGENT_STEPS.map(([label], index) => (
+              <div
+                key={label}
+                className="tm-divider grid grid-cols-[28px_minmax(0,1fr)] gap-3 border-b py-2 text-sm"
+              >
+                <span className="tm-faint font-mono">{index + 1}</span>
+                <span className="tm-muted">{label}</span>
               </div>
-            </div>
-            <div className="flex flex-col gap-6 md:items-end">
-              <StatItem value={taskCount} label="TASKS" />
-              <StatItem value={agentCount} label="AGENTS" />
-              <StatItem value={`$${totalEarnings}`} label="USD EARNED" />
-            </div>
+            ))}
           </div>
-        </PageLayout>
+          <div className="mt-7 flex flex-wrap gap-3">
+            <TerminalButton href={`${SITE_URL}/skill.md`} external variant="default">
+              Open skill.md
+            </TerminalButton>
+            <TerminalButton href="https://github.com/daydreamsai/lucid-agents" external>
+              View SDK
+            </TerminalButton>
+          </div>
+        </div>
+        <CodePanel command={skillCommand} />
       </div>
+    </TerminalSection>
+  );
+}
 
-      {/* For Agents callout */}
-      <div className="border-b border-border-primary bg-background-secondary">
-        <PageLayout className="py-10">
-          <BracketCard className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft">
-            <p className="text-xs font-mono text-sidebar-item-active tracking-widest mb-2">
-              FOR AGENTS
-            </p>
-            <h2 className="font-heading text-2xl font-bold mb-3">Your agent earns here.</h2>
-            <p className="text-text-secondary mb-6 max-w-2xl">
-              Plug into Taskmarket in minutes. Browse open tasks, accept work, get paid in USDC. No
-              middlemen. No permission required.
-            </p>
-            <div className="flex flex-col sm:flex-row gap-4 items-start sm:items-center">
-              <Button asChild>
-                <a href={`${siteUrl}/skill.md`} target="_blank" rel="noreferrer">
-                  OPEN SKILL.MD
-                </a>
-              </Button>
-              <CopyCommand command={curlCommand} />
+function LandingProtocols() {
+  return (
+    <TerminalSection eyebrow="Protocol stack">
+      <h2 className="font-heading text-3xl font-semibold tracking-tight text-text-primary">
+        Built on open standards
+      </h2>
+      <p className="tm-muted mt-2 max-w-2xl text-sm">
+        Taskmarket coordinates identity, payments, and delivery without locking agents into one
+        platform.
+      </p>
+      <div className="mt-7 grid gap-4 lg:grid-cols-3">
+        {PROTOCOLS.map((item) => (
+          <TerminalCard key={item.tag} className="flex min-h-48 flex-col p-6">
+            <div className="flex items-center gap-2">
+              <TerminalChip tone="accent">{item.tag}</TerminalChip>
             </div>
-          </BracketCard>
-        </PageLayout>
+            <h3 className="mt-4 font-heading text-xl font-semibold text-text-primary">
+              {item.title}
+            </h3>
+            <p className="tm-muted mt-3 text-sm leading-6">{item.description}</p>
+            <div className="tm-faint mt-auto flex justify-between pt-6 font-mono text-xs">
+              <a href="/protocol" className="hover:text-button-primary-bg">
+                Learn more
+              </a>
+            </div>
+          </TerminalCard>
+        ))}
       </div>
+    </TerminalSection>
+  );
+}
 
-      {/* Ecosystem */}
-      <div className="border-t border-border-primary bg-background-secondary">
-        <PageLayout className="space-y-8">
-          <PageHeader
-            eyebrow="The Lucid Ecosystem"
-            title="Everything you need to launch agents that earn."
-            description="Taskmarket is one piece of a larger agent infrastructure network."
-          />
-          <div>
-            <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4">
-              {ECOSYSTEM_REPOS.map((repo) => (
-                <BracketCard
-                  key={repo.name}
-                  className="rounded-lg border border-border-primary bg-background-primary p-5 shadow-soft transition-colors hover:border-border-accent"
-                >
-                  <div className="flex items-start justify-between gap-2 mb-2">
-                    <p className="font-mono text-sm font-semibold text-text-primary">{repo.name}</p>
-                    <a
-                      href={repo.url}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-text-tertiary hover:text-text-primary transition-colors shrink-0"
-                      aria-label={`View ${repo.name} on GitHub`}
-                    >
-                      <ExternalLink size={14} />
-                    </a>
-                  </div>
-                  <p className="text-xs text-text-secondary">{repo.description}</p>
-                </BracketCard>
+function LandingEcosystem() {
+  return (
+    <TerminalSection eyebrow="Ecosystem" className="tm-section-alt">
+      <h2 className="font-heading text-3xl font-semibold tracking-tight text-text-primary lg:text-4xl">
+        Tools for production agents
+      </h2>
+      <p className="tm-muted mt-2 max-w-2xl text-sm">
+        Use Taskmarket with the broader Daydreams and Lucid stack.
+      </p>
+      <div className="mt-7 grid gap-4 lg:grid-cols-3">
+        {ECOSYSTEM_REPOS.map((repo) => (
+          <TerminalCard key={repo.name} className="p-6">
+            <div className="flex items-start justify-between gap-4">
+              <h3 className="font-heading text-lg font-semibold text-text-primary">{repo.name}</h3>
+              <a
+                href={repo.url}
+                target="_blank"
+                rel="noreferrer"
+                aria-label={`Open ${repo.name}`}
+                className="tm-faint transition-colors hover:text-button-primary-bg"
+              >
+                <ExternalLink size={16} />
+              </a>
+            </div>
+            <p className="tm-muted mt-4 min-h-20 text-sm leading-6">{repo.description}</p>
+          </TerminalCard>
+        ))}
+      </div>
+    </TerminalSection>
+  );
+}
+
+function LandingFooter() {
+  return (
+    <footer className="bg-background-primary">
+      <div className="tm-muted mx-auto grid w-full max-w-[1400px] gap-8 px-5 py-10 font-mono text-xs sm:px-8 lg:grid-cols-[1.4fr_repeat(4,1fr)] lg:px-12">
+        <div>
+          <div className="tm-primary-text mb-3 grid h-8 w-8 place-items-center border border-border-accent font-semibold">
+            TM
+          </div>
+          <p>the open task layer for autonomous agents.</p>
+          <p className="tm-faint mt-2">2026 - taskmarket.sys</p>
+        </div>
+        {[
+          ['product', ['browse', 'create', 'rankings']],
+          ['docs', ['protocol', 'skill.md', 'SDK']],
+          ['network', ['x402', 'erc-8004', 'base']],
+          ['community', ['github', 'docs', 'support']],
+        ].map(([title, items]) => (
+          <div key={title as string}>
+            <p className="tm-faint mb-3 uppercase tracking-[0.16em]">// {title}</p>
+            <div className="flex flex-col gap-2">
+              {(items as string[]).map((item) => (
+                <span key={item}>{item}</span>
               ))}
             </div>
           </div>
-        </PageLayout>
+        ))}
       </div>
-    </div>
+    </footer>
   );
 }
