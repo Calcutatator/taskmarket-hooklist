@@ -4,14 +4,16 @@
 
 Taskmarket currently has two human web surfaces:
 
-- `apps/frontend`: the legacy React, TanStack Router, Vite, and Tailwind CSS app. It remains the reference and fallback while route parity is built.
-- `apps/web`: the new production-bound Next.js App Router app. It uses Tailwind v4, shadcn-style primitives, and a dashboard shell while keeping backend contracts unchanged.
+- `apps/web`: the production-bound Next.js App Router app. It uses Tailwind v4, shadcn-style primitives, and a dashboard shell while keeping backend contracts unchanged.
+- `apps/frontend`: the deprecated legacy React, TanStack Router, Vite, and Tailwind CSS app. It exists for historical reference and narrowly scoped maintenance only.
 
 Both apps integrate with the backend through the existing REST and tRPC APIs.
 
+Do not add new features, routes, or UI work to the TanStack Router app in `apps/frontend`. Build human web product work in `apps/web` moving forward.
+
 ## Structure
 
-### Legacy Vite app
+### Deprecated legacy Vite app
 
 ```
 apps/frontend/
@@ -37,7 +39,7 @@ apps/frontend/
 └── package.json
 ```
 
-### Next.js replacement app
+### Production Next.js app
 
 ```
 apps/web/
@@ -59,7 +61,7 @@ apps/web/
 └── package.json
 ```
 
-## Container/view pattern
+## Legacy container/view pattern
 
 **Containers** (`src/pages/`) handle data fetching and business logic:
 
@@ -103,7 +105,7 @@ const task = await trpcClient.tasks.get.query({ taskId: '0x...' });
 
 ## Routing
 
-TanStack Router with file-based routing in `src/routes/`:
+The deprecated Vite app uses TanStack Router with file-based routing in `src/routes/`. Do not add new routes there except for narrowly scoped maintenance fixes:
 
 ```
 routes/
@@ -166,6 +168,10 @@ The Next app uses wagmi directly in client components. Keep wallet-dependent cod
 
 ## Adding a new page
 
+Add new product pages to `apps/web` using Next.js App Router routes under `apps/web/app/`.
+
+For legacy maintenance only, the deprecated TanStack Router flow was:
+
 1. Create the container in `src/pages/MyPage.tsx`
 2. Create the view in `src/components/views/MyPageView.tsx`
 3. Add the route file in `src/routes/my-page.tsx`:
@@ -184,15 +190,14 @@ export const Route = createFileRoute('/my-page')({
 ## Running the frontend
 
 ```bash
-make dev          # starts frontend at http://localhost:5173
+make dev          # starts dev services
 make start web    # starts the Next app at http://localhost:3001
 ```
 
-Or standalone:
+The deprecated legacy app can still be started when maintenance requires it:
 
 ```bash
-cd apps/frontend
-pnpm dev
+make start frontend
 ```
 
 Use Makefile targets for checks:

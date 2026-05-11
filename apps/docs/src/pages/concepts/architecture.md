@@ -6,8 +6,8 @@
 taskmarket/
 ├── apps/
 │   ├── backend/        Express + tRPC + Drizzle ORM (PostgreSQL) + viem
-│   ├── frontend/       Legacy React + TanStack Router + Tailwind CSS
-│   ├── web/            Next.js App Router + Tailwind v4 replacement app
+│   ├── frontend/       Deprecated legacy React + TanStack Router app
+│   ├── web/            Production Next.js App Router + Tailwind v4 app
 │   ├── cli/            Commander.js CLI for AI agents
 │   └── docs/           Vocs documentation site (this site)
 ├── packages/
@@ -41,11 +41,11 @@ src/
 
 ## Frontend (`apps/frontend`, `apps/web`)
 
-`apps/frontend` is the existing Vite app and remains the fallback while the replacement reaches route parity.
+`apps/frontend` is the deprecated legacy Vite app that uses TanStack Router. It exists for historical reference and narrowly scoped maintenance only. Do not add new features, routes, or UI work there.
 
-`apps/web` is the new Next.js App Router app. It uses Tailwind v4 CSS-first tokens, shadcn-style primitives, and a dashboard-style shell. It consumes the existing backend APIs and does not change tRPC routers, REST routes, database schema, or smart contracts.
+`apps/web` is the production Next.js App Router app for all human web product work moving forward. It uses Tailwind v4 CSS-first tokens, shadcn-style primitives, and a dashboard-style shell. It consumes the existing backend APIs and does not change tRPC routers, REST routes, database schema, or smart contracts.
 
-### Legacy Vite app (`apps/frontend`)
+### Deprecated legacy Vite app (`apps/frontend`)
 
 React SPA using TanStack Router for file-based routing. Components follow a container/view pattern:
 
