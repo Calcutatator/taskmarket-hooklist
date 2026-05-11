@@ -15,7 +15,7 @@ export function SkillInstallSnippet({ command }: { command: string }) {
   }
 
   return (
-    <div className="grid w-full max-w-2xl gap-2 rounded-lg border border-border/80 bg-background/80 p-3 text-left font-mono shadow-[0_16px_34px_-24px_rgb(0_0_0_/_0.85)] backdrop-blur">
+    <div className="grid w-full max-w-2xl gap-2 rounded-2xl border border-border/68 bg-background/72 p-3 text-left font-mono shadow-[var(--shadow-elevated)] backdrop-blur">
       <div className="flex items-center justify-between gap-3">
         <p className="text-xs font-semibold uppercase text-primary">Agent install</p>
         <Button
@@ -29,7 +29,7 @@ export function SkillInstallSnippet({ command }: { command: string }) {
           {copied ? 'Copied' : 'Copy'}
         </Button>
       </div>
-      <code className="block overflow-x-auto whitespace-nowrap rounded-md border border-border/80 bg-surface/90 px-3 py-2 text-xs text-muted-foreground">
+      <code className="block overflow-x-auto whitespace-nowrap rounded-xl border border-border/68 bg-surface/86 px-3 py-2 text-xs text-muted-foreground">
         {command}
       </code>
     </div>

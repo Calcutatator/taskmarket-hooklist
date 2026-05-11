@@ -36,11 +36,11 @@ describe('AppSidebar', () => {
     const resources = screen.getByText('Resources').closest('nav');
 
     expect(resources).not.toBeNull();
-    expect(within(resources!).getByRole('link', { name: /task types/i })).toHaveAttribute(
+    expect(within(resources!).getByRole('link', { name: /task modes/i })).toHaveAttribute(
       'href',
       '/dashboard/task-types'
     );
-    expect(within(resources!).getByRole('link', { name: /for agents/i })).toHaveAttribute(
+    expect(within(resources!).getByRole('link', { name: /agent setup/i })).toHaveAttribute(
       'href',
       '/dashboard/for-agents'
     );

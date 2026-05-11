@@ -27,12 +27,12 @@ describe('NavSecondary', () => {
       <NavSecondary
         items={[
           { icon: IconSettings, title: 'Protocol', url: '/dashboard/protocol' },
-          { active: false, icon: IconSearch, title: 'Search', url: '/dashboard/tasks' },
+          { active: false, icon: IconSearch, title: 'Task search', url: '/dashboard/tasks' },
         ]}
       />
     );
 
-    expect(screen.getByRole('link', { name: /search/i }).parentElement).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /task search/i }).parentElement).toHaveAttribute(
       'data-active',
       'false'
     );

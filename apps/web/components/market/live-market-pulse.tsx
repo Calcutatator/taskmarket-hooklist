@@ -47,14 +47,14 @@ function taskTitle(task: TaskResponse) {
 
 function PulseStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-1 rounded-md border border-border/80 bg-surface/70 p-3 shadow-[var(--shadow-terminal)]">
+    <div className="grid gap-1 rounded-xl border border-border/68 bg-card/75 p-3 shadow-[var(--shadow-soft)]">
       <p className="font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground">
         {label}
       </p>
       <AnimatePresence mode="popLayout">
         <motion.span
           animate={{ opacity: 1, y: 0 }}
-          className="block font-mono text-2xl font-black text-foreground"
+          className="block font-mono text-2xl font-semibold text-foreground"
           exit={{ opacity: 0, y: -8 }}
           initial={{ opacity: 0, y: 8 }}
           key={value}
@@ -99,7 +99,7 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
   return (
     <motion.li
       animate={{ opacity: 1, y: 0 }}
-      className="grid gap-3 rounded-lg border border-border/80 bg-surface/75 p-4 shadow-[var(--shadow-terminal)] transition-colors hover:bg-surface"
+      className="grid gap-3 rounded-2xl border border-border/68 bg-card/75 p-4 shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-surface/82 hover:shadow-[var(--shadow-control)]"
       exit={{ opacity: 0, y: -12 }}
       initial={{ opacity: 0, y: 14 }}
       layout
@@ -113,7 +113,7 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
       </div>
 
       <a
-        className="block truncate font-mono text-sm font-semibold uppercase text-foreground transition-colors hover:text-primary"
+        className="block truncate font-sans text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-primary"
         href={href}
         title={taskTitle(task)}
       >
@@ -123,7 +123,7 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
       <div className="grid gap-3 border-t border-border/70 pt-3 sm:grid-cols-[auto_1fr] sm:items-end">
         <div>
           <p className="font-mono text-[0.65rem] uppercase text-muted-foreground">Reward</p>
-          <p className="mt-1 font-mono text-xl font-black text-primary">
+          <p className="mt-1 font-mono text-xl font-semibold text-primary">
             {formatUsdcUnits(task.reward)}
           </p>
         </div>
@@ -170,16 +170,16 @@ export function LiveMarketPulseSection({
   return (
     <section
       aria-labelledby="live-market-pulse-title"
-      className="flex min-h-[100dvh] flex-col justify-center border-b border-border/80 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
+      className="flex min-h-[100dvh] flex-col justify-center border-b border-border/68 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
       <div className="mx-auto grid max-w-7xl gap-8">
         <div className="grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:items-end">
           <div className="grid gap-3">
-            <Badge className="w-fit rounded-md" variant="terminal">
+            <Badge className="w-fit" variant="terminal">
               Live market pulse
             </Badge>
             <h2
-              className="font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
+              className="font-display text-3xl font-semibold tracking-tight leading-none sm:text-5xl"
               id="live-market-pulse-title"
             >
               Open work, streaming
@@ -198,7 +198,7 @@ export function LiveMarketPulseSection({
         </div>
 
         <Tabs onValueChange={(value) => setMode(value as ModeFilter)} value={mode}>
-          <TabsList className="flex w-full flex-wrap gap-1 bg-surface/60 p-1">
+          <TabsList className="flex w-full flex-wrap gap-1 bg-surface/58 p-1">
             {modeTabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -212,8 +212,8 @@ export function LiveMarketPulseSection({
 
           <TabsContent className="mt-4" value={mode}>
             {filtered.length === 0 ? (
-              <div className="rounded-lg border border-dashed border-border/80 bg-surface/50 p-8 text-center font-mono text-sm uppercase text-muted-foreground">
-                No open {activeModeLabel} right now — check back soon.
+              <div className="rounded-2xl border border-dashed border-border/68 bg-card/60 p-8 text-center font-mono text-sm uppercase text-muted-foreground shadow-[var(--shadow-soft)]">
+                No open {activeModeLabel} right now. Check back soon.
               </div>
             ) : (
               <ul className="grid gap-3 sm:grid-cols-2">

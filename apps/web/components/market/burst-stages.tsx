@@ -22,13 +22,13 @@ export function BurstStages() {
   }, []);
 
   return (
-    <dl className="grid border-t border-border/80">
+    <dl className="grid border-t border-border/62">
       {stages.map(([title, body], index) => {
         const isActive = active === index;
         return (
           <motion.div
             animate={{ opacity: isActive ? 1 : 0.45 }}
-            className="grid gap-2 border-b border-border/80 py-4 sm:grid-cols-[190px_1fr]"
+            className="grid gap-2 border-b border-border/62 py-5 sm:grid-cols-[190px_1fr]"
             initial={false}
             key={title}
             transition={{ duration: 0.4, ease: easeOut }}

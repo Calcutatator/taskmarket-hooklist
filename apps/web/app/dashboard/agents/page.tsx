@@ -34,8 +34,8 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <div>
-        <p className="font-mono text-xs uppercase text-primary">Agent directory</p>
-        <h1 className="mt-2 font-mono text-4xl font-black uppercase">Agents</h1>
+        <p className="font-mono text-xs uppercase text-primary">Agents</p>
+        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Agent directory</h1>
       </div>
       <Card>
         <CardContent>
@@ -46,12 +46,17 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
                 defaultValue={params.search}
                 id="agent-search"
                 name="search"
-                placeholder="Name, ID, or address"
+                placeholder="Agent ID or address"
               />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="agent-skill">Skill</Label>
-              <Input defaultValue={params.skill} id="agent-skill" name="skill" placeholder="code" />
+              <Input
+                defaultValue={params.skill}
+                id="agent-skill"
+                name="skill"
+                placeholder="skill"
+              />
             </div>
             <div className="grid gap-2">
               <Label htmlFor="agent-min-rating">Min rating</Label>
@@ -77,7 +82,7 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
             </div>
             <div className="flex items-end gap-2">
               <Button type="submit" variant="terminal">
-                Apply
+                Apply filters
               </Button>
               <Button asChild variant="outline">
                 <a href="/dashboard/agents">Clear</a>

@@ -4,79 +4,86 @@
 @custom-variant dark (&:is(.dark *));
 
 :root {
-  --background: #151315;
-  --foreground: #f4eee8;
-  --card: #1d1a1e;
-  --card-foreground: #f4eee8;
-  --popover: #211d22;
-  --popover-foreground: #f4eee8;
-  --primary: #d36d9c;
-  --primary-foreground: #221018;
-  --secondary: #28242a;
-  --secondary-foreground: #f4eee8;
-  --muted: #232025;
-  --muted-foreground: #b9afa8;
-  --accent: #74c7aa;
-  --accent-foreground: #10211a;
-  --destructive: #e06f6f;
-  --destructive-foreground: #250d0d;
-  --border: #3d373f;
-  --input: #322d34;
-  --ring: #d36d9c;
-  --surface: #19171a;
-  --surface-2: #262229;
-  --success: #74c7aa;
-  --warning: #e4be68;
-  --info: #91addc;
+  --background: #0f0f12;
+  --foreground: #f7f2ef;
+  --card: #18171a;
+  --card-foreground: #f7f2ef;
+  --popover: #1d1b20;
+  --popover-foreground: #f7f2ef;
+  --primary: #cc667f;
+  --primary-foreground: #220d14;
+  --secondary: #232126;
+  --secondary-foreground: #f3eeeb;
+  --muted: #1e1c21;
+  --muted-foreground: #c4bab8;
+  --accent: #82b5a9;
+  --accent-foreground: #0f241f;
+  --destructive: #dc7474;
+  --destructive-foreground: #260e0e;
+  --border: #342f36;
+  --input: #2a252d;
+  --ring: #cc667f;
+  --surface: #141316;
+  --surface-2: #211f25;
+  --success: #82b5a9;
+  --warning: #d3b06b;
+  --info: #8ea9c8;
   --radius: 0.5rem;
-  --sidebar: #19171a;
-  --sidebar-foreground: #f4eee8;
-  --sidebar-primary: #d36d9c;
-  --sidebar-primary-foreground: #221018;
-  --sidebar-accent: #262229;
-  --sidebar-accent-foreground: #f4eee8;
-  --sidebar-border: #3d373f;
-  --sidebar-ring: #d36d9c;
+  --sidebar: #141316;
+  --sidebar-foreground: #f7f2ef;
+  --sidebar-primary: #cc667f;
+  --sidebar-primary-foreground: #220d14;
+  --sidebar-accent: #211f25;
+  --sidebar-accent-foreground: #f7f2ef;
+  --sidebar-border: #342f36;
+  --sidebar-ring: #cc667f;
+  color-scheme: dark;
 }
 
 .light {
-  --background: #f7f3ed;
-  --foreground: #211c20;
-  --card: #fffdfa;
-  --card-foreground: #211c20;
-  --popover: #fffdfa;
-  --popover-foreground: #211c20;
-  --primary: #b85d84;
-  --primary-foreground: #fffdfa;
-  --secondary: #eee7df;
-  --secondary-foreground: #211c20;
-  --muted: #f0e9e2;
-  --muted-foreground: #685f62;
-  --accent: #3f8f73;
-  --accent-foreground: #f7fff9;
-  --destructive: #b94b4b;
-  --destructive-foreground: #fffdfa;
-  --border: #ddd2c8;
-  --input: #e2d8cf;
-  --ring: #b85d84;
-  --surface: #fff9f3;
-  --surface-2: #f0e9e2;
-  --success: #3f8f73;
-  --warning: #8a681d;
-  --info: #456b9f;
-  --sidebar: #fff9f3;
-  --sidebar-foreground: #211c20;
-  --sidebar-primary: #b85d84;
-  --sidebar-primary-foreground: #fffdfa;
-  --sidebar-accent: #f0e9e2;
-  --sidebar-accent-foreground: #211c20;
-  --sidebar-border: #ddd2c8;
-  --sidebar-ring: #b85d84;
+  --background: #fbf8f5;
+  --foreground: #242024;
+  --card: #fffefd;
+  --card-foreground: #242024;
+  --popover: #fffefd;
+  --popover-foreground: #242024;
+  --primary: #b55c70;
+  --primary-foreground: #fffefd;
+  --secondary: #eee8e4;
+  --secondary-foreground: #242024;
+  --muted: #f1ece8;
+  --muted-foreground: #675f60;
+  --accent: #508c7b;
+  --accent-foreground: #fbfffd;
+  --destructive: #b95252;
+  --destructive-foreground: #fffefd;
+  --border: #ded6d1;
+  --input: #e6ded9;
+  --ring: #b55c70;
+  --surface: #fff9f6;
+  --surface-2: #f1ece8;
+  --success: #508c7b;
+  --warning: #8b6d25;
+  --info: #4d7199;
+  --sidebar: #fff9f6;
+  --sidebar-foreground: #242024;
+  --sidebar-primary: #b55c70;
+  --sidebar-primary-foreground: #fffefd;
+  --sidebar-accent: #f1ece8;
+  --sidebar-accent-foreground: #242024;
+  --sidebar-border: #ded6d1;
+  --sidebar-ring: #b55c70;
+  --shadow-terminal: 0 18px 42px -32px rgb(80 54 48 / 0.24), 0 1px 0 rgb(255 255 255 / 0.78) inset;
+  --shadow-elevated: 0 26px 72px -48px rgb(80 54 48 / 0.3), 0 1px 0 rgb(255 255 255 / 0.82) inset;
+  --shadow-control: 0 10px 26px -22px rgb(80 54 48 / 0.28), 0 1px 0 rgb(255 255 255 / 0.72) inset;
+  --shadow-soft: 0 16px 44px -36px rgb(80 54 48 / 0.22), 0 1px 0 rgb(255 255 255 / 0.68) inset;
+  color-scheme: light;
 }
 
 @theme inline {
-  --font-sans: var(--font-geist-sans);
-  --font-mono: var(--font-geist-mono);
+  --font-sans: var(--font-space-grotesk);
+  --font-display: var(--font-space-grotesk);
+  --font-mono: var(--font-jetbrains-mono);
   --color-background: var(--background);
   --color-foreground: var(--foreground);
   --color-card: var(--card);
@@ -113,7 +120,11 @@
   --radius-md: calc(var(--radius) + 2px);
   --radius-lg: calc(var(--radius) + 4px);
   --radius-xl: calc(var(--radius) + 6px);
-  --shadow-terminal: 0 18px 40px -28px rgb(0 0 0 / 0.85), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+  --shadow-terminal: 0 18px 42px -30px rgb(11 9 13 / 0.9), 0 1px 0 rgb(255 255 255 / 0.055) inset;
+  --shadow-elevated: 0 26px 72px -46px rgb(11 9 13 / 0.96), 0 1px 0 rgb(255 255 255 / 0.055) inset;
+  --shadow-control: 0 10px 26px -22px rgb(11 9 13 / 0.86), 0 1px 0 rgb(255 255 255 / 0.07) inset;
+  --shadow-soft: 0 16px 44px -36px rgb(11 9 13 / 0.78), 0 1px 0 rgb(255 255 255 / 0.045) inset;
+  --ease-premium: cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 * {
@@ -127,9 +138,14 @@ html {
 
 body {
   min-height: 100vh;
-  background: var(--background);
+  background: linear-gradient(
+    180deg,
+    color-mix(in oklab, var(--surface) 82%, var(--background)) 0%,
+    var(--background) 34%,
+    var(--background) 100%
+  );
   color: var(--foreground);
-  font-family: var(--font-geist-sans), system-ui, sans-serif;
+  font-family: var(--font-space-grotesk), system-ui, sans-serif;
 }
 
 ::selection {
@@ -143,10 +159,10 @@ body {
   overflow: hidden;
   pointer-events: none;
   background:
-    linear-gradient(color-mix(in oklab, var(--border) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(color-mix(in oklab, var(--border) 22%, transparent) 1px, transparent 1px),
     linear-gradient(
       90deg,
-      color-mix(in oklab, var(--border) 28%, transparent) 1px,
+      color-mix(in oklab, var(--border) 22%, transparent) 1px,
       transparent 1px
     ),
     radial-gradient(
@@ -160,8 +176,8 @@ body {
     center center,
     center center;
   background-size:
-    72px 72px,
-    72px 72px,
+    80px 80px,
+    80px 80px,
     100% 100%;
 }
 
@@ -197,13 +213,13 @@ body {
   justify-content: space-between;
   overflow: hidden;
   padding: 0.65rem;
-  border: 1px solid color-mix(in oklab, var(--foreground) 28%, transparent);
-  border-radius: var(--radius-lg);
-  background: color-mix(in oklab, var(--surface) 84%, transparent);
+  border: 1px solid color-mix(in oklab, var(--foreground) 20%, transparent);
+  border-radius: calc(var(--radius-xl) + 2px);
+  background: color-mix(in oklab, var(--surface) 78%, transparent);
   box-shadow:
-    0 18px 42px -34px rgb(0 0 0 / 0.9),
-    inset 0 1px 0 rgb(255 255 255 / 0.06);
-  font-family: var(--font-geist-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
+    0 18px 42px -36px rgb(12 10 13 / 0.9),
+    inset 0 1px 0 rgb(255 255 255 / 0.08);
+  font-family: var(--font-jetbrains-mono), ui-monospace, SFMono-Regular, Menlo, monospace;
   opacity: 0;
   transform: translate(var(--event-x), var(--event-y)) scale(0.72);
   animation: task-market-hero-event var(--event-duration) cubic-bezier(0.16, 1, 0.3, 1) infinite;
@@ -270,20 +286,26 @@ body {
 
 .task-market-hero-event--accepted {
   color: var(--primary);
-  background: color-mix(in oklab, var(--primary) 26%, transparent);
-  border-color: color-mix(in oklab, var(--primary) 72%, var(--border));
+  background: color-mix(in oklab, var(--primary) 18%, var(--surface));
+  border-color: color-mix(in oklab, var(--primary) 48%, var(--border));
 }
 
 .task-market-hero-event--submission {
   color: var(--accent);
-  background: color-mix(in oklab, var(--accent) 22%, transparent);
-  border-color: color-mix(in oklab, var(--accent) 64%, var(--border));
+  background: color-mix(in oklab, var(--accent) 16%, var(--surface));
+  border-color: color-mix(in oklab, var(--accent) 42%, var(--border));
 }
 
 .task-market-hero-event--volume {
   color: var(--warning);
-  background: color-mix(in oklab, var(--warning) 18%, transparent);
-  border-color: color-mix(in oklab, var(--warning) 58%, var(--border));
+  background: color-mix(in oklab, var(--warning) 14%, var(--surface));
+  border-color: color-mix(in oklab, var(--warning) 38%, var(--border));
+}
+
+@media (width < 640px) {
+  .task-market-hero-event {
+    display: none;
+  }
 }
 
 .task-market-burst-flow {

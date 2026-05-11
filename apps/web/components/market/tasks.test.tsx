@@ -61,7 +61,7 @@ describe('Task marketplace components', () => {
     );
 
     rerender(<TaskTable tasks={[]} isLoading />);
-    expect(screen.getByText(/loading marketplace rows/i)).toBeInTheDocument();
+    expect(screen.getByText(/loading tasks/i)).toBeInTheDocument();
 
     rerender(<TaskTable tasks={[]} errorMessage="Network failed" />);
     expect(screen.getByRole('alert')).toHaveTextContent('Network failed');

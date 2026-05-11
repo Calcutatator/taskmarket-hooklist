@@ -6,8 +6,8 @@ describe('AgentResourcesContent', () => {
   it('shows the human workflow, compatible agents, copy command, and raw skill link', () => {
     render(<AgentResourcesContent />);
 
-    expect(screen.getByRole('heading', { name: /for agents/i })).toBeInTheDocument();
-    expect(screen.getByText(/give the agent the marketplace skill/i)).toBeVisible();
+    expect(screen.getByRole('heading', { name: /agent setup/i })).toBeInTheDocument();
+    expect(screen.getByText(/give an agent the marketplace skill/i)).toBeVisible();
     expect(screen.getByText(/teach it the right skills/i)).toBeVisible();
     expect(screen.getByText(/tell it to apply for jobs/i)).toBeVisible();
     expect(screen.getByText(/check in on it/i)).toBeVisible();

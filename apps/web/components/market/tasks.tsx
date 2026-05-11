@@ -106,7 +106,7 @@ export function TaskTable({
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Loading marketplace rows</CardTitle>
+          <CardTitle>Loading tasks</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-3">
           <Skeleton className="h-10 w-full" />
@@ -119,17 +119,17 @@ export function TaskTable({
 
   if (tasks.length === 0) {
     return (
-      <Card className="w-full border-dashed bg-surface/50 py-10 shadow-none">
+      <Card className="w-full border-dashed border-border/68 bg-card/60 py-14 shadow-[var(--shadow-soft)]">
         <CardContent className="flex items-center justify-center">
           <div className="grid max-w-md gap-4 text-center">
             <div className="grid gap-2">
-              <p className="font-mono text-sm font-semibold uppercase text-foreground">
+              <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
                 {hasActiveFilters ? 'No tasks match these filters' : 'No open tasks yet'}
               </p>
               <p className="text-sm text-muted-foreground">
                 {hasActiveFilters
-                  ? 'Try clearing filters or post the first task for this market.'
-                  : 'Post the first task to seed the marketplace.'}
+                  ? 'Change filters or clear them to return to open tasks.'
+                  : 'Create a funded task to make work visible to agents.'}
               </p>
             </div>
             <div className="flex flex-col justify-center gap-2 sm:flex-row">
@@ -149,7 +149,7 @@ export function TaskTable({
   }
 
   return (
-    <Card className="min-w-0 max-w-full overflow-hidden">
+    <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
       <Table>
         <TableHeader>
           <TableRow>
@@ -224,9 +224,9 @@ export function TaskFilterRail({
 
   return (
     <aside className="grid gap-4 lg:sticky lg:top-20">
-      <Card className="gap-4 bg-surface/45 py-4 shadow-none">
+      <Card className="gap-4 border-border/68 bg-card/68 py-4 shadow-[var(--shadow-soft)]">
         <CardHeader className="px-4">
-          <CardTitle className="text-sm">Filters</CardTitle>
+          <CardTitle className="text-sm">Task filters</CardTitle>
         </CardHeader>
         <CardContent className="grid gap-4 px-4">
           <div className="grid gap-2">
@@ -234,7 +234,7 @@ export function TaskFilterRail({
             <div className="grid grid-cols-2 gap-1">
               {modes.map((mode) => (
                 <a
-                  className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
+                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
                   data-active={selectedMode === mode}
                   href={taskFiltersHref(basePath, currentFilters, { mode })}
                   key={mode}
@@ -249,7 +249,7 @@ export function TaskFilterRail({
             <div className="grid grid-cols-2 gap-1">
               {statuses.map((status) => (
                 <a
-                  className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
+                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
                   data-active={selectedStatus === status}
                   href={taskFiltersHref(basePath, currentFilters, { status })}
                   key={status}
@@ -314,7 +314,7 @@ export function TaskFilterRail({
             </div>
             <div className="grid grid-cols-2 gap-2">
               <Button type="submit" variant="terminal">
-                Apply
+                Apply filters
               </Button>
               <Button asChild variant="outline">
                 <a aria-label="Clear filters" href={normalizeBasePath(basePath)}>
@@ -367,8 +367,8 @@ export function TaskListPageContent({
       <section className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden">
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
-            <p className="font-mono text-xs uppercase text-primary">Marketplace</p>
-            <h1 className="mt-2 font-mono text-4xl font-black uppercase">Open tasks</h1>
+            <p className="font-mono text-xs uppercase text-primary">Tasks</p>
+            <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Open tasks</h1>
           </div>
           <Button asChild>
             <a href={createHref}>Post task</a>
@@ -405,7 +405,7 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
   return (
     <Card>
       <CardHeader>
-        <CardTitle>Post work</CardTitle>
+        <CardTitle>Create task</CardTitle>
       </CardHeader>
       <CardContent>
         <form className="grid gap-4">
@@ -445,7 +445,7 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
 function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId: string }) {
   const label = artifact.role !== 'attachment' ? artifact.role : null;
   return (
-    <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+    <div className="rounded-xl border border-border/60 bg-muted/34 px-3 py-2 text-sm">
       <div className="flex items-center justify-between gap-2">
         <div className="flex min-w-0 items-center gap-2">
           {label ? <Badge variant="outline">{label}</Badge> : null}
@@ -464,7 +464,7 @@ function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId:
           <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
             preview
           </summary>
-          <pre className="mt-1 overflow-auto rounded bg-background p-2 font-mono text-xs leading-5 text-foreground">
+          <pre className="mt-1 overflow-auto rounded-lg bg-background p-2 font-mono text-xs leading-5 text-foreground">
             {artifact.textPreview}
           </pre>
         </details>
@@ -476,7 +476,7 @@ function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId:
 function SubmissionCard({ submission }: { submission: SubmissionResponse }) {
   const artifacts: ArtifactResponse[] = submission.artifacts ?? [];
   return (
-    <div className="rounded-md border border-border/80 bg-background/60 p-3">
+    <div className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]">
       <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
         <span>{compactAddress(submission.workerAgentId ?? submission.workerAddress)}</span>
         <span className="text-muted-foreground">
@@ -531,7 +531,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {pitches.map((pitch) => (
               <div
-                className="rounded-md border border-border/80 bg-background/60 p-3"
+                className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
                 key={pitch.id}
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -553,7 +553,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {proofs.map((proof) => (
               <div
-                className="rounded-md border border-border/80 bg-background/60 p-3"
+                className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
                 key={proof.id}
               >
                 <div className="flex flex-wrap items-center gap-2">
@@ -590,7 +590,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {bids.map((bid) => (
               <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-md border border-border/80 bg-background/60 p-3 font-mono text-sm"
+                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]"
                 key={bid.id}
               >
                 <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
@@ -631,7 +631,7 @@ function ModeDataPanel({
           <CardContent className="grid gap-3">
             {pendingActions.map((action) => (
               <pre
-                className="overflow-x-auto rounded-md border border-border/80 bg-background/60 p-3 font-mono text-xs text-muted-foreground"
+                className="overflow-x-auto rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-xs text-muted-foreground shadow-[var(--shadow-soft)]"
                 key={`${action.role}-${action.action}`}
               >
                 <code>{action.command}</code>

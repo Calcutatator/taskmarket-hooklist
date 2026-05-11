@@ -113,7 +113,7 @@ export function AgentTable({
 
   if (agents.length === 0) {
     return (
-      <Card>
+      <Card className="border-dashed border-border/68 bg-card/60 py-8 shadow-[var(--shadow-soft)]">
         <CardContent>
           <p className="font-mono text-sm uppercase text-muted-foreground">{emptyMessage}</p>
         </CardContent>
@@ -122,7 +122,7 @@ export function AgentTable({
   }
 
   return (
-    <Card className="min-w-0 max-w-full overflow-hidden">
+    <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
       <Table>
         <TableHeader>
           <TableRow>
@@ -179,7 +179,7 @@ export function AgentTable({
 export function AgentLeaderboardPanel({
   agents,
   basePath = '/dashboard/leaderboard',
-  filterTitle = 'Filter rankings',
+  filterTitle = 'Ranking filters',
   hasNextPage,
   hasPrevPage,
   minRating,
@@ -240,7 +240,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-rating">Min rating</Label>
               <select
-                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={minRating ?? ''}
                 id="leaderboard-min-rating"
                 name="minRating"
@@ -255,7 +255,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-tasks">Min tasks</Label>
               <select
-                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={minTasks ?? ''}
                 id="leaderboard-min-tasks"
                 name="minTasks"
@@ -270,7 +270,7 @@ export function AgentLeaderboardPanel({
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-limit">Per page</Label>
               <select
-                className="h-10 rounded-md border border-input/85 bg-background/45 px-3 py-2 font-mono text-sm text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.03)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
                 defaultValue={String(pageSize)}
                 id="leaderboard-limit"
                 name="limit"
@@ -313,14 +313,14 @@ export function AgentLeaderboardPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <a
-            className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+            className="rounded-full border border-border/68 bg-background/35 px-3 py-2 font-mono text-xs uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-[var(--shadow-control)]"
             data-active={sort === 'reputation'}
             href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath)}
           >
             Reputation
           </a>
           <a
-            className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
+            className="rounded-full border border-border/68 bg-background/35 px-3 py-2 font-mono text-xs uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-[var(--shadow-control)]"
             data-active={sort === 'tasks'}
             href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath)}
           >
@@ -397,7 +397,7 @@ export function AgentProfilePanel({
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="overflow-hidden">
           <CardContent className="grid gap-7 pt-0">
-            <div className="-mx-6 -mt-6 border-b border-border/80 bg-surface/70 px-6 py-6">
+            <div className="-mx-6 -mt-6 border-b border-border/68 bg-surface/58 px-6 py-6 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
                 <AgentMark address={agent.address} label={label} />
                 <div className="min-w-0 flex-1">
@@ -406,7 +406,7 @@ export function AgentProfilePanel({
                     <Badge variant="outline">{ratingLabel} rating</Badge>
                     {agent.agentId ? <Badge variant="terminal">ERC-8004 identity</Badge> : null}
                   </div>
-                  <h1 className="mt-3 break-words font-mono text-3xl font-black uppercase leading-tight tracking-normal text-foreground sm:text-4xl">
+                  <h1 className="mt-3 break-words font-display text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
                     {label}
                   </h1>
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
@@ -422,7 +422,7 @@ export function AgentProfilePanel({
                 action={
                   <a
                     aria-label="View address on BaseScan"
-                    className="inline-flex size-6 items-center justify-center rounded-md border border-border/80 bg-background/70 text-muted-foreground transition-colors hover:border-primary/70 hover:text-primary"
+                    className="inline-flex size-7 items-center justify-center rounded-full border border-border/68 bg-background/58 text-muted-foreground transition-colors hover:border-primary/52 hover:text-primary"
                     href={explorerAddressUrl}
                     rel="noreferrer"
                     target="_blank"
@@ -440,7 +440,7 @@ export function AgentProfilePanel({
                     explorerTokenUrl ? (
                       <a
                         aria-label="View identity token on BaseScan"
-                        className="inline-flex size-6 items-center justify-center rounded-md border border-border/80 bg-background/70 text-muted-foreground transition-colors hover:border-primary/70 hover:text-primary"
+                        className="inline-flex size-7 items-center justify-center rounded-full border border-border/68 bg-background/58 text-muted-foreground transition-colors hover:border-primary/52 hover:text-primary"
                         href={explorerTokenUrl}
                         rel="noreferrer"
                         target="_blank"
@@ -502,13 +502,13 @@ export function AgentProfilePanel({
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="min-w-0">
           <CardHeader className="has-data-[slot=card-action]:grid-cols-[minmax(0,1fr)_auto]">
-            <CardTitle>Identity JSON</CardTitle>
+            <CardTitle>Identity record</CardTitle>
             <div data-slot="card-action">
               <CopyButton label="Copy identity JSON" text={identityJson} />
             </div>
           </CardHeader>
           <CardContent>
-            <pre className="max-h-[28rem] overflow-auto rounded-md border border-border/80 bg-background/70 p-4 text-xs leading-5 text-muted-foreground">
+            <pre className="max-h-[28rem] overflow-auto rounded-xl border border-border/68 bg-background/62 p-4 text-xs leading-5 text-muted-foreground shadow-[var(--shadow-soft)]">
               <code>{identityJson}</code>
             </pre>
           </CardContent>
@@ -516,7 +516,7 @@ export function AgentProfilePanel({
 
         <Card>
           <CardHeader>
-            <CardTitle>CLI</CardTitle>
+            <CardTitle>CLI commands</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-3">
             <CommandBlock command={`taskmarket stats --address ${agent.address}`} />
@@ -582,7 +582,7 @@ function AgentMark({ address, label }: { address: string; label: string }) {
   return (
     <div
       aria-label={`Avatar for ${label}`}
-      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/80 font-mono text-2xl font-black text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08),0_18px_34px_-24px_rgb(0_0_0_/_0.9)]"
+      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/68 font-mono text-2xl font-semibold text-foreground shadow-[var(--shadow-elevated)]"
       role="img"
       style={{
         background: `linear-gradient(135deg, hsl(${hue % 360} 28% 24%), hsl(${(hue + 48) % 360} 42% 38%))`,
@@ -609,7 +609,7 @@ function IdentityRow({
   valueToCopy?: string;
 }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border/75 bg-background/45 p-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid gap-2 rounded-xl border border-border/68 bg-background/40 p-3 shadow-[var(--shadow-soft)] sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center">
       <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase text-muted-foreground">
         {icon}
         {label}
@@ -625,26 +625,24 @@ function IdentityRow({
 
 function ProfileStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-lg border border-border/85 bg-card p-4 shadow-[var(--shadow-terminal)]">
+    <div className="rounded-xl border border-border/68 bg-card/92 p-4 shadow-[var(--shadow-elevated)]">
       <div className="flex items-center justify-between gap-4">
         <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">{label}</p>
         <span className="text-primary [&>svg]:size-4">{icon}</span>
       </div>
-      <p className="mt-4 break-words font-mono text-2xl font-black uppercase leading-tight">
-        {value}
-      </p>
+      <p className="mt-4 break-words font-mono text-2xl font-semibold leading-tight">{value}</p>
     </div>
   );
 }
 
 function CommandBlock({ command }: { command: string }) {
   return (
-    <div className="grid gap-2 rounded-md border border-border/80 bg-background/70 p-3">
+    <div className="grid gap-2 rounded-xl border border-border/68 bg-background/62 p-3 shadow-[var(--shadow-soft)]">
       <div className="flex items-center justify-between gap-3">
         <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">Command</p>
         <CopyButton label="Copy CLI command" text={command} />
       </div>
-      <code className="block overflow-x-auto whitespace-nowrap rounded-md border border-border/70 bg-surface/80 px-3 py-2 font-mono text-xs text-muted-foreground">
+      <code className="block overflow-x-auto whitespace-nowrap rounded-lg border border-border/62 bg-surface/80 px-3 py-2 font-mono text-xs text-muted-foreground">
         {command}
       </code>
     </div>

@@ -6,7 +6,7 @@ describe('TaskTypesContent', () => {
   it('explains every task mode and auction subtype', () => {
     render(<TaskTypesContent />);
 
-    expect(screen.getByRole('heading', { name: /task types/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /task modes/i })).toBeInTheDocument();
 
     for (const mode of ['Bounty', 'Claim', 'Pitch', 'Benchmark', 'Auction']) {
       expect(screen.getByRole('heading', { name: mode })).toBeInTheDocument();

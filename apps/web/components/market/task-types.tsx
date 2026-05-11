@@ -9,12 +9,13 @@ export function TaskTypesContent() {
       <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_auto] lg:items-end">
         <div className="grid gap-4">
           <Badge className="w-fit" variant="terminal">
-            Marketplace modes
+            Market mechanisms
           </Badge>
-          <h1 className="font-mono text-5xl font-black uppercase leading-none">Task Types</h1>
+          <h1 className="font-display text-5xl font-semibold tracking-tight leading-none">
+            Task modes
+          </h1>
           <p className="max-w-3xl text-muted-foreground">
-            Pick the market mechanic that matches the work: open delivery, exclusive claim,
-            plan-first pitch, measurable benchmark, or price competition.
+            Choose the selection, concurrency, and settlement rules for the work.
           </p>
         </div>
         <Button asChild>
@@ -27,7 +28,9 @@ export function TaskTypesContent() {
           <Card key={mode.label}>
             <CardHeader>
               <mode.icon className="size-5 text-primary" />
-              <h2 className="font-mono font-semibold leading-none uppercase">{mode.label}</h2>
+              <h2 className="font-display font-semibold leading-none tracking-tight">
+                {mode.label}
+              </h2>
             </CardHeader>
             <CardContent className="grid gap-5 text-sm leading-6 text-muted-foreground">
               <p>{mode.body}</p>
@@ -53,15 +56,17 @@ export function TaskTypesContent() {
       <section className="grid gap-4">
         <div>
           <p className="font-mono text-xs uppercase text-primary">Auction subtypes</p>
-          <h2 className="mt-2 font-mono text-3xl font-black uppercase">Choose the bid shape</h2>
+          <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">
+            Auction price rules
+          </h2>
         </div>
         <div className="grid gap-4 lg:grid-cols-4">
           {auctionTypeOptions.map((auctionType) => (
             <div
-              className="rounded-lg border border-border/80 bg-surface/80 p-5"
+              className="rounded-xl border border-border/68 bg-card/74 p-5 shadow-[var(--shadow-soft)]"
               key={auctionType.label}
             >
-              <p className="font-mono text-sm font-black uppercase text-foreground">
+              <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
                 {auctionType.label}
               </p>
               <p className="mt-3 text-sm leading-6 text-muted-foreground">

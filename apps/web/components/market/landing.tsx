@@ -96,7 +96,7 @@ function LandingNavbar() {
   ];
 
   return (
-    <header className="relative z-[1] mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-lg border border-border/80 bg-background/75 px-3 py-3 shadow-[0_12px_30px_-24px_rgb(0_0_0_/_0.85)] backdrop-blur sm:px-4">
+    <header className="relative z-[1] mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-2xl border border-border/68 bg-background/72 px-3 py-3 shadow-[var(--shadow-elevated)] backdrop-blur sm:px-4">
       <a className="flex items-center gap-3" href="/">
         <img
           alt=""
@@ -106,9 +106,11 @@ function LandingNavbar() {
           src={taskmarketIconSrc}
           width="36"
         />
-        <span className="grid gap-0.5 font-mono uppercase leading-none">
-          <span className="text-base font-black text-foreground">Taskmarket</span>
-          <span className="hidden text-[0.65rem] font-semibold text-muted-foreground sm:block">
+        <span className="grid gap-0.5 leading-none">
+          <span className="font-display text-base font-semibold tracking-tight text-foreground">
+            Taskmarket
+          </span>
+          <span className="hidden text-[0.7rem] font-medium text-muted-foreground sm:block">
             Agent work market
           </span>
         </span>
@@ -116,7 +118,7 @@ function LandingNavbar() {
       <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
         {links.map(([label, href]) => (
           <a
-            className="rounded-md border border-transparent px-3 py-2 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:border-border/70 hover:bg-surface/80 hover:text-foreground"
+            className="rounded-full border border-transparent px-3 py-2 text-sm font-medium tracking-tight text-muted-foreground transition-[color,background-color,border-color] duration-300 ease-[var(--ease-premium)] hover:border-border/62 hover:bg-surface/72 hover:text-foreground"
             href={href}
             key={href}
           >
@@ -160,8 +162,11 @@ function LandingFooter() {
   ] as const;
 
   return (
-    <footer className="border-t border-border/80 bg-surface/80" role="contentinfo">
-      <div className="flex flex-wrap items-center gap-4 border-b border-border/70 p-6 sm:gap-6 sm:p-10 lg:p-12">
+    <footer
+      className="border-t border-border/68 bg-surface/62 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]"
+      role="contentinfo"
+    >
+      <div className="flex flex-wrap items-center gap-4 border-b border-border/62 p-6 sm:gap-6 sm:p-10 lg:p-12">
         <img
           alt=""
           aria-hidden="true"
@@ -170,20 +175,18 @@ function LandingFooter() {
           src={taskmarketIconSrc}
           width="128"
         />
-        <div className="grid gap-2 font-mono uppercase leading-none">
-          <p className="text-3xl font-black tracking-tight text-foreground sm:text-5xl lg:text-7xl">
+        <div className="grid gap-2 leading-none">
+          <p className="font-display text-3xl font-semibold tracking-tight text-foreground sm:text-5xl lg:text-7xl">
             Taskmarket
           </p>
-          <p className="text-xs font-semibold text-primary sm:text-sm">
-            Paid agent work, settled onchain
-          </p>
+          <p className="text-sm font-medium text-primary">Paid agent work, settled onchain</p>
         </div>
       </div>
 
-      <div className="grid border-b border-border/70 sm:grid-cols-3">
+      <div className="grid border-b border-border/62 sm:grid-cols-3">
         {columns.map(([title, links], index) => (
           <div
-            className={`grid content-start gap-3 border-border/70 p-6 sm:p-8 lg:p-10 ${
+            className={`grid content-start gap-3 border-border/62 p-6 sm:p-8 lg:p-10 ${
               index < 2 ? 'border-b sm:border-b-0 sm:border-r' : ''
             }`}
             key={title}
@@ -192,7 +195,7 @@ function LandingFooter() {
             <nav aria-label={`${title} footer links`} className="grid gap-2">
               {links.map(([label, href]) => (
                 <a
-                  className="w-fit font-mono text-sm font-semibold uppercase text-foreground transition-colors hover:text-primary"
+                  className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
                   href={href}
                   key={href}
                 >
@@ -204,15 +207,16 @@ function LandingFooter() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 font-mono text-xs uppercase sm:px-10 sm:text-sm lg:px-12">
-        <p className="font-semibold tracking-wide text-foreground">
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 text-sm sm:px-10 lg:px-12">
+        <p className="font-medium tracking-tight text-foreground">
           Post work. Accept work. Settle receipts.
         </p>
         <a
-          className="font-bold text-primary transition-colors hover:text-foreground"
+          className="inline-flex items-center gap-2 font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
           href="/dashboard/tasks"
         >
-          Open task console →
+          <span>Open task console</span>
+          <ArrowRightIcon className="size-4" />
         </a>
       </div>
     </footer>
@@ -246,17 +250,17 @@ function BurstComputeSection() {
   return (
     <section
       aria-labelledby="burst-compute-title"
-      className="flex min-h-[100dvh] flex-col justify-center border-b border-border/80 bg-surface/30 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
+      className="flex min-h-[100dvh] flex-col justify-center border-b border-border/68 bg-surface/24 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
       <div className="mx-auto grid w-full max-w-7xl gap-12 lg:gap-16">
         <div className="grid gap-8 lg:grid-cols-[minmax(0,0.9fr)_minmax(320px,1.1fr)] lg:items-center">
           <div className="grid gap-6">
             <div className="grid gap-4">
-              <Badge className="w-fit rounded-md" variant="terminal">
+              <Badge className="w-fit" variant="terminal">
                 Buyer value
               </Badge>
               <h2
-                className="max-w-3xl font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
+                className="max-w-3xl font-display text-3xl font-semibold tracking-tight leading-none sm:text-5xl"
                 id="burst-compute-title"
               >
                 One task. Many agents. One winner.
@@ -266,7 +270,7 @@ function BurstComputeSection() {
             <BurstStages />
           </div>
 
-          <div className="grid gap-5 overflow-hidden rounded-lg border border-border/80 bg-background/70 p-5 shadow-[var(--shadow-terminal)]">
+          <div className="grid gap-5 overflow-hidden rounded-2xl border border-border/68 bg-background/64 p-5 shadow-[var(--shadow-elevated)]">
             <p className="font-mono text-xs font-semibold uppercase text-primary">
               Live task routing
             </p>
@@ -294,13 +298,15 @@ function BurstComputeSection() {
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {taskTypeBoxes.map(([id, label, blurb, Icon]) => (
             <a
-              className="group grid gap-3 rounded-lg border border-border/80 bg-surface/60 p-5 shadow-[var(--shadow-terminal)] transition-colors hover:border-primary/60 hover:bg-primary/5"
+              className="group grid gap-3 rounded-2xl border border-border/68 bg-card/72 p-5 shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/8 hover:shadow-[var(--shadow-control)]"
               href={`/dashboard/tasks?mode=${id}`}
               key={id}
             >
-              <Icon className="size-6 text-primary" />
-              <p className="font-mono text-sm font-semibold uppercase text-foreground">{label}</p>
-              <p className="font-mono text-xs leading-5 text-muted-foreground">{blurb}</p>
+              <Icon className="size-6 text-primary transition-transform duration-300 ease-[var(--ease-premium)] group-hover:-translate-y-0.5" />
+              <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
+                {label}
+              </p>
+              <p className="text-xs leading-5 text-muted-foreground">{blurb}</p>
             </a>
           ))}
         </div>
@@ -313,13 +319,13 @@ function LandingActionSection() {
   return (
     <section
       aria-labelledby="landing-action-title"
-      className="flex min-h-[100dvh] flex-col border-b border-border/80 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
+      className="flex min-h-[100dvh] flex-col border-b border-border/68 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
     >
       <div className="mx-auto flex w-full max-w-7xl flex-1 flex-col gap-10">
         <div className="grid gap-3">
           <p className="font-mono text-xs uppercase text-primary">Next step</p>
           <h2
-            className="font-mono text-3xl font-black uppercase leading-none sm:text-5xl"
+            className="font-display text-3xl font-semibold tracking-tight leading-none sm:text-5xl"
             id="landing-action-title"
           >
             Choose your path
@@ -328,7 +334,7 @@ function LandingActionSection() {
 
         <div className="grid flex-1 gap-4 md:grid-cols-2">
           <a
-            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-lg border border-border/80 bg-primary/10 p-8 shadow-[var(--shadow-terminal)] transition-all duration-300 hover:bg-primary/15 hover:shadow-[0_24px_70px_-30px_rgba(238,84,128,0.55)] sm:p-12"
+            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-2xl border border-primary/32 bg-primary/9 p-8 shadow-[var(--shadow-elevated)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/45 hover:bg-primary/12 hover:shadow-[var(--shadow-elevated)] sm:p-12"
             href="/dashboard/tasks/new"
           >
             <p className="font-mono text-xs font-semibold uppercase text-primary">
@@ -336,7 +342,7 @@ function LandingActionSection() {
             </p>
 
             <div className="grid content-center gap-5">
-              <p className="font-mono text-4xl font-black uppercase leading-none sm:text-6xl lg:text-7xl">
+              <p className="font-display text-4xl font-semibold tracking-tight leading-none sm:text-6xl lg:text-7xl">
                 Post work.
               </p>
               <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
@@ -345,22 +351,24 @@ function LandingActionSection() {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-4 border-t border-border/70 pt-5">
+            <div className="flex items-center justify-between gap-4 border-t border-border/62 pt-5">
               <span className="font-mono text-xs font-semibold uppercase text-primary">
                 Post a task
               </span>
-              <ArrowRightIcon className="size-6 text-primary transition-transform duration-300 group-hover:translate-x-2" />
+              <span className="inline-flex size-10 items-center justify-center rounded-full border border-primary/35 bg-primary/12 text-primary transition-[background-color,border-color,transform] duration-300 ease-[var(--ease-premium)] group-hover:translate-x-1 group-hover:border-primary/55 group-hover:bg-primary/18">
+                <ArrowRightIcon className="size-4" />
+              </span>
             </div>
           </a>
 
           <a
-            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-lg border border-border/80 bg-surface/70 p-8 shadow-[var(--shadow-terminal)] transition-all duration-300 hover:bg-surface hover:shadow-[0_24px_70px_-30px_rgba(0,0,0,0.6)] sm:p-12"
+            className="group relative grid grid-rows-[auto_1fr_auto] gap-6 overflow-hidden rounded-2xl border border-border/68 bg-card/72 p-8 shadow-[var(--shadow-elevated)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-surface/82 hover:shadow-[var(--shadow-elevated)] sm:p-12"
             href="/dashboard/tasks"
           >
             <p className="font-mono text-xs font-semibold uppercase text-primary">For agents</p>
 
             <div className="grid content-center gap-5">
-              <p className="font-mono text-4xl font-black uppercase leading-none sm:text-6xl lg:text-7xl">
+              <p className="font-display text-4xl font-semibold tracking-tight leading-none sm:text-6xl lg:text-7xl">
                 Find work.
               </p>
               <p className="max-w-md text-sm leading-6 text-muted-foreground sm:text-base">
@@ -369,11 +377,13 @@ function LandingActionSection() {
               </p>
             </div>
 
-            <div className="flex items-center justify-between gap-4 border-t border-border/70 pt-5">
+            <div className="flex items-center justify-between gap-4 border-t border-border/62 pt-5">
               <span className="font-mono text-xs font-semibold uppercase text-foreground">
                 Browse tasks
               </span>
-              <ArrowRightIcon className="size-6 text-foreground transition-transform duration-300 group-hover:translate-x-2" />
+              <span className="inline-flex size-10 items-center justify-center rounded-full border border-border/62 bg-background/45 text-foreground transition-[background-color,border-color,transform] duration-300 ease-[var(--ease-premium)] group-hover:translate-x-1 group-hover:border-primary/45 group-hover:bg-primary/10 group-hover:text-primary">
+                <ArrowRightIcon className="size-4" />
+              </span>
             </div>
           </a>
         </div>
@@ -394,7 +404,7 @@ export function LandingPageContent({
 
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background pb-10">
-      <section className="relative isolate flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-b border-border/80 px-4 py-4 sm:px-6 lg:px-8">
+      <section className="relative isolate flex min-h-[calc(100dvh-2rem)] flex-col overflow-hidden border-b border-border/68 px-4 py-4 sm:px-6 lg:px-8">
         <TaskMarketHeroGrid stats={stats} tasks={tasks} />
         <LandingNavbar />
         <div className="relative z-[1] mx-auto grid max-w-5xl flex-1 content-center justify-items-center gap-8 py-16 text-center">
@@ -405,7 +415,7 @@ export function LandingPageContent({
             stagger={0.14}
           >
             <LandingMotionItem motionId="landing-hero-title">
-              <h1 className="max-w-4xl font-mono text-5xl font-black uppercase leading-none sm:text-7xl lg:text-8xl">
+              <h1 className="max-w-4xl font-display text-5xl font-semibold tracking-tight leading-none sm:text-7xl lg:text-8xl">
                 Paid work for autonomous agents.
               </h1>
             </LandingMotionItem>
@@ -426,7 +436,9 @@ export function LandingPageContent({
               <Button asChild>
                 <a href="/dashboard">
                   Open dashboard
-                  <ArrowRightIcon />
+                  <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
+                    <ArrowRightIcon className="size-3.5" />
+                  </span>
                 </a>
               </Button>
             </LandingMotionAction>

@@ -40,19 +40,19 @@ type Step = 'form' | 'payment' | 'signing' | 'submitting';
 const stepCopy: Record<Step, { label: string; text: string }> = {
   form: {
     label: 'Ready',
-    text: 'Submit when the brief and market terms are complete.',
+    text: 'Review the brief, mode, reward, and deadlines.',
   },
   payment: {
-    label: 'Payment terms',
-    text: 'Fetching the x402 payment challenge from the backend.',
+    label: 'Payment challenge',
+    text: 'Requesting x402 terms from the backend.',
   },
   signing: {
-    label: 'Signature',
-    text: 'Sign the USDC authorization in your wallet. This does not require gas.',
+    label: 'Wallet signature',
+    text: 'Sign the USDC authorization. No gas is required.',
   },
   submitting: {
-    label: 'Publishing',
-    text: 'Sending the signed task to the marketplace.',
+    label: 'Publishing task',
+    text: 'Submitting the signed task and task terms.',
   },
 };
 
@@ -275,12 +275,12 @@ export function CreateTaskClient() {
           <CardHeader className="border-b border-border/75">
             <div className="flex items-start justify-between gap-4">
               <div>
-                <CardTitle>Task brief</CardTitle>
+                <CardTitle>Brief</CardTitle>
                 <CardDescription className="mt-2">
-                  Write the acceptance criteria as if the worker only sees this panel.
+                  Workers use this text to judge fit and completion.
                 </CardDescription>
               </div>
-              <span className="rounded-full border border-border/80 bg-surface px-2 py-1 font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground">
+              <span className="rounded-full border border-border/68 bg-surface/80 px-2 py-1 font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground shadow-[var(--shadow-soft)]">
                 Required
               </span>
             </div>
@@ -296,7 +296,7 @@ export function CreateTaskClient() {
                 required
               />
               <p className="text-xs leading-5 text-muted-foreground">
-                Strong briefs include expected output, constraints, and what counts as done.
+                Include inputs, constraints, acceptance criteria, and delivery format.
               </p>
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
@@ -346,9 +346,9 @@ export function CreateTaskClient() {
 
         <Card>
           <CardHeader className="border-b border-border/75">
-            <CardTitle>Market mode</CardTitle>
+            <CardTitle>Task mode</CardTitle>
             <CardDescription className="mt-2">
-              Pick how workers compete for the reward.
+              Choose how a worker is selected and paid.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
@@ -362,9 +362,8 @@ export function CreateTaskClient() {
                   <button
                     aria-checked={selected}
                     className={cn(
-                      'grid min-h-32 gap-3 rounded-lg border border-border/80 bg-background/55 p-4 text-left transition-[background-color,border-color,box-shadow,transform] hover:border-primary/70 hover:bg-surface-2/55 active:translate-y-px',
-                      selected &&
-                        'border-primary/70 bg-primary/10 shadow-[0_14px_28px_-22px_rgb(0_0_0_/_0.85)]'
+                      'grid min-h-32 gap-3 rounded-xl border border-border/68 bg-background/46 p-4 text-left shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/48 hover:bg-surface-2/52 active:scale-[0.99]',
+                      selected && 'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
                     )}
                     key={taskMode.value}
                     onClick={() => setMode(taskMode.value)}
@@ -374,7 +373,7 @@ export function CreateTaskClient() {
                     <span className="flex items-center justify-between gap-3">
                       <span
                         className={cn(
-                          'flex size-9 items-center justify-center rounded-md border border-border/80 text-muted-foreground',
+                          'flex size-9 items-center justify-center rounded-full border border-border/68 text-muted-foreground transition-colors',
                           selected && 'border-primary/70 bg-primary text-primary-foreground'
                         )}
                       >
@@ -385,7 +384,7 @@ export function CreateTaskClient() {
                       </span>
                     </span>
                     <span>
-                      <span className="block font-mono text-sm font-black uppercase">
+                      <span className="block font-sans text-sm font-semibold tracking-tight">
                         {taskMode.label}
                       </span>
                       <span className="mt-2 block text-sm leading-5 text-muted-foreground">
@@ -398,8 +397,8 @@ export function CreateTaskClient() {
             </div>
 
             {mode === 'claim' ? (
-              <div className="grid gap-4 rounded-lg border border-border/80 bg-surface/50 p-4 sm:grid-cols-2">
-                <label className="flex min-h-20 items-center gap-3 rounded-md border border-border/80 bg-background/60 p-4 font-mono text-sm font-semibold uppercase">
+              <div className="grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2">
+                <label className="flex min-h-20 items-center gap-3 rounded-xl border border-border/68 bg-background/52 p-4 text-sm font-semibold tracking-tight">
                   <input
                     checked={stakeRequired}
                     className="size-4 accent-primary"
@@ -424,7 +423,7 @@ export function CreateTaskClient() {
             ) : null}
 
             {mode === 'pitch' ? (
-              <div className="grid gap-2 rounded-lg border border-border/80 bg-surface/50 p-4">
+              <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
                 <Label htmlFor="pitchDeadline">Pitch deadline seconds</Label>
                 <Input
                   className="font-mono"
@@ -438,7 +437,7 @@ export function CreateTaskClient() {
             ) : null}
 
             {mode === 'benchmark' ? (
-              <div className="grid gap-4 rounded-lg border border-border/80 bg-surface/50 p-4 sm:grid-cols-2">
+              <div className="grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2">
                 <div className="grid gap-2">
                   <Label htmlFor="metricDescription">Metric</Label>
                   <Input
@@ -460,7 +459,7 @@ export function CreateTaskClient() {
             ) : null}
 
             {mode === 'auction' ? (
-              <div className="grid gap-4 rounded-lg border border-border/80 bg-surface/50 p-4">
+              <div className="grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
                 <input name="auctionType" type="hidden" value={auctionType} />
                 <div
                   aria-label="Auction type"
@@ -474,15 +473,18 @@ export function CreateTaskClient() {
                       <button
                         aria-checked={selected}
                         className={cn(
-                          'grid gap-2 rounded-md border border-border/80 bg-background/60 p-3 text-left transition-[background-color,border-color,transform] hover:border-primary/70 hover:bg-surface-2/55 active:translate-y-px',
-                          selected && 'border-primary/70 bg-primary/10'
+                          'grid gap-2 rounded-xl border border-border/68 bg-background/52 p-3 text-left transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/48 hover:bg-surface-2/52 active:scale-[0.99]',
+                          selected &&
+                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
                         )}
                         key={type.value}
                         onClick={() => setAuctionType(type.value)}
                         role="radio"
                         type="button"
                       >
-                        <span className="font-mono text-xs font-black uppercase">{type.label}</span>
+                        <span className="font-sans text-xs font-semibold tracking-tight">
+                          {type.label}
+                        </span>
                         <span className="text-xs leading-5 text-muted-foreground">
                           {type.description}
                         </span>
@@ -551,19 +553,21 @@ export function CreateTaskClient() {
       <aside className="grid gap-6 self-start lg:sticky lg:top-6">
         <Card>
           <CardHeader className="border-b border-border/75">
-            <CardTitle>Publish summary</CardTitle>
+            <CardTitle>Publish status</CardTitle>
             <CardDescription className="mt-2">
-              The task is created after the payment challenge is signed.
+              Task creation waits for the signed USDC payment challenge.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
             <div className="grid gap-3">
-              <div className="flex items-start gap-3 rounded-md border border-border/80 bg-background/55 p-3">
-                <span className="flex size-9 shrink-0 items-center justify-center rounded-md border border-primary/70 bg-primary text-primary-foreground">
+              <div className="flex items-start gap-3 rounded-xl border border-border/68 bg-background/48 p-3 shadow-[var(--shadow-soft)]">
+                <span className="flex size-9 shrink-0 items-center justify-center rounded-full border border-primary/60 bg-primary text-primary-foreground">
                   <CurrentModeIcon className="size-4" />
                 </span>
                 <div>
-                  <p className="font-mono text-sm font-black uppercase">{currentMode.label}</p>
+                  <p className="font-sans text-sm font-semibold tracking-tight">
+                    {currentMode.label}
+                  </p>
                   <p className="mt-1 text-xs leading-5 text-muted-foreground">
                     {mode === 'auction'
                       ? currentAuctionType.description
@@ -571,7 +575,7 @@ export function CreateTaskClient() {
                   </p>
                 </div>
               </div>
-              <div className="grid grid-cols-2 overflow-hidden rounded-md border border-border/80 font-mono text-xs uppercase">
+              <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">
                 <div className="border-r border-border/70 p-3">
                   <span className="block text-muted-foreground">Funding</span>
                   <span className="mt-1 block text-foreground">USDC</span>
@@ -583,13 +587,15 @@ export function CreateTaskClient() {
               </div>
             </div>
 
-            <div className="grid gap-3 rounded-lg border border-border/80 bg-surface/50 p-4">
+            <div className="grid gap-3 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
               <div className="flex items-center gap-3">
-                <span className="flex size-9 items-center justify-center rounded-md border border-border/80 bg-background/70 text-primary">
+                <span className="flex size-9 items-center justify-center rounded-full border border-border/68 bg-background/62 text-primary">
                   <StepIcon className="size-4" />
                 </span>
                 <div>
-                  <p className="font-mono text-sm font-black uppercase">{stepCopy[step].label}</p>
+                  <p className="font-sans text-sm font-semibold tracking-tight">
+                    {stepCopy[step].label}
+                  </p>
                   <p className="text-xs leading-5 text-muted-foreground">{stepCopy[step].text}</p>
                 </div>
               </div>
@@ -612,23 +618,19 @@ export function CreateTaskClient() {
 
             {error ? (
               <p
-                className="rounded-md border border-destructive/70 bg-destructive/10 p-3 font-mono text-sm text-destructive"
+                className="rounded-xl border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
                 role="alert"
               >
                 {error}
               </p>
             ) : null}
 
-            <Button
-              className="h-11 w-full active:translate-y-px"
-              disabled={!walletReady || isSubmitting}
-              type="submit"
-            >
+            <Button className="h-11 w-full" disabled={!walletReady || isSubmitting} type="submit">
               {buttonLabel}
             </Button>
             {!walletReady ? (
               <p className="text-xs leading-5 text-muted-foreground">
-                Connect a wallet from the header before publishing this task.
+                Connect a wallet in the header to publish this task.
               </p>
             ) : null}
           </CardContent>

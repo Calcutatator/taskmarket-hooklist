@@ -41,7 +41,7 @@ export default async function LeaderboardPage({ searchParams }: LeaderboardPageP
       <div className="flex flex-wrap items-end justify-between gap-4">
         <div>
           <p className="font-mono text-xs uppercase text-primary">Rankings</p>
-          <h1 className="mt-2 font-mono text-4xl font-black uppercase">Leaderboard</h1>
+          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Leaderboard</h1>
         </div>
       </div>
       <AgentLeaderboardPanel

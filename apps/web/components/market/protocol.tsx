@@ -107,14 +107,14 @@ function SectionHeading({ kicker, title }: { kicker: string; title: string }) {
       <Badge className="w-fit" variant="outline">
         {kicker}
       </Badge>
-      <h2 className="font-mono text-2xl font-black uppercase leading-tight">{title}</h2>
+      <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">{title}</h2>
     </div>
   );
 }
 
 function NumberMarker({ value }: { value: number }) {
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/80 bg-surface font-mono text-xs font-bold">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/68 bg-surface/80 font-mono text-xs font-bold shadow-[var(--shadow-soft)]">
       {value}
     </span>
   );
@@ -133,8 +133,8 @@ function ProtocolCard({ body, label }: { body: string; label: string }) {
 
 function InterfaceRow({ body, label }: { body: string; label: string }) {
   return (
-    <div className="grid gap-2 border-t border-border/80 py-4 first:border-t-0 first:pt-0 last:pb-0 md:grid-cols-[13rem_1fr]">
-      <div className="font-mono text-sm font-semibold uppercase">{label}</div>
+    <div className="grid gap-2 border-t border-border/62 py-4 first:border-t-0 first:pt-0 last:pb-0 md:grid-cols-[13rem_1fr]">
+      <div className="font-sans text-sm font-semibold tracking-tight">{label}</div>
       <p className="text-sm leading-6 text-muted-foreground">{body}</p>
     </div>
   );
@@ -142,10 +142,10 @@ function InterfaceRow({ body, label }: { body: string; label: string }) {
 
 function FlowStep({ body, index, label }: { body: string; index: number; label: string }) {
   return (
-    <li className="grid gap-3 rounded-lg border border-border/85 bg-card p-5 shadow-[var(--shadow-terminal)] md:grid-cols-[auto_1fr]">
+    <li className="grid gap-3 rounded-xl border border-border/68 bg-card/92 p-5 shadow-[var(--shadow-elevated)] md:grid-cols-[auto_1fr]">
       <NumberMarker value={index} />
       <div className="grid gap-2">
-        <h3 className="font-mono text-sm font-semibold uppercase">{label}</h3>
+        <h3 className="font-sans text-sm font-semibold tracking-tight">{label}</h3>
         <p className="text-sm leading-6 text-muted-foreground">{body}</p>
       </div>
     </li>
@@ -154,7 +154,7 @@ function FlowStep({ body, index, label }: { body: string; index: number; label: 
 
 function SelectorPill({ selector }: { selector: string }) {
   return (
-    <code className="rounded-md border border-border/80 bg-surface px-3 py-2 font-mono text-xs text-foreground">
+    <code className="rounded-full border border-border/68 bg-surface/80 px-3 py-2 font-mono text-xs text-foreground shadow-[var(--shadow-soft)]">
       {selector}
     </code>
   );
@@ -162,7 +162,7 @@ function SelectorPill({ selector }: { selector: string }) {
 
 function SafetyRule({ rule }: { rule: string }) {
   return (
-    <li className="border-t border-border/80 py-3 text-sm leading-6 text-muted-foreground first:border-t-0 first:pt-0 last:pb-0">
+    <li className="border-t border-border/62 py-3 text-sm leading-6 text-muted-foreground first:border-t-0 first:pt-0 last:pb-0">
       {rule}
     </li>
   );
@@ -175,7 +175,7 @@ export function ProtocolContent() {
         <Badge className="w-fit" variant="terminal">
           Protocol stack
         </Badge>
-        <h1 className="max-w-4xl font-mono text-4xl font-black uppercase leading-none sm:text-5xl">
+        <h1 className="max-w-4xl font-display text-4xl font-semibold tracking-tight leading-none sm:text-5xl">
           Task Market Protocol
         </h1>
         <p className="max-w-3xl text-muted-foreground">
@@ -186,7 +186,7 @@ export function ProtocolContent() {
       </section>
 
       <section className="grid gap-5">
-        <SectionHeading kicker="Standards" title="What runs underneath" />
+        <SectionHeading kicker="Standards" title="Protocol dependencies" />
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {standards.map((standard) => (
             <ProtocolCard key={standard.label} {...standard} />

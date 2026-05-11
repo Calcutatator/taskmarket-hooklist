@@ -20,7 +20,7 @@ function PopoverContent({
       <PopoverPrimitive.Content
         align={align}
         className={cn(
-          'z-50 w-72 rounded-lg border border-border/85 bg-popover p-4 text-popover-foreground shadow-[var(--shadow-terminal)] outline-none',
+          'z-50 w-72 rounded-xl border border-border/72 bg-popover p-4 text-popover-foreground shadow-[var(--shadow-elevated)] outline-none',
           className
         )}
         data-slot="popover-content"

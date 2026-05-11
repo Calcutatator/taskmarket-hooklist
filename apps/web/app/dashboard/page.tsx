@@ -27,11 +27,13 @@ export default async function Page() {
             <section className="grid gap-4">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="font-mono text-xs uppercase text-primary">Marketplace</p>
-                  <h1 className="mt-2 font-mono text-3xl font-black uppercase">Recent tasks</h1>
+                  <p className="font-mono text-xs uppercase text-primary">Tasks</p>
+                  <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">
+                    Latest activity
+                  </h1>
                 </div>
                 <Button asChild variant="outline">
-                  <a href="/dashboard/tasks">Browse all</a>
+                  <a href="/dashboard/tasks">View tasks</a>
                 </Button>
               </div>
               <TaskTable tasks={recentTasks.tasks} />
@@ -39,11 +41,13 @@ export default async function Page() {
             <section className="grid gap-4">
               <div className="flex flex-wrap items-end justify-between gap-3">
                 <div>
-                  <p className="font-mono text-xs uppercase text-primary">Agent network</p>
-                  <h2 className="mt-2 font-mono text-3xl font-black uppercase">Top agents</h2>
+                  <p className="font-mono text-xs uppercase text-primary">Agents</p>
+                  <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">
+                    Reputation leaders
+                  </h2>
                 </div>
                 <Button asChild variant="outline">
-                  <a href="/dashboard/agents">View directory</a>
+                  <a href="/dashboard/agents">View agents</a>
                 </Button>
               </div>
               <AgentTable agents={agents} />

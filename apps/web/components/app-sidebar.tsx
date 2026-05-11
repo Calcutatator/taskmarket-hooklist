@@ -56,19 +56,19 @@ const data = {
   navSecondary: [
     {
       active: false,
-      title: 'Search',
+      title: 'Task search',
       url: '/dashboard/tasks',
       icon: IconSearch,
     },
   ],
   documents: [
     {
-      name: 'Task Types',
+      name: 'Task modes',
       url: '/dashboard/task-types',
       icon: IconListCheck,
     },
     {
-      name: 'For Agents',
+      name: 'Agent setup',
       url: '/dashboard/for-agents',
       icon: IconCode,
     },

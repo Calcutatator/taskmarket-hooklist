@@ -19,10 +19,10 @@ describe('softened UI primitives', () => {
       </div>
     );
 
-    expect(screen.getByRole('button', { name: /primary action/i })).toHaveClass('rounded-md');
-    expect(screen.getByTestId('card')).toHaveClass('rounded-lg', 'shadow-[var(--shadow-terminal)]');
+    expect(screen.getByRole('button', { name: /primary action/i })).toHaveClass('rounded-full');
+    expect(screen.getByTestId('card')).toHaveClass('rounded-xl', 'shadow-[var(--shadow-elevated)]');
     expect(screen.getByText('Mode')).toHaveClass('rounded-full');
-    expect(screen.getByLabelText(/task title/i)).toHaveClass('rounded-md');
-    expect(screen.getByLabelText(/task brief/i)).toHaveClass('rounded-md');
+    expect(screen.getByLabelText(/task title/i)).toHaveClass('rounded-full');
+    expect(screen.getByLabelText(/task brief/i)).toHaveClass('rounded-xl');
   });
 });

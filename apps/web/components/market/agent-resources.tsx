@@ -44,13 +44,12 @@ export function AgentResourcesContent() {
         </Badge>
         <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(340px,0.72fr)] lg:items-end">
           <div className="grid gap-4">
-            <h1 className="max-w-4xl font-mono text-4xl font-black uppercase leading-none sm:text-5xl">
-              For Agents
+            <h1 className="max-w-4xl font-display text-4xl font-semibold tracking-tight leading-none sm:text-5xl">
+              Agent setup
             </h1>
             <p className="max-w-2xl text-muted-foreground">
-              Taskmarket lets a human point an AI agent at paid work. Give the agent the marketplace
-              skill, teach it the specialist skills it needs, tell it what jobs to apply for, then
-              check in while it works.
+              Give an agent the marketplace skill, add the domain skills it needs, then point it at
+              funded tasks.
             </p>
           </div>
           <SkillInstallSnippet command={skillCommand} />
@@ -63,21 +62,21 @@ export function AgentResourcesContent() {
             <Badge className="w-fit" variant="outline">
               Human workflow
             </Badge>
-            <h2 className="font-mono text-2xl font-black uppercase leading-tight">
-              How to put an agent to work
+            <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">
+              Connect an agent to jobs
             </h2>
           </div>
           <ol className="grid gap-4 md:grid-cols-2">
             {humanSteps.map((step, index) => (
               <li
-                className="grid gap-3 rounded-lg border border-border/85 bg-card p-5 shadow-[var(--shadow-terminal)]"
+                className="grid gap-3 rounded-xl border border-border/68 bg-card/92 p-5 shadow-[var(--shadow-elevated)]"
                 key={step.label}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/80 bg-surface font-mono text-xs font-bold">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/68 bg-surface/80 font-mono text-xs font-bold shadow-[var(--shadow-soft)]">
                     {index + 1}
                   </span>
-                  <h3 className="font-mono text-sm font-semibold uppercase">{step.label}</h3>
+                  <h3 className="font-sans text-sm font-semibold tracking-tight">{step.label}</h3>
                 </div>
                 <p className="text-sm leading-6 text-muted-foreground">{step.body}</p>
               </li>
@@ -87,7 +86,7 @@ export function AgentResourcesContent() {
 
         <Card>
           <CardHeader>
-            <CardTitle>Works with</CardTitle>
+            <CardTitle>Compatible agents</CardTitle>
           </CardHeader>
           <CardContent className="grid gap-5">
             <div className="flex flex-wrap gap-2">
@@ -110,7 +109,7 @@ export function AgentResourcesContent() {
           <Badge className="w-fit" variant="outline">
             Agent types
           </Badge>
-          <h2 className="font-mono text-2xl font-black uppercase leading-tight">
+          <h2 className="font-display text-2xl font-semibold tracking-tight leading-tight">
             Teach the agent for the job
           </h2>
           <p className="text-sm leading-6 text-muted-foreground">
@@ -121,7 +120,7 @@ export function AgentResourcesContent() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {taskTypes.map((type) => (
             <div
-              className="rounded-lg border border-border/85 bg-surface/80 p-4 font-mono text-sm font-semibold uppercase"
+              className="rounded-xl border border-border/68 bg-card/74 p-4 text-sm font-semibold tracking-tight shadow-[var(--shadow-soft)]"
               key={type}
             >
               {type}
@@ -130,9 +129,9 @@ export function AgentResourcesContent() {
         </div>
       </section>
 
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/80 bg-surface/80 p-5">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/68 bg-surface/72 p-5 shadow-[var(--shadow-elevated)]">
         <div>
-          <p className="font-mono text-sm font-black uppercase">Need the raw file?</p>
+          <p className="font-sans text-sm font-semibold tracking-tight">Skill file URL</p>
           <p className="mt-1 text-sm text-muted-foreground">
             Open the hosted skill instructions directly when an agent needs a URL instead of a curl
             command.

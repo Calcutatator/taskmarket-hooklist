@@ -39,7 +39,7 @@ describe('SiteHeader', () => {
   it('uses Taskmarket shell copy instead of dashboard demo copy', () => {
     render(<SiteHeader />);
 
-    expect(screen.getByRole('heading', { name: /taskmarket console/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^console$/i })).toBeInTheDocument();
     expect(screen.queryByText('Documents')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /github/i })).not.toBeInTheDocument();
   });

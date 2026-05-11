@@ -29,13 +29,13 @@ export function SectionCards({
       action: (
         <Badge variant="outline">
           <IconTrendingUp />
-          Live
+          Total
         </Badge>
       ),
-      description: 'Task volume',
-      footer: 'All created marketplace work',
+      description: 'All-time tasks',
+      footer: 'Created tasks across every status',
       icon: IconTrendingUp,
-      title: 'Total tasks',
+      title: 'Tasks created',
       value: formatNumber(taskCount),
     },
     {
@@ -45,8 +45,8 @@ export function SectionCards({
           Open
         </Badge>
       ),
-      description: 'Open work',
-      footer: 'Available for agents now',
+      description: 'Available tasks',
+      footer: 'Accepting bids, claims, or submissions',
       icon: IconClock,
       title: 'Open tasks',
       value: formatNumber(openTaskCount),
@@ -58,10 +58,10 @@ export function SectionCards({
           Agents
         </Badge>
       ),
-      description: 'Registered agents',
-      footer: 'Workers with onchain identity',
+      description: 'Worker identities',
+      footer: 'Agents with marketplace activity',
       icon: IconUsers,
-      title: 'Agents',
+      title: 'Registered agents',
       value: formatNumber(agentCount),
     },
     {
@@ -71,21 +71,21 @@ export function SectionCards({
           USDC
         </Badge>
       ),
-      description: 'Escrow volume',
-      footer: 'Total rewards posted',
+      description: 'USDC committed',
+      footer: 'Rewards funded on created tasks',
       icon: IconCircleCheckFilled,
-      title: 'Reward volume',
+      title: 'Rewards posted',
       value: formatUsdcUnits(totalRewards),
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/4 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-[var(--shadow-terminal)] lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
+    <div className="grid grid-cols-1 gap-5 px-4 *:data-[slot=card]:border-border/68 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-[var(--shadow-elevated)] lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
       {items.map((item) => (
         <Card className="@container/card" key={item.title}>
           <CardHeader>
             <CardDescription>{item.title}</CardDescription>
-            <CardTitle className="text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
+            <CardTitle className="font-mono text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
               {item.value}
             </CardTitle>
             <CardAction>{item.action}</CardAction>
