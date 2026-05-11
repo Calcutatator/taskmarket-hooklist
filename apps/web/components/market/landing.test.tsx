@@ -166,12 +166,25 @@ describe('LandingPageContent', () => {
     expect(burstSection).toContainElement(
       screen.getByRole('heading', { name: /one task\. many agents\. one winner\./i })
     );
+    expect(within(burstSection as HTMLElement).getByText(/^01 post$/i)).toBeVisible();
     expect(within(burstSection as HTMLElement).getByText(/fund one task/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^02 compete$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/available agents opt in/i)).toBeVisible();
     expect(within(burstSection as HTMLElement).getByText(/work in parallel/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^03 settle$/i)).toBeVisible();
     expect(
       within(burstSection as HTMLElement).getByText(/best submission gets paid/i)
     ).toBeVisible();
     expect(within(burstSection as HTMLElement).getByText(/live task routing/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^funded task$/i)
+    ).not.toBeInTheDocument();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^best receipt$/i)
+    ).not.toBeInTheDocument();
+    expect(
+      within(burstSection as HTMLElement).queryByText(/^variable pool$/i)
+    ).not.toBeInTheDocument();
     expect(within(burstSection as HTMLElement).queryByText(/100x/i)).not.toBeInTheDocument();
   });
 
@@ -222,17 +235,22 @@ describe('LandingPageContent', () => {
     expect(liveMarketHeading).toBeVisible();
     expect(liveMarketSection).not.toBeNull();
     expect(screen.getByRole('heading', { name: /choose your path/i })).toBeVisible();
+    expect(screen.queryByRole('heading', { name: /market in action/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^live market pulse$/i)).toBeVisible();
     expect(
       screen.getByRole('link', { name: /build a typed parser for agent capability manifests/i })
     ).toHaveAttribute('href', '/dashboard/tasks/live-auction');
     expect(within(liveMarketSection as HTMLElement).getByText('850.000 USDC')).toBeVisible();
     expect(screen.getByText(/english auction/i)).toBeVisible();
-    expect(within(liveMarketSection as HTMLElement).getByText('3')).toBeInTheDocument();
+    expect(within(liveMarketSection as HTMLElement).getByText(/^3$/i)).toBeInTheDocument();
     expect(within(liveMarketSection as HTMLElement).getByText(/^bids$/i)).toBeVisible();
-    expect(within(liveMarketSection as HTMLElement).getByText('2')).toBeInTheDocument();
+    expect(within(liveMarketSection as HTMLElement).getByText(/^2$/i)).toBeInTheDocument();
     expect(within(liveMarketSection as HTMLElement).getByText(/^subs$/i)).toBeVisible();
     expect(screen.getByText(/0x597b\.\.\.5e4B/i)).toBeVisible();
+    expect(screen.getByRole('tab', { name: /all/i })).toBeVisible();
+    expect(screen.getByRole('tab', { name: /auction/i })).toBeVisible();
+    expect(screen.getByText(/^post work\.$/i)).toBeVisible();
+    expect(screen.getByText(/^find work\.$/i)).toBeVisible();
   });
 
   it('renders an explicitly labeled sample flow when no live tasks exist', () => {
@@ -249,7 +267,11 @@ describe('LandingPageContent', () => {
 
     expect(screen.getByRole('heading', { name: /open work, streaming/i })).toBeVisible();
     expect(screen.getByText(/no open tasks right now/i)).toBeVisible();
+    expect(screen.queryByText(/sample snapshot/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/example data/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no open tasks yet/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/no tasks found/i)).not.toBeInTheDocument();
+    expect(screen.getByText(/^post work\.$/i)).toBeVisible();
+    expect(screen.getByText(/^find work\.$/i)).toBeVisible();
   });
 });

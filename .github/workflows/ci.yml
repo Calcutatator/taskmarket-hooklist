@@ -45,16 +45,58 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
-      - run: pnpm install --frozen-lockfile
+      - run: make install
 
-      - run: pnpm turbo build
+      - run: make build all
 
-      - run: pnpm turbo lint:check
+      - run: make lint-check all
 
-      - run: pnpm turbo format:check
+      - run: make format-check all
 
-      - run: pnpm turbo type-check
+      - run: make type-check all
 
-      - run: pnpm turbo test
+      - run: make test
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
+
+  ui-regression:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - run: make install
+
+      - run: make ui-ci-install-browsers
+
+      - run: make ui-ci
+        env:
+          CI: true
+
+      - name: Upload Playwright report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-report
+          path: apps/web/playwright-report
+          retention-days: 14
+
+      - name: Upload Playwright test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-test-results
+          path: apps/web/test-results
+          retention-days: 14

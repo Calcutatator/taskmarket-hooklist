@@ -1,11 +1,11 @@
 # Taskmarket monorepo - install, build, start services, lint, format
 SHELL := /bin/bash
-ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}" && [ -s "$$NVM_DIR/nvm.sh" ] && . "$$NVM_DIR/nvm.sh" && nvm install && nvm use
+ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$${NVM_DIR:-$$HOME/.nvm}"; if [ -s "$$NVM_DIR/nvm.sh" ]; then . "$$NVM_DIR/nvm.sh" && nvm install && nvm use; fi
 
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -25,6 +25,8 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
+	@echo "  make ui-ci                - Run production web UI regression checks"
+	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
 	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|upgrade)"
@@ -319,6 +321,19 @@ fix:
 
 test:
 	$(ENV_LOADER) && pnpm turbo test
+
+ui-ci:
+	$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/web lint:check && \
+	pnpm --filter @taskmarket/web format:check && \
+	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/web type-check && \
+	pnpm --filter @taskmarket/web test && \
+	pnpm --filter @taskmarket/web build && \
+	pnpm --filter @taskmarket/web test:e2e
+
+ui-ci-install-browsers:
+	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps chromium
 
 clean:
 	$(ENV_LOADER) && pnpm turbo clean
