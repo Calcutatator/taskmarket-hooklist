@@ -68,6 +68,8 @@ const submission: SubmissionResponse = {
       id: 'artifact-1',
       taskId: '0xtask',
       submissionId: 'submission-1',
+      workerAddress: '0xWorker0000000000000000000000000000000001',
+      workerAgentId: null,
       role: 'preview',
       fileName: 'logo.png',
       mimeType: 'image/png',

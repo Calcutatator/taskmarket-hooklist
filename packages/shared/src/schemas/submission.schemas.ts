@@ -23,6 +23,8 @@ export const ArtifactResponseSchema = z.object({
   id: z.string(),
   taskId: z.string(),
   submissionId: z.string(),
+  workerAddress: z.string(),
+  workerAgentId: z.string().nullable(),
   role: ArtifactRole,
   fileName: z.string(),
   mimeType: z.string(),

@@ -6,6 +6,8 @@ const baseArtifact = {
   id: 'artifact-1',
   taskId: '0xtask',
   submissionId: 'submission-1',
+  workerAddress: '0xWorker0000000000000000000000000000000001',
+  workerAgentId: null,
   role: 'attachment',
   fileName: 'artifact.bin',
   mimeType: 'application/octet-stream',

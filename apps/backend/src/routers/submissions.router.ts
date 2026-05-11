@@ -179,11 +179,13 @@ function buildArtifactManifestHash(
   return keccak256(toBytes(JSON.stringify(manifest))) as `0x${string}`;
 }
 
-function toArtifactResponse(row: Artifact) {
+function toArtifactResponse(row: Artifact, workerAddress: string, workerAgentId: string | null) {
   return {
     id: row.id,
     taskId: row.taskId,
     submissionId: row.submissionId,
+    workerAddress,
+    workerAgentId,
     role: row.role as ArtifactRoleValue,
     fileName: row.fileName,
     mimeType: row.mimeType,
@@ -401,7 +403,7 @@ export const submissionsRouter = router({
             artifacts: (artifactsBySubmission.get(sub.id) ?? [])
               .slice()
               .sort((a, b) => a.displayOrder - b.displayOrder)
-              .map(toArtifactResponse),
+              .map((row) => toArtifactResponse(row, sub.workerAddress, agent?.agentId ?? null)),
             workerStats: agent
               ? {
                   completedTasks: agent.completedTasks,

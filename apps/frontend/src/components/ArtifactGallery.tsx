@@ -1,4 +1,5 @@
 import type { ArtifactResponse } from '@taskmarket/shared';
+import { IdentityBadge } from './IdentityBadge';
 
 const TEXT_PREVIEW_LIMIT = 2000;
 
@@ -49,6 +50,9 @@ export function ArtifactGallery({
               <p className="text-xs text-text-tertiary">
                 {artifact.mediaKind} · {formatBytes(artifact.sizeBytes)}
               </p>
+              <div className="mt-1">
+                <IdentityBadge agentId={artifact.workerAgentId} address={artifact.workerAddress} />
+              </div>
             </div>
 
             <div className="p-3">
