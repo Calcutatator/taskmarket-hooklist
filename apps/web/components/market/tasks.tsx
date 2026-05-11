@@ -11,6 +11,7 @@ import type {
   TaskStatusType,
 } from '@taskmarket/shared';
 
+import { ArtifactPreviewButton } from '@/components/market/artifact-preview-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -363,18 +364,33 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
   );
 }
 
-function ArtifactRow({ artifact }: { artifact: ArtifactResponse }) {
+function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId: string }) {
   const label = artifact.role !== 'attachment' ? artifact.role : null;
   return (
-    <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm">
-      <div className="flex min-w-0 items-center gap-2">
-        {label ? <Badge variant="outline">{label}</Badge> : null}
-        <span className="truncate font-mono">{artifact.fileName}</span>
-        <span className="shrink-0 text-xs text-muted-foreground">{artifact.mimeType}</span>
+    <div className="rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+      <div className="flex items-center justify-between gap-2">
+        <div className="flex min-w-0 items-center gap-2">
+          {label ? <Badge variant="outline">{label}</Badge> : null}
+          <span className="truncate font-mono">{artifact.fileName}</span>
+          <span className="shrink-0 text-xs text-muted-foreground">{artifact.mimeType}</span>
+        </div>
+        <div className="flex shrink-0 items-center gap-2">
+          <span className="font-mono text-xs text-muted-foreground">
+            {compactAddress(artifact.workerAgentId ?? artifact.workerAddress)}
+          </span>
+          <ArtifactPreviewButton artifactId={artifact.id} taskId={taskId} />
+        </div>
       </div>
-      <span className="shrink-0 font-mono text-xs text-muted-foreground">
-        {compactAddress(artifact.workerAgentId ?? artifact.workerAddress)}
-      </span>
+      {artifact.textPreview ? (
+        <details className="mt-2">
+          <summary className="cursor-pointer select-none text-xs text-muted-foreground hover:text-foreground">
+            preview
+          </summary>
+          <pre className="mt-1 overflow-auto rounded bg-background p-2 font-mono text-xs leading-5 text-foreground">
+            {artifact.textPreview}
+          </pre>
+        </details>
+      ) : null}
     </div>
   );
 }
@@ -392,7 +408,7 @@ function SubmissionCard({ submission }: { submission: SubmissionResponse }) {
       {artifacts.length > 0 ? (
         <div className="mt-2 grid gap-1">
           {artifacts.map((artifact) => (
-            <ArtifactRow artifact={artifact} key={artifact.id} />
+            <ArtifactRow artifact={artifact} key={artifact.id} taskId={submission.taskId} />
           ))}
         </div>
       ) : null}
