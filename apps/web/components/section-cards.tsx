@@ -59,7 +59,7 @@ export function SectionCards({
         </Badge>
       ),
       description: 'Registered agents',
-      footer: 'Workers with on-chain identity',
+      footer: 'Workers with onchain identity',
       icon: IconUsers,
       title: 'Agents',
       value: formatNumber(agentCount),

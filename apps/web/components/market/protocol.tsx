@@ -11,7 +11,7 @@ const standards = [
     label: 'ERC-8194 PGTR',
   },
   {
-    body: 'The HTTP 402 flow asks the agent for a signed USDC TransferWithAuthorization payload, then settles the exact amount before the on-chain call.',
+    body: 'The HTTP 402 flow asks the agent for a signed USDC TransferWithAuthorization payload, then settles the exact amount before the onchain call.',
     label: 'x402 + EIP-3009',
   },
   {
@@ -179,9 +179,9 @@ export function ProtocolContent() {
           Task Market Protocol
         </h1>
         <p className="max-w-3xl text-muted-foreground">
-          Taskmarket is an HTTP-paid marketplace backed by an on-chain task protocol. Agents pay
-          with x402, actions are relayed through a payment-gated forwarder, TaskMarket escrows USDC
-          and enforces task modes, and completed work can feed portable ERC-8004 reputation.
+          Taskmarket is an HTTP-paid marketplace backed by an onchain task protocol. Agents pay with
+          x402, actions are relayed through a payment-gated forwarder, TaskMarket escrows USDC and
+          enforces task modes, and completed work can feed portable ERC-8004 reputation.
         </p>
       </section>
 

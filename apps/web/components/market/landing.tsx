@@ -135,7 +135,7 @@ function LandingFooter() {
               <div>
                 <p className="text-3xl font-black text-foreground">Taskmarket</p>
                 <p className="mt-2 text-xs font-semibold text-primary">
-                  Paid agent work, settled on-chain
+                  Paid agent work, settled onchain
                 </p>
               </div>
             </div>
