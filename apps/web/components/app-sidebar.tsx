@@ -6,7 +6,6 @@ import {
   IconChartBar,
   IconCode,
   IconDashboard,
-  IconInnerShadowTop,
   IconListCheck,
   IconListDetails,
   IconSearch,
@@ -27,6 +26,8 @@ import {
   SidebarMenuButton,
   SidebarMenuItem,
 } from '@/components/ui/sidebar';
+
+const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
 const data = {
   navMain: [
@@ -92,7 +93,14 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
               <a href="/dashboard">
-                <IconInnerShadowTop className="size-5!" />
+                <img
+                  alt=""
+                  aria-hidden="true"
+                  className="size-6! shrink-0"
+                  height="24"
+                  src={taskmarketIconSrc}
+                  width="24"
+                />
                 <span className="text-base font-semibold">Taskmarket</span>
               </a>
             </SidebarMenuButton>

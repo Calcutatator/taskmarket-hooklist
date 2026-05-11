@@ -1,5 +1,16 @@
 import type { AgentStats, LeaderboardEntry } from '@taskmarket/shared';
+import { getAgentName } from '@taskmarket/shared';
+import {
+  BadgeCheckIcon,
+  CoinsIcon,
+  ExternalLinkIcon,
+  MailIcon,
+  ShieldCheckIcon,
+  StarIcon,
+} from 'lucide-react';
+import type { ReactNode } from 'react';
 
+import { CopyButton } from '@/components/market/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -16,6 +27,15 @@ import {
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 
 const pageSizeOptions = [10, 20, 50];
+const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? process.env.CHAIN_ID ?? 8453);
+const explorerUrl =
+  process.env.NEXT_PUBLIC_EXPLORER_URL ??
+  (chainId === 84532 ? 'https://sepolia.basescan.org' : 'https://basescan.org');
+const identityRegistry =
+  process.env.NEXT_PUBLIC_IDENTITY_REGISTRY ??
+  process.env.ERC8004_IDENTITY_REGISTRY ??
+  '0x8004A169FB4a3325136EB29fA0ceB6D2e539a432';
+const networkName = chainId === 84532 ? 'base-sepolia' : 'base';
 const minRatingOptions = [
   { label: 'Any rating', value: '' },
   { label: '3.0+', value: '3' },
@@ -315,68 +335,289 @@ export function AgentLeaderboardPanel({
 }
 
 export function AgentProfilePanel({ agent }: { agent: AgentStats | LeaderboardEntry }) {
-  const label = agent.agentId ?? compactAddress(agent.address);
+  const label = agent.agentId
+    ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
+    : compactAddress(agent.address);
   const rank = 'rank' in agent ? agent.rank : null;
   const ratedTasks = 'ratedTasks' in agent ? agent.ratedTasks : 0;
+  const totalStars = 'totalStars' in agent ? agent.totalStars : null;
   const skills = agent.skills ?? [];
+  const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
+  const explorerAddressUrl = `${explorerUrl}/address/${agent.address}`;
+  const explorerTokenUrl = agent.agentId
+    ? `${explorerUrl}/token/${identityRegistry}?a=${agent.agentId}`
+    : null;
+  const identityJson = JSON.stringify(
+    {
+      agentId: agent.agentId ?? null,
+      address: agent.address,
+      network: networkName,
+      identityRegistry,
+      completedTasks: agent.completedTasks,
+      ratedTasks,
+      averageRating: agent.averageRating,
+      totalEarnings: agent.totalEarnings,
+      skills,
+    },
+    null,
+    2
+  );
 
   return (
-    <Card>
-      <CardHeader>
-        <div className="flex flex-wrap items-center gap-2">
-          {rank ? <Badge>Rank #{rank}</Badge> : null}
-          <Badge variant="outline">{agent.averageRating.toFixed(1)} rating</Badge>
-          {'emailAddress' in agent && agent.emailAddress ? (
-            <Badge variant="terminal">{agent.emailAddress}</Badge>
-          ) : null}
+    <div className="grid gap-6">
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="overflow-hidden">
+          <CardContent className="grid gap-7 pt-0">
+            <div className="-mx-6 -mt-6 border-b border-border/80 bg-surface/70 px-6 py-6">
+              <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
+                <AgentMark address={agent.address} label={label} />
+                <div className="min-w-0 flex-1">
+                  <div className="flex flex-wrap items-center gap-2">
+                    {rank ? <Badge>Rank #{rank}</Badge> : null}
+                    <Badge variant="outline">{ratingLabel} rating</Badge>
+                    {agent.agentId ? <Badge variant="terminal">ERC-8004 identity</Badge> : null}
+                  </div>
+                  <h1 className="mt-3 break-words font-mono text-3xl font-black uppercase leading-tight tracking-normal text-foreground sm:text-4xl">
+                    {label}
+                  </h1>
+                  <p className="mt-2 text-sm leading-6 text-muted-foreground">
+                    {agent.completedTasks} completed tasks with{' '}
+                    {formatUsdcUnits(agent.totalEarnings)} total earnings.
+                  </p>
+                </div>
+              </div>
+            </div>
+
+            <div className="grid gap-3">
+              <IdentityRow
+                action={
+                  <a
+                    aria-label="View address on BaseScan"
+                    className="inline-flex size-6 items-center justify-center rounded-md border border-border/80 bg-background/70 text-muted-foreground transition-colors hover:border-primary/70 hover:text-primary"
+                    href={explorerAddressUrl}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    <ExternalLinkIcon className="size-3" />
+                  </a>
+                }
+                copyLabel="Copy address"
+                label="Address"
+                value={agent.address}
+              />
+              {agent.agentId ? (
+                <IdentityRow
+                  action={
+                    explorerTokenUrl ? (
+                      <a
+                        aria-label="View identity token on BaseScan"
+                        className="inline-flex size-6 items-center justify-center rounded-md border border-border/80 bg-background/70 text-muted-foreground transition-colors hover:border-primary/70 hover:text-primary"
+                        href={explorerTokenUrl}
+                        rel="noreferrer"
+                        target="_blank"
+                      >
+                        <ExternalLinkIcon className="size-3" />
+                      </a>
+                    ) : null
+                  }
+                  copyLabel="Copy agent ID"
+                  label="ERC-8004"
+                  value={`token #${agent.agentId}`}
+                  valueToCopy={agent.agentId}
+                />
+              ) : null}
+              <IdentityRow label="Network" value={networkName} />
+              {'emailAddress' in agent && agent.emailAddress ? (
+                <IdentityRow
+                  copyLabel="Copy email address"
+                  icon={<MailIcon className="size-3.5" />}
+                  label="Email"
+                  value={agent.emailAddress}
+                />
+              ) : null}
+            </div>
+
+            {skills.length ? (
+              <div className="grid gap-3 border-t border-border/75 pt-5">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Skills
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {skills.map((skill) => (
+                    <Badge key={skill} variant="terminal">
+                      {skill}
+                    </Badge>
+                  ))}
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+
+        <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <ProfileStat
+            icon={<BadgeCheckIcon />}
+            label="Tasks completed"
+            value={String(agent.completedTasks)}
+          />
+          <ProfileStat icon={<StarIcon />} label="Average rating" value={ratingLabel} />
+          <ProfileStat
+            icon={<CoinsIcon />}
+            label="Total earned"
+            value={formatUsdcUnits(agent.totalEarnings)}
+          />
+          <ProfileStat icon={<ShieldCheckIcon />} label="Rated tasks" value={String(ratedTasks)} />
         </div>
-        <h1 className="font-mono text-3xl font-semibold uppercase">{label}</h1>
-      </CardHeader>
-      <CardContent className="grid gap-5">
-        <p className="text-sm text-muted-foreground">
-          {agent.completedTasks} completed tasks with {formatUsdcUnits(agent.totalEarnings)} total
-          earnings.
+      </div>
+
+      <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
+        <Card className="min-w-0">
+          <CardHeader className="has-data-[slot=card-action]:grid-cols-[minmax(0,1fr)_auto]">
+            <CardTitle>Identity JSON</CardTitle>
+            <div data-slot="card-action">
+              <CopyButton label="Copy identity JSON" text={identityJson} />
+            </div>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-[28rem] overflow-auto rounded-md border border-border/80 bg-background/70 p-4 text-xs leading-5 text-muted-foreground">
+              <code>{identityJson}</code>
+            </pre>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle>CLI</CardTitle>
+          </CardHeader>
+          <CardContent className="grid gap-3">
+            <CommandBlock command={`taskmarket stats --address ${agent.address}`} />
+            {agent.agentId ? (
+              <CommandBlock command={`taskmarket agents --search ${agent.agentId}`} />
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+
+      {'recentRatings' in agent && agent.recentRatings?.length ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Recent ratings</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="divide-y divide-border/75">
+              {agent.recentRatings.map((rating) => (
+                <a
+                  className="grid gap-3 py-3 font-mono text-xs transition-colors hover:text-primary sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
+                  href={`/dashboard/tasks/${rating.taskId}`}
+                  key={`${rating.taskId}-${rating.createdAt}`}
+                >
+                  <span className="min-w-0 truncate">{rating.taskId}</span>
+                  <span className="font-semibold text-foreground">{rating.rating}/100</span>
+                  <span className="text-muted-foreground">
+                    {new Date(rating.createdAt).toLocaleDateString('en-US', {
+                      day: '2-digit',
+                      month: 'short',
+                      year: 'numeric',
+                    })}
+                  </span>
+                </a>
+              ))}
+            </div>
+          </CardContent>
+        </Card>
+      ) : null}
+
+      {totalStars !== null ? (
+        <p className="font-mono text-xs uppercase text-muted-foreground">
+          Reputation total: {totalStars} stars across {ratedTasks} rated tasks.
         </p>
-        {'agentId' in agent && agent.agentId ? (
-          <p className="font-mono text-xs text-muted-foreground">ERC-8004 token #{agent.agentId}</p>
-        ) : null}
-        <div className="grid gap-3 font-mono text-sm sm:grid-cols-3">
-          <div className="rounded-md border border-border/80 bg-background/60 p-3">
-            <p className="text-muted-foreground">Address</p>
-            <p className="mt-1 break-all">{agent.address}</p>
-          </div>
-          <div className="rounded-md border border-border/80 bg-background/60 p-3">
-            <p className="text-muted-foreground">Rated tasks</p>
-            <p className="mt-1">{ratedTasks}</p>
-          </div>
-          <div className="rounded-md border border-border/80 bg-background/60 p-3">
-            <p className="text-muted-foreground">Rating</p>
-            <p className="mt-1">{agent.averageRating.toFixed(1)}</p>
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {skills.map((skill) => (
-            <Badge key={skill} variant="terminal">
-              {skill}
-            </Badge>
-          ))}
-        </div>
-        {'recentRatings' in agent && agent.recentRatings?.length ? (
-          <div className="grid gap-2">
-            <p className="font-mono text-xs uppercase text-muted-foreground">Recent ratings</p>
-            {agent.recentRatings.map((rating) => (
-              <a
-                className="flex items-center justify-between rounded-md border border-border/80 bg-background/60 p-3 font-mono text-xs transition-colors hover:border-primary/70 hover:bg-surface/70"
-                href={`/dashboard/tasks/${rating.taskId}`}
-                key={`${rating.taskId}-${rating.createdAt}`}
-              >
-                <span className="truncate">{rating.taskId}</span>
-                <span>{rating.rating}</span>
-              </a>
-            ))}
-          </div>
-        ) : null}
-      </CardContent>
-    </Card>
+      ) : null}
+    </div>
+  );
+}
+
+function AgentMark({ address, label }: { address: string; label: string }) {
+  const hue = address
+    .slice(2, 8)
+    .split('')
+    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+  const initials = label
+    .replace(/^Agent #/, '#')
+    .split(/[\s.-]+/)
+    .filter(Boolean)
+    .slice(0, 2)
+    .map((part) => part.charAt(0))
+    .join('')
+    .toUpperCase();
+
+  return (
+    <div
+      aria-label={`Avatar for ${label}`}
+      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/80 font-mono text-2xl font-black text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08),0_18px_34px_-24px_rgb(0_0_0_/_0.9)]"
+      role="img"
+      style={{
+        background: `linear-gradient(135deg, hsl(${hue % 360} 28% 24%), hsl(${(hue + 48) % 360} 42% 38%))`,
+      }}
+    >
+      {initials || address.slice(2, 4).toUpperCase()}
+    </div>
+  );
+}
+
+function IdentityRow({
+  action,
+  copyLabel,
+  icon,
+  label,
+  value,
+  valueToCopy,
+}: {
+  action?: ReactNode;
+  copyLabel?: string;
+  icon?: ReactNode;
+  label: string;
+  value: string;
+  valueToCopy?: string;
+}) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border/75 bg-background/45 p-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center">
+      <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase text-muted-foreground">
+        {icon}
+        {label}
+      </div>
+      <p className="min-w-0 break-all font-mono text-sm text-foreground">{value}</p>
+      <div className="flex items-center gap-2">
+        {copyLabel ? <CopyButton label={copyLabel} text={valueToCopy ?? value} /> : null}
+        {action}
+      </div>
+    </div>
+  );
+}
+
+function ProfileStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+  return (
+    <div className="rounded-lg border border-border/85 bg-card p-4 shadow-[var(--shadow-terminal)]">
+      <div className="flex items-center justify-between gap-4">
+        <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+        <span className="text-primary [&>svg]:size-4">{icon}</span>
+      </div>
+      <p className="mt-4 break-words font-mono text-2xl font-black uppercase leading-tight">
+        {value}
+      </p>
+    </div>
+  );
+}
+
+function CommandBlock({ command }: { command: string }) {
+  return (
+    <div className="grid gap-2 rounded-md border border-border/80 bg-background/70 p-3">
+      <div className="flex items-center justify-between gap-3">
+        <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">Command</p>
+        <CopyButton label="Copy CLI command" text={command} />
+      </div>
+      <code className="block overflow-x-auto whitespace-nowrap rounded-md border border-border/70 bg-surface/80 px-3 py-2 font-mono text-xs text-muted-foreground">
+        {command}
+      </code>
+    </div>
   );
 }

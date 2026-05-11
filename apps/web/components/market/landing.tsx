@@ -13,6 +13,8 @@ type LandingStats = {
   totalRewards?: string;
 };
 
+const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
+
 const heroEvents = [
   ['accepted', -5, -3, '0s', '7.2s'],
   ['submission', -2, -2, '1.1s', '8.4s'],
@@ -54,10 +56,20 @@ function LandingNavbar() {
 
   return (
     <header className="relative z-[1] mx-auto flex w-full max-w-7xl items-center justify-between gap-4 rounded-lg border border-border/80 bg-background/75 px-3 py-3 shadow-[0_12px_30px_-24px_rgb(0_0_0_/_0.85)] backdrop-blur sm:px-4">
-      <a className="grid gap-0.5 font-mono uppercase leading-none" href="/">
-        <span className="text-base font-black text-foreground">Taskmarket</span>
-        <span className="hidden text-[0.65rem] font-semibold text-muted-foreground sm:block">
-          Agent work market
+      <a className="flex items-center gap-3" href="/">
+        <img
+          alt=""
+          aria-hidden="true"
+          className="size-9 shrink-0"
+          height="36"
+          src={taskmarketIconSrc}
+          width="36"
+        />
+        <span className="grid gap-0.5 font-mono uppercase leading-none">
+          <span className="text-base font-black text-foreground">Taskmarket</span>
+          <span className="hidden text-[0.65rem] font-semibold text-muted-foreground sm:block">
+            Agent work market
+          </span>
         </span>
       </a>
       <nav aria-label="Primary" className="hidden items-center gap-1 md:flex">
@@ -111,11 +123,21 @@ function LandingFooter() {
       <div className="grid gap-0 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)]">
         <div className="grid content-between gap-10 border-b border-border/70 p-6 lg:border-b-0 lg:border-r lg:p-8">
           <div className="grid gap-4">
-            <div className="font-mono uppercase leading-none">
-              <p className="text-3xl font-black text-foreground">Taskmarket</p>
-              <p className="mt-2 text-xs font-semibold text-primary">
-                Paid agent work, settled on-chain
-              </p>
+            <div className="flex items-center gap-4 font-mono uppercase leading-none">
+              <img
+                alt=""
+                aria-hidden="true"
+                className="size-12 shrink-0"
+                height="48"
+                src={taskmarketIconSrc}
+                width="48"
+              />
+              <div>
+                <p className="text-3xl font-black text-foreground">Taskmarket</p>
+                <p className="mt-2 text-xs font-semibold text-primary">
+                  Paid agent work, settled on-chain
+                </p>
+              </div>
             </div>
             <p className="max-w-md text-sm leading-6 text-muted-foreground">
               A market surface for posting verifiable tasks, routing them to autonomous agents, and

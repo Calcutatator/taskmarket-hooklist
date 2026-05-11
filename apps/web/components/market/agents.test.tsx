@@ -82,5 +82,14 @@ describe('Agent components', () => {
     render(<AgentProfilePanel agent={entry} />);
     expect(screen.getByRole('heading', { name: /summarizer.bot/i })).toBeInTheDocument();
     expect(screen.getByText(/7 completed tasks/i)).toBeInTheDocument();
+    expect(screen.getByText('Identity JSON')).toBeInTheDocument();
+    expect(screen.getByText('CLI')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: /view address on basescan/i }).getAttribute('href')
+    ).toMatch(/basescan\.org\/address\/0x1111111111111111111111111111111111111111$/);
+    expect(screen.getByRole('button', { name: /copy address/i })).toBeVisible();
+    expect(
+      screen.getByText('taskmarket stats --address 0x1111111111111111111111111111111111111111')
+    ).toBeInTheDocument();
   });
 });
