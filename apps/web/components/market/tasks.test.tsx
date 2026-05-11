@@ -110,6 +110,7 @@ describe('Task marketplace components', () => {
           ],
           submissions: [
             {
+              artifacts: [],
               fileUrl: 'ipfs://deliverable',
               id: 'sub-1',
               signature: '0xsig',

@@ -1,4 +1,5 @@
 import type {
+  ArtifactResponse,
   BidResponse,
   ClaimResponse,
   PitchResponse,
@@ -361,6 +362,43 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
   );
 }
 
+function ArtifactRow({ artifact }: { artifact: ArtifactResponse }) {
+  const label = artifact.role !== 'attachment' ? artifact.role : null;
+  return (
+    <div className="flex items-center justify-between gap-2 rounded border border-border/60 bg-muted/40 px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-center gap-2">
+        {label ? <Badge variant="outline">{label}</Badge> : null}
+        <span className="truncate font-mono">{artifact.fileName}</span>
+        <span className="shrink-0 text-xs text-muted-foreground">{artifact.mimeType}</span>
+      </div>
+      <span className="shrink-0 font-mono text-xs text-muted-foreground">
+        {compactAddress(artifact.workerAgentId ?? artifact.workerAddress)}
+      </span>
+    </div>
+  );
+}
+
+function SubmissionCard({ submission }: { submission: SubmissionResponse }) {
+  const artifacts: ArtifactResponse[] = submission.artifacts ?? [];
+  return (
+    <div className="rounded-md border border-border/80 bg-background/60 p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
+        <span>{compactAddress(submission.workerAgentId ?? submission.workerAddress)}</span>
+        <span className="text-muted-foreground">
+          {new Date(submission.submittedAt).toLocaleString()}
+        </span>
+      </div>
+      {artifacts.length > 0 ? (
+        <div className="mt-2 grid gap-1">
+          {artifacts.map((artifact) => (
+            <ArtifactRow artifact={artifact} key={artifact.id} />
+          ))}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
 function ModeDataPanel({
   modeData,
   task,
@@ -384,20 +422,7 @@ function ModeDataPanel({
           </CardHeader>
           <CardContent className="grid gap-3">
             {submissions.map((submission) => (
-              <div
-                className="rounded-md border border-border/80 bg-background/60 p-3"
-                key={submission.id}
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
-                  <span>{compactAddress(submission.workerAddress)}</span>
-                  <span className="text-muted-foreground">
-                    {new Date(submission.submittedAt).toLocaleString()}
-                  </span>
-                </div>
-                <a className="mt-2 block break-all text-sm text-primary" href={submission.fileUrl}>
-                  {submission.fileUrl}
-                </a>
-              </div>
+              <SubmissionCard key={submission.id} submission={submission} />
             ))}
           </CardContent>
         </Card>
