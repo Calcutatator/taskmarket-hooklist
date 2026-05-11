@@ -39,6 +39,7 @@ export function createMockCtx(payer?: string) {
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
     delete: vi.fn().mockReturnValue(makeChain()),
+    transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
   };
 
   return {

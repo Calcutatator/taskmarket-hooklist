@@ -76,6 +76,33 @@ export const submissions = pgTable(
   })
 );
 
+export const artifacts = pgTable(
+  'artifacts',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    submissionId: text('submission_id')
+      .notNull()
+      .references(() => submissions.id),
+    role: text('role').notNull().default('attachment'),
+    fileName: text('file_name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    mediaKind: text('media_kind').notNull().default('unknown'),
+    storageUri: text('storage_uri').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256Hash: text('sha256_hash').notNull(),
+    keccak256Hash: text('keccak256_hash').notNull(),
+    displayOrder: integer('display_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdx: index('idx_artifacts_task').on(table.taskId),
+    submissionIdx: index('idx_artifacts_submission').on(table.submissionId),
+  })
+);
+
 export const agents = pgTable(
   'agents',
   {
@@ -328,6 +355,8 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
+export type Artifact = typeof artifacts.$inferSelect;
+export type NewArtifact = typeof artifacts.$inferInsert;
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 export type Feedback = typeof feedbacks.$inferSelect;

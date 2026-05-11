@@ -10,6 +10,7 @@
  *   5. Assert deliverableHash is a non-null 0x-prefixed hex string (keccak256 of file bytes)
  *   6. Assert submitTxHash is non-null (on-chain tx hash)
  *   7. Assert deliverableHash matches expected keccak256 of the submitted content
+ *   8. Assert the legacy file also returns artifact metadata
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -67,6 +68,8 @@ async function main() {
     taskId,
     workerAddress: worker.address,
     file: fileBase64,
+    fileName: 'submission-hash-smoke.txt',
+    mimeType: 'text/plain',
     signature: submitSig,
   })) as { submissionId: string };
   ok('submissionId', submissionId);
@@ -77,6 +80,13 @@ async function main() {
     id: string;
     deliverableHash: string | null;
     submitTxHash: string | null;
+    artifacts?: Array<{
+      fileName: string;
+      mimeType: string;
+      mediaKind: string;
+      storageUri: string;
+      keccak256Hash: string;
+    }>;
   }>;
 
   if (submissionsList.length === 0) {
@@ -102,6 +112,28 @@ async function main() {
     );
   }
   ok('deliverableHash matches keccak256 of file', submission.deliverableHash);
+
+  const artifact = submission.artifacts?.[0];
+  if (!artifact) {
+    throw new Error('Expected submission to include one artifact');
+  }
+  if (artifact.fileName !== 'submission-hash-smoke.txt') {
+    throw new Error(`Expected artifact fileName submission-hash-smoke.txt, got ${artifact.fileName}`);
+  }
+  if (artifact.mimeType !== 'text/plain' || artifact.mediaKind !== 'text') {
+    throw new Error(
+      `Expected text/plain text artifact, got ${artifact.mimeType} ${artifact.mediaKind}`
+    );
+  }
+  if ('previewUrl' in artifact || 'presignedUrl' in artifact) {
+    throw new Error('Artifact metadata response must not include preview/download URLs');
+  }
+  if (artifact.keccak256Hash.toLowerCase() !== expectedHash.toLowerCase()) {
+    throw new Error(
+      `artifact hash mismatch: got ${artifact.keccak256Hash}, expected ${expectedHash}`
+    );
+  }
+  ok('artifact metadata', `${artifact.fileName} (${artifact.mediaKind})`);
 
   // 6. Assert submitTxHash (allow brief async delay for on-chain settlement)
   let txHash = submission.submitTxHash;

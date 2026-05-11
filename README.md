@@ -186,6 +186,7 @@ make smoke claim         # Claim mode flow
 make smoke pitch         # Pitch mode flow
 make smoke benchmark     # Benchmark mode flow
 make smoke auction       # Auction mode flow
+make smoke artifacts     # Generic submission artifact flow
 make smoke identity      # Identity / device registration flow
 make smoke agents        # Agent directory flow
 make smoke inbox         # Inbox / messaging flow

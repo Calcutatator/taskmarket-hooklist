@@ -92,6 +92,13 @@
       "when": 1772400000000,
       "tag": "0012_add_submission_on_chain",
       "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1772450000000,
+      "tag": "0013_add_artifacts",
+      "breakpoints": true
     }
   ]
 }
