@@ -1,6 +1,7 @@
 'use client';
 
 import { IconDotsVertical, IconLogout, IconWallet } from '@tabler/icons-react';
+import { useEffect, useState } from 'react';
 import { useAccount, useDisconnect } from 'wagmi';
 
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
@@ -27,9 +28,13 @@ export function NavUser() {
   const { isMobile } = useSidebar();
   const { address, connector, isConnected } = useAccount();
   const { disconnect } = useDisconnect();
-  const walletLabel = isConnected && address ? compactAddress(address) : 'Wallet';
-  const walletDetail = isConnected ? (connector?.name ?? 'Connected wallet') : 'Not connected';
-  const fallback = isConnected && address ? '0x' : 'W';
+  const [mounted, setMounted] = useState(false);
+  useEffect(() => setMounted(true), []);
+
+  const connected = mounted && isConnected;
+  const walletLabel = connected && address ? compactAddress(address) : 'Wallet';
+  const walletDetail = connected ? (connector?.name ?? 'Connected wallet') : 'Not connected';
+  const fallback = connected && address ? '0x' : 'W';
 
   return (
     <SidebarMenu>
@@ -67,14 +72,14 @@ export function NavUser() {
                 </div>
               </div>
             </DropdownMenuLabel>
-            {address ? (
+            {connected && address ? (
               <div className="px-2 py-1.5 font-mono text-xs break-all text-muted-foreground">
                 {address}
               </div>
             ) : null}
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!isConnected} onSelect={() => disconnect()}>
-              {isConnected ? <IconLogout /> : <IconWallet />}
+            <DropdownMenuItem disabled={!connected} onSelect={() => disconnect()}>
+              {connected ? <IconLogout /> : <IconWallet />}
               Disconnect
             </DropdownMenuItem>
           </DropdownMenuContent>
