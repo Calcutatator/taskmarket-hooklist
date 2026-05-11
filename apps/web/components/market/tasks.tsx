@@ -573,10 +573,22 @@ export function TaskDetailPanel({
   modeData?: TaskModeData;
   task: TaskDetailResponse | TaskResponse;
 }) {
+  const hasModeContent =
+    (modeData?.submissions?.length ?? 0) > 0 ||
+    (modeData?.pitches?.length ?? 0) > 0 ||
+    (modeData?.proofs?.length ?? 0) > 0 ||
+    (modeData?.bids?.length ?? 0) > 0 ||
+    modeData?.claim != null ||
+    ('pendingActions' in task && task.pendingActions.length > 0);
+
   return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_320px]">
-      <div className="grid gap-6">
-        <Card>
+    <div
+      className={
+        hasModeContent ? 'grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_320px]' : 'w-full space-y-6'
+      }
+    >
+      <div className="block w-full min-w-0 space-y-6">
+        <Card className="w-full">
           <CardHeader>
             <div className="flex flex-wrap gap-2">
               <Badge>{task.mode}</Badge>
@@ -595,7 +607,7 @@ export function TaskDetailPanel({
         </Card>
         <ModeDataPanel modeData={modeData} task={task} />
       </div>
-      <Card>
+      <Card className="w-full">
         <CardHeader>
           <CardTitle>Settlement</CardTitle>
         </CardHeader>
