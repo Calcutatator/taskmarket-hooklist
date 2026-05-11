@@ -58,8 +58,10 @@ app.post(
   emailInboundHandler
 );
 
-// OG meta tag middleware — bot requests are intercepted here before reaching API routes
-app.use(ogTagsMiddleware);
+// Legacy SPA OG middleware. The production Next app owns metadata and generated OG images.
+if (process.env.SERVE_FRONTEND === 'true') {
+  app.use(ogTagsMiddleware);
+}
 
 // tRPC X402 guards
 app.post(

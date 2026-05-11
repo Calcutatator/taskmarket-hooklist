@@ -61,7 +61,15 @@ type LeaderboardState = {
   sort: LeaderboardSort;
 };
 
-function leaderboardHref(state: LeaderboardState, overrides: Partial<LeaderboardState>) {
+function normalizeBasePath(basePath: string) {
+  return basePath.replace(/\/+$/, '') || '/';
+}
+
+function leaderboardHref(
+  state: LeaderboardState,
+  overrides: Partial<LeaderboardState>,
+  basePath = '/dashboard/leaderboard'
+) {
   const next = { ...state, ...overrides };
   const params = new URLSearchParams();
 
@@ -87,14 +95,17 @@ function leaderboardHref(state: LeaderboardState, overrides: Partial<Leaderboard
     params.set('minTasks', next.minTasks);
   }
 
-  return `/dashboard/leaderboard?${params.toString()}`;
+  const query = params.toString();
+  return query ? `${normalizeBasePath(basePath)}?${query}` : normalizeBasePath(basePath);
 }
 
 export function AgentTable({
   agents,
+  profileBasePath = '/dashboard/agents',
   variant = 'directory',
 }: {
   agents: LeaderboardEntry[];
+  profileBasePath?: string;
   variant?: 'directory' | 'leaderboard';
 }) {
   const emptyMessage = variant === 'leaderboard' ? 'No workers found.' : 'No agents ranked yet';
@@ -134,7 +145,7 @@ export function AgentTable({
                 <TableCell>
                   <a
                     className="font-medium hover:text-primary"
-                    href={`/dashboard/agents/${profileId}`}
+                    href={`${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}`}
                   >
                     {label}
                   </a>
@@ -167,6 +178,7 @@ export function AgentTable({
 
 export function AgentLeaderboardPanel({
   agents,
+  basePath = '/dashboard/leaderboard',
   hasNextPage,
   hasPrevPage,
   minRating,
@@ -176,8 +188,10 @@ export function AgentLeaderboardPanel({
   search,
   skill,
   sort,
+  profileBasePath = '/dashboard/agents',
 }: {
   agents: LeaderboardEntry[];
+  basePath?: string;
   hasNextPage: boolean;
   hasPrevPage: boolean;
   minRating?: string;
@@ -187,6 +201,7 @@ export function AgentLeaderboardPanel({
   search?: string;
   skill?: string;
   sort: LeaderboardSort;
+  profileBasePath?: string;
 }) {
   const state = { limit: pageSize, minRating, minTasks, page, search, skill, sort };
   const hasActiveFilters = Boolean(search || skill || minRating || minTasks);
@@ -198,7 +213,7 @@ export function AgentLeaderboardPanel({
           <CardTitle>Filter rankings</CardTitle>
         </CardHeader>
         <CardContent>
-          <form action="/dashboard/leaderboard" className="grid gap-4 lg:grid-cols-6">
+          <form action={normalizeBasePath(basePath)} className="grid gap-4 lg:grid-cols-6">
             <input name="sort" type="hidden" value={sort} />
             <div className="grid gap-2 lg:col-span-2">
               <Label htmlFor="leaderboard-search">Search</Label>
@@ -270,13 +285,17 @@ export function AgentLeaderboardPanel({
               {hasActiveFilters ? (
                 <Button asChild type="button" variant="outline">
                   <a
-                    href={leaderboardHref(state, {
-                      minRating: '',
-                      minTasks: '',
-                      page: undefined,
-                      search: '',
-                      skill: '',
-                    })}
+                    href={leaderboardHref(
+                      state,
+                      {
+                        minRating: '',
+                        minTasks: '',
+                        page: undefined,
+                        search: '',
+                        skill: '',
+                      },
+                      basePath
+                    )}
                   >
                     Clear filters
                   </a>
@@ -292,14 +311,14 @@ export function AgentLeaderboardPanel({
           <a
             className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
             data-active={sort === 'reputation'}
-            href={leaderboardHref(state, { page: 1, sort: 'reputation' })}
+            href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath)}
           >
             Reputation
           </a>
           <a
             className="rounded-md border border-border/80 px-3 py-2 font-mono text-xs uppercase transition-colors hover:border-primary/70 hover:bg-primary/10 data-[active=true]:border-primary/70 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground"
             data-active={sort === 'tasks'}
-            href={leaderboardHref(state, { page: 1, sort: 'tasks' })}
+            href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath)}
           >
             Task count
           </a>
@@ -307,7 +326,7 @@ export function AgentLeaderboardPanel({
         <p className="font-mono text-xs uppercase text-muted-foreground">Page {page}</p>
       </div>
 
-      <AgentTable agents={agents} variant="leaderboard" />
+      <AgentTable agents={agents} profileBasePath={profileBasePath} variant="leaderboard" />
 
       <div className="flex items-center justify-between border-t border-border/75 pt-4">
         <span className="font-mono text-sm text-muted-foreground">Page {page}</span>
@@ -315,7 +334,7 @@ export function AgentLeaderboardPanel({
           <Button asChild disabled={!hasPrevPage} variant="outline">
             <a
               aria-disabled={!hasPrevPage}
-              href={hasPrevPage ? leaderboardHref(state, { page: page - 1 }) : '#'}
+              href={hasPrevPage ? leaderboardHref(state, { page: page - 1 }, basePath) : '#'}
             >
               Previous
             </a>
@@ -323,7 +342,7 @@ export function AgentLeaderboardPanel({
           <Button asChild disabled={!hasNextPage} variant="outline">
             <a
               aria-disabled={!hasNextPage}
-              href={hasNextPage ? leaderboardHref(state, { page: page + 1 }) : '#'}
+              href={hasNextPage ? leaderboardHref(state, { page: page + 1 }, basePath) : '#'}
             >
               Next
             </a>
@@ -334,7 +353,13 @@ export function AgentLeaderboardPanel({
   );
 }
 
-export function AgentProfilePanel({ agent }: { agent: AgentStats | LeaderboardEntry }) {
+export function AgentProfilePanel({
+  agent,
+  taskBasePath = '/dashboard/tasks',
+}: {
+  agent: AgentStats | LeaderboardEntry;
+  taskBasePath?: string;
+}) {
   const label = agent.agentId
     ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
     : compactAddress(agent.address);
@@ -508,7 +533,7 @@ export function AgentProfilePanel({ agent }: { agent: AgentStats | LeaderboardEn
               {agent.recentRatings.map((rating) => (
                 <a
                   className="grid gap-3 py-3 font-mono text-xs transition-colors hover:text-primary sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                  href={`/dashboard/tasks/${rating.taskId}`}
+                  href={`${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}`}
                   key={`${rating.taskId}-${rating.createdAt}`}
                 >
                   <span className="min-w-0 truncate">{rating.taskId}</span>

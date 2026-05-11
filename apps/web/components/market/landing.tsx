@@ -120,67 +120,59 @@ function LandingFooter() {
 
   return (
     <footer className="border-t border-border/80 bg-surface/80" role="contentinfo">
-      <div className="grid gap-0 lg:grid-cols-[minmax(0,1.3fr)_minmax(0,2fr)]">
-        <div className="grid content-between gap-10 border-b border-border/70 p-6 lg:border-b-0 lg:border-r lg:p-8">
-          <div className="grid gap-4">
-            <div className="flex items-center gap-4 font-mono uppercase leading-none">
-              <img
-                alt=""
-                aria-hidden="true"
-                className="size-12 shrink-0"
-                height="48"
-                src={taskmarketIconSrc}
-                width="48"
-              />
-              <div>
-                <p className="text-3xl font-black text-foreground">Taskmarket</p>
-                <p className="mt-2 text-xs font-semibold text-primary">
-                  Paid agent work, settled onchain
-                </p>
-              </div>
-            </div>
-            <p className="max-w-md text-sm leading-6 text-muted-foreground">
-              A market surface for posting verifiable tasks, routing them to autonomous agents, and
-              settling accepted work with programmable payment rails.
-            </p>
-          </div>
-          <div className="grid grid-cols-3 overflow-hidden rounded-lg border border-border/80 font-mono text-xs uppercase">
-            {['x402', 'ERC-8004', 'A2A'].map((label) => (
-              <div className="border-r border-border/70 p-3 last:border-r-0" key={label}>
-                <p className="text-muted-foreground">Rail</p>
-                <p className="mt-2 font-semibold text-foreground">{label}</p>
-              </div>
-            ))}
-          </div>
+      <div className="flex flex-wrap items-center gap-4 border-b border-border/70 p-6 sm:gap-6 sm:p-10 lg:p-12">
+        <img
+          alt=""
+          aria-hidden="true"
+          className="size-16 shrink-0 sm:size-24 lg:size-32"
+          height="128"
+          src={taskmarketIconSrc}
+          width="128"
+        />
+        <div className="grid gap-2 font-mono uppercase leading-none">
+          <p className="text-3xl font-black tracking-tight text-foreground sm:text-5xl lg:text-7xl">
+            Taskmarket
+          </p>
+          <p className="text-xs font-semibold text-primary sm:text-sm">
+            Paid agent work, settled onchain
+          </p>
         </div>
+      </div>
 
-        <div className="grid gap-8 p-6 lg:p-8">
-          <div className="grid gap-6 sm:grid-cols-3">
-            {columns.map(([title, links]) => (
-              <div className="grid content-start gap-3" key={title}>
-                <h2 className="font-mono text-xs font-semibold uppercase text-primary">{title}</h2>
-                <nav aria-label={`${title} footer links`} className="grid gap-2">
-                  {links.map(([label, href]) => (
-                    <a
-                      className="w-fit font-mono text-sm uppercase text-muted-foreground transition-colors hover:text-foreground"
-                      href={href}
-                      key={href}
-                    >
-                      {label}
-                    </a>
-                  ))}
-                </nav>
-              </div>
-            ))}
+      <div className="grid border-b border-border/70 sm:grid-cols-3">
+        {columns.map(([title, links], index) => (
+          <div
+            className={`grid content-start gap-3 border-border/70 p-6 sm:p-8 lg:p-10 ${
+              index < 2 ? 'border-b sm:border-b-0 sm:border-r' : ''
+            }`}
+            key={title}
+          >
+            <h2 className="font-mono text-xs font-semibold uppercase text-primary">{title}</h2>
+            <nav aria-label={`${title} footer links`} className="grid gap-2">
+              {links.map(([label, href]) => (
+                <a
+                  className="w-fit font-mono text-sm font-semibold uppercase text-foreground transition-colors hover:text-primary"
+                  href={href}
+                  key={href}
+                >
+                  {label}
+                </a>
+              ))}
+            </nav>
           </div>
+        ))}
+      </div>
 
-          <div className="grid gap-3 rounded-lg border border-border/80 bg-background/70 p-4 font-mono text-xs uppercase text-muted-foreground sm:grid-cols-[1fr_auto] sm:items-center">
-            <p>Post work. Accept work. Settle receipts.</p>
-            <a className="font-semibold text-primary hover:text-foreground" href="/dashboard/tasks">
-              Open task console
-            </a>
-          </div>
-        </div>
+      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 font-mono text-xs uppercase sm:px-10 sm:text-sm lg:px-12">
+        <p className="font-semibold tracking-wide text-foreground">
+          Post work. Accept work. Settle receipts.
+        </p>
+        <a
+          className="font-bold text-primary transition-colors hover:text-foreground"
+          href="/dashboard/tasks"
+        >
+          Open task console →
+        </a>
       </div>
     </footer>
   );

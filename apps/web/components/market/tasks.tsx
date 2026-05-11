@@ -71,7 +71,11 @@ function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
 }
 
-function hrefForFilters(mode?: string, status?: string) {
+function normalizeBasePath(basePath: string) {
+  return basePath.replace(/\/+$/, '') || '/';
+}
+
+function hrefForFilters(mode?: string, status?: string, basePath = '/dashboard/tasks') {
   const params = new URLSearchParams();
   if (mode && mode !== 'ALL') {
     params.set('mode', mode);
@@ -81,18 +85,25 @@ function hrefForFilters(mode?: string, status?: string) {
   }
 
   const query = params.toString();
-  return query ? `/dashboard/tasks?${query}` : '/dashboard/tasks';
+  const normalized = normalizeBasePath(basePath);
+  return query ? `${normalized}?${query}` : normalized;
 }
 
 export function TaskTable({
+  createHref = '/dashboard/tasks/new',
+  detailBasePath = '/dashboard/tasks',
   errorMessage,
   hasActiveFilters = false,
   isLoading,
+  listHref = '/dashboard/tasks',
   tasks,
 }: {
+  createHref?: string;
+  detailBasePath?: string;
   errorMessage?: string;
   hasActiveFilters?: boolean;
   isLoading?: boolean;
+  listHref?: string;
   tasks: TaskResponse[];
 }) {
   if (errorMessage) {
@@ -140,11 +151,11 @@ export function TaskTable({
             <div className="flex flex-col justify-center gap-2 sm:flex-row">
               {hasActiveFilters ? (
                 <Button asChild variant="outline">
-                  <a href="/dashboard/tasks">Clear filters</a>
+                  <a href={listHref}>Clear filters</a>
                 </Button>
               ) : null}
               <Button asChild>
-                <a href="/dashboard/tasks/new">Post task</a>
+                <a href={createHref}>Post task</a>
               </Button>
             </div>
           </div>
@@ -171,7 +182,7 @@ export function TaskTable({
               <TableCell className="min-w-72">
                 <a
                   className="font-medium text-foreground hover:text-primary"
-                  href={`/dashboard/tasks/${task.id}`}
+                  href={`${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`}
                 >
                   {taskTitle(task)}
                 </a>
@@ -202,6 +213,7 @@ export function TaskTable({
 }
 
 export function TaskFilterRail({
+  basePath = '/dashboard/tasks',
   deadlineHours = '',
   maxReward = '',
   minReward = '',
@@ -209,6 +221,7 @@ export function TaskFilterRail({
   selectedStatus = 'ALL',
   tags = '',
 }: {
+  basePath?: string;
   deadlineHours?: string;
   maxReward?: string;
   minReward?: string;
@@ -230,7 +243,7 @@ export function TaskFilterRail({
                 <a
                   className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedMode === mode}
-                  href={hrefForFilters(mode, selectedStatus)}
+                  href={hrefForFilters(mode, selectedStatus, basePath)}
                   key={mode}
                 >
                   {mode === 'ALL' ? 'All modes' : labelize(mode)}
@@ -245,7 +258,7 @@ export function TaskFilterRail({
                 <a
                   className="min-h-8 rounded-md border border-border/70 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-colors hover:border-primary/60 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/70 data-[active=true]:bg-primary/15 data-[active=true]:text-primary"
                   data-active={selectedStatus === status}
-                  href={hrefForFilters(selectedMode, status)}
+                  href={hrefForFilters(selectedMode, status, basePath)}
                   key={status}
                 >
                   {status === 'ALL' ? 'All statuses' : labelize(status)}
@@ -253,7 +266,7 @@ export function TaskFilterRail({
               ))}
             </div>
           </div>
-          <form action="/dashboard/tasks" className="grid gap-4">
+          <form action={normalizeBasePath(basePath)} className="grid gap-4">
             {selectedMode !== 'ALL' ? (
               <input name="mode" type="hidden" value={selectedMode} />
             ) : null}
@@ -311,7 +324,7 @@ export function TaskFilterRail({
                 Apply
               </Button>
               <Button asChild variant="outline">
-                <a aria-label="Clear filters" href="/dashboard/tasks">
+                <a aria-label="Clear filters" href={normalizeBasePath(basePath)}>
                   Clear
                 </a>
               </Button>
@@ -567,9 +580,11 @@ function ModeDataPanel({
 }
 
 export function TaskDetailPanel({
+  backHref = '/dashboard/tasks',
   modeData,
   task,
 }: {
+  backHref?: string;
   modeData?: TaskModeData;
   task: TaskDetailResponse | TaskResponse;
 }) {
@@ -669,7 +684,7 @@ export function TaskDetailPanel({
             <span>{task.submissionCount ?? 0}</span>
           </div>
           <Button asChild className="mt-3" variant="terminal">
-            <a href="/dashboard/tasks">Back to tasks</a>
+            <a href={backHref}>Back to tasks</a>
           </Button>
         </CardContent>
       </Card>

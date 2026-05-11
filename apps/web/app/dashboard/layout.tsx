@@ -1,6 +1,11 @@
+import type { Metadata } from 'next';
+
 import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
+import { buildNoIndexMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildNoIndexMetadata();
 
 export default function DashboardLayout({
   children,

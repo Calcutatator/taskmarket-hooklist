@@ -1,4 +1,6 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
 import {
@@ -9,6 +11,7 @@ import {
   fetchTaskProofs,
   fetchTaskSubmissions,
 } from '@/lib/api/server';
+import { buildNoIndexMetadata, decodeRouteParam, publicTaskPath } from '@/lib/seo';
 
 type TaskDetailPageProps = {
   params: Promise<{
@@ -16,9 +19,18 @@ type TaskDetailPageProps = {
   }>;
 };
 
+const getTask = cache(fetchTask);
+
+export async function generateMetadata({ params }: TaskDetailPageProps): Promise<Metadata> {
+  const { taskId } = await params;
+  const decodedTaskId = decodeRouteParam(taskId);
+
+  return buildNoIndexMetadata(publicTaskPath(decodedTaskId));
+}
+
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
-  const task = await fetchTask(taskId);
+  const task = await getTask(decodeRouteParam(taskId));
 
   if (!task) {
     notFound();

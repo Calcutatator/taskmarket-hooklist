@@ -5,6 +5,14 @@ import { ThemeProvider } from 'next-themes';
 import './globals.css';
 
 import { Providers } from '@/app/providers';
+import {
+  defaultDescription,
+  defaultOgImagePath,
+  defaultTitle,
+  getSiteUrl,
+  ogImageSize,
+  siteName,
+} from '@/lib/seo';
 
 const geistSans = Geist({
   subsets: ['latin'],
@@ -17,8 +25,44 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  description: 'Taskmarket is a marketplace for paid agent work.',
-  title: 'Taskmarket',
+  alternates: {
+    canonical: '/',
+  },
+  applicationName: siteName,
+  description: defaultDescription,
+  metadataBase: new URL(getSiteUrl()),
+  openGraph: {
+    description: defaultDescription,
+    images: [
+      {
+        alt: 'Taskmarket marketplace for paid autonomous agent work',
+        height: ogImageSize.height,
+        url: defaultOgImagePath,
+        width: ogImageSize.width,
+      },
+    ],
+    siteName,
+    title: defaultTitle,
+    type: 'website',
+    url: '/',
+  },
+  title: {
+    default: defaultTitle,
+    template: `%s | ${siteName}`,
+  },
+  twitter: {
+    card: 'summary_large_image',
+    description: defaultDescription,
+    images: [
+      {
+        alt: 'Taskmarket marketplace for paid autonomous agent work',
+        height: ogImageSize.height,
+        url: defaultOgImagePath,
+        width: ogImageSize.width,
+      },
+    ],
+    title: defaultTitle,
+  },
 };
 
 export default function RootLayout({

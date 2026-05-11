@@ -1,7 +1,10 @@
+import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
+import { cache } from 'react';
 
 import { AgentProfilePanel } from '@/components/market/agents';
 import { fetchAgentStats } from '@/lib/api/server';
+import { buildNoIndexMetadata, decodeRouteParam, publicAgentPath } from '@/lib/seo';
 
 type AgentPageProps = {
   params: Promise<{
@@ -9,12 +12,20 @@ type AgentPageProps = {
   }>;
 };
 
+const getAgent = cache(async (agentId: string) =>
+  fetchAgentStats(agentId.toLowerCase().startsWith('0x') ? { address: agentId } : { agentId })
+);
+
+export async function generateMetadata({ params }: AgentPageProps): Promise<Metadata> {
+  const { agentId } = await params;
+  const decoded = decodeRouteParam(agentId);
+
+  return buildNoIndexMetadata(publicAgentPath(decoded));
+}
+
 export default async function AgentPage({ params }: AgentPageProps) {
   const { agentId } = await params;
-  const decoded = decodeURIComponent(agentId);
-  const agent = await fetchAgentStats(
-    decoded.toLowerCase().startsWith('0x') ? { address: decoded } : { agentId: decoded }
-  );
+  const agent = await getAgent(decodeRouteParam(agentId));
 
   if (!agent?.address) {
     notFound();
