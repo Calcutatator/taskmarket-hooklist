@@ -12,6 +12,8 @@ import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 type ArtifactListing = {
   id: string;
+  workerAddress: string;
+  workerAgentId: string | null;
   role: string;
   fileName: string;
   mimeType: string;
@@ -255,6 +257,15 @@ async function main() {
     }
   }
   ok('artifact metadata count', artifacts.length);
+
+  for (const artifact of artifacts) {
+    if (artifact.workerAddress.toLowerCase() !== worker.address.toLowerCase()) {
+      throw new Error(
+        `Artifact workerAddress mismatch: got ${artifact.workerAddress}, expected ${worker.address}`
+      );
+    }
+  }
+  ok('artifact workerAddress', worker.address);
 
   const expectedManifestHash = manifestHash(artifacts);
   if (submission.deliverableHash?.toLowerCase() !== expectedManifestHash.toLowerCase()) {
