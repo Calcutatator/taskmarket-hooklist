@@ -96,15 +96,12 @@ Returns a `TaskDetailResponse` — a `TaskResponse` extended with `pendingAction
 {
   taskId: string
   workerAddress: string
-  file?: string      // legacy base64-encoded file content
-  fileName?: string  // optional metadata for legacy file
-  mimeType?: string  // optional metadata for legacy file
-  artifacts?: Array<{
+  artifacts: Array<{
     fileName: string
     mimeType: string
     role?: 'preview' | 'source' | 'final' | 'attachment'
     file: string     // base64-encoded artifact content
-  }>
+  }>  // 1–20 artifacts required
   signature: string // worker's EIP-191 personal_sign of "taskmarket:submit:<taskId>"
 }
 ```
