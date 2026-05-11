@@ -17,8 +17,15 @@ export function ok(label: string, value: unknown) {
 }
 
 export function fail(step: string, status: number, body: string): never {
-  console.error(`\n✗ ${step} failed (HTTP ${status}):\n${body}`);
-  process.exit(1);
+  // Parse body to extract message for a cleaner error string.
+  let message = body;
+  try {
+    const parsed = JSON.parse(body) as { message?: string };
+    if (parsed.message) message = parsed.message;
+  } catch {
+    // leave message as raw body
+  }
+  throw new Error(`${step} failed (HTTP ${status}): ${message}`);
 }
 
 /** GET with optional headers. */

@@ -5,14 +5,21 @@ export const BidCreateSchema = z.object({
   price: z.string().min(1, 'Price is required'),
 });
 
+export const AuctionAcceptSchema = z.object({
+  taskId: z.string().min(1, 'Task ID is required'),
+  minPrice: z.string().optional(),
+});
+
 export const BidResponseSchema = z.object({
   id: z.string(),
   taskId: z.string(),
-  workerAddress: z.string(),
-  price: z.string(),
+  workerAddress: z.string().nullable(),
+  price: z.string().nullable(),
   createdAt: z.string(),
   workerAgentId: z.string().nullable().optional(),
+  isMyBid: z.boolean().optional(),
 });
 
 export type BidCreate = z.infer<typeof BidCreateSchema>;
 export type BidResponse = z.infer<typeof BidResponseSchema>;
+export type AuctionAccept = z.infer<typeof AuctionAcceptSchema>;

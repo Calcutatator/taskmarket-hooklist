@@ -1,0 +1,243 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+
+@custom-variant dark (&:is(.dark *));
+
+:root {
+  --background: #151315;
+  --foreground: #f4eee8;
+  --card: #1d1a1e;
+  --card-foreground: #f4eee8;
+  --popover: #211d22;
+  --popover-foreground: #f4eee8;
+  --primary: #d36d9c;
+  --primary-foreground: #221018;
+  --secondary: #28242a;
+  --secondary-foreground: #f4eee8;
+  --muted: #232025;
+  --muted-foreground: #b9afa8;
+  --accent: #74c7aa;
+  --accent-foreground: #10211a;
+  --destructive: #e06f6f;
+  --destructive-foreground: #250d0d;
+  --border: #3d373f;
+  --input: #322d34;
+  --ring: #d36d9c;
+  --surface: #19171a;
+  --surface-2: #262229;
+  --success: #74c7aa;
+  --warning: #e4be68;
+  --info: #91addc;
+  --radius: 0.5rem;
+  --sidebar: #19171a;
+  --sidebar-foreground: #f4eee8;
+  --sidebar-primary: #d36d9c;
+  --sidebar-primary-foreground: #221018;
+  --sidebar-accent: #262229;
+  --sidebar-accent-foreground: #f4eee8;
+  --sidebar-border: #3d373f;
+  --sidebar-ring: #d36d9c;
+}
+
+.light {
+  --background: #f7f3ed;
+  --foreground: #211c20;
+  --card: #fffdfa;
+  --card-foreground: #211c20;
+  --popover: #fffdfa;
+  --popover-foreground: #211c20;
+  --primary: #b85d84;
+  --primary-foreground: #fffdfa;
+  --secondary: #eee7df;
+  --secondary-foreground: #211c20;
+  --muted: #f0e9e2;
+  --muted-foreground: #685f62;
+  --accent: #3f8f73;
+  --accent-foreground: #f7fff9;
+  --destructive: #b94b4b;
+  --destructive-foreground: #fffdfa;
+  --border: #ddd2c8;
+  --input: #e2d8cf;
+  --ring: #b85d84;
+  --surface: #fff9f3;
+  --surface-2: #f0e9e2;
+  --success: #3f8f73;
+  --warning: #8a681d;
+  --info: #456b9f;
+  --sidebar: #fff9f3;
+  --sidebar-foreground: #211c20;
+  --sidebar-primary: #b85d84;
+  --sidebar-primary-foreground: #fffdfa;
+  --sidebar-accent: #f0e9e2;
+  --sidebar-accent-foreground: #211c20;
+  --sidebar-border: #ddd2c8;
+  --sidebar-ring: #b85d84;
+}
+
+@theme inline {
+  --font-sans: var(--font-geist-sans);
+  --font-mono: var(--font-geist-mono);
+  --color-background: var(--background);
+  --color-foreground: var(--foreground);
+  --color-card: var(--card);
+  --color-card-foreground: var(--card-foreground);
+  --color-popover: var(--popover);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-primary: var(--primary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-secondary: var(--secondary);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-muted: var(--muted);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-accent: var(--accent);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-destructive: var(--destructive);
+  --color-destructive-foreground: var(--destructive-foreground);
+  --color-border: var(--border);
+  --color-input: var(--input);
+  --color-ring: var(--ring);
+  --color-surface: var(--surface);
+  --color-surface-2: var(--surface-2);
+  --color-success: var(--success);
+  --color-warning: var(--warning);
+  --color-info: var(--info);
+  --color-sidebar: var(--sidebar);
+  --color-sidebar-foreground: var(--sidebar-foreground);
+  --color-sidebar-primary: var(--sidebar-primary);
+  --color-sidebar-primary-foreground: var(--sidebar-primary-foreground);
+  --color-sidebar-accent: var(--sidebar-accent);
+  --color-sidebar-accent-foreground: var(--sidebar-accent-foreground);
+  --color-sidebar-border: var(--sidebar-border);
+  --color-sidebar-ring: var(--sidebar-ring);
+  --radius-sm: calc(var(--radius) + 0px);
+  --radius-md: calc(var(--radius) + 2px);
+  --radius-lg: calc(var(--radius) + 4px);
+  --radius-xl: calc(var(--radius) + 6px);
+  --shadow-terminal: 0 18px 40px -28px rgb(0 0 0 / 0.85), 0 1px 0 rgb(255 255 255 / 0.04) inset;
+}
+
+* {
+  border-color: var(--border);
+  outline-color: color-mix(in oklab, var(--ring) 50%, transparent);
+}
+
+html {
+  background: var(--background);
+}
+
+body {
+  min-height: 100vh;
+  background: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-geist-sans), system-ui, sans-serif;
+}
+
+::selection {
+  background: var(--primary);
+  color: var(--primary-foreground);
+}
+
+.task-market-hero-grid {
+  position: absolute;
+  inset: 0;
+  overflow: hidden;
+  pointer-events: none;
+  background:
+    linear-gradient(color-mix(in oklab, var(--border) 28%, transparent) 1px, transparent 1px),
+    linear-gradient(
+      90deg,
+      color-mix(in oklab, var(--border) 28%, transparent) 1px,
+      transparent 1px
+    ),
+    radial-gradient(
+      ellipse at center,
+      color-mix(in oklab, var(--surface) 82%, transparent) 0%,
+      color-mix(in oklab, var(--background) 94%, transparent) 58%,
+      var(--background) 100%
+    );
+  background-position:
+    center center,
+    center center,
+    center center;
+  background-size:
+    72px 72px,
+    72px 72px,
+    100% 100%;
+}
+
+.task-market-hero-grid::after {
+  position: absolute;
+  inset: 0;
+  content: '';
+  background:
+    linear-gradient(
+      180deg,
+      var(--background) 0%,
+      transparent 22%,
+      transparent 76%,
+      var(--background) 100%
+    ),
+    linear-gradient(
+      90deg,
+      var(--background) 0%,
+      transparent 18%,
+      transparent 82%,
+      var(--background) 100%
+    );
+}
+
+.task-market-hero-event {
+  position: absolute;
+  top: calc(50% - 36px);
+  left: calc(50% - 36px);
+  width: 72px;
+  height: 72px;
+  border: 1px solid color-mix(in oklab, var(--foreground) 28%, transparent);
+  border-radius: var(--radius-lg);
+  opacity: 0;
+  transform: translate(var(--event-x), var(--event-y)) scale(0.72);
+  animation: task-market-hero-event var(--event-duration) cubic-bezier(0.16, 1, 0.3, 1) infinite;
+  animation-delay: var(--event-delay);
+}
+
+.task-market-hero-event--accepted {
+  background: color-mix(in oklab, var(--primary) 26%, transparent);
+  border-color: color-mix(in oklab, var(--primary) 72%, var(--border));
+}
+
+.task-market-hero-event--submission {
+  background: color-mix(in oklab, var(--accent) 22%, transparent);
+  border-color: color-mix(in oklab, var(--accent) 64%, var(--border));
+}
+
+@keyframes task-market-hero-event {
+  0%,
+  12%,
+  100% {
+    opacity: 0;
+    transform: translate(var(--event-x), var(--event-y)) scale(0.72);
+  }
+
+  18% {
+    opacity: 0.68;
+    transform: translate(var(--event-x), var(--event-y)) scale(1);
+  }
+
+  38% {
+    opacity: 0.32;
+    transform: translate(var(--event-x), var(--event-y)) scale(0.92);
+  }
+
+  54% {
+    opacity: 0;
+    transform: translate(var(--event-x), var(--event-y)) scale(0.76);
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .task-market-hero-event {
+    opacity: 0.24;
+    transform: translate(var(--event-x), var(--event-y)) scale(0.9);
+    animation: none;
+  }
+}

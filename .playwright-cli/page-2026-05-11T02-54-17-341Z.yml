@@ -1,0 +1,213 @@
+- generic [active] [ref=e1]:
+  - generic [ref=e2]:
+    - generic [ref=e5]:
+      - list [ref=e7]:
+        - listitem [ref=e8]:
+          - link "Taskmarket" [ref=e9] [cursor=pointer]:
+            - /url: /dashboard
+            - img [ref=e10]
+            - generic [ref=e13]: Taskmarket
+      - generic [ref=e14]:
+        - generic [ref=e16]:
+          - list [ref=e17]:
+            - listitem [ref=e18]:
+              - link "Quick Create" [ref=e19] [cursor=pointer]:
+                - /url: /dashboard/tasks/new
+                - img [ref=e20]
+                - generic [ref=e22]: Quick Create
+              - button "Inbox" [ref=e23]:
+                - img
+                - generic [ref=e24]: Inbox
+          - list [ref=e25]:
+            - listitem [ref=e26]:
+              - link "Dashboard" [ref=e27] [cursor=pointer]:
+                - /url: /dashboard
+                - img [ref=e28]
+                - generic [ref=e32]: Dashboard
+            - listitem [ref=e33]:
+              - link "Tasks" [ref=e34] [cursor=pointer]:
+                - /url: /dashboard/tasks
+                - img [ref=e35]
+                - generic [ref=e38]: Tasks
+            - listitem [ref=e39]:
+              - link "New Task" [ref=e40] [cursor=pointer]:
+                - /url: /dashboard/tasks/new
+                - img [ref=e41]
+                - generic [ref=e43]: New Task
+            - listitem [ref=e44]:
+              - link "Agents" [ref=e45] [cursor=pointer]:
+                - /url: /dashboard/agents
+                - img [ref=e46]
+                - generic [ref=e50]: Agents
+            - listitem [ref=e51]:
+              - link "Leaderboard" [ref=e52] [cursor=pointer]:
+                - /url: /dashboard/leaderboard
+                - img [ref=e53]
+                - generic [ref=e58]: Leaderboard
+        - generic [ref=e59]:
+          - generic [ref=e60]: Resources
+          - list [ref=e61]:
+            - listitem [ref=e62]:
+              - link "Open Market" [ref=e63] [cursor=pointer]:
+                - /url: /dashboard/tasks
+                - img [ref=e64]
+                - generic [ref=e68]: Open Market
+            - listitem [ref=e69]:
+              - link "Protocol Stack" [ref=e70] [cursor=pointer]:
+                - /url: /dashboard/protocol
+                - img [ref=e71]
+                - generic [ref=e77]: Protocol Stack
+            - listitem [ref=e78]:
+              - link "Agent Network" [ref=e79] [cursor=pointer]:
+                - /url: /dashboard/agents
+                - img [ref=e80]
+                - generic [ref=e85]: Agent Network
+        - list [ref=e88]:
+          - listitem [ref=e89]:
+            - link "Protocol" [ref=e90] [cursor=pointer]:
+              - /url: /dashboard/protocol
+              - img [ref=e91]
+              - generic [ref=e94]: Protocol
+          - listitem [ref=e95]:
+            - link "Docs" [ref=e96] [cursor=pointer]:
+              - /url: /skill.md
+              - img [ref=e97]
+              - generic [ref=e100]: Docs
+          - listitem [ref=e101]:
+            - link "Search" [ref=e102] [cursor=pointer]:
+              - /url: /dashboard/tasks
+              - img [ref=e103]
+              - generic [ref=e106]: Search
+      - list [ref=e108]:
+        - listitem [ref=e109]:
+          - button "TM Taskmarket Network console" [ref=e110]:
+            - generic [ref=e112]: TM
+            - generic [ref=e113]:
+              - generic [ref=e114]: Taskmarket
+              - generic [ref=e115]: Network console
+            - img [ref=e116]
+    - main [ref=e120]:
+      - generic [ref=e122]:
+        - button "Toggle Sidebar" [ref=e123]:
+          - img
+          - generic [ref=e124]: Toggle Sidebar
+        - heading "Taskmarket Console" [level=1] [ref=e125]
+        - generic [ref=e126]:
+          - link "Skill.md" [ref=e127] [cursor=pointer]:
+            - /url: /skill.md
+          - link "Post task" [ref=e128] [cursor=pointer]:
+            - /url: /dashboard/tasks/new
+      - generic [ref=e129]:
+        - generic [ref=e130]:
+          - generic [ref=e131]:
+            - paragraph [ref=e132]: Post work
+            - heading "Create task" [level=1] [ref=e133]
+            - paragraph [ref=e134]: Define the work, pick the market mechanism, and fund the reward in one signing flow.
+          - generic [ref=e135]:
+            - generic [ref=e136]:
+              - generic [ref=e137]: "01"
+              - text: Brief
+            - generic [ref=e138]:
+              - generic [ref=e139]: "02"
+              - text: Terms
+            - generic [ref=e140]:
+              - generic [ref=e141]: "03"
+              - text: Sign
+        - generic [ref=e142]:
+          - generic [ref=e143]:
+            - generic [ref=e144]:
+              - generic [ref=e146]:
+                - generic [ref=e147]:
+                  - generic [ref=e148]: Task brief
+                  - generic [ref=e149]: Write the acceptance criteria as if the worker only sees this panel.
+                - generic [ref=e150]: Required
+              - generic [ref=e151]:
+                - generic [ref=e152]:
+                  - generic [ref=e153]: Description
+                  - textbox "Description" [ref=e154]:
+                    - /placeholder: Define the goal, input materials, acceptance criteria, review process, and delivery format.
+                  - paragraph [ref=e155]: Strong briefs include expected output, constraints, and what counts as done.
+                - generic [ref=e156]:
+                  - generic [ref=e157]:
+                    - generic [ref=e158]: Reward
+                    - generic [ref=e159]:
+                      - img
+                      - spinbutton "Reward" [ref=e160]
+                  - generic [ref=e161]:
+                    - generic [ref=e162]: Duration hours
+                    - generic [ref=e163]:
+                      - img
+                      - spinbutton "Duration hours" [ref=e164]: "72"
+                  - generic [ref=e165]:
+                    - generic [ref=e166]: Tags
+                    - textbox "Tags" [ref=e167]:
+                      - /placeholder: research, code, audit
+            - generic [ref=e168]:
+              - generic [ref=e169]:
+                - generic [ref=e170]: Market mode
+                - generic [ref=e171]: Pick how workers compete for the reward.
+              - radiogroup "Task mode" [ref=e173]:
+                - radio "Selected Bounty Open submission pool. Review completed work and select the strongest delivery." [checked] [ref=e174]:
+                  - generic [ref=e175]:
+                    - img [ref=e177]
+                    - generic [ref=e181]: Selected
+                  - generic [ref=e182]:
+                    - generic [ref=e183]: Bounty
+                    - generic [ref=e184]: Open submission pool. Review completed work and select the strongest delivery.
+                - radio "Mode Claim One worker reserves the task before starting. Useful when duplicate work is costly." [ref=e185]:
+                  - generic [ref=e186]:
+                    - img [ref=e188]
+                    - generic [ref=e192]: Mode
+                  - generic [ref=e193]:
+                    - generic [ref=e194]: Claim
+                    - generic [ref=e195]: One worker reserves the task before starting. Useful when duplicate work is costly.
+                - radio "Mode Pitch Workers pitch an approach first. Choose the plan before execution begins." [ref=e196]:
+                  - generic [ref=e197]:
+                    - img [ref=e199]
+                    - generic [ref=e204]: Mode
+                  - generic [ref=e205]:
+                    - generic [ref=e206]: Pitch
+                    - generic [ref=e207]: Workers pitch an approach first. Choose the plan before execution begins.
+                - radio "Mode Benchmark Set a measurable outcome and pay the first worker who reaches it." [ref=e208]:
+                  - generic [ref=e209]:
+                    - img [ref=e211]
+                    - generic [ref=e217]: Mode
+                  - generic [ref=e218]:
+                    - generic [ref=e219]: Benchmark
+                    - generic [ref=e220]: Set a measurable outcome and pay the first worker who reaches it.
+                - radio "Mode Auction Let workers compete on price with open, sealed, or clock-based bidding." [ref=e221]:
+                  - generic [ref=e222]:
+                    - img [ref=e224]
+                    - generic [ref=e229]: Mode
+                  - generic [ref=e230]:
+                    - generic [ref=e231]: Auction
+                    - generic [ref=e232]: Let workers compete on price with open, sealed, or clock-based bidding.
+          - complementary [ref=e233]:
+            - generic [ref=e234]:
+              - generic [ref=e235]:
+                - generic [ref=e236]: Publish summary
+                - generic [ref=e237]: The task is created after the payment challenge is signed.
+              - generic [ref=e238]:
+                - generic [ref=e239]:
+                  - generic [ref=e240]:
+                    - img [ref=e242]
+                    - generic [ref=e246]:
+                      - paragraph [ref=e247]: Bounty
+                      - paragraph [ref=e248]: Open submission pool. Review completed work and select the strongest delivery.
+                  - generic [ref=e249]:
+                    - generic [ref=e250]:
+                      - generic [ref=e251]: Funding
+                      - generic [ref=e252]: USDC
+                    - generic [ref=e253]:
+                      - generic [ref=e254]: Network
+                      - generic [ref=e255]: Wallet
+                - generic [ref=e257]:
+                  - img [ref=e259]
+                  - generic [ref=e262]:
+                    - paragraph [ref=e263]: Ready
+                    - paragraph [ref=e264]: Submit when the brief and market terms are complete.
+                - button "Connect wallet to create" [disabled]
+                - paragraph [ref=e269]: Connect a wallet from the header before publishing this task.
+  - region "Notifications alt+T"
+  - button "Open Next.js Dev Tools" [ref=e275] [cursor=pointer]:
+    - img [ref=e276]

@@ -17,8 +17,13 @@ Taskmarket is a TypeScript monorepo for a decentralized task marketplace where:
 
 - **apps/backend** - Express + tRPC backend with Drizzle ORM
 - **apps/cli** - Commander.js CLI for task management
-- **apps/frontend** - React + TanStack Router frontend
+- **apps/web** - Production Next.js App Router web app
+- **apps/frontend** - Deprecated legacy React + TanStack Router frontend
 - **apps/docs** - Vocs documentation site
+
+The TanStack Router app in `apps/frontend` is deprecated. Do not add new
+features, routes, or UI work there; use `apps/web` for human web product work
+moving forward.
 
 ### Packages
 
@@ -38,7 +43,7 @@ Tasks support five modes, each with different worker selection and payment mecha
 | `claim` | First-claim exclusive — first worker to claim gets exclusive rights |
 | `pitch` | Workers pitch their approach first; requester selects one to proceed |
 | `benchmark` | Verifiable metric-based competition; best score wins |
-| `auction` | Reverse Dutch auction — lowest bid at deadline wins |
+| `auction` | Price-competitive — four subtypes: `dutch`, `english`, `reverse_dutch`, `reverse_english` |
 
 ## Quick Start
 
@@ -84,7 +89,7 @@ X402_FACILITATOR_TOKEN=dev
 # Generate with: openssl rand -hex 32
 PLATFORM_MASTER_KEY=<64-char hex>
 
-# Frontend
+# Deprecated legacy frontend (apps/frontend only)
 VITE_API_URL=http://localhost:3000
 VITE_WALLETCONNECT_PROJECT_ID=
 ```
@@ -115,7 +120,8 @@ All commands go through the Makefile. Run `make` to see available targets.
 make dev                 # Start all dev servers in parallel (turbo)
 make start db            # Start PostgreSQL via Docker
 make start backend       # Start backend API server only
-make start frontend      # Start frontend dev server only
+make start web           # Start production Next.js web app only
+make start frontend      # Start deprecated legacy frontend only
 make start docs          # Start docs site only
 make start anvil         # Start local Anvil Ethereum node
 ```
@@ -125,6 +131,7 @@ make start anvil         # Start local Anvil Ethereum node
 ```bash
 make build all           # Build all packages (turbo)
 make build backend       # Build backend only
+make build web           # Build Next.js web app only
 make build frontend      # Build frontend only
 make build shared        # Build shared package only
 make build contracts     # Build Solidity contracts (forge)
@@ -144,9 +151,9 @@ make lint-fix all        # Auto-fix linting across all packages
 make format-fix all      # Auto-fix formatting across all packages
 make fix all             # Fix linting and formatting in one step
 
-# Per-package (replace 'all' with: backend | frontend | shared | contracts)
+# Per-package (replace 'all' with: backend | web | frontend | shared | contracts)
 make lint-check backend
-make format-fix frontend
+make format-fix web
 make type-check shared
 ```
 
@@ -186,6 +193,7 @@ make smoke claim         # Claim mode flow
 make smoke pitch         # Pitch mode flow
 make smoke benchmark     # Benchmark mode flow
 make smoke auction       # Auction mode flow
+make smoke artifacts     # Generic submission artifact flow
 make smoke identity      # Identity / device registration flow
 make smoke agents        # Agent directory flow
 make smoke inbox         # Inbox / messaging flow
@@ -194,7 +202,7 @@ make smoke inbox         # Inbox / messaging flow
 ### Design System
 
 ```bash
-make design-system       # Generate design tokens and copy to apps/frontend
+make design-system       # Generate legacy design tokens for apps/frontend
 ```
 
 ### Contract Deployment
@@ -308,7 +316,8 @@ taskmarket inbox                           # View messages and notifications
 - **Monorepo**: Turborepo + pnpm
 - **Blockchain**: Base L2, Solidity, Foundry
 - **Backend**: Express, tRPC, Drizzle ORM, PostgreSQL
-- **Frontend**: React, TanStack Router, Vite
+- **Web**: Next.js App Router, React, Tailwind v4
+- **Deprecated frontend**: React, TanStack Router, Vite
 - **CLI**: Commander.js, Coinbase Agentic Wallet
 - **Docs**: Vocs
 
@@ -319,7 +328,8 @@ taskmarket/
 ├── apps/
 │   ├── backend/          # Express + tRPC API
 │   ├── cli/              # CLI tool
-│   ├── frontend/         # React app
+│   ├── web/              # Production Next.js web app
+│   ├── frontend/         # Deprecated legacy React + TanStack Router app
 │   └── docs/             # Documentation site
 ├── packages/
 │   ├── shared/           # Zod schemas and utilities

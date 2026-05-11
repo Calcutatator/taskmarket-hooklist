@@ -16,6 +16,10 @@ export const listCmd = new Command('list')
   .description('List available tasks')
   .option('--status <status>', 'Filter by status (e.g. open)', 'open')
   .option('--mode <mode>', 'Filter by mode (bounty, claim, pitch, benchmark, auction)')
+  .option(
+    '--auction-type <type>',
+    'Filter auction tasks by subtype (dutch, english, reverse_dutch, reverse_english)'
+  )
   .option('--tags <tags>', 'Comma-separated tags to filter by')
   .option('--skill <skill>', 'Filter by skill tag (comma-separated, alias for --tags)')
   .option('--reward-min <n>', 'Minimum reward in USDC')
@@ -27,6 +31,7 @@ export const listCmd = new Command('list')
     async (opts: {
       status?: string;
       mode?: string;
+      auctionType?: string;
       tags?: string;
       skill?: string;
       rewardMin?: string;
@@ -38,6 +43,7 @@ export const listCmd = new Command('list')
       const params = new URLSearchParams();
       if (opts.status) params.set('status', opts.status);
       if (opts.mode) params.set('mode', opts.mode);
+      if (opts.auctionType) params.set('auctionType', opts.auctionType);
       const tagsValue = opts.tags ?? opts.skill;
       if (tagsValue) params.set('tags', tagsValue);
       if (opts.rewardMin)

@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -14,9 +14,9 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|shared|contracts|all)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|shared|contracts|all)"
 	@echo "  make dev                  - Start all dev servers in parallel"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|anvil)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|anvil)"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
 	@echo "  make format-check <app|all> - Check formatting for specific app or all"
@@ -27,30 +27,67 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|upgrade)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
 	$(ENV_LOADER) && pnpm install
+	git submodule update --init --recursive
 
 install: init
 
 deploy:
 	@$(ENV_LOADER) && \
+	TMPFILE=$$(mktemp) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		CHAINID=84532; \
 		cd packages/contracts && forge script script/DeployTestnet.s.sol:DeployTestnet \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify 2>&1 | tee $$TMPFILE; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		CHAINID=8453; \
+		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
+			--rpc-url base \
+			--broadcast \
+			--verify 2>&1 | tee $$TMPFILE; \
+	else \
+		rm -f $$TMPFILE; \
+		echo "Usage: make deploy <testnet|mainnet>"; \
+		exit 1; \
+	fi; \
+	PROXY=$$(grep "Proxy (CONTRACT_ADDRESS):" $$TMPFILE | awk '{print $$NF}'); \
+	rm -f $$TMPFILE; \
+	if [ -n "$$PROXY" ]; then \
+		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
+		RESP=$$(curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=verifyproxycontract&address=$$PROXY&apikey=$$FORGE_ETHERSCAN_API_KEY") && \
+		GUID=$$(echo "$$RESP" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4) && \
+		if [ -n "$$GUID" ]; then \
+			echo "Proxy verification submitted (GUID: $$GUID). Waiting 10s..." && \
+			sleep 10 && \
+			curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=checkproxyverification&guid=$$GUID&apikey=$$FORGE_ETHERSCAN_API_KEY" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4; \
+		else \
+			echo "Proxy verification response: $$RESP"; \
+		fi; \
+	fi
+
+upgrade:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
+		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
 			--rpc-url base \
 			--broadcast \
 			--verify; \
 	else \
-		echo "Usage: make deploy <testnet|mainnet>"; \
+		echo "Usage: make upgrade <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
@@ -74,7 +111,7 @@ release:
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
@@ -82,13 +119,15 @@ build:
 		pnpm --filter @taskmarket/backend build; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend build; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/web build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	fi
 
@@ -103,19 +142,21 @@ start:
 		pnpm --filter @taskmarket/backend dev; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		pnpm --filter @taskmarket/frontend dev; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		pnpm --filter @taskmarket/web dev; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs dev; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|backend|frontend|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|web|anvil>"; \
 		exit 1; \
 	fi
 
 lint-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-check <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:check; \
@@ -123,6 +164,8 @@ lint-check:
 		cd apps/backend && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm lint:check; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		cd apps/web && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
@@ -131,14 +174,14 @@ lint-check:
 		cd apps/email-worker && pnpm lint:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-check <backend|frontend|shared|contracts|email-worker|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
 lint-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-fix <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:write; \
@@ -146,6 +189,8 @@ lint-fix:
 		cd apps/backend && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm lint:write; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		cd apps/web && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
@@ -154,14 +199,14 @@ lint-fix:
 		cd apps/email-worker && pnpm lint:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-fix <backend|frontend|shared|contracts|email-worker|all>"; \
+		echo "Usage: make lint-fix <backend|frontend|web|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
 format-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-check <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make format-check <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:check; \
@@ -169,6 +214,8 @@ format-check:
 		cd apps/backend && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm format:check; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		cd apps/web && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
@@ -177,14 +224,14 @@ format-check:
 		cd apps/email-worker && pnpm format:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|frontend|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-check <backend|frontend|web|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
 format-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-fix <backend|frontend|shared|contracts|all>"; \
+		echo "Usage: make format-fix <backend|frontend|web|shared|contracts|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:write; \
@@ -192,6 +239,8 @@ format-fix:
 		cd apps/backend && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm format:write; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		cd apps/web && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
@@ -200,14 +249,14 @@ format-fix:
 		cd apps/email-worker && pnpm format:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|frontend|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-fix <backend|frontend|web|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
 
 type-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make type-check <backend|frontend|shared|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo type-check; \
@@ -215,13 +264,15 @@ type-check:
 		cd apps/backend && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
 		cd apps/frontend && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
+		cd apps/web && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm type-check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|shared|email-worker|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|all>"; \
 		exit 1; \
 	fi
 
@@ -322,10 +373,30 @@ smoke:
 		cd apps/backend && pnpm smoke:xmtp; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
 		cd apps/cli && pnpm smoke:xmtp-live; \
+	elif [ "$(word 1,$(ARGS))" = "auction-types" ]; then \
+		cd apps/backend && pnpm smoke:auction-types; \
+	elif [ "$(word 1,$(ARGS))" = "cancel-update" ]; then \
+		cd apps/backend && pnpm smoke:cancel-update; \
 	elif [ "$(word 1,$(ARGS))" = "email" ]; then \
 		cd apps/backend && pnpm smoke:email; \
+	elif [ "$(word 1,$(ARGS))" = "auction-full" ]; then \
+		cd apps/backend && pnpm smoke:auction-full; \
+	elif [ "$(word 1,$(ARGS))" = "rater-agent-id" ]; then \
+		cd apps/backend && pnpm smoke:rater-agent-id; \
+	elif [ "$(word 1,$(ARGS))" = "bids-inbox" ]; then \
+		cd apps/backend && pnpm smoke:bids-inbox; \
+	elif [ "$(word 1,$(ARGS))" = "pending-actions" ]; then \
+		cd apps/backend && pnpm smoke:pending-actions; \
+	elif [ "$(word 1,$(ARGS))" = "artifacts" ]; then \
+		cd apps/backend && pnpm smoke:artifacts; \
+	elif [ "$(word 1,$(ARGS))" = "submission-hash" ]; then \
+		cd apps/backend && pnpm smoke:submission-hash; \
+	elif [ "$(word 1,$(ARGS))" = "task-search" ]; then \
+		cd apps/backend && pnpm smoke:task-search; \
+	elif [ "$(word 1,$(ARGS))" = "upgrade" ]; then \
+		cd apps/backend && pnpm smoke:upgrade; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|upgrade>"; \
 		exit 1; \
 	fi
 

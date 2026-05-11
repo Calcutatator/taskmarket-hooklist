@@ -47,6 +47,10 @@ app.use(
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
 
+if (config.NODE_ENV !== 'production') {
+  app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+}
+
 // Cloudflare Email Worker webhook — raw bytes, before bot-detection and JSON middleware
 app.post(
   '/email/inbound',
@@ -111,6 +115,18 @@ app.post(
 app.post(
   '/api/tasks/:taskId/bids',
   x402Middleware({ getAmount: () => '1000', description: 'Submit bid' })
+);
+app.post(
+  '/api/tasks/:taskId/bids/accept',
+  x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
+);
+app.post(
+  '/api/tasks/:taskId/cancel',
+  x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
+);
+app.post(
+  '/api/tasks/:taskId/update',
+  x402Middleware({ getAmount: () => '1000', description: 'Update task' })
 );
 app.post(
   '/api/identity/register',

@@ -9,6 +9,7 @@ import {
   uniqueIndex,
   numeric,
   serial,
+  unique,
 } from 'drizzle-orm/pg-core';
 
 export const tasks = pgTable(
@@ -32,12 +33,18 @@ export const tasks = pgTable(
     pitchDeadline: timestamp('pitch_deadline'),
     bidDeadline: timestamp('bid_deadline'),
     maxPrice: numeric('max_price', { precision: 78, scale: 0 }),
+    auctionType: text('auction_type'),
+    auctionStartPrice: numeric('auction_start_price', { precision: 78, scale: 0 }),
+    auctionFloorPrice: numeric('auction_floor_price', { precision: 78, scale: 0 }),
     metricDescription: text('metric_description'),
     metricTarget: text('metric_target'),
     claimedBy: text('claimed_by'),
     claimedAt: timestamp('claimed_at'),
     platformFeeBps: smallint('platform_fee_bps').notNull().default(500),
     requesterAgentId: text('requester_agent_id'),
+    chainId: integer('chain_id'),
+    contractAddress: text('contract_address'),
+    cancelledAt: timestamp('cancelled_at'),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
@@ -59,11 +66,40 @@ export const submissions = pgTable(
     workerAddress: text('worker_address').notNull(),
     fileUrl: text('file_url').notNull(),
     signature: text('signature').notNull(),
+    deliverableHash: text('deliverable_hash'),
+    submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
   },
   (table) => ({
     taskIdIdx: index('idx_submissions_task').on(table.taskId),
     workerIdx: index('idx_submissions_worker').on(table.workerAddress),
+  })
+);
+
+export const artifacts = pgTable(
+  'artifacts',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    submissionId: text('submission_id')
+      .notNull()
+      .references(() => submissions.id),
+    role: text('role').notNull().default('attachment'),
+    fileName: text('file_name').notNull(),
+    mimeType: text('mime_type').notNull(),
+    mediaKind: text('media_kind').notNull().default('unknown'),
+    storageUri: text('storage_uri').notNull(),
+    sizeBytes: integer('size_bytes').notNull(),
+    sha256Hash: text('sha256_hash').notNull(),
+    keccak256Hash: text('keccak256_hash').notNull(),
+    displayOrder: integer('display_order').notNull().default(0),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdx: index('idx_artifacts_task').on(table.taskId),
+    submissionIdx: index('idx_artifacts_submission').on(table.submissionId),
   })
 );
 
@@ -191,6 +227,7 @@ export const bids = pgTable(
     taskIdIdx: index('idx_bids_task').on(table.taskId),
     workerIdx: index('idx_bids_worker').on(table.workerAddress),
     priceIdx: index('idx_bids_price').on(table.price),
+    taskWorkerUnique: unique('bids_task_worker_unique').on(table.taskId, table.workerAddress),
   })
 );
 
@@ -318,6 +355,8 @@ export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
+export type Artifact = typeof artifacts.$inferSelect;
+export type NewArtifact = typeof artifacts.$inferInsert;
 export type Agent = typeof agents.$inferSelect;
 export type NewAgent = typeof agents.$inferInsert;
 export type Feedback = typeof feedbacks.$inferSelect;

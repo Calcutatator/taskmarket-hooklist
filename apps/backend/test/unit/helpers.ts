@@ -12,6 +12,7 @@ export function makeChain(resolveValue: any = undefined) {
     limit: vi.fn().mockReturnThis(),
     offset: vi.fn().mockReturnThis(),
     orderBy: vi.fn().mockReturnThis(),
+    groupBy: vi.fn().mockReturnThis(),
     values: vi.fn().mockReturnThis(),
     returning: vi.fn().mockReturnThis(),
     set: vi.fn().mockReturnThis(),
@@ -38,6 +39,7 @@ export function createMockCtx(payer?: string) {
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
     delete: vi.fn().mockReturnValue(makeChain()),
+    transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
   };
 
   return {

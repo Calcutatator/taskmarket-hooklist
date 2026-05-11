@@ -1,10 +1,10 @@
-import { TaskMarketABI } from '@taskmarket/contracts/abi';
+import { TaskMarketABI as TaskMarketArtifact } from '@taskmarket/contracts/abi';
 
 export const TASK_MARKET_ADDRESS =
   (import.meta.env.VITE_TASK_MARKET_ADDRESS as `0x${string}`) || '0x';
 export const USDC_ADDRESS = (import.meta.env.VITE_USDC_ADDRESS as `0x${string}`) || '0x';
 
-export { TaskMarketABI };
+export const TaskMarketABI = TaskMarketArtifact.abi;
 
 export const USDC_ABI = [
   {

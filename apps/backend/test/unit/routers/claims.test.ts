@@ -90,7 +90,7 @@ describe('claims router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.claimId).toBe('string');
       expect(contractClaimTask).toHaveBeenCalledOnce();
-      expect(contractClaimTask).toHaveBeenCalledWith(TASK_ID, WORKER, 0n);
+      expect(contractClaimTask).toHaveBeenCalledWith(TASK_ID, WORKER, 0n, undefined);
       expect(ctx.db.insert).toHaveBeenCalledOnce();
       expect(ctx.db.update).toHaveBeenCalledOnce();
     });

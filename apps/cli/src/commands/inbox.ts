@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { apiGet } from '../lib/api.js';
 import { getWalletAddress } from '../lib/signer.js';
+import { loadKeystore } from '../lib/keystore.js';
 import { printResult, printError } from '../lib/output.js';
 
 interface TaskRow {
@@ -17,6 +18,16 @@ interface InboxResult {
   asWorker: TaskRow[];
 }
 
+interface PendingBid {
+  taskId: string;
+  auctionType: string | null;
+  myBidPrice: string;
+  currentLowestBid: string | null;
+  bidDeadline: string | null;
+  bidCount: number;
+  taskStatus: string;
+}
+
 export const inboxCommand = new Command('inbox')
   .description('Show tasks you created and tasks you are working on')
   .action(async () => {
@@ -29,8 +40,23 @@ export const inboxCommand = new Command('inbox')
       printError(msg);
     }
 
-    const result = (await apiGet(
+    const taskResult = (await apiGet(
       `/api/agents/inbox?address=${encodeURIComponent(address!)}`
     )) as InboxResult;
-    printResult(result);
+
+    // Fetch pending bids if device auth is available
+    let pendingBids: PendingBid[] = [];
+    try {
+      const keystore = await loadKeystore();
+      if (keystore.deviceId && keystore.apiToken) {
+        const params = new URLSearchParams({ deviceId: keystore.deviceId });
+        pendingBids = (await apiGet(`/api/bids/my?${params.toString()}`, {
+          headers: { 'x-taskmarket-api-token': keystore.apiToken },
+        })) as PendingBid[];
+      }
+    } catch {
+      // Non-fatal: include inbox tasks without pending bids
+    }
+
+    printResult({ ...taskResult, pendingBids });
   });

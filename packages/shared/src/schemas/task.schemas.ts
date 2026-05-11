@@ -11,7 +11,10 @@ export const TaskStatus = z.enum([
   'completed',
   'expired',
   'disputed',
+  'cancelled',
 ]);
+
+export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
 
 export const TaskCreateSchema = z.object({
   description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
@@ -26,6 +29,9 @@ export const TaskCreateSchema = z.object({
   maxPrice: z.string().optional(),
   metricDescription: z.string().max(500).optional(),
   metricTarget: z.string().max(200).optional(),
+  auctionType: AuctionType.optional(),
+  auctionStartPrice: z.string().optional(),
+  auctionFloorPrice: z.string().optional(),
 });
 
 export const TaskResponseSchema = z.object({
@@ -56,29 +62,28 @@ export const TaskResponseSchema = z.object({
   pitchCount: z.number().optional().default(0),
   requesterAgentId: z.string().nullable().optional(),
   workerAgentId: z.string().nullable().optional(),
+  auctionType: AuctionType.nullable().optional(),
+  auctionStartPrice: z.string().nullable().optional(),
+  auctionFloorPrice: z.string().nullable().optional(),
+  currentAuctionPrice: z.string().nullable().optional(),
+  auctionBidCount: z.number().nullable().optional(),
+  auctionPriceReachesFloorAt: z.string().nullable().optional(),
+  auctionPriceReachesMaxAt: z.string().nullable().optional(),
+  currentLowestBid: z.string().nullable().optional(),
 });
 
 export const TaskListInputSchema = z.object({
   limit: z.number().min(1).max(100).optional().default(20),
   cursor: z.string().optional(),
   status: z
-    .enum([
-      'ALL',
-      'open',
-      'claimed',
-      'worker_selected',
-      'pending_approval',
-      'accepted',
-      'completed',
-      'expired',
-      'disputed',
-    ])
+    .union([TaskStatus, z.literal('ALL')])
     .optional()
     .default('ALL'),
   mode: z
     .enum(['ALL', 'bounty', 'claim', 'pitch', 'benchmark', 'auction'])
     .optional()
     .default('ALL'),
+  auctionType: AuctionType.optional(),
   tags: z.array(z.string()).optional(),
   minReward: z.string().optional(),
   maxReward: z.string().optional(),
@@ -110,6 +115,23 @@ export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
 });
 
+export const CancelTaskInputSchema = z.object({
+  taskId: z.string(),
+});
+
+export const UpdateTaskInputSchema = z.object({
+  taskId: z.string(),
+  reward: z.string().optional(),
+  expiryTime: z.number().optional(),
+  bidDeadline: z.number().optional(),
+  pitchDeadline: z.number().optional(),
+  auctionFloorPrice: z.string().optional(),
+  auctionStartPrice: z.string().optional(),
+  description: z.string().optional(),
+  tags: z.array(z.string()).optional(),
+  metricDescription: z.string().optional(),
+});
+
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
@@ -118,5 +140,6 @@ export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
 export type TaskModeType = z.infer<typeof TaskMode>;
+export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

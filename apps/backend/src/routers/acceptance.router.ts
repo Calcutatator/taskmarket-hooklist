@@ -61,7 +61,8 @@ export const acceptanceRouter = router({
       const txHash = await contractAcceptSubmission(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
-        input.worker as `0x${string}`
+        input.worker as `0x${string}`,
+        task.contractAddress
       );
 
       await ctx.db
@@ -166,6 +167,8 @@ export const acceptanceRouter = router({
         ? BigInt(workerAgentResult[0].agentId)
         : 0n;
 
+      const raterAgentId = task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n;
+
       const feedbackId = randomUUID();
       const feedbackURI = `${config.BACKEND_URL}/api/feedback/${feedbackId}`;
 
@@ -196,6 +199,17 @@ export const acceptanceRouter = router({
       const fileContent = JSON.stringify(feedbackData, null, 2);
       const feedbackHash = keccak256(toBytes(fileContent)) as `0x${string}`;
 
+      const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        input.rating,
+        workerAgentId,
+        raterAgentId,
+        feedbackURI,
+        feedbackHash,
+        task.contractAddress
+      );
+
       await ctx.db.insert(feedbacks).values({
         id: feedbackId,
         taskId: input.taskId,
@@ -206,21 +220,9 @@ export const acceptanceRouter = router({
         rating: input.rating,
         feedbackText: input.feedbackText ?? null,
         fileContent,
+        ratingTxHash,
+        ratingBlockNumber,
       });
-
-      const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        input.rating,
-        workerAgentId,
-        feedbackURI,
-        feedbackHash
-      );
-
-      await ctx.db
-        .update(feedbacks)
-        .set({ ratingTxHash, ratingBlockNumber })
-        .where(eq(feedbacks.id, feedbackId));
 
       await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
 

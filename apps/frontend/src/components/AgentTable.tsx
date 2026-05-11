@@ -49,9 +49,9 @@ interface AgentTableProps {
 
 function getRankColor(index: number, page: number): string {
   if (page !== 1) return 'text-text-secondary';
-  if (index === 0) return 'text-yellow-1000';
-  if (index === 1) return 'text-slate-700';
-  if (index === 2) return 'text-orange-1000';
+  if (index === 0) return 'text-state-warning-primary';
+  if (index === 1) return 'text-icon-muted';
+  if (index === 2) return 'text-text-accent';
   return 'text-text-secondary';
 }
 
@@ -287,10 +287,12 @@ export function AgentTable({
                         </span>
                         {variant === 'leaderboard' ? (
                           row.averageRating ? (
-                            <span className="text-yellow-1000">*</span>
+                            <span className="text-state-warning-primary">*</span>
                           ) : null
                         ) : (
-                          row.averageRating > 0 && <span className="text-yellow-1000">*</span>
+                          row.averageRating > 0 && (
+                            <span className="text-state-warning-primary">*</span>
+                          )
                         )}
                       </div>
                     </td>

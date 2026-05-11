@@ -45,7 +45,7 @@
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.orange.1100}"
+        "$value": "{colors.crimson.1100}"
       },
       "disabled": {
         "$type": "color",
@@ -57,7 +57,7 @@
       },
       "link": {
         "$type": "color",
-        "$value": "{colors.orange.1100}"
+        "$value": "{colors.crimson.1100}"
       }
     },
     "surface": {
@@ -89,7 +89,7 @@
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.orange.700}"
+        "$value": "{colors.crimson.700}"
       },
       "inverse": {
         "$type": "color",
@@ -97,7 +97,7 @@
       },
       "focus": {
         "$type": "color",
-        "$value": "{colors.orange.800}"
+        "$value": "{colors.crimson.800}"
       },
       "disabled": {
         "$type": "color",
@@ -133,7 +133,7 @@
       },
       "accent": {
         "$type": "color",
-        "$value": "{colors.orange.1100}"
+        "$value": "{colors.crimson.1100}"
       },
       "disabled": {
         "$type": "color",
@@ -143,7 +143,7 @@
     "ring": {
       "primary": {
         "$type": "color",
-        "$value": "{colors.orange.700}"
+        "$value": "{colors.crimson.700}"
       },
       "offset": {
         "$type": "color",
@@ -153,11 +153,11 @@
     "highlight": {
       "bg": {
         "$type": "color",
-        "$value": "{colors.orange.400}"
+        "$value": "{colors.crimson.400}"
       },
       "text": {
         "$type": "color",
-        "$value": "{colors.orange.1200}"
+        "$value": "{colors.crimson.1200}"
       }
     },
     "state": {
@@ -200,19 +200,19 @@
       "info": {
         "primary": {
           "$type": "color",
-          "$value": "{colors.orange.900}"
+          "$value": "{colors.crimson.900}"
         },
         "bg": {
           "$type": "color",
-          "$value": "{colors.orange.300}"
+          "$value": "{colors.crimson.300}"
         },
         "text": {
           "$type": "color",
-          "$value": "{colors.orange.1100}"
+          "$value": "{colors.crimson.1100}"
         },
         "border": {
           "$type": "color",
-          "$value": "{colors.orange.700}"
+          "$value": "{colors.crimson.700}"
         }
       },
       "success": {
