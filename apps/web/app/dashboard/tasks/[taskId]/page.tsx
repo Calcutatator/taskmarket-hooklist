@@ -4,7 +4,12 @@ import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
 import { fetchTask, fetchTaskModeData } from '@/lib/api/server';
-import { buildNoIndexMetadata, decodeRouteParam, publicTaskPath } from '@/lib/seo';
+import {
+  buildDashboardPageMetadata,
+  buildDashboardTaskMetadata,
+  dashboardTaskPath,
+  decodeRouteParam,
+} from '@/lib/seo';
 
 type TaskDetailPageProps = {
   params: Promise<{
@@ -18,7 +23,24 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
   const { taskId } = await params;
   const decodedTaskId = decodeRouteParam(taskId);
 
-  return buildNoIndexMetadata(publicTaskPath(decodedTaskId));
+  try {
+    const task = await getTask(decodedTaskId);
+    if (task) {
+      return buildDashboardTaskMetadata(task);
+    }
+  } catch {
+    return buildDashboardPageMetadata({
+      description: 'Browse this Taskmarket task and related marketplace details.',
+      path: dashboardTaskPath(decodedTaskId),
+      title: 'Taskmarket task',
+    });
+  }
+
+  return buildDashboardPageMetadata({
+    description: 'Browse open Taskmarket work across all marketplace modes.',
+    path: '/dashboard/tasks',
+    title: 'Task not found',
+  });
 }
 
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {

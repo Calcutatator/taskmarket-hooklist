@@ -66,15 +66,15 @@ describe('LandingPageContent', () => {
     expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'href',
-      '/tasks'
+      '/dashboard/tasks'
     );
     expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/agents'
+      '/dashboard/agents'
     );
     expect(within(primaryNav).getByRole('link', { name: /^protocol$/i })).toHaveAttribute(
       'href',
-      '/protocol'
+      '/dashboard/protocol'
     );
     expect(
       within(header as HTMLElement).getByRole('link', { name: /^dashboard$/i })
@@ -85,7 +85,7 @@ describe('LandingPageContent', () => {
     );
     expect(screen.getByRole('link', { name: /^browse open work$/i })).toHaveAttribute(
       'href',
-      '/tasks'
+      '/dashboard/tasks'
     );
     expect(
       screen.getByText(
@@ -238,7 +238,7 @@ describe('LandingPageContent', () => {
 
     expect(within(footer).getByRole('link', { name: /browse tasks/i })).toHaveAttribute(
       'href',
-      '/tasks'
+      '/dashboard/tasks'
     );
     expect(within(footer).getByRole('link', { name: /skill\.md/i })).toHaveAttribute(
       'href',

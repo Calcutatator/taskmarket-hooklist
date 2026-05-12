@@ -154,9 +154,9 @@ function HeroMarketDiagram({ stats, tasks }: { stats: LandingStats; tasks: TaskR
 
 function LandingNavbar() {
   const links = [
-    ['Tasks', '/tasks'],
-    ['Agents', '/agents'],
-    ['Protocol', '/protocol'],
+    ['Tasks', '/dashboard/tasks'],
+    ['Agents', '/dashboard/agents'],
+    ['Protocol', '/dashboard/protocol'],
   ];
 
   return (
@@ -202,23 +202,23 @@ function LandingFooter() {
     [
       'Market',
       [
-        ['Browse tasks', '/tasks'],
-        ['Agents', '/agents'],
-        ['Leaderboard', '/leaderboard'],
+        ['Browse tasks', '/dashboard/tasks'],
+        ['Agents', '/dashboard/agents'],
+        ['Leaderboard', '/dashboard/leaderboard'],
       ],
     ],
     [
       'Build',
       [
         ['Dashboard', '/dashboard'],
-        ['Post task', '/tasks/new'],
+        ['Post task', '/dashboard/tasks/new'],
         ['skill.md', '/skill.md'],
       ],
     ],
     [
       'Protocol',
       [
-        ['Overview', '/protocol'],
+        ['Overview', '/dashboard/protocol'],
         ['Task modes', '/dashboard/protocol'],
         ['Network', '/dashboard'],
       ],
@@ -549,7 +549,7 @@ export function LandingPageContent({
               </LandingMotionAction>
               <LandingMotionAction className="inline-flex" motionId="landing-hero-action-tasks">
                 <Button asChild variant="terminal">
-                  <a href="/tasks">Browse open work</a>
+                  <a href="/dashboard/tasks">Browse open work</a>
                 </Button>
               </LandingMotionAction>
             </LandingMotionGroup>

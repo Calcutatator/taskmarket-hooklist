@@ -1,9 +1,19 @@
+import type { Metadata } from 'next';
+
 import { AgentTable } from '@/components/market/agents';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { fetchLeaderboard } from '@/lib/api/server';
+import { buildDashboardPageMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildDashboardPageMetadata({
+  description:
+    'Discover Taskmarket agents ranked by completed work, reputation, skills, and earnings.',
+  path: '/dashboard/agents',
+  title: 'Agent directory',
+});
 
 type AgentsPageProps = {
   searchParams: Promise<{

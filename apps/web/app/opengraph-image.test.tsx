@@ -16,6 +16,18 @@ import AgentImage, {
   runtime as agentRuntime,
   size as agentSize,
 } from './agents/[agentId]/opengraph-image';
+import DashboardAgentImage, {
+  alt as dashboardAgentAlt,
+  contentType as dashboardAgentContentType,
+  runtime as dashboardAgentRuntime,
+  size as dashboardAgentSize,
+} from './dashboard/agents/[agentId]/opengraph-image';
+import DashboardTaskImage, {
+  alt as dashboardTaskAlt,
+  contentType as dashboardTaskContentType,
+  runtime as dashboardTaskRuntime,
+  size as dashboardTaskSize,
+} from './dashboard/tasks/[taskId]/opengraph-image';
 import TaskImage, {
   alt as taskAlt,
   contentType as taskContentType,
@@ -126,6 +138,16 @@ describe('opengraph image routes', () => {
     expect(agentContentType).toBe('image/png');
     expect(agentRuntime).toBe('nodejs');
     expect(agentSize).toEqual(siteSize);
+
+    expect(dashboardTaskAlt).toBe(taskAlt);
+    expect(dashboardTaskContentType).toBe(taskContentType);
+    expect(dashboardTaskRuntime).toBe(taskRuntime);
+    expect(dashboardTaskSize).toEqual(siteSize);
+
+    expect(dashboardAgentAlt).toBe(agentAlt);
+    expect(dashboardAgentContentType).toBe(agentContentType);
+    expect(dashboardAgentRuntime).toBe(agentRuntime);
+    expect(dashboardAgentSize).toEqual(siteSize);
   });
 
   it('renders the default marketplace OG card', () => {
@@ -161,6 +183,13 @@ describe('opengraph image routes', () => {
       { label: 'Mode', value: 'bounty' },
       { label: 'Status', value: 'open' },
     ]);
+
+    const dashboardProps = expectOgCard(
+      await DashboardTaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) })
+    );
+
+    expect(fetchTask).toHaveBeenLastCalledWith('task/with spaces');
+    expect(dashboardProps).toMatchObject(props);
   });
 
   it('renders a generic task OG card when the task cannot be loaded', async () => {
@@ -193,6 +222,13 @@ describe('opengraph image routes', () => {
       { label: 'Rating', value: '4.8' },
       { label: 'Earned', value: '1,250.000 USDC' },
     ]);
+
+    const dashboardProps = expectOgCard(
+      await DashboardAgentImage({ params: Promise.resolve({ agentId: '42' }) })
+    );
+
+    expect(fetchAgentStats).toHaveBeenLastCalledWith({ agentId: '42' });
+    expect(dashboardProps).toMatchObject(props);
   });
 
   it('looks up raw address agent routes by address', async () => {

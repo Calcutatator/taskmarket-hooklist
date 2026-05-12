@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 
 import {
   buildAgentMetadata,
+  buildDashboardAgentMetadata,
+  buildDashboardPageMetadata,
+  buildDashboardTaskMetadata,
   buildTaskMetadata,
+  dashboardAgentPath,
+  dashboardTaskPath,
   getSiteUrl,
   publicAgentPath,
   publicTaskPath,
@@ -76,6 +81,8 @@ describe('seo helpers', () => {
     expect(getSiteUrl()).toBe('https://market.example');
     expect(publicTaskPath('task/with spaces')).toBe('/tasks/task%2Fwith%20spaces');
     expect(publicAgentPath('agent name')).toBe('/agents/agent%20name');
+    expect(dashboardTaskPath('task/with spaces')).toBe('/dashboard/tasks/task%2Fwith%20spaces');
+    expect(dashboardAgentPath('agent name')).toBe('/dashboard/agents/agent%20name');
 
     vi.unstubAllEnvs();
   });
@@ -105,6 +112,43 @@ describe('seo helpers', () => {
     expect((metadata.twitter as { card?: string })?.card).toBe('summary_large_image');
   });
 
+  it('builds noindex dashboard page metadata with OG tags', () => {
+    const metadata = buildDashboardPageMetadata({
+      description: 'Browse open Taskmarket work across marketplace modes.',
+      path: '/dashboard/tasks',
+      title: 'Open tasks',
+    });
+
+    expect(metadata.alternates).toEqual({ canonical: '/dashboard/tasks' });
+    expect(metadata.robots).toEqual({ follow: true, index: false });
+    expect(metadata.openGraph?.url).toBe('/dashboard/tasks');
+    expect(metadata.openGraph?.images).toEqual([
+      {
+        alt: 'Open tasks',
+        height: 630,
+        url: '/opengraph-image',
+        width: 1200,
+      },
+    ]);
+    expect((metadata.twitter as { card?: string })?.card).toBe('summary_large_image');
+  });
+
+  it('builds noindex dashboard task metadata with dashboard OG image paths', () => {
+    const metadata = buildDashboardTaskMetadata(baseTask);
+
+    expect(metadata.alternates).toEqual({ canonical: '/dashboard/tasks/task-123' });
+    expect(metadata.robots).toEqual({ follow: true, index: false });
+    expect(metadata.openGraph?.url).toBe('/dashboard/tasks/task-123');
+    expect(metadata.openGraph?.images).toEqual([
+      {
+        alt: 'Build a typed parser for agent capability manifests.',
+        height: 630,
+        url: '/dashboard/tasks/task-123/opengraph-image',
+        width: 1200,
+      },
+    ]);
+  });
+
   it('builds task metadata for auction tasks without a tags suffix when tags are empty', () => {
     const metadata = buildTaskMetadata({
       ...baseTask,
@@ -121,6 +165,7 @@ describe('seo helpers', () => {
   it('builds agent metadata for agent id and raw address routes', () => {
     const agentMetadata = buildAgentMetadata(baseAgent, '42');
     const addressMetadata = buildAgentMetadata({ ...baseAgent, agentId: null, skills: [] });
+    const dashboardAgentMetadata = buildDashboardAgentMetadata(baseAgent, '42');
 
     expect(agentMetadata.title).toBe('PhotonGlowPhantom');
     expect(agentMetadata.description).toBe(
@@ -131,5 +176,16 @@ describe('seo helpers', () => {
     expect(addressMetadata.description).toBe(
       '12 completed tasks. Rating: 4.8. Total earned: 1,250.000 USDC.'
     );
+    expect(dashboardAgentMetadata.alternates).toEqual({ canonical: '/dashboard/agents/42' });
+    expect(dashboardAgentMetadata.robots).toEqual({ follow: true, index: false });
+    expect(dashboardAgentMetadata.openGraph?.url).toBe('/dashboard/agents/42');
+    expect(dashboardAgentMetadata.openGraph?.images).toEqual([
+      {
+        alt: 'PhotonGlowPhantom on Taskmarket',
+        height: 630,
+        url: '/dashboard/agents/42/opengraph-image',
+        width: 1200,
+      },
+    ]);
   });
 });

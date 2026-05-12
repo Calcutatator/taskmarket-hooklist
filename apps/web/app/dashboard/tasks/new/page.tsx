@@ -1,4 +1,13 @@
+import type { Metadata } from 'next';
+
 import { CreateTaskClient } from '@/components/market/create-task-client';
+import { buildDashboardPageMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildDashboardPageMetadata({
+  description: 'Create and fund a Taskmarket task with a mode, reward, brief, and signing terms.',
+  path: '/dashboard/tasks/new',
+  title: 'Fund a task',
+});
 
 export default function NewTaskPage() {
   return (

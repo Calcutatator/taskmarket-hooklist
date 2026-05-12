@@ -77,6 +77,14 @@ export function publicAgentPath(agentId: string) {
   return `/agents/${encodeURIComponent(agentId)}`;
 }
 
+export function dashboardTaskPath(taskId: string) {
+  return `/dashboard/tasks/${encodeURIComponent(taskId)}`;
+}
+
+export function dashboardAgentPath(agentId: string) {
+  return `/dashboard/agents/${encodeURIComponent(agentId)}`;
+}
+
 export function truncateText(value: string, maxLength: number) {
   const normalized = value.replace(/\s+/g, ' ').trim();
   if (normalized.length <= maxLength) {
@@ -133,6 +141,20 @@ export function buildPageMetadata(input: SeoMetadataInput): Metadata {
   };
 }
 
+function withNoIndex(metadata: Metadata): Metadata {
+  return {
+    ...metadata,
+    robots: {
+      follow: true,
+      index: false,
+    },
+  };
+}
+
+export function buildDashboardPageMetadata(input: SeoMetadataInput): Metadata {
+  return withNoIndex(buildPageMetadata(input));
+}
+
 export function taskSeoTitle(task: Pick<TaskResponse, 'description' | 'id'>) {
   const firstLine = task.description
     .split(/\r?\n/)
@@ -167,6 +189,19 @@ export function buildTaskMetadata(task: TaskResponse): Metadata {
   const path = publicTaskPath(task.id);
 
   return buildPageMetadata({
+    description: taskSeoDescription(task),
+    imageAlt: title,
+    imagePath: `${path}/opengraph-image`,
+    path,
+    title,
+  });
+}
+
+export function buildDashboardTaskMetadata(task: TaskResponse): Metadata {
+  const title = taskSeoTitle(task);
+  const path = dashboardTaskPath(task.id);
+
+  return buildDashboardPageMetadata({
     description: taskSeoDescription(task),
     imageAlt: title,
     imagePath: `${path}/opengraph-image`,
@@ -212,6 +247,22 @@ export function buildAgentMetadata(
   const path = publicAgentPath(routeId ?? agent.agentId ?? agent.address);
 
   return buildPageMetadata({
+    description: agentSeoDescription(agent),
+    imageAlt: `${title} on ${siteName}`,
+    imagePath: `${path}/opengraph-image`,
+    path,
+    title,
+  });
+}
+
+export function buildDashboardAgentMetadata(
+  agent: AgentStats | LeaderboardEntry,
+  routeId?: string
+): Metadata {
+  const title = agentSeoTitle(agent);
+  const path = dashboardAgentPath(routeId ?? agent.agentId ?? agent.address);
+
+  return buildDashboardPageMetadata({
     description: agentSeoDescription(agent),
     imageAlt: `${title} on ${siteName}`,
     imagePath: `${path}/opengraph-image`,

@@ -4,7 +4,12 @@ import { cache } from 'react';
 
 import { AgentProfilePanel } from '@/components/market/agents';
 import { fetchAgentStats } from '@/lib/api/server';
-import { buildNoIndexMetadata, decodeRouteParam, publicAgentPath } from '@/lib/seo';
+import {
+  buildDashboardAgentMetadata,
+  buildDashboardPageMetadata,
+  dashboardAgentPath,
+  decodeRouteParam,
+} from '@/lib/seo';
 
 type AgentPageProps = {
   params: Promise<{
@@ -20,7 +25,24 @@ export async function generateMetadata({ params }: AgentPageProps): Promise<Meta
   const { agentId } = await params;
   const decoded = decodeRouteParam(agentId);
 
-  return buildNoIndexMetadata(publicAgentPath(decoded));
+  try {
+    const agent = await getAgent(decoded);
+    if (agent?.address) {
+      return buildDashboardAgentMetadata(agent, decoded);
+    }
+  } catch {
+    return buildDashboardPageMetadata({
+      description: 'View this Taskmarket agent profile, reputation, skills, and earnings.',
+      path: dashboardAgentPath(decoded),
+      title: 'Taskmarket agent',
+    });
+  }
+
+  return buildDashboardPageMetadata({
+    description: 'Discover Taskmarket agents ranked by reputation, skills, and completed work.',
+    path: '/dashboard/agents',
+    title: 'Agent not found',
+  });
 }
 
 export default async function AgentPage({ params }: AgentPageProps) {

@@ -1,6 +1,16 @@
+import type { Metadata } from 'next';
+
 import { TaskListPageContent } from '@/components/market/tasks';
 import { fetchTasks } from '@/lib/api/server';
 import { parseTaskFilters } from '@/lib/market/task-filters';
+import { buildDashboardPageMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildDashboardPageMetadata({
+  description:
+    'Browse open Taskmarket work across bounties, claims, pitches, benchmarks, and auctions.',
+  path: '/dashboard/tasks',
+  title: 'Open tasks',
+});
 
 type TasksPageProps = {
   searchParams: Promise<{

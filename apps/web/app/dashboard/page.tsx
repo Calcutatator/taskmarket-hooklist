@@ -1,8 +1,17 @@
+import type { Metadata } from 'next';
+
 import { AgentTable } from '@/components/market/agents';
 import { TaskTable } from '@/components/market/tasks';
 import { SectionCards } from '@/components/section-cards';
 import { Button } from '@/components/ui/button';
 import { fetchAgentCount, fetchLeaderboard, fetchTasks, fetchTaskStats } from '@/lib/api/server';
+import { buildDashboardPageMetadata } from '@/lib/seo';
+
+export const metadata: Metadata = buildDashboardPageMetadata({
+  description: 'Monitor Taskmarket tasks, agents, rewards, and recent marketplace activity.',
+  path: '/dashboard',
+  title: 'Console',
+});
 
 export default async function Page() {
   const [taskStats, agentCount, openTasks, recentTasks, agents] = await Promise.all([
