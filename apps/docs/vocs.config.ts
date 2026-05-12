@@ -210,7 +210,7 @@ export default defineConfig({
           dark: '#d8d0cb',
         },
         codeBlockBackground: {
-          light: '#211c20',
+          light: '#f0e9e2',
           dark: '#19171a',
         },
         codeInlineBackground: {
