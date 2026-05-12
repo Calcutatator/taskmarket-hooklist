@@ -1,14 +1,25 @@
-import { createPublicClient, http, parseAbiItem } from 'viem';
+import { createPublicClient, http, keccak256, parseAbiItem, slice, toBytes } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { db } from '../db/client';
-import { tasks, claims, agents, indexerState, platformFees } from '../db/schema';
-import { eq, sql } from 'drizzle-orm';
+import {
+  tasks,
+  claims,
+  agents,
+  bids,
+  feedbacks,
+  indexerState,
+  indexedEvents,
+  platformFees,
+  submissions,
+} from '../db/schema';
+import { and, eq, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 
 type EventLog = {
   args: Record<string, unknown>;
   eventName: string;
   blockNumber?: bigint | null;
+  logIndex?: number | null;
   transactionHash?: `0x${string}` | null;
 };
 
@@ -26,7 +37,7 @@ const IDENTITY_REGISTRY_ADDRESS = config.ERC8004_IDENTITY_REGISTRY as `0x${strin
 const ERC8004_SEED_BLOCK = config.ERC8004_SEED_BLOCK;
 
 const TASK_CREATED_EVENT = parseAbiItem(
-  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, uint8 mode)'
+  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, bytes4 mode)'
 );
 const TASK_CLAIMED_EVENT = parseAbiItem(
   'event TaskClaimed(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
@@ -38,7 +49,13 @@ const TASK_ACCEPTED_EVENT = parseAbiItem(
   'event TaskAccepted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)'
 );
 const TASK_RATED_EVENT = parseAbiItem(
-  'event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating)'
+  'event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating, uint256 raterAgentId)'
+);
+const TASK_SUBMITTED_EVENT = parseAbiItem(
+  'event TaskSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 deliverable)'
+);
+const BID_SUBMITTED_EVENT = parseAbiItem(
+  'event BidSubmitted(bytes32 indexed taskId, address indexed worker, uint256 price)'
 );
 const TASK_EXPIRED_EVENT = parseAbiItem(
   'event TaskExpired(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
@@ -61,12 +78,18 @@ const METADATA_SET_EVENT = parseAbiItem(
   'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
 );
 
-const MODE_MAP: Record<number, string> = {
-  0: 'bounty',
-  1: 'claim',
-  2: 'pitch',
-  3: 'benchmark',
-  4: 'auction',
+// Mode is emitted as bytes4(keccak256("TMP.mode.<name>")) — see ITMPMode.sol.
+// Compute the selectors once at module load so the indexer can reverse the lookup.
+function modeSelector(name: string): `0x${string}` {
+  return slice(keccak256(toBytes(name)), 0, 4);
+}
+
+const MODE_BY_SELECTOR: Record<string, string> = {
+  [modeSelector('TMP.mode.bounty').toLowerCase()]: 'bounty',
+  [modeSelector('TMP.mode.claim').toLowerCase()]: 'claim',
+  [modeSelector('TMP.mode.pitch').toLowerCase()]: 'pitch',
+  [modeSelector('TMP.mode.benchmark').toLowerCase()]: 'benchmark',
+  [modeSelector('TMP.mode.auction').toLowerCase()]: 'auction',
 };
 
 async function getLastBlock(id: string, defaultBlock: number): Promise<bigint> {
@@ -90,9 +113,48 @@ async function setLastBlock(id: string, block: bigint): Promise<void> {
     .where(eq(indexerState.id, id));
 }
 
+/**
+ * Idempotency guard. Returns true if the event at (chainId, blockNumber, logIndex)
+ * has already been processed. Callers should short-circuit when true.
+ */
+async function isAlreadyProcessed(log: EventLog): Promise<boolean> {
+  if (log.blockNumber == null || log.logIndex == null) return false;
+  const existing = await db
+    .select({ chainId: indexedEvents.chainId })
+    .from(indexedEvents)
+    .where(
+      and(
+        eq(indexedEvents.chainId, config.CHAIN_ID),
+        eq(indexedEvents.blockNumber, log.blockNumber),
+        eq(indexedEvents.logIndex, log.logIndex)
+      )
+    )
+    .limit(1);
+  return existing.length > 0;
+}
+
+/**
+ * Records that this event has been processed. Idempotent on
+ * (chainId, blockNumber, logIndex) — concurrent inserts are deduped by the PK.
+ */
+async function markProcessed(log: EventLog): Promise<void> {
+  if (log.blockNumber == null || log.logIndex == null) return;
+  await db
+    .insert(indexedEvents)
+    .values({
+      chainId: config.CHAIN_ID,
+      blockNumber: log.blockNumber,
+      logIndex: log.logIndex,
+      eventName: log.eventName,
+      txHash: log.transactionHash ?? '0x',
+    })
+    .onConflictDoNothing();
+}
+
 async function processTaskCreatedEvent(log: EventLog): Promise<void> {
   const { taskId, requester, reward, expiryTime, mode } = log.args;
-  const modeString = MODE_MAP[Number(mode)] || 'bounty';
+  const modeKey = (mode as `0x${string}`).toLowerCase();
+  const modeString = MODE_BY_SELECTOR[modeKey] || 'bounty';
 
   await db
     .insert(tasks)
@@ -168,14 +230,22 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
     .where(eq(tasks.id, taskId as string));
 
   if (Number(platformFee) > 0 && log.transactionHash) {
-    await db.insert(platformFees).values({
-      taskId: taskId as string,
-      amount: (platformFee as bigint).toString(),
-      txHash: log.transactionHash,
-    });
+    await db
+      .insert(platformFees)
+      .values({
+        taskId: taskId as string,
+        amount: (platformFee as bigint).toString(),
+        txHash: log.transactionHash,
+      })
+      .onConflictDoNothing();
   }
 
   if (Number(workerPayment) > 0) {
+    // The cumulative `agents.totalEarnings` and `agents.completedTasks` updates
+    // below use SQL `+` aggregation, which would double-count if the indexer
+    // re-processed this event. The idempotency guard at the top of processEvents
+    // prevents that: the event row exists in indexed_events before this handler
+    // runs again, so we never re-enter this branch for the same log.
     await db
       .insert(agents)
       .values({
@@ -199,14 +269,97 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
 }
 
 async function processTaskRatedEvent(log: EventLog): Promise<void> {
-  const { taskId, rating } = log.args;
+  const { taskId, worker, rating, raterAgentId } = log.args;
 
   await db
     .update(tasks)
     .set({ rating: Number(rating) })
     .where(eq(tasks.id, taskId as string));
 
-  console.log(`TaskRated event: ${taskId} - ${rating} stars`);
+  // Backfill the rater agent id onto any feedback row that the rate route already
+  // inserted but didn't populate (e.g. requester wasn't registered at the time of
+  // the rate call). Idempotent: setting the same value is a no-op.
+  if (raterAgentId !== undefined && raterAgentId !== null) {
+    const agentIdStr = (raterAgentId as bigint).toString();
+    if (agentIdStr !== '0') {
+      await db
+        .update(feedbacks)
+        .set({ requesterAgentId: agentIdStr })
+        .where(
+          and(eq(feedbacks.taskId, taskId as string), eq(feedbacks.workerAddress, worker as string))
+        );
+    }
+  }
+
+  console.log(`TaskRated event: ${taskId} - ${rating} stars (raterAgentId=${raterAgentId})`);
+}
+
+async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, deliverable } = log.args;
+
+  await db
+    .update(submissions)
+    .set({ deliverableHash: deliverable as string })
+    .where(
+      and(eq(submissions.taskId, taskId as string), eq(submissions.workerAddress, worker as string))
+    );
+
+  console.log(`TaskSubmitted event: ${taskId} by ${worker}, deliverable: ${deliverable}`);
+}
+
+async function processBidSubmittedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, price } = log.args;
+
+  // The bids router writes the canonical row at submission time via
+  // contractSubmitBid. This handler is reconciliation only: if no matching row
+  // exists yet for (taskId, worker, price), insert one keyed on tx hash so the
+  // DB and chain are eventually consistent.
+  if (!log.transactionHash) return;
+
+  const existing = await db
+    .select({ id: bids.id })
+    .from(bids)
+    .where(
+      and(
+        eq(bids.taskId, taskId as string),
+        eq(bids.workerAddress, worker as string),
+        eq(bids.price, (price as bigint).toString())
+      )
+    )
+    .limit(1);
+
+  if (existing.length === 0) {
+    await db.insert(bids).values({
+      id: log.transactionHash,
+      taskId: taskId as string,
+      workerAddress: worker as string,
+      price: (price as bigint).toString(),
+    });
+  }
+
+  console.log(`BidSubmitted event: ${taskId} by ${worker}, price: ${price}`);
+}
+
+async function processStakeForfeitedEvent(log: EventLog): Promise<void> {
+  const { taskId, claimer, stakeAmount } = log.args;
+
+  await db
+    .update(claims)
+    .set({ status: 'forfeited' })
+    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, claimer as string)));
+
+  console.log(`StakeForfeited event: ${taskId} from ${claimer}, amount: ${stakeAmount}`);
+}
+
+async function processStakeReturnedEvent(log: EventLog): Promise<void> {
+  const { taskId, claimer, stakeAmount } = log.args;
+
+  await db
+    .update(claims)
+    .set({ status: 'returned' })
+    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, claimer as string)));
+
+  console.log(`StakeReturned event: ${taskId} to ${claimer}, amount: ${stakeAmount}`);
 }
 
 async function processTaskExpiredEvent(log: EventLog): Promise<void> {
@@ -273,6 +426,8 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_WORKER_SELECTED_EVENT,
       TASK_ACCEPTED_EVENT,
       TASK_RATED_EVENT,
+      TASK_SUBMITTED_EVENT,
+      BID_SUBMITTED_EVENT,
       TASK_EXPIRED_EVENT,
       STAKE_FORFEITED_EVENT,
       STAKE_RETURNED_EVENT,
@@ -284,25 +439,53 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
 
   for (const log of logs) {
     try {
-      if (log.eventName === 'TaskCreated') {
-        await processTaskCreatedEvent(log);
-      } else if (log.eventName === 'TaskClaimed') {
-        await processTaskClaimedEvent(log);
-      } else if (log.eventName === 'TaskWorkerSelected') {
-        await processTaskWorkerSelectedEvent(log);
-      } else if (log.eventName === 'TaskAccepted') {
-        await processTaskAcceptedEvent(log);
-      } else if (log.eventName === 'TaskRated') {
-        await processTaskRatedEvent(log);
-      } else if (log.eventName === 'TaskExpired') {
-        await processTaskExpiredEvent(log);
-      } else if (log.eventName === 'TaskReopened') {
-        await processTaskReopenedEvent(log);
-      } else if (log.eventName === 'TaskCancelled') {
-        await processTaskCancelledEvent(log);
-      } else if (log.eventName === 'TaskUpdated') {
-        await processTaskUpdatedEvent(log);
+      if (await isAlreadyProcessed(log)) continue;
+
+      switch (log.eventName) {
+        case 'TaskCreated':
+          await processTaskCreatedEvent(log);
+          break;
+        case 'TaskClaimed':
+          await processTaskClaimedEvent(log);
+          break;
+        case 'TaskWorkerSelected':
+          await processTaskWorkerSelectedEvent(log);
+          break;
+        case 'TaskAccepted':
+          await processTaskAcceptedEvent(log);
+          break;
+        case 'TaskRated':
+          await processTaskRatedEvent(log);
+          break;
+        case 'TaskSubmitted':
+          await processTaskSubmittedEvent(log);
+          break;
+        case 'BidSubmitted':
+          await processBidSubmittedEvent(log);
+          break;
+        case 'TaskExpired':
+          await processTaskExpiredEvent(log);
+          break;
+        case 'StakeForfeited':
+          await processStakeForfeitedEvent(log);
+          break;
+        case 'StakeReturned':
+          await processStakeReturnedEvent(log);
+          break;
+        case 'TaskReopened':
+          await processTaskReopenedEvent(log);
+          break;
+        case 'TaskCancelled':
+          await processTaskCancelledEvent(log);
+          break;
+        case 'TaskUpdated':
+          await processTaskUpdatedEvent(log);
+          break;
+        default:
+          continue;
       }
+
+      await markProcessed(log);
     } catch (error) {
       console.error(`Error processing event ${log.eventName}:`, error);
     }

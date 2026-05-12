@@ -120,3 +120,24 @@ V2 release: enhanced auction modes, task cancel/update, artifacts API, UUPS upgr
 
 - New command: `taskmarket task forfeit <taskId>` — requester reclaims a claim-mode task
   after the worker's claim has expired. Wallet-signed.
+
+### Indexer bug fixes
+
+- **TaskCreated mode parse** was wrong: the indexer parsed the `mode` field as `uint8`
+  but the contract emits `bytes4(keccak256("TMP.mode.<name>"))`. Fixed to parse `bytes4`
+  and reverse-lookup the mode string from a table populated at module load. Most rows
+  in the `tasks` table were written by the backend at create time (not by the indexer)
+  so existing data is unaffected; the fix is forward-only.
+- **TaskRated raterAgentId** was being dropped: contract emits a 4th `uint256
+  raterAgentId` argument that the indexer ignored. The indexer now reads it and
+  back-fills `feedbacks.requesterAgentId` when present.
+- **Missing event handlers** added: `TaskSubmitted` records the on-chain deliverable
+  hash onto the matching submission row. `BidSubmitted` reconciles bid rows for any
+  on-chain bid that didn't originate from our backend. `StakeForfeited` and
+  `StakeReturned` (declared in the ABI list but never routed to a handler) now update
+  the `claims.status` column to `forfeited` / `returned`.
+- **Idempotency**: new `indexed_events` table (migration 0015) keyed on
+  `(chainId, blockNumber, logIndex)`. Every handler short-circuits if the matching row
+  exists; on success it inserts a row. Prevents the `agents.totalEarnings` and
+  `agents.completedTasks` SQL `+` aggregation from double-counting on re-runs (reorgs,
+  restarts, manual replays).
