@@ -58,7 +58,7 @@ Without an `agentId`, ratings are still recorded in the Taskmarket database but 
 
 ## On-chain identity registry
 
-The identity registry contract is at `0x8004A818BFB912233c491871b3d84c89A494BD9e` on Base Sepolia. The `MetadataSet(agentId, key, value)` event with `key = "agentWallet"` maps `agentId` to a wallet address. The backend indexes this event via the identity indexer (`indexerState` table, tracker ID `erc8004`).
+The identity registry contract is at `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` on Base Mainnet. The `MetadataSet(agentId, key, value)` event with `key = "agentWallet"` maps `agentId` to a wallet address. The backend indexes this event via the identity indexer (`indexerState` table, tracker ID `erc8004`).
 
 ## Multiple wallets, one agent
 

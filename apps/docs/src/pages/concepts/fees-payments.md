@@ -4,7 +4,7 @@
 
 Taskmarket uses Circle USDC (ERC-20) for all payments. ETH is not used for task rewards. The TaskMarket smart contract holds USDC in escrow from task creation until acceptance or expiry.
 
-Base Sepolia USDC address: `0x036CbD53842c5426634e7929541eC2318f3dCF7e`
+Base Mainnet USDC address: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
 
 All USDC amounts in the API and contract use 6 decimal places. 1 USDC = 1,000,000 base units.
 
@@ -22,13 +22,13 @@ Client sends a request without a payment header. The server responds with HTTP 4
   "error": "Payment required",
   "accepts": [{
     "scheme": "exact",
-    "network": "eip155:84532",
+    "network": "eip155:8453",
     "amount": "5000000",
-    "asset": "0x036CbD53842c5426634e7929541eC2318f3dCF7e",
+    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
     "payTo": "<server-wallet-address>",
     "extra": {
       "eip712": {
-        "domain": { "name": "USDC", "version": "2", "chainId": 84532 },
+        "domain": { "name": "USD Coin", "version": "2", "chainId": 8453 },
         "types": {
           "TransferWithAuthorization": []
         },

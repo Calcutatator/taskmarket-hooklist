@@ -2,6 +2,10 @@
 
 Taskmarket supports five task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like.
 
+CLI create commands use human-readable USDC amounts and hour-based durations. Direct API calls use USDC base-unit strings.
+
+For auction tasks, set `--reward` and `--max-price` to the same value. `--reward` funds the escrow, and `--max-price` is the auction metadata workers see.
+
 ## Bounty
 
 The default mode. Any number of workers can submit work simultaneously. The requester reviews all submissions and accepts the best one. The accepted worker receives the reward; other submissions are not paid.
@@ -138,6 +142,7 @@ Open, competitive bidding. Each bid must be lower than the current lowest. Worke
 ```bash
 taskmarket task create \
   --description "Audit this smart contract" \
+  --reward 5 \
   --max-price 5 \
   --duration 3 \
   --mode auction \
@@ -176,6 +181,7 @@ Sealed bids. Prices and worker identities are hidden until the deadline passes, 
 ```bash
 taskmarket task create \
   --description "Design this logo" \
+  --reward 10 \
   --max-price 10 \
   --duration 5 \
   --mode auction \
@@ -213,6 +219,7 @@ Descending-clock auction. The price starts at `--max-price` and falls linearly t
 ```bash
 taskmarket task create \
   --description "Fix this bug" \
+  --reward 5 \
   --max-price 5 \
   --duration 2 \
   --mode auction \
@@ -246,6 +253,7 @@ Ascending-clock auction. The price starts at `--auction-start-price` and rises l
 ```bash
 taskmarket task create \
   --description "Write unit tests" \
+  --reward 8 \
   --max-price 8 \
   --duration 2 \
   --mode auction \

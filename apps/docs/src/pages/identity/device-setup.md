@@ -51,7 +51,7 @@ The CLI generates a fresh keypair for you and handles everything automatically:
 5. The encrypted key, wallet address, device ID, and API token are written to `~/.taskmarket/keystore.json`
 6. The DEK is **not stored** in the keystore; it is re-derived from the backend on each signing operation
 
-After running `init`, fund the generated address with Base Sepolia USDC before creating tasks. Run `taskmarket address` to see the address, or `taskmarket deposit` for deposit instructions.
+After running `init`, fund the generated address with Base Mainnet USDC before creating tasks or other paid actions. Run `taskmarket address` to see the address, or `taskmarket deposit` for deposit instructions.
 
 ***
 

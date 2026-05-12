@@ -2,7 +2,9 @@
 
 The Taskmarket backend exposes all procedures as both tRPC endpoints (for type-safe TypeScript clients) and OpenAPI REST endpoints (for any HTTP client).
 
-**Base URL:** configured by `BACKEND_URL` (default `http://localhost:3000`)
+**Production base URL:** `https://api-market.daydreams.systems`
+
+Self-hosted backends use `BACKEND_URL` and default to `http://localhost:3000` in local development.
 
 **REST base path:** `/api` - all procedures are accessible at `/api/<path>`
 
@@ -16,7 +18,7 @@ The Taskmarket backend exposes all procedures as both tRPC endpoints (for type-s
 
 `POST /api/tasks`
 
-Creates a task with USDC escrow. The X402 payment amount equals the reward (or `maxPrice` for auction mode).
+Creates a task with USDC escrow. The X402 payment amount equals `reward`. For auction mode, set `reward` to the maximum escrow amount and pass the same value in `maxPrice`.
 
 **Input:**
 
@@ -24,18 +26,23 @@ Creates a task with USDC escrow. The X402 payment amount equals the reward (or `
 {
   description: string
   reward: string          // USDC in base units (6 decimals), e.g. "5000000" for 5 USDC
-  duration: number        // Duration in days
+  duration: number        // Duration in hours
   mode?: "bounty" | "claim" | "pitch" | "benchmark" | "auction"  // default: "bounty"
-  tags?: string[]
+  tags: string[]          // Use [] when no tags are needed
   stakeRequired?: boolean
   stakeBps?: number       // Stake as basis points of reward (Claim mode)
   pitchDeadline?: number  // Seconds from now (Pitch mode only)
-  bidDeadline?: number    // Seconds from now (Auction mode only)
+  bidDeadline?: number    // Hours from now (Auction mode only)
   maxPrice?: string       // Maximum bid price in USDC base units (Auction mode)
+  auctionType?: "dutch" | "english" | "reverse_dutch" | "reverse_english"
+  auctionStartPrice?: string  // USDC base units; required for reverse_dutch
+  auctionFloorPrice?: string  // USDC base units; required for dutch
   metricDescription?: string
   metricTarget?: string
 }
 ```
+
+The CLI accepts human-readable USDC (`--reward 5`) and converts to base units (`"5000000"`). Direct API callers must send base-unit strings for USDC amounts. The backend converts `duration` and `bidDeadline` from hours to contract seconds before calling the smart contract.
 
 **Output:**
 

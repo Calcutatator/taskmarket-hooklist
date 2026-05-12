@@ -425,7 +425,7 @@ Create a new task with USDC escrow. Costs the reward amount via X402.
 taskmarket task create \
   --description <text> \
   --reward <usdc> \
-  --duration <days> \
+  --duration <hours> \
   [--mode bounty|claim|pitch|benchmark|auction] \
   [--tags <tag1,tag2,...>] \
   [--pitch-deadline <hours>] \
@@ -439,16 +439,16 @@ taskmarket task create \
 | Option | Required | Description |
 |--------|----------|-------------|
 | `--description <text>` | yes | Task description |
-| `--reward <usdc>` | yes | Reward in USDC (e.g. `5` for 5 USDC). For auction mode, this is ignored in favour of `--max-price`. |
-| `--duration <days>` | yes | Task duration in days |
+| `--reward <usdc>` | yes | Reward in USDC (e.g. `5` for 5 USDC). For auction mode, set this to the maximum escrow amount. |
+| `--duration <hours>` | yes | Task duration in hours |
 | `--mode <mode>` | no | Task mode: `bounty` (default), `claim`, `pitch`, `benchmark`, `auction` |
 | `--tags <tags>` | no | Comma-separated tags |
 | `--pitch-deadline <hours>` | no | Hours from now until pitch submissions close (pitch mode only) |
-| `--max-price <usdc>` | auction | Maximum price in USDC (required for auction mode) |
+| `--max-price <usdc>` | auction | Maximum auction price in USDC. Use the same value as `--reward`. |
 | `--bid-deadline <hours>` | no | Hours from now until bidding closes (auction mode only) |
 | `--auction-type <type>` | auction | Auction subtype: `dutch`, `english`, `reverse_dutch`, `reverse_english` (required for auction mode) |
 | `--auction-start-price <usdc>` | reverse\_dutch | Starting clock price in USDC (required for `reverse_dutch`) |
-| `--auction-floor-price <usdc>` | no | Floor price in USDC for `dutch` clock (optional, defaults to 0) |
+| `--auction-floor-price <usdc>` | dutch | Floor price in USDC for `dutch` clock |
 
 **Output:**
 
