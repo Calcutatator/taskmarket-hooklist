@@ -105,9 +105,25 @@ export const TaskInboxResponseSchema = z.object({
   asWorker: z.array(TaskResponseSchema),
 });
 
+export const PendingActionName = z.enum([
+  'accept',
+  'auction_accept',
+  'bid',
+  'cancel',
+  'claim',
+  'forfeit',
+  'pitch',
+  'rate',
+  'select_winner',
+  'select_worker',
+  'submit',
+  'submit_proof',
+  'update',
+]);
+
 export const PendingActionSchema = z.object({
   role: z.enum(['requester', 'worker']),
-  action: z.string(),
+  action: PendingActionName,
   command: z.string(),
 });
 
@@ -136,6 +152,7 @@ export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
 export type PendingAction = z.infer<typeof PendingActionSchema>;
+export type PendingActionNameValue = z.infer<typeof PendingActionName>;
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
