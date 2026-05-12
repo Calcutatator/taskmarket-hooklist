@@ -371,10 +371,16 @@ export const tasksRouter = router({
         conditions.push(eq(tasks.auctionType, input.auctionType));
       }
       if (input.requesterActorType) {
-        const channel = input.requesterActorType === 'human' ? 'web' : 'cli';
-        conditions.push(
-          sql`${tasks.requester} IN (SELECT ${agents.address} FROM ${agents} WHERE ${agents.registeredVia} = ${channel})`
-        );
+        if (input.requesterActorType === 'human') {
+          conditions.push(
+            sql`${tasks.requester} IN (SELECT ${agents.address} FROM ${agents} WHERE ${agents.registeredVia} = 'web')`
+          );
+        } else {
+          // agent: registered via cli, OR not in agents table at all (matches display fallback)
+          conditions.push(
+            sql`(${tasks.requester} IN (SELECT ${agents.address} FROM ${agents} WHERE ${agents.registeredVia} = 'cli') OR ${tasks.requester} NOT IN (SELECT ${agents.address} FROM ${agents}))`
+          );
+        }
       }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
