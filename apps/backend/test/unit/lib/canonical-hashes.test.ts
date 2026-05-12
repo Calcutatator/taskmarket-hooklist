@@ -18,7 +18,7 @@ describe('canonical-hashes', () => {
   describe('artifact manifest', () => {
     const rows: ArtifactManifestRow[] = [
       {
-        role: 'primary',
+        role: 'final',
         fileName: 'result.png',
         mimeType: 'image/png',
         mediaKind: 'image',
