@@ -32,16 +32,20 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  // 2. Worker submits pitch
-  log('2/7', 'Worker submitting pitch...');
-  const pitchSig = await worker.signMessage({ message: `taskmarket:pitch:${taskId}` });
-  const { pitchId } = (await post(`/api/tasks/${taskId}/pitches`, {
-    taskId,
-    workerAddress: worker.address,
-    pitchText: 'I will build a responsive landing page using React and Tailwind CSS with wallet connect integration.',
-    estimatedDuration: 8,
-    signature: pitchSig,
-  })) as { pitchId: string };
+  // 2. Worker submits pitch (X402-paid, anchors hash on-chain)
+  log('2/7', 'Worker submitting pitch (X402)...');
+  const { pitchId } = (await x402Post(
+    `/api/tasks/${taskId}/pitches`,
+    {
+      taskId,
+      workerAddress: worker.address,
+      pitchText:
+        'I will build a responsive landing page using React and Tailwind CSS with wallet connect integration.',
+      estimatedDuration: 8,
+      signature: '0x',
+    },
+    worker
+  )) as { pitchId: string };
   ok('pitchId', pitchId);
 
   // 3. Requester selects pitch

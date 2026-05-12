@@ -4,8 +4,10 @@ import { z } from 'zod';
 import { proofs, tasks, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { recoverMessageAddress } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { TRPCError } from '@trpc/server';
+import { contractSubmitProof } from '../services/contract';
+import { buildProofHash } from '../lib/canonical-hashes';
 
 export const proofsRouter = router({
   submit: publicProcedure
@@ -40,24 +42,49 @@ export const proofsRouter = router({
         throw new Error('Task not open for proof submission');
       }
 
-      const message = `taskmarket:proof:${input.taskId}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      // X402 payment guard: same pattern as pitches — middleware sets payer,
+      // we enforce payer == workerAddress so a worker can't pay to submit a
+      // proof masquerading as someone else.
+      const payer: string | undefined = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Payment required: missing payer' });
       }
-      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+      if (payer.toLowerCase() !== input.workerAddress.toLowerCase()) {
         throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Signature does not match worker address',
+          code: 'FORBIDDEN',
+          message: 'Payer must match workerAddress',
         });
       }
 
+      // Parse metricValue as uint256. Empty string → 0. Reject non-integer input.
+      let metricValueBig: bigint;
+      try {
+        metricValueBig = input.metricValue ? BigInt(input.metricValue) : 0n;
+        if (metricValueBig < 0n) throw new Error('negative');
+      } catch {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'metricValue must be a non-negative integer',
+        });
+      }
+
+      const proofHash = buildProofHash(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        input.proofData
+      );
+      const proofTypeBytes32 = keccak256(toBytes(input.proofType));
+
       const proofId = randomUUID();
+
+      const submitTxHash = await contractSubmitProof(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        proofHash,
+        proofTypeBytes32,
+        metricValueBig,
+        task.contractAddress
+      );
 
       await ctx.db.insert(proofs).values({
         id: proofId,
@@ -68,6 +95,8 @@ export const proofsRouter = router({
         metricValue: input.metricValue || null,
         signature: input.signature,
         status: 'pending',
+        proofHash,
+        submitTxHash,
       });
 
       return { success: true, proofId };

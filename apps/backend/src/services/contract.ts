@@ -29,6 +29,8 @@ const MARKET_ABI = parseAbi([
   'function submitBid(bytes32,uint256)',
   'function selectLowestBidder(bytes32)',
   'function acceptAuction(bytes32,uint256)',
+  'function submitPitch(bytes32,bytes32)',
+  'function submitProof(bytes32,bytes32,bytes32,uint256)',
   'function cancelTask(bytes32)',
   'function updateTask(bytes32,uint256,uint256,uint256,uint256)',
   'function forfeitAndReopen(bytes32)',
@@ -266,6 +268,36 @@ export async function contractSubmitBid(
     abi: MARKET_ABI,
     functionName: 'submitBid',
     args: [taskId, price],
+  });
+  return relayThroughForwarder(worker, 0n, data);
+}
+
+export async function contractSubmitPitch(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  pitchHash: `0x${string}`,
+  _contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'submitPitch',
+    args: [taskId, pitchHash],
+  });
+  return relayThroughForwarder(worker, 0n, data);
+}
+
+export async function contractSubmitProof(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  proofHash: `0x${string}`,
+  proofType: `0x${string}`,
+  metricValue: bigint,
+  _contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'submitProof',
+    args: [taskId, proofHash, proofType, metricValue],
   });
   return relayThroughForwarder(worker, 0n, data);
 }

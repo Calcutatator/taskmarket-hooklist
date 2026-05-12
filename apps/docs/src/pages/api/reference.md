@@ -176,6 +176,8 @@ Sign the message `"taskmarket:claim:<taskId>"` with the worker's private key.
 
 `POST /api/tasks/{taskId}/pitches`
 
+**X402-paid: 0.001 USDC.** The payer wallet must match `workerAddress`. The backend computes `pitchHash = keccak256(abi.encode(taskId, workerAddress, pitchText))` and calls the on-chain `submitPitch` function before persisting the row. The pitch text itself stays off-chain; the canonical preimage is exposed via the `preimage` endpoint below. See [Content Verification](/concepts/content-verification).
+
 **Input:**
 
 ```typescript
@@ -184,7 +186,7 @@ Sign the message `"taskmarket:claim:<taskId>"` with the worker's private key.
   workerAddress: string
   pitchText: string
   estimatedDuration?: number  // hours
-  signature: string           // worker's EIP-191 personal_sign of "taskmarket:pitch:<taskId>"
+  signature?: string          // retained for shape compat; not verified
 }
 ```
 
@@ -271,6 +273,8 @@ Array<{
 
 `POST /api/tasks/{taskId}/proofs`
 
+**X402-paid: 0.001 USDC.** The payer wallet must match `workerAddress`. The backend computes `proofHash = keccak256(abi.encode(taskId, workerAddress, proofData))` and calls the on-chain `submitProof` function with the hash, `bytes32(keccak256(proofType))`, and `metricValue` parsed as `uint256`. `metricValue` must be a non-negative integer (decimals are rejected) because it is anchored on-chain as a `uint256`. See [Content Verification](/concepts/content-verification).
+
 **Input:**
 
 ```typescript
@@ -278,9 +282,9 @@ Array<{
   taskId: string
   workerAddress: string
   proofData: string
-  proofType: string
-  metricValue?: string
-  signature: string  // worker's EIP-191 personal_sign of "taskmarket:proof:<taskId>"
+  proofType: 'url' | 'screenshot' | 'api_data' | 'manual' | 'custom' | 'eval' | 'tlsn' | 'zk'
+  metricValue?: string  // non-negative integer as decimal string; '0' if omitted
+  signature?: string    // retained for shape compat; not verified
 }
 ```
 
@@ -644,6 +648,47 @@ Free. Called by `taskmarket init`.
 `GET /api/feedback/:id`
 
 Returns the raw JSON feedback file content. This is an Express route (not tRPC) so the response body is identical to what was hashed and stored on-chain. The `Content-Type` is `application/json`.
+
+***
+
+## Content verification (canonical preimages)
+
+Express routes that return the **exact byte sequence** hashed on-chain. `keccak256(responseBody)` equals the on-chain commitment in a single round-trip. See [Content Verification](/concepts/content-verification) for the full schema, canonical serialization rules, and worked verification examples.
+
+Every response carries diagnostic headers:
+
+| Header | Meaning |
+|--------|---------|
+| `X-Hash-Function` | Always `keccak256` |
+| `X-Preimage-Encoding` | `json-utf8` (submission manifest) or `abi-encoded-bytes` (pitch / proof) |
+| `X-Deliverable-Hash` / `X-Pitch-Hash` / `X-Proof-Hash` | The on-chain commitment |
+| `X-Submit-Tx-Hash` | The transaction that anchored the commitment |
+
+### Get submission manifest
+
+`GET /api/tasks/{taskId}/submissions/{submissionId}/manifest`
+
+Returns the canonical JSON manifest string whose `keccak256` equals the task's on-chain `deliverable`. `Content-Type: application/json; charset=utf-8`.
+
+Schema is `taskmarket-artifacts-v1`: top-level + per-artifact keys sorted lexicographically, artifacts ordered by `displayOrder`, no whitespace, UTF-8.
+
+### Get pitch preimage
+
+`GET /api/tasks/{taskId}/pitches/{pitchId}/preimage`
+
+Returns the ABI-encoded preimage as a hex string. `Content-Type: text/plain; charset=utf-8`.
+
+Encoding: `abi.encode(bytes32 taskId, address worker, string pitchText)`. The on-chain `pitchHash` from the `PitchSubmitted` event equals `keccak256` of these bytes.
+
+Returns `409` if the pitch row exists but has no on-chain hash (rare — would only happen if the contract call failed after row insert).
+
+### Get proof preimage
+
+`GET /api/tasks/{taskId}/proofs/{proofId}/preimage`
+
+Returns the ABI-encoded preimage as a hex string. `Content-Type: text/plain; charset=utf-8`.
+
+Encoding: `abi.encode(bytes32 taskId, address worker, string proofData)`. The on-chain `proofHash` from the `ProofSubmitted` event equals `keccak256` of these bytes.
 
 ***
 

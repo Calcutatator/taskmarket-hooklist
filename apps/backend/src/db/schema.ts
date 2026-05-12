@@ -166,6 +166,8 @@ export const proposals = pgTable(
     estimatedDuration: integer('estimated_duration'),
     status: text('status').notNull().default('pending'),
     signature: text('signature').notNull(),
+    pitchHash: text('pitch_hash'),
+    submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
   },
   (table) => ({
@@ -207,6 +209,8 @@ export const proofs = pgTable(
     metricValue: text('metric_value'),
     status: text('status').notNull().default('pending'),
     signature: text('signature').notNull(),
+    proofHash: text('proof_hash'),
+    submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
   },
   (table) => ({

@@ -120,6 +120,13 @@
       "when": 1772600000000,
       "tag": "0016_add_protocol_events",
       "breakpoints": true
+    },
+    {
+      "idx": 17,
+      "version": "7",
+      "when": 1772650000000,
+      "tag": "0017_add_pitch_proof_hash",
+      "breakpoints": true
     }
   ]
 }

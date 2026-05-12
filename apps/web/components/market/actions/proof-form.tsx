@@ -1,7 +1,7 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -15,7 +15,8 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { signAndPost } from '@/lib/wallet-sign-action';
+import { explorerTxUrl } from '@/lib/explorer';
+import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -24,18 +25,21 @@ const PROOF_TYPES = ['custom', 'eval', 'tlsn', 'zk'] as const;
 
 export function ProofForm({ disabled, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
-  const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { switchChainAsync } = useSwitchChain();
   const [proofData, setProofData] = useState('');
   const [proofType, setProofType] = useState<string>('custom');
   const [metricValue, setMetricValue] = useState('');
-  const [pending, setPending] = useState(false);
+  const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [done, setDone] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to submit benchmark proof." />;
   }
+
+  const busy = step !== 'idle' && step !== 'done';
 
   async function handleProof() {
     setError(null);
@@ -44,29 +48,66 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
       setFieldErrors({ proofData: 'Proof data is required' });
       return;
     }
+    if (metricValue.trim().length > 0) {
+      try {
+        BigInt(metricValue.trim());
+      } catch {
+        setFieldErrors({ metricValue: 'Must be a non-negative integer' });
+        return;
+      }
+    }
 
-    const extra: Record<string, unknown> = { proofData: proofData.trim(), proofType };
-    if (metricValue.trim().length > 0) extra.metricValue = metricValue.trim();
-
-    setPending(true);
-    const result = await signAndPost<{ proofId: string }>({
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      extraBody: extra,
-      path: `/api/tasks/${task.id}/proofs`,
+    const body: Record<string, unknown> = {
       taskId: task.id,
-      verbForMessage: 'proof',
-    });
-    setPending(false);
+      workerAddress: address,
+      proofData: proofData.trim(),
+      proofType,
+      signature: '0x',
+    };
+    if (metricValue.trim().length > 0) body.metricValue = metricValue.trim();
+
+    const result = await payX402Post<{ proofId: string; txHash?: string }>(
+      `/api/tasks/${task.id}/proofs`,
+      body,
+      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+      setStep
+    );
     if (result.ok) {
-      setDone(true);
-    } else if (!result.rejected) {
-      setError(result.error);
+      setStep('done');
+      setTxHash(result.txHash ?? null);
+    } else {
+      setStep('idle');
+      if (!result.rejected) setError(result.error);
     }
   }
 
-  if (done) {
-    return <span className="font-mono text-sm text-primary">✓ Proof submitted</span>;
+  if (step === 'done') {
+    const url = txHash ? explorerTxUrl(txHash) : null;
+    return (
+      <div className="grid gap-1 text-sm">
+        <span className="font-mono text-primary">✓ Proof submitted</span>
+        {url ? (
+          <a
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            href={url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View anchoring tx
+          </a>
+        ) : null}
+      </div>
+    );
   }
+
+  const label =
+    step === 'payment'
+      ? 'Fetching payment…'
+      : step === 'signing'
+        ? 'Sign payment…'
+        : step === 'submitting'
+          ? 'Anchoring on-chain…'
+          : 'Submit proof';
 
   return (
     <div className="grid gap-3">
@@ -99,19 +140,25 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
         </Select>
       </div>
       <div className="grid gap-1">
-        <Label htmlFor="proof-metric">Metric value (optional)</Label>
+        <Label htmlFor="proof-metric">Metric value (optional, integer)</Label>
         <Input
           id="proof-metric"
+          inputMode="numeric"
           onChange={(e) => setMetricValue(e.currentTarget.value)}
-          placeholder="e.g. 0.93"
+          placeholder="e.g. 9500"
           type="text"
           value={metricValue}
         />
+        {fieldErrors.metricValue ? (
+          <p className="text-xs text-destructive">{fieldErrors.metricValue}</p>
+        ) : null}
       </div>
-      <Button disabled={disabled || pending} onClick={handleProof} size="sm">
-        {pending ? 'Submitting…' : 'Submit proof'}
+      <Button disabled={disabled || busy} onClick={handleProof} size="sm">
+        {label}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
+      <p className="text-xs text-muted-foreground">
+        Costs 0.001 USDC. Anchors a tamper-proof hash of your proof on-chain.
+      </p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

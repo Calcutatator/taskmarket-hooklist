@@ -3,23 +3,15 @@ import { createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
   contractSelectWorker: vi.fn().mockResolvedValue('0xselecttx'),
+  contractSubmitPitch: vi.fn().mockResolvedValue('0xpitchtx'),
 }));
-
-vi.mock('viem', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('viem')>();
-  return {
-    ...actual,
-    recoverMessageAddress: vi.fn(),
-  };
-});
 
 import { pitchesRouter } from '../../../src/routers/pitches.router';
 import { contractSelectWorker } from '../../../src/services/contract';
-import { recoverMessageAddress } from 'viem';
 
-const REQUESTER = '0xRequester0000000000000000000000000000001';
-const WORKER = '0xWorker0000000000000000000000000000000001';
-const TASK_ID = '0xtask0000000000000000000000000000000001';
+const REQUESTER = '0xRe9ue57e10000000000000000000000000000001';
+const WORKER = '0x0000000000000000000000000000000000000001';
+const TASK_ID = '0x7461736b00000000000000000000000000000000000000000000000000000001';
 const PITCH_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeTask(overrides: Record<string, any> = {}) {
@@ -110,11 +102,8 @@ describe('pitches router', () => {
     });
 
     it('inserts pitch and returns proposalId on happy path', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])); // no duplicate
+      const ctx = createMockCtx(WORKER); // X402 payer = worker
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -124,30 +113,21 @@ describe('pitches router', () => {
       expect(ctx.db.insert).toHaveBeenCalledOnce();
     });
 
-    it('throws BAD_REQUEST when signature is invalid', async () => {
-      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-      const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])); // no duplicate
+    it('throws BAD_REQUEST when X402 payer is missing', async () => {
+      const ctx = createMockCtx(); // no payer
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow('Invalid signature');
+      await expect(caller.submit(submitInput)).rejects.toThrow('Payment required');
     });
 
-    it('throws UNAUTHORIZED when signature is from different address', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
-        '0x0000000000000000000000000000000000000001' as `0x${string}`
-      );
-      const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])); // no duplicate
+    it('throws FORBIDDEN when X402 payer does not match workerAddress', async () => {
+      const OTHER = '0x9999999999999999999999999999999999999999';
+      const ctx = createMockCtx(OTHER);
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow(
-        'Signature does not match worker address'
-      );
+      await expect(caller.submit(submitInput)).rejects.toThrow('Payer must match workerAddress');
     });
   });
 

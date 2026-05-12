@@ -18,9 +18,10 @@ import {
 import { eq, inArray } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID, createHash } from 'crypto';
-import { recoverMessageAddress, keccak256, toBytes } from 'viem';
+import { recoverMessageAddress, keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
+import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -133,50 +134,6 @@ function extensionForMimeType(mimeType: string): string {
 
 function safeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255) || 'artifact';
-}
-
-function sortKeys(value: unknown): unknown {
-  if (Array.isArray(value)) return value.map(sortKeys);
-  if (value !== null && typeof value === 'object') {
-    return Object.fromEntries(
-      Object.keys(value as Record<string, unknown>)
-        .sort()
-        .map((key) => [key, sortKeys((value as Record<string, unknown>)[key])])
-    );
-  }
-  return value;
-}
-
-function buildArtifactManifestHash(
-  artifactRows: Array<{
-    role: ArtifactRoleValue;
-    fileName: string;
-    mimeType: string;
-    mediaKind: ArtifactMediaKindValue;
-    sizeBytes: number;
-    sha256Hash: string;
-    keccak256Hash: string;
-    displayOrder: number;
-  }>
-): `0x${string}` {
-  const manifest = sortKeys({
-    version: 'taskmarket-artifacts-v1',
-    artifacts: artifactRows
-      .slice()
-      .sort((a, b) => a.displayOrder - b.displayOrder)
-      .map((artifact) => ({
-        role: artifact.role,
-        fileName: artifact.fileName,
-        mimeType: artifact.mimeType,
-        mediaKind: artifact.mediaKind,
-        sizeBytes: artifact.sizeBytes,
-        sha256Hash: artifact.sha256Hash,
-        keccak256Hash: artifact.keccak256Hash,
-        displayOrder: artifact.displayOrder,
-      })),
-  });
-
-  return keccak256(toBytes(JSON.stringify(manifest))) as `0x${string}`;
 }
 
 function toArtifactResponse(row: Artifact, workerAddress: string, workerAgentId: string | null) {

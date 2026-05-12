@@ -146,3 +146,75 @@ V2 release: enhanced auction modes, task cancel/update, artifacts API, UUPS upgr
   (migration 0016, `jsonb args` column) so every protocol-config change has a queryable
   history with full provenance — useful for surfacing operator activity in the UI and
   for after-the-fact debugging when a config change broke something downstream.
+
+### Contract — on-chain pitches, proofs, AuctionAccepted
+
+Three new events extend TaskMarket's surface to cover flows that were previously
+off-chain:
+
+- `PitchSubmitted(taskId, worker, pitchHash)`
+- `ProofSubmitted(taskId, worker, proofHash, proofType, metricValue)`
+- `AuctionAccepted(taskId, worker, acceptedPrice)` — coexists with the legacy
+  `BidSubmitted + TaskWorkerSelected` pair emitted by `acceptAuction`; new
+  indexers should prefer this single event.
+
+Two new functions anchor content hashes on-chain (pitch text and proof data stay
+off-chain; the hash is a tamper-proof commitment third parties can verify against
+operator-served content):
+
+- `submitPitch(taskId, pitchHash)` — pitch-mode tasks, X402-paid (0.001 USDC)
+- `submitProof(taskId, proofHash, proofType, metricValue)` — benchmark mode, X402-paid
+
+Storage layout: 2 new mappings appended at slots 10–11 (`taskPitchHashes`,
+`taskProofHashes`), `__gap` shrunk from 48 to 46. Before/after JSON snapshots
+plus a `verify-storage-layout.ts` script committed for UUPS upgrade safety.
+
+### Backend — X402 on pitches and proofs
+
+**BREAKING:** `POST /api/tasks/{taskId}/pitches` and `POST /api/tasks/{taskId}/proofs`
+now require an X402 payment (0.001 USDC) instead of a wallet signature. The
+endpoints validate that the X402 payer matches `workerAddress` (replaces the
+previous signature-recovery check). Each successful submission computes a
+domain-separated keccak256 content hash and calls the corresponding contract
+function before persisting the DB row; the new `pitch_hash` / `proof_hash` and
+`submit_tx_hash` columns (migration 0017) link the off-chain content to its
+on-chain anchor.
+
+The indexer adds handlers for all three new events: `PitchSubmitted` /
+`ProofSubmitted` reconcile the DB row with the on-chain hash and tx hash,
+`AuctionAccepted` is an idempotent witness for the existing auction-accept flow.
+
+### CLI
+
+- `taskmarket task pitch` and `taskmarket task proof` now use the X402 flow
+  (previously plain `apiPost`). Both cost 0.001 USDC per submission and
+  anchor a hash of the content on-chain.
+
+### Web
+
+- `PitchForm` and `ProofForm` now use `payX402Post` (previously the wallet-signed
+  helper). Same flow as accept/rate/cancel — cost badge, sign-then-anchor steps,
+  explorer tx link on success.
+
+### Content verification (public API)
+
+Three new public `GET` endpoints expose the canonical preimage that was hashed
+on-chain, so any third party can verify operator-served content matches the
+on-chain commitment in a single round-trip:
+
+- `GET /api/tasks/{taskId}/submissions/{submissionId}/manifest` — returns the
+  exact JSON manifest bytes whose `keccak256` equals the task's `deliverable`.
+- `GET /api/tasks/{taskId}/pitches/{pitchId}/preimage` — returns the ABI-encoded
+  preimage `(taskId, worker, pitchText)` as a hex string whose `keccak256`
+  equals the on-chain `pitchHash`.
+- `GET /api/tasks/{taskId}/proofs/{proofId}/preimage` — same shape as the pitch
+  preimage but for benchmark proof data.
+
+Each response carries diagnostic headers (`X-Hash-Function`, `X-Preimage-Encoding`,
+`X-Deliverable-Hash` / `X-Pitch-Hash` / `X-Proof-Hash`, `X-Submit-Tx-Hash`)
+so verifiers can cross-check without reading the body.
+
+A new docs page at `/concepts/content-verification` documents the canonical
+manifest schema (`taskmarket-artifacts-v1`, key-sorted, no whitespace, UTF-8),
+the ABI encoding for pitch and proof preimages, and `curl + cast keccak`
+verification examples.

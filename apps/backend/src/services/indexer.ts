@@ -10,6 +10,8 @@ import {
   indexerState,
   indexedEvents,
   platformFees,
+  proofs,
+  proposals,
   protocolEvents,
   submissions,
 } from '../db/schema';
@@ -73,6 +75,15 @@ const TASK_CANCELLED_EVENT = parseAbiItem(
 );
 const TASK_UPDATED_EVENT = parseAbiItem(
   'event TaskUpdated(bytes32 indexed taskId, uint256 newReward, uint256 newExpiryTime)'
+);
+const PITCH_SUBMITTED_EVENT = parseAbiItem(
+  'event PitchSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 pitchHash)'
+);
+const PROOF_SUBMITTED_EVENT = parseAbiItem(
+  'event ProofSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 proofHash, bytes32 proofType, uint256 metricValue)'
+);
+const AUCTION_ACCEPTED_EVENT = parseAbiItem(
+  'event AuctionAccepted(bytes32 indexed taskId, address indexed worker, uint256 acceptedPrice)'
 );
 const FEES_UPDATED_EVENT = parseAbiItem('event FeesUpdated(uint16 newFeeBps)');
 const FEE_RECIPIENT_UPDATED_EVENT = parseAbiItem('event FeeRecipientUpdated(address newRecipient)');
@@ -407,6 +418,52 @@ async function processTaskUpdatedEvent(log: EventLog): Promise<void> {
   console.log(`TaskUpdated event: ${taskId}`);
 }
 
+async function processPitchSubmittedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, pitchHash } = log.args;
+  if (!log.transactionHash) return;
+
+  // The pitches router writes the canonical row at submission time with the
+  // same pitchHash and submitTxHash. Reconciliation only — if the row exists
+  // but the hash/txHash were never persisted (e.g. server crashed between
+  // contract call and DB insert), patch them in here.
+  await db
+    .update(proposals)
+    .set({ pitchHash: pitchHash as string, submitTxHash: log.transactionHash })
+    .where(
+      and(eq(proposals.taskId, taskId as string), eq(proposals.workerAddress, worker as string))
+    );
+
+  console.log(`PitchSubmitted event: ${taskId} by ${worker}, hash: ${pitchHash}`);
+}
+
+async function processProofSubmittedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, proofHash } = log.args;
+  if (!log.transactionHash) return;
+
+  await db
+    .update(proofs)
+    .set({ proofHash: proofHash as string, submitTxHash: log.transactionHash })
+    .where(and(eq(proofs.taskId, taskId as string), eq(proofs.workerAddress, worker as string)));
+
+  console.log(`ProofSubmitted event: ${taskId} by ${worker}, hash: ${proofHash}`);
+}
+
+async function processAuctionAcceptedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker, acceptedPrice } = log.args;
+
+  // Idempotent reconciliation: the acceptAuction router already moved the task
+  // to status=claimed with this worker; this handler is the on-chain witness.
+  // Mostly a no-op DB-wise (state already reflected), but it does ensure the
+  // task row is consistent with the chain in cases where the router-side write
+  // failed after the contract call landed.
+  await db
+    .update(tasks)
+    .set({ status: 'claimed', worker: worker as string })
+    .where(eq(tasks.id, taskId as string));
+
+  console.log(`AuctionAccepted event: ${taskId} by ${worker}, price: ${acceptedPrice}`);
+}
+
 /**
  * Generic handler for the four admin/config events. Writes the raw event args
  * to the protocol_events audit log so we have a queryable history of every
@@ -472,6 +529,9 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_REOPENED_EVENT,
       TASK_CANCELLED_EVENT,
       TASK_UPDATED_EVENT,
+      PITCH_SUBMITTED_EVENT,
+      PROOF_SUBMITTED_EVENT,
+      AUCTION_ACCEPTED_EVENT,
       FEES_UPDATED_EVENT,
       FEE_RECIPIENT_UPDATED_EVENT,
       FORWARDER_UPDATED_EVENT,
@@ -522,6 +582,15 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
           break;
         case 'TaskUpdated':
           await processTaskUpdatedEvent(log);
+          break;
+        case 'PitchSubmitted':
+          await processPitchSubmittedEvent(log);
+          break;
+        case 'ProofSubmitted':
+          await processProofSubmittedEvent(log);
+          break;
+        case 'AuctionAccepted':
+          await processAuctionAcceptedEvent(log);
           break;
         case 'FeesUpdated':
         case 'FeeRecipientUpdated':
