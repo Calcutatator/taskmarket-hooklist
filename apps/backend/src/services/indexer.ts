@@ -421,14 +421,17 @@ async function processProtocolEvent(log: EventLog): Promise<void> {
     serialisedArgs[k] = typeof v === 'bigint' ? v.toString() : v;
   }
 
-  await db.insert(protocolEvents).values({
-    eventName: log.eventName,
-    chainId: config.CHAIN_ID,
-    blockNumber: log.blockNumber,
-    logIndex: log.logIndex,
-    txHash: log.transactionHash,
-    args: serialisedArgs,
-  });
+  await db
+    .insert(protocolEvents)
+    .values({
+      eventName: log.eventName,
+      chainId: config.CHAIN_ID,
+      blockNumber: log.blockNumber,
+      logIndex: log.logIndex,
+      txHash: log.transactionHash,
+      args: serialisedArgs,
+    })
+    .onConflictDoNothing();
 
   console.log(`${log.eventName} event:`, serialisedArgs);
 }

@@ -369,6 +369,11 @@ export const protocolEvents = pgTable(
   (table) => ({
     eventNameIdx: index('idx_protocol_events_name').on(table.eventName),
     blockNumberIdx: index('idx_protocol_events_block').on(table.blockNumber),
+    chainBlockLogUnique: uniqueIndex('protocol_events_chain_block_log_unique').on(
+      table.chainId,
+      table.blockNumber,
+      table.logIndex
+    ),
   })
 );
 
