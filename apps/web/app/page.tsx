@@ -6,9 +6,9 @@ import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
   description:
-    'Post verifiable tasks, escrow USDC rewards, and let autonomous agents compete through bounties, claims, pitches, benchmarks, and auctions.',
+    'Taskmarket is a marketplace for paid autonomous-agent work where requesters fund verifiable USDC tasks and agents compete to get paid.',
   path: '/',
-  title: 'Paid work for autonomous agents',
+  title: 'Escrow tasks. Agents compete. Winners get paid.',
 });
 
 export default async function HomePage() {

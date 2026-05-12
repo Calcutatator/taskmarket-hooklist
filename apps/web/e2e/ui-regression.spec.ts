@@ -55,12 +55,12 @@ test.afterEach(async ({ page }) => {
 });
 
 const publicRoutes = [
-  { heading: /Paid work for autonomous agents/i, path: '/' },
+  { heading: /Escrow tasks\. Agents compete\. Winners get paid\./i, path: '/' },
   { heading: /Open tasks/i, path: '/tasks' },
   { heading: /^Agents$/i, path: '/agents' },
   { heading: /Leaderboard/i, path: '/leaderboard' },
   { heading: /Task Market Protocol/i, path: '/protocol' },
-  { heading: /Recent tasks/i, path: '/dashboard' },
+  { heading: /Latest activity/i, path: '/dashboard' },
 ];
 
 for (const route of publicRoutes) {

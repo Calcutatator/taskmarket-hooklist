@@ -10,8 +10,10 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
+import type { ReactNode } from 'react';
 
 import { ArtifactPreviewButton } from '@/components/market/artifact-preview-button';
+import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -71,6 +73,147 @@ function formatUsdc(value: string | null | undefined) {
 
 function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
+}
+
+function formatDateTime(value?: string | null) {
+  if (!value) {
+    return 'Not set';
+  }
+
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return 'Not set';
+  }
+
+  return date.toLocaleString();
+}
+
+function formatBps(value?: number | null) {
+  if (!value) {
+    return 'None';
+  }
+
+  return `${(value / 100).toFixed(2)}%`;
+}
+
+function countLabel(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
+function taskDeadlineLabel(task: TaskDetailResponse | TaskResponse) {
+  if (task.mode === 'auction' && task.bidDeadline) {
+    return formatDateTime(task.bidDeadline);
+  }
+
+  if (task.mode === 'pitch' && task.pitchDeadline) {
+    return formatDateTime(task.pitchDeadline);
+  }
+
+  return formatDateTime(task.expiryTime);
+}
+
+function statusContext(task: TaskDetailResponse | TaskResponse) {
+  const expiry = new Date(task.expiryTime);
+  if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
+    return 'Expired open task';
+  }
+
+  switch (task.status) {
+    case 'open':
+      return 'Accepting work';
+    case 'claimed':
+      return 'Worker assigned';
+    case 'worker_selected':
+      return 'Pitch selected';
+    case 'pending_approval':
+      return 'Awaiting requester review';
+    case 'accepted':
+      return task.rating === null ? 'Payout accepted, rating pending' : 'Payout accepted';
+    case 'completed':
+      return 'Completed';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'expired':
+      return 'Expired';
+    case 'disputed':
+      return 'Disputed';
+    default:
+      return labelize(task.status);
+  }
+}
+
+function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
+  const expiry = new Date(task.expiryTime);
+  if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
+    return 'This task has passed its expiry time, so no open commands are available.';
+  }
+
+  switch (task.status) {
+    case 'accepted':
+      return task.rating === null
+        ? 'The payout has been accepted. The requester can rate once a rating command is available.'
+        : 'The payout and rating are complete.';
+    case 'completed':
+      return 'This task is complete.';
+    case 'cancelled':
+      return 'This task was cancelled.';
+    case 'expired':
+      return 'This task expired before work could continue.';
+    case 'disputed':
+      return 'This task is disputed and needs off-flow resolution.';
+    default:
+      return 'There is no CLI action available for the current mode and status.';
+  }
+}
+
+function activityEmptyCopy(task: TaskDetailResponse | TaskResponse) {
+  switch (task.mode) {
+    case 'auction':
+      return task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch'
+        ? 'Auction acceptance activity will appear here after a worker takes the clock price.'
+        : 'Bids will appear here as workers compete before the bid deadline.';
+    case 'benchmark':
+      return 'Benchmark proofs will appear here after workers submit metric evidence.';
+    case 'claim':
+      return 'Claim and submission activity will appear here after a worker reserves the task.';
+    case 'pitch':
+      return 'Worker pitches will appear here for requester selection.';
+    case 'bounty':
+    default:
+      return 'Submissions will appear here after workers upload deliverables.';
+  }
+}
+
+function activityCount(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
+  switch (task.mode) {
+    case 'auction':
+      return task.auctionBidCount ?? modeData?.bids?.length ?? 0;
+    case 'benchmark':
+      return modeData?.proofs?.length ?? 0;
+    case 'pitch':
+      return task.pitchCount ?? modeData?.pitches?.length ?? 0;
+    case 'claim':
+    case 'bounty':
+    default:
+      return task.submissionCount ?? modeData?.submissions?.length ?? 0;
+  }
+}
+
+function activityLabel(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
+  const count = activityCount(task, modeData);
+
+  switch (task.mode) {
+    case 'auction':
+      return countLabel(count, 'bid');
+    case 'benchmark':
+      return countLabel(count, 'proof');
+    case 'pitch':
+      return countLabel(count, 'pitch', 'pitches');
+    case 'claim':
+    case 'bounty':
+    default:
+      return countLabel(count, 'submission');
+  }
 }
 
 export function TaskTable({
@@ -506,141 +649,298 @@ function ModeDataPanel({
   const proofs = modeData?.proofs ?? [];
   const bids = modeData?.bids ?? [];
   const claim = modeData?.claim ?? null;
-  const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
+
+  const hasActivity =
+    submissions.length > 0 ||
+    pitches.length > 0 ||
+    proofs.length > 0 ||
+    bids.length > 0 ||
+    claim != null;
 
   return (
-    <div className="grid gap-6">
-      {submissions.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Submissions</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {submissions.map((submission) => (
-              <SubmissionCard key={submission.id} submission={submission} />
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+    <Card className="border-border/68 bg-card/90">
+      <CardHeader>
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="grid gap-1">
+            <CardTitle>Activity</CardTitle>
+            <p className="text-sm leading-5 text-muted-foreground">
+              Work, bids, proofs, and reviews tied to this task.
+            </p>
+          </div>
+          <Badge variant="terminal">{activityLabel(task, modeData)}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {submissions.map((submission) => (
+          <SubmissionCard key={submission.id} submission={submission} />
+        ))}
 
-      {pitches.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pitches</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {pitches.map((pitch) => (
-              <div
-                className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
-                key={pitch.id}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{pitch.status}</Badge>
-                  <span className="font-mono text-sm">{compactAddress(pitch.workerAddress)}</span>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-muted-foreground">{pitch.pitchText}</p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {proofs.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Proofs</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {proofs.map((proof) => (
-              <div
-                className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
-                key={proof.id}
-              >
-                <div className="flex flex-wrap items-center gap-2">
-                  <Badge variant="outline">{proof.status}</Badge>
-                  <Badge variant="terminal">{proof.proofType}</Badge>
-                  {proof.metricValue ? (
-                    <span className="font-mono text-sm">{proof.metricValue}</span>
-                  ) : null}
-                </div>
-                <p className="mt-2 break-all text-sm leading-6 text-muted-foreground">
-                  {proof.proofData}
-                </p>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
-
-      {bids.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-wrap items-start justify-between gap-2">
-              <CardTitle>Auction bids</CardTitle>
-              <div className="grid gap-1 text-right font-mono text-xs text-muted-foreground">
-                {'currentLowestBid' in task && task.currentLowestBid ? (
-                  <span>Lowest bid: {formatUsdc(task.currentLowestBid)}</span>
-                ) : null}
-                {'bidDeadline' in task && task.bidDeadline ? (
-                  <span>Deadline: {new Date(task.bidDeadline).toLocaleString()}</span>
-                ) : null}
-              </div>
+        {pitches.map((pitch) => (
+          <div
+            className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
+            key={pitch.id}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{pitch.status}</Badge>
+              <span className="font-mono text-sm">{compactAddress(pitch.workerAddress)}</span>
             </div>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {bids.map((bid) => (
-              <div
-                className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]"
-                key={bid.id}
-              >
-                <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
-                <span className="text-primary">{formatUsdc(bid.price)}</span>
-              </div>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+            <p className="mt-2 text-sm leading-6 text-muted-foreground">{pitch.pitchText}</p>
+          </div>
+        ))}
 
-      {claim ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Claim</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-2 font-mono text-sm">
+        {proofs.map((proof) => (
+          <div
+            className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
+            key={proof.id}
+          >
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">{proof.status}</Badge>
+              <Badge variant="terminal">{proof.proofType}</Badge>
+              {proof.metricValue ? (
+                <span className="font-mono text-sm">{proof.metricValue}</span>
+              ) : null}
+            </div>
+            <p className="mt-2 break-all text-sm leading-6 text-muted-foreground">
+              {proof.proofData}
+            </p>
+          </div>
+        ))}
+
+        {bids.map((bid) => (
+          <div
+            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]"
+            key={bid.id}
+          >
+            <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
+            <span className="text-primary">{formatUsdc(bid.price)}</span>
+          </div>
+        ))}
+
+        {claim ? (
+          <div className="grid gap-2 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]">
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Worker</span>
+              <span className="text-muted-foreground">Claim worker</span>
               <span>{compactAddress(claim.workerAddress)}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Stake</span>
+              <span className="text-muted-foreground">Claim stake</span>
               <span>{formatUsdc(claim.stakeAmount)}</span>
             </div>
             <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Status</span>
+              <span className="text-muted-foreground">Claim status</span>
               <span>{claim.status}</span>
             </div>
-          </CardContent>
-        </Card>
-      ) : null}
+          </div>
+        ) : null}
 
-      {pendingActions.length > 0 ? (
-        <Card>
-          <CardHeader>
-            <CardTitle>Pending actions</CardTitle>
-          </CardHeader>
-          <CardContent className="grid gap-3">
-            {pendingActions.map((action) => (
-              <pre
-                className="overflow-x-auto rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-xs text-muted-foreground shadow-[var(--shadow-soft)]"
-                key={`${action.role}-${action.action}`}
-              >
-                <code>{action.command}</code>
-              </pre>
-            ))}
-          </CardContent>
-        </Card>
-      ) : null}
+        {!hasActivity ? (
+          <div className="rounded-xl border border-dashed border-border/68 bg-background/35 p-4">
+            <p className="text-sm font-semibold tracking-tight text-foreground">No activity yet</p>
+            <p className="mt-1 text-sm leading-5 text-muted-foreground">
+              {activityEmptyCopy(task)}
+            </p>
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+function DetailMetric({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="min-w-0 rounded-xl border border-border/60 bg-background/42 p-3">
+      <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
+      <div className="mt-1 truncate font-mono text-sm text-foreground">{value}</div>
     </div>
+  );
+}
+
+function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
+  return (
+    <div className="flex min-w-0 items-center justify-between gap-3">
+      <span className="text-muted-foreground">{label}</span>
+      <span
+        className="min-w-0 truncate text-right"
+        title={typeof value === 'string' ? value : undefined}
+      >
+        {value}
+      </span>
+    </div>
+  );
+}
+
+function SummaryGroup({ children, title }: { children: ReactNode; title: string }) {
+  return (
+    <section className="grid gap-3 border-t border-border/58 pt-4 first:border-t-0 first:pt-0">
+      <h2 className="font-sans text-sm font-semibold tracking-tight text-foreground">{title}</h2>
+      <div className="grid gap-2 font-mono text-sm">{children}</div>
+    </section>
+  );
+}
+
+function requirementRows(task: TaskDetailResponse | TaskResponse) {
+  const rows: Array<{ label: string; value: ReactNode }> = [];
+
+  if (task.mode === 'auction') {
+    rows.push({
+      label: 'Auction type',
+      value: task.auctionType ? `${labelize(task.auctionType)} auction` : 'Auction',
+    });
+    if (task.bidDeadline) {
+      rows.push({ label: 'Bid deadline', value: formatDateTime(task.bidDeadline) });
+    }
+    if (task.maxPrice) {
+      rows.push({ label: 'Max price', value: formatUsdc(task.maxPrice) });
+    }
+  }
+
+  if (task.mode === 'pitch' && task.pitchDeadline) {
+    rows.push({ label: 'Pitch deadline', value: formatDateTime(task.pitchDeadline) });
+  }
+
+  if (task.mode === 'benchmark') {
+    if (task.metricDescription) {
+      rows.push({ label: 'Metric', value: task.metricDescription });
+    }
+    if (task.metricTarget) {
+      rows.push({ label: 'Target', value: task.metricTarget });
+    }
+  }
+
+  if (task.stakeRequired || task.stakeBps > 0) {
+    rows.push({ label: 'Stake', value: `${formatBps(task.stakeBps)} of reward` });
+  }
+
+  if (rows.length === 0) {
+    rows.push({
+      label: 'Delivery',
+      value:
+        task.mode === 'claim'
+          ? 'Claim first, then submit the deliverable.'
+          : 'Submit work before expiry for requester review.',
+    });
+  }
+
+  return rows;
+}
+
+function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskResponse }) {
+  const rows = requirementRows(task);
+
+  return (
+    <Card className="border-border/68 bg-card/90">
+      <CardHeader>
+        <CardTitle>Work requirements</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-3">
+        {rows.map((row) => (
+          <div
+            className="grid gap-1 rounded-xl border border-border/62 bg-background/42 p-3"
+            key={row.label}
+          >
+            <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{row.label}</p>
+            <div className="text-sm leading-6 text-foreground">{row.value}</div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function TaskSummaryRail({
+  backHref,
+  modeData,
+  task,
+}: {
+  backHref: string;
+  modeData?: TaskModeData;
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  return (
+    <Card className="w-full gap-5 border-border/68 bg-card/90 lg:sticky lg:top-20">
+      <CardHeader>
+        <CardTitle>Task facts</CardTitle>
+      </CardHeader>
+      <CardContent className="grid gap-5">
+        <SummaryGroup title="Payout">
+          <SummaryRow
+            label="Reward"
+            value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
+          />
+          {task.maxPrice ? (
+            <SummaryRow label="Max price" value={formatUsdc(task.maxPrice)} />
+          ) : null}
+          {task.currentAuctionPrice ? (
+            <SummaryRow
+              label="Clock price"
+              value={<span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>}
+            />
+          ) : null}
+          {task.currentLowestBid ? (
+            <SummaryRow label="Lowest bid" value={formatUsdc(task.currentLowestBid)} />
+          ) : null}
+          {task.auctionStartPrice ? (
+            <SummaryRow label="Start price" value={formatUsdc(task.auctionStartPrice)} />
+          ) : null}
+          {task.auctionFloorPrice ? (
+            <SummaryRow label="Floor price" value={formatUsdc(task.auctionFloorPrice)} />
+          ) : null}
+          <SummaryRow label="Platform fee" value={formatBps(task.platformFeeBps)} />
+        </SummaryGroup>
+
+        <SummaryGroup title="Timing">
+          <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
+          <SummaryRow
+            label={
+              task.mode === 'auction'
+                ? 'Bid deadline'
+                : task.mode === 'pitch'
+                  ? 'Pitch deadline'
+                  : 'Expiry'
+            }
+            value={taskDeadlineLabel(task)}
+          />
+          {task.claimedAt ? (
+            <SummaryRow label="Claimed" value={formatDateTime(task.claimedAt)} />
+          ) : null}
+          {task.auctionPriceReachesFloorAt ? (
+            <SummaryRow
+              label="Floor reached"
+              value={formatDateTime(task.auctionPriceReachesFloorAt)}
+            />
+          ) : null}
+          {task.auctionPriceReachesMaxAt ? (
+            <SummaryRow label="Max reached" value={formatDateTime(task.auctionPriceReachesMaxAt)} />
+          ) : null}
+        </SummaryGroup>
+
+        <SummaryGroup title="Participants">
+          <SummaryRow
+            label="Requester"
+            value={compactAddress(task.requesterAgentId ?? task.requester)}
+          />
+          {task.worker || task.claimedBy ? (
+            <SummaryRow
+              label="Worker"
+              value={compactAddress(task.workerAgentId ?? task.worker ?? task.claimedBy)}
+            />
+          ) : null}
+        </SummaryGroup>
+
+        <SummaryGroup title="Progress">
+          <SummaryRow label="Status" value={labelize(task.status)} />
+          <SummaryRow label="Activity" value={activityLabel(task, modeData)} />
+          {task.rating !== null ? <SummaryRow label="Rating" value={`${task.rating}/100`} /> : null}
+          {task.stakeRequired || task.stakeBps > 0 ? (
+            <SummaryRow label="Stake required" value={formatBps(task.stakeBps)} />
+          ) : null}
+        </SummaryGroup>
+
+        <Button asChild className="mt-1" variant="terminal">
+          <a href={backHref}>Back to tasks</a>
+        </Button>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -653,106 +953,65 @@ export function TaskDetailPanel({
   modeData?: TaskModeData;
   task: TaskDetailResponse | TaskResponse;
 }) {
-  const hasModeContent =
-    (modeData?.submissions?.length ?? 0) > 0 ||
-    (modeData?.pitches?.length ?? 0) > 0 ||
-    (modeData?.proofs?.length ?? 0) > 0 ||
-    (modeData?.bids?.length ?? 0) > 0 ||
-    modeData?.claim != null ||
-    ('pendingActions' in task && task.pendingActions.length > 0);
+  const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
 
   return (
-    <div
-      className={
-        hasModeContent ? 'grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_320px]' : 'w-full space-y-6'
-      }
-    >
+    <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="block w-full min-w-0 space-y-6">
-        <Card className="w-full">
+        <Card className="w-full border-border/68 bg-card/90">
           <CardHeader>
-            <div className="flex flex-wrap gap-2">
-              <Badge>{task.mode}</Badge>
-              <Badge variant="outline">{labelize(task.status)}</Badge>
-              {task.auctionType ? (
-                <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
-              ) : null}
+            <div className="flex flex-wrap items-start justify-between gap-4">
+              <div className="flex flex-wrap gap-2">
+                <Badge>{task.mode}</Badge>
+                <Badge variant="outline">{labelize(task.status)}</Badge>
+                {task.auctionType ? (
+                  <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
+                ) : null}
+              </div>
+              <span className="font-mono text-xs uppercase text-primary">
+                {statusContext(task)}
+              </span>
             </div>
             <CardTitle className="mt-3 text-2xl">{taskTitle(task)}</CardTitle>
           </CardHeader>
-          <CardContent>
+          <CardContent className="grid gap-5">
             <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
               {task.description}
             </p>
+            {task.tags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {task.tags.map((tag) => (
+                  <Badge key={tag} variant="terminal">
+                    {tag}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+              <DetailMetric
+                label="Reward"
+                value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
+              />
+              <DetailMetric label="Due" value={taskDeadlineLabel(task)} />
+              <DetailMetric label="Activity" value={activityLabel(task, modeData)} />
+              <DetailMetric
+                label="Requester"
+                value={compactAddress(task.requesterAgentId ?? task.requester)}
+              />
+            </div>
           </CardContent>
         </Card>
+        <WorkRequirementsPanel task={task} />
         <ModeDataPanel modeData={modeData} task={task} />
+        <TaskActionsPanel
+          claimedBy={task.claimedBy}
+          emptyReason={pendingActionEmptyReason(task)}
+          pendingActions={pendingActions}
+          requester={task.requester}
+          worker={task.worker}
+        />
       </div>
-      <Card className="w-full">
-        <CardHeader>
-          <CardTitle>Settlement</CardTitle>
-        </CardHeader>
-        <CardContent className="grid gap-3 font-mono text-sm">
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Reward</span>
-            <span className="text-primary">{formatUsdc(task.reward)}</span>
-          </div>
-          {'maxPrice' in task && task.maxPrice ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Max price</span>
-              <span>{formatUsdc(task.maxPrice)}</span>
-            </div>
-          ) : null}
-          {'currentAuctionPrice' in task && task.currentAuctionPrice ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Clock price</span>
-              <span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>
-            </div>
-          ) : null}
-          {'auctionFloorPrice' in task && task.auctionFloorPrice ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Floor price</span>
-              <span>{formatUsdc(task.auctionFloorPrice)}</span>
-            </div>
-          ) : null}
-          {'auctionStartPrice' in task && task.auctionStartPrice ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Start price</span>
-              <span>{formatUsdc(task.auctionStartPrice)}</span>
-            </div>
-          ) : null}
-          {'bidDeadline' in task && task.bidDeadline ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Bid deadline</span>
-              <span>{new Date(task.bidDeadline).toLocaleDateString()}</span>
-            </div>
-          ) : null}
-          {'pitchDeadline' in task && task.pitchDeadline ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Pitch deadline</span>
-              <span>{new Date(task.pitchDeadline).toLocaleDateString()}</span>
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Requester</span>
-            <span title={task.requester}>
-              {compactAddress(task.requesterAgentId ?? task.requester)}
-            </span>
-          </div>
-          {'worker' in task && task.worker ? (
-            <div className="flex items-center justify-between">
-              <span className="text-muted-foreground">Worker</span>
-              <span title={task.worker}>{compactAddress(task.workerAgentId ?? task.worker)}</span>
-            </div>
-          ) : null}
-          <div className="flex items-center justify-between">
-            <span className="text-muted-foreground">Submissions</span>
-            <span>{task.submissionCount ?? 0}</span>
-          </div>
-          <Button asChild className="mt-3" variant="terminal">
-            <a href={backHref}>Back to tasks</a>
-          </Button>
-        </CardContent>
-      </Card>
+      <TaskSummaryRail backHref={backHref} modeData={modeData} task={task} />
     </div>
   );
 }

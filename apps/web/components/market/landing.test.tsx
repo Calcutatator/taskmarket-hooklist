@@ -79,27 +79,28 @@ describe('LandingPageContent', () => {
     expect(
       within(header as HTMLElement).getByRole('link', { name: /^dashboard$/i })
     ).toHaveAttribute('href', '/dashboard');
-    expect(screen.getByRole('link', { name: /open dashboard/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
       'href',
-      '/dashboard'
+      '/dashboard/tasks/new'
+    );
+    expect(screen.getByRole('link', { name: /^browse open work$/i })).toHaveAttribute(
+      'href',
+      '/tasks'
     );
     expect(
-      screen
-        .getAllByRole('link', { name: /browse tasks/i })
-        .some((link) => link.getAttribute('href') === '/dashboard/tasks')
-    ).toBe(true);
+      screen.getByText(
+        /taskmarket is a marketplace for paid autonomous-agent work: requesters fund verifiable tasks in usdc/i
+      )
+    ).toBeVisible();
     expect(
       screen.getByText('curl -fsSL https://taskmarket.example/skill.md -o skill.md')
     ).toBeVisible();
     expect(screen.getByRole('button', { name: /copy skill install command/i })).toBeVisible();
     expect(screen.queryByRole('link', { name: /read protocol/i })).not.toBeInTheDocument();
-    expect(container.querySelector('[data-testid="task-market-hero-grid"]')).toHaveAttribute(
-      'aria-hidden',
-      'true'
-    );
+    expect(container.querySelector('[data-testid="hero-market-diagram"]')).toBeInTheDocument();
   });
 
-  it('renders market value numbers inside the decorative hero animation', () => {
+  it('renders visible market stats and a product diagram in the hero', () => {
     const { container } = render(
       <LandingPageContent
         stats={{
@@ -111,15 +112,29 @@ describe('LandingPageContent', () => {
       />
     );
 
-    const heroGrid = container.querySelector('[data-testid="task-market-hero-grid"]');
+    const heroHeading = screen.getByRole('heading', {
+      name: /escrow tasks\. agents compete\. winners get paid\./i,
+    });
+    const heroSection = heroHeading.closest('section');
+    const heroDiagram = container.querySelector('[data-testid="hero-market-diagram"]');
+    const heroStats = container.querySelector('[data-testid="hero-market-stats"]');
 
-    expect(heroGrid).not.toBeNull();
-    expect(within(heroGrid as HTMLElement).getByText('12')).toBeInTheDocument();
-    expect(within(heroGrid as HTMLElement).getByText('4')).toBeInTheDocument();
-    expect(within(heroGrid as HTMLElement).getByText('25 USDC')).toBeInTheDocument();
-    expect(within(heroGrid as HTMLElement).getByText('850 USDC')).toBeInTheDocument();
-    expect(within(heroGrid as HTMLElement).getByText(/open tasks/i)).toBeInTheDocument();
-    expect(within(heroGrid as HTMLElement).getByText(/reward/i)).toBeInTheDocument();
+    expect(heroSection).not.toBeNull();
+    expect(heroDiagram).not.toBeNull();
+    expect(heroStats).not.toBeNull();
+    expect(within(heroStats as HTMLElement).getByText(/^Open tasks$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^12$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^Agents$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^4$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^Posted volume$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^25\.000 USDC$/i)).toBeVisible();
+    expect(within(heroDiagram as HTMLElement).getByText(/^Funded task$/i)).toBeVisible();
+    expect(within(heroDiagram as HTMLElement).getByText(/^Competing agents$/i)).toBeVisible();
+    expect(within(heroDiagram as HTMLElement).getByText(/^Accepted receipt$/i)).toBeVisible();
+    expect(within(heroDiagram as HTMLElement).getByText('850.000 USDC')).toBeVisible();
+    expect(heroDiagram).toHaveAttribute('data-animate', 'market-flow');
+    expect(container.querySelectorAll('[data-flow-card]')).toHaveLength(3);
+    expect(container.querySelectorAll('[data-flow-connector]')).toHaveLength(2);
   });
 
   it('adds motion orchestration to the hero copy and landing sections', () => {
@@ -136,7 +151,9 @@ describe('LandingPageContent', () => {
 
     expect(container.querySelector('[data-motion="landing-hero-copy"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-hero-title"]')).toContainElement(
-      screen.getByRole('heading', { name: /paid work for autonomous agents/i })
+      screen.getByRole('heading', {
+        name: /escrow tasks\. agents compete\. winners get paid\./i,
+      })
     );
     expect(container.querySelector('[data-motion="landing-hero-actions"]')).toBeInTheDocument();
     expect(container.querySelector('[data-motion="landing-hero-install"]')).toBeInTheDocument();
@@ -161,21 +178,38 @@ describe('LandingPageContent', () => {
     const burstSection = pageSections[1];
 
     expect(hero).toContainElement(
-      screen.getByRole('heading', { name: /paid work for autonomous agents/i })
+      screen.getByRole('heading', {
+        name: /escrow tasks\. agents compete\. winners get paid\./i,
+      })
     );
     expect(burstSection).toContainElement(
-      screen.getByRole('heading', { name: /one task\. many agents\. one winner\./i })
+      screen.getByRole('heading', {
+        name: /one funded brief becomes a competitive work market\./i,
+      })
     );
-    expect(within(burstSection as HTMLElement).getByText(/^01 post$/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/fund one task/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^02 compete$/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/available agents opt in/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/work in parallel/i)).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/^03 settle$/i)).toBeVisible();
     expect(
-      within(burstSection as HTMLElement).getByText(/best submission gets paid/i)
+      within(burstSection as HTMLElement).getByText(/taskmarket turns a task into a small market/i)
     ).toBeVisible();
-    expect(within(burstSection as HTMLElement).getByText(/live task routing/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^01 Fund$/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).getByText(/escrow usdc behind a precise outcome/i)
+    ).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^02 Route$/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).getByText(/choose bounty, claim, pitch/i)
+    ).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^03 Compete$/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).getByText(/agents bid, claim, pitch/i)
+    ).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^04 Settle$/i)).toBeVisible();
+    expect(
+      within(burstSection as HTMLElement).getByText(/accepted work releases payment/i)
+    ).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^Requester value$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^Agent value$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/^Protocol value$/i)).toBeVisible();
+    expect(within(burstSection as HTMLElement).getByText(/Mode choices/i)).toBeVisible();
     expect(
       within(burstSection as HTMLElement).queryByText(/^funded task$/i)
     ).not.toBeInTheDocument();
@@ -235,6 +269,11 @@ describe('LandingPageContent', () => {
     expect(liveMarketHeading).toBeVisible();
     expect(liveMarketSection).not.toBeNull();
     expect(screen.getByRole('heading', { name: /choose your path/i })).toBeVisible();
+    expect(
+      screen.getByRole('heading', {
+        name: /one funded brief becomes a competitive work market\./i,
+      })
+    ).toBeVisible();
     expect(screen.queryByRole('heading', { name: /market in action/i })).not.toBeInTheDocument();
     expect(screen.getByText(/^live market pulse$/i)).toBeVisible();
     expect(
