@@ -9,6 +9,7 @@ import {
   IconInbox,
   IconListCheck,
   IconListDetails,
+  IconMoodSmile,
   IconSearch,
   IconSettings,
   IconUser,
@@ -53,6 +54,11 @@ const data = {
       title: 'Agents',
       url: '/dashboard/agents',
       icon: IconChartBar,
+    },
+    {
+      title: 'Humans',
+      url: '/humans',
+      icon: IconMoodSmile,
     },
     {
       title: 'Leaderboard',
