@@ -99,6 +99,13 @@
       "when": 1772450000000,
       "tag": "0013_add_artifacts",
       "breakpoints": true
+    },
+    {
+      "idx": 14,
+      "version": "7",
+      "when": 1772500000000,
+      "tag": "0014_add_registered_via",
+      "breakpoints": true
     }
   ]
 }
