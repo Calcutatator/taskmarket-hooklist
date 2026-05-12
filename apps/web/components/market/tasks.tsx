@@ -624,7 +624,7 @@ function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId:
           <span className="font-mono text-xs text-muted-foreground">
             {compactAddress(artifact.workerAgentId ?? artifact.workerAddress)}
           </span>
-          <ArtifactPreviewButton artifactId={artifact.id} taskId={taskId} />
+          <ArtifactPreviewButton artifact={artifact} taskId={taskId} />
         </div>
       </div>
       {artifact.textPreview ? (
@@ -999,7 +999,7 @@ export function TaskDetailPanel({
   const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
 
   return (
-    <div className="grid w-full gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="block w-full min-w-0 space-y-6">
         <Card className="w-full border-border/68 bg-card/90">
           <CardHeader>

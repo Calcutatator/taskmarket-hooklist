@@ -74,10 +74,10 @@ export function TaskActionsPanel({
     .filter((group) => group.actions.length > 0);
 
   return (
-    <Card className="border-border/68 bg-card/90">
+    <Card className="min-w-0 border-border/68 bg-card/90">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="grid gap-1">
+          <div className="grid min-w-0 gap-1">
             <CardTitle>Next actions</CardTitle>
             <p className="text-sm leading-5 text-muted-foreground">
               Click an action to run it from the connected wallet. CLI commands stay available under
@@ -91,26 +91,26 @@ export function TaskActionsPanel({
         {groupedActions.length > 0 ? (
           groupedActions.map((group) => (
             <section
-              className="grid gap-3 rounded-xl border border-border/64 bg-background/42 p-3"
+              className="grid min-w-0 gap-3 rounded-xl border border-border/64 bg-background/42 p-3"
               key={group.role}
             >
-              <div className="grid gap-1">
+              <div className="grid min-w-0 gap-1">
                 <h3 className="text-sm font-semibold tracking-tight">
                   {roleTitle(group.role, connectedRole)}
                 </h3>
                 <p className="text-xs leading-5 text-muted-foreground">{roleTone(group.role)}</p>
               </div>
-              <div className="grid gap-2">
+              <div className="grid min-w-0 gap-2">
                 {group.actions.map((action) => {
                   const Component = COMPONENT_BY_ACTION[action.action];
                   const wrongRole = connectedRole !== undefined && action.role !== connectedRole;
                   return (
                     <div
-                      className="grid gap-2 rounded-xl border border-border/58 bg-surface/72 p-3 shadow-[var(--shadow-soft)]"
+                      className="grid min-w-0 gap-2 rounded-xl border border-border/58 bg-surface/72 p-3 shadow-[var(--shadow-soft)]"
                       key={`${action.role}-${action.action}-${action.command}`}
                     >
-                      <div className="flex flex-wrap items-center justify-between gap-2">
-                        <div className="flex flex-wrap items-center gap-2">
+                      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+                        <div className="flex min-w-0 flex-wrap items-center gap-2">
                           <Badge variant="outline">{action.action.replaceAll('_', ' ')}</Badge>
                           <span className="text-xs text-muted-foreground">
                             {actionCopy[action.action] ?? 'Action available.'}
@@ -119,11 +119,11 @@ export function TaskActionsPanel({
                         <CopyButton label={`Copy ${action.action} command`} text={action.command} />
                       </div>
                       <Component action={action} disabled={wrongRole} task={task} />
-                      <details className="grid gap-1">
+                      <details className="grid min-w-0 gap-1">
                         <summary className="cursor-pointer text-xs text-muted-foreground">
                           Show CLI
                         </summary>
-                        <pre className="overflow-x-auto rounded-lg bg-background/76 p-2 font-mono text-xs leading-5 text-foreground">
+                        <pre className="max-w-full overflow-x-auto rounded-lg bg-background/76 p-2 font-mono text-xs leading-5 text-foreground">
                           <code>{action.command}</code>
                         </pre>
                       </details>

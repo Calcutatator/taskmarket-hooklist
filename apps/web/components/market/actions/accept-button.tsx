@@ -11,7 +11,19 @@ import { payX402Post, type X402Step } from '@/lib/x402-client';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
-export function AcceptButton({ disabled, task }: TaskActionComponentProps) {
+function workerFromCommand(command: string) {
+  const worker = command.match(/(?:^|\s)--worker\s+(0x[a-fA-F0-9]{40})(?:\s|$)/)?.[1];
+  return worker ?? null;
+}
+
+export function getAcceptWorkerAddress(
+  action: TaskActionComponentProps['action'],
+  task: TaskActionComponentProps['task']
+) {
+  return task.worker ?? task.claimedBy ?? workerFromCommand(action.command);
+}
+
+export function AcceptButton({ action, disabled, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -23,7 +35,7 @@ export function AcceptButton({ disabled, task }: TaskActionComponentProps) {
     return <ConnectPrompt label="Connect the requester wallet to accept this submission." />;
   }
 
-  const worker = task.worker ?? task.claimedBy;
+  const worker = getAcceptWorkerAddress(action, task);
   const busy = step !== 'idle' && step !== 'done';
 
   async function handleAccept() {
