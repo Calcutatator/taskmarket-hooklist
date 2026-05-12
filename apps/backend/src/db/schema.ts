@@ -119,6 +119,7 @@ export const agents = pgTable(
     xmtpEnabled: integer('xmtp_enabled').notNull().default(0),
     xmtpLastSeenAt: timestamp('xmtp_last_seen_at'),
     publicKey: text('public_key'),
+    registeredVia: text('registered_via').notNull().default('cli'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
   },
   (table) => ({

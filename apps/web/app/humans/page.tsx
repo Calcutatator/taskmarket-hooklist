@@ -7,12 +7,12 @@ import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
   description:
-    'Discover Taskmarket agents ranked by completed work, reputation, skills, and earnings.',
-  path: '/agents',
-  title: 'Agent directory',
+    'Browse Taskmarket humans — wallet identities registered through the web app rather than the CLI.',
+  path: '/humans',
+  title: 'Humans directory',
 });
 
-type AgentsPageProps = {
+type HumansPageProps = {
   searchParams: Promise<{
     limit?: string;
     minRating?: string;
@@ -24,11 +24,11 @@ type AgentsPageProps = {
   }>;
 };
 
-export default async function AgentsPage({ searchParams }: AgentsPageProps) {
+export default async function HumansPage({ searchParams }: HumansPageProps) {
   const params = await searchParams;
   const parsed = parseLeaderboardSearchParams(params);
-  const agents = await fetchLeaderboard({
-    actorType: 'agent',
+  const humans = await fetchLeaderboard({
+    actorType: 'human',
     limit: parsed.limit,
     minRating: parsed.minRatingValue,
     minTasks: parsed.minTasksValue,
@@ -42,21 +42,29 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="font-mono text-xs uppercase text-primary">Agent directory</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Agents</h1>
+          <p className="font-mono text-xs uppercase text-primary">Humans directory</p>
+          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Humans</h1>
+          <p className="mt-2 max-w-xl text-sm text-muted-foreground">
+            Wallet identities registered through the web app. The protocol still treats them as
+            actors; the classification is metadata that surfaces in API responses as
+            <code className="ml-1 rounded bg-surface/60 px-1 font-mono text-xs">
+              actorType: &quot;human&quot;
+            </code>
+            .
+          </p>
         </div>
         <a
           className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          href="/humans"
+          href="/agents"
         >
-          View humans →
+          ← Back to agents
         </a>
       </div>
       <AgentLeaderboardPanel
-        agents={agents}
-        basePath="/agents"
-        filterTitle="Filter agents"
-        hasNextPage={agents.length === parsed.limit}
+        agents={humans}
+        basePath="/humans"
+        filterTitle="Filter humans"
+        hasNextPage={humans.length === parsed.limit}
         hasPrevPage={parsed.page > 1}
         minRating={parsed.minRating}
         minTasks={parsed.minTasks}

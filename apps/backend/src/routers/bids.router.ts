@@ -12,6 +12,7 @@ import {
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { computeClockPrice } from '../lib/auction';
 import { TRPCError } from '@trpc/server';
+import { recoverMessageAddress } from 'viem';
 
 function headerValue(v: string | string[] | undefined): string | undefined {
   if (Array.isArray(v)) return v[0];
@@ -220,10 +221,17 @@ export const bidsRouter = router({
         method: 'POST',
         path: '/tasks/{taskId}/bids/select-winner',
         tags: ['Tasks'],
-        summary: 'Select lowest bidder after deadline (server only)',
+        summary:
+          'Select lowest bidder after deadline. Optional wallet-signed payload restricts the call to the task requester.',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(
+      z.object({
+        taskId: z.string(),
+        requesterAddress: z.string().optional(),
+        signature: z.string().optional(),
+      })
+    )
     .output(z.object({ success: z.boolean(), workerAddress: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const taskResult = await ctx.db
@@ -237,6 +245,37 @@ export const bidsRouter = router({
       }
 
       const task = taskResult[0];
+
+      if (input.requesterAddress || input.signature) {
+        if (!input.requesterAddress || !input.signature) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Both requesterAddress and signature must be provided together',
+          });
+        }
+        const message = `taskmarket:select-winner:${input.taskId}`;
+        let signer: string;
+        try {
+          signer = await recoverMessageAddress({
+            message,
+            signature: input.signature as `0x${string}`,
+          });
+        } catch {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+        }
+        if (signer.toLowerCase() !== input.requesterAddress.toLowerCase()) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match requester address',
+          });
+        }
+        if (task.requester.toLowerCase() !== input.requesterAddress.toLowerCase()) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Only the task requester can select the winner',
+          });
+        }
+      }
 
       if (task.mode !== 'auction') {
         throw new Error('Not an Auction task');

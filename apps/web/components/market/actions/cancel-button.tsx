@@ -1,0 +1,96 @@
+'use client';
+
+import { useState } from 'react';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
+
+import { Button } from '@/components/ui/button';
+import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { explorerTxUrl } from '@/lib/explorer';
+import { payX402Post, type X402Step } from '@/lib/x402-client';
+
+import { ConfirmDialog } from './confirm-dialog';
+import { ConnectPrompt } from './connect-prompt';
+import type { TaskActionComponentProps } from './types';
+
+export function CancelButton({ disabled, task }: TaskActionComponentProps) {
+  const { address, isConnected } = useAccount();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { switchChainAsync } = useSwitchChain();
+  const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
+  const [error, setError] = useState<string | null>(null);
+  const [txHash, setTxHash] = useState<string | null>(null);
+
+  if (!isConnected || !address) {
+    return <ConnectPrompt label="Connect the requester wallet to cancel this task." />;
+  }
+
+  const busy = step !== 'idle' && step !== 'done';
+
+  async function handleCancel() {
+    setError(null);
+    const result = await payX402Post<{ txHash?: string }>(
+      `/api/tasks/${task.id}/cancel`,
+      { taskId: task.id },
+      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+      setStep
+    );
+    if (result.ok) {
+      setStep('done');
+      setTxHash(result.txHash ?? null);
+    } else {
+      setStep('idle');
+      if (!result.rejected) setError(result.error);
+    }
+  }
+
+  if (step === 'done') {
+    const url = txHash ? explorerTxUrl(txHash) : null;
+    return (
+      <div className="grid gap-1 text-sm">
+        <span className="font-mono text-primary">✓ Cancelled</span>
+        {url ? (
+          <a
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            href={url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View on explorer
+          </a>
+        ) : null}
+      </div>
+    );
+  }
+
+  const dialogDescription =
+    task.mode === 'auction'
+      ? 'Cancel this auction task. The escrowed reward is refunded. This is only allowed if no bids have been placed and cannot be undone.'
+      : 'Cancel this task and refund the escrowed reward to your wallet. This cannot be undone.';
+
+  return (
+    <div className="grid gap-2">
+      <ConfirmDialog
+        confirmCta="Cancel task"
+        description={dialogDescription}
+        disabled={disabled || busy}
+        loadingCta={
+          step === 'payment'
+            ? 'Fetching payment…'
+            : step === 'signing'
+              ? 'Sign payment…'
+              : step === 'submitting'
+                ? 'Cancelling…'
+                : 'Cancelling…'
+        }
+        onConfirm={handleCancel}
+        title="Cancel this task?"
+      >
+        <Button disabled={disabled || busy} size="sm" variant="destructive">
+          Cancel task
+        </Button>
+      </ConfirmDialog>
+      <p className="text-xs text-muted-foreground">Costs 0.001 USDC. Refunds escrowed reward.</p>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}

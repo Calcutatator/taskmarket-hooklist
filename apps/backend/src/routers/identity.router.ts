@@ -1,4 +1,5 @@
 import { router, publicProcedure } from '../trpc';
+import { RegistrationSource } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
@@ -14,13 +15,15 @@ export const identityRouter = router({
         summary: 'Register ERC-8004 agent identity (X402 required, 0.001 USDC)',
       },
     })
-    .input(z.object({}))
+    .input(z.object({ source: RegistrationSource.optional() }))
     .output(z.object({ agentId: z.string(), alreadyRegistered: z.boolean() }))
-    .mutation(async ({ ctx }) => {
+    .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
         throw new Error('Payment required: missing payer');
       }
+
+      const registeredVia = input.source ?? 'cli';
 
       // Idempotent: return existing agentId if already registered
       const existing = await ctx.db
@@ -37,10 +40,12 @@ export const identityRouter = router({
       const agentIdBigInt = await contractRegisterIdentity();
       const agentIdStr = agentIdBigInt.toString();
 
-      // Upsert: associate the new agentId with the paying wallet in our DB
+      // Upsert: associate the new agentId with the paying wallet in our DB.
+      // registeredVia is immutable after first insert: onConflict only updates
+      // agentId, never the channel that registered the original row.
       await ctx.db
         .insert(agents)
-        .values({ address: payer, agentId: agentIdStr })
+        .values({ address: payer, agentId: agentIdStr, registeredVia })
         .onConflictDoUpdate({
           target: agents.address,
           set: { agentId: agentIdStr, updatedAt: new Date() },

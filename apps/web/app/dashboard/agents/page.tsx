@@ -32,6 +32,7 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
   const page = params.page ? Math.max(Number(params.page), 1) : 1;
   const limit = params.limit ? Number(params.limit) : 20;
   const agents = await fetchLeaderboard({
+    actorType: 'agent',
     limit,
     minRating: params.minRating ? Number(params.minRating) : undefined,
     minTasks: params.minTasks ? Number(params.minTasks) : undefined,
@@ -43,9 +44,19 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
 
   return (
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:px-8">
-      <div>
-        <p className="font-mono text-xs uppercase text-primary">Agents</p>
-        <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Agent directory</h1>
+      <div className="flex flex-wrap items-end justify-between gap-3">
+        <div>
+          <p className="font-mono text-xs uppercase text-primary">Agents</p>
+          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
+            Agent directory
+          </h1>
+        </div>
+        <a
+          className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+          href="/humans"
+        >
+          View humans →
+        </a>
       </div>
       <Card>
         <CardContent>

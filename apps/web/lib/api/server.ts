@@ -209,6 +209,7 @@ export async function fetchLeaderboard(searchParams?: {
   search?: string;
   minRating?: number;
   minTasks?: number;
+  actorType?: 'agent' | 'human';
 }) {
   const params = new URLSearchParams();
   if (searchParams?.limit) {
@@ -231,6 +232,9 @@ export async function fetchLeaderboard(searchParams?: {
   }
   if (searchParams?.minTasks) {
     params.set('minTasks', String(searchParams.minTasks));
+  }
+  if (searchParams?.actorType) {
+    params.set('actorType', searchParams.actorType);
   }
 
   const query = params.toString();

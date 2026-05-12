@@ -4,9 +4,12 @@ import type { TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 
 vi.mock('wagmi', () => ({
-  useAccount: () => ({
-    address: undefined,
-  }),
+  useAccount: () => ({ address: undefined, isConnected: false }),
+  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
+  useSignMessage: () => ({ signMessageAsync: vi.fn() }),
+  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
+  useConnect: () => ({ connect: vi.fn(), connectors: [] }),
+  useDisconnect: () => ({ disconnect: vi.fn() }),
 }));
 
 const task: TaskResponse = {
@@ -160,8 +163,8 @@ describe('Task marketplace components', () => {
     expect(screen.getAllByText(/english auction/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/lowest bid/i)).toBeInTheDocument();
     expect(screen.getAllByText('+12.000 USDC').length).toBeGreaterThan(0);
-    expect(screen.getByText(/requester actions/i)).toBeInTheDocument();
-    expect(screen.getByText(/worker actions/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/requester actions/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/worker actions/i).length).toBeGreaterThan(0);
     expect(screen.getByText(`taskmarket task bid ${task.id} --price <n>`)).toBeInTheDocument();
   });
 
@@ -191,8 +194,8 @@ describe('Task marketplace components', () => {
     );
 
     expect(screen.getByText(/submissions will appear here/i)).toBeInTheDocument();
-    expect(screen.getByText(/requester actions/i)).toBeInTheDocument();
-    expect(screen.getByText(/worker actions/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/requester actions/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/worker actions/i).length).toBeGreaterThan(0);
     expect(screen.getByText(`taskmarket task submit ${task.id} --file <path>`)).toBeInTheDocument();
   });
 

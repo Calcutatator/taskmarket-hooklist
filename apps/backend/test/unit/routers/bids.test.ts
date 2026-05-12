@@ -11,8 +11,17 @@ vi.mock('../../../src/services/xmtp-auth', () => ({
   authenticateXmtpDevice: vi.fn().mockResolvedValue({ deviceId: 'dev-1', walletAddress: '0xWorker0000000000000000000000000000000001' }),
 }));
 
+vi.mock('viem', async () => {
+  const actual = await vi.importActual<typeof import('viem')>('viem');
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { bidsRouter } from '../../../src/routers/bids.router';
 import { contractSubmitBid, contractSelectLowestBidder, contractAcceptAuction } from '../../../src/services/contract';
+import { recoverMessageAddress } from 'viem';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const WORKER_B = '0xWorkerB000000000000000000000000000000002';
@@ -345,6 +354,79 @@ describe('bids router', () => {
       expect(result.workerAddress).toBe(WORKER_B);
       expect(contractSelectLowestBidder).toHaveBeenCalledOnce();
       expect(ctx.db.update).toHaveBeenCalledOnce();
+    });
+
+    describe('wallet-signed auth (optional)', () => {
+      const REQUESTER = '0xRequester0000000000000000000000000000099';
+      const taskFromRequester = makeTask({
+        requester: REQUESTER,
+        bidDeadline: new Date(Date.now() - 1000),
+      });
+
+      it('succeeds when signature recovers to the task requester', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(REQUESTER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([taskFromRequester]))
+          .mockReturnValueOnce(
+            makeChain([
+              { id: BID_ID, taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() },
+            ])
+          );
+
+        const caller = bidsRouter.createCaller(ctx);
+        const result = await caller.selectWinner({
+          taskId: TASK_ID,
+          requesterAddress: REQUESTER,
+          signature: '0xsig',
+        });
+
+        expect(result.success).toBe(true);
+        expect(result.workerAddress).toBe(WORKER_B);
+      });
+
+      it('rejects when signature does not match requesterAddress', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+          '0xOther000000000000000000000000000000000001' as `0x${string}`
+        );
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(
+          caller.selectWinner({
+            taskId: TASK_ID,
+            requesterAddress: REQUESTER,
+            signature: '0xsig',
+          })
+        ).rejects.toThrow('Signature does not match requester address');
+      });
+
+      it('rejects when requesterAddress is not the task requester', async () => {
+        const SOMEONE_ELSE = '0xSomeoneElse0000000000000000000000000000007';
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(SOMEONE_ELSE as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(
+          caller.selectWinner({
+            taskId: TASK_ID,
+            requesterAddress: SOMEONE_ELSE,
+            signature: '0xsig',
+          })
+        ).rejects.toThrow('Only the task requester can select the winner');
+      });
+
+      it('rejects when requesterAddress is provided without a signature', async () => {
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(
+          caller.selectWinner({ taskId: TASK_ID, requesterAddress: REQUESTER })
+        ).rejects.toThrow('Both requesterAddress and signature must be provided together');
+      });
     });
   });
 

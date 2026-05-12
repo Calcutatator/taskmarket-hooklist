@@ -1,8 +1,9 @@
 'use client';
 
-import type { PendingAction } from '@taskmarket/shared';
+import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { useAccount } from 'wagmi';
 
+import { COMPONENT_BY_ACTION } from '@/components/market/actions';
 import { CopyButton } from '@/components/market/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -12,6 +13,7 @@ type TaskActionPanelProps = {
   emptyReason: string;
   pendingActions: PendingAction[];
   requester: string;
+  task: TaskDetailResponse | TaskResponse;
   worker?: string | null;
 };
 
@@ -21,6 +23,7 @@ const actionCopy: Record<string, string> = {
   bid: 'Place a bid before the auction deadline.',
   cancel: 'Close the task while it is still cancellable.',
   claim: 'Reserve the task before submitting work.',
+  forfeit: 'Reclaim the task from a worker whose claim has expired.',
   pitch: 'Send a proposal for the requester to review.',
   rate: 'Rate completed work after the payout is accepted.',
   select_winner: 'Finalize the auction by selecting the winning bid.',
@@ -44,8 +47,8 @@ function roleTitle(role: PendingAction['role'], connectedRole?: PendingAction['r
 
 function roleTone(role: PendingAction['role']) {
   return role === 'requester'
-    ? 'Requester-only commands for managing selection, review, and settlement.'
-    : 'Worker commands for claiming, bidding, pitching, or submitting work.';
+    ? 'Requester-only actions for managing selection, review, and settlement.'
+    : 'Worker actions for claiming, bidding, pitching, or submitting work.';
 }
 
 export function TaskActionsPanel({
@@ -53,10 +56,11 @@ export function TaskActionsPanel({
   emptyReason,
   pendingActions,
   requester,
+  task,
   worker,
 }: TaskActionPanelProps) {
   const { address } = useAccount();
-  const connectedRole = sameAddress(address, requester)
+  const connectedRole: PendingAction['role'] | undefined = sameAddress(address, requester)
     ? 'requester'
     : sameAddress(address, worker) || sameAddress(address, claimedBy)
       ? 'worker'
@@ -76,7 +80,8 @@ export function TaskActionsPanel({
           <div className="grid gap-1">
             <CardTitle>Next actions</CardTitle>
             <p className="text-sm leading-5 text-muted-foreground">
-              CLI commands stay visible so agents and operators can act from the console.
+              Click an action to run it from the connected wallet. CLI commands stay available under
+              each action for agents and operators.
             </p>
           </div>
           {connectedRole ? <Badge variant="terminal">{connectedRole}</Badge> : null}
@@ -96,25 +101,35 @@ export function TaskActionsPanel({
                 <p className="text-xs leading-5 text-muted-foreground">{roleTone(group.role)}</p>
               </div>
               <div className="grid gap-2">
-                {group.actions.map((action) => (
-                  <div
-                    className="grid gap-2 rounded-xl border border-border/58 bg-surface/72 p-3 shadow-[var(--shadow-soft)]"
-                    key={`${action.role}-${action.action}-${action.command}`}
-                  >
-                    <div className="flex flex-wrap items-center justify-between gap-2">
-                      <div className="flex flex-wrap items-center gap-2">
-                        <Badge variant="outline">{action.action.replaceAll('_', ' ')}</Badge>
-                        <span className="text-xs text-muted-foreground">
-                          {actionCopy[action.action] ?? 'Run this command when this role is ready.'}
-                        </span>
+                {group.actions.map((action) => {
+                  const Component = COMPONENT_BY_ACTION[action.action];
+                  const wrongRole = connectedRole !== undefined && action.role !== connectedRole;
+                  return (
+                    <div
+                      className="grid gap-2 rounded-xl border border-border/58 bg-surface/72 p-3 shadow-[var(--shadow-soft)]"
+                      key={`${action.role}-${action.action}-${action.command}`}
+                    >
+                      <div className="flex flex-wrap items-center justify-between gap-2">
+                        <div className="flex flex-wrap items-center gap-2">
+                          <Badge variant="outline">{action.action.replaceAll('_', ' ')}</Badge>
+                          <span className="text-xs text-muted-foreground">
+                            {actionCopy[action.action] ?? 'Action available.'}
+                          </span>
+                        </div>
+                        <CopyButton label={`Copy ${action.action} command`} text={action.command} />
                       </div>
-                      <CopyButton label={`Copy ${action.action} command`} text={action.command} />
+                      <Component action={action} disabled={wrongRole} task={task} />
+                      <details className="grid gap-1">
+                        <summary className="cursor-pointer text-xs text-muted-foreground">
+                          Show CLI
+                        </summary>
+                        <pre className="overflow-x-auto rounded-lg bg-background/76 p-2 font-mono text-xs leading-5 text-foreground">
+                          <code>{action.command}</code>
+                        </pre>
+                      </details>
                     </div>
-                    <pre className="overflow-x-auto rounded-lg bg-background/76 p-2 font-mono text-xs leading-5 text-foreground">
-                      <code>{action.command}</code>
-                    </pre>
-                  </div>
-                ))}
+                  );
+                })}
               </div>
             </section>
           ))

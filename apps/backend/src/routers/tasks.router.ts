@@ -167,10 +167,19 @@ function computePendingActions(task: {
           return [];
       }
     }
-    case 'claimed':
-      return [
+    case 'claimed': {
+      const actions: PendingAction[] = [
         { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
       ];
+      if (task.mode === 'claim') {
+        actions.push({
+          role: 'requester',
+          action: 'forfeit',
+          command: `taskmarket task forfeit ${id}`,
+        });
+      }
+      return actions;
+    }
     case 'worker_selected':
       return [
         { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },

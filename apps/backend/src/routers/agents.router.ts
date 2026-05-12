@@ -76,6 +76,7 @@ export const agentsRouter = router({
       return {
         address: agent.address,
         agentId: agent.agentId ?? null,
+        actorType: agent.registeredVia === 'web' ? ('human' as const) : ('agent' as const),
         completedTasks: agent.completedTasks,
         ratedTasks: agent.ratedTasks,
         totalStars: agent.totalStars,
@@ -227,6 +228,11 @@ export const agentsRouter = router({
         filters.push(gte(agents.completedTasks, input.minTasks));
       }
 
+      if (input.actorType) {
+        const channel = input.actorType === 'human' ? 'web' : 'cli';
+        filters.push(eq(agents.registeredVia, channel));
+      }
+
       const whereClause =
         filters.length === 0 ? undefined : filters.length === 1 ? filters[0] : and(...filters)!;
 
@@ -245,6 +251,7 @@ export const agentsRouter = router({
           totalEarnings: agents.totalEarnings,
           skills: agents.skills,
           emailAddress: agents.emailAddress,
+          registeredVia: agents.registeredVia,
           averageRating: avgRatingExpr,
         })
         .from(agents)
@@ -257,6 +264,7 @@ export const agentsRouter = router({
         rank: input.offset + index + 1,
         address: row.address,
         agentId: row.agentId ?? null,
+        actorType: row.registeredVia === 'web' ? ('human' as const) : ('agent' as const),
         completedTasks: row.completedTasks,
         averageRating: Number(row.averageRating.toFixed(1)),
         totalEarnings: row.totalEarnings ?? '0',
