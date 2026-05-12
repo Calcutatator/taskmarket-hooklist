@@ -7,6 +7,7 @@ import {
   smallint,
   index,
   uniqueIndex,
+  jsonb,
   numeric,
   primaryKey,
   serial,
@@ -352,6 +353,24 @@ export const indexerState = pgTable('indexer_state', {
   lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
   updatedAt: timestamp('updated_at').defaultNow().notNull(),
 });
+
+export const protocolEvents = pgTable(
+  'protocol_events',
+  {
+    id: serial('id').primaryKey(),
+    eventName: text('event_name').notNull(),
+    chainId: integer('chain_id').notNull(),
+    blockNumber: bigint('block_number', { mode: 'bigint' }).notNull(),
+    logIndex: integer('log_index').notNull(),
+    txHash: text('tx_hash').notNull(),
+    args: jsonb('args').notNull(),
+    emittedAt: timestamp('emitted_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    eventNameIdx: index('idx_protocol_events_name').on(table.eventName),
+    blockNumberIdx: index('idx_protocol_events_block').on(table.blockNumber),
+  })
+);
 
 export const indexedEvents = pgTable(
   'indexed_events',

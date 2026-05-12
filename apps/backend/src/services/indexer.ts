@@ -10,6 +10,7 @@ import {
   indexerState,
   indexedEvents,
   platformFees,
+  protocolEvents,
   submissions,
 } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
@@ -72,6 +73,14 @@ const TASK_CANCELLED_EVENT = parseAbiItem(
 );
 const TASK_UPDATED_EVENT = parseAbiItem(
   'event TaskUpdated(bytes32 indexed taskId, uint256 newReward, uint256 newExpiryTime)'
+);
+const FEES_UPDATED_EVENT = parseAbiItem('event FeesUpdated(uint16 newFeeBps)');
+const FEE_RECIPIENT_UPDATED_EVENT = parseAbiItem('event FeeRecipientUpdated(address newRecipient)');
+const FORWARDER_UPDATED_EVENT = parseAbiItem(
+  'event ForwarderUpdated(address indexed forwarder, bool trusted)'
+);
+const REPUTATION_REGISTRY_UPDATED_EVENT = parseAbiItem(
+  'event ReputationRegistryUpdated(address indexed newRegistry)'
 );
 
 const METADATA_SET_EVENT = parseAbiItem(
@@ -398,6 +407,32 @@ async function processTaskUpdatedEvent(log: EventLog): Promise<void> {
   console.log(`TaskUpdated event: ${taskId}`);
 }
 
+/**
+ * Generic handler for the four admin/config events. Writes the raw event args
+ * to the protocol_events audit log so we have a queryable history of every
+ * protocol-level change with full provenance. BigInts are serialised as
+ * strings so JSON.stringify doesn't throw.
+ */
+async function processProtocolEvent(log: EventLog): Promise<void> {
+  if (log.blockNumber == null || log.logIndex == null || !log.transactionHash) return;
+
+  const serialisedArgs: Record<string, unknown> = {};
+  for (const [k, v] of Object.entries(log.args)) {
+    serialisedArgs[k] = typeof v === 'bigint' ? v.toString() : v;
+  }
+
+  await db.insert(protocolEvents).values({
+    eventName: log.eventName,
+    chainId: config.CHAIN_ID,
+    blockNumber: log.blockNumber,
+    logIndex: log.logIndex,
+    txHash: log.transactionHash,
+    args: serialisedArgs,
+  });
+
+  console.log(`${log.eventName} event:`, serialisedArgs);
+}
+
 async function processTaskReopenedEvent(log: EventLog): Promise<void> {
   const { taskId } = log.args;
 
@@ -434,6 +469,10 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_REOPENED_EVENT,
       TASK_CANCELLED_EVENT,
       TASK_UPDATED_EVENT,
+      FEES_UPDATED_EVENT,
+      FEE_RECIPIENT_UPDATED_EVENT,
+      FORWARDER_UPDATED_EVENT,
+      REPUTATION_REGISTRY_UPDATED_EVENT,
     ] as any,
   })) as unknown as EventLog[];
 
@@ -480,6 +519,12 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
           break;
         case 'TaskUpdated':
           await processTaskUpdatedEvent(log);
+          break;
+        case 'FeesUpdated':
+        case 'FeeRecipientUpdated':
+        case 'ForwarderUpdated':
+        case 'ReputationRegistryUpdated':
+          await processProtocolEvent(log);
           break;
         default:
           continue;

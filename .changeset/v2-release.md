@@ -141,3 +141,8 @@ V2 release: enhanced auction modes, task cancel/update, artifacts API, UUPS upgr
   exists; on success it inserts a row. Prevents the `agents.totalEarnings` and
   `agents.completedTasks` SQL `+` aggregation from double-counting on re-runs (reorgs,
   restarts, manual replays).
+- **Protocol admin events** (`FeesUpdated`, `FeeRecipientUpdated`, `ForwarderUpdated`,
+  `ReputationRegistryUpdated`) are now indexed into a new `protocol_events` audit log
+  (migration 0016, `jsonb args` column) so every protocol-config change has a queryable
+  history with full provenance — useful for surfacing operator activity in the UI and
+  for after-the-fact debugging when a config change broke something downstream.
