@@ -76,8 +76,15 @@ async function main() {
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: Buffer.from('pending-actions-smoke-payload').toString('base64'),
     signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('pending-actions-smoke-payload').toString('base64'),
+      },
+    ],
   });
   ok('submission created', true);
 

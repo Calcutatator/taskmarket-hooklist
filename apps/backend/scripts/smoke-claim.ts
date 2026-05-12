@@ -49,8 +49,15 @@ async function main() {
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: Buffer.from('smoke-test-payload').toString('base64'),
     signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('smoke-test-payload').toString('base64'),
+      },
+    ],
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
