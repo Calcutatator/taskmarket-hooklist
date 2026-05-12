@@ -131,6 +131,14 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Update task' })
 );
 app.post(
+  '/api/tasks/:taskId/pitches',
+  x402Middleware({ getAmount: () => '1000', description: 'Submit pitch' })
+);
+app.post(
+  '/api/tasks/:taskId/proofs',
+  x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
+);
+app.post(
   '/api/identity/register',
   x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
 );

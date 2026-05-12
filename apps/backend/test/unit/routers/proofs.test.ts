@@ -9,11 +9,15 @@ vi.mock('viem', async (importOriginal) => {
   };
 });
 
+vi.mock('../../../src/services/contract', () => ({
+  contractSubmitProof: vi.fn().mockResolvedValue('0xprooftx'),
+}));
+
 import { proofsRouter } from '../../../src/routers/proofs.router';
 import { recoverMessageAddress } from 'viem';
 
-const WORKER = '0xWorker0000000000000000000000000000000001';
-const TASK_ID = '0xtask0000000000000000000000000000000001';
+const WORKER = '0x0000000000000000000000000000000000000001';
+const TASK_ID = '0x7461736b00000000000000000000000000000000000000000000000000000001';
 const PROOF_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeTask(overrides: Record<string, any> = {}) {
@@ -78,12 +82,13 @@ describe('proofs router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'pending_approval' })]));
 
       const caller = proofsRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow('Task not open for proof submission');
+      await expect(caller.submit(submitInput)).rejects.toThrow(
+        'Task not open for proof submission'
+      );
     });
 
     it('inserts proof and returns proofId on happy path', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createMockCtx(WORKER); // X402 payer = worker
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = proofsRouter.createCaller(ctx);
@@ -94,26 +99,21 @@ describe('proofs router', () => {
       expect(ctx.db.insert).toHaveBeenCalledOnce();
     });
 
-    it('throws BAD_REQUEST when signature is invalid', async () => {
-      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-      const ctx = createMockCtx();
+    it('throws BAD_REQUEST when X402 payer is missing', async () => {
+      const ctx = createMockCtx(); // no payer
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = proofsRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow('Invalid signature');
+      await expect(caller.submit(submitInput)).rejects.toThrow('Payment required');
     });
 
-    it('throws UNAUTHORIZED when signature is from different address', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
-        '0x0000000000000000000000000000000000000001' as `0x${string}`
-      );
-      const ctx = createMockCtx();
+    it('throws FORBIDDEN when X402 payer does not match workerAddress', async () => {
+      const OTHER = '0x9999999999999999999999999999999999999999';
+      const ctx = createMockCtx(OTHER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = proofsRouter.createCaller(ctx);
-      await expect(caller.submit(submitInput)).rejects.toThrow(
-        'Signature does not match worker address'
-      );
+      await expect(caller.submit(submitInput)).rejects.toThrow('Payer must match workerAddress');
     });
   });
 

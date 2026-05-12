@@ -4,8 +4,8 @@ import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { contractSelectWorker } from '../services/contract';
-import { recoverMessageAddress } from 'viem';
+import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
+import { encodeAbiParameters, keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 
 export const pitchesRouter = router({
@@ -57,24 +57,42 @@ export const pitchesRouter = router({
         throw new Error('Worker has already submitted a pitch');
       }
 
-      const message = `taskmarket:pitch:${input.taskId}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      // X402 payment guard: middleware in app.ts settles the USDC transfer and
+      // sets ctx.res.locals.payer to the wallet that paid. We then require that
+      // wallet to match input.workerAddress — a worker can't pay to submit a
+      // pitch masquerading as someone else. Replaces the previous wallet-signed
+      // check (signature is still accepted in the body for shape compat but no
+      // longer verified).
+      const payer: string | undefined = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Payment required: missing payer' });
       }
-      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+      if (payer.toLowerCase() !== input.workerAddress.toLowerCase()) {
         throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Signature does not match worker address',
+          code: 'FORBIDDEN',
+          message: 'Payer must match workerAddress',
         });
       }
 
+      // Domain-separated content hash: keccak256(abi.encode(taskId, worker, pitchText))
+      // so the same pitch text cannot be replayed across tasks or workers.
+      const pitchHash = keccak256(
+        encodeAbiParameters(
+          [{ type: 'bytes32' }, { type: 'address' }, { type: 'string' }],
+          [input.taskId as `0x${string}`, input.workerAddress as `0x${string}`, input.pitchText]
+        )
+      );
+
       const pitchId = randomUUID();
+
+      // Anchor on chain before inserting the off-chain row: if the contract call
+      // reverts, we don't leave a phantom DB row pointing at no tx hash.
+      const submitTxHash = await contractSubmitPitch(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        pitchHash,
+        task.contractAddress
+      );
 
       await ctx.db.insert(proposals).values({
         id: pitchId,
@@ -84,6 +102,8 @@ export const pitchesRouter = router({
         estimatedDuration: input.estimatedDuration || null,
         signature: input.signature,
         status: 'pending',
+        pitchHash,
+        submitTxHash,
       });
 
       return { success: true, pitchId };

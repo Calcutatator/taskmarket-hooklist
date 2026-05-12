@@ -1,31 +1,35 @@
 'use client';
 
 import { useState } from 'react';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { signAndPost } from '@/lib/wallet-sign-action';
+import { explorerTxUrl } from '@/lib/explorer';
+import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
 export function PitchForm({ disabled, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
-  const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { switchChainAsync } = useSwitchChain();
   const [pitchText, setPitchText] = useState('');
   const [durationHours, setDurationHours] = useState('');
-  const [pending, setPending] = useState(false);
+  const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
-  const [done, setDone] = useState(false);
+  const [txHash, setTxHash] = useState<string | null>(null);
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to submit a pitch." />;
   }
+
+  const busy = step !== 'idle' && step !== 'done';
 
   async function handlePitch() {
     setError(null);
@@ -35,35 +39,63 @@ export function PitchForm({ disabled, task }: TaskActionComponentProps) {
       return;
     }
 
-    const extra: Record<string, unknown> = { pitchText: pitchText.trim() };
+    const body: Record<string, unknown> = {
+      taskId: task.id,
+      workerAddress: address,
+      pitchText: pitchText.trim(),
+      signature: '0x',
+    };
     if (durationHours.trim().length > 0) {
       const hrs = Number(durationHours);
       if (!Number.isFinite(hrs) || hrs <= 0) {
         setFieldErrors({ durationHours: 'Must be a positive number of hours' });
         return;
       }
-      extra.estimatedDuration = Math.floor(hrs * 3600);
+      body.estimatedDuration = Math.floor(hrs * 3600);
     }
 
-    setPending(true);
-    const result = await signAndPost<{ pitchId: string }>({
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      extraBody: extra,
-      path: `/api/tasks/${task.id}/pitches`,
-      taskId: task.id,
-      verbForMessage: 'pitch',
-    });
-    setPending(false);
+    const result = await payX402Post<{ pitchId: string; txHash?: string }>(
+      `/api/tasks/${task.id}/pitches`,
+      body,
+      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+      setStep
+    );
     if (result.ok) {
-      setDone(true);
-    } else if (!result.rejected) {
-      setError(result.error);
+      setStep('done');
+      setTxHash(result.txHash ?? null);
+    } else {
+      setStep('idle');
+      if (!result.rejected) setError(result.error);
     }
   }
 
-  if (done) {
-    return <span className="font-mono text-sm text-primary">✓ Pitch submitted</span>;
+  if (step === 'done') {
+    const url = txHash ? explorerTxUrl(txHash) : null;
+    return (
+      <div className="grid gap-1 text-sm">
+        <span className="font-mono text-primary">✓ Pitch submitted</span>
+        {url ? (
+          <a
+            className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
+            href={url}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View anchoring tx
+          </a>
+        ) : null}
+      </div>
+    );
   }
+
+  const label =
+    step === 'payment'
+      ? 'Fetching payment…'
+      : step === 'signing'
+        ? 'Sign payment…'
+        : step === 'submitting'
+          ? 'Anchoring on-chain…'
+          : 'Submit pitch';
 
   return (
     <div className="grid gap-3">
@@ -94,10 +126,12 @@ export function PitchForm({ disabled, task }: TaskActionComponentProps) {
           <p className="text-xs text-destructive">{fieldErrors.durationHours}</p>
         ) : null}
       </div>
-      <Button disabled={disabled || pending} onClick={handlePitch} size="sm">
-        {pending ? 'Submitting…' : 'Submit pitch'}
+      <Button disabled={disabled || busy} onClick={handlePitch} size="sm">
+        {label}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
+      <p className="text-xs text-muted-foreground">
+        Costs 0.001 USDC. Anchors a tamper-proof hash of your pitch on-chain.
+      </p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );
