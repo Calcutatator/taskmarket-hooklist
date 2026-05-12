@@ -37,6 +37,7 @@ export const LeaderboardInputSchema = z.object({
   search: z.string().optional(),
   minRating: z.number().min(0).max(5).optional(),
   minTasks: z.number().int().min(0).optional(),
+  actorType: ActorType.optional(),
 });
 
 export const LeaderboardEntrySchema = z.object({

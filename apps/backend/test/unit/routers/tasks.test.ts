@@ -139,6 +139,42 @@ describe('tasks router', () => {
       expect(result!.submissionCount).toBe(3);
       expect(result!.pitchCount).toBe(1);
     });
+
+    it('emits forfeit pendingAction for a claimed claim-mode task', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([{ ...mockTaskRow, mode: 'claim', status: 'claimed', claimedBy: '0xworker' }])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result).not.toBeNull();
+      const actions = result!.pendingActions;
+      expect(actions.some((a) => a.action === 'forfeit' && a.role === 'requester')).toBe(true);
+      expect(actions.some((a) => a.action === 'submit' && a.role === 'worker')).toBe(true);
+    });
+
+    it('does not emit forfeit for a claimed bounty (non-claim mode)', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            { ...mockTaskRow, mode: 'bounty', status: 'claimed', claimedBy: '0xworker' },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result).not.toBeNull();
+      expect(result!.pendingActions.some((a) => a.action === 'forfeit')).toBe(false);
+    });
   });
 
   describe('create auction validation', () => {
