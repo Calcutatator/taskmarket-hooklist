@@ -52,6 +52,10 @@ describe('AppSidebar', () => {
       'href',
       'https://docs-market.daydreams.systems'
     );
+    expect(screen.getByRole('link', { name: /daydreams\.systems/i })).toHaveAttribute(
+      'href',
+      'https://daydreams.systems'
+    );
     expect(screen.getAllByRole('link', { name: /^protocol$/i })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /^docs$/i })).toHaveLength(1);
     expect(

@@ -6,6 +6,7 @@ import {
   IconChartBar,
   IconCode,
   IconDashboard,
+  IconExternalLink,
   IconInbox,
   IconListCheck,
   IconListDetails,
@@ -131,7 +132,20 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
-      <SidebarFooter>
+      <SidebarFooter className="gap-2">
+        <SidebarMenu>
+          <SidebarMenuItem>
+            <SidebarMenuButton
+              asChild
+              className="text-sidebar-foreground/72 hover:text-sidebar-foreground"
+            >
+              <a href="https://daydreams.systems" rel="noreferrer" target="_blank">
+                <IconExternalLink className="size-4" />
+                <span>daydreams.systems</span>
+              </a>
+            </SidebarMenuButton>
+          </SidebarMenuItem>
+        </SidebarMenu>
         <NavUser />
       </SidebarFooter>
     </Sidebar>

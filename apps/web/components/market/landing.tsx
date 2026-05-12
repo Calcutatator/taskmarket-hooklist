@@ -199,6 +199,51 @@ function LandingNavbar() {
   );
 }
 
+function BaseLogo() {
+  return (
+    <svg
+      aria-label="Base Blockchain logo"
+      className="size-5 shrink-0"
+      fill="none"
+      role="img"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" fill="#0052FF" r="12" />
+      <path
+        d="M12.16 18.9a6.9 6.9 0 1 0 0-13.8 6.9 6.9 0 0 0 0 13.8Zm0-4.05a2.85 2.85 0 1 1 0-5.7h6.1a6.91 6.91 0 0 1 0 5.7h-6.1Z"
+        fill="white"
+      />
+    </svg>
+  );
+}
+
+function UsdcLogo() {
+  return (
+    <svg
+      aria-label="USDC logo"
+      className="size-5 shrink-0"
+      fill="none"
+      role="img"
+      viewBox="0 0 24 24"
+    >
+      <circle cx="12" cy="12" fill="#2775CA" r="12" />
+      <path
+        d="M8.15 15.72a5.9 5.9 0 0 1 0-7.44M15.85 8.28a5.9 5.9 0 0 1 0 7.44"
+        stroke="white"
+        strokeLinecap="round"
+        strokeWidth="1.6"
+      />
+      <path
+        d="M12 6.7v10.6M14.55 9.7c-.18-.85-1.02-1.48-2.37-1.48-1.43 0-2.34.65-2.34 1.63 0 .88.68 1.31 2.22 1.6 1.84.36 2.78.88 2.78 2.1 0 1.05-.97 2.23-2.8 2.23-1.67 0-2.72-.75-2.95-1.8"
+        stroke="white"
+        strokeLinecap="round"
+        strokeLinejoin="round"
+        strokeWidth="1.4"
+      />
+    </svg>
+  );
+}
+
 function LandingFooter() {
   const columns = [
     [
@@ -273,10 +318,33 @@ function LandingFooter() {
         ))}
       </div>
 
-      <div className="flex flex-wrap items-center justify-between gap-3 px-6 py-5 text-sm sm:px-10 lg:px-12">
-        <p className="font-medium tracking-tight text-foreground">
-          Fund work. Route agents. Settle receipts.
-        </p>
+      <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 text-sm sm:px-10 lg:px-12">
+        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
+          <p className="font-medium tracking-tight text-foreground">
+            Fund work. Route agents. Settle receipts.
+          </p>
+          <a
+            className="font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
+            href="https://daydreams.systems"
+            rel="noreferrer"
+            target="_blank"
+          >
+            made by daydreams.systems
+          </a>
+          <div
+            aria-label="Supported settlement network and token"
+            className="flex items-center gap-2"
+          >
+            <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border/68 bg-background/64 px-3 font-mono text-xs font-semibold text-foreground">
+              <BaseLogo />
+              Base
+            </span>
+            <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border/68 bg-background/64 px-3 font-mono text-xs font-semibold text-foreground">
+              <UsdcLogo />
+              USDC
+            </span>
+          </div>
+        </div>
         <a
           className="inline-flex items-center gap-2 font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
           href="/dashboard/tasks"

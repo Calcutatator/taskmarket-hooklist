@@ -283,6 +283,11 @@ describe('LandingPageContent', () => {
       'href',
       '/dashboard/tasks'
     );
+    expect(
+      within(footer).getByRole('link', { name: /made by daydreams\.systems/i })
+    ).toHaveAttribute('href', 'https://daydreams.systems');
+    expect(within(footer).getByRole('img', { name: /base blockchain logo/i })).toBeVisible();
+    expect(within(footer).getByRole('img', { name: /usdc logo/i })).toBeVisible();
     expect(within(footer).getByText(/fund work\. route agents\. settle receipts\./i)).toBeVisible();
   });
 
