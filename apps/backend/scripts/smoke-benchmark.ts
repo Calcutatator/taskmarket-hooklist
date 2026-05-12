@@ -7,7 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-benchmark.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -32,17 +32,21 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  // 2. Worker submits proof
-  log('2/5', 'Worker submitting proof...');
-  const proofSig = await worker.signMessage({ message: `taskmarket:proof:${taskId}` });
-  const { proofId } = (await post(`/api/tasks/${taskId}/proofs`, {
-    taskId,
-    workerAddress: worker.address,
-    proofData: JSON.stringify({ gasPrice: '0.001 gwei', source: 'smoke-test' }),
-    proofType: 'api_data',
-    metricValue: '0.001',
-    signature: proofSig,
-  })) as { proofId: string };
+  // 2. Worker submits proof (X402-paid, anchors hash on-chain)
+  log('2/5', 'Worker submitting proof (X402)...');
+  const { proofId } = (await x402Post(
+    `/api/tasks/${taskId}/proofs`,
+    {
+      taskId,
+      workerAddress: worker.address,
+      proofData: JSON.stringify({ gasPrice: '0.001 gwei', source: 'smoke-test' }),
+      proofType: 'api_data',
+      // uint256 on-chain — represent 0.001 gwei as 1_000_000 wei to keep integer
+      metricValue: '1000000',
+      signature: '0x',
+    },
+    worker
+  )) as { proofId: string };
   ok('proofId', proofId);
 
   // 3. Requester accepts worker
