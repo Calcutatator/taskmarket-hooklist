@@ -497,6 +497,7 @@ contract TaskMarket is ITMP, ITMPReputation, ITMPFees, ITMPMode, Initializable, 
         require(task.requester != address(0), "Task does not exist");
         require(task.mode == PITCH, "Not a Pitch task");
         require(task.status == TaskStatus.Open, "Task not open");
+        require(block.timestamp <= task.pitchDeadline, "Pitch deadline passed");
         require(block.timestamp <= task.expiryTime, "Task expired");
         require(pitchHash != bytes32(0), "Empty pitch hash");
 

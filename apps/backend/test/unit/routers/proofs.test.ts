@@ -1,20 +1,11 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
 
-vi.mock('viem', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('viem')>();
-  return {
-    ...actual,
-    recoverMessageAddress: vi.fn(),
-  };
-});
-
 vi.mock('../../../src/services/contract', () => ({
   contractSubmitProof: vi.fn().mockResolvedValue('0xprooftx'),
 }));
 
 import { proofsRouter } from '../../../src/routers/proofs.router';
-import { recoverMessageAddress } from 'viem';
 
 const WORKER = '0x0000000000000000000000000000000000000001';
 const TASK_ID = '0x7461736b00000000000000000000000000000000000000000000000000000001';

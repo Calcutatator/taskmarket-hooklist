@@ -1,6 +1,15 @@
 import { z } from 'zod';
 
-export const ProofType = z.enum(['url', 'screenshot', 'api_data', 'manual']);
+export const ProofType = z.enum([
+  'url',
+  'screenshot',
+  'api_data',
+  'manual',
+  'custom',
+  'eval',
+  'tlsn',
+  'zk',
+]);
 
 export const ProofStatus = z.enum(['pending', 'verified', 'rejected']);
 

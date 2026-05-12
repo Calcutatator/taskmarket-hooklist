@@ -1216,10 +1216,19 @@ contract TaskMarketTest is Test {
         _submitPitch(taskId, worker1, keccak256("pitch"));
     }
 
+    function test_SubmitPitch_revertsAfterPitchDeadline() public {
+        // Task has a 2-day pitch window inside a 7-day expiry.
+        // Warping past the pitch deadline (but not the expiry) must revert.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        vm.warp(block.timestamp + 2 days + 1);
+        vm.expectRevert("Pitch deadline passed");
+        _submitPitch(taskId, worker1, keccak256("late pitch"));
+    }
+
     function test_SubmitPitch_revertsAfterExpiry() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
         vm.warp(block.timestamp + DURATION + 1);
-        vm.expectRevert("Task expired");
+        vm.expectRevert("Pitch deadline passed");
         _submitPitch(taskId, worker1, keccak256("pitch"));
     }
 

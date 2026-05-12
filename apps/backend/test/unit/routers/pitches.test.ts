@@ -6,17 +6,8 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitPitch: vi.fn().mockResolvedValue('0xpitchtx'),
 }));
 
-vi.mock('viem', async (importOriginal) => {
-  const actual = await importOriginal<typeof import('viem')>();
-  return {
-    ...actual,
-    recoverMessageAddress: vi.fn(),
-  };
-});
-
 import { pitchesRouter } from '../../../src/routers/pitches.router';
 import { contractSelectWorker } from '../../../src/services/contract';
-import { recoverMessageAddress } from 'viem';
 
 const REQUESTER = '0xRe9ue57e10000000000000000000000000000001';
 const WORKER = '0x0000000000000000000000000000000000000001';
