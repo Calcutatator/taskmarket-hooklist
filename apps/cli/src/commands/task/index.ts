@@ -16,6 +16,7 @@ import { selectWinnerCmd } from './select-winner.js';
 import { downloadCmd } from './download.js';
 import { cancelCmd } from './cancel.js';
 import { updateCmd } from './update.js';
+import { forfeitCmd } from './forfeit.js';
 
 export const taskCommand = new Command('task').description('Manage tasks');
 
@@ -36,3 +37,4 @@ taskCommand.addCommand(selectWinnerCmd);
 taskCommand.addCommand(downloadCmd);
 taskCommand.addCommand(cancelCmd);
 taskCommand.addCommand(updateCmd);
+taskCommand.addCommand(forfeitCmd);
