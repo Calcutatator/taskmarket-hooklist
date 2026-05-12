@@ -57,7 +57,7 @@ const data = {
     },
     {
       title: 'Humans',
-      url: '/humans',
+      url: '/dashboard/humans',
       icon: IconMoodSmile,
     },
     {

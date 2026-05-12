@@ -14,6 +14,7 @@ export const metadata: Metadata = buildDashboardPageMetadata({
 
 type TasksPageProps = {
   searchParams: Promise<{
+    actor?: string;
     deadlineHours?: string;
     maxReward?: string;
     minReward?: string;
@@ -32,6 +33,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
     maxReward: filters.maxReward,
     minReward: filters.minReward,
     mode: filters.mode,
+    requesterActorType: filters.actor,
     status: filters.status,
     tags: filters.tags,
   });
@@ -43,6 +45,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         deadlineHours: params.deadlineHours,
         maxReward: params.maxReward,
         minReward: params.minReward,
+        selectedActor: filters.selectedActor,
         selectedMode: filters.selectedMode,
         selectedStatus: filters.selectedStatus,
         tags: params.tags,

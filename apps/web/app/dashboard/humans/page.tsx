@@ -10,12 +10,12 @@ import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
   description:
-    'Discover Taskmarket agents ranked by completed work, reputation, skills, and earnings.',
-  path: '/dashboard/agents',
-  title: 'Agent directory',
+    'Browse Taskmarket humans — wallet identities registered through the web app rather than the CLI.',
+  path: '/dashboard/humans',
+  title: 'Humans directory',
 });
 
-type AgentsPageProps = {
+type HumansPageProps = {
   searchParams: Promise<{
     limit?: string;
     minRating?: string;
@@ -27,12 +27,12 @@ type AgentsPageProps = {
   }>;
 };
 
-export default async function AgentsPage({ searchParams }: AgentsPageProps) {
+export default async function HumansPage({ searchParams }: HumansPageProps) {
   const params = await searchParams;
   const page = params.page ? Math.max(Number(params.page), 1) : 1;
   const limit = params.limit ? Number(params.limit) : 20;
-  const agents = await fetchLeaderboard({
-    actorType: 'agent',
+  const humans = await fetchLeaderboard({
+    actorType: 'human',
     limit,
     minRating: params.minRating ? Number(params.minRating) : undefined,
     minTasks: params.minTasks ? Number(params.minTasks) : undefined,
@@ -46,44 +46,52 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
     <div className="mx-auto grid max-w-7xl gap-6 px-4 py-10 sm:px-6 lg:px-8">
       <div className="flex flex-wrap items-end justify-between gap-3">
         <div>
-          <p className="font-mono text-xs uppercase text-primary">Agents</p>
+          <p className="font-mono text-xs uppercase text-primary">Humans</p>
           <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">
-            Agent directory
+            Humans directory
           </h1>
+          <p className="mt-2 max-w-2xl text-sm text-muted-foreground">
+            Wallet identities registered through the web app. The protocol still treats them as
+            actors; the classification is metadata that surfaces in API responses as
+            <code className="mx-1 rounded bg-surface/60 px-1 font-mono text-xs">
+              actorType: &quot;human&quot;
+            </code>
+            .
+          </p>
         </div>
         <a
           className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
-          href="/dashboard/humans"
+          href="/dashboard/agents"
         >
-          View humans →
+          ← Back to agents
         </a>
       </div>
       <Card>
         <CardContent>
-          <form action="/dashboard/agents" className="grid gap-4 lg:grid-cols-6">
+          <form action="/dashboard/humans" className="grid gap-4 lg:grid-cols-6">
             <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="agent-search">Search</Label>
+              <Label htmlFor="human-search">Search</Label>
               <Input
                 defaultValue={params.search}
-                id="agent-search"
+                id="human-search"
                 name="search"
                 placeholder="Agent ID or address"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="agent-skill">Skill</Label>
+              <Label htmlFor="human-skill">Skill</Label>
               <Input
                 defaultValue={params.skill}
-                id="agent-skill"
+                id="human-skill"
                 name="skill"
                 placeholder="skill"
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="agent-min-rating">Min rating</Label>
+              <Label htmlFor="human-min-rating">Min rating</Label>
               <Input
                 defaultValue={params.minRating}
-                id="agent-min-rating"
+                id="human-min-rating"
                 max="5"
                 min="0"
                 name="minRating"
@@ -92,10 +100,10 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
               />
             </div>
             <div className="grid gap-2">
-              <Label htmlFor="agent-min-tasks">Min tasks</Label>
+              <Label htmlFor="human-min-tasks">Min tasks</Label>
               <Input
                 defaultValue={params.minTasks}
-                id="agent-min-tasks"
+                id="human-min-tasks"
                 min="0"
                 name="minTasks"
                 type="number"
@@ -106,13 +114,13 @@ export default async function AgentsPage({ searchParams }: AgentsPageProps) {
                 Apply filters
               </Button>
               <Button asChild variant="outline">
-                <a href="/dashboard/agents">Clear</a>
+                <a href="/dashboard/humans">Clear</a>
               </Button>
             </div>
           </form>
         </CardContent>
       </Card>
-      <AgentTable agents={agents} />
+      <AgentTable agents={humans} />
     </div>
   );
 }

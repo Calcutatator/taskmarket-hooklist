@@ -370,6 +370,12 @@ export const tasksRouter = router({
       if (input.auctionType) {
         conditions.push(eq(tasks.auctionType, input.auctionType));
       }
+      if (input.requesterActorType) {
+        const channel = input.requesterActorType === 'human' ? 'web' : 'cli';
+        conditions.push(
+          sql`${tasks.requester} IN (SELECT ${agents.address} FROM ${agents} WHERE ${agents.registeredVia} = ${channel})`
+        );
+      }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
       }
@@ -401,37 +407,52 @@ export const tasksRouter = router({
       // Batch all per-task counts in three queries instead of N*3 queries.
       const listIds = tasksList.map((t) => t.id);
 
-      const [submissionCountRows, pitchCountRows, bidAggRows] = await Promise.all([
-        listIds.length > 0
-          ? ctx.db
-              .select({ taskId: submissions.taskId, count: sql<number>`count(*)::int` })
-              .from(submissions)
-              .where(inArray(submissions.taskId, listIds))
-              .groupBy(submissions.taskId)
-          : Promise.resolve([]),
-        listIds.length > 0
-          ? ctx.db
-              .select({ taskId: proposals.taskId, count: sql<number>`count(*)::int` })
-              .from(proposals)
-              .where(inArray(proposals.taskId, listIds))
-              .groupBy(proposals.taskId)
-          : Promise.resolve([]),
-        listIds.length > 0
-          ? ctx.db
-              .select({
-                taskId: bids.taskId,
-                count: sql<number>`count(*)::int`,
-                minPrice: sql<string | null>`min(${bids.price})`,
-              })
-              .from(bids)
-              .where(inArray(bids.taskId, listIds))
-              .groupBy(bids.taskId)
-          : Promise.resolve([]),
-      ]);
+      const requesterAddresses = Array.from(new Set(tasksList.map((t) => t.requester)));
+
+      const [submissionCountRows, pitchCountRows, bidAggRows, requesterAgentRows] =
+        await Promise.all([
+          listIds.length > 0
+            ? ctx.db
+                .select({ taskId: submissions.taskId, count: sql<number>`count(*)::int` })
+                .from(submissions)
+                .where(inArray(submissions.taskId, listIds))
+                .groupBy(submissions.taskId)
+            : Promise.resolve([]),
+          listIds.length > 0
+            ? ctx.db
+                .select({ taskId: proposals.taskId, count: sql<number>`count(*)::int` })
+                .from(proposals)
+                .where(inArray(proposals.taskId, listIds))
+                .groupBy(proposals.taskId)
+            : Promise.resolve([]),
+          listIds.length > 0
+            ? ctx.db
+                .select({
+                  taskId: bids.taskId,
+                  count: sql<number>`count(*)::int`,
+                  minPrice: sql<string | null>`min(${bids.price})`,
+                })
+                .from(bids)
+                .where(inArray(bids.taskId, listIds))
+                .groupBy(bids.taskId)
+            : Promise.resolve([]),
+          requesterAddresses.length > 0
+            ? ctx.db
+                .select({ address: agents.address, registeredVia: agents.registeredVia })
+                .from(agents)
+                .where(inArray(agents.address, requesterAddresses))
+            : Promise.resolve([]),
+        ]);
 
       const submissionCountMap = new Map(submissionCountRows.map((r) => [r.taskId, r.count]));
       const pitchCountMap = new Map(pitchCountRows.map((r) => [r.taskId, r.count]));
       const bidAggMap = new Map(bidAggRows.map((r) => [r.taskId, r]));
+      const actorTypeByAddress = new Map<string, 'agent' | 'human'>(
+        requesterAgentRows.map((r) => [
+          r.address,
+          r.registeredVia === 'web' ? ('human' as const) : ('agent' as const),
+        ])
+      );
 
       const tasksWithCounts = tasksList.map((task) => {
         let auctionBidCount: number | null = null;
@@ -479,6 +500,7 @@ export const tasksRouter = router({
           submissionCount: Number(submissionCountMap.get(task.id) ?? 0),
           pitchCount: Number(pitchCountMap.get(task.id) ?? 0),
           requesterAgentId: task.requesterAgentId ?? null,
+          requesterActorType: actorTypeByAddress.get(task.requester) ?? 'agent',
           auctionType: (task.auctionType as AuctionTypeValue | null) ?? null,
           auctionStartPrice: task.auctionStartPrice ?? null,
           auctionFloorPrice: task.auctionFloorPrice ?? null,
@@ -539,11 +561,23 @@ export const tasksRouter = router({
       const workerAddress = task.worker ?? task.claimedBy;
       const workerAgent = workerAddress
         ? await ctx.db
-            .select({ agentId: agents.agentId })
+            .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
             .from(agents)
             .where(eq(agents.address, workerAddress))
             .limit(1)
         : [];
+      const requesterAgentRow = await ctx.db
+        .select({ registeredVia: agents.registeredVia })
+        .from(agents)
+        .where(eq(agents.address, task.requester))
+        .limit(1);
+      const requesterActorType: 'agent' | 'human' =
+        requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
+      const workerActorType: 'agent' | 'human' | undefined = workerAddress
+        ? workerAgent[0]?.registeredVia === 'web'
+          ? 'human'
+          : 'agent'
+        : undefined;
 
       // Auction-specific computed fields
       let auctionBidCount: number | null = null;
@@ -615,7 +649,9 @@ export const tasksRouter = router({
         submissionCount: Number(submissionCount[0]?.count || 0),
         pitchCount: pitchCountNum,
         requesterAgentId: task.requesterAgentId ?? null,
+        requesterActorType,
         workerAgentId: workerAgent[0]?.agentId ?? null,
+        workerActorType,
         auctionType: (task.auctionType as any) ?? null,
         auctionStartPrice: task.auctionStartPrice ?? null,
         auctionFloorPrice: task.auctionFloorPrice ?? null,

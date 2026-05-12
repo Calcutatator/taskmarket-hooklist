@@ -339,11 +339,14 @@ export function TaskTable({
   );
 }
 
+const actors: Array<'ALL' | 'agent' | 'human'> = ['ALL', 'agent', 'human'];
+
 export function TaskFilterRail({
   basePath = '/dashboard/tasks',
   deadlineHours = '',
   maxReward = '',
   minReward = '',
+  selectedActor = 'ALL',
   selectedMode = 'ALL',
   selectedStatus = 'ALL',
   tags = '',
@@ -352,11 +355,13 @@ export function TaskFilterRail({
   deadlineHours?: string;
   maxReward?: string;
   minReward?: string;
+  selectedActor?: 'ALL' | 'agent' | 'human' | string;
   selectedMode?: 'ALL' | TaskModeType | string;
   selectedStatus?: 'ALL' | TaskStatusType | string;
   tags?: string;
 }) {
   const currentFilters: TaskSearchParams = {
+    actor: selectedActor,
     deadlineHours,
     maxReward,
     minReward,
@@ -402,12 +407,30 @@ export function TaskFilterRail({
               ))}
             </div>
           </div>
+          <div className="grid gap-2">
+            <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
+            <div className="grid grid-cols-3 gap-1">
+              {actors.map((actor) => (
+                <a
+                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
+                  data-active={selectedActor === actor}
+                  href={taskFiltersHref(basePath, currentFilters, { actor })}
+                  key={actor}
+                >
+                  {actor === 'ALL' ? 'Any' : actor}
+                </a>
+              ))}
+            </div>
+          </div>
           <form action={normalizeBasePath(basePath)} className="grid gap-4">
             {selectedMode !== 'ALL' ? (
               <input name="mode" type="hidden" value={selectedMode} />
             ) : null}
             {selectedStatus !== 'ALL' ? (
               <input name="status" type="hidden" value={selectedStatus} />
+            ) : null}
+            {selectedActor !== 'ALL' ? (
+              <input name="actor" type="hidden" value={selectedActor} />
             ) : null}
             <div className="grid gap-2">
               <Label htmlFor="task-filter-tags">Tags</Label>
@@ -489,6 +512,7 @@ export function TaskListPageContent({
     deadlineHours?: string;
     maxReward?: string;
     minReward?: string;
+    selectedActor?: string;
     selectedMode: string;
     selectedStatus: string;
     tags?: string;
@@ -503,6 +527,7 @@ export function TaskListPageContent({
         deadlineHours={filterParams.deadlineHours}
         maxReward={filterParams.maxReward}
         minReward={filterParams.minReward}
+        selectedActor={filterParams.selectedActor}
         selectedMode={filterParams.selectedMode}
         selectedStatus={filterParams.selectedStatus}
         tags={filterParams.tags}
@@ -917,12 +942,30 @@ function TaskSummaryRail({
         <SummaryGroup title="Participants">
           <SummaryRow
             label="Requester"
-            value={compactAddress(task.requesterAgentId ?? task.requester)}
+            value={
+              <span className="flex items-center gap-1.5">
+                {compactAddress(task.requesterAgentId ?? task.requester)}
+                {task.requesterActorType === 'human' ? (
+                  <Badge variant="outline" title="Registered as a human via the web app">
+                    human
+                  </Badge>
+                ) : null}
+              </span>
+            }
           />
           {task.worker || task.claimedBy ? (
             <SummaryRow
               label="Worker"
-              value={compactAddress(task.workerAgentId ?? task.worker ?? task.claimedBy)}
+              value={
+                <span className="flex items-center gap-1.5">
+                  {compactAddress(task.workerAgentId ?? task.worker ?? task.claimedBy)}
+                  {task.workerActorType === 'human' ? (
+                    <Badge variant="outline" title="Registered as a human via the web app">
+                      human
+                    </Badge>
+                  ) : null}
+                </span>
+              }
             />
           ) : null}
         </SummaryGroup>

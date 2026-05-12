@@ -1,4 +1,5 @@
 export type TaskSearchParams = {
+  actor?: string;
   deadlineHours?: string;
   maxReward?: string;
   minReward?: string;
@@ -14,10 +15,12 @@ export type ActiveFilter = {
 
 export type ParsedTaskFilters = {
   activeFilters: ActiveFilter[];
+  actor?: 'agent' | 'human';
   deadlineHours?: number;
   maxReward?: string;
   minReward?: string;
   mode?: string;
+  selectedActor: 'ALL' | 'agent' | 'human';
   selectedMode: string;
   selectedStatus: string;
   status?: string;
@@ -73,13 +76,20 @@ export function parseTaskFilters(
   if (params.deadlineHours) {
     activeFilters.push({ label: 'Deadline', value: `${params.deadlineHours}h` });
   }
+  if (params.actor && params.actor !== 'ALL') {
+    activeFilters.push({ label: 'Actor', value: labelize(params.actor) });
+  }
+
+  const actor = params.actor === 'agent' || params.actor === 'human' ? params.actor : undefined;
 
   return {
     activeFilters,
+    actor,
     deadlineHours: params.deadlineHours ? Number(params.deadlineHours) : undefined,
     maxReward: toBaseUnits(params.maxReward),
     minReward: toBaseUnits(params.minReward),
     mode: params.mode,
+    selectedActor: actor ?? 'ALL',
     selectedMode: params.mode ?? 'ALL',
     selectedStatus: status ?? 'ALL',
     status,
@@ -112,6 +122,9 @@ export function taskFiltersHref(
   }
   if (next.deadlineHours) {
     params.set('deadlineHours', next.deadlineHours);
+  }
+  if (next.actor && next.actor !== 'ALL') {
+    params.set('actor', next.actor);
   }
 
   const normalized = normalizeBasePath(basePath);

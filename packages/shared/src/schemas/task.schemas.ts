@@ -61,7 +61,9 @@ export const TaskResponseSchema = z.object({
   submissionCount: z.number().optional().default(0),
   pitchCount: z.number().optional().default(0),
   requesterAgentId: z.string().nullable().optional(),
+  requesterActorType: z.enum(['agent', 'human']).optional(),
   workerAgentId: z.string().nullable().optional(),
+  workerActorType: z.enum(['agent', 'human']).optional(),
   auctionType: AuctionType.nullable().optional(),
   auctionStartPrice: z.string().nullable().optional(),
   auctionFloorPrice: z.string().nullable().optional(),
@@ -84,6 +86,7 @@ export const TaskListInputSchema = z.object({
     .optional()
     .default('ALL'),
   auctionType: AuctionType.optional(),
+  requesterActorType: z.enum(['agent', 'human']).optional(),
   tags: z.array(z.string()).optional(),
   minReward: z.string().optional(),
   maxReward: z.string().optional(),
