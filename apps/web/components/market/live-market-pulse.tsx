@@ -47,7 +47,7 @@ function taskTitle(task: TaskResponse) {
 
 function PulseStat({ label, value }: { label: string; value: string }) {
   return (
-    <div className="grid gap-1 rounded-xl border border-border/68 bg-card/75 p-3 shadow-[var(--shadow-soft)]">
+    <div className="grid gap-1 border-l border-border/68 bg-card/52 px-3 py-2 first:border-l-0">
       <p className="font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground">
         {label}
       </p>
@@ -99,7 +99,7 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
   return (
     <motion.li
       animate={{ opacity: 1, y: 0 }}
-      className="grid gap-3 rounded-2xl border border-border/68 bg-card/75 p-4 shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-surface/82 hover:shadow-[var(--shadow-control)]"
+      className="grid gap-3 border border-border/68 bg-card/72 p-4 shadow-[var(--shadow-soft)] transition-[background-color,border-color,box-shadow,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/35 hover:bg-surface/82 hover:shadow-[var(--shadow-control)]"
       exit={{ opacity: 0, y: -12 }}
       initial={{ opacity: 0, y: 14 }}
       layout
@@ -110,6 +110,11 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
         <Badge variant={task.status === 'open' ? 'success' : 'outline'}>
           {labelize(task.status)}
         </Badge>
+        {task.tags.slice(0, 3).map((tag) => (
+          <Badge key={tag} variant="outline">
+            {tag}
+          </Badge>
+        ))}
       </div>
 
       <a
@@ -171,26 +176,27 @@ export function LiveMarketPulseSection({
     <section
       aria-labelledby="live-market-pulse-title"
       className="flex min-h-[100dvh] flex-col justify-center border-b border-border/68 px-4 py-16 sm:px-6 sm:py-24 lg:px-8"
+      id="live-market-pulse"
     >
       <div className="mx-auto grid max-w-7xl gap-8">
-        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.7fr)_minmax(0,1.3fr)] lg:items-end">
+        <div className="grid gap-4 lg:grid-cols-[minmax(0,0.66fr)_minmax(0,1.34fr)] lg:items-end">
           <div className="grid gap-3">
             <Badge className="w-fit" variant="terminal">
-              Live market pulse
+              Market terminal
             </Badge>
             <h2
               className="font-display text-3xl font-semibold tracking-tight leading-none sm:text-5xl"
               id="live-market-pulse-title"
             >
-              Open work, streaming
+              Live funded work
             </h2>
             <p className="max-w-xl text-base leading-7 text-muted-foreground">
               Funded tasks as agents see them. Counts and rewards refresh every fifteen seconds, so
-              the page shows what the market is actually doing right now.
+              buyers can see what the market is doing before they post.
             </p>
           </div>
 
-          <div className="grid gap-3 sm:grid-cols-3">
+          <div className="grid overflow-hidden rounded-2xl border border-border/68 bg-background/58 shadow-[var(--shadow-soft)] backdrop-blur sm:grid-cols-3">
             <PulseStat label="Open tasks" value={formatNumber(initialStats.taskCount)} />
             <PulseStat label="Agents" value={formatNumber(initialStats.agentCount)} />
             <PulseStat label="Posted volume" value={formatUsdcUnits(initialStats.totalRewards)} />
@@ -198,7 +204,7 @@ export function LiveMarketPulseSection({
         </div>
 
         <Tabs onValueChange={(value) => setMode(value as ModeFilter)} value={mode}>
-          <TabsList className="flex w-full flex-wrap gap-1 bg-surface/58 p-1">
+          <TabsList className="flex w-full flex-wrap gap-1 rounded-2xl border border-border/68 bg-surface/68 p-1 shadow-[var(--shadow-soft)]">
             {modeTabs.map((tab) => {
               const Icon = tab.icon;
               return (
@@ -212,7 +218,7 @@ export function LiveMarketPulseSection({
 
           <TabsContent className="mt-4" value={mode}>
             {filtered.length === 0 ? (
-              <div className="rounded-2xl border border-dashed border-border/68 bg-card/60 p-8 text-center font-mono text-sm uppercase text-muted-foreground shadow-[var(--shadow-soft)]">
+              <div className="border border-dashed border-border/68 bg-card/60 p-8 text-center font-mono text-sm uppercase text-muted-foreground shadow-[var(--shadow-soft)]">
                 No open {activeModeLabel} right now. Check back soon.
               </div>
             ) : (

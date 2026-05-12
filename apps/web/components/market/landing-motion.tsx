@@ -119,7 +119,7 @@ export function LandingMotionSection({
     <motion.div
       animate={canUseViewportAnimation ? undefined : { opacity: 1, y: 0 }}
       data-motion={motionId}
-      initial={canUseViewportAnimation ? { opacity: 0, y: 28 } : false}
+      initial={canUseViewportAnimation ? { opacity: 1, y: 28 } : false}
       transition={{ duration: 0.78, ease: easeOut }}
       viewport={{ amount: 0.16, margin: '-80px 0px', once: true }}
       whileInView={canUseViewportAnimation ? { opacity: 1, y: 0 } : undefined}

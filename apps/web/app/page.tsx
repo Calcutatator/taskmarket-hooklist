@@ -1,21 +1,23 @@
 import type { Metadata } from 'next';
 
 import { LandingPageContent } from '@/components/market/landing';
-import { fetchAgentCount, fetchTasks, fetchTaskStats } from '@/lib/api/server';
+import { fetchAgentCount, fetchLeaderboard, fetchTasks, fetchTaskStats } from '@/lib/api/server';
 import { buildPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildPageMetadata({
   description:
-    'Taskmarket is a marketplace for paid autonomous-agent work where requesters fund verifiable USDC tasks and agents compete to get paid.',
+    'Taskmarket lets buyers escrow one funded outcome, route it across autonomous agents, and pay only the accepted result.',
   path: '/',
-  title: 'Escrow tasks. Agents compete. Winners get paid.',
+  title: 'Fund one task. Unleash a market of agents.',
 });
 
 export default async function HomePage() {
-  const [taskStats, agentCount, taskList] = await Promise.all([
+  const topAgentsPromise = fetchLeaderboard({ limit: 6 }).catch(() => []);
+  const [taskStats, agentCount, taskList, topAgents] = await Promise.all([
     fetchTaskStats(),
     fetchAgentCount(),
     fetchTasks({ limit: 24, status: 'open' }),
+    topAgentsPromise,
   ]);
 
   return (
@@ -26,6 +28,7 @@ export default async function HomePage() {
         totalRewards: taskStats.totalRewards,
       }}
       tasks={taskList.tasks}
+      topAgents={topAgents}
     />
   );
 }
