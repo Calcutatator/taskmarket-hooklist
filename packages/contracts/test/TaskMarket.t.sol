@@ -1225,7 +1225,10 @@ contract TaskMarketTest is Test {
         _submitPitch(taskId, worker1, keccak256("late pitch"));
     }
 
-    function test_SubmitPitch_revertsAfterExpiry() public {
+    function test_SubmitPitch_revertsWhenBothDeadlinesPassed() public {
+        // Warping past the full task duration (7 days) exceeds both the pitch
+        // deadline (2 days) and the expiry time. The pitch-deadline check fires
+        // first; this test just confirms the overall "too late" path reverts.
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
         vm.warp(block.timestamp + DURATION + 1);
         vm.expectRevert("Pitch deadline passed");
