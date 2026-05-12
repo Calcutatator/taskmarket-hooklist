@@ -27,6 +27,7 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [pitches, setPitches] = useState<Pitch[] | null>(null);
+  const [fetchError, setFetchError] = useState<string | null>(null);
   const [selectedId, setSelectedId] = useState<string>('');
   const [pending, setPending] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -38,11 +39,18 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
     async function load() {
       try {
         const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches`);
-        if (!res.ok) return;
+        if (!res.ok) {
+          if (!cancelled) setFetchError(`Could not load pitches (${res.status})`);
+          return;
+        }
         const data = (await res.json()) as Pitch[];
-        if (!cancelled) setPitches(data);
-      } catch {
-        // ignore
+        if (!cancelled) {
+          setFetchError(null);
+          setPitches(data);
+        }
+      } catch (err) {
+        if (!cancelled)
+          setFetchError(err instanceof Error ? err.message : 'Could not load pitches');
       }
     }
     load();
@@ -53,6 +61,10 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to select a pitch." />;
+  }
+
+  if (fetchError) {
+    return <p className="text-sm text-destructive">{fetchError}</p>;
   }
 
   if (pitches === null) {

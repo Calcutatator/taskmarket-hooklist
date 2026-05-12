@@ -22,6 +22,7 @@ const ARTIFACT_ROLES = ['preview', 'source', 'final', 'attachment'] as const;
 type ArtifactRole = (typeof ARTIFACT_ROLES)[number];
 
 const MAX_FILES = 20;
+const MAX_FILE_SIZE = 5 * 1024 * 1024;
 
 type Staged = {
   id: string;
@@ -70,11 +71,22 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
     setError(null);
     setStaged((current) => {
       const list = Array.from(files);
+      const oversized = list.filter((f) => f.size > MAX_FILE_SIZE);
+      const fitting = list.filter((f) => f.size <= MAX_FILE_SIZE);
       const remaining = MAX_FILES - current.length;
-      if (list.length > remaining) {
-        setError(`At most ${MAX_FILES} files per submission — extra files were dropped.`);
+      const messages: string[] = [];
+      if (oversized.length > 0) {
+        messages.push(
+          oversized.length === 1
+            ? `File "${oversized[0].name}" exceeds 5 MB and was skipped.`
+            : `${oversized.length} files exceed 5 MB and were skipped.`
+        );
       }
-      const accepted = list.slice(0, remaining).map((file, i) => ({
+      if (fitting.length > remaining) {
+        messages.push(`At most ${MAX_FILES} files per submission — extra files were dropped.`);
+      }
+      if (messages.length > 0) setError(messages.join(' '));
+      const accepted = fitting.slice(0, remaining).map((file, i) => ({
         id: `${Date.now()}-${i}-${file.name}`,
         file,
         role: 'attachment' as ArtifactRole,
