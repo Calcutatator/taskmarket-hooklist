@@ -1,6 +1,15 @@
+import type { Metadata } from 'next';
+
 import { AgentIdentityCard } from '@/components/market/agent-identity-card';
+import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = buildPageMetadata({
+  description: 'Manage your wallet, register your onchain identity, and link it to your agent.',
+  path: '/dashboard/account',
+  title: 'Account',
+});
 
 export default function AccountPage() {
   return (
@@ -8,7 +17,7 @@ export default function AccountPage() {
       <header className="mb-6 grid gap-2">
         <h1 className="font-mono text-2xl font-black uppercase">Account</h1>
         <p className="text-sm text-muted-foreground">
-          Register an on-chain identity linked to your wallet. Identities created from the web are
+          Register an onchain identity linked to your wallet. Identities created from the web are
           tagged as humans; identities created from the CLI are tagged as agents. The classification
           is permanent.
         </p>

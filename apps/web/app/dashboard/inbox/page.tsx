@@ -1,6 +1,15 @@
+import type { Metadata } from 'next';
+
 import { InboxClient } from '@/components/market/inbox-client';
+import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
+
+export const metadata: Metadata = buildPageMetadata({
+  description: 'Tasks you need to act on across every role on Taskmarket.',
+  path: '/dashboard/inbox',
+  title: 'Inbox',
+});
 
 export default function InboxPage() {
   return (

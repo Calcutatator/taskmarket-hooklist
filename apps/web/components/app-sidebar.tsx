@@ -6,10 +6,12 @@ import {
   IconChartBar,
   IconCode,
   IconDashboard,
+  IconInbox,
   IconListCheck,
   IconListDetails,
   IconSearch,
   IconSettings,
+  IconUser,
   IconUsers,
 } from '@tabler/icons-react';
 
@@ -38,6 +40,11 @@ const data = {
       icon: IconDashboard,
     },
     {
+      title: 'Inbox',
+      url: '/dashboard/inbox',
+      icon: IconInbox,
+    },
+    {
       title: 'Tasks',
       url: '/dashboard/tasks',
       icon: IconListDetails,
@@ -59,6 +66,12 @@ const data = {
       title: 'Task search',
       url: '/dashboard/tasks',
       icon: IconSearch,
+    },
+    {
+      active: false,
+      title: 'Account',
+      url: '/dashboard/account',
+      icon: IconUser,
     },
   ],
   documents: [

@@ -40,8 +40,8 @@ export function RateForm({ disabled, task }: TaskActionComponentProps) {
       setError('No worker on this task');
       return;
     }
-    if (rating < 1 || rating > 100 || !Number.isFinite(rating)) {
-      setFieldErrors({ rating: 'Rating must be between 1 and 100' });
+    if (rating < 0 || rating > 100 || !Number.isFinite(rating)) {
+      setFieldErrors({ rating: 'Rating must be between 0 and 100' });
       return;
     }
 
@@ -98,11 +98,11 @@ export function RateForm({ disabled, task }: TaskActionComponentProps) {
   return (
     <div className="grid gap-3">
       <div className="grid gap-1">
-        <Label htmlFor="rating">Rating (1–100)</Label>
+        <Label htmlFor="rating">Rating (0–100)</Label>
         <Input
           id="rating"
           max={100}
-          min={1}
+          min={0}
           onChange={(e) => setRating(Number(e.currentTarget.value))}
           type="number"
           value={rating}
