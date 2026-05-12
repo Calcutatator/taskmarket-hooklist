@@ -5,8 +5,8 @@ import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
-import { encodeAbiParameters, keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
+import { buildPitchHash } from '../lib/canonical-hashes';
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -74,13 +74,10 @@ export const pitchesRouter = router({
         });
       }
 
-      // Domain-separated content hash: keccak256(abi.encode(taskId, worker, pitchText))
-      // so the same pitch text cannot be replayed across tasks or workers.
-      const pitchHash = keccak256(
-        encodeAbiParameters(
-          [{ type: 'bytes32' }, { type: 'address' }, { type: 'string' }],
-          [input.taskId as `0x${string}`, input.workerAddress as `0x${string}`, input.pitchText]
-        )
+      const pitchHash = buildPitchHash(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        input.pitchText
       );
 
       const pitchId = randomUUID();

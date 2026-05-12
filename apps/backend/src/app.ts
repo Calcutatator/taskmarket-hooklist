@@ -16,8 +16,14 @@ import { x402Middleware } from './middleware/x402';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
-import { feedbacks } from './db/schema';
-import { eq } from 'drizzle-orm';
+import { feedbacks, submissions, artifacts, proposals, proofs } from './db/schema';
+import { and, eq } from 'drizzle-orm';
+import {
+  buildArtifactManifestJson,
+  buildPitchPreimage,
+  buildProofPreimage,
+  type ArtifactManifestRow,
+} from './lib/canonical-hashes';
 
 export const app = express();
 
@@ -97,6 +103,108 @@ app.get('/api/feedback/:id', async (req, res) => {
     res.setHeader('Content-Type', 'application/json');
     res.send(result[0].fileContent);
   } catch {
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+// Canonical content-hash preimages. The response body is the exact byte string
+// that was hashed on-chain — `keccak256(responseBytes)` equals the stored hash.
+// See docs/concepts/content-verification for the full verification flow.
+app.get('/api/tasks/:taskId/submissions/:submissionId/manifest', async (req, res) => {
+  try {
+    const sub = await db
+      .select({
+        deliverableHash: submissions.deliverableHash,
+        submitTxHash: submissions.submitTxHash,
+      })
+      .from(submissions)
+      .where(
+        and(eq(submissions.id, req.params.submissionId), eq(submissions.taskId, req.params.taskId))
+      )
+      .limit(1);
+    if (!sub.length) return res.status(404).json({ error: 'Submission not found' });
+
+    const rows = (await db
+      .select()
+      .from(artifacts)
+      .where(
+        eq(artifacts.submissionId, req.params.submissionId)
+      )) as unknown as ArtifactManifestRow[];
+    if (!rows.length) return res.status(404).json({ error: 'No artifacts for submission' });
+
+    const manifestJson = buildArtifactManifestJson(rows);
+    if (sub[0].deliverableHash) res.setHeader('X-Deliverable-Hash', sub[0].deliverableHash);
+    if (sub[0].submitTxHash) res.setHeader('X-Submit-Tx-Hash', sub[0].submitTxHash);
+    res.setHeader('X-Hash-Function', 'keccak256');
+    res.setHeader('X-Preimage-Encoding', 'json-utf8');
+    res.setHeader('Content-Type', 'application/json; charset=utf-8');
+    res.send(manifestJson);
+  } catch (err) {
+    logger.error('manifest endpoint failed', { err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/tasks/:taskId/pitches/:pitchId/preimage', async (req, res) => {
+  try {
+    const row = await db
+      .select({
+        workerAddress: proposals.workerAddress,
+        pitchText: proposals.proposalText,
+        pitchHash: proposals.pitchHash,
+        submitTxHash: proposals.submitTxHash,
+      })
+      .from(proposals)
+      .where(and(eq(proposals.id, req.params.pitchId), eq(proposals.taskId, req.params.taskId)))
+      .limit(1);
+    if (!row.length) return res.status(404).json({ error: 'Pitch not found' });
+    if (!row[0].pitchHash) return res.status(409).json({ error: 'Pitch has no on-chain hash' });
+
+    const preimage = buildPitchPreimage(
+      req.params.taskId as `0x${string}`,
+      row[0].workerAddress as `0x${string}`,
+      row[0].pitchText
+    );
+    res.setHeader('X-Pitch-Hash', row[0].pitchHash);
+    if (row[0].submitTxHash) res.setHeader('X-Submit-Tx-Hash', row[0].submitTxHash);
+    res.setHeader('X-Hash-Function', 'keccak256');
+    res.setHeader('X-Preimage-Encoding', 'abi-encoded-bytes');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(preimage);
+  } catch (err) {
+    logger.error('pitch preimage endpoint failed', { err });
+    res.status(500).json({ error: 'Internal server error' });
+  }
+});
+
+app.get('/api/tasks/:taskId/proofs/:proofId/preimage', async (req, res) => {
+  try {
+    const row = await db
+      .select({
+        workerAddress: proofs.workerAddress,
+        proofData: proofs.proofData,
+        proofHash: proofs.proofHash,
+        submitTxHash: proofs.submitTxHash,
+      })
+      .from(proofs)
+      .where(and(eq(proofs.id, req.params.proofId), eq(proofs.taskId, req.params.taskId)))
+      .limit(1);
+    if (!row.length) return res.status(404).json({ error: 'Proof not found' });
+    if (!row[0].proofHash) return res.status(409).json({ error: 'Proof has no on-chain hash' });
+
+    const preimage = buildProofPreimage(
+      req.params.taskId as `0x${string}`,
+      row[0].workerAddress as `0x${string}`,
+      row[0].proofData
+    );
+    res.setHeader('X-Proof-Hash', row[0].proofHash);
+    if (row[0].submitTxHash) res.setHeader('X-Submit-Tx-Hash', row[0].submitTxHash);
+    res.setHeader('X-Hash-Function', 'keccak256');
+    res.setHeader('X-Preimage-Encoding', 'abi-encoded-bytes');
+    res.setHeader('Content-Type', 'text/plain; charset=utf-8');
+    res.send(preimage);
+  } catch (err) {
+    logger.error('proof preimage endpoint failed', { err });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

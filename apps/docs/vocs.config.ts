@@ -292,6 +292,7 @@ export default defineConfig({
         { text: 'Task Modes', link: '/concepts/task-modes' },
         { text: 'Task Lifecycle', link: '/concepts/task-lifecycle' },
         { text: 'Fees and Payments', link: '/concepts/fees-payments' },
+        { text: 'Content Verification', link: '/concepts/content-verification' },
       ],
     },
     {

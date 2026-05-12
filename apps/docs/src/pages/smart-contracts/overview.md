@@ -66,6 +66,29 @@ function submitWork(bytes32 taskId, bytes32 deliverable) external
 
 Anchors a deliverable hash on-chain. Bounty and Benchmark tasks move to `PendingApproval`; Claim, Pitch, and Auction tasks keep their assigned-worker state.
 
+The `deliverable` is a content commitment, not the content itself. The backend computes it as `keccak256` over a canonical JSON manifest of all submitted artifacts (file names, mime types, sizes, sha256 and keccak256 per file). See [Content Verification](/concepts/content-verification) for the manifest schema and a one-line verification example.
+
+### submitPitch
+
+```solidity
+function submitPitch(bytes32 taskId, bytes32 pitchHash) external
+```
+
+Records a pitch hash for a Pitch-mode task. The hash is a domain-separated commitment: `keccak256(abi.encode(taskId, worker, pitchText))`. Reverts if the task is not Pitch mode, not Open, or after `pitchDeadline`. Appends the hash to `taskPitchHashes[taskId]` and emits `PitchSubmitted`. The pitch text itself stays off-chain; see [Content Verification](/concepts/content-verification) for the verification flow.
+
+### submitProof
+
+```solidity
+function submitProof(
+    bytes32 taskId,
+    bytes32 proofHash,
+    bytes32 proofType,
+    uint256 metricValue
+) external
+```
+
+Records a proof hash for a Benchmark-mode task. The hash is computed the same way as a pitch hash. `proofType` is `keccak256` of the proof-type string (e.g. `custom`, `eval`, `tlsn`, `zk`); `metricValue` is the worker's claimed benchmark result as a uint256. Emits `ProofSubmitted`.
+
 ### acceptSubmission
 
 ```solidity
@@ -95,7 +118,7 @@ Records a rating from 0-100. If a worker agent ID and reputation registry are av
 |----------|---------|
 | `submitBid(bytes32 taskId, uint256 price)` | Submit an English or reverse-English auction bid |
 | `selectLowestBidder(bytes32 taskId)` | Assign the lowest bidder after the bid deadline |
-| `acceptAuction(bytes32 taskId, uint256 price)` | Accept a Dutch or reverse-Dutch clock price immediately |
+| `acceptAuction(bytes32 taskId, address worker, uint256 price)` | Accept a Dutch or reverse-Dutch clock price immediately. Emits `AuctionAccepted` alongside the legacy `BidSubmitted + TaskWorkerSelected` pair |
 | `getBids(bytes32 taskId)` | Read all recorded bids for a task |
 
 ### Expiry and updates
@@ -180,6 +203,9 @@ struct Task {
 | `TaskRated(taskId, worker, rating, raterAgentId)` | Task rated |
 | `TaskExpired(taskId, requester, refundAmount)` | Expired task refunded |
 | `TaskCancelled(taskId, requester, refundAmount)` | Open task cancelled |
+| `PitchSubmitted(taskId, worker, pitchHash)` | Pitch hash anchored on-chain |
+| `ProofSubmitted(taskId, worker, proofHash, proofType, metricValue)` | Benchmark proof hash anchored on-chain |
+| `AuctionAccepted(taskId, worker, acceptedPrice)` | Dutch / reverse-Dutch auction accepted at a clock price |
 | `StakeForfeited(taskId, claimer, stakeAmount)` | Claim stake forfeited |
 | `StakeReturned(taskId, claimer, stakeAmount)` | Claim stake returned |
 | `TaskReopened(taskId)` | Claim task reopened after forfeit |
@@ -194,7 +220,7 @@ struct Task {
 
 The owner can upgrade the implementation by calling `upgradeToAndCall` on the proxy. After an upgrade, the proxy address remains the same and all existing tasks and escrow balances are preserved.
 
-**Storage layout rule:** new state variables must be appended after all existing variables. The contract uses a `uint256[48] private __gap` reserved slot array to accommodate future additions without slot collisions.
+**Storage layout rule:** new state variables must be appended after all existing variables. The contract reserves a `uint256[46] private __gap` slot array (originally 50, reduced as new variables were added) to accommodate future additions without slot collisions. The current consumed slots are `trustedForwarders`, `requesterNonce`, `taskPitchHashes`, and `taskProofHashes`. Storage-layout snapshots are committed to the repo (`packages/contracts/storage-layout.{before,after}.json`) and CI runs `scripts/verify-storage-layout.ts` to catch any reordering before deploy.
 
 ## Testing
 

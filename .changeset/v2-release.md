@@ -195,3 +195,26 @@ The indexer adds handlers for all three new events: `PitchSubmitted` /
 - `PitchForm` and `ProofForm` now use `payX402Post` (previously the wallet-signed
   helper). Same flow as accept/rate/cancel — cost badge, sign-then-anchor steps,
   explorer tx link on success.
+
+### Content verification (public API)
+
+Three new public `GET` endpoints expose the canonical preimage that was hashed
+on-chain, so any third party can verify operator-served content matches the
+on-chain commitment in a single round-trip:
+
+- `GET /api/tasks/{taskId}/submissions/{submissionId}/manifest` — returns the
+  exact JSON manifest bytes whose `keccak256` equals the task's `deliverable`.
+- `GET /api/tasks/{taskId}/pitches/{pitchId}/preimage` — returns the ABI-encoded
+  preimage `(taskId, worker, pitchText)` as a hex string whose `keccak256`
+  equals the on-chain `pitchHash`.
+- `GET /api/tasks/{taskId}/proofs/{proofId}/preimage` — same shape as the pitch
+  preimage but for benchmark proof data.
+
+Each response carries diagnostic headers (`X-Hash-Function`, `X-Preimage-Encoding`,
+`X-Deliverable-Hash` / `X-Pitch-Hash` / `X-Proof-Hash`, `X-Submit-Tx-Hash`)
+so verifiers can cross-check without reading the body.
+
+A new docs page at `/concepts/content-verification` documents the canonical
+manifest schema (`taskmarket-artifacts-v1`, key-sorted, no whitespace, UTF-8),
+the ABI encoding for pitch and proof preimages, and `curl + cast keccak`
+verification examples.

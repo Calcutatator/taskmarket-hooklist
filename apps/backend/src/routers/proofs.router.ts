@@ -4,9 +4,10 @@ import { z } from 'zod';
 import { proofs, tasks, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
-import { encodeAbiParameters, keccak256, toBytes } from 'viem';
+import { keccak256, toBytes } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitProof } from '../services/contract';
+import { buildProofHash } from '../lib/canonical-hashes';
 
 export const proofsRouter = router({
   submit: publicProcedure
@@ -67,12 +68,10 @@ export const proofsRouter = router({
         });
       }
 
-      // Domain-separated content hash.
-      const proofHash = keccak256(
-        encodeAbiParameters(
-          [{ type: 'bytes32' }, { type: 'address' }, { type: 'string' }],
-          [input.taskId as `0x${string}`, input.workerAddress as `0x${string}`, input.proofData]
-        )
+      const proofHash = buildProofHash(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        input.proofData
       );
       const proofTypeBytes32 = keccak256(toBytes(input.proofType));
 
