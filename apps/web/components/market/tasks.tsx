@@ -1001,15 +1001,16 @@ export function TaskDetailPanel({
             </div>
           </CardContent>
         </Card>
-        <WorkRequirementsPanel task={task} />
-        <ModeDataPanel modeData={modeData} task={task} />
         <TaskActionsPanel
           claimedBy={task.claimedBy}
           emptyReason={pendingActionEmptyReason(task)}
           pendingActions={pendingActions}
           requester={task.requester}
+          task={task}
           worker={task.worker}
         />
+        <WorkRequirementsPanel task={task} />
+        <ModeDataPanel modeData={modeData} task={task} />
       </div>
       <TaskSummaryRail backHref={backHref} modeData={modeData} task={task} />
     </div>

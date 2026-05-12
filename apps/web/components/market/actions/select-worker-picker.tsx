@@ -1,0 +1,139 @@
+'use client';
+
+import { useEffect, useState } from 'react';
+import { useAccount, useSignMessage } from 'wagmi';
+
+import { Button } from '@/components/ui/button';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { getBrowserApiBaseUrl } from '@/lib/api/config';
+
+import { ConnectPrompt } from './connect-prompt';
+import type { TaskActionComponentProps } from './types';
+
+type Pitch = {
+  id: string;
+  workerAddress: string;
+  pitchText: string;
+};
+
+export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps) {
+  const { address, isConnected } = useAccount();
+  const { signMessageAsync } = useSignMessage();
+  const [pitches, setPitches] = useState<Pitch[] | null>(null);
+  const [selectedId, setSelectedId] = useState<string>('');
+  const [pending, setPending] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const [done, setDone] = useState(false);
+
+  useEffect(() => {
+    if (!isConnected) return;
+    let cancelled = false;
+    async function load() {
+      try {
+        const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches`);
+        if (!res.ok) return;
+        const data = (await res.json()) as Pitch[];
+        if (!cancelled) setPitches(data);
+      } catch {
+        // ignore
+      }
+    }
+    load();
+    return () => {
+      cancelled = true;
+    };
+  }, [task.id, isConnected]);
+
+  if (!isConnected || !address) {
+    return <ConnectPrompt label="Connect the requester wallet to select a pitch." />;
+  }
+
+  if (pitches === null) {
+    return <p className="text-sm text-muted-foreground">Loading pitches…</p>;
+  }
+
+  if (pitches.length === 0) {
+    return <p className="text-sm text-muted-foreground">No pitches yet.</p>;
+  }
+
+  async function handleSelect() {
+    const selected = pitches!.find((p) => p.id === selectedId);
+    if (!selected) {
+      setError('Choose a pitch first');
+      return;
+    }
+    setPending(true);
+    setError(null);
+
+    const message = `taskmarket:select-worker:${task.id}:${selected.workerAddress}`;
+    let signature: string;
+    try {
+      signature = await signMessageAsync({ message });
+    } catch (err) {
+      setPending(false);
+      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 4001) return;
+      setError(err instanceof Error ? err.message : 'Signing failed');
+      return;
+    }
+
+    try {
+      const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches/select`, {
+        body: JSON.stringify({
+          taskId: task.id,
+          pitchId: selected.id,
+          workerAddress: selected.workerAddress,
+          signature,
+        }),
+        headers: { 'Content-Type': 'application/json' },
+        method: 'POST',
+      });
+      setPending(false);
+      if (!res.ok) {
+        const errBody = (await res.json().catch(() => ({}))) as { message?: string };
+        setError(errBody.message ?? `Server error: ${res.status}`);
+        return;
+      }
+      setDone(true);
+    } catch (err) {
+      setPending(false);
+      setError(err instanceof Error ? err.message : 'Request failed');
+    }
+  }
+
+  if (done) {
+    return <span className="font-mono text-sm text-primary">✓ Worker selected</span>;
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div className="grid gap-1">
+        <Label htmlFor="select-pitch">Choose a pitch</Label>
+        <Select onValueChange={setSelectedId} value={selectedId}>
+          <SelectTrigger id="select-pitch">
+            <SelectValue placeholder="Pick a worker…" />
+          </SelectTrigger>
+          <SelectContent>
+            {pitches.map((p) => (
+              <SelectItem key={p.id} value={p.id}>
+                {p.workerAddress.slice(0, 6)}…{p.workerAddress.slice(-4)} —{' '}
+                {p.pitchText.slice(0, 60)}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
+      <Button disabled={disabled || pending || !selectedId} onClick={handleSelect} size="sm">
+        {pending ? 'Confirming…' : 'Select worker'}
+      </Button>
+      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
+      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+    </div>
+  );
+}
