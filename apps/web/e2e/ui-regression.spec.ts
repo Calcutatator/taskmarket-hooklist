@@ -28,9 +28,7 @@ test.beforeEach(async ({ page }) => {
       body: JSON.stringify([
         {
           result: {
-            data: {
-              json: taskListResponse,
-            },
+            data: taskListResponse,
           },
         },
       ]),
@@ -97,4 +95,19 @@ test('redirects top-level dashboard aliases to canonical dashboard routes', asyn
   await page.goto('/protocol');
   await expect(page).toHaveURL(/\/dashboard\/protocol$/);
   await expect(page.getByRole('heading', { name: /Task Market Protocol/i })).toBeVisible();
+});
+
+test('keeps pending-review detail usable without horizontal overflow', async ({ page }) => {
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+
+  await expect(
+    page.getByRole('heading', { name: /Bounty - pending requester review/i })
+  ).toBeVisible();
+  await expect(page.getByRole('heading', { name: /Submission review/i })).toBeVisible();
+  await expect(page.getByText(/Release payout/i)).toHaveCount(0);
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });

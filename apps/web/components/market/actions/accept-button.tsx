@@ -6,6 +6,7 @@ import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { compactAddress, formatUsdcUnits } from '@/lib/format';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -23,6 +24,10 @@ export function getAcceptWorkerAddress(
   return task.worker ?? task.claimedBy ?? workerFromCommand(action.command);
 }
 
+function sameAddress(left?: string | null, right?: string | null) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
 export function AcceptButton({ action, disabled, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
@@ -32,15 +37,24 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
   const [txHash, setTxHash] = useState<string | null>(null);
 
   if (!isConnected || !address) {
-    return <ConnectPrompt label="Connect the requester wallet to accept this submission." />;
+    return <ConnectPrompt label="Connect the requester wallet to release payout." />;
   }
 
   const worker = getAcceptWorkerAddress(action, task);
   const busy = step !== 'idle' && step !== 'done';
+  const wrongRequester = !sameAddress(address, task.requester);
+  const blocked = disabled || wrongRequester || busy;
+  const workerLabel = worker ? compactAddress(worker) : 'selected worker';
 
   async function handleAccept() {
     if (!worker) {
       setError('No worker on this task');
+      return;
+    }
+    const confirmed = window.confirm(
+      `Release ${formatUsdcUnits(task.reward)} to ${workerLabel}? This accepts the deliverable and cannot be undone.`
+    );
+    if (!confirmed) {
       return;
     }
     setError(null);
@@ -63,7 +77,7 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Accepted</span>
+        <span className="font-mono text-primary">Payout released</span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -80,19 +94,25 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
 
   const label =
     step === 'payment'
-      ? 'Fetching payment terms…'
+      ? 'Fetching payment terms...'
       : step === 'signing'
-        ? 'Sign payment…'
+        ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Confirming…'
-          : 'Accept submission';
+          ? 'Releasing payout...'
+          : `Release payout`;
 
   return (
     <div className="grid gap-2">
-      <Button disabled={disabled || busy} onClick={handleAccept} size="sm">
+      <Button disabled={blocked} onClick={handleAccept} size="sm">
         {label}
       </Button>
-      <p className="text-xs text-muted-foreground">Costs 0.001 USDC. Releases reward to worker.</p>
+      <p className="text-xs leading-5 text-muted-foreground">
+        Accepts the deliverable and releases {formatUsdcUnits(task.reward)} to {workerLabel}. Costs
+        0.001 USDC.
+      </p>
+      {wrongRequester ? (
+        <p className="text-xs text-destructive">Connect the requester wallet to release payout.</p>
+      ) : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

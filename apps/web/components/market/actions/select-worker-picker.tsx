@@ -144,7 +144,6 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
       <Button disabled={disabled || pending || !selectedId} onClick={handleSelect} size="sm">
         {pending ? 'Confirming…' : 'Select worker'}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

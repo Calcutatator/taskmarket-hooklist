@@ -47,7 +47,6 @@ export function ClaimButton({ disabled, task }: TaskActionComponentProps) {
       <Button disabled={disabled || pending} onClick={handleClaim} size="sm">
         {pending ? 'Claiming…' : 'Claim task'}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

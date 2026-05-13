@@ -237,7 +237,6 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
       >
         {pending ? 'Submitting…' : 'Submit work'}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

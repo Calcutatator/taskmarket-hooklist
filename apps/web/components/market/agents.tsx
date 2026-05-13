@@ -16,6 +16,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { NativeSelect } from '@/components/ui/native-select';
 import {
   Table,
   TableBody,
@@ -239,8 +240,7 @@ export function AgentLeaderboardPanel({
             </div>
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-rating">Min rating</Label>
-              <select
-                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              <NativeSelect
                 defaultValue={minRating ?? ''}
                 id="leaderboard-min-rating"
                 name="minRating"
@@ -250,12 +250,11 @@ export function AgentLeaderboardPanel({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-min-tasks">Min tasks</Label>
-              <select
-                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
+              <NativeSelect
                 defaultValue={minTasks ?? ''}
                 id="leaderboard-min-tasks"
                 name="minTasks"
@@ -265,22 +264,17 @@ export function AgentLeaderboardPanel({
                     {option.label}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="grid gap-2">
               <Label htmlFor="leaderboard-limit">Per page</Label>
-              <select
-                className="h-10 rounded-full border border-input/78 bg-background/42 px-4 py-2 font-mono text-sm text-foreground shadow-[var(--shadow-control)] transition-[color,background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] focus-visible:border-ring focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30"
-                defaultValue={String(pageSize)}
-                id="leaderboard-limit"
-                name="limit"
-              >
+              <NativeSelect defaultValue={String(pageSize)} id="leaderboard-limit" name="limit">
                 {pageSizeOptions.map((option) => (
                   <option key={option} value={option}>
                     {option}
                   </option>
                 ))}
-              </select>
+              </NativeSelect>
             </div>
             <div className="flex flex-wrap items-end gap-3 lg:col-span-6">
               <Button type="submit" variant="terminal">
@@ -312,20 +306,22 @@ export function AgentLeaderboardPanel({
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
-          <a
-            className="rounded-full border border-border/68 bg-background/35 px-3 py-2 font-mono text-xs uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-[var(--shadow-control)]"
-            data-active={sort === 'reputation'}
-            href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath)}
-          >
-            Reputation
-          </a>
-          <a
-            className="rounded-full border border-border/68 bg-background/35 px-3 py-2 font-mono text-xs uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary data-[active=true]:text-primary-foreground data-[active=true]:shadow-[var(--shadow-control)]"
-            data-active={sort === 'tasks'}
-            href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath)}
-          >
-            Task count
-          </a>
+          <Button asChild size="chip" variant="chip">
+            <a
+              data-active={sort === 'reputation'}
+              href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath)}
+            >
+              Reputation
+            </a>
+          </Button>
+          <Button asChild size="chip" variant="chip">
+            <a
+              data-active={sort === 'tasks'}
+              href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath)}
+            >
+              Task count
+            </a>
+          </Button>
         </div>
         <p className="font-mono text-xs uppercase text-muted-foreground">Page {page}</p>
       </div>
@@ -533,23 +529,50 @@ export function AgentProfilePanel({
             <CardTitle>Recent ratings</CardTitle>
           </CardHeader>
           <CardContent>
-            <div className="divide-y divide-border/75">
+            <div className="grid gap-3">
               {agent.recentRatings.map((rating) => (
-                <a
-                  className="grid gap-3 py-3 font-mono text-xs transition-colors hover:text-primary sm:grid-cols-[minmax(0,1fr)_auto_auto] sm:items-center"
-                  href={`${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}`}
+                <article
+                  className="grid gap-3 rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
                   key={`${rating.taskId}-${rating.createdAt}`}
                 >
-                  <span className="min-w-0 truncate">{rating.taskId}</span>
-                  <span className="font-semibold text-foreground">{rating.rating}/100</span>
-                  <span className="text-muted-foreground">
-                    {new Date(rating.createdAt).toLocaleDateString('en-US', {
-                      day: '2-digit',
-                      month: 'short',
-                      year: 'numeric',
-                    })}
-                  </span>
-                </a>
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <div className="grid min-w-0 gap-1">
+                      <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">
+                        Reviewed task
+                      </p>
+                      <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+                        {rating.taskTitle || `Task ${rating.taskId}`}
+                      </h3>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {rating.taskId}
+                      </p>
+                    </div>
+                    <div className="grid gap-1 text-left sm:text-right">
+                      <span className="font-mono text-sm font-semibold text-foreground">
+                        {rating.rating}/100
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {new Date(rating.createdAt).toLocaleDateString('en-US', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  {rating.feedbackText ? (
+                    <p className="text-sm leading-6 text-muted-foreground">{rating.feedbackText}</p>
+                  ) : null}
+                  <div>
+                    <Button asChild size="sm" variant="outline">
+                      <a
+                        href={`${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}`}
+                      >
+                        Open reviewed task
+                      </a>
+                    </Button>
+                  </div>
+                </article>
               ))}
             </div>
           </CardContent>

@@ -6,6 +6,7 @@ import { IconBolt, IconClockHour4, IconCoin, IconFileText } from '@tabler/icons-
 import { parseUnits } from 'viem';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -60,8 +61,18 @@ function optionalNumber(value: string) {
   return value.trim() ? Number(value) : undefined;
 }
 
+function optionalHoursToSeconds(value: string) {
+  const hours = optionalNumber(value);
+  return hours === undefined ? undefined : Math.round(hours * 3_600);
+}
+
 function optionalUsdcBaseUnits(value: string) {
   return value.trim() ? parseUnits(value, 6).toString() : undefined;
+}
+
+function percentToBps(value: string) {
+  const percent = Number(value || 0);
+  return Number.isFinite(percent) ? Math.round(percent * 100) : 0;
 }
 
 export function buildCreateTaskPayload(values: CreateTaskFormValues) {
@@ -70,7 +81,7 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
     duration: Number(values.duration),
     mode: values.mode,
     reward: parseUnits(values.reward, 6).toString(),
-    stakeBps: Number(values.stakeBps || 0),
+    stakeBps: percentToBps(values.stakeBps),
     stakeRequired: values.stakeRequired,
     tags: values.tags
       .split(',')
@@ -79,7 +90,7 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
   };
 
   const bidDeadline = optionalNumber(values.bidDeadline);
-  const pitchDeadline = optionalNumber(values.pitchDeadline);
+  const pitchDeadline = optionalHoursToSeconds(values.pitchDeadline);
   const maxPrice = optionalUsdcBaseUnits(values.maxPrice);
   const auctionStartPrice = optionalUsdcBaseUnits(values.auctionStartPrice);
   const auctionFloorPrice = optionalUsdcBaseUnits(values.auctionFloorPrice);
@@ -125,7 +136,6 @@ export function CreateTaskClient() {
 
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    if (!address) return;
 
     const formData = new FormData(event.currentTarget);
     const body = buildCreateTaskPayload({
@@ -147,6 +157,11 @@ export function CreateTaskClient() {
     });
 
     setError(null);
+    if (!address) {
+      setError('Connect a wallet in the header after the task details pass validation.');
+      return;
+    }
+
     try {
       setStep('payment');
       const probeRes = await fetch(`${apiUrl}/api/tasks`, {
@@ -280,9 +295,7 @@ export function CreateTaskClient() {
                   Workers use this text to judge fit and completion.
                 </CardDescription>
               </div>
-              <span className="rounded-full border border-border/68 bg-surface/80 px-2 py-1 font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground shadow-[var(--shadow-soft)]">
-                Required
-              </span>
+              <Badge variant="terminal">Required</Badge>
             </div>
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
@@ -409,30 +422,38 @@ export function CreateTaskClient() {
                   Require stake
                 </label>
                 <div className="grid gap-2">
-                  <Label htmlFor="stakeBps">Stake bps</Label>
+                  <Label htmlFor="stakeBps">Stake percent</Label>
                   <Input
                     className="font-mono"
-                    defaultValue="1000"
+                    defaultValue="10"
                     id="stakeBps"
+                    max="100"
                     min="0"
                     name="stakeBps"
+                    step="0.01"
                     type="number"
                   />
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    Enter the percent of the reward a claimant must stake.
+                  </p>
                 </div>
               </div>
             ) : null}
 
             {mode === 'pitch' ? (
               <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-                <Label htmlFor="pitchDeadline">Pitch deadline seconds</Label>
+                <Label htmlFor="pitchDeadline">Pitch deadline hours</Label>
                 <Input
                   className="font-mono"
                   id="pitchDeadline"
                   min="1"
                   name="pitchDeadline"
-                  placeholder="86400"
+                  placeholder="24"
                   type="number"
                 />
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Requesters enter hours. The task API receives seconds.
+                </p>
               </div>
             ) : null}
 
@@ -625,7 +646,7 @@ export function CreateTaskClient() {
               </p>
             ) : null}
 
-            <Button className="h-11 w-full" disabled={!walletReady || isSubmitting} type="submit">
+            <Button className="h-11 w-full" disabled={isSubmitting} type="submit">
               {buttonLabel}
             </Button>
             {!walletReady ? (

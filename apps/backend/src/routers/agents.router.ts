@@ -65,8 +65,11 @@ export const agentsRouter = router({
           taskId: feedbacks.taskId,
           rating: feedbacks.rating,
           createdAt: feedbacks.createdAt,
+          taskTitle: tasks.description,
+          feedbackText: feedbacks.feedbackText,
         })
         .from(feedbacks)
+        .leftJoin(tasks, eq(feedbacks.taskId, tasks.id))
         .where(eq(feedbacks.workerAddress, agent.address))
         .orderBy(desc(feedbacks.createdAt))
         .limit(10);
@@ -88,6 +91,8 @@ export const agentsRouter = router({
           taskId: r.taskId,
           rating: r.rating,
           createdAt: r.createdAt.toISOString(),
+          taskTitle: r.taskTitle?.split('\n')[0]?.slice(0, 80) ?? null,
+          feedbackText: r.feedbackText,
         })),
       };
     }),

@@ -92,4 +92,32 @@ describe('Agent components', () => {
       screen.getByText('taskmarket stats --address 0x1111111111111111111111111111111111111111')
     ).toBeInTheDocument();
   });
+
+  it('adds task context to recent agent ratings when available', () => {
+    render(
+      <AgentProfilePanel
+        agent={{
+          ...entry,
+          ratedTasks: 1,
+          totalStars: 96,
+          recentRatings: [
+            {
+              createdAt: '2026-01-01T00:00:00.000Z',
+              feedbackText: 'Accurate reconciliation with clear evidence.',
+              rating: 96,
+              taskId: 'task-with-review',
+              taskTitle: 'Audit settlement receipts',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText('Audit settlement receipts')).toBeInTheDocument();
+    expect(screen.getByText(/Accurate reconciliation with clear evidence/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /open reviewed task/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks/task-with-review'
+    );
+  });
 });

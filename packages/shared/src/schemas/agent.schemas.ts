@@ -20,6 +20,8 @@ export const AgentStatsSchema = z.object({
         taskId: z.string(),
         rating: z.number(),
         createdAt: z.string(),
+        taskTitle: z.string().nullable().optional(),
+        feedbackText: z.string().nullable().optional(),
       })
     )
     .optional(),

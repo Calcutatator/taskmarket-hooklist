@@ -5,7 +5,7 @@
   "type": "module",
   "prettier": "@taskmarket/prettier-config",
   "scripts": {
-    "dev": "next dev --turbopack -p 3001",
+    "dev": "next dev --turbopack -p ${PORT:-3001}",
     "build": "NODE_ENV=production next build",
     "start": "next start -p ${PORT:-3001}",
     "lint:check": "ESLINT_USE_FLAT_CONFIG=false eslint .",

@@ -1,6 +1,5 @@
 import type { Metadata } from 'next';
 import { JetBrains_Mono, Space_Grotesk } from 'next/font/google';
-import { ThemeProvider } from 'next-themes';
 
 import './globals.css';
 
@@ -73,9 +72,7 @@ export default function RootLayout({
   return (
     <html lang="en" suppressHydrationWarning>
       <body className={`${spaceGrotesk.variable} ${jetBrainsMono.variable}`}>
-        <ThemeProvider attribute="class" defaultTheme="dark" disableTransitionOnChange enableSystem>
-          <Providers>{children}</Providers>
-        </ThemeProvider>
+        <Providers>{children}</Providers>
       </body>
     </html>
   );

@@ -5,8 +5,13 @@ import type { ArtifactResponse, TaskDetailResponse, TaskResponse } from '@taskma
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 
+const mockAccount = vi.hoisted(() => ({
+  address: undefined as string | undefined,
+  isConnected: false,
+}));
+
 vi.mock('wagmi', () => ({
-  useAccount: () => ({ address: undefined, isConnected: false }),
+  useAccount: () => mockAccount,
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useSignMessage: () => ({ signMessageAsync: vi.fn() }),
   useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
@@ -15,6 +20,8 @@ vi.mock('wagmi', () => ({
 }));
 
 afterEach(() => {
+  mockAccount.address = undefined;
+  mockAccount.isConnected = false;
   vi.restoreAllMocks();
 });
 
@@ -128,6 +135,7 @@ function mockPreviewFetch(previewUrl: string) {
 describe('Task marketplace components', () => {
   it('renders populated, empty, loading, and error task table states', () => {
     const { rerender } = render(<TaskTable tasks={[task]} />);
+    expect(screen.getByRole('table').parentElement).toHaveClass('overflow-x-auto');
     expect(screen.getByRole('link', { name: /summarize protocol feedback/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks/0xabc123'
@@ -217,16 +225,46 @@ describe('Task marketplace components', () => {
             },
           ],
         }}
-        task={{ ...taskDetail, currentLowestBid: '12000000', maxPrice: '25000000' }}
+        task={{
+          ...taskDetail,
+          currentLowestBid: '12000000',
+          maxPrice: '25000000',
+          tags: ['auction', 'open', 'research'],
+        }}
       />
     );
-    expect(screen.getByText(/task facts/i)).toBeInTheDocument();
+    const breadcrumb = screen.getByRole('navigation', { name: /breadcrumb/i });
+    expect(within(breadcrumb).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks'
+    );
+    expect(within(breadcrumb).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
+    const metrics = screen.getByRole('region', { name: /task metrics/i });
+    expect(within(metrics).getByText(/reward/i)).toBeInTheDocument();
+    expect(metrics.closest('[data-slot="card"]')).toBeNull();
+    const referenceCard = screen.getByText(/task reference/i).closest('[data-slot="card"]');
+    expect(referenceCard).not.toBeNull();
+    const reference = within(referenceCard as HTMLElement);
+    expect(reference.getByText(/settlement/i)).toBeInTheDocument();
+    expect(reference.getByText(/auction pricing/i)).toBeInTheDocument();
+    expect(reference.getByText(/history/i)).toBeInTheDocument();
+    expect(reference.queryByText(/^reward$/i)).not.toBeInTheDocument();
+    expect(reference.queryByText(/^activity$/i)).not.toBeInTheDocument();
+    expect(reference.queryByText(/^requester$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/work requirements/i)).toBeInTheDocument();
+    expect(
+      screen.queryByText('Summarize protocol feedback', { selector: 'p' })
+    ).not.toBeInTheDocument();
+    expect(screen.getAllByText(/^auction$/i)).toHaveLength(1);
+    expect(screen.getAllByText(/^open$/i)).toHaveLength(1);
+    expect(screen.getByText(/^research$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/english auction/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/lowest bid/i)).toBeInTheDocument();
     expect(screen.getAllByText('+12.000 USDC').length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/requester actions/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/worker actions/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^result$/i)).not.toBeInTheDocument();
     expect(screen.getByText(`taskmarket task bid ${task.id} --price <n>`)).toBeInTheDocument();
   });
 
@@ -256,12 +294,113 @@ describe('Task marketplace components', () => {
     );
 
     expect(screen.getByText(/submissions will appear here/i)).toBeInTheDocument();
-    expect(screen.getAllByText(/requester actions/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText(/worker actions/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.getByText(`taskmarket task submit ${task.id} --file <path>`)).toBeInTheDocument();
   });
 
-  it('shows pitch deadline, pitch count, and worker selection context', () => {
+  it('hides requester task controls for a connected non-requester', () => {
+    mockAccount.address = '0x9999999999999999999999999999999999999999';
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'cancel',
+              command: `taskmarket task cancel ${task.id}`,
+              role: 'requester',
+            },
+            {
+              action: 'update',
+              command: `taskmarket task update ${task.id} [--reward <usdc>]`,
+              role: 'requester',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByText(/no actions for this wallet/i)).toBeInTheDocument();
+    expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/connected wallet cannot change this task/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/requires requester/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(`taskmarket task cancel ${task.id}`)).not.toBeInTheDocument();
+    expect(screen.queryByText(/taskmarket task update/i)).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /^cancel task$/i })).not.toBeInTheDocument();
+    expect(screen.queryByLabelText(/reward \(usdc\)/i)).not.toBeInTheDocument();
+  });
+
+  it('shows requester task controls to the task requester', () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'cancel',
+              command: `taskmarket task cancel ${task.id}`,
+              role: 'requester',
+            },
+            {
+              action: 'update',
+              command: `taskmarket task update ${task.id} [--reward <usdc>]`,
+              role: 'requester',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^cancel task$/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/reward \(usdc\)/i)).toBeInTheDocument();
+  });
+
+  it('keeps open worker actions available to connected non-requesters', () => {
+    mockAccount.address = '0x9999999999999999999999999999999999999999';
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'claim',
+              command: `taskmarket task claim ${task.id}`,
+              role: 'worker',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(screen.getByRole('button', { name: /^claim task$/i })).toBeEnabled();
+    expect(screen.queryByText(/connected wallet cannot change this task/i)).not.toBeInTheDocument();
+  });
+
+  it('shows pitch due date, pitch count, and worker selection context', () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
     render(
       <TaskDetailPanel
         modeData={{
@@ -301,13 +440,23 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getAllByText(/pitch deadline/i).length).toBeGreaterThan(0);
+    expect(
+      within(screen.getByRole('region', { name: /task metrics/i })).getByText(/^due$/i)
+    ).toBeInTheDocument();
+    expect(screen.getByText(/workers submit pitches/i)).toBeInTheDocument();
     expect(screen.getAllByText(/1 pitch/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/choose a pitch/i)).toBeInTheDocument();
+    expect(
+      screen.getByText(
+        `taskmarket task select-worker ${task.id} --pitch <pitchId> --worker <address>`
+      )
+    ).toBeInTheDocument();
     expect(screen.getByText(/i can produce a concise protocol summary/i)).toBeInTheDocument();
   });
 
-  it('shows pending approval submissions and requester review action', () => {
+  it('shows pending approval submissions as a requester review queue with payout actions', () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
     render(
       <TaskDetailPanel
         modeData={{
@@ -343,8 +492,11 @@ describe('Task marketplace components', () => {
 
     expect(screen.getByText(/awaiting requester review/i)).toBeInTheDocument();
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
-    expect(screen.getByText(/review the latest submission/i)).toBeInTheDocument();
-    expect(screen.getByText(/taskmarket task accept/i)).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
+    expect(screen.getByText(/compare deliverables before releasing escrow/i)).toBeInTheDocument();
+    expect(screen.getByText(/deliverable submitted by/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/release payout/i).length).toBeGreaterThan(0);
+    expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
 
   it('previews image artifacts inline without opening a new window', async () => {
@@ -391,7 +543,7 @@ describe('Task marketplace components', () => {
     fetchMock.mockRestore();
   });
 
-  it('shows archive artifact metadata with an explicit fallback link', async () => {
+  it('shows archive artifact metadata with technical details collapsed behind disclosure', async () => {
     const previewUrl = 'https://files.example.com/submission.zip';
     const fetchMock = mockPreviewFetch(previewUrl);
     const user = userEvent.setup();
@@ -412,6 +564,7 @@ describe('Task marketplace components', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByText('application/zip')).toBeInTheDocument();
     expect(within(dialog).getByText('4 KB')).toBeInTheDocument();
+    expect(within(dialog).getByText(/technical details/i)).toBeInTheDocument();
     expect(within(dialog).getByRole('link', { name: /open artifact/i })).toHaveAttribute(
       'href',
       previewUrl
@@ -440,6 +593,9 @@ describe('Task marketplace components', () => {
   });
 
   it('contains long action CLI commands inside the actions card', () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
     render(
       <TaskDetailPanel
         modeData={{ submissions: [] }}
@@ -466,7 +622,41 @@ describe('Task marketplace components', () => {
     expect(cliCommand.closest('pre')).toHaveClass('max-w-full', 'overflow-x-auto');
   });
 
-  it('keeps payout and timing visible when activity and actions are empty', () => {
+  it('shows rating quality guidance before the requester records feedback', () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'rate',
+              command: `taskmarket task rate ${task.id} --rating <0-100>`,
+              role: 'requester',
+            },
+          ],
+          rating: null,
+          status: 'accepted',
+          worker: '0x3333333333333333333333333333333333333333',
+        }}
+      />
+    );
+
+    expect(screen.getByText(/quality guide/i)).toBeInTheDocument();
+    expect(screen.getByText(/90-100/i)).toBeInTheDocument();
+    expect(screen.getByText(/complete, accurate, and easy to verify/i)).toBeInTheDocument();
+    expect(
+      screen.getByPlaceholderText(/accuracy, completeness, communication/i)
+    ).toBeInTheDocument();
+  });
+
+  it('keeps metrics and reference data visible when activity and actions are empty', () => {
     render(
       <TaskDetailPanel
         modeData={{ bids: [] }}
@@ -479,8 +669,10 @@ describe('Task marketplace components', () => {
 
     expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
     expect(screen.getByText(/no pending commands/i)).toBeInTheDocument();
-    expect(screen.getByText(/payout/i)).toBeInTheDocument();
-    expect(screen.getByText(/timing/i)).toBeInTheDocument();
+    expect(screen.getByRole('region', { name: /task metrics/i })).toBeInTheDocument();
+    expect(screen.getByText(/task reference/i)).toBeInTheDocument();
+    expect(screen.getByText(/settlement/i)).toBeInTheDocument();
+    expect(screen.getByText(/history/i)).toBeInTheDocument();
     expect(screen.getAllByText('+25.000 USDC').length).toBeGreaterThan(0);
   });
 });

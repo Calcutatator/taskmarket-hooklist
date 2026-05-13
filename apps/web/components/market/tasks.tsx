@@ -2,6 +2,7 @@ import type {
   ArtifactResponse,
   BidResponse,
   ClaimResponse,
+  PendingAction,
   PitchResponse,
   ProofResponse,
   SubmissionResponse,
@@ -12,9 +13,18 @@ import type {
 } from '@taskmarket/shared';
 import type { ReactNode } from 'react';
 
+import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
 import { ArtifactPreviewButton } from '@/components/market/artifact-preview-button';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
+import {
+  Breadcrumb,
+  BreadcrumbItem,
+  BreadcrumbLink,
+  BreadcrumbList,
+  BreadcrumbPage,
+  BreadcrumbSeparator,
+} from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
@@ -60,6 +70,27 @@ type TaskModeData = {
 
 function taskTitle(task: TaskResponse) {
   return task.description.split('\n')[0]?.slice(0, 80) || `Task ${task.id}`;
+}
+
+function taskBody(task: TaskResponse) {
+  const description = task.description.trim();
+  const body = description.split('\n').slice(1).join('\n').trim();
+
+  if (body) {
+    return body;
+  }
+
+  return description === taskTitle(task).trim() ? '' : description;
+}
+
+function taskDetailTags(task: TaskResponse) {
+  const duplicateValues = new Set(
+    [task.mode, task.status, task.auctionType].flatMap((value) =>
+      value ? [value.toLowerCase()] : []
+    )
+  );
+
+  return task.tags.filter((tag) => !duplicateValues.has(tag.toLowerCase().replaceAll(' ', '_')));
 }
 
 function formatUsdc(value: string | null | undefined) {
@@ -293,48 +324,54 @@ export function TaskTable({
 
   return (
     <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Task</TableHead>
-            <TableHead>Mode</TableHead>
-            <TableHead>Status</TableHead>
-            <TableHead>Requester</TableHead>
-            <TableHead className="text-right">Reward</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {tasks.map((task) => (
-            <TableRow key={task.id}>
-              <TableCell className="min-w-72">
-                <a
-                  className="font-medium text-foreground hover:text-primary"
-                  href={`${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`}
-                >
-                  {taskTitle(task)}
-                </a>
-                <div className="mt-2 flex flex-wrap gap-1">
-                  {task.tags.slice(0, 3).map((tag) => (
-                    <Badge key={tag} variant="terminal">
-                      {tag}
-                    </Badge>
-                  ))}
-                </div>
-              </TableCell>
-              <TableCell>
-                <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>{task.mode}</Badge>
-              </TableCell>
-              <TableCell className="font-mono text-sm uppercase">{labelize(task.status)}</TableCell>
-              <TableCell className="font-mono text-xs text-muted-foreground">
-                {compactAddress(task.requester)}
-              </TableCell>
-              <TableCell className="text-right font-mono text-primary">
-                {formatUsdc(task.reward)}
-              </TableCell>
+      <div className="w-full max-w-full overflow-x-auto">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Task</TableHead>
+              <TableHead>Mode</TableHead>
+              <TableHead>Status</TableHead>
+              <TableHead>Requester</TableHead>
+              <TableHead className="text-right">Reward</TableHead>
             </TableRow>
-          ))}
-        </TableBody>
-      </Table>
+          </TableHeader>
+          <TableBody>
+            {tasks.map((task) => (
+              <TableRow key={task.id}>
+                <TableCell className="min-w-72">
+                  <a
+                    className="font-medium text-foreground hover:text-primary"
+                    href={`${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`}
+                  >
+                    {taskTitle(task)}
+                  </a>
+                  <div className="mt-2 flex flex-wrap gap-1">
+                    {task.tags.slice(0, 3).map((tag) => (
+                      <Badge key={tag} variant="terminal">
+                        {tag}
+                      </Badge>
+                    ))}
+                  </div>
+                </TableCell>
+                <TableCell>
+                  <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>
+                    {task.mode}
+                  </Badge>
+                </TableCell>
+                <TableCell className="font-mono text-sm uppercase">
+                  {labelize(task.status)}
+                </TableCell>
+                <TableCell className="font-mono text-xs text-muted-foreground">
+                  {compactAddress(task.requester)}
+                </TableCell>
+                <TableCell className="text-right font-mono text-primary">
+                  {formatUsdc(task.reward)}
+                </TableCell>
+              </TableRow>
+            ))}
+          </TableBody>
+        </Table>
+      </div>
     </Card>
   );
 }
@@ -372,53 +409,53 @@ export function TaskFilterRail({
 
   return (
     <aside className="grid gap-4 lg:sticky lg:top-20">
-      <Card className="gap-4 border-border/68 bg-card/68 py-4 shadow-[var(--shadow-soft)]">
-        <CardHeader className="px-4">
+      <Card className="gap-4 border-border/68 bg-card/68 py-4 shadow-[var(--shadow-soft)] lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+        <CardHeader className="px-3">
           <CardTitle className="text-sm">Task filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 px-4">
+        <CardContent className="grid gap-4 px-3">
           <div className="grid gap-2">
             <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {modes.map((mode) => (
-                <a
-                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
-                  data-active={selectedMode === mode}
-                  href={taskFiltersHref(basePath, currentFilters, { mode })}
-                  key={mode}
-                >
-                  {mode === 'ALL' ? 'All modes' : labelize(mode)}
-                </a>
+                <Button asChild key={mode} size="chip" variant="chip">
+                  <a
+                    data-active={selectedMode === mode}
+                    href={taskFiltersHref(basePath, currentFilters, { mode })}
+                  >
+                    {mode === 'ALL' ? 'All modes' : labelize(mode)}
+                  </a>
+                </Button>
               ))}
             </div>
           </div>
           <div className="grid gap-2">
             <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
-            <div className="grid grid-cols-2 gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {statuses.map((status) => (
-                <a
-                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
-                  data-active={selectedStatus === status}
-                  href={taskFiltersHref(basePath, currentFilters, { status })}
-                  key={status}
-                >
-                  {status === 'ALL' ? 'All statuses' : labelize(status)}
-                </a>
+                <Button asChild key={status} size="chip" variant="chip">
+                  <a
+                    data-active={selectedStatus === status}
+                    href={taskFiltersHref(basePath, currentFilters, { status })}
+                  >
+                    {status === 'ALL' ? 'All statuses' : labelize(status)}
+                  </a>
+                </Button>
               ))}
             </div>
           </div>
           <div className="grid gap-2">
             <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
-            <div className="grid grid-cols-3 gap-1">
+            <div className="grid grid-cols-1 gap-1">
               {actors.map((actor) => (
-                <a
-                  className="min-h-8 rounded-full border border-border/62 bg-background/35 px-2 py-2 text-center font-mono text-[0.68rem] uppercase transition-[background-color,border-color,color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/58 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]"
-                  data-active={selectedActor === actor}
-                  href={taskFiltersHref(basePath, currentFilters, { actor })}
-                  key={actor}
-                >
-                  {actor === 'ALL' ? 'Any' : actor}
-                </a>
+                <Button asChild key={actor} size="chip" variant="chip">
+                  <a
+                    data-active={selectedActor === actor}
+                    href={taskFiltersHref(basePath, currentFilters, { actor })}
+                  >
+                    {actor === 'ALL' ? 'Any' : actor}
+                  </a>
+                </Button>
               ))}
             </div>
           </div>
@@ -441,7 +478,7 @@ export function TaskFilterRail({
                 placeholder="scrape, react"
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <div className="grid gap-2">
                 <Label htmlFor="task-filter-min-reward">Min reward</Label>
                 <Input
@@ -478,7 +515,7 @@ export function TaskFilterRail({
                 type="number"
               />
             </div>
-            <div className="grid grid-cols-2 gap-2">
+            <div className="grid grid-cols-1 gap-2">
               <Button type="submit" variant="terminal">
                 Apply filters
               </Button>
@@ -521,7 +558,7 @@ export function TaskListPageContent({
   tasks: TaskResponse[];
 }) {
   return (
-    <div className="@container/main grid w-full grid-cols-[minmax(0,1fr)] items-start gap-6 px-4 py-4 md:gap-6 md:py-6 lg:grid-cols-[280px_minmax(0,1fr)] lg:px-6">
+    <div className="@container/main grid w-full grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-4 md:gap-6 md:py-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[220px_minmax(0,1fr)]">
       <TaskFilterRail
         basePath={basePath}
         deadlineHours={filterParams.deadlineHours}
@@ -613,14 +650,14 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
 function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId: string }) {
   const label = artifact.role !== 'attachment' ? artifact.role : null;
   return (
-    <div className="rounded-xl border border-border/60 bg-muted/34 px-3 py-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <div className="flex min-w-0 items-center gap-2">
+    <div className="min-w-0 rounded-xl border border-border/60 bg-muted/34 px-3 py-2 text-sm">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+        <div className="flex min-w-0 flex-wrap items-center gap-2">
           {label ? <Badge variant="outline">{label}</Badge> : null}
-          <span className="truncate font-mono">{artifact.fileName}</span>
-          <span className="shrink-0 text-xs text-muted-foreground">{artifact.mimeType}</span>
+          <span className="min-w-0 break-all font-mono">{artifact.fileName}</span>
+          <span className="text-xs text-muted-foreground">{artifact.mimeType}</span>
         </div>
-        <div className="flex shrink-0 items-center gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
           <span className="font-mono text-xs text-muted-foreground">
             {compactAddress(artifact.workerAgentId ?? artifact.workerAddress)}
           </span>
@@ -641,32 +678,70 @@ function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId:
   );
 }
 
-function SubmissionCard({ submission }: { submission: SubmissionResponse }) {
+function commandForSubmissionWorker(command: string, worker: string) {
+  if (/(?:^|\s)--worker\s+0x[a-fA-F0-9]{40}(?:\s|$)/.test(command)) {
+    return command.replace(/--worker\s+0x[a-fA-F0-9]{40}/, `--worker ${worker}`);
+  }
+
+  return `${command} --worker ${worker}`;
+}
+
+function SubmissionCard({
+  reviewAction,
+  submission,
+  task,
+}: {
+  reviewAction?: PendingAction;
+  submission: SubmissionResponse;
+  task: TaskDetailResponse | TaskResponse;
+}) {
   const artifacts: ArtifactResponse[] = submission.artifacts ?? [];
+  const worker = submission.workerAddress;
+  const acceptAction = reviewAction
+    ? {
+        ...reviewAction,
+        command: commandForSubmissionWorker(reviewAction.command, worker),
+      }
+    : null;
+
   return (
-    <div className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]">
-      <div className="flex flex-wrap items-center justify-between gap-2 font-mono text-sm">
-        <span>{compactAddress(submission.workerAgentId ?? submission.workerAddress)}</span>
+    <div className="grid min-w-0 gap-3 rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]">
+      <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+        <div className="grid min-w-0 gap-1">
+          <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
+            Deliverable submitted by
+          </p>
+          <span className="break-all font-mono text-sm">
+            {compactAddress(submission.workerAgentId ?? submission.workerAddress)}
+          </span>
+        </div>
         <span className="text-muted-foreground">
           {new Date(submission.submittedAt).toLocaleString()}
         </span>
       </div>
       {artifacts.length > 0 ? (
-        <div className="mt-2 grid gap-1">
+        <div className="grid min-w-0 gap-1">
           {artifacts.map((artifact) => (
             <ArtifactRow artifact={artifact} key={artifact.id} taskId={submission.taskId} />
           ))}
         </div>
-      ) : null}
+      ) : (
+        <p className="rounded-xl border border-dashed border-border/60 bg-background/35 p-3 text-sm text-muted-foreground">
+          No artifacts were attached to this submission.
+        </p>
+      )}
+      {acceptAction ? <SubmissionPayoutAction action={acceptAction} task={task} /> : null}
     </div>
   );
 }
 
 function ModeDataPanel({
   modeData,
+  reviewAction,
   task,
 }: {
   modeData?: TaskModeData;
+  reviewAction?: PendingAction;
   task: TaskDetailResponse | TaskResponse;
 }) {
   const submissions = modeData?.submissions ?? [];
@@ -682,22 +757,33 @@ function ModeDataPanel({
     bids.length > 0 ||
     claim != null;
 
+  const isReviewQueue = reviewAction && submissions.length > 0;
+  const title = isReviewQueue ? 'Submission review' : 'Activity';
+  const description = isReviewQueue
+    ? 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
+    : 'Work, bids, proofs, and reviews tied to this task.';
+
   return (
     <Card className="border-border/68 bg-card/90">
       <CardHeader>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="grid gap-1">
-            <CardTitle>Activity</CardTitle>
-            <p className="text-sm leading-5 text-muted-foreground">
-              Work, bids, proofs, and reviews tied to this task.
-            </p>
+            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+              {title}
+            </h2>
+            <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           </div>
           <Badge variant="terminal">{activityLabel(task, modeData)}</Badge>
         </div>
       </CardHeader>
       <CardContent className="grid gap-3">
         {submissions.map((submission) => (
-          <SubmissionCard key={submission.id} submission={submission} />
+          <SubmissionCard
+            key={submission.id}
+            reviewAction={reviewAction}
+            submission={submission}
+            task={task}
+          />
         ))}
 
         {pitches.map((pitch) => (
@@ -808,19 +894,19 @@ function requirementRows(task: TaskDetailResponse | TaskResponse) {
 
   if (task.mode === 'auction') {
     rows.push({
-      label: 'Auction type',
-      value: task.auctionType ? `${labelize(task.auctionType)} auction` : 'Auction',
+      label: 'Auction flow',
+      value:
+        task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch'
+          ? 'Workers can accept the current clock price before the task is due.'
+          : 'Workers submit bids for requester review before payout is released.',
     });
-    if (task.bidDeadline) {
-      rows.push({ label: 'Bid deadline', value: formatDateTime(task.bidDeadline) });
-    }
-    if (task.maxPrice) {
-      rows.push({ label: 'Max price', value: formatUsdc(task.maxPrice) });
-    }
   }
 
-  if (task.mode === 'pitch' && task.pitchDeadline) {
-    rows.push({ label: 'Pitch deadline', value: formatDateTime(task.pitchDeadline) });
+  if (task.mode === 'pitch') {
+    rows.push({
+      label: 'Selection',
+      value: 'Workers submit pitches. The requester selects one before work continues.',
+    });
   }
 
   if (task.mode === 'benchmark') {
@@ -872,59 +958,52 @@ function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskRespon
   );
 }
 
-function TaskSummaryRail({
-  backHref,
-  modeData,
-  task,
-}: {
-  backHref: string;
-  modeData?: TaskModeData;
-  task: TaskDetailResponse | TaskResponse;
-}) {
+function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) {
+  const showAuctionPricing = Boolean(
+    task.maxPrice ||
+    task.currentAuctionPrice ||
+    task.currentLowestBid ||
+    task.auctionStartPrice ||
+    task.auctionFloorPrice
+  );
+
   return (
     <Card className="w-full gap-5 border-border/68 bg-card/90 lg:sticky lg:top-20">
       <CardHeader>
-        <CardTitle>Task facts</CardTitle>
+        <CardTitle>Task reference</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-5">
-        <SummaryGroup title="Payout">
-          <SummaryRow
-            label="Reward"
-            value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
-          />
-          {task.maxPrice ? (
-            <SummaryRow label="Max price" value={formatUsdc(task.maxPrice)} />
-          ) : null}
-          {task.currentAuctionPrice ? (
-            <SummaryRow
-              label="Clock price"
-              value={<span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>}
-            />
-          ) : null}
-          {task.currentLowestBid ? (
-            <SummaryRow label="Lowest bid" value={formatUsdc(task.currentLowestBid)} />
-          ) : null}
-          {task.auctionStartPrice ? (
-            <SummaryRow label="Start price" value={formatUsdc(task.auctionStartPrice)} />
-          ) : null}
-          {task.auctionFloorPrice ? (
-            <SummaryRow label="Floor price" value={formatUsdc(task.auctionFloorPrice)} />
-          ) : null}
+        <SummaryGroup title="Settlement">
+          <SummaryRow label="Task ID" value={compactAddress(task.id)} />
+          <SummaryRow label="Escrow tx" value={compactAddress(task.escrowTxHash)} />
           <SummaryRow label="Platform fee" value={formatBps(task.platformFeeBps)} />
         </SummaryGroup>
 
-        <SummaryGroup title="Timing">
+        {showAuctionPricing ? (
+          <SummaryGroup title="Auction pricing">
+            {task.maxPrice ? (
+              <SummaryRow label="Max price" value={formatUsdc(task.maxPrice)} />
+            ) : null}
+            {task.currentAuctionPrice ? (
+              <SummaryRow
+                label="Clock price"
+                value={<span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>}
+              />
+            ) : null}
+            {task.currentLowestBid ? (
+              <SummaryRow label="Lowest bid" value={formatUsdc(task.currentLowestBid)} />
+            ) : null}
+            {task.auctionStartPrice ? (
+              <SummaryRow label="Start price" value={formatUsdc(task.auctionStartPrice)} />
+            ) : null}
+            {task.auctionFloorPrice ? (
+              <SummaryRow label="Floor price" value={formatUsdc(task.auctionFloorPrice)} />
+            ) : null}
+          </SummaryGroup>
+        ) : null}
+
+        <SummaryGroup title="History">
           <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
-          <SummaryRow
-            label={
-              task.mode === 'auction'
-                ? 'Bid deadline'
-                : task.mode === 'pitch'
-                  ? 'Pitch deadline'
-                  : 'Expiry'
-            }
-            value={taskDeadlineLabel(task)}
-          />
           {task.claimedAt ? (
             <SummaryRow label="Claimed" value={formatDateTime(task.claimedAt)} />
           ) : null}
@@ -939,21 +1018,8 @@ function TaskSummaryRail({
           ) : null}
         </SummaryGroup>
 
-        <SummaryGroup title="Participants">
-          <SummaryRow
-            label="Requester"
-            value={
-              <span className="flex items-center gap-1.5">
-                {compactAddress(task.requesterAgentId ?? task.requester)}
-                {task.requesterActorType === 'human' ? (
-                  <Badge variant="outline" title="Registered as a human via the web app">
-                    human
-                  </Badge>
-                ) : null}
-              </span>
-            }
-          />
-          {task.worker || task.claimedBy ? (
+        {task.worker || task.claimedBy ? (
+          <SummaryGroup title="Assignment">
             <SummaryRow
               label="Worker"
               value={
@@ -967,21 +1033,14 @@ function TaskSummaryRail({
                 </span>
               }
             />
-          ) : null}
-        </SummaryGroup>
+          </SummaryGroup>
+        ) : null}
 
-        <SummaryGroup title="Progress">
-          <SummaryRow label="Status" value={labelize(task.status)} />
-          <SummaryRow label="Activity" value={activityLabel(task, modeData)} />
-          {task.rating !== null ? <SummaryRow label="Rating" value={`${task.rating}/100`} /> : null}
-          {task.stakeRequired || task.stakeBps > 0 ? (
-            <SummaryRow label="Stake required" value={formatBps(task.stakeBps)} />
-          ) : null}
-        </SummaryGroup>
-
-        <Button asChild className="mt-1" variant="terminal">
-          <a href={backHref}>Back to tasks</a>
-        </Button>
+        {task.rating !== null ? (
+          <SummaryGroup title="Outcome">
+            <SummaryRow label="Rating" value={`${task.rating}/100`} />
+          </SummaryGroup>
+        ) : null}
       </CardContent>
     </Card>
   );
@@ -997,10 +1056,45 @@ export function TaskDetailPanel({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
+  const reviewAction =
+    task.status === 'pending_approval' && (modeData?.submissions?.length ?? 0) > 0
+      ? pendingActions.find((action) => action.action === 'accept')
+      : undefined;
+  const nextActions = reviewAction
+    ? pendingActions.filter((action) => action !== reviewAction)
+    : pendingActions;
+  const showNextActions = nextActions.length > 0 || !reviewAction;
+  const descriptionBody = taskBody(task);
+  const detailTags = taskDetailTags(task);
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
       <div className="block w-full min-w-0 space-y-6">
+        <Breadcrumb className="px-1">
+          <BreadcrumbList className="font-mono text-xs uppercase">
+            <BreadcrumbItem>
+              <BreadcrumbLink href={backHref}>Tasks</BreadcrumbLink>
+            </BreadcrumbItem>
+            <BreadcrumbSeparator />
+            <BreadcrumbItem className="min-w-0">
+              <BreadcrumbPage className="max-w-[min(72vw,42rem)] truncate font-sans text-sm normal-case">
+                {taskTitle(task)}
+              </BreadcrumbPage>
+            </BreadcrumbItem>
+          </BreadcrumbList>
+        </Breadcrumb>
+        <section aria-label="Task metrics" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+          <DetailMetric
+            label="Reward"
+            value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
+          />
+          <DetailMetric label="Due" value={taskDeadlineLabel(task)} />
+          <DetailMetric label="Activity" value={activityLabel(task, modeData)} />
+          <DetailMetric
+            label="Requester"
+            value={compactAddress(task.requesterAgentId ?? task.requester)}
+          />
+        </section>
         <Card className="w-full border-border/68 bg-card/90">
           <CardHeader>
             <div className="flex flex-wrap items-start justify-between gap-4">
@@ -1015,47 +1109,44 @@ export function TaskDetailPanel({
                 {statusContext(task)}
               </span>
             </div>
-            <CardTitle className="mt-3 text-2xl">{taskTitle(task)}</CardTitle>
+            <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight text-foreground">
+              {taskTitle(task)}
+            </h1>
           </CardHeader>
           <CardContent className="grid gap-5">
-            <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-              {task.description}
-            </p>
-            {task.tags.length > 0 ? (
+            {descriptionBody ? (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                {descriptionBody}
+              </p>
+            ) : null}
+            {detailTags.length > 0 ? (
               <div className="flex flex-wrap gap-2">
-                {task.tags.map((tag) => (
+                {detailTags.map((tag) => (
                   <Badge key={tag} variant="terminal">
                     {tag}
                   </Badge>
                 ))}
               </div>
             ) : null}
-            <div className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
-              <DetailMetric
-                label="Reward"
-                value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
-              />
-              <DetailMetric label="Due" value={taskDeadlineLabel(task)} />
-              <DetailMetric label="Activity" value={activityLabel(task, modeData)} />
-              <DetailMetric
-                label="Requester"
-                value={compactAddress(task.requesterAgentId ?? task.requester)}
-              />
-            </div>
           </CardContent>
         </Card>
-        <TaskActionsPanel
-          claimedBy={task.claimedBy}
-          emptyReason={pendingActionEmptyReason(task)}
-          pendingActions={pendingActions}
-          requester={task.requester}
-          task={task}
-          worker={task.worker}
-        />
+        {reviewAction ? (
+          <ModeDataPanel modeData={modeData} reviewAction={reviewAction} task={task} />
+        ) : null}
+        {showNextActions ? (
+          <TaskActionsPanel
+            claimedBy={task.claimedBy}
+            emptyReason={pendingActionEmptyReason(task)}
+            pendingActions={nextActions}
+            requester={task.requester}
+            task={task}
+            worker={task.worker}
+          />
+        ) : null}
         <WorkRequirementsPanel task={task} />
-        <ModeDataPanel modeData={modeData} task={task} />
+        {!reviewAction ? <ModeDataPanel modeData={modeData} task={task} /> : null}
       </div>
-      <TaskSummaryRail backHref={backHref} modeData={modeData} task={task} />
+      <TaskSummaryRail task={task} />
     </div>
   );
 }

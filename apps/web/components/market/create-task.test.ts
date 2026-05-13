@@ -15,10 +15,10 @@ describe('buildCreateTaskPayload', () => {
         metricDescription: '',
         metricTarget: '',
         mode: 'auction',
-        pitchDeadline: '',
+        pitchDeadline: '24',
         reward: '25.75',
-        stakeBps: '0',
-        stakeRequired: false,
+        stakeBps: '12.5',
+        stakeRequired: true,
         tags: 'scrape, data',
       })
     ).toEqual({
@@ -29,9 +29,10 @@ describe('buildCreateTaskPayload', () => {
       duration: 72,
       maxPrice: '12500000',
       mode: 'auction',
+      pitchDeadline: 86400,
       reward: '25750000',
-      stakeBps: 0,
-      stakeRequired: false,
+      stakeBps: 1250,
+      stakeRequired: true,
       tags: ['scrape', 'data'],
     });
   });

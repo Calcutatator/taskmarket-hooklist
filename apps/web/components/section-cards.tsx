@@ -1,14 +1,6 @@
 import { IconCircleCheckFilled, IconClock, IconTrendingUp, IconUsers } from '@tabler/icons-react';
 
-import { Badge } from '@/components/ui/badge';
-import {
-  Card,
-  CardAction,
-  CardDescription,
-  CardFooter,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
+import { Card, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatNumber, formatUsdcUnits } from '@/lib/format';
 
 type SectionCardsProps = {
@@ -24,78 +16,56 @@ export function SectionCards({
   taskCount,
   totalRewards,
 }: SectionCardsProps) {
+  const [rewardsValue, rewardsUnit = 'USDC'] = formatUsdcUnits(totalRewards).split(' ');
   const items = [
     {
-      action: (
-        <Badge variant="outline">
-          <IconTrendingUp />
-          Total
-        </Badge>
-      ),
-      description: 'All-time tasks',
-      footer: 'Created tasks across every status',
       icon: IconTrendingUp,
       title: 'Tasks created',
       value: formatNumber(taskCount),
     },
     {
-      action: (
-        <Badge variant="outline">
-          <IconClock />
-          Open
-        </Badge>
-      ),
-      description: 'Available tasks',
-      footer: 'Accepting bids, claims, or submissions',
       icon: IconClock,
       title: 'Open tasks',
       value: formatNumber(openTaskCount),
     },
     {
-      action: (
-        <Badge variant="outline">
-          <IconUsers />
-          Agents
-        </Badge>
-      ),
-      description: 'Worker identities',
-      footer: 'Agents with marketplace activity',
       icon: IconUsers,
       title: 'Registered agents',
       value: formatNumber(agentCount),
     },
     {
-      action: (
-        <Badge variant="outline">
-          <IconCircleCheckFilled />
-          USDC
-        </Badge>
-      ),
-      description: 'USDC committed',
-      footer: 'Rewards funded on created tasks',
       icon: IconCircleCheckFilled,
       title: 'Rewards posted',
-      value: formatUsdcUnits(totalRewards),
+      unit: rewardsUnit,
+      value: rewardsValue,
     },
   ];
 
   return (
-    <div className="grid grid-cols-1 gap-5 px-4 *:data-[slot=card]:border-border/68 *:data-[slot=card]:bg-gradient-to-t *:data-[slot=card]:from-primary/5 *:data-[slot=card]:to-card *:data-[slot=card]:shadow-[var(--shadow-elevated)] lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4 dark:*:data-[slot=card]:bg-card">
+    <div className="grid grid-cols-1 gap-3 px-4 sm:grid-cols-2 lg:px-6 @5xl/main:grid-cols-4">
       {items.map((item) => (
-        <Card className="@container/card" key={item.title}>
-          <CardHeader>
-            <CardDescription>{item.title}</CardDescription>
-            <CardTitle className="font-mono text-2xl font-semibold tabular-nums @[250px]/card:text-3xl">
-              {item.value}
-            </CardTitle>
-            <CardAction>{item.action}</CardAction>
-          </CardHeader>
-          <CardFooter className="flex-col items-start gap-1.5 text-sm">
-            <div className="line-clamp-1 flex gap-2 font-medium">
-              {item.description} <item.icon className="size-4" />
+        <Card
+          className="@container/card gap-0 overflow-hidden border-border/68 bg-card/90 py-0 shadow-[var(--shadow-soft)]"
+          key={item.title}
+        >
+          <CardHeader className="grid grid-cols-[1fr_auto] gap-4 px-5 py-5">
+            <div className="min-w-0 space-y-3">
+              <CardDescription className="text-[0.8125rem] font-medium text-muted-foreground">
+                {item.title}
+              </CardDescription>
+              <CardTitle className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-3xl font-semibold leading-none tracking-normal tabular-nums @[250px]/card:text-[2rem]">
+                <span>{item.value}</span>
+                {item.unit ? (
+                  <span className="font-sans text-sm font-semibold uppercase tracking-normal text-muted-foreground">
+                    {item.unit}
+                  </span>
+                ) : null}
+              </CardTitle>
             </div>
-            <div className="text-muted-foreground">{item.footer}</div>
-          </CardFooter>
+            <div className="flex size-9 items-center justify-center rounded-md border border-border/65 bg-secondary/45 text-muted-foreground">
+              <item.icon aria-hidden="true" className="size-4" />
+            </div>
+          </CardHeader>
         </Card>
       ))}
     </div>

@@ -92,7 +92,6 @@ export function SelectWinnerButton({ disabled, task }: TaskActionComponentProps)
       <Button disabled={disabled || pending} onClick={handleSelect} size="sm">
         {pending ? 'Confirming…' : 'Select winner'}
       </Button>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

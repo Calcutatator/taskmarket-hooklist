@@ -22,12 +22,14 @@ const buttonVariants = cva(
         link: 'border-transparent text-primary underline-offset-4 hover:underline',
         terminal:
           'border-border/72 bg-surface/80 text-foreground shadow-[var(--shadow-control)] hover:border-primary/55 hover:bg-surface-2/72 hover:text-primary',
+        chip: 'border-border/60 bg-background/35 font-mono uppercase tracking-tight text-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/55 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]',
       },
       size: {
         default: 'h-10 px-4 py-2 has-[>svg]:px-3.5',
         xs: "h-7 gap-1 px-2.5 text-xs has-[>svg]:px-2 [&_svg:not([class*='size-'])]:size-3",
         sm: 'h-9 gap-1.5 px-3.5 has-[>svg]:px-3',
         lg: 'h-11 px-6 has-[>svg]:px-4',
+        chip: "h-9 gap-1.5 px-3 text-xs has-[>svg]:px-2.5 [&_svg:not([class*='size-'])]:size-3",
         icon: 'size-10',
         'icon-xs': "size-7 [&_svg:not([class*='size-'])]:size-3",
         'icon-sm': 'size-9',

@@ -76,7 +76,6 @@ export function ForfeitButton({ disabled, task }: TaskActionComponentProps) {
           Forfeit claim
         </Button>
       </ConfirmDialog>
-      <p className="text-xs text-muted-foreground">Wallet signature only. No payment needed.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

@@ -16,7 +16,7 @@ help:
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
 	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all)"
 	@echo "  make dev                  - Start all dev servers in parallel"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|docs|anvil)"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil)"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
 	@echo "  make format-check <app|all> - Check formatting for specific app or all"
@@ -148,12 +148,20 @@ start:
 		pnpm --filter @taskmarket/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/web dev; \
+	elif [ "$(word 1,$(ARGS))" = "mock-api" ]; then \
+		pnpm --filter @taskmarket/backend exec tsx ../../apps/web/e2e/mock-api.ts; \
+	elif [ "$(word 1,$(ARGS))" = "mock-web" ]; then \
+		MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}"; \
+		PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" \
+		NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+		TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+		pnpm --filter @taskmarket/web dev; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs dev; \
 	elif [ "$(word 1,$(ARGS))" = "anvil" ]; then \
 		anvil; \
 	else \
-		echo "Usage: make start <db|backend|frontend|web|docs|anvil>"; \
+		echo "Usage: make start <db|backend|frontend|web|mock-api|mock-web|docs|anvil>"; \
 		exit 1; \
 	fi
 

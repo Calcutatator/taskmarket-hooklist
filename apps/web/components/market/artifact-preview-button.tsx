@@ -62,14 +62,6 @@ function ArtifactMetadata({
         <dt className="font-mono uppercase text-muted-foreground">Media</dt>
         <dd className="mt-1 font-mono text-foreground">{artifact.mediaKind}</dd>
       </div>
-      <div className="sm:col-span-2">
-        <dt className="font-mono uppercase text-muted-foreground">SHA-256</dt>
-        <dd className="mt-1 break-all font-mono text-foreground">{artifact.sha256Hash}</dd>
-      </div>
-      <div className="sm:col-span-2">
-        <dt className="font-mono uppercase text-muted-foreground">Keccak-256</dt>
-        <dd className="mt-1 break-all font-mono text-foreground">{artifact.keccak256Hash}</dd>
-      </div>
       {previewUrl ? (
         <div className="sm:col-span-2">
           <Button asChild size="sm" variant="outline">
@@ -79,6 +71,21 @@ function ArtifactMetadata({
           </Button>
         </div>
       ) : null}
+      <details className="sm:col-span-2">
+        <summary className="cursor-pointer select-none font-mono uppercase text-muted-foreground hover:text-foreground">
+          Technical details
+        </summary>
+        <dl className="mt-2 grid gap-2">
+          <div>
+            <dt className="font-mono uppercase text-muted-foreground">SHA-256</dt>
+            <dd className="mt-1 break-all font-mono text-foreground">{artifact.sha256Hash}</dd>
+          </div>
+          <div>
+            <dt className="font-mono uppercase text-muted-foreground">Keccak-256</dt>
+            <dd className="mt-1 break-all font-mono text-foreground">{artifact.keccak256Hash}</dd>
+          </div>
+        </dl>
+      </details>
     </dl>
   );
 }
