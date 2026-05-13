@@ -1,0 +1,128 @@
+/**
+ * Broadcast smoke test: exercises the broadcast endpoint against a running backend.
+ *
+ * Steps:
+ *  1. Register two devices and claim email addresses
+ *  2. Reject broadcast with wrong admin secret
+ *  3. Send broadcast to all agents
+ *  4. Verify both agents received the email in their inboxes
+ *  5. Send filtered broadcast (actorType: agent) — both agents are CLI-registered, so both receive
+ *  6. Send broadcast with skills filter targeting a skill neither agent has — zero recipients
+ *
+ * Usage:
+ *   ADMIN_SECRET=your-secret API_URL=http://localhost:3000 npx tsx scripts/smoke-broadcast.ts
+ */
+import { randomBytes } from 'crypto';
+import { log, ok, get, post, API_URL } from './_x402';
+
+const ADMIN_SECRET = process.env.ADMIN_SECRET;
+if (!ADMIN_SECRET) {
+  process.stderr.write('ADMIN_SECRET env var is required\n');
+  process.exit(1);
+}
+
+function randomAddress(): string {
+  return '0x' + randomBytes(20).toString('hex');
+}
+
+function randomUsername(): string {
+  return 'smoke-' + randomBytes(4).toString('hex');
+}
+
+async function registerDevice(walletAddress: string): Promise<{ deviceId: string; apiToken: string }> {
+  const result = (await post('/api/devices', { walletAddress })) as {
+    deviceId: string;
+    apiToken: string;
+  };
+  return result;
+}
+
+async function registerEmail(deviceId: string, apiToken: string, username: string): Promise<string> {
+  const result = (await post('/api/emails/register', { deviceId, apiToken, username })) as {
+    emailAddress: string;
+  };
+  return result.emailAddress;
+}
+
+async function listInbox(deviceId: string, apiToken: string, unread = false): Promise<unknown[]> {
+  const params = new URLSearchParams({ deviceId, apiToken, limit: '20' });
+  if (unread) params.set('unread', 'true');
+  const result = (await get(`/api/emails/list?${params.toString()}`)) as { emails: unknown[] };
+  return result.emails;
+}
+
+async function broadcast(
+  subject: string,
+  body: string,
+  filters?: Record<string, unknown>
+): Promise<{ sent: number; failed: number; total: number }> {
+  return (await post('/api/emails/broadcast', {
+    adminSecret: ADMIN_SECRET,
+    subject,
+    body,
+    filters,
+  })) as { sent: number; failed: number; total: number };
+}
+
+log('=== smoke-broadcast ===');
+log(`API_URL: ${API_URL}`);
+
+// Step 1: Register two agents
+const addrA = randomAddress();
+const addrB = randomAddress();
+log(`\n[1] Registering agents ${addrA.slice(0, 10)} and ${addrB.slice(0, 10)}`);
+const deviceA = await registerDevice(addrA);
+const deviceB = await registerDevice(addrB);
+const usernameA = randomUsername();
+const usernameB = randomUsername();
+const emailA = await registerEmail(deviceA.deviceId, deviceA.apiToken, usernameA);
+const emailB = await registerEmail(deviceB.deviceId, deviceB.apiToken, usernameB);
+log(`  Agent A email: ${emailA}`);
+log(`  Agent B email: ${emailB}`);
+
+// Step 2: Reject wrong secret
+log('\n[2] Reject broadcast with wrong secret');
+let rejected = false;
+try {
+  await post('/api/emails/broadcast', {
+    adminSecret: 'wrong-secret-1234',
+    subject: 'Test',
+    body: 'Body',
+  });
+} catch {
+  rejected = true;
+}
+ok(rejected, 'broadcast with wrong secret should be rejected');
+
+// Step 3: Broadcast to all agents
+log('\n[3] Broadcast to all agents');
+const broadcastBody = `# Platform Update\n\nNew features are available.\n\n<!--metadata\n{"type":"announcement","tags":[]}\n-->`;
+const result = await broadcast('Platform Update', broadcastBody);
+log(`  sent: ${result.sent}, failed: ${result.failed}, total: ${result.total}`);
+ok(result.total >= 2, 'broadcast total should include at least our two test agents');
+ok(result.failed === 0, 'no sends should fail');
+
+// Step 4: Verify both agents received the email
+log('\n[4] Verify both agents received the email');
+const inboxA = await listInbox(deviceA.deviceId, deviceA.apiToken, true);
+const inboxB = await listInbox(deviceB.deviceId, deviceB.apiToken, true);
+ok(inboxA.length >= 1, 'agent A should have at least one unread email');
+ok(inboxB.length >= 1, 'agent B should have at least one unread email');
+
+// Step 5: Filtered broadcast by actorType=agent (CLI-registered)
+log('\n[5] Filtered broadcast: actorType=agent');
+const filteredResult = await broadcast('Agent-only update', 'For CLI agents only.', {
+  actorType: 'agent',
+});
+log(`  sent: ${filteredResult.sent}, total: ${filteredResult.total}`);
+ok(filteredResult.total >= 2, 'both test agents are CLI-registered');
+
+// Step 6: Skills filter with no matches
+log('\n[6] Skills filter with no matching agents');
+const noMatchResult = await broadcast('Skill-targeted update', 'For quantum-computing agents.', {
+  skills: ['quantum-computing-xyz-no-match'],
+});
+log(`  sent: ${noMatchResult.sent}, total: ${noMatchResult.total}`);
+ok(noMatchResult.total === 0, 'no agents have the test skill');
+
+log('\n=== smoke-broadcast PASSED ===');

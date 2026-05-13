@@ -12,12 +12,14 @@ vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     EMAIL_DOMAIN: 'mail.taskmarket.xyz',
     NODE_ENV: 'test',
+    ADMIN_SECRET: 'test-secret-value-1234',
   }),
 }));
 
 import { emailsRouter } from '../../../src/routers/emails.router';
 import { authenticateXmtpDevice } from '../../../src/services/xmtp-auth';
 import { sendEmail } from '../../../src/services/mailer';
+import { getServerConfig } from '../../../src/config/env';
 import { createMockCtx, makeChain } from '../helpers';
 
 const WALLET_A = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
@@ -309,6 +311,107 @@ describe('emails router', () => {
           bodyText: 'body',
         })
       ).rejects.toMatchObject({ code: 'TOO_MANY_REQUESTS' });
+    });
+  });
+
+  describe('broadcast', () => {
+
+    it('sends to all agents with email addresses', async () => {
+      vi.mocked(sendEmail).mockResolvedValue(undefined);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          { address: WALLET_A, emailAddress: EMAIL_A },
+          { address: WALLET_B, emailAddress: EMAIL_B },
+        ])
+      );
+
+      const caller = emailsRouter.createCaller(ctx);
+      const result = await caller.broadcast({
+        adminSecret: 'test-secret-value-1234',
+        subject: 'New vertical',
+        body: '# Automobiles\n\nNew tasks available.',
+      });
+      expect(result.sent).toBe(2);
+      expect(result.failed).toBe(0);
+      expect(result.total).toBe(2);
+      expect(sendEmail).toHaveBeenCalledTimes(2);
+    });
+
+    it('returns UNAUTHORIZED for wrong admin secret', async () => {
+      const ctx = createMockCtx();
+      const caller = emailsRouter.createCaller(ctx);
+      await expect(
+        caller.broadcast({ adminSecret: 'wrong-secret', subject: 'Test', body: 'Body' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    });
+
+    it('returns UNAUTHORIZED when ADMIN_SECRET is not configured', async () => {
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        EMAIL_DOMAIN: 'mail.taskmarket.xyz',
+        NODE_ENV: 'test',
+        ADMIN_SECRET: undefined,
+      } as ReturnType<typeof getServerConfig>);
+
+      const ctx = createMockCtx();
+      const caller = emailsRouter.createCaller(ctx);
+      await expect(
+        caller.broadcast({ adminSecret: 'any-secret', subject: 'Test', body: 'Body' })
+      ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
+    });
+
+    it('counts failed sends in the result', async () => {
+      vi.mocked(sendEmail)
+        .mockResolvedValueOnce(undefined)
+        .mockRejectedValueOnce(new Error('relay down'));
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          { address: WALLET_A, emailAddress: EMAIL_A },
+          { address: WALLET_B, emailAddress: EMAIL_B },
+        ])
+      );
+
+      const caller = emailsRouter.createCaller(ctx);
+      const result = await caller.broadcast({
+        adminSecret: 'test-secret-value-1234',
+        subject: 'Test',
+        body: 'Body',
+      });
+      expect(result.sent).toBe(1);
+      expect(result.failed).toBe(1);
+      expect(result.total).toBe(2);
+    });
+
+    it('returns zero counts when no agents have email addresses', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+      const caller = emailsRouter.createCaller(ctx);
+      const result = await caller.broadcast({
+        adminSecret: 'test-secret-value-1234',
+        subject: 'Test',
+        body: 'Body',
+      });
+      expect(result.sent).toBe(0);
+      expect(result.failed).toBe(0);
+      expect(result.total).toBe(0);
+      expect(sendEmail).not.toHaveBeenCalled();
+    });
+
+    it('passes actorType filter as registeredVia condition', async () => {
+      vi.mocked(sendEmail).mockResolvedValue(undefined);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+      const caller = emailsRouter.createCaller(ctx);
+      const result = await caller.broadcast({
+        adminSecret: 'test-secret-value-1234',
+        subject: 'Agents only',
+        body: 'Body',
+        filters: { actorType: 'agent' },
+      });
+      expect(result.total).toBe(0);
     });
   });
 });

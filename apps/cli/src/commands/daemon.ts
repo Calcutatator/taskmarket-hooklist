@@ -40,6 +40,18 @@ interface TaskDetail {
   pendingActions: PendingAction[];
 }
 
+interface EmailRow {
+  id: string;
+  fromAddress: string;
+  subject: string | null;
+  bodyText: string | null;
+  receivedAt: string;
+}
+
+interface EmailListResult {
+  emails: EmailRow[];
+}
+
 // --- Pure helpers (exported for testing) ---
 
 export function diffTaskStatuses(
@@ -90,6 +102,7 @@ export const daemonCommand = new Command('daemon')
     'Poll interval for clock-based auction tasks (dutch/reverse_dutch) in milliseconds',
     '15000'
   )
+  .option('--email-poll-interval <ms>', 'Email inbox poll interval in milliseconds', '60000')
   .option('--task-filters <json>', 'JSON filter object for new-task discovery')
   .option('--no-xmtp', 'Disable XMTP stream and heartbeat')
   .action(
@@ -98,6 +111,7 @@ export const daemonCommand = new Command('daemon')
       inboxInterval: string;
       taskInterval: string;
       auctionPollInterval: string;
+      emailPollInterval: string;
       taskFilters?: string;
       xmtp: boolean;
     }) => {
@@ -105,6 +119,7 @@ export const daemonCommand = new Command('daemon')
       const inboxIntervalMs = Number(opts.inboxInterval);
       const taskIntervalMs = Number(opts.taskInterval);
       const auctionPollIntervalMs = Number(opts.auctionPollInterval);
+      const emailPollIntervalMs = Number(opts.emailPollInterval);
 
       if (!Number.isFinite(heartbeatIntervalMs) || heartbeatIntervalMs <= 0) {
         throw new Error('--heartbeat-interval must be a positive number');
@@ -117,6 +132,9 @@ export const daemonCommand = new Command('daemon')
       }
       if (!Number.isFinite(auctionPollIntervalMs) || auctionPollIntervalMs <= 0) {
         throw new Error('--auction-poll-interval must be a positive number');
+      }
+      if (!Number.isFinite(emailPollIntervalMs) || emailPollIntervalMs <= 0) {
+        throw new Error('--email-poll-interval must be a positive number');
       }
 
       let taskFilters: Record<string, unknown> = {};
@@ -384,7 +402,58 @@ export const daemonCommand = new Command('daemon')
             }
           };
 
-          await Promise.allSettled([inboxPollLoop(), newTaskPollLoop(), auctionPollLoop()]);
+          const emailPollLoop = async (): Promise<void> => {
+            while (!stopped) {
+              await sleepOrAbort(emailPollIntervalMs, abortController.signal);
+              if (stopped) break;
+              try {
+                const params = new URLSearchParams({
+                  deviceId: keystore.deviceId,
+                  apiToken: keystore.apiToken,
+                  limit: '20',
+                  unread: 'true',
+                });
+                const result = (await apiGet(
+                  `/api/emails/list?${params.toString()}`
+                )) as EmailListResult;
+
+                for (const email of result.emails) {
+                  printResult({
+                    event: 'email.new',
+                    id: email.id,
+                    fromAddress: email.fromAddress,
+                    subject: email.subject,
+                    bodyText: email.bodyText,
+                    receivedAt: email.receivedAt,
+                  });
+
+                  try {
+                    await apiPost('/api/emails/mark-read', {
+                      deviceId: keystore.deviceId,
+                      apiToken: keystore.apiToken,
+                      id: email.id,
+                      read: true,
+                    });
+                  } catch (markErr) {
+                    process.stderr.write(
+                      `Email mark-read failed for ${email.id}: ${markErr instanceof Error ? markErr.message : String(markErr)}\n`
+                    );
+                  }
+                }
+              } catch (err) {
+                process.stderr.write(
+                  `Email poll failed: ${err instanceof Error ? err.message : String(err)}\n`
+                );
+              }
+            }
+          };
+
+          await Promise.allSettled([
+            inboxPollLoop(),
+            newTaskPollLoop(),
+            auctionPollLoop(),
+            emailPollLoop(),
+          ]);
         };
 
         await Promise.allSettled([xmtpLoop(), heartbeatLoop(), taskPollLoop()]);
