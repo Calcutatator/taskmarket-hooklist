@@ -9,19 +9,22 @@ const badgeVariants = cva(
   {
     variants: {
       variant: {
-        default: 'border-primary/60 bg-primary text-primary-foreground [a&]:hover:bg-primary/90',
+        default:
+          'border-primary/76 bg-primary text-primary-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.14)] [a&]:hover:bg-primary/92',
         secondary:
-          'border-border/70 bg-secondary/88 text-secondary-foreground [a&]:hover:bg-secondary/90',
+          'border-border/78 bg-secondary/92 text-secondary-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.1)] [a&]:hover:bg-secondary',
         destructive:
-          'border-destructive/65 bg-destructive text-destructive-foreground focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/90',
+          'border-destructive/76 bg-destructive text-destructive-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.12)] focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/92',
         outline:
-          'border-border/72 bg-background/35 text-foreground [a&]:hover:bg-accent/12 [a&]:hover:text-foreground',
+          'border-border/78 bg-background/46 text-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.08)] [a&]:hover:bg-accent/14 [a&]:hover:text-foreground',
         ghost: '[a&]:hover:bg-accent/15 [a&]:hover:text-foreground',
         link: 'text-primary underline-offset-4 [a&]:hover:underline',
         terminal:
-          'border-border/68 bg-surface/80 text-muted-foreground shadow-[var(--shadow-soft)]',
-        success: 'border-success/60 bg-success text-accent-foreground',
-        warning: 'border-warning/60 bg-warning text-background',
+          'border-border/78 bg-surface/90 text-foreground/84 shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.09)]',
+        success:
+          'border-success/72 bg-success text-accent-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.13)]',
+        warning:
+          'border-warning/72 bg-warning text-background shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.13)]',
       },
     },
     defaultVariants: {

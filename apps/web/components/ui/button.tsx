@@ -10,19 +10,19 @@ const buttonVariants = cva(
     variants: {
       variant: {
         default:
-          'border-primary/65 bg-primary text-primary-foreground shadow-[var(--shadow-control)] hover:border-primary/80 hover:bg-primary/90 hover:shadow-[var(--shadow-elevated)]',
+          'border-primary/80 bg-primary text-primary-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.16)] hover:-translate-y-0.5 hover:border-primary hover:bg-primary/92 hover:shadow-[var(--shadow-elevated),inset_0_1px_0_rgb(255_255_255_/_0.2)]',
         destructive:
-          'border-destructive/65 bg-destructive text-destructive-foreground shadow-[var(--shadow-control)] hover:bg-destructive/90 focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
+          'border-destructive/78 bg-destructive text-destructive-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.14)] hover:-translate-y-0.5 hover:border-destructive hover:bg-destructive/92 hover:shadow-[var(--shadow-elevated),inset_0_1px_0_rgb(255_255_255_/_0.18)] focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40',
         outline:
-          'border-border/75 bg-background/55 text-foreground shadow-[var(--shadow-control)] hover:border-primary/55 hover:bg-surface-2/70 hover:text-primary dark:border-input/80 dark:bg-input/20 dark:hover:bg-input/42',
+          'border-border/82 bg-background/58 text-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.08)] hover:-translate-y-0.5 hover:border-primary/62 hover:bg-surface-2/78 hover:text-primary hover:shadow-[var(--shadow-elevated),inset_0_1px_0_rgb(255_255_255_/_0.1)] dark:border-input/86 dark:bg-input/24 dark:hover:bg-input/48',
         secondary:
-          'border-border/70 bg-secondary text-secondary-foreground shadow-[var(--shadow-control)] hover:bg-secondary/82',
+          'border-border/78 bg-secondary text-secondary-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.1)] hover:-translate-y-0.5 hover:border-accent/42 hover:bg-secondary/88 hover:shadow-[var(--shadow-elevated),inset_0_1px_0_rgb(255_255_255_/_0.12)]',
         ghost:
           'border-transparent bg-transparent text-foreground hover:bg-accent/12 hover:text-foreground dark:hover:bg-accent/18',
         link: 'border-transparent text-primary underline-offset-4 hover:underline',
         terminal:
-          'border-border/72 bg-surface/80 text-foreground shadow-[var(--shadow-control)] hover:border-primary/55 hover:bg-surface-2/72 hover:text-primary',
-        chip: 'border-border/60 bg-background/35 font-mono uppercase tracking-tight text-foreground hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/55 data-[active=true]:bg-primary/14 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control)]',
+          'border-border/82 bg-surface/86 text-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.09)] hover:-translate-y-0.5 hover:border-primary/62 hover:bg-surface-2/82 hover:text-primary hover:shadow-[var(--shadow-elevated),inset_0_1px_0_rgb(255_255_255_/_0.11)]',
+        chip: 'border-border/68 bg-background/42 font-mono uppercase tracking-tight text-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.06)] hover:-translate-y-0.5 hover:border-primary/58 hover:bg-primary/12 hover:text-primary hover:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.08)] data-[active=true]:border-primary/68 data-[active=true]:bg-primary/18 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.1)]',
       },
       size: {
         default: 'h-10 px-4 py-2 has-[>svg]:px-3.5',
