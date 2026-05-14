@@ -167,8 +167,6 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
       return 'Pitch selected';
     case 'pending_approval':
       return 'Awaiting requester review';
-    case 'accepted':
-      return 'Awaiting confirmation';
     case 'completed':
       return task.rating === null ? 'Completed, rating pending' : 'Completed';
     case 'cancelled':
@@ -189,8 +187,6 @@ function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
   }
 
   switch (task.status) {
-    case 'accepted':
-      return 'Payment submitted on-chain, awaiting confirmation.';
     case 'completed':
       return task.rating === null
         ? 'Payment confirmed. The requester can still leave a rating.'
