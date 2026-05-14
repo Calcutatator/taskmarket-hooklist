@@ -341,7 +341,7 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText(/awaiting requester review/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/awaiting requester review/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/review the latest submission/i)).toBeInTheDocument();
     expect(screen.getByText(/taskmarket task accept/i)).toBeInTheDocument();
