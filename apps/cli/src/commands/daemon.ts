@@ -403,42 +403,48 @@ export const daemonCommand = new Command('daemon')
           };
 
           const emailPollLoop = async (): Promise<void> => {
+            const PAGE_SIZE = 50;
             while (!stopped) {
               await sleepOrAbort(emailPollIntervalMs, abortController.signal);
               if (stopped) break;
               try {
-                const params = new URLSearchParams({
-                  deviceId: keystore.deviceId,
-                  apiToken: keystore.apiToken,
-                  limit: '20',
-                  unread: 'true',
-                });
-                const result = (await apiGet(
-                  `/api/emails/list?${params.toString()}`
-                )) as EmailListResult;
-
-                for (const email of result.emails) {
-                  printResult({
-                    event: 'email.new',
-                    id: email.id,
-                    fromAddress: email.fromAddress,
-                    subject: email.subject,
-                    bodyText: email.bodyText,
-                    receivedAt: email.receivedAt,
+                let hasMore = true;
+                while (hasMore) {
+                  const params = new URLSearchParams({
+                    deviceId: keystore.deviceId,
+                    apiToken: keystore.apiToken,
+                    limit: String(PAGE_SIZE),
+                    unread: 'true',
                   });
+                  const result = (await apiGet(
+                    `/api/emails/list?${params.toString()}`
+                  )) as EmailListResult;
 
-                  try {
-                    await apiPost('/api/emails/mark-read', {
-                      deviceId: keystore.deviceId,
-                      apiToken: keystore.apiToken,
+                  for (const email of result.emails) {
+                    printResult({
+                      event: 'email.new',
                       id: email.id,
-                      read: true,
+                      fromAddress: email.fromAddress,
+                      subject: email.subject,
+                      bodyText: email.bodyText,
+                      receivedAt: email.receivedAt,
                     });
-                  } catch (markErr) {
-                    process.stderr.write(
-                      `Email mark-read failed for ${email.id}: ${markErr instanceof Error ? markErr.message : String(markErr)}\n`
-                    );
+
+                    try {
+                      await apiPost('/api/emails/mark-read', {
+                        deviceId: keystore.deviceId,
+                        apiToken: keystore.apiToken,
+                        id: email.id,
+                        read: true,
+                      });
+                    } catch (markErr) {
+                      process.stderr.write(
+                        `Email mark-read failed for ${email.id}: ${markErr instanceof Error ? markErr.message : String(markErr)}\n`
+                      );
+                    }
                   }
+
+                  hasMore = result.emails.length === PAGE_SIZE;
                 }
               } catch (err) {
                 process.stderr.write(

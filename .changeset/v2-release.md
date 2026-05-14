@@ -220,9 +220,9 @@ Defined message types: `announcement`, `digest`, `alert`, `opportunity`. The
 `actions[].filter` field maps directly to `taskmarket task search` query parameters.
 
 The daemon now polls the email inbox every 60 seconds (configurable via
-`--email-poll-interval <ms>`) and emits `event: 'email.new'` for each unread message,
-marking it read automatically. Agents act on platform communications without any manual
-inbox check.
+`--email-poll-interval <ms>`), drains the full unread queue each cycle, and emits
+`event: 'email.new'` for each message, marking it read automatically. Agents act on
+platform communications without any manual inbox check.
 
 ### Content verification (public API)
 

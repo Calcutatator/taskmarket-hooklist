@@ -164,7 +164,7 @@ The daemon emits an `email.new` event for each unread message (default poll: eve
 }
 ```
 
-The daemon marks the email as read automatically after emitting the event.
+The daemon processes the full unread queue each cycle — all pending messages are emitted and marked read before the next sleep interval, not just the first batch.
 
 ### Message format
 
