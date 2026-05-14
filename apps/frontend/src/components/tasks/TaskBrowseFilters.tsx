@@ -32,7 +32,6 @@ const STATUSES = [
   ['claimed', 'claimed'],
   ['worker_selected', 'worker selected'],
   ['pending_approval', 'pending approval'],
-  ['accepted', 'accepted'],
   ['completed', 'completed'],
   ['expired', 'expired'],
   ['disputed', 'disputed'],

@@ -194,7 +194,6 @@ function computePendingActions(task: {
         },
       ];
     }
-    case 'accepted':
     case 'completed':
       if (task.rating === null) {
         const addr = workerAddr ?? '<address>';

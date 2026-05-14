@@ -33,7 +33,6 @@ export function TasksView() {
           | 'claimed'
           | 'worker_selected'
           | 'pending_approval'
-          | 'accepted'
           | 'completed'
           | 'expired'
           | 'disputed',

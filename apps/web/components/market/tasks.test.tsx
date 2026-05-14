@@ -748,7 +748,7 @@ describe('Task marketplace components', () => {
             },
           ],
           rating: null,
-          status: 'accepted',
+          status: 'completed',
           worker: '0x3333333333333333333333333333333333333333',
         }}
       />
