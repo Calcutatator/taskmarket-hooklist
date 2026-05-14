@@ -102,6 +102,14 @@ const envSchema = z
           path: ['OUTBOUND_EMAIL_WORKER_URL'],
         });
       }
+
+      if (!data.ADMIN_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ADMIN_SECRET is required in production',
+          path: ['ADMIN_SECRET'],
+        });
+      }
     }
   });
 
