@@ -53,7 +53,7 @@ export function normalizeBasePath(basePath: string) {
 
 export function parseTaskFilters(
   params: TaskSearchParams,
-  { defaultStatus = 'open' }: { defaultStatus?: string } = {}
+  { defaultStatus = 'ALL' }: { defaultStatus?: string } = {}
 ): ParsedTaskFilters {
   const status = params.status ?? defaultStatus;
   const activeFilters: ActiveFilter[] = [];
@@ -92,7 +92,7 @@ export function parseTaskFilters(
     selectedActor: actor ?? 'ALL',
     selectedMode: params.mode ?? 'ALL',
     selectedStatus: status ?? 'ALL',
-    status,
+    status: status === 'ALL' ? undefined : status,
     tags: parseTags(params.tags),
   };
 }
