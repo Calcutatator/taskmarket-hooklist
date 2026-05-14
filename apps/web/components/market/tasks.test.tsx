@@ -249,17 +249,25 @@ describe('Task marketplace components', () => {
     );
     expect(within(breadcrumb).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
     const metrics = screen.getByRole('region', { name: /task metrics/i });
-    expect(within(metrics).getByText(/reward/i)).toBeInTheDocument();
+    const metricCards = within(metrics).getAllByRole('article');
+    expect(metricCards).toHaveLength(2);
+    const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
+    expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
+    expect(within(rewardSummary).getByText('+25.000 USDC')).toBeInTheDocument();
+    expect(within(rewardSummary).getByText(/^due$/i)).toBeInTheDocument();
+    const activitySummary = within(metrics).getByRole('article', { name: /bids summary/i });
+    expect(within(activitySummary).getByText(/^bids$/i)).toBeInTheDocument();
+    expect(within(activitySummary).getByText('2 bids')).toBeInTheDocument();
     expect(metrics.closest('[data-slot="card"]')).toBeNull();
     const referenceCard = screen.getByText(/task reference/i).closest('[data-slot="card"]');
     expect(referenceCard).not.toBeNull();
     const reference = within(referenceCard as HTMLElement);
+    expect(reference.getByText(/^requester$/i)).toBeInTheDocument();
     expect(reference.getByText(/settlement/i)).toBeInTheDocument();
     expect(reference.getByText(/auction pricing/i)).toBeInTheDocument();
     expect(reference.getByText(/history/i)).toBeInTheDocument();
     expect(reference.queryByText(/^reward$/i)).not.toBeInTheDocument();
     expect(reference.queryByText(/^activity$/i)).not.toBeInTheDocument();
-    expect(reference.queryByText(/^requester$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/work requirements/i)).toBeInTheDocument();
     expect(
       screen.queryByText('Summarize protocol feedback', { selector: 'p' })
@@ -306,6 +314,7 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.getByText(`taskmarket task submit ${task.id} --file <path>`)).toBeInTheDocument();
+    expect(screen.queryByText(/^CLI$/i)).not.toBeInTheDocument();
   });
 
   it('hides requester task controls for a connected non-requester', () => {
@@ -377,6 +386,9 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^cancel task$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/reward \(usdc\)/i)).toBeInTheDocument();
+    const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    expect(within(sidebar).getByRole('button', { name: /^cancel task$/i })).toBeInTheDocument();
+    expect(within(sidebar).queryByLabelText(/reward \(usdc\)/i)).not.toBeInTheDocument();
   });
 
   it('keeps open worker actions available to connected non-requesters', () => {

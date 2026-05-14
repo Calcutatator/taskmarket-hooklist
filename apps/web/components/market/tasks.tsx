@@ -256,6 +256,21 @@ function activityLabel(task: TaskDetailResponse | TaskResponse, modeData?: TaskM
   }
 }
 
+function activityTitle(task: TaskDetailResponse | TaskResponse) {
+  switch (task.mode) {
+    case 'auction':
+      return 'Bids';
+    case 'benchmark':
+      return 'Proofs';
+    case 'pitch':
+      return 'Pitches';
+    case 'claim':
+    case 'bounty':
+    default:
+      return 'Submissions';
+  }
+}
+
 function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
 
@@ -971,12 +986,31 @@ function ModeDataPanel({
   );
 }
 
-function DetailMetric({ label, value }: { label: string; value: ReactNode }) {
+function DetailMetric({
+  footerLabel,
+  footerValue,
+  label,
+  value,
+}: {
+  footerLabel: string;
+  footerValue: ReactNode;
+  label: string;
+  value: ReactNode;
+}) {
   return (
-    <div className="min-w-0 rounded-xl border border-border/60 bg-background/42 p-3">
+    <article
+      aria-label={`${label} summary`}
+      className="min-w-0 rounded-2xl border border-border/60 bg-background/42 p-5 shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.06)]"
+    >
       <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
-      <div className="mt-1 truncate font-mono text-sm text-foreground">{value}</div>
-    </div>
+      <div className="mt-2 truncate font-mono text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+        {value}
+      </div>
+      <div className="mt-4 grid gap-1 border-t border-border/52 pt-3">
+        <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{footerLabel}</p>
+        <div className="truncate text-sm text-muted-foreground">{footerValue}</div>
+      </div>
+    </article>
   );
 }
 
@@ -1082,11 +1116,18 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
   );
 
   return (
-    <Card className="w-full gap-5 border-border/68 bg-card/90 lg:sticky lg:top-20">
+    <Card className="w-full gap-5 border-border/68 bg-card/90">
       <CardHeader>
         <CardTitle>Task reference</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-5">
+        <SummaryGroup title="Requester">
+          <SummaryRow
+            label="Wallet"
+            value={compactAddress(task.requesterAgentId ?? task.requester)}
+          />
+        </SummaryGroup>
+
         <SummaryGroup title="Settlement">
           <SummaryRow label="Task ID" value={compactAddress(task.id)} />
           <SummaryRow label="Escrow tx" value={compactAddress(task.escrowTxHash)} />
@@ -1177,9 +1218,13 @@ export function TaskDetailPanel({
   const nextActions = reviewAction
     ? pendingActions.filter((action) => action !== reviewAction)
     : pendingActions;
-  const showNextActions = nextActions.length > 0 || !reviewAction;
+  const cancelActions = nextActions.filter((action) => action.action === 'cancel');
+  const mainNextActions = nextActions.filter((action) => action.action !== 'cancel');
+  const showNextActions =
+    mainNextActions.length > 0 || (!reviewAction && cancelActions.length === 0);
   const descriptionBody = taskBody(task);
   const detailTags = taskDetailTags(task);
+  const taskActivityTitle = activityTitle(task);
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -1197,16 +1242,18 @@ export function TaskDetailPanel({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <section aria-label="Task metrics" className="grid gap-2 sm:grid-cols-2 xl:grid-cols-4">
+        <section aria-label="Task metrics" className="grid gap-3 md:grid-cols-2">
           <DetailMetric
+            footerLabel="Due"
+            footerValue={taskDeadlineLabel(task)}
             label="Reward"
             value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
           />
-          <DetailMetric label="Due" value={taskDeadlineLabel(task)} />
-          <DetailMetric label="Activity" value={activityLabel(task, modeData)} />
           <DetailMetric
-            label="Requester"
-            value={compactAddress(task.requesterAgentId ?? task.requester)}
+            footerLabel="Status"
+            footerValue={statusContext(task)}
+            label={taskActivityTitle}
+            value={activityLabel(task, modeData)}
           />
         </section>
         <Card className="w-full border-border/68 bg-card/90">
@@ -1251,7 +1298,7 @@ export function TaskDetailPanel({
           <TaskActionsPanel
             claimedBy={task.claimedBy}
             emptyReason={pendingActionEmptyReason(task)}
-            pendingActions={nextActions}
+            pendingActions={mainNextActions}
             requester={task.requester}
             task={task}
             worker={task.worker}
@@ -1260,7 +1307,21 @@ export function TaskDetailPanel({
         <WorkRequirementsPanel task={task} />
         {!reviewAction ? <ModeDataPanel modeData={modeData} task={task} /> : null}
       </div>
-      <TaskSummaryRail task={task} />
+      <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
+        <TaskSummaryRail task={task} />
+        {cancelActions.length > 0 ? (
+          <TaskActionsPanel
+            claimedBy={task.claimedBy}
+            emptyReason={pendingActionEmptyReason(task)}
+            hideWhenNoVisibleActions
+            pendingActions={cancelActions}
+            requester={task.requester}
+            task={task}
+            title="Task controls"
+            worker={task.worker}
+          />
+        ) : null}
+      </aside>
     </div>
   );
 }

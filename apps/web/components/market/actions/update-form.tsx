@@ -250,7 +250,12 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
           value={tagsCsv}
         />
       </div>
-      <Button disabled={disabled || busy} onClick={handleUpdate} size="sm">
+      <Button
+        className="w-fit justify-self-start px-5"
+        disabled={disabled || busy}
+        onClick={handleUpdate}
+        size="sm"
+      >
         {label}
       </Button>
       <p className="text-xs text-muted-foreground">Costs 0.001 USDC.</p>

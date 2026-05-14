@@ -85,7 +85,12 @@ export function CancelButton({ disabled, task }: TaskActionComponentProps) {
         onConfirm={handleCancel}
         title="Cancel this task?"
       >
-        <Button disabled={disabled || busy} size="sm" variant="destructive">
+        <Button
+          className="w-fit justify-self-start px-5"
+          disabled={disabled || busy}
+          size="sm"
+          variant="destructive"
+        >
           Cancel task
         </Button>
       </ConfirmDialog>

@@ -1,6 +1,7 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+import { Terminal } from 'lucide-react';
 import { useAccount } from 'wagmi';
 
 import { COMPONENT_BY_ACTION } from '@/components/market/actions';
@@ -10,9 +11,11 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 type TaskActionPanelProps = {
   claimedBy?: string | null;
   emptyReason: string;
+  hideWhenNoVisibleActions?: boolean;
   pendingActions: PendingAction[];
   requester: string;
   task: TaskDetailResponse | TaskResponse;
+  title?: string;
   worker?: string | null;
 };
 
@@ -52,9 +55,11 @@ function canRunAction(params: ActionVisibilityParams) {
 export function TaskActionsPanel({
   claimedBy,
   emptyReason,
+  hideWhenNoVisibleActions = false,
   pendingActions,
   requester,
   task,
+  title = 'Next actions',
   worker,
 }: TaskActionPanelProps) {
   const { address } = useAccount();
@@ -68,10 +73,14 @@ export function TaskActionsPanel({
       ? 'Connect the requester or assigned worker wallet to manage this task.'
       : emptyReason;
 
+  if (hideWhenNoVisibleActions && visibleActions.length === 0) {
+    return null;
+  }
+
   return (
     <Card className="min-w-0 border-border/68 bg-card/90">
       <CardHeader>
-        <CardTitle>Next actions</CardTitle>
+        <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
         {visibleActions.length > 0 ? (
@@ -88,7 +97,13 @@ export function TaskActionsPanel({
                   <Component action={action} disabled={!canRun && Boolean(address)} task={task} />
                 </div>
                 <details className="min-w-0">
-                  <summary className="cursor-pointer text-xs text-muted-foreground">CLI</summary>
+                  <summary
+                    aria-label={`Show ${action.action} command`}
+                    className="ml-auto flex size-7 cursor-pointer list-none items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-[color,background-color,border-color,opacity] duration-200 hover:border-border/58 hover:bg-background/52 hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none [&::-webkit-details-marker]:hidden"
+                    title="Show command"
+                  >
+                    <Terminal aria-hidden="true" className="size-3.5" />
+                  </summary>
                   <div className="mt-2 grid min-w-0 gap-2 rounded-lg bg-background/76 p-2">
                     <div className="flex min-w-0 items-center justify-end gap-2">
                       <CopyButton label={`Copy ${action.action} command`} text={action.command} />
