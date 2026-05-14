@@ -134,13 +134,6 @@
       "when": 1747267200000,
       "tag": "0018_task_status_completed",
       "breakpoints": true
-    },
-    {
-      "idx": 19,
-      "version": "7",
-      "when": 1747353600000,
-      "tag": "0019_fix_accepted_to_completed",
-      "breakpoints": true
     }
   ]
 }
