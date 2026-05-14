@@ -18,6 +18,7 @@ class S3Storage implements StorageBackend {
     this.client = new S3Client({
       region: config.AWS_REGION!,
       endpoint: config.AWS_ENDPOINT_URL!,
+      forcePathStyle: true,
     });
     this.bucket = config.AWS_S3_BUCKET!;
   }
