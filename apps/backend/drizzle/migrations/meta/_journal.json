@@ -127,6 +127,13 @@
       "when": 1772650000000,
       "tag": "0017_add_pitch_proof_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 18,
+      "version": "7",
+      "when": 1747267200000,
+      "tag": "0018_task_status_completed",
+      "breakpoints": true
     }
   ]
 }
