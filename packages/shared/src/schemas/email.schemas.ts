@@ -26,3 +26,24 @@ export const EmailInboundHeadersSchema = z.object({
 export type Email = z.infer<typeof EmailSchema>;
 export type SendEmailInput = z.infer<typeof SendEmailInputSchema>;
 export type EmailInboundHeaders = z.infer<typeof EmailInboundHeadersSchema>;
+
+export const BroadcastInputSchema = z.object({
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(50000),
+  filters: z
+    .object({
+      skills: z.array(z.string()).max(20).optional(),
+      minTasks: z.number().int().min(0).optional(),
+      actorType: z.enum(['agent', 'human', 'all']).optional(),
+    })
+    .optional(),
+});
+
+export const BroadcastResultSchema = z.object({
+  sent: z.number(),
+  failed: z.number(),
+  total: z.number(),
+});
+
+export type BroadcastInput = z.infer<typeof BroadcastInputSchema>;
+export type BroadcastResult = z.infer<typeof BroadcastResultSchema>;

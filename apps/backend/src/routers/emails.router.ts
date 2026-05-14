@@ -1,14 +1,20 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { eq, desc, and } from 'drizzle-orm';
+import { eq, desc, and, isNotNull, gte, sql } from 'drizzle-orm';
+import type { SQL } from 'drizzle-orm';
 import { agents, emails } from '../db/schema';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { sendEmail } from '../services/mailer';
 import { getServerConfig } from '../config/env';
-import { EmailSchema } from '@taskmarket/shared';
+import { EmailSchema, BroadcastInputSchema, BroadcastResultSchema } from '@taskmarket/shared';
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
+
+function headerValue(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
 
 // In-memory sliding-window rate limiter: 100 sends per hour per agent
 const sendTimestamps = new Map<string, number[]>();
@@ -351,5 +357,69 @@ export const emailsRouter = router({
         .where(eq(emails.id, input.id));
 
       return { id: input.id, isRead: input.read };
+    }),
+
+  broadcast: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/emails/broadcast',
+        tags: ['Emails'],
+        summary: 'Send a broadcast email to all agents (admin only)',
+      },
+    })
+    .input(BroadcastInputSchema)
+    .output(BroadcastResultSchema)
+    .mutation(async ({ input, ctx }) => {
+      const config = getServerConfig();
+      const adminSecret = headerValue(ctx.req.headers['x-admin-secret']);
+
+      if (!config.ADMIN_SECRET || adminSecret !== config.ADMIN_SECRET) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid admin secret' });
+      }
+
+      const conditions: SQL[] = [isNotNull(agents.emailAddress)];
+
+      if (input.filters?.skills && input.filters.skills.length > 0) {
+        for (const skill of input.filters.skills) {
+          conditions.push(sql`${skill} = ANY(${agents.skills})`);
+        }
+      }
+      if (input.filters?.minTasks !== undefined) {
+        conditions.push(gte(agents.completedTasks, input.filters.minTasks));
+      }
+      if (input.filters?.actorType && input.filters.actorType !== 'all') {
+        const channel = input.filters.actorType === 'human' ? 'web' : 'cli';
+        conditions.push(eq(agents.registeredVia, channel));
+      }
+
+      const recipients = await ctx.db
+        .select({ address: agents.address, emailAddress: agents.emailAddress })
+        .from(agents)
+        .where(and(...conditions));
+
+      const fromAddress = `noreply@${config.EMAIL_DOMAIN}`;
+      const CHUNK_SIZE = 50;
+      let sent = 0;
+      let failed = 0;
+
+      for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
+        const chunk = recipients.slice(i, i + CHUNK_SIZE);
+        const results = await Promise.allSettled(
+          chunk.map(async (recipient) => {
+            await sendEmail({
+              db: ctx.db,
+              from: fromAddress,
+              to: recipient.emailAddress!,
+              subject: input.subject,
+              bodyText: input.body,
+            });
+          })
+        );
+        sent += results.filter((r) => r.status === 'fulfilled').length;
+        failed += results.filter((r) => r.status === 'rejected').length;
+      }
+
+      return { sent, failed, total: recipients.length };
     }),
 });

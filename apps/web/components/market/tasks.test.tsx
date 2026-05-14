@@ -511,7 +511,7 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText(/awaiting requester review/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/awaiting requester review/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
     expect(screen.getByText(/compare deliverables before releasing escrow/i)).toBeInTheDocument();

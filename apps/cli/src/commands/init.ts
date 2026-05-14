@@ -19,6 +19,24 @@ type NetworkInfo = {
   explorerUrl: string;
 };
 
+export function sanitizeEmailUsername(agentId: string, suffix: string): string | null {
+  const maxBase = 30 - 1 - suffix.length;
+  if (maxBase < 2) return null;
+
+  const base = agentId
+    .toLowerCase()
+    .replace(/[^a-z0-9]/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, maxBase)
+    .replace(/-+$/, '');
+
+  if (base.length < 2) return null;
+
+  const candidate = `${base}-${suffix}`;
+  return /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/.test(candidate) ? candidate : null;
+}
+
 async function tryRegisterEmail(
   deviceId: string,
   apiToken: string,
@@ -96,7 +114,10 @@ export const initCommand = new Command('init')
 
       if (!emailAddress) {
         const username =
-          opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
+          opts.email ??
+          (agentId && networkInfo
+            ? sanitizeEmailUsername(agentId, String(networkInfo.chainId))
+            : null);
         if (username) {
           emailAddress = await tryRegisterEmail(
             keystore.deviceId,
@@ -167,7 +188,8 @@ export const initCommand = new Command('init')
     }
 
     const username =
-      opts.email ?? (agentId && networkInfo ? `${agentId}-${networkInfo.chainId}` : null);
+      opts.email ??
+      (agentId && networkInfo ? sanitizeEmailUsername(agentId, String(networkInfo.chainId)) : null);
     const emailAddress = username
       ? await tryRegisterEmail(deviceId, apiToken, username, !!opts.email)
       : null;

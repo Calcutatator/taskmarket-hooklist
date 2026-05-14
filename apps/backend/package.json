@@ -38,6 +38,7 @@
     "smoke:auction-types": "tsx scripts/smoke-auction-types.ts",
     "smoke:cancel-update": "tsx scripts/smoke-cancel-update.ts",
     "smoke:email": "tsx scripts/smoke-email.ts",
+    "smoke:broadcast": "tsx scripts/smoke-broadcast.ts",
     "smoke:auction-full": "tsx scripts/smoke-auction-full.ts",
     "smoke:rater-agent-id": "tsx scripts/smoke-rater-agent-id.ts",
     "smoke:bids-inbox": "tsx scripts/smoke-bids-inbox.ts",

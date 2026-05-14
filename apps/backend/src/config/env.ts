@@ -58,6 +58,7 @@ const envSchema = z
     SMTP_PORT: z.coerce.number().default(25),
     SMTP_TLS_CERT: z.string().optional(),
     SMTP_TLS_KEY: z.string().optional(),
+    ADMIN_SECRET: z.string().min(16).optional(),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {
@@ -99,6 +100,30 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           message: 'OUTBOUND_EMAIL_WORKER_URL is required in production',
           path: ['OUTBOUND_EMAIL_WORKER_URL'],
+        });
+      }
+
+      if (!data.ADMIN_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'ADMIN_SECRET is required in production',
+          path: ['ADMIN_SECRET'],
+        });
+      }
+
+      if (!data.EMAIL_WEBHOOK_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'EMAIL_WEBHOOK_SECRET is required in production',
+          path: ['EMAIL_WEBHOOK_SECRET'],
+        });
+      }
+
+      if (!data.X402_FACILITATOR_TOKEN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'X402_FACILITATOR_TOKEN is required in production',
+          path: ['X402_FACILITATOR_TOKEN'],
         });
       }
     }

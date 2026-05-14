@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-broadcast smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -412,6 +412,8 @@ smoke:
 		cd apps/backend && pnpm smoke:cancel-update; \
 	elif [ "$(word 1,$(ARGS))" = "email" ]; then \
 		cd apps/backend && pnpm smoke:email; \
+	elif [ "$(word 1,$(ARGS))" = "broadcast" ]; then \
+		cd apps/backend && pnpm smoke:broadcast; \
 	elif [ "$(word 1,$(ARGS))" = "auction-full" ]; then \
 		cd apps/backend && pnpm smoke:auction-full; \
 	elif [ "$(word 1,$(ARGS))" = "rater-agent-id" ]; then \
@@ -429,7 +431,7 @@ smoke:
 	elif [ "$(word 1,$(ARGS))" = "upgrade" ]; then \
 		cd apps/backend && pnpm smoke:upgrade; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|upgrade>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade>"; \
 		exit 1; \
 	fi
 
