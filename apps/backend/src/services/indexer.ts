@@ -244,7 +244,7 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
   await db
     .update(tasks)
     .set({
-      status: 'accepted',
+      status: 'completed',
       worker: worker as string,
     })
     .where(eq(tasks.id, taskId as string));

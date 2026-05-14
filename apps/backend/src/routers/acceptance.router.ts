@@ -147,7 +147,10 @@ export const acceptanceRouter = router({
         .where(eq(tasks.id, input.taskId))
         .limit(1);
 
-      if (taskResult.length === 0 || taskResult[0].status !== 'accepted') {
+      if (
+        taskResult.length === 0 ||
+        (taskResult[0].status !== 'accepted' && taskResult[0].status !== 'completed')
+      ) {
         throw new Error('Task not accepted');
       }
 

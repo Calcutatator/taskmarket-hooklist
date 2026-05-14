@@ -141,6 +141,17 @@ describe('acceptance router', () => {
       await expect(caller.rate(rateInput)).rejects.toThrow('Task not accepted');
     });
 
+    it('allows rating a completed task', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })])) // task lookup
+        .mockReturnValueOnce(makeChain([])); // worker agent lookup
+
+      const caller = acceptanceRouter.createCaller(ctx);
+      const result = await caller.rate(rateInput);
+      expect(result.success).toBe(true);
+    });
+
     it('throws when task not found', async () => {
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));

@@ -66,6 +66,7 @@ const statuses: Array<'ALL' | TaskStatusType> = [
   'claimed',
   'pending_approval',
   'accepted',
+  'completed',
   'cancelled',
 ];
 
@@ -168,9 +169,9 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
     case 'pending_approval':
       return 'Awaiting requester review';
     case 'accepted':
-      return task.rating === null ? 'Payout accepted, rating pending' : 'Payout accepted';
+      return 'Awaiting confirmation';
     case 'completed':
-      return 'Completed';
+      return task.rating === null ? 'Completed, rating pending' : 'Completed';
     case 'cancelled':
       return 'Cancelled';
     case 'expired':
@@ -190,11 +191,11 @@ function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
 
   switch (task.status) {
     case 'accepted':
-      return task.rating === null
-        ? 'The payout has been accepted. The requester can rate once a rating command is available.'
-        : 'The payout and rating are complete.';
+      return 'Payment submitted on-chain, awaiting confirmation.';
     case 'completed':
-      return 'This task is complete.';
+      return task.rating === null
+        ? 'Payment confirmed. The requester can still leave a rating.'
+        : 'This task is complete.';
     case 'cancelled':
       return 'This task was cancelled.';
     case 'expired':
