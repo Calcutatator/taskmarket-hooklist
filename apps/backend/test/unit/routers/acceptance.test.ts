@@ -81,46 +81,18 @@ describe('acceptance router', () => {
       );
     });
 
-    it('accepts submission, creates new agent, inserts platform fee', async () => {
+    it('calls contractAcceptSubmission and returns success — no DB writes', async () => {
       const ctx = createMockCtx(REQUESTER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()])) // task lookup
-        .mockReturnValueOnce(makeChain([])); // agent lookup — not found (new agent)
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = acceptanceRouter.createCaller(ctx);
       const result = await caller.accept(acceptInput);
 
       expect(result.success).toBe(true);
       expect(contractAcceptSubmission).toHaveBeenCalledOnce();
-      // update task + insert new agent + insert platformFee = 1 update, 2 inserts
-      expect(ctx.db.update).toHaveBeenCalledTimes(1);
-      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
-    });
-
-    it('accepts submission, updates existing agent stats', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(
-          makeChain([
-            {
-              address: WORKER,
-              completedTasks: 3,
-              ratedTasks: 2,
-              totalStars: 8,
-              totalEarnings: '3000000',
-              updatedAt: new Date(),
-            },
-          ])
-        );
-
-      const caller = acceptanceRouter.createCaller(ctx);
-      const result = await caller.accept(acceptInput);
-
-      expect(result.success).toBe(true);
-      // update task + update agent + insert platformFee = 2 updates, 1 insert
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
-      expect(ctx.db.insert).toHaveBeenCalledTimes(1);
+      // indexer is the sole writer of task state — acceptance router makes no DB writes
+      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.db.insert).not.toHaveBeenCalled();
     });
   });
 
@@ -133,23 +105,12 @@ describe('acceptance router', () => {
       await expect(caller.rate(rateInput)).rejects.toThrow('Payment required: missing payer');
     });
 
-    it('throws when task is not accepted', async () => {
+    it('throws when task is not completed', async () => {
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'open' })]));
 
       const caller = acceptanceRouter.createCaller(ctx);
-      await expect(caller.rate(rateInput)).rejects.toThrow('Task not accepted');
-    });
-
-    it('allows rating a completed task', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })])) // task lookup
-        .mockReturnValueOnce(makeChain([])); // worker agent lookup
-
-      const caller = acceptanceRouter.createCaller(ctx);
-      const result = await caller.rate(rateInput);
-      expect(result.success).toBe(true);
+      await expect(caller.rate(rateInput)).rejects.toThrow('Task not completed');
     });
 
     it('throws when task not found', async () => {
@@ -157,12 +118,12 @@ describe('acceptance router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = acceptanceRouter.createCaller(ctx);
-      await expect(caller.rate(rateInput)).rejects.toThrow('Task not accepted');
+      await expect(caller.rate(rateInput)).rejects.toThrow('Task not completed');
     });
 
     it('throws when payer is not the requester', async () => {
       const ctx = createMockCtx('0xDifferentPayer000000000000000000000001');
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'accepted' })]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]));
 
       const caller = acceptanceRouter.createCaller(ctx);
       await expect(caller.rate(rateInput)).rejects.toThrow(
@@ -170,10 +131,10 @@ describe('acceptance router', () => {
       );
     });
 
-    it('rates task, inserts rating, updates agent stats on happy path', async () => {
+    it('rates task, inserts feedback, updates agent stats on happy path', async () => {
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask({ status: 'accepted' })])) // task lookup
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })])) // task lookup
         .mockReturnValueOnce(makeChain([])); // worker agent lookup (no agentId)
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -181,9 +142,7 @@ describe('acceptance router', () => {
 
       expect(result.success).toBe(true);
       expect(contractRateTask).toHaveBeenCalledOnce();
-      // update tasks (rating) + update agents (stats) = 2 updates (feedback tx hash is in the insert)
       expect(ctx.db.update).toHaveBeenCalledTimes(2);
-      // insert feedback (with ratingTxHash already populated)
       expect(ctx.db.insert).toHaveBeenCalledTimes(1);
     });
   });
