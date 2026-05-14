@@ -5,9 +5,13 @@ import type { ArtifactResponse, TaskDetailResponse, TaskResponse } from '@taskma
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 
-const mockAccount = vi.hoisted(() => ({
-  address: undefined as string | undefined,
-  isConnected: false,
+const { mockAccount, mockConnect, mockDisconnect } = vi.hoisted(() => ({
+  mockAccount: {
+    address: undefined as string | undefined,
+    isConnected: false,
+  },
+  mockConnect: vi.fn(),
+  mockDisconnect: vi.fn(),
 }));
 
 vi.mock('wagmi', () => ({
@@ -15,13 +19,18 @@ vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useSignMessage: () => ({ signMessageAsync: vi.fn() }),
   useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
-  useConnect: () => ({ connect: vi.fn(), connectors: [] }),
-  useDisconnect: () => ({ disconnect: vi.fn() }),
+  useConnect: () => ({
+    connect: mockConnect,
+    connectors: [{ id: 'injected', name: 'Injected' }],
+  }),
+  useDisconnect: () => ({ disconnect: mockDisconnect }),
 }));
 
 afterEach(() => {
   mockAccount.address = undefined;
   mockAccount.isConnected = false;
+  mockConnect.mockClear();
+  mockDisconnect.mockClear();
   vi.restoreAllMocks();
 });
 
@@ -135,12 +144,12 @@ function mockPreviewFetch(previewUrl: string) {
 describe('Task marketplace components', () => {
   it('renders populated, empty, loading, and error task table states', () => {
     const { rerender } = render(<TaskTable tasks={[task]} />);
+    const taskLinks = screen.getAllByRole('link', { name: /summarize protocol feedback/i });
     expect(screen.getByRole('table').parentElement).toHaveClass('overflow-x-auto');
-    expect(screen.getByRole('link', { name: /summarize protocol feedback/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks/0xabc123'
-    );
-    expect(screen.getByText('+25.000 USDC')).toBeInTheDocument();
+    expect(taskLinks.at(0)).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
+    expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
+    expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText('+25.000 USDC').length).toBeGreaterThan(0);
 
     rerender(<TaskTable tasks={[]} />);
     expect(screen.getByText(/no open tasks yet/i)).toBeInTheDocument();
@@ -497,6 +506,91 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/deliverable submitted by/i)).toBeInTheDocument();
     expect(screen.getAllByText(/release payout/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
+  });
+
+  it('explains how disconnected requesters can release a pending payout', () => {
+    render(
+      <TaskDetailPanel
+        modeData={{
+          submissions: [
+            {
+              artifacts: [],
+              fileUrl: 'ipfs://deliverable',
+              id: 'sub-1',
+              signature: '0xsig',
+              submittedAt: new Date().toISOString(),
+              taskId: task.id,
+              workerAddress: '0x3333333333333333333333333333333333333333',
+            },
+          ],
+        }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'accept',
+              command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333`,
+              role: 'requester',
+            },
+          ],
+          status: 'pending_approval',
+          submissionCount: 1,
+        }}
+      />
+    );
+
+    expect(screen.getByText(/connect requester wallet to release payout/i)).toBeInTheDocument();
+    expect(screen.getByText(/required requester/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /connect wallet/i })).toBeEnabled();
+  });
+
+  it('lets a wrong connected wallet switch before releasing payout', async () => {
+    const user = userEvent.setup();
+    mockAccount.address = '0x9999999999999999999999999999999999999999';
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{
+          submissions: [
+            {
+              artifacts: [],
+              fileUrl: 'ipfs://deliverable',
+              id: 'sub-1',
+              signature: '0xsig',
+              submittedAt: new Date().toISOString(),
+              taskId: task.id,
+              workerAddress: '0x3333333333333333333333333333333333333333',
+            },
+          ],
+        }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'accept',
+              command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333`,
+              role: 'requester',
+            },
+          ],
+          status: 'pending_approval',
+          submissionCount: 1,
+        }}
+      />
+    );
+
+    expect(screen.getByText(/requester wallet required/i)).toBeInTheDocument();
+    expect(screen.getByText(/connected wallet/i)).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /switch wallet/i }));
+
+    expect(mockDisconnect).toHaveBeenCalled();
   });
 
   it('previews image artifacts inline without opening a new window', async () => {

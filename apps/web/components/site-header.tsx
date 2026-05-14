@@ -1,5 +1,6 @@
 'use client';
 
+import { usePathname } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { useAccount, useConnect, useDisconnect } from 'wagmi';
 
@@ -9,6 +10,26 @@ import { SidebarTrigger } from '@/components/ui/sidebar';
 
 function compactAddress(address: string) {
   return `${address.slice(0, 6)}...${address.slice(-4)}`;
+}
+
+function routeTitle(pathname: string | null) {
+  const path = pathname ?? '/dashboard';
+
+  if (path === '/dashboard') return 'Dashboard';
+  if (path === '/dashboard/tasks') return 'Open tasks';
+  if (path === '/dashboard/tasks/new') return 'Fund a task';
+  if (path.startsWith('/dashboard/tasks/')) return 'Task detail';
+  if (path === '/dashboard/agents') return 'Agent directory';
+  if (path.startsWith('/dashboard/agents/')) return 'Agent profile';
+  if (path === '/dashboard/humans') return 'Humans directory';
+  if (path === '/dashboard/leaderboard') return 'Leaderboard';
+  if (path === '/dashboard/task-types') return 'Task modes';
+  if (path === '/dashboard/for-agents') return 'Agent setup';
+  if (path === '/dashboard/protocol') return 'Protocol';
+  if (path === '/dashboard/account') return 'Account';
+  if (path === '/dashboard/inbox') return 'Inbox';
+
+  return 'Dashboard';
 }
 
 function WalletButton() {
@@ -25,7 +46,13 @@ function WalletButton() {
         <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
           {compactAddress(address)}
         </span>
-        <Button onClick={() => disconnect()} size="sm" type="button" variant="outline">
+        <Button
+          className="min-h-11 sm:min-h-9"
+          onClick={() => disconnect()}
+          size="sm"
+          type="button"
+          variant="outline"
+        >
           Disconnect
         </Button>
       </div>
@@ -34,6 +61,7 @@ function WalletButton() {
 
   return (
     <Button
+      className="min-h-11 sm:min-h-9"
       disabled={!firstConnector}
       onClick={() => firstConnector && connect({ connector: firstConnector })}
       size="sm"
@@ -46,12 +74,14 @@ function WalletButton() {
 }
 
 export function SiteHeader() {
+  const pathname = usePathname();
+
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 rounded-t-xl border-b border-border/68 bg-background/78 shadow-[var(--shadow-soft)] backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
-        <h1 className="text-base font-medium">Console</h1>
+        <h1 className="truncate text-base font-medium">{routeTitle(pathname)}</h1>
         <div className="ml-auto flex items-center gap-2">
           <WalletButton />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
@@ -59,7 +89,7 @@ export function SiteHeader() {
               Skill.md
             </a>
           </Button>
-          <Button asChild size="sm">
+          <Button asChild className="min-h-11 sm:min-h-9" size="sm">
             <a href="/dashboard/tasks/new">Post task</a>
           </Button>
         </div>

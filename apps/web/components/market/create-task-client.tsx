@@ -4,7 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { IconBolt, IconClockHour4, IconCoin, IconFileText } from '@tabler/icons-react';
 import { parseUnits } from 'viem';
-import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
+import { useAccount, useConnect, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -118,6 +118,7 @@ function randomNonce() {
 export function CreateTaskClient() {
   const router = useRouter();
   const { address, isConnected } = useAccount();
+  const { connect, connectors } = useConnect();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
   const [mode, setMode] = useState('bounty');
@@ -129,6 +130,7 @@ export function CreateTaskClient() {
 
   const isSubmitting = step !== 'form';
   const walletReady = mounted && isConnected;
+  const firstConnector = connectors[0];
 
   useEffect(() => {
     setMounted(true);
@@ -158,7 +160,7 @@ export function CreateTaskClient() {
 
     setError(null);
     if (!address) {
-      setError('Connect a wallet in the header after the task details pass validation.');
+      setError('Connect a wallet before publishing this task.');
       return;
     }
 
@@ -282,6 +284,13 @@ export function CreateTaskClient() {
     auctionTypeOptions.find((type) => type.value === auctionType) ?? auctionTypeOptions[0];
   const CurrentModeIcon = currentMode.icon;
   const StepIcon = step === 'form' ? IconFileText : step === 'payment' ? IconCoin : IconBolt;
+
+  function handleConnectWallet() {
+    setError(null);
+    if (firstConnector) {
+      connect({ connector: firstConnector });
+    }
+  }
 
   return (
     <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={handleSubmit}>
@@ -646,12 +655,17 @@ export function CreateTaskClient() {
               </p>
             ) : null}
 
-            <Button className="h-11 w-full" disabled={isSubmitting} type="submit">
+            <Button
+              className="h-11 w-full"
+              disabled={isSubmitting || (!walletReady && !firstConnector)}
+              onClick={walletReady ? undefined : handleConnectWallet}
+              type={walletReady ? 'submit' : 'button'}
+            >
               {buttonLabel}
             </Button>
             {!walletReady ? (
               <p className="text-xs leading-5 text-muted-foreground">
-                Connect a wallet in the header to publish this task.
+                Connect a wallet to publish this task.
               </p>
             ) : null}
           </CardContent>

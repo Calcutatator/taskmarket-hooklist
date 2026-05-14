@@ -11,6 +11,7 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
+import { SlidersHorizontal } from 'lucide-react';
 import type { ReactNode } from 'react';
 
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
@@ -27,6 +28,14 @@ import {
 } from '@/components/ui/breadcrumb';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+  DrawerTrigger,
+} from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -247,6 +256,55 @@ function activityLabel(task: TaskDetailResponse | TaskResponse, modeData?: TaskM
   }
 }
 
+function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
+  const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
+
+  return (
+    <li className="grid gap-3 rounded-xl border border-border/68 bg-background/54 p-4 shadow-[var(--shadow-soft)]">
+      <div className="grid gap-2">
+        <a
+          className="text-base font-semibold leading-6 text-foreground hover:text-primary"
+          href={detailHref}
+        >
+          {taskTitle(task)}
+        </a>
+        <div className="flex flex-wrap gap-1.5">
+          <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>{task.mode}</Badge>
+          <Badge variant="terminal">{labelize(task.status)}</Badge>
+          {task.tags.slice(0, 2).map((tag) => (
+            <Badge key={tag} variant="outline">
+              {tag}
+            </Badge>
+          ))}
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 text-sm">
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Reward</dt>
+          <dd className="mt-1 font-mono text-primary">{formatUsdc(task.reward)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Due</dt>
+          <dd className="mt-1 truncate font-mono text-muted-foreground">
+            {taskDeadlineLabel(task)}
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Requester</dt>
+          <dd className="mt-1 font-mono text-muted-foreground">{compactAddress(task.requester)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Activity</dt>
+          <dd className="mt-1 font-mono text-muted-foreground">{activityLabel(task)}</dd>
+        </div>
+      </dl>
+      <Button asChild className="w-full sm:w-fit" variant="outline">
+        <a href={detailHref}>View task</a>
+      </Button>
+    </li>
+  );
+}
+
 export function TaskTable({
   createHref = '/dashboard/tasks/new',
   detailBasePath = '/dashboard/tasks',
@@ -324,7 +382,12 @@ export function TaskTable({
 
   return (
     <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
-      <div className="w-full max-w-full overflow-x-auto">
+      <ul aria-label="Task cards" className="grid gap-3 p-3 md:hidden" role="list">
+        {tasks.map((task) => (
+          <TaskMobileCard detailBasePath={detailBasePath} key={task.id} task={task} />
+        ))}
+      </ul>
+      <div className="hidden w-full max-w-full overflow-x-auto md:block">
         <Table>
           <TableHeader>
             <TableRow>
@@ -378,25 +441,29 @@ export function TaskTable({
 
 const actors: Array<'ALL' | 'agent' | 'human'> = ['ALL', 'agent', 'human'];
 
-export function TaskFilterRail({
-  basePath = '/dashboard/tasks',
-  deadlineHours = '',
-  maxReward = '',
-  minReward = '',
-  selectedActor = 'ALL',
-  selectedMode = 'ALL',
-  selectedStatus = 'ALL',
-  tags = '',
-}: {
+type TaskFilterControlsProps = {
   basePath?: string;
   deadlineHours?: string;
+  idPrefix: string;
   maxReward?: string;
   minReward?: string;
   selectedActor?: 'ALL' | 'agent' | 'human' | string;
   selectedMode?: 'ALL' | TaskModeType | string;
   selectedStatus?: 'ALL' | TaskStatusType | string;
   tags?: string;
-}) {
+};
+
+function TaskFilterControls({
+  basePath = '/dashboard/tasks',
+  deadlineHours = '',
+  idPrefix,
+  maxReward = '',
+  minReward = '',
+  selectedActor = 'ALL',
+  selectedMode = 'ALL',
+  selectedStatus = 'ALL',
+  tags = '',
+}: TaskFilterControlsProps) {
   const currentFilters: TaskSearchParams = {
     actor: selectedActor,
     deadlineHours,
@@ -408,127 +475,157 @@ export function TaskFilterRail({
   };
 
   return (
-    <aside className="grid gap-4 lg:sticky lg:top-20">
+    <div className="grid gap-4">
+      <div className="grid gap-2">
+        <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
+        <div className="grid grid-cols-1 gap-1">
+          {modes.map((mode) => (
+            <Button asChild key={mode} size="chip" variant="chip">
+              <a
+                data-active={selectedMode === mode}
+                href={taskFiltersHref(basePath, currentFilters, { mode })}
+              >
+                {mode === 'ALL' ? 'All modes' : labelize(mode)}
+              </a>
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
+        <div className="grid grid-cols-1 gap-1">
+          {statuses.map((status) => (
+            <Button asChild key={status} size="chip" variant="chip">
+              <a
+                data-active={selectedStatus === status}
+                href={taskFiltersHref(basePath, currentFilters, { status })}
+              >
+                {status === 'ALL' ? 'All statuses' : labelize(status)}
+              </a>
+            </Button>
+          ))}
+        </div>
+      </div>
+      <div className="grid gap-2">
+        <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
+        <div className="grid grid-cols-1 gap-1">
+          {actors.map((actor) => (
+            <Button asChild key={actor} size="chip" variant="chip">
+              <a
+                data-active={selectedActor === actor}
+                href={taskFiltersHref(basePath, currentFilters, { actor })}
+              >
+                {actor === 'ALL' ? 'Any' : actor}
+              </a>
+            </Button>
+          ))}
+        </div>
+      </div>
+      <form action={normalizeBasePath(basePath)} className="grid gap-4">
+        {selectedMode !== 'ALL' ? <input name="mode" type="hidden" value={selectedMode} /> : null}
+        {selectedStatus !== 'ALL' ? (
+          <input name="status" type="hidden" value={selectedStatus} />
+        ) : null}
+        {selectedActor !== 'ALL' ? (
+          <input name="actor" type="hidden" value={selectedActor} />
+        ) : null}
+        <div className="grid gap-2">
+          <Label htmlFor={`task-filter-${idPrefix}-tags`}>Tags</Label>
+          <Input
+            defaultValue={tags}
+            id={`task-filter-${idPrefix}-tags`}
+            name="tags"
+            placeholder="scrape, react"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <div className="grid gap-2">
+            <Label htmlFor={`task-filter-${idPrefix}-min-reward`}>Min reward</Label>
+            <Input
+              defaultValue={minReward}
+              id={`task-filter-${idPrefix}-min-reward`}
+              min="0"
+              name="minReward"
+              placeholder="2.00"
+              step="0.01"
+              type="number"
+            />
+          </div>
+          <div className="grid gap-2">
+            <Label htmlFor={`task-filter-${idPrefix}-max-reward`}>Max reward</Label>
+            <Input
+              defaultValue={maxReward}
+              id={`task-filter-${idPrefix}-max-reward`}
+              min="0"
+              name="maxReward"
+              placeholder="500"
+              step="0.01"
+              type="number"
+            />
+          </div>
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor={`task-filter-${idPrefix}-deadline`}>Deadline hours</Label>
+          <Input
+            defaultValue={deadlineHours}
+            id={`task-filter-${idPrefix}-deadline`}
+            min="1"
+            name="deadlineHours"
+            placeholder="72"
+            type="number"
+          />
+        </div>
+        <div className="grid grid-cols-1 gap-2">
+          <Button type="submit" variant="terminal">
+            Apply filters
+          </Button>
+          <Button asChild variant="outline">
+            <a aria-label="Clear filters" href={normalizeBasePath(basePath)}>
+              Clear
+            </a>
+          </Button>
+        </div>
+      </form>
+    </div>
+  );
+}
+
+export function TaskFilterRail(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
+  return (
+    <aside aria-label="Task filters" className="hidden gap-4 lg:sticky lg:top-20 lg:grid">
       <Card className="gap-4 border-border/68 bg-card/68 py-4 shadow-[var(--shadow-soft)] lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
         <CardHeader className="px-3">
           <CardTitle className="text-sm">Task filters</CardTitle>
         </CardHeader>
-        <CardContent className="grid gap-4 px-3">
-          <div className="grid gap-2">
-            <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
-            <div className="grid grid-cols-1 gap-1">
-              {modes.map((mode) => (
-                <Button asChild key={mode} size="chip" variant="chip">
-                  <a
-                    data-active={selectedMode === mode}
-                    href={taskFiltersHref(basePath, currentFilters, { mode })}
-                  >
-                    {mode === 'ALL' ? 'All modes' : labelize(mode)}
-                  </a>
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
-            <div className="grid grid-cols-1 gap-1">
-              {statuses.map((status) => (
-                <Button asChild key={status} size="chip" variant="chip">
-                  <a
-                    data-active={selectedStatus === status}
-                    href={taskFiltersHref(basePath, currentFilters, { status })}
-                  >
-                    {status === 'ALL' ? 'All statuses' : labelize(status)}
-                  </a>
-                </Button>
-              ))}
-            </div>
-          </div>
-          <div className="grid gap-2">
-            <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
-            <div className="grid grid-cols-1 gap-1">
-              {actors.map((actor) => (
-                <Button asChild key={actor} size="chip" variant="chip">
-                  <a
-                    data-active={selectedActor === actor}
-                    href={taskFiltersHref(basePath, currentFilters, { actor })}
-                  >
-                    {actor === 'ALL' ? 'Any' : actor}
-                  </a>
-                </Button>
-              ))}
-            </div>
-          </div>
-          <form action={normalizeBasePath(basePath)} className="grid gap-4">
-            {selectedMode !== 'ALL' ? (
-              <input name="mode" type="hidden" value={selectedMode} />
-            ) : null}
-            {selectedStatus !== 'ALL' ? (
-              <input name="status" type="hidden" value={selectedStatus} />
-            ) : null}
-            {selectedActor !== 'ALL' ? (
-              <input name="actor" type="hidden" value={selectedActor} />
-            ) : null}
-            <div className="grid gap-2">
-              <Label htmlFor="task-filter-tags">Tags</Label>
-              <Input
-                defaultValue={tags}
-                id="task-filter-tags"
-                name="tags"
-                placeholder="scrape, react"
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              <div className="grid gap-2">
-                <Label htmlFor="task-filter-min-reward">Min reward</Label>
-                <Input
-                  defaultValue={minReward}
-                  id="task-filter-min-reward"
-                  min="0"
-                  name="minReward"
-                  placeholder="2.00"
-                  step="0.01"
-                  type="number"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="task-filter-max-reward">Max reward</Label>
-                <Input
-                  defaultValue={maxReward}
-                  id="task-filter-max-reward"
-                  min="0"
-                  name="maxReward"
-                  placeholder="500"
-                  step="0.01"
-                  type="number"
-                />
-              </div>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="task-filter-deadline">Deadline hours</Label>
-              <Input
-                defaultValue={deadlineHours}
-                id="task-filter-deadline"
-                min="1"
-                name="deadlineHours"
-                placeholder="72"
-                type="number"
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-2">
-              <Button type="submit" variant="terminal">
-                Apply filters
-              </Button>
-              <Button asChild variant="outline">
-                <a aria-label="Clear filters" href={normalizeBasePath(basePath)}>
-                  Clear
-                </a>
-              </Button>
-            </div>
-          </form>
+        <CardContent className="px-3">
+          <TaskFilterControls {...props} idPrefix="rail" />
         </CardContent>
       </Card>
     </aside>
+  );
+}
+
+function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
+  return (
+    <Drawer direction="bottom">
+      <DrawerTrigger asChild>
+        <Button className="min-h-11" type="button" variant="outline">
+          <SlidersHorizontal />
+          Filters
+        </Button>
+      </DrawerTrigger>
+      <DrawerContent aria-describedby="mobile-task-filter-description">
+        <DrawerHeader>
+          <DrawerTitle>Task filters</DrawerTitle>
+          <DrawerDescription id="mobile-task-filter-description">
+            Narrow open tasks by mode, status, actor, reward, and deadline.
+          </DrawerDescription>
+        </DrawerHeader>
+        <div className="overflow-y-auto px-4 pb-4">
+          <TaskFilterControls {...props} idPrefix="drawer" />
+        </div>
+      </DrawerContent>
+    </Drawer>
   );
 }
 
@@ -569,15 +666,32 @@ export function TaskListPageContent({
         selectedStatus={filterParams.selectedStatus}
         tags={filterParams.tags}
       />
-      <section className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden">
+      <section
+        aria-label="Task list"
+        className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden"
+      >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-mono text-xs uppercase text-primary">Tasks</p>
             <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Open tasks</h1>
           </div>
-          <Button asChild>
-            <a href={createHref}>Post task</a>
-          </Button>
+          <div className="flex flex-wrap gap-2">
+            <div className="lg:hidden">
+              <MobileTaskFilterDrawer
+                basePath={basePath}
+                deadlineHours={filterParams.deadlineHours}
+                maxReward={filterParams.maxReward}
+                minReward={filterParams.minReward}
+                selectedActor={filterParams.selectedActor}
+                selectedMode={filterParams.selectedMode}
+                selectedStatus={filterParams.selectedStatus}
+                tags={filterParams.tags}
+              />
+            </div>
+            <Button asChild>
+              <a href={createHref}>Post task</a>
+            </Button>
+          </div>
         </div>
         {activeFilters.length > 0 ? (
           <div className="flex flex-wrap items-center gap-2">

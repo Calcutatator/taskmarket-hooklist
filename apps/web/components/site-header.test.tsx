@@ -7,13 +7,20 @@ vi.mock('@/components/ui/sidebar', () => ({
   SidebarTrigger: () => <button>Toggle Sidebar</button>,
 }));
 
-const { connect, disconnect, walletState } = vi.hoisted(() => ({
+const { connect, disconnect, routeState, walletState } = vi.hoisted(() => ({
   connect: vi.fn(),
   disconnect: vi.fn(),
+  routeState: {
+    pathname: '/dashboard',
+  },
   walletState: {
     address: undefined as `0x${string}` | undefined,
     isConnected: false,
   },
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => routeState.pathname,
 }));
 
 vi.mock('wagmi', () => ({
@@ -32,16 +39,34 @@ describe('SiteHeader', () => {
   beforeEach(() => {
     connect.mockClear();
     disconnect.mockClear();
+    routeState.pathname = '/dashboard';
     walletState.address = undefined;
     walletState.isConnected = false;
   });
 
-  it('uses Taskmarket shell copy instead of dashboard demo copy', () => {
+  it('uses a route-aware Taskmarket shell title instead of dashboard demo copy', () => {
     render(<SiteHeader />);
 
-    expect(screen.getByRole('heading', { name: /^console$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument();
+    expect(screen.queryByRole('heading', { name: /^console$/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Documents')).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /github/i })).not.toBeInTheDocument();
+  });
+
+  it('names task routes by the active user flow', () => {
+    const { rerender } = render(<SiteHeader />);
+
+    routeState.pathname = '/dashboard/tasks';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('heading', { name: /^open tasks$/i })).toBeInTheDocument();
+
+    routeState.pathname = '/dashboard/tasks/new';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('heading', { name: /^fund a task$/i })).toBeInTheDocument();
+
+    routeState.pathname = '/dashboard/tasks/0xabc123';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('heading', { name: /^task detail$/i })).toBeInTheDocument();
   });
 
   it('lets users connect and disconnect a wallet from the header', async () => {
