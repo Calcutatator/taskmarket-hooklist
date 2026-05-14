@@ -65,7 +65,7 @@ const statuses: Array<'ALL' | TaskStatusType> = [
   'open',
   'claimed',
   'pending_approval',
-  'completed',
+  'accepted',
   'cancelled',
 ];
 
