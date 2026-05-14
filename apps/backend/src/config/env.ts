@@ -126,14 +126,6 @@ const envSchema = z
           path: ['X402_FACILITATOR_TOKEN'],
         });
       }
-
-      if (data.CORS_ORIGIN === '*') {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          message: 'CORS_ORIGIN must not be wildcard in production',
-          path: ['CORS_ORIGIN'],
-        });
-      }
     }
   });
 
