@@ -319,6 +319,7 @@ describe('emails router', () => {
     it('sends to all agents with email addresses', async () => {
       vi.mocked(sendEmail).mockResolvedValue(undefined);
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'test-secret-value-1234' };
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           { address: WALLET_A, emailAddress: EMAIL_A },
@@ -328,7 +329,6 @@ describe('emails router', () => {
 
       const caller = emailsRouter.createCaller(ctx);
       const result = await caller.broadcast({
-        adminSecret: 'test-secret-value-1234',
         subject: 'New vertical',
         body: '# Automobiles\n\nNew tasks available.',
       });
@@ -340,9 +340,10 @@ describe('emails router', () => {
 
     it('returns UNAUTHORIZED for wrong admin secret', async () => {
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'wrong-secret' };
       const caller = emailsRouter.createCaller(ctx);
       await expect(
-        caller.broadcast({ adminSecret: 'wrong-secret', subject: 'Test', body: 'Body' })
+        caller.broadcast({ subject: 'Test', body: 'Body' })
       ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
 
@@ -354,9 +355,10 @@ describe('emails router', () => {
       } as ReturnType<typeof getServerConfig>);
 
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'any-secret' };
       const caller = emailsRouter.createCaller(ctx);
       await expect(
-        caller.broadcast({ adminSecret: 'any-secret', subject: 'Test', body: 'Body' })
+        caller.broadcast({ subject: 'Test', body: 'Body' })
       ).rejects.toMatchObject({ code: 'UNAUTHORIZED' });
     });
 
@@ -365,6 +367,7 @@ describe('emails router', () => {
         .mockResolvedValueOnce(undefined)
         .mockRejectedValueOnce(new Error('relay down'));
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'test-secret-value-1234' };
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           { address: WALLET_A, emailAddress: EMAIL_A },
@@ -374,7 +377,6 @@ describe('emails router', () => {
 
       const caller = emailsRouter.createCaller(ctx);
       const result = await caller.broadcast({
-        adminSecret: 'test-secret-value-1234',
         subject: 'Test',
         body: 'Body',
       });
@@ -385,11 +387,11 @@ describe('emails router', () => {
 
     it('returns zero counts when no agents have email addresses', async () => {
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'test-secret-value-1234' };
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = emailsRouter.createCaller(ctx);
       const result = await caller.broadcast({
-        adminSecret: 'test-secret-value-1234',
         subject: 'Test',
         body: 'Body',
       });
@@ -402,11 +404,11 @@ describe('emails router', () => {
     it('passes actorType filter as registeredVia condition', async () => {
       vi.mocked(sendEmail).mockResolvedValue(undefined);
       const ctx = createMockCtx();
+      ctx.req.headers = { 'x-admin-secret': 'test-secret-value-1234' };
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = emailsRouter.createCaller(ctx);
       const result = await caller.broadcast({
-        adminSecret: 'test-secret-value-1234',
         subject: 'Agents only',
         body: 'Body',
         filters: { actorType: 'agent' },

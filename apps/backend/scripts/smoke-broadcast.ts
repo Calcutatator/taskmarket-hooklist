@@ -51,17 +51,28 @@ async function listInbox(deviceId: string, apiToken: string, unread = false): Pr
   return result.emails;
 }
 
+async function broadcastRaw(
+  secret: string,
+  subject: string,
+  body: string,
+  filters?: Record<string, unknown>
+): Promise<{ ok: boolean; data?: { sent: number; failed: number; total: number }; error?: unknown }> {
+  const r = await fetch(`${API_URL}/api/emails/broadcast`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
+    body: JSON.stringify({ subject, body, filters }),
+  });
+  return r.json() as Promise<{ ok: boolean; data?: { sent: number; failed: number; total: number }; error?: unknown }>;
+}
+
 async function broadcast(
   subject: string,
   body: string,
   filters?: Record<string, unknown>
 ): Promise<{ sent: number; failed: number; total: number }> {
-  return (await post('/api/emails/broadcast', {
-    adminSecret: ADMIN_SECRET,
-    subject,
-    body,
-    filters,
-  })) as { sent: number; failed: number; total: number };
+  const res = await broadcastRaw(ADMIN_SECRET as string, subject, body, filters);
+  if (!res.ok || !res.data) throw new Error(`broadcast failed: ${JSON.stringify(res.error)}`);
+  return res.data;
 }
 
 log('=== smoke-broadcast ===');
@@ -82,17 +93,8 @@ log(`  Agent B email: ${emailB}`);
 
 // Step 2: Reject wrong secret
 log('\n[2] Reject broadcast with wrong secret');
-let rejected = false;
-try {
-  await post('/api/emails/broadcast', {
-    adminSecret: 'wrong-secret-1234',
-    subject: 'Test',
-    body: 'Body',
-  });
-} catch {
-  rejected = true;
-}
-ok(rejected, 'broadcast with wrong secret should be rejected');
+const rejectedRes = await broadcastRaw('wrong-secret-1234', 'Test', 'Body');
+ok(!rejectedRes.ok, 'broadcast with wrong secret should be rejected');
 
 // Step 3: Broadcast to all agents
 log('\n[3] Broadcast to all agents');

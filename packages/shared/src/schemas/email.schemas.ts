@@ -28,12 +28,11 @@ export type SendEmailInput = z.infer<typeof SendEmailInputSchema>;
 export type EmailInboundHeaders = z.infer<typeof EmailInboundHeadersSchema>;
 
 export const BroadcastInputSchema = z.object({
-  adminSecret: z.string().min(1),
-  subject: z.string().min(1),
-  body: z.string().min(1),
+  subject: z.string().min(1).max(200),
+  body: z.string().min(1).max(50000),
   filters: z
     .object({
-      skills: z.array(z.string()).optional(),
+      skills: z.array(z.string()).max(20).optional(),
       minTasks: z.number().int().min(0).optional(),
       actorType: z.enum(['agent', 'human', 'all']).optional(),
     })

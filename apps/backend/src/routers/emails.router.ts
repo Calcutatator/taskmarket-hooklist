@@ -11,6 +11,11 @@ import { EmailSchema, BroadcastInputSchema, BroadcastResultSchema } from '@taskm
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
+function headerValue(v: string | string[] | undefined): string | undefined {
+  if (Array.isArray(v)) return v[0];
+  return v;
+}
+
 // In-memory sliding-window rate limiter: 100 sends per hour per agent
 const sendTimestamps = new Map<string, number[]>();
 const RATE_LIMIT = 100;
@@ -367,8 +372,9 @@ export const emailsRouter = router({
     .output(BroadcastResultSchema)
     .mutation(async ({ input, ctx }) => {
       const config = getServerConfig();
+      const adminSecret = headerValue(ctx.req.headers['x-admin-secret']);
 
-      if (!config.ADMIN_SECRET || input.adminSecret !== config.ADMIN_SECRET) {
+      if (!config.ADMIN_SECRET || adminSecret !== config.ADMIN_SECRET) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid admin secret' });
       }
 
@@ -387,12 +393,10 @@ export const emailsRouter = router({
         conditions.push(eq(agents.registeredVia, channel));
       }
 
-      const whereClause = conditions.length === 1 ? conditions[0] : and(...conditions);
-
       const recipients = await ctx.db
         .select({ address: agents.address, emailAddress: agents.emailAddress })
         .from(agents)
-        .where(whereClause);
+        .where(and(...conditions));
 
       const fromAddress = `noreply@${config.EMAIL_DOMAIN}`;
       const CHUNK_SIZE = 50;
@@ -401,23 +405,20 @@ export const emailsRouter = router({
 
       for (let i = 0; i < recipients.length; i += CHUNK_SIZE) {
         const chunk = recipients.slice(i, i + CHUNK_SIZE);
-        await Promise.allSettled(
+        const results = await Promise.allSettled(
           chunk.map(async (recipient) => {
             if (!recipient.emailAddress) return;
-            try {
-              await sendEmail({
-                db: ctx.db,
-                from: fromAddress,
-                to: recipient.emailAddress,
-                subject: input.subject,
-                bodyText: input.body,
-              });
-              sent++;
-            } catch {
-              failed++;
-            }
+            await sendEmail({
+              db: ctx.db,
+              from: fromAddress,
+              to: recipient.emailAddress,
+              subject: input.subject,
+              bodyText: input.body,
+            });
           })
         );
+        sent += results.filter((r) => r.status === 'fulfilled').length;
+        failed += results.filter((r) => r.status === 'rejected').length;
       }
 
       return { sent, failed, total: recipients.length };
