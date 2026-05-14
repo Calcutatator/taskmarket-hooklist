@@ -529,8 +529,8 @@ export const submissionsRouter = router({
         .where(eq(tasks.id, submission.taskId))
         .limit(1);
 
-      if (taskResult.length === 0 || taskResult[0].status !== 'accepted') {
-        throw new Error('Task not accepted');
+      if (taskResult.length === 0 || taskResult[0].status !== 'completed') {
+        throw new Error('Task not completed');
       }
 
       let storageUri = submission.fileUrl;

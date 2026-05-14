@@ -1,6 +1,6 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
-import { tasks, agents, platformFees, feedbacks } from '../db/schema';
+import { tasks, agents, feedbacks } from '../db/schema';
 import { eq, sql } from 'drizzle-orm';
 import { contractAcceptSubmission, contractRateTask } from '../services/contract';
 import { getServerConfig } from '../config/env';
@@ -58,60 +58,16 @@ export const acceptanceRouter = router({
         throw new Error('Only the task requester can accept a submission');
       }
 
-      const txHash = await contractAcceptSubmission(
+      await contractAcceptSubmission(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         input.worker as `0x${string}`,
         task.contractAddress
       );
 
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'accepted',
-          worker: input.worker,
-        })
-        .where(eq(tasks.id, input.taskId));
-
-      const agentResult = await ctx.db
-        .select()
-        .from(agents)
-        .where(eq(agents.address, input.worker))
-        .limit(1);
-
-      if (agentResult.length === 0) {
-        await ctx.db.insert(agents).values({
-          address: input.worker,
-          completedTasks: 1,
-          totalEarnings: task.reward,
-          skills: task.tags ?? [],
-        });
-      } else {
-        const tags = task.tags ?? [];
-        const skillsExpr =
-          tags.length === 0
-            ? sql`${agents.skills}`
-            : sql`ARRAY(SELECT DISTINCT unnest(${agents.skills} || ARRAY[${sql.join(
-                tags.map((t) => sql`${t}`),
-                sql`, `
-              )}]))`;
-        await ctx.db
-          .update(agents)
-          .set({
-            completedTasks: sql`${agents.completedTasks} + 1`,
-            totalEarnings: sql`${agents.totalEarnings} + ${task.reward}`,
-            skills: skillsExpr,
-            updatedAt: new Date(),
-          })
-          .where(eq(agents.address, input.worker));
-      }
-
-      await ctx.db.insert(platformFees).values({
-        taskId: input.taskId,
-        amount: '0',
-        txHash,
-      });
-
+      // No DB writes here — the indexer is the sole writer of task state.
+      // It will set status to 'completed' and update agent stats when it
+      // processes the TaskCompleted on-chain event.
       return { success: true };
     }),
 
@@ -147,8 +103,8 @@ export const acceptanceRouter = router({
         .where(eq(tasks.id, input.taskId))
         .limit(1);
 
-      if (taskResult.length === 0 || taskResult[0].status !== 'accepted') {
-        throw new Error('Task not accepted');
+      if (taskResult.length === 0 || taskResult[0].status !== 'completed') {
+        throw new Error('Task not completed');
       }
 
       const task = taskResult[0];

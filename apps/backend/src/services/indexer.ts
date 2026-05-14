@@ -48,8 +48,8 @@ const TASK_CLAIMED_EVENT = parseAbiItem(
 const TASK_WORKER_SELECTED_EVENT = parseAbiItem(
   'event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)'
 );
-const TASK_ACCEPTED_EVENT = parseAbiItem(
-  'event TaskAccepted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)'
+const TASK_COMPLETED_EVENT = parseAbiItem(
+  'event TaskCompleted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)'
 );
 const TASK_RATED_EVENT = parseAbiItem(
   'event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating, uint256 raterAgentId)'
@@ -244,7 +244,7 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
   await db
     .update(tasks)
     .set({
-      status: 'accepted',
+      status: 'completed',
       worker: worker as string,
     })
     .where(eq(tasks.id, taskId as string));
@@ -285,7 +285,7 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
       });
   }
 
-  console.log(`TaskAccepted event: ${taskId} - ${worker}, payment: ${workerPayment}`);
+  console.log(`TaskCompleted event: ${taskId} - ${worker}, payment: ${workerPayment}`);
 }
 
 async function processTaskRatedEvent(log: EventLog): Promise<void> {
@@ -519,7 +519,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_CREATED_EVENT,
       TASK_CLAIMED_EVENT,
       TASK_WORKER_SELECTED_EVENT,
-      TASK_ACCEPTED_EVENT,
+      TASK_COMPLETED_EVENT,
       TASK_RATED_EVENT,
       TASK_SUBMITTED_EVENT,
       BID_SUBMITTED_EVENT,
@@ -553,7 +553,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
         case 'TaskWorkerSelected':
           await processTaskWorkerSelectedEvent(log);
           break;
-        case 'TaskAccepted':
+        case 'TaskCompleted':
           await processTaskAcceptedEvent(log);
           break;
         case 'TaskRated':

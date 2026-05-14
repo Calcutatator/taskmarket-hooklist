@@ -7,7 +7,6 @@ export const TaskStatus = z.enum([
   'claimed',
   'worker_selected',
   'pending_approval',
-  'accepted',
   'completed',
   'expired',
   'disputed',

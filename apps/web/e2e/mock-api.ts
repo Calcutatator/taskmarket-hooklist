@@ -217,7 +217,7 @@ const tasks: TaskDetailResponse[] = [
     mode: 'bounty',
     pendingActions: [action('mock-bounty-accepted-unrated', 'requester', 'rate')],
     rating: null,
-    status: 'accepted',
+    status: 'completed',
     submissionCount: 1,
     tags: ['bounty', 'rating'],
     worker: workerOne,

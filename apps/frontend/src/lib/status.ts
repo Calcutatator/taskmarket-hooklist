@@ -6,7 +6,6 @@ export function getStatusVariant(status: string) {
     case 'worker_selected':
     case 'pending_approval':
       return 'warning';
-    case 'accepted':
     case 'completed':
       return 'blue';
     case 'expired':

@@ -143,7 +143,7 @@ export const proofsRouter = router({
     .mutation(async ({ input, ctx }) => {
       await ctx.db.update(proofs).set({ status: 'verified' }).where(eq(proofs.id, input.proofId));
 
-      await ctx.db.update(tasks).set({ status: 'accepted' }).where(eq(tasks.id, input.taskId));
+      await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
 
       return { success: true };
     }),

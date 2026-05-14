@@ -469,11 +469,11 @@ describe('submissions router', () => {
       expect(JSON.stringify(result)).not.toContain('previewUrl');
     });
 
-    it('returns presigned URL when task is accepted', async () => {
+    it('returns presigned URL when task is completed', async () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
-        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'accepted' }]));
+        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]));
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.download({
@@ -484,12 +484,12 @@ describe('submissions router', () => {
       expect(result.presignedUrl).toBe('https://presigned.example.com/file');
     });
 
-    it('returns the selected artifact URL when an accepted submission has multiple artifacts', async () => {
+    it('returns the selected artifact URL when a completed submission has multiple artifacts', async () => {
       const storage = getStorageBackend();
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
-        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'accepted' }]))
+        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]))
         .mockReturnValueOnce(makeChain([{ ...artifactRow, id: 'artifact-2', storageUri: 'file://test/source.zip' }]));
 
       const caller = submissionsRouter.createCaller(ctx) as any;
@@ -503,11 +503,11 @@ describe('submissions router', () => {
       expect(storage.getPresignedUrl).toHaveBeenCalledWith('file://test/source.zip', 3600);
     });
 
-    it('requires an artifact ID to download accepted multi-artifact submissions', async () => {
+    it('requires an artifact ID to download completed multi-artifact submissions', async () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
-        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'accepted' }]))
+        .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]))
         .mockReturnValueOnce(
           makeChain([
             artifactRow,
@@ -531,7 +531,7 @@ describe('submissions router', () => {
       ).rejects.toThrow('Submission not found');
     });
 
-    it('throws when task is not accepted', async () => {
+    it('throws when task is not completed', async () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
@@ -540,7 +540,7 @@ describe('submissions router', () => {
       const caller = submissionsRouter.createCaller(ctx);
       await expect(
         caller.download({ submissionId: SUB_ID, acceptanceTxHash: '0xaccepttx' })
-      ).rejects.toThrow('Task not accepted');
+      ).rejects.toThrow('Task not completed');
     });
   });
 

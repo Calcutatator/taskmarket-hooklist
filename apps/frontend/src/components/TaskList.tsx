@@ -34,7 +34,6 @@ export function TaskList({ filters, search }: TaskListProps) {
             | 'claimed'
             | 'worker_selected'
             | 'pending_approval'
-            | 'accepted'
             | 'completed'
             | 'expired'
             | 'disputed') ?? 'ALL',

@@ -21,7 +21,7 @@ export function RatingForm({ task }: RatingFormProps) {
   const [error, setError] = useState<string | null>(null);
 
   const isRequester = address?.toLowerCase() === task.requester.toLowerCase();
-  const canRate = task.status === 'accepted' && task.rating === 0 && isRequester;
+  const canRate = task.status === 'completed' && task.rating === 0 && isRequester;
 
   if (!canRate) return null;
 
