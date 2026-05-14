@@ -409,6 +409,8 @@ export const daemonCommand = new Command('daemon')
               if (stopped) break;
               try {
                 let hasMore = true;
+                // Intentionally drains the full queue before sleeping — stop signals
+                // are honoured after the current cycle completes, not mid-drain.
                 while (hasMore) {
                   const params = new URLSearchParams({
                     deviceId: keystore.deviceId,

@@ -407,11 +407,10 @@ export const emailsRouter = router({
         const chunk = recipients.slice(i, i + CHUNK_SIZE);
         const results = await Promise.allSettled(
           chunk.map(async (recipient) => {
-            if (!recipient.emailAddress) return;
             await sendEmail({
               db: ctx.db,
               from: fromAddress,
-              to: recipient.emailAddress,
+              to: recipient.emailAddress!,
               subject: input.subject,
               bodyText: input.body,
             });
