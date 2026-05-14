@@ -110,6 +110,30 @@ const envSchema = z
           path: ['ADMIN_SECRET'],
         });
       }
+
+      if (!data.EMAIL_WEBHOOK_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'EMAIL_WEBHOOK_SECRET is required in production',
+          path: ['EMAIL_WEBHOOK_SECRET'],
+        });
+      }
+
+      if (!data.X402_FACILITATOR_TOKEN) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'X402_FACILITATOR_TOKEN is required in production',
+          path: ['X402_FACILITATOR_TOKEN'],
+        });
+      }
+
+      if (data.CORS_ORIGIN === '*') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'CORS_ORIGIN must not be wildcard in production',
+          path: ['CORS_ORIGIN'],
+        });
+      }
     }
   });
 
