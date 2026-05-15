@@ -8,9 +8,9 @@ This page documents the three commitment schemes and the canonical preimage endp
 
 The file bytes, pitch text, and proof data are too large to store on Ethereum economically. Instead, the contract stores a 32-byte `keccak256` hash and emits an event with the hash as an indexed argument. Verifiers can:
 
-- Watch the on-chain event to learn that *something* was submitted
-- Fetch the off-chain content from the operator
-- Recompute the hash locally and compare
+* Watch the on-chain event to learn that *something* was submitted
+* Fetch the off-chain content from the operator
+* Recompute the hash locally and compare
 
 If the operator tampers with content after submission, the recomputed hash will not match the on-chain value and the tampering is provable.
 
@@ -61,11 +61,11 @@ Submission artifacts are bundled into a deterministic JSON manifest. The manifes
 
 The on-chain `deliverable` equals `keccak256(utf8_bytes(json_string))` where `json_string` is built with:
 
-- **Top-level keys sorted lexicographically** (`artifacts` before `version`)
-- **Each artifact object's keys also sorted lexicographically**
-- **Artifacts ordered by `displayOrder` ascending**
-- **No whitespace** between tokens — use `JSON.stringify(value)` with no indent argument
-- **UTF-8** encoding when computing the byte sequence to hash
+* **Top-level keys sorted lexicographically** (`artifacts` before `version`)
+* **Each artifact object's keys also sorted lexicographically**
+* **Artifacts ordered by `displayOrder` ascending**
+* **No whitespace** between tokens — use `JSON.stringify(value)` with no indent argument
+* **UTF-8** encoding when computing the byte sequence to hash
 
 The manifest endpoint returns exactly this string. Reconstructing it client-side is not necessary — you can fetch the canonical bytes and re-hash them directly.
 
@@ -144,19 +144,19 @@ The result should match the `pitchHash` argument on the `PitchSubmitted` event. 
 
 The on-chain commitment is proof of three things:
 
-- **The content existed at the timestamp of the submit transaction** — `block.timestamp` notarises the receipt
-- **The content was associated with that worker for that task** — the worker is recovered from the PGTR-signed forwarder call
-- **The content has not been altered since** — any tampering changes the hash
+* **The content existed at the timestamp of the submit transaction** — `block.timestamp` notarises the receipt
+* **The content was associated with that worker for that task** — the worker is recovered from the PGTR-signed forwarder call
+* **The content has not been altered since** — any tampering changes the hash
 
 The commitment does **not** prove:
 
-- **That the content is available** — if the operator and all third-party mirrors go offline, the on-chain hash is unredeemable; the preimage is lost
-- **That the content is unique** — the same pitch can be submitted to two different tasks (different `taskId` will produce a different hash, but the workers are free to do so)
-- **That the content is valuable or correct** — quality and accuracy are still subjective and handled off-chain via acceptance and ratings
+* **That the content is available** — if the operator and all third-party mirrors go offline, the on-chain hash is unredeemable; the preimage is lost
+* **That the content is unique** — the same pitch can be submitted to two different tasks (different `taskId` will produce a different hash, but the workers are free to do so)
+* **That the content is valuable or correct** — quality and accuracy are still subjective and handled off-chain via acceptance and ratings
 
 For long-term durability, consider pinning the manifest JSON to IPFS or Arweave and recording the CID alongside the on-chain hash. This is not currently part of the protocol but is compatible with it.
 
 ## See also
 
-- [Task Lifecycle](/concepts/task-lifecycle) — how submissions, pitches, and proofs fit into the state machine
-- [Smart Contracts](/smart-contracts/overview) — full reference for the on-chain events
+* [Task Lifecycle](/concepts/task-lifecycle) — how submissions, pitches, and proofs fit into the state machine
+* [Smart Contracts](/smart-contracts/overview) — full reference for the on-chain events
