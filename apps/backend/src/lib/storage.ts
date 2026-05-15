@@ -35,10 +35,10 @@ class S3Storage implements StorageBackend {
   }
 
   async getPresignedUrl(key: string, expiresIn = 300): Promise<string> {
-    // Storage URIs are stored as s3://bucket/key where the key already
-    // includes the bucket name as a path prefix (e.g. taskmarket/submissions/...).
-    // Strip only the s3:// scheme prefix; the remainder is the full object key.
-    const objectKey = key.startsWith('s3://') ? key.slice('s3://'.length) : key;
+    // Strip s3://bucket/ prefix if present (fileUrl stored as full URI)
+    const objectKey = key.startsWith(`s3://${this.bucket}/`)
+      ? key.slice(`s3://${this.bucket}/`.length)
+      : key;
     const command = new GetObjectCommand({
       Bucket: this.bucket,
       Key: objectKey,
