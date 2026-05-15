@@ -627,8 +627,18 @@ describe('Task marketplace components', () => {
     fetchMock.mockRestore();
   });
 
-  it('previews text artifacts from the existing text snippet', async () => {
-    const fetchMock = mockPreviewFetch('https://files.example.com/readme.md');
+  it('previews markdown artifacts by fetching and rendering content from presigned URL', async () => {
+    const mdContent = '# Delivery\nGenerated logo assets.';
+    const presignedUrl = 'https://files.example.com/readme.md';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('/artifacts/')) {
+        return {
+          json: async () => ({ expiresAt: '2026-05-12T08:00:00.000Z', previewUrl: presignedUrl }),
+          ok: true,
+        } as Response;
+      }
+      return { text: async () => mdContent, ok: true } as Response;
+    });
     const user = userEvent.setup();
 
     renderBountyArtifacts([
@@ -637,14 +647,14 @@ describe('Task marketplace components', () => {
         id: 'artifact-text',
         mediaKind: 'text',
         mimeType: 'text/markdown',
-        textPreview: '# Delivery\nGenerated logo assets.',
       }),
     ]);
 
     await user.click(screen.getByRole('button', { name: /^view$/i }));
 
     const dialog = await screen.findByRole('dialog');
-    expect(within(dialog).getByText(/# Delivery/)).toHaveTextContent('Generated logo assets.');
+    expect(within(dialog).getByRole('heading', { name: /Delivery/i })).toBeInTheDocument();
+    expect(within(dialog).getByText(/Generated logo assets/i)).toBeInTheDocument();
 
     fetchMock.mockRestore();
   });
