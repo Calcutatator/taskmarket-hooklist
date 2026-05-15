@@ -1,7 +1,8 @@
 'use client';
 
 import type { ArtifactResponse } from '@taskmarket/shared';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
+import Markdown from 'react-markdown';
 
 import { Button } from '@/components/ui/button';
 import {
@@ -90,6 +91,49 @@ function ArtifactMetadata({
   );
 }
 
+function TextPreview({
+  artifact,
+  previewUrl,
+}: {
+  artifact: ArtifactResponse;
+  previewUrl: string | null;
+}) {
+  const [content, setContent] = useState<string | null>(null);
+  const [fetchError, setFetchError] = useState(false);
+  const isMarkdown =
+    artifact.fileName.toLowerCase().endsWith('.md') || artifact.mimeType === 'text/markdown';
+
+  useEffect(() => {
+    if (!previewUrl) return;
+    fetch(previewUrl)
+      .then((r) => r.text())
+      .then(setContent)
+      .catch(() => setFetchError(true));
+  }, [previewUrl]);
+
+  if (!previewUrl || content === null) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
+        {fetchError ? 'Failed to load preview.' : 'Loading...'}
+      </div>
+    );
+  }
+
+  if (isMarkdown) {
+    return (
+      <div className="markdown-preview max-h-[65vh] overflow-auto rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-foreground">
+        <Markdown>{content}</Markdown>
+      </div>
+    );
+  }
+
+  return (
+    <pre className="max-h-[65vh] overflow-auto rounded-xl border border-border/60 bg-background/52 p-4 font-mono text-xs leading-5 text-foreground">
+      {content}
+    </pre>
+  );
+}
+
 function ArtifactPreviewContent({
   artifact,
   previewUrl,
@@ -154,15 +198,7 @@ function ArtifactPreviewContent({
   }
 
   if (artifact.mediaKind === 'text') {
-    return artifact.textPreview ? (
-      <pre className="max-h-[65vh] overflow-auto rounded-xl border border-border/60 bg-background/52 p-4 font-mono text-xs leading-5 text-foreground">
-        {artifact.textPreview}
-      </pre>
-    ) : (
-      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
-        No text preview is available for this artifact.
-      </div>
-    );
+    return <TextPreview artifact={artifact} previewUrl={previewUrl} />;
   }
 
   return (
