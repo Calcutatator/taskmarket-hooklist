@@ -167,7 +167,14 @@ export const initCommand = new Command('init')
     const encryptedKey = encryptPrivateKey(deviceEncryptionKey, privateKey);
 
     let agentId: string | null = initialAgentId;
-    await saveKeystore({ encryptedKey, walletAddress: address, deviceId, apiToken, agentId });
+    await saveKeystore({
+      encryptedKey,
+      walletAddress: address,
+      deviceId,
+      apiToken,
+      agentId,
+      keyServerUrl: API_URL,
+    });
 
     if (!agentId) {
       agentId = await pollAgentId(address);

@@ -10,6 +10,10 @@ export interface Keystore {
   deviceId: string;
   apiToken: string;
   agentId: string | null;
+  // URL of the backend where this device was registered. Used by fetchDeviceKey so
+  // the DEK is always fetched from the correct server even when TASKMARKET_API_URL
+  // points at a different backend (e.g. testnet).
+  keyServerUrl?: string;
   xmtpInboxId?: string;
   xmtpInstallationId?: string;
   xmtpDbPath?: string;

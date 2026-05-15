@@ -108,7 +108,14 @@ export const walletImportCommand = new Command('import')
 
     // agentId may be null if on-chain registration is still pending — poll for it
     let agentId: string | null = initialAgentId;
-    await saveKeystore({ encryptedKey, walletAddress: address, deviceId, apiToken, agentId });
+    await saveKeystore({
+      encryptedKey,
+      walletAddress: address,
+      deviceId,
+      apiToken,
+      agentId,
+      keyServerUrl: API_URL,
+    });
 
     if (!agentId) {
       agentId = await pollAgentId(address);
