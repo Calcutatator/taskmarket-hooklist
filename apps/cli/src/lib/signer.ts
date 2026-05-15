@@ -1,7 +1,7 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
 import { loadKeystore, decryptPrivateKey, type Keystore } from './keystore.js';
-import { API_URL } from './api.js';
+const MAINNET_API_URL = 'https://api-market.daydreams.systems';
 
 export interface TypedData {
   domain: Record<string, unknown>;
@@ -15,7 +15,9 @@ export async function fetchDeviceKey(
   apiToken: string,
   keyServerUrl?: string
 ): Promise<string> {
-  const base = keyServerUrl ?? API_URL;
+  // Old keystores lack keyServerUrl — fall back to mainnet where all existing
+  // devices were registered. New keystores have it stamped at init/import time.
+  const base = keyServerUrl ?? MAINNET_API_URL;
   const res = await fetch(`${base}/api/devices/${deviceId}/key`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
