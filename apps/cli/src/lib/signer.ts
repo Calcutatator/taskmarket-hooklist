@@ -1,7 +1,12 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
 import { loadKeystore, decryptPrivateKey, type Keystore } from './keystore.js';
-import { API_URL } from './api.js';
+
+// Device key lookup must always target the server where the device was registered.
+// TASKMARKET_KEY_SERVER_URL lets testnet users override TASKMARKET_API_URL without
+// breaking DEK fetches for devices registered on mainnet.
+const KEY_SERVER_URL =
+  process.env.TASKMARKET_KEY_SERVER_URL ?? 'https://api-market.daydreams.systems';
 
 export interface TypedData {
   domain: Record<string, unknown>;
@@ -11,7 +16,7 @@ export interface TypedData {
 }
 
 export async function fetchDeviceKey(deviceId: string, apiToken: string): Promise<string> {
-  const res = await fetch(`${API_URL}/api/devices/${deviceId}/key`, {
+  const res = await fetch(`${KEY_SERVER_URL}/api/devices/${deviceId}/key`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify({ deviceId, apiToken }),
