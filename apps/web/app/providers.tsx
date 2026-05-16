@@ -1,11 +1,14 @@
 'use client';
 
+import { PrivyProvider } from '@privy-io/react-auth';
+import { WagmiProvider as PrivyWagmiProvider } from '@privy-io/wagmi';
 import { QueryClientProvider } from '@tanstack/react-query';
 import { useState } from 'react';
 import { WagmiProvider } from 'wagmi';
 
 import { makeQueryClient, makeTrpcClient, trpc } from '@/lib/api/client';
-import { wagmiConfig } from '@/lib/web3/wagmi';
+import { isPrivyConfigured } from '@/lib/privy-config';
+import { privyAppId, privyClientId, privyConfig, wagmiConfig } from '@/lib/web3/wagmi';
 
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
@@ -14,16 +17,28 @@ export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => makeQueryClient());
   const [trpcClient] = useState(() => makeTrpcClient());
 
-  return (
-    <WagmiProvider config={wagmiConfig}>
+  const app = (
+    <trpc.Provider client={trpcClient} queryClient={queryClient}>
+      <TooltipProvider>
+        {children}
+        <Toaster />
+      </TooltipProvider>
+    </trpc.Provider>
+  );
+
+  if (!isPrivyConfigured()) {
+    return (
       <QueryClientProvider client={queryClient}>
-        <trpc.Provider client={trpcClient} queryClient={queryClient}>
-          <TooltipProvider>
-            {children}
-            <Toaster />
-          </TooltipProvider>
-        </trpc.Provider>
+        <WagmiProvider config={wagmiConfig}>{app}</WagmiProvider>
       </QueryClientProvider>
-    </WagmiProvider>
+    );
+  }
+
+  return (
+    <QueryClientProvider client={queryClient}>
+      <PrivyProvider appId={privyAppId} clientId={privyClientId} config={privyConfig}>
+        <PrivyWagmiProvider config={wagmiConfig}>{app}</PrivyWagmiProvider>
+      </PrivyProvider>
+    </QueryClientProvider>
   );
 }

@@ -3,9 +3,15 @@
 import { useRouter } from 'next/navigation';
 import { useEffect, useState } from 'react';
 import { IconBolt, IconClockHour4, IconCoin, IconFileText } from '@tabler/icons-react';
+import { usePrivy } from '@privy-io/react-auth';
 import { parseUnits } from 'viem';
-import { useAccount, useConnect, useSignTypedData, useSwitchChain } from 'wagmi';
+import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import {
+  FundingGuard,
+  isPrivyFiatOnboardingEnabled,
+  type FundingStatus,
+} from '@/components/market/fund-wallet-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -13,7 +19,9 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { formatUsdcUnits } from '@/lib/format';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
+import { isPrivyConfigured } from '@/lib/privy-config';
 import { cn } from '@/lib/utils';
 
 const apiUrl = getBrowserApiBaseUrl();
@@ -37,6 +45,19 @@ type CreateTaskFormValues = {
 };
 
 type Step = 'form' | 'payment' | 'signing' | 'submitting';
+
+type WalletBalance = {
+  balanceBaseUnits: string;
+  balanceUsdc: string;
+};
+
+type FundingPromptState = {
+  balanceBaseUnits: string;
+  balanceUsdc: string;
+  defaultAmount: string;
+  requiredBaseUnits: string;
+  shortfallBaseUnits: string;
+};
 
 const stepCopy: Record<Step, { label: string; text: string }> = {
   form: {
@@ -115,10 +136,78 @@ function randomNonce() {
     .join('')}` as `0x${string}`;
 }
 
+function onrampDefaultAmount(baseUnits: string) {
+  const parsed = Number(baseUnits) / 1_000_000;
+  if (!Number.isFinite(parsed) || parsed <= 0) {
+    return '10';
+  }
+
+  return Math.max(parsed, 1).toFixed(2);
+}
+
+function buildFundingPrompt(
+  balance: WalletBalance,
+  requiredBaseUnits: string
+): FundingPromptState | null {
+  const balanceBaseUnits = BigInt(balance.balanceBaseUnits);
+  const required = BigInt(requiredBaseUnits);
+
+  if (balanceBaseUnits >= required) {
+    return null;
+  }
+
+  const shortfallBaseUnits = (required - balanceBaseUnits).toString();
+  return {
+    balanceBaseUnits: balance.balanceBaseUnits,
+    balanceUsdc: balance.balanceUsdc,
+    defaultAmount: onrampDefaultAmount(shortfallBaseUnits),
+    requiredBaseUnits,
+    shortfallBaseUnits,
+  };
+}
+
+async function loadWalletBalance(address: string): Promise<WalletBalance> {
+  const balanceRes = await fetch(
+    `${apiUrl}/api/wallet/balance?address=${encodeURIComponent(address)}`
+  );
+  if (!balanceRes.ok) {
+    throw new Error(`Wallet balance check failed: ${balanceRes.status}`);
+  }
+
+  const balance = (await balanceRes.json()) as Partial<WalletBalance>;
+  if (typeof balance.balanceBaseUnits !== 'string' || typeof balance.balanceUsdc !== 'string') {
+    throw new Error('Wallet balance response was malformed');
+  }
+
+  return {
+    balanceBaseUnits: balance.balanceBaseUnits,
+    balanceUsdc: balance.balanceUsdc,
+  };
+}
+
 export function CreateTaskClient() {
+  if (!isPrivyConfigured()) {
+    return <CreateTaskClientContent connectOrCreateWallet={() => undefined} ready={false} />;
+  }
+
+  return <CreateTaskClientWithPrivy />;
+}
+
+function CreateTaskClientWithPrivy() {
+  const { connectOrCreateWallet, ready } = usePrivy();
+
+  return <CreateTaskClientContent connectOrCreateWallet={connectOrCreateWallet} ready={ready} />;
+}
+
+function CreateTaskClientContent({
+  connectOrCreateWallet,
+  ready,
+}: {
+  connectOrCreateWallet: () => void | Promise<void>;
+  ready: boolean;
+}) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
   const [mode, setMode] = useState('bounty');
@@ -127,10 +216,11 @@ export function CreateTaskClient() {
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>('form');
   const [error, setError] = useState<string | null>(null);
+  const [fundingPrompt, setFundingPrompt] = useState<FundingPromptState | null>(null);
+  const [fundingNotice, setFundingNotice] = useState<string | null>(null);
 
   const isSubmitting = step !== 'form';
-  const walletReady = mounted && isConnected;
-  const firstConnector = connectors[0];
+  const walletReady = mounted && isConnected && Boolean(address);
 
   useEffect(() => {
     setMounted(true);
@@ -159,12 +249,24 @@ export function CreateTaskClient() {
     });
 
     setError(null);
+    setFundingPrompt(null);
+    setFundingNotice(null);
     if (!address) {
       setError('Connect a wallet before publishing this task.');
       return;
     }
 
     try {
+      if (isPrivyFiatOnboardingEnabled()) {
+        const rewardBaseUnits = String(body.reward);
+        const balance = await loadWalletBalance(address);
+        const nextFundingPrompt = buildFundingPrompt(balance, rewardBaseUnits);
+        if (nextFundingPrompt) {
+          setFundingPrompt(nextFundingPrompt);
+          return;
+        }
+      }
+
       setStep('payment');
       const probeRes = await fetch(`${apiUrl}/api/tasks`, {
         body: JSON.stringify(body),
@@ -285,11 +387,35 @@ export function CreateTaskClient() {
   const CurrentModeIcon = currentMode.icon;
   const StepIcon = step === 'form' ? IconFileText : step === 'payment' ? IconCoin : IconBolt;
 
+  async function handleFundingStatus(status: FundingStatus) {
+    if (status === 'submitted') {
+      setFundingNotice('Purchase submitted. Funds can take a few minutes to arrive.');
+      return;
+    }
+
+    setFundingNotice('Funding confirmed. Checking wallet balance.');
+
+    if (!address || !fundingPrompt) {
+      return;
+    }
+
+    try {
+      const balance = await loadWalletBalance(address);
+      const nextFundingPrompt = buildFundingPrompt(balance, fundingPrompt.requiredBaseUnits);
+      setFundingPrompt(nextFundingPrompt);
+      setFundingNotice(
+        nextFundingPrompt
+          ? 'Funding confirmed, but the wallet still needs more USDC.'
+          : 'Funding confirmed. Wallet balance is ready.'
+      );
+    } catch (err) {
+      setFundingNotice(err instanceof Error ? err.message : 'Funding confirmed. Recheck balance.');
+    }
+  }
+
   function handleConnectWallet() {
     setError(null);
-    if (firstConnector) {
-      connect({ connector: firstConnector });
-    }
+    connectOrCreateWallet();
   }
 
   return (
@@ -655,9 +781,30 @@ export function CreateTaskClient() {
               </p>
             ) : null}
 
+            {fundingPrompt ? (
+              <FundingGuard
+                address={address}
+                defaultAmount={fundingPrompt.defaultAmount}
+                message={`Wallet has ${fundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+                  fundingPrompt.shortfallBaseUnits
+                )} before signing the payment authorization.`}
+                onStatus={handleFundingStatus}
+              >
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Required funding is {formatUsdcUnits(fundingPrompt.requiredBaseUnits)}.
+                </p>
+              </FundingGuard>
+            ) : null}
+
+            {fundingNotice ? (
+              <p className="rounded-xl border border-border/68 bg-background/48 p-3 text-xs leading-5 text-muted-foreground">
+                {fundingNotice}
+              </p>
+            ) : null}
+
             <Button
               className="h-11 w-full"
-              disabled={isSubmitting || (!walletReady && !firstConnector)}
+              disabled={isSubmitting || (!walletReady && !ready)}
               onClick={walletReady ? undefined : handleConnectWallet}
               type={walletReady ? 'submit' : 'button'}
             >

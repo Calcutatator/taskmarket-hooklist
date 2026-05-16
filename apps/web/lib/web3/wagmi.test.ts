@@ -3,19 +3,14 @@ import { base, baseSepolia } from 'viem/chains';
 
 const createConfig = vi.hoisted(() => vi.fn((config) => config));
 const http = vi.hoisted(() => vi.fn((url?: string) => ({ transport: 'http', url })));
-const injected = vi.hoisted(() => vi.fn(() => ({ id: 'injected' })));
-const walletConnect = vi.hoisted(() =>
-  vi.fn((options: { projectId: string }) => ({ id: 'walletConnect', options }))
-);
 
-vi.mock('wagmi', () => ({
+vi.mock('@privy-io/wagmi', () => ({
   createConfig,
-  http,
+  WagmiProvider: ({ children }: { children: unknown }) => children,
 }));
 
-vi.mock('wagmi/connectors', () => ({
-  injected,
-  walletConnect,
+vi.mock('wagmi', () => ({
+  http,
 }));
 
 describe('wagmi connection config', () => {
@@ -24,29 +19,44 @@ describe('wagmi connection config', () => {
     vi.unstubAllEnvs();
     createConfig.mockClear();
     http.mockClear();
-    injected.mockClear();
-    walletConnect.mockClear();
   });
 
-  it('orders the configured chain first and includes injected plus WalletConnect when configured', async () => {
+  it('orders the configured chain first and uses configured RPC URLs', async () => {
     vi.stubEnv('NEXT_PUBLIC_CHAIN_ID', String(baseSepolia.id));
-    vi.stubEnv('NEXT_PUBLIC_WALLETCONNECT_PROJECT_ID', 'project-123');
     vi.stubEnv('NEXT_PUBLIC_BASE_RPC_URL', 'https://base.rpc');
     vi.stubEnv('NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL', 'https://sepolia.rpc');
 
-    const { wagmiConfig } = (await import('./wagmi')) as unknown as {
+    const { privyConfig, supportedChains, wagmiConfig } = (await import('./wagmi')) as unknown as {
+      privyConfig: {
+        appearance: {
+          accentColor: string;
+          landingHeader: string;
+          loginMessage: string;
+          logo: {
+            key: string | null;
+            props: { alt: string; src: string };
+            type: string;
+          };
+          showWalletLoginFirst: boolean;
+          theme: string;
+          walletChainType: string;
+          walletList: string[];
+        };
+        defaultChain: { id: number };
+        embeddedWallets: { ethereum: { createOnLogin: string } };
+        loginMethods: string[];
+        supportedChains: Array<{ id: number }>;
+      };
+      supportedChains: Array<{ id: number; rpcUrls: { default: { http: string[] } } }>;
       wagmiConfig: {
-        chains: unknown[];
-        connectors: unknown[];
+        chains: Array<{ id: number }>;
         transports: Record<number, unknown>;
       };
     };
 
-    expect(wagmiConfig.chains).toEqual([baseSepolia, base]);
-    expect(wagmiConfig.connectors).toEqual([
-      { id: 'injected' },
-      { id: 'walletConnect', options: { projectId: 'project-123' } },
-    ]);
+    expect(wagmiConfig.chains.map((chain) => chain.id)).toEqual([baseSepolia.id, base.id]);
+    expect(supportedChains[0].rpcUrls.default.http).toEqual(['https://sepolia.rpc']);
+    expect(supportedChains[1].rpcUrls.default.http).toEqual(['https://base.rpc']);
     expect(wagmiConfig.transports[base.id]).toEqual({
       transport: 'http',
       url: 'https://base.rpc',
@@ -55,5 +65,31 @@ describe('wagmi connection config', () => {
       transport: 'http',
       url: 'https://sepolia.rpc',
     });
+    expect(privyConfig.appearance.accentColor).toBe('#cc667f');
+    expect(privyConfig.appearance.landingHeader).toBe('Enter Taskmarket');
+    expect(privyConfig.appearance.loginMessage).toBe(
+      'Connect a wallet or create one to fund Base USDC tasks.'
+    );
+    expect(privyConfig.appearance.logo.type).toBe('img');
+    expect(privyConfig.appearance.logo.key).toBe('taskmarket-logo');
+    expect(privyConfig.appearance.logo.props).toMatchObject({
+      alt: 'Taskmarket',
+      src: '/taskmarket-final-icon-transparent.svg',
+    });
+    expect(privyConfig.appearance.showWalletLoginFirst).toBe(false);
+    expect(privyConfig.appearance.theme).toBe('#0f0f12');
+    expect(privyConfig.appearance.walletChainType).toBe('ethereum-only');
+    expect(privyConfig.appearance.walletList).toEqual([
+      'detected_ethereum_wallets',
+      'base_account',
+      'coinbase_wallet',
+      'metamask',
+      'rainbow',
+      'wallet_connect_qr',
+    ]);
+    expect(privyConfig.defaultChain.id).toBe(baseSepolia.id);
+    expect(privyConfig.supportedChains.map((chain) => chain.id)).toEqual([baseSepolia.id, base.id]);
+    expect(privyConfig.embeddedWallets.ethereum.createOnLogin).toBe('users-without-wallets');
+    expect(privyConfig.loginMethods).toEqual(['email', 'wallet', 'google', 'passkey']);
   });
 });

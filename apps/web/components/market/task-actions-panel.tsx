@@ -6,7 +6,13 @@ import { useAccount } from 'wagmi';
 
 import { COMPONENT_BY_ACTION } from '@/components/market/actions';
 import { CopyButton } from '@/components/market/copy-button';
+import {
+  FundingGuard,
+  PAID_ACTION_COST_BASE_UNITS,
+  usePaidActionFundingPrompt,
+} from '@/components/market/fund-wallet-button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { formatUsdcUnits } from '@/lib/format';
 
 type TaskActionPanelProps = {
   claimedBy?: string | null;
@@ -19,8 +25,23 @@ type TaskActionPanelProps = {
   worker?: string | null;
 };
 
+const PAID_ACTIONS = new Set([
+  'accept',
+  'auction_accept',
+  'bid',
+  'cancel',
+  'pitch',
+  'rate',
+  'submit_proof',
+  'update',
+]);
+
 function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
+function isPaidAction(action: PendingAction) {
+  return PAID_ACTIONS.has(action.action);
 }
 
 type ActionVisibilityParams = {
@@ -66,6 +87,11 @@ export function TaskActionsPanel({
   const visibleActions = pendingActions.filter((action) =>
     canViewAction({ action, address, claimedBy, requester, worker })
   );
+  const hasPaidAction = visibleActions.some(isPaidAction);
+  const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
+    address,
+    enabled: hasPaidAction,
+  });
   const emptyTitle =
     pendingActions.length > 0 ? 'No actions for this wallet' : 'No pending commands';
   const emptyDescription =
@@ -83,10 +109,29 @@ export function TaskActionsPanel({
         <CardTitle>{title}</CardTitle>
       </CardHeader>
       <CardContent className="grid gap-3">
+        {actionFundingPrompt ? (
+          <FundingGuard
+            address={address}
+            defaultAmount={actionFundingPrompt.defaultAmount}
+            message={`Wallet has ${actionFundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+              actionFundingPrompt.shortfallBaseUnits
+            )} before running paid task actions.`}
+            onStatus={(status) => {
+              if (status === 'confirmed') {
+                recheckActionFunding();
+              }
+            }}
+          >
+            <p className="text-xs leading-5 text-muted-foreground">
+              Paid task actions require {formatUsdcUnits(PAID_ACTION_COST_BASE_UNITS.toString())}.
+            </p>
+          </FundingGuard>
+        ) : null}
         {visibleActions.length > 0 ? (
           visibleActions.map((action) => {
             const Component = COMPONENT_BY_ACTION[action.action];
             const canRun = canRunAction({ action, address, claimedBy, requester, worker });
+            const blockedByFunding = Boolean(actionFundingPrompt && isPaidAction(action));
 
             return (
               <article
@@ -94,7 +139,11 @@ export function TaskActionsPanel({
                 key={`${action.role}-${action.action}-${action.command}`}
               >
                 <div className="min-w-0">
-                  <Component action={action} disabled={!canRun && Boolean(address)} task={task} />
+                  <Component
+                    action={action}
+                    disabled={blockedByFunding || (!canRun && Boolean(address))}
+                    task={task}
+                  />
                 </div>
                 <details className="min-w-0">
                   <summary

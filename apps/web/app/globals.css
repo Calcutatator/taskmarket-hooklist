@@ -137,6 +137,33 @@ html {
 }
 
 body {
+  --privy-color-background: var(--card);
+  --privy-color-background-2: var(--surface);
+  --privy-color-background-3: var(--surface-2);
+  --privy-color-foreground: var(--foreground);
+  --privy-color-foreground-2: var(--muted-foreground);
+  --privy-color-foreground-3: color-mix(in oklab, var(--muted-foreground) 82%, transparent);
+  --privy-color-foreground-4: var(--border);
+  --privy-color-foreground-accent: var(--primary-foreground);
+  --privy-color-accent: var(--primary);
+  --privy-color-accent-dark: color-mix(in oklab, var(--primary) 88%, black);
+  --privy-color-accent-light: color-mix(in oklab, var(--primary) 18%, transparent);
+  --privy-color-success: var(--success);
+  --privy-color-success-dark: color-mix(in oklab, var(--success) 84%, black);
+  --privy-color-success-light: color-mix(in oklab, var(--success) 18%, transparent);
+  --privy-color-success-bg: color-mix(in oklab, var(--success) 12%, var(--card));
+  --privy-color-border-success: color-mix(in oklab, var(--success) 58%, var(--border));
+  --privy-color-error: var(--destructive);
+  --privy-color-error-dark: color-mix(in oklab, var(--destructive) 84%, black);
+  --privy-color-error-light: color-mix(in oklab, var(--destructive) 18%, transparent);
+  --privy-color-error-bg: color-mix(in oklab, var(--destructive) 12%, var(--card));
+  --privy-color-border-error: color-mix(in oklab, var(--destructive) 58%, var(--border));
+  --privy-color-icon-muted: var(--muted-foreground);
+  --privy-border-radius-xs: var(--radius-sm);
+  --privy-border-radius-sm: var(--radius-md);
+  --privy-border-radius-md: var(--radius-lg);
+  --privy-border-radius-lg: var(--radius-xl);
+  --privy-border-radius-full: 9999px;
   min-height: 100vh;
   background: linear-gradient(
     180deg,

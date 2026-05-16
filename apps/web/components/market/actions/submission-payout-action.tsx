@@ -1,11 +1,18 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
+import { usePrivy } from '@privy-io/react-auth';
+import { useAccount } from 'wagmi';
 
 import { AcceptButton } from '@/components/market/actions/accept-button';
+import {
+  FundingGuard,
+  PAID_ACTION_COST_BASE_UNITS,
+  usePaidActionFundingPrompt,
+} from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
-import { compactAddress } from '@/lib/format';
+import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { isPrivyConfigured } from '@/lib/privy-config';
 
 function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
@@ -19,15 +26,35 @@ export function SubmissionPayoutAction({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
-  const firstConnector = connectors[0];
+  const requesterConnected = sameAddress(address, task.requester);
+  const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
+    address,
+    enabled: requesterConnected,
+  });
 
-  if (sameAddress(address, task.requester)) {
+  if (requesterConnected) {
     return (
       <div className="grid min-w-0 gap-2 rounded-xl border border-primary/28 bg-primary/10 p-3">
         <p className="text-sm font-semibold tracking-tight text-foreground">Release payout</p>
-        <AcceptButton action={action} disabled={false} task={task} />
+        {actionFundingPrompt ? (
+          <FundingGuard
+            address={address}
+            defaultAmount={actionFundingPrompt.defaultAmount}
+            message={`Wallet has ${actionFundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+              actionFundingPrompt.shortfallBaseUnits
+            )} before releasing payout.`}
+            onStatus={(status) => {
+              if (status === 'confirmed') {
+                recheckActionFunding();
+              }
+            }}
+          >
+            <p className="text-xs leading-5 text-muted-foreground">
+              Payout release requires {formatUsdcUnits(PAID_ACTION_COST_BASE_UNITS.toString())}.
+            </p>
+          </FundingGuard>
+        ) : null}
+        <AcceptButton action={action} disabled={Boolean(actionFundingPrompt)} task={task} />
       </div>
     );
   }
@@ -60,19 +87,37 @@ export function SubmissionPayoutAction({
         ) : null}
       </div>
       {isConnected ? (
-        <Button onClick={() => disconnect()} type="button" variant="outline">
-          Switch wallet
-        </Button>
+        <PrivyWalletActionButton label="Switch wallet" />
       ) : (
-        <Button
-          disabled={!firstConnector}
-          onClick={() => firstConnector && connect({ connector: firstConnector })}
-          type="button"
-          variant="outline"
-        >
-          Connect wallet
-        </Button>
+        <PrivyWalletActionButton label="Connect wallet" />
       )}
     </div>
+  );
+}
+
+function PrivyWalletActionButton({ label }: { label: string }) {
+  if (!isPrivyConfigured()) {
+    return (
+      <Button disabled type="button" variant="outline">
+        {label}
+      </Button>
+    );
+  }
+
+  return <PrivyWalletActionButtonInner label={label} />;
+}
+
+function PrivyWalletActionButtonInner({ label }: { label: string }) {
+  const { connectOrCreateWallet, ready } = usePrivy();
+
+  return (
+    <Button
+      disabled={!ready}
+      onClick={() => connectOrCreateWallet()}
+      type="button"
+      variant="outline"
+    >
+      {label}
+    </Button>
   );
 }

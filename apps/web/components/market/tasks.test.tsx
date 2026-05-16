@@ -1,17 +1,17 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { afterEach, describe, expect, it, vi } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 
-const { mockAccount, mockConnect, mockDisconnect } = vi.hoisted(() => ({
+const { mockAccount, mockFund, mockPrivyConnect } = vi.hoisted(() => ({
   mockAccount: {
     address: undefined as string | undefined,
     isConnected: false,
   },
-  mockConnect: vi.fn(),
-  mockDisconnect: vi.fn(),
+  mockFund: vi.fn(),
+  mockPrivyConnect: vi.fn(),
 }));
 
 vi.mock('wagmi', () => ({
@@ -19,18 +19,27 @@ vi.mock('wagmi', () => ({
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useSignMessage: () => ({ signMessageAsync: vi.fn() }),
   useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
-  useConnect: () => ({
-    connect: mockConnect,
-    connectors: [{ id: 'injected', name: 'Injected' }],
-  }),
-  useDisconnect: () => ({ disconnect: mockDisconnect }),
 }));
+
+vi.mock('@privy-io/react-auth', () => ({
+  useFiatOnramp: () => ({ fund: mockFund }),
+  usePrivy: () => ({
+    connectOrCreateWallet: mockPrivyConnect,
+    ready: true,
+  }),
+}));
+
+beforeEach(() => {
+  vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
+});
 
 afterEach(() => {
   mockAccount.address = undefined;
   mockAccount.isConnected = false;
-  mockConnect.mockClear();
-  mockDisconnect.mockClear();
+  mockFund.mockClear();
+  mockPrivyConnect.mockClear();
+  vi.unstubAllGlobals();
+  vi.unstubAllEnvs();
   vi.restoreAllMocks();
 });
 
@@ -391,6 +400,42 @@ describe('Task marketplace components', () => {
     expect(within(sidebar).queryByLabelText(/reward \(usdc\)/i)).not.toBeInTheDocument();
   });
 
+  it('prompts low-balance wallets to add USDC before paid task actions', async () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'true');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({ balanceBaseUnits: '0', balanceUsdc: '0.000000' }),
+        ok: true,
+      })
+    );
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'cancel',
+              command: `taskmarket task cancel ${task.id}`,
+              role: 'requester',
+            },
+          ],
+        }}
+      />
+    );
+
+    expect(await screen.findByText(/wallet has 0\.000000 usdc/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^cancel task$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
+  });
+
   it('keeps open worker actions available to connected non-requesters', () => {
     mockAccount.address = '0x9999999999999999999999999999999999999999';
     mockAccount.isConnected = true;
@@ -520,6 +565,56 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
 
+  it('blocks pending approval payout release when the requester wallet needs funding', async () => {
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'true');
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        json: async () => ({ balanceBaseUnits: '0', balanceUsdc: '0.000000' }),
+        ok: true,
+      })
+    );
+
+    render(
+      <TaskDetailPanel
+        modeData={{
+          submissions: [
+            {
+              artifacts: [],
+              fileUrl: 'ipfs://deliverable',
+              id: 'sub-1',
+              signature: '0xsig',
+              submittedAt: new Date().toISOString(),
+              taskId: task.id,
+              workerAddress: '0x3333333333333333333333333333333333333333',
+            },
+          ],
+        }}
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [
+            {
+              action: 'accept',
+              command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333`,
+              role: 'requester',
+            },
+          ],
+          status: 'pending_approval',
+          submissionCount: 1,
+        }}
+      />
+    );
+
+    expect(await screen.findByText(/wallet has 0\.000000 usdc/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /^release payout$/i })).toBeDisabled();
+    expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
+  });
+
   it('explains how disconnected requesters can release a pending payout', () => {
     render(
       <TaskDetailPanel
@@ -602,7 +697,7 @@ describe('Task marketplace components', () => {
 
     await user.click(screen.getByRole('button', { name: /switch wallet/i }));
 
-    expect(mockDisconnect).toHaveBeenCalled();
+    expect(mockPrivyConnect).toHaveBeenCalled();
   });
 
   it('previews image artifacts inline without opening a new window', async () => {

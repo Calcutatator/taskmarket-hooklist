@@ -1,9 +1,15 @@
 'use client';
 
-import { IconDotsVertical, IconLogout, IconWallet } from '@tabler/icons-react';
-import { useEffect, useState } from 'react';
-import { useAccount, useDisconnect } from 'wagmi';
+import {
+  IconDotsVertical,
+  IconLogin,
+  IconLogout,
+  IconRefresh,
+  IconWallet,
+} from '@tabler/icons-react';
 
+import { FundWalletButton } from '@/components/market/fund-wallet-button';
+import { usePrivyAccountState } from '@/components/privy-account-control';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -19,21 +25,67 @@ import {
   SidebarMenuItem,
   useSidebar,
 } from '@/components/ui/sidebar';
-
-function compactAddress(address: string) {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
+import { compactAddress } from '@/lib/format';
+import { isPrivyConfigured } from '@/lib/privy-config';
 
 export function NavUser() {
   const { isMobile } = useSidebar();
-  const { address, connector, isConnected } = useAccount();
-  const { disconnect } = useDisconnect();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
 
-  const connected = mounted && isConnected;
+  if (!isPrivyConfigured()) {
+    return (
+      <NavUserContent
+        connectOrCreateWallet={() => undefined}
+        connected={false}
+        isMobile={isMobile}
+        login={() => undefined}
+        logout={() => undefined}
+        ready={false}
+        walletDetail="Not connected"
+      />
+    );
+  }
+
+  return <NavUserWithPrivy isMobile={isMobile} />;
+}
+
+function NavUserWithPrivy({ isMobile }: { isMobile: boolean }) {
+  const { address, connectOrCreateWallet, connected, login, logout, ready, walletDetail } =
+    usePrivyAccountState();
+
+  return (
+    <NavUserContent
+      address={address}
+      connectOrCreateWallet={connectOrCreateWallet}
+      connected={connected}
+      isMobile={isMobile}
+      login={login}
+      logout={logout}
+      ready={ready}
+      walletDetail={walletDetail}
+    />
+  );
+}
+
+function NavUserContent({
+  address,
+  connectOrCreateWallet,
+  connected,
+  isMobile,
+  login,
+  logout,
+  ready,
+  walletDetail,
+}: {
+  address?: string;
+  connectOrCreateWallet: () => void | Promise<void>;
+  connected: boolean;
+  isMobile: boolean;
+  login: () => void;
+  logout: () => void | Promise<void>;
+  ready: boolean;
+  walletDetail: string;
+}) {
   const walletLabel = connected && address ? compactAddress(address) : 'Wallet';
-  const walletDetail = connected ? (connector?.name ?? 'Connected wallet') : 'Not connected';
   const fallback = connected && address ? '0x' : 'W';
 
   return (
@@ -78,10 +130,26 @@ export function NavUser() {
               </div>
             ) : null}
             <DropdownMenuSeparator />
-            <DropdownMenuItem disabled={!connected} onSelect={() => disconnect()}>
-              {connected ? <IconLogout /> : <IconWallet />}
-              Disconnect
-            </DropdownMenuItem>
+            {connected && address ? (
+              <>
+                <div className="px-2 py-1.5">
+                  <FundWalletButton address={address} fullWidth size="sm" />
+                </div>
+                <DropdownMenuItem onSelect={() => connectOrCreateWallet()}>
+                  <IconRefresh />
+                  Switch wallet
+                </DropdownMenuItem>
+                <DropdownMenuItem onSelect={() => logout()}>
+                  <IconLogout />
+                  Log out
+                </DropdownMenuItem>
+              </>
+            ) : (
+              <DropdownMenuItem disabled={!ready} onSelect={() => login()}>
+                {ready ? <IconLogin /> : <IconWallet />}
+                Sign in
+              </DropdownMenuItem>
+            )}
           </DropdownMenuContent>
         </DropdownMenu>
       </SidebarMenuItem>

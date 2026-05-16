@@ -1,16 +1,11 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
-import { useEffect, useState } from 'react';
-import { useAccount, useConnect, useDisconnect } from 'wagmi';
 
+import { PrivyHeaderAccountControl } from '@/components/privy-account-control';
 import { Button } from '@/components/ui/button';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-
-function compactAddress(address: string) {
-  return `${address.slice(0, 6)}...${address.slice(-4)}`;
-}
 
 function routeTitle(pathname: string | null) {
   const path = pathname ?? '/dashboard';
@@ -32,47 +27,6 @@ function routeTitle(pathname: string | null) {
   return 'Dashboard';
 }
 
-function WalletButton() {
-  const { address, isConnected } = useAccount();
-  const { connect, connectors } = useConnect();
-  const { disconnect } = useDisconnect();
-  const [mounted, setMounted] = useState(false);
-  useEffect(() => setMounted(true), []);
-  const firstConnector = connectors[0];
-
-  if (mounted && isConnected && address) {
-    return (
-      <div className="flex items-center gap-2">
-        <span className="hidden font-mono text-xs text-muted-foreground sm:inline">
-          {compactAddress(address)}
-        </span>
-        <Button
-          className="min-h-11 sm:min-h-9"
-          onClick={() => disconnect()}
-          size="sm"
-          type="button"
-          variant="outline"
-        >
-          Disconnect
-        </Button>
-      </div>
-    );
-  }
-
-  return (
-    <Button
-      className="min-h-11 sm:min-h-9"
-      disabled={!firstConnector}
-      onClick={() => firstConnector && connect({ connector: firstConnector })}
-      size="sm"
-      type="button"
-      variant="outline"
-    >
-      Connect wallet
-    </Button>
-  );
-}
-
 export function SiteHeader() {
   const pathname = usePathname();
 
@@ -83,7 +37,7 @@ export function SiteHeader() {
         <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
         <h1 className="truncate text-base font-medium">{routeTitle(pathname)}</h1>
         <div className="ml-auto flex items-center gap-2">
-          <WalletButton />
+          <PrivyHeaderAccountControl />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a href="/skill.md" className="dark:text-foreground">
               Skill.md
