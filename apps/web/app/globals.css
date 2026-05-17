@@ -3,6 +3,28 @@
 
 @custom-variant dark (&:is(.dark *));
 
+/*
+ * Surface tier DSL (use these opacity stops; anything else is a documented exception)
+ *
+ *   bg-card/58 | bg-surface/58       flagship panel, reads as lifted
+ *   bg-card/44 | bg-surface/44       recessive card (default for most cards on the index page)
+ *   bg-background/32                 glass overlay (navbar, floating chips on hero)
+ *   bg-primary/8 | bg-accent/8       tonal accent wash
+ *
+ *   border-border/58                 default panel and card border
+ *   border-border/36                 hover/focus accent border on neutral surfaces
+ *   border-primary/28 | border-accent/28
+ *                                    tonal accent border (pairs with /8 fills)
+ *
+ *   rounded-lg                       panels, cards, section containers
+ *   rounded-md                       nested rows inside a panel (agent lanes, etc.)
+ *   rounded-full                     pills, chips, buttons, badges, network logos
+ *
+ *   shadow-none                      cards and section panels (default)
+ *   shadow-[var(--shadow-control)]   interactive controls (buttons, inputs, floating chips)
+ *   shadow-[var(--shadow-elevated)]  modals, popovers only
+ */
+
 :root {
   --background: #0f0f12;
   --foreground: #f7f2ef;
@@ -246,28 +268,79 @@ body {
   height: 100%;
 }
 
-.task-market-glass-navbar {
+.task-market-live-tetris {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
   overflow: hidden;
+  pointer-events: none;
+  opacity: 0.72;
+  mix-blend-mode: screen;
+  mask-image:
+    linear-gradient(180deg, transparent 0%, rgb(0 0 0 / 0.2) 14%, #000 42%, #000 100%),
+    linear-gradient(
+      90deg,
+      #000 0%,
+      #000 14%,
+      rgb(0 0 0 / 0.42) 38%,
+      rgb(0 0 0 / 0.38) 62%,
+      #000 86%,
+      #000 100%
+    );
+  mask-composite: intersect;
 }
 
-.task-market-glass-navbar::before {
+.task-market-live-tetris::after {
   position: absolute;
   inset: 0;
   content: '';
-  pointer-events: none;
   background:
-    linear-gradient(180deg, rgb(255 255 255 / 0.095), transparent 48%),
-    radial-gradient(
-      ellipse at 18% 0%,
-      color-mix(in oklab, var(--primary) 18%, transparent) 0%,
-      transparent 54%
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--background) 72%, transparent) 0%,
+      transparent 22%,
+      transparent 100%
     ),
     radial-gradient(
-      ellipse at 78% 0%,
-      color-mix(in oklab, var(--accent) 12%, transparent) 0%,
-      transparent 48%
+      ellipse at 50% 42%,
+      color-mix(in oklab, var(--background) 64%, transparent),
+      transparent 58%
     );
-  opacity: 0.78;
+}
+
+.task-market-live-tetris-canvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+.task-market-cta-dither {
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background-color: transparent;
+  background-image:
+    radial-gradient(circle at 1px 1px, var(--dither-color, currentColor) 0.6px, transparent 1px),
+    radial-gradient(circle at 3px 3px, var(--dither-color, currentColor) 0.6px, transparent 1px);
+  background-size:
+    4px 4px,
+    4px 4px;
+  background-position:
+    0 0,
+    0 0;
+  opacity: var(--dither-opacity, 0.32);
+  mask-image: linear-gradient(
+    135deg,
+    rgb(0 0 0 / 0.92) 0%,
+    rgb(0 0 0 / 0.5) 42%,
+    rgb(0 0 0 / 0.12) 72%,
+    transparent 100%
+  );
+}
+
+.task-market-glass-navbar {
+  overflow: hidden;
 }
 
 .task-market-glass-navbar::after {
@@ -443,228 +516,17 @@ body {
   }
 }
 
-.task-market-compute-exchange::before {
-  position: absolute;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  background:
-    linear-gradient(
-      90deg,
-      transparent 0%,
-      color-mix(in oklab, var(--primary) 14%, transparent) 46%,
-      color-mix(in oklab, var(--accent) 18%, transparent) 54%,
-      transparent 100%
-    ),
-    linear-gradient(color-mix(in oklab, var(--border) 24%, transparent) 1px, transparent 1px);
-  background-size:
-    100% 100%,
-    100% 18px;
-  opacity: 0.34;
-  transform: translateX(-68%);
-  animation: task-market-compute-scan 7.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.task-market-exchange-card {
-  position: relative;
-  overflow: hidden;
-  transform: translateZ(0);
-  animation: task-market-exchange-card 6.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-  will-change: transform;
-}
-
-.task-market-exchange-card::after {
-  position: absolute;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  background: linear-gradient(
-    112deg,
-    transparent 0%,
-    transparent 36%,
-    rgb(255 255 255 / 0.1) 50%,
-    transparent 64%,
-    transparent 100%
-  );
-  opacity: 0;
-  transform: translateX(-125%);
-  animation: task-market-exchange-card-sweep 6.8s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.task-market-exchange-card--lanes {
-  animation-delay: 0.76s;
-}
-
-.task-market-exchange-card--lanes::after {
-  animation-delay: 0.76s;
-}
-
-.task-market-exchange-card--receipt {
-  animation-delay: 1.52s;
-}
-
-.task-market-exchange-card--receipt::after {
-  animation-delay: 1.52s;
-}
-
-.task-market-agent-lane {
-  transform: translateZ(0);
-  animation: task-market-agent-lane 4.6s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-  overflow: hidden;
-  position: relative;
-  will-change: opacity, transform;
-}
-
-.task-market-agent-lane--bids {
-  border-color: color-mix(in oklab, var(--primary) 54%, var(--border));
-  background:
-    linear-gradient(90deg, color-mix(in oklab, var(--primary) 16%, transparent), transparent 62%),
-    color-mix(in oklab, var(--surface) 82%, transparent);
-  animation:
-    task-market-agent-lane 4.6s cubic-bezier(0.16, 1, 0.3, 1) infinite,
-    task-market-bid-lane-pulse 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.task-market-agent-lane--bids::after {
-  position: absolute;
-  inset: 0;
-  content: '';
-  pointer-events: none;
-  background: linear-gradient(
-    105deg,
-    transparent 0%,
-    transparent 34%,
-    color-mix(in oklab, var(--primary) 28%, transparent) 50%,
-    transparent 66%,
-    transparent 100%
-  );
-  opacity: 0;
-  transform: translateX(-120%);
-  animation: task-market-bid-lane-sweep 2.4s cubic-bezier(0.16, 1, 0.3, 1) infinite;
-}
-
-.task-market-agent-lane:nth-child(2) {
-  animation-delay: 0.32s;
-}
-
-.task-market-agent-lane:nth-child(3) {
-  animation-delay: 0.64s;
-}
-
-.task-market-agent-lane:nth-child(4) {
-  animation-delay: 0.96s;
-}
-
-@keyframes task-market-compute-scan {
-  0%,
-  62%,
-  100% {
-    opacity: 0;
-    transform: translateX(-68%);
-  }
-
-  18%,
-  38% {
-    opacity: 0.34;
-  }
-
-  52% {
-    opacity: 0;
-    transform: translateX(68%);
-  }
-}
-
-@keyframes task-market-exchange-card {
-  0%,
-  100% {
-    transform: translateY(0) translateZ(0);
-  }
-
-  46% {
-    transform: translateY(-4px) translateZ(0);
-  }
-}
-
-@keyframes task-market-exchange-card-sweep {
-  0%,
-  34%,
-  100% {
-    opacity: 0;
-    transform: translateX(-125%);
-  }
-
-  48% {
-    opacity: 0.42;
-  }
-
-  66% {
-    opacity: 0;
-    transform: translateX(125%);
-  }
-}
-
-@keyframes task-market-agent-lane {
-  0%,
-  100% {
-    opacity: 0.72;
-    transform: translateX(0) translateZ(0);
-  }
-
-  34%,
-  50% {
-    opacity: 1;
-    transform: translateX(4px) translateZ(0);
-  }
-}
-
-@keyframes task-market-bid-lane-pulse {
-  0%,
-  100% {
-    box-shadow: 0 0 0 0 color-mix(in oklab, var(--primary) 0%, transparent);
-  }
-
-  42% {
-    box-shadow: 0 0 26px -16px color-mix(in oklab, var(--primary) 72%, transparent);
-  }
-}
-
-@keyframes task-market-bid-lane-sweep {
-  0%,
-  36%,
-  100% {
-    opacity: 0;
-    transform: translateX(-120%);
-  }
-
-  52% {
-    opacity: 0.82;
-  }
-
-  70% {
-    opacity: 0;
-    transform: translateX(120%);
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .task-market-flow::before,
   .task-market-flow-card,
   .task-market-flow-card::after,
   .task-market-flow-connector,
-  .task-market-flow-agent-row,
-  .task-market-compute-exchange::before,
-  .task-market-exchange-card,
-  .task-market-exchange-card::after,
-  .task-market-agent-lane,
-  .task-market-agent-lane--bids,
-  .task-market-agent-lane--bids::after {
+  .task-market-flow-agent-row {
     animation: none;
   }
 
   .task-market-flow::before,
-  .task-market-flow-card::after,
-  .task-market-compute-exchange::before,
-  .task-market-exchange-card::after {
+  .task-market-flow-card::after {
     opacity: 0;
   }
 }

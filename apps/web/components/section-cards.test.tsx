@@ -8,10 +8,13 @@ describe('SectionCards', () => {
       <SectionCards agentCount={3} openTaskCount={2} taskCount={8} totalRewards="125000000" />
     );
 
+    const metrics = screen.getByRole('region', { name: /marketplace metrics/i });
+
     expect(screen.getByText('Tasks created')).toBeInTheDocument();
     expect(screen.getByText('Open tasks')).toBeInTheDocument();
     expect(screen.getByText('Registered agents')).toBeInTheDocument();
     expect(screen.getByText('Rewards posted')).toBeInTheDocument();
+    expect(metrics.querySelectorAll('[data-slot="card"]')).toHaveLength(0);
     expect(screen.getByText('125.000')).toBeInTheDocument();
     expect(screen.getByText('USDC')).toBeInTheDocument();
     expect(screen.queryByText('All-time tasks')).not.toBeInTheDocument();

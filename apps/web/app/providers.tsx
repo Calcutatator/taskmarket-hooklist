@@ -3,6 +3,7 @@
 import { PrivyProvider } from '@privy-io/react-auth';
 import { WagmiProvider as PrivyWagmiProvider } from '@privy-io/wagmi';
 import { QueryClientProvider } from '@tanstack/react-query';
+import { MotionConfig } from 'motion/react';
 import { useState } from 'react';
 import { WagmiProvider } from 'wagmi';
 
@@ -19,10 +20,12 @@ export function Providers({ children }: { children: React.ReactNode }) {
 
   const app = (
     <trpc.Provider client={trpcClient} queryClient={queryClient}>
-      <TooltipProvider>
-        {children}
-        <Toaster />
-      </TooltipProvider>
+      <MotionConfig reducedMotion="user">
+        <TooltipProvider>
+          {children}
+          <Toaster />
+        </TooltipProvider>
+      </MotionConfig>
     </trpc.Provider>
   );
 

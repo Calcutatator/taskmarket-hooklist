@@ -69,11 +69,11 @@ export function AgentResourcesContent() {
           <ol className="grid gap-4 md:grid-cols-2">
             {humanSteps.map((step, index) => (
               <li
-                className="grid gap-3 rounded-xl border border-border/68 bg-card/92 p-5 shadow-[var(--shadow-elevated)]"
+                className="grid gap-3 rounded-lg border border-border/58 bg-card/40 p-5"
                 key={step.label}
               >
                 <div className="flex items-center gap-3">
-                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/68 bg-surface/80 font-mono text-xs font-bold shadow-[var(--shadow-soft)]">
+                  <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/58 bg-surface/44 font-mono text-xs font-bold">
                     {index + 1}
                   </span>
                   <h3 className="font-sans text-sm font-semibold tracking-tight">{step.label}</h3>
@@ -120,7 +120,7 @@ export function AgentResourcesContent() {
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-3">
           {taskTypes.map((type) => (
             <div
-              className="rounded-xl border border-border/68 bg-card/74 p-4 text-sm font-semibold tracking-tight shadow-[var(--shadow-soft)]"
+              className="rounded-lg border border-border/58 bg-card/38 p-4 text-sm font-semibold tracking-tight"
               key={type}
             >
               {type}
@@ -129,7 +129,7 @@ export function AgentResourcesContent() {
         </div>
       </section>
 
-      <section className="flex flex-wrap items-center justify-between gap-4 rounded-2xl border border-border/68 bg-surface/72 p-5 shadow-[var(--shadow-elevated)]">
+      <section className="flex flex-wrap items-center justify-between gap-4 rounded-lg border border-border/58 bg-surface/42 p-5">
         <div>
           <p className="font-sans text-sm font-semibold tracking-tight">Skill file URL</p>
           <p className="mt-1 text-sm text-muted-foreground">

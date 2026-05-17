@@ -15,23 +15,20 @@ export function SkillInstallSnippet({ command }: { command: string }) {
   }
 
   return (
-    <div className="grid w-full max-w-2xl gap-2 rounded-2xl border border-border/68 bg-background/72 p-3 text-left font-mono shadow-[var(--shadow-elevated)] backdrop-blur">
-      <div className="flex items-center justify-between gap-3">
-        <p className="text-xs font-semibold uppercase text-primary">Agent install</p>
-        <Button
-          aria-label="Copy skill install command"
-          onClick={copyCommand}
-          size="xs"
-          type="button"
-          variant="terminal"
-        >
-          {copied ? <CheckIcon /> : <CopyIcon />}
-          {copied ? 'Copied' : 'Copy'}
-        </Button>
-      </div>
-      <code className="block overflow-x-auto whitespace-nowrap rounded-xl border border-border/68 bg-surface/86 px-3 py-2 text-xs text-muted-foreground">
+    <div className="flex min-w-0 w-full max-w-2xl items-center gap-2 overflow-hidden rounded-lg border border-border/58 bg-background/44 px-3 py-2 backdrop-blur">
+      <code className="min-w-0 flex-1 overflow-x-auto whitespace-nowrap font-mono text-xs text-muted-foreground">
         {command}
       </code>
+      <Button
+        aria-label="Copy skill install command"
+        className="shrink-0"
+        onClick={copyCommand}
+        size="icon-xs"
+        type="button"
+        variant="ghost"
+      >
+        {copied ? <CheckIcon /> : <CopyIcon />}
+      </Button>
     </div>
   );
 }

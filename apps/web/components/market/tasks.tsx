@@ -271,7 +271,7 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
 
   return (
-    <li className="grid gap-3 rounded-xl border border-border/68 bg-background/54 p-4 shadow-[var(--shadow-soft)]">
+    <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
       <div className="grid gap-2">
         <a
           className="text-base font-semibold leading-6 text-foreground hover:text-primary"
@@ -392,7 +392,7 @@ export function TaskTable({
   }
 
   return (
-    <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
       <ul aria-label="Task cards" className="grid gap-3 p-3 md:hidden" role="list">
         {tasks.map((task) => (
           <TaskMobileCard detailBasePath={detailBasePath} key={task.id} task={task} />
@@ -446,7 +446,7 @@ export function TaskTable({
           </TableBody>
         </Table>
       </div>
-    </Card>
+    </div>
   );
 }
 
@@ -604,14 +604,16 @@ function TaskFilterControls({
 export function TaskFilterRail(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
   return (
     <aside aria-label="Task filters" className="hidden gap-4 lg:sticky lg:top-20 lg:grid">
-      <Card className="gap-4 border-border/68 bg-card/68 py-4 shadow-[var(--shadow-soft)] lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
-        <CardHeader className="px-3">
-          <CardTitle className="text-sm">Task filters</CardTitle>
-        </CardHeader>
-        <CardContent className="px-3">
+      <div className="grid gap-4 border-r border-border/58 pr-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
+        <div className="border-b border-border/58 pb-3">
+          <h2 className="font-sans text-sm font-semibold tracking-tight text-foreground">
+            Task filters
+          </h2>
+        </div>
+        <div>
           <TaskFilterControls {...props} idPrefix="rail" />
-        </CardContent>
-      </Card>
+        </div>
+      </div>
     </aside>
   );
 }
@@ -775,7 +777,7 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
 function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId: string }) {
   const label = artifact.role !== 'attachment' ? artifact.role : null;
   return (
-    <div className="min-w-0 rounded-xl border border-border/60 bg-muted/34 px-3 py-2 text-sm">
+    <div className="min-w-0 rounded-lg border border-border/52 bg-muted/24 px-3 py-2 text-sm">
       <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="flex min-w-0 flex-wrap items-center gap-2">
           {label ? <Badge variant="outline">{label}</Badge> : null}
@@ -830,7 +832,7 @@ function SubmissionCard({
     : null;
 
   return (
-    <div className="grid min-w-0 gap-3 rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]">
+    <div className="grid min-w-0 gap-3 rounded-lg border border-border/52 bg-background/30 p-3">
       <div className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
         <div className="grid min-w-0 gap-1">
           <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
@@ -851,7 +853,7 @@ function SubmissionCard({
           ))}
         </div>
       ) : (
-        <p className="rounded-xl border border-dashed border-border/60 bg-background/35 p-3 text-sm text-muted-foreground">
+        <p className="rounded-lg border border-dashed border-border/52 bg-background/30 p-3 text-sm text-muted-foreground">
           No artifacts were attached to this submission.
         </p>
       )}
@@ -889,8 +891,8 @@ function ModeDataPanel({
     : 'Work, bids, proofs, and reviews tied to this task.';
 
   return (
-    <Card className="border-border/68 bg-card/90">
-      <CardHeader>
+    <section className="grid gap-4 border-t border-border/58 pt-5">
+      <div>
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div className="grid gap-1">
             <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
@@ -900,8 +902,8 @@ function ModeDataPanel({
           </div>
           <Badge variant="terminal">{activityLabel(task, modeData)}</Badge>
         </div>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+      </div>
+      <div className="grid gap-3">
         {submissions.map((submission) => (
           <SubmissionCard
             key={submission.id}
@@ -912,10 +914,7 @@ function ModeDataPanel({
         ))}
 
         {pitches.map((pitch) => (
-          <div
-            className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
-            key={pitch.id}
-          >
+          <div className="rounded-lg border border-border/52 bg-background/30 p-3" key={pitch.id}>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">{pitch.status}</Badge>
               <span className="font-mono text-sm">{compactAddress(pitch.workerAddress)}</span>
@@ -925,10 +924,7 @@ function ModeDataPanel({
         ))}
 
         {proofs.map((proof) => (
-          <div
-            className="rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
-            key={proof.id}
-          >
+          <div className="rounded-lg border border-border/52 bg-background/30 p-3" key={proof.id}>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">{proof.status}</Badge>
               <Badge variant="terminal">{proof.proofType}</Badge>
@@ -944,7 +940,7 @@ function ModeDataPanel({
 
         {bids.map((bid) => (
           <div
-            className="flex flex-wrap items-center justify-between gap-3 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]"
+            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm"
             key={bid.id}
           >
             <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
@@ -953,7 +949,7 @@ function ModeDataPanel({
         ))}
 
         {claim ? (
-          <div className="grid gap-2 rounded-xl border border-border/68 bg-background/52 p-3 font-mono text-sm shadow-[var(--shadow-soft)]">
+          <div className="grid gap-2 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm">
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">Claim worker</span>
               <span>{compactAddress(claim.workerAddress)}</span>
@@ -970,15 +966,15 @@ function ModeDataPanel({
         ) : null}
 
         {!hasActivity ? (
-          <div className="rounded-xl border border-dashed border-border/68 bg-background/35 p-4">
+          <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
             <p className="text-sm font-semibold tracking-tight text-foreground">No activity yet</p>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">
               {activityEmptyCopy(task)}
             </p>
           </div>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -996,7 +992,7 @@ function DetailMetric({
   return (
     <article
       aria-label={`${label} summary`}
-      className="min-w-0 rounded-2xl border border-border/60 bg-background/42 p-5 shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.06)]"
+      className="min-w-0 border-t border-border/52 p-5 first:border-t-0 md:border-l md:border-t-0 md:first:border-l-0"
     >
       <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
       <div className="mt-2 truncate font-mono text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
@@ -1083,22 +1079,19 @@ function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskRespon
   const rows = requirementRows(task);
 
   return (
-    <Card className="border-border/68 bg-card/90">
-      <CardHeader>
-        <CardTitle>Work requirements</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <section className="grid gap-4 border-t border-border/58 pt-5">
+      <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+        Work requirements
+      </h2>
+      <div className="divide-y divide-border/52 border-y border-border/52">
         {rows.map((row) => (
-          <div
-            className="grid gap-1 rounded-xl border border-border/62 bg-background/42 p-3"
-            key={row.label}
-          >
+          <div className="grid gap-1 py-3" key={row.label}>
             <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{row.label}</p>
             <div className="text-sm leading-6 text-foreground">{row.value}</div>
           </div>
         ))}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }
 
@@ -1112,11 +1105,11 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
   );
 
   return (
-    <Card className="w-full gap-5 border-border/68 bg-card/90">
-      <CardHeader>
-        <CardTitle>Task reference</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-5">
+    <div className="w-full border-l border-border/58 pl-5">
+      <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+        Task reference
+      </h2>
+      <div className="mt-5 grid gap-5">
         <SummaryGroup title="Requester">
           <SummaryRow
             label="Wallet"
@@ -1192,8 +1185,8 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
             <SummaryRow label="Rating" value={`${task.rating}/100`} />
           </SummaryGroup>
         ) : null}
-      </CardContent>
-    </Card>
+      </div>
+    </div>
   );
 }
 
@@ -1238,7 +1231,10 @@ export function TaskDetailPanel({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
-        <section aria-label="Task metrics" className="grid gap-3 md:grid-cols-2">
+        <section
+          aria-label="Task metrics"
+          className="grid overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-2"
+        >
           <DetailMetric
             footerLabel="Due"
             footerValue={taskDeadlineLabel(task)}
@@ -1252,8 +1248,8 @@ export function TaskDetailPanel({
             value={activityLabel(task, modeData)}
           />
         </section>
-        <Card className="w-full border-border/68 bg-card/90">
-          <CardHeader>
+        <section className="grid gap-5 border-t border-border/58 pt-5">
+          <div>
             <div className="flex flex-wrap items-start justify-between gap-4">
               <div className="flex flex-wrap gap-2">
                 <Badge>{task.mode}</Badge>
@@ -1269,8 +1265,8 @@ export function TaskDetailPanel({
             <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight text-foreground">
               {taskTitle(task)}
             </h1>
-          </CardHeader>
-          <CardContent className="grid gap-5">
+          </div>
+          <div className="grid gap-5">
             {descriptionBody ? (
               <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
                 {descriptionBody}
@@ -1285,8 +1281,8 @@ export function TaskDetailPanel({
                 ))}
               </div>
             ) : null}
-          </CardContent>
-        </Card>
+          </div>
+        </section>
         {reviewAction ? (
           <ModeDataPanel modeData={modeData} reviewAction={reviewAction} task={task} />
         ) : null}

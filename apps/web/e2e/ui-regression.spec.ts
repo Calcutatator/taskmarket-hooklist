@@ -123,6 +123,51 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });
 
+test('collapses the desktop sidebar to an icon rail', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only sidebar rail behavior.');
+
+  await page.goto('/dashboard/tasks');
+
+  const sidebar = page.locator('[data-slot="sidebar"]').first();
+  const sidebarContainer = page.locator('[data-slot="sidebar-container"]').first();
+  const sidebarTrigger = page.getByRole('button', { name: /Toggle Sidebar/i });
+
+  await expect(sidebar).toHaveAttribute('data-state', 'expanded');
+  await expect(page.getByRole('link', { name: /Taskmarket/i })).toBeVisible();
+  await sidebarTrigger.click();
+
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
+  const brandLabelBox = await page.getByText('Taskmarket', { exact: true }).boundingBox();
+  expect(brandLabelBox?.width ?? 0).toBeLessThanOrEqual(1);
+  expect(brandLabelBox?.height ?? 0).toBeLessThanOrEqual(1);
+  await expect(page.getByRole('link', { name: /^Task modes$/i })).toBeVisible();
+
+  await expect
+    .poll(async () => {
+      const box = await sidebarContainer.boundingBox();
+      return box?.width ?? 0;
+    })
+    .toBeLessThanOrEqual(72);
+  const railBox = await sidebarContainer.boundingBox();
+  expect(railBox?.x ?? -1).toBeGreaterThanOrEqual(-1);
+  expect(railBox?.width ?? 0).toBeGreaterThanOrEqual(40);
+  expect(railBox?.width ?? 0).toBeLessThanOrEqual(72);
+
+  await page.getByRole('link', { name: /^Task modes$/i }).click();
+  await expect(page).toHaveURL(/\/dashboard\/task-types$/);
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+
+  await page.reload();
+  await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
 test('prioritizes mobile task results and moves filters into a drawer', async ({
   page,
 }, testInfo) => {

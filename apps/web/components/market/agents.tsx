@@ -123,7 +123,7 @@ export function AgentTable({
   }
 
   return (
-    <Card className="min-w-0 max-w-full overflow-hidden border-border/68 bg-card/92">
+    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
       <Table>
         <TableHeader>
           <TableRow>
@@ -173,7 +173,7 @@ export function AgentTable({
           })}
         </TableBody>
       </Table>
-    </Card>
+    </div>
   );
 }
 
@@ -213,11 +213,11 @@ export function AgentLeaderboardPanel({
 
   return (
     <div className="grid gap-5">
-      <Card>
-        <CardHeader>
-          <CardTitle>{filterTitle}</CardTitle>
-        </CardHeader>
-        <CardContent>
+      <section className="grid gap-4 border-y border-border/58 py-5">
+        <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+          {filterTitle}
+        </h2>
+        <div>
           <form action={normalizeBasePath(basePath)} className="grid gap-4 lg:grid-cols-6">
             <input name="sort" type="hidden" value={sort} />
             <div className="grid gap-2 lg:col-span-2">
@@ -301,8 +301,8 @@ export function AgentLeaderboardPanel({
               ) : null}
             </div>
           </form>
-        </CardContent>
-      </Card>
+        </div>
+      </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
@@ -504,7 +504,7 @@ export function AgentProfilePanel({
             </div>
           </CardHeader>
           <CardContent>
-            <pre className="max-h-[28rem] overflow-auto rounded-xl border border-border/68 bg-background/62 p-4 text-xs leading-5 text-muted-foreground shadow-[var(--shadow-soft)]">
+            <pre className="max-h-[28rem] overflow-auto rounded-lg border border-border/58 bg-background/52 p-4 text-xs leading-5 text-muted-foreground">
               <code>{identityJson}</code>
             </pre>
           </CardContent>
@@ -532,7 +532,7 @@ export function AgentProfilePanel({
             <div className="grid gap-3">
               {agent.recentRatings.map((rating) => (
                 <article
-                  className="grid gap-3 rounded-xl border border-border/68 bg-background/52 p-3 shadow-[var(--shadow-soft)]"
+                  className="grid gap-3 rounded-lg border border-border/58 bg-background/36 p-3"
                   key={`${rating.taskId}-${rating.createdAt}`}
                 >
                   <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
@@ -605,7 +605,7 @@ function AgentMark({ address, label }: { address: string; label: string }) {
   return (
     <div
       aria-label={`Avatar for ${label}`}
-      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/68 font-mono text-2xl font-semibold text-foreground shadow-[var(--shadow-elevated)]"
+      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/58 font-mono text-2xl font-semibold text-foreground shadow-[var(--shadow-control)]"
       role="img"
       style={{
         background: `linear-gradient(135deg, hsl(${hue % 360} 28% 24%), hsl(${(hue + 48) % 360} 42% 38%))`,
@@ -632,7 +632,7 @@ function IdentityRow({
   valueToCopy?: string;
 }) {
   return (
-    <div className="grid gap-2 rounded-xl border border-border/68 bg-background/40 p-3 shadow-[var(--shadow-soft)] sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center">
+    <div className="grid gap-2 rounded-lg border border-border/52 bg-background/30 p-3 sm:grid-cols-[7rem_minmax(0,1fr)_auto] sm:items-center">
       <div className="flex items-center gap-2 font-mono text-xs font-semibold uppercase text-muted-foreground">
         {icon}
         {label}
@@ -648,7 +648,7 @@ function IdentityRow({
 
 function ProfileStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
   return (
-    <div className="rounded-xl border border-border/68 bg-card/92 p-4 shadow-[var(--shadow-elevated)]">
+    <div className="rounded-lg border border-border/58 bg-card/42 p-4">
       <div className="flex items-center justify-between gap-4">
         <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">{label}</p>
         <span className="text-primary [&>svg]:size-4">{icon}</span>
@@ -660,7 +660,7 @@ function ProfileStat({ icon, label, value }: { icon: ReactNode; label: string; v
 
 function CommandBlock({ command }: { command: string }) {
   return (
-    <div className="grid gap-2 rounded-xl border border-border/68 bg-background/62 p-3 shadow-[var(--shadow-soft)]">
+    <div className="grid gap-2 rounded-lg border border-border/58 bg-background/42 p-3">
       <div className="flex items-center justify-between gap-3">
         <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">Command</p>
         <CopyButton label="Copy CLI command" text={command} />

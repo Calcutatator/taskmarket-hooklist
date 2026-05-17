@@ -11,7 +11,6 @@ import {
   PAID_ACTION_COST_BASE_UNITS,
   usePaidActionFundingPrompt,
 } from '@/components/market/fund-wallet-button';
-import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { formatUsdcUnits } from '@/lib/format';
 
 type TaskActionPanelProps = {
@@ -104,11 +103,11 @@ export function TaskActionsPanel({
   }
 
   return (
-    <Card className="min-w-0 border-border/68 bg-card/90">
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-      </CardHeader>
-      <CardContent className="grid gap-3">
+    <section className="grid min-w-0 gap-4 border-t border-border/58 pt-5">
+      <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+        {title}
+      </h2>
+      <div className="grid gap-3">
         {actionFundingPrompt ? (
           <FundingGuard
             address={address}
@@ -135,7 +134,7 @@ export function TaskActionsPanel({
 
             return (
               <article
-                className="grid min-w-0 gap-2 rounded-xl border border-border/58 bg-surface/72 p-3"
+                className="grid min-w-0 gap-2 rounded-lg border border-border/52 bg-surface/40 p-3"
                 key={`${action.role}-${action.action}-${action.command}`}
               >
                 <div className="min-w-0">
@@ -166,12 +165,12 @@ export function TaskActionsPanel({
             );
           })
         ) : (
-          <div className="rounded-xl border border-dashed border-border/68 bg-background/35 p-4">
+          <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
             <p className="text-sm font-semibold tracking-tight text-foreground">{emptyTitle}</p>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">{emptyDescription}</p>
           </div>
         )}
-      </CardContent>
-    </Card>
+      </div>
+    </section>
   );
 }

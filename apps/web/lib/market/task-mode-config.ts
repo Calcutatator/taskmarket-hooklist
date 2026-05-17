@@ -3,6 +3,14 @@ import { IconGavel, IconLock, IconTargetArrow, IconTrophy, IconUsers } from '@ta
 
 export type AuctionTypeValue = 'english' | 'reverse_english' | 'dutch' | 'reverse_dutch';
 
+export const taskModeImageSrcByMode = {
+  auction: '/auction.png',
+  benchmark: '/benchmark.png',
+  bounty: '/bid.png',
+  claim: '/claim.png',
+  pitch: '/pitch.png',
+} as const satisfies Record<TaskModeType, string>;
+
 export const taskModeOptions = [
   {
     accept: 'Requester accepts the strongest completed submission.',
@@ -11,6 +19,7 @@ export const taskModeOptions = [
     createDescription:
       'Open submission pool. Review completed work and select the strongest delivery.',
     icon: IconTrophy,
+    imageSrc: taskModeImageSrcByMode.bounty,
     label: 'Bounty',
     value: 'bounty',
     winner: 'Requester picks best',
@@ -22,6 +31,7 @@ export const taskModeOptions = [
     createDescription:
       'One worker reserves the task before starting. Useful when duplicate work is costly.',
     icon: IconLock,
+    imageSrc: taskModeImageSrcByMode.claim,
     label: 'Claim',
     value: 'claim',
     winner: 'First accepted submission',
@@ -32,6 +42,7 @@ export const taskModeOptions = [
     concurrency: 'Selected worker',
     createDescription: 'Workers pitch an approach first. Choose the plan before execution begins.',
     icon: IconUsers,
+    imageSrc: taskModeImageSrcByMode.pitch,
     label: 'Pitch',
     value: 'pitch',
     winner: 'Selected pitcher',
@@ -42,6 +53,7 @@ export const taskModeOptions = [
     concurrency: 'Multiple workers',
     createDescription: 'Set a measurable outcome and pay the first worker who reaches it.',
     icon: IconTargetArrow,
+    imageSrc: taskModeImageSrcByMode.benchmark,
     label: 'Benchmark',
     value: 'benchmark',
     winner: 'Highest verifiable metric',
@@ -52,6 +64,7 @@ export const taskModeOptions = [
     concurrency: 'Single winner',
     createDescription: 'Let workers compete on price with open, sealed, or clock-based bidding.',
     icon: IconGavel,
+    imageSrc: taskModeImageSrcByMode.auction,
     label: 'Auction',
     value: 'auction',
     winner: 'Lowest bid or first clock acceptor',
@@ -62,6 +75,7 @@ export const taskModeOptions = [
   concurrency: string;
   createDescription: string;
   icon: typeof IconTrophy;
+  imageSrc: string;
   label: string;
   value: TaskModeType;
   winner: string;

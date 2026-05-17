@@ -155,6 +155,7 @@ describe('Task marketplace components', () => {
     const { rerender } = render(<TaskTable tasks={[task]} />);
     const taskLinks = screen.getAllByRole('link', { name: /summarize protocol feedback/i });
     expect(screen.getByRole('table').parentElement).toHaveClass('overflow-x-auto');
+    expect(screen.getByRole('table').closest('[data-slot="card"]')).toBeNull();
     expect(taskLinks.at(0)).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
     expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
@@ -268,9 +269,9 @@ describe('Task marketplace components', () => {
     expect(within(activitySummary).getByText(/^bids$/i)).toBeInTheDocument();
     expect(within(activitySummary).getByText('2 bids')).toBeInTheDocument();
     expect(metrics.closest('[data-slot="card"]')).toBeNull();
-    const referenceCard = screen.getByText(/task reference/i).closest('[data-slot="card"]');
-    expect(referenceCard).not.toBeNull();
-    const reference = within(referenceCard as HTMLElement);
+    const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    expect(screen.getByText(/task reference/i).closest('[data-slot="card"]')).toBeNull();
+    const reference = within(sidebar);
     expect(reference.getByText(/^requester$/i)).toBeInTheDocument();
     expect(reference.getByText(/settlement/i)).toBeInTheDocument();
     expect(reference.getByText(/auction pricing/i)).toBeInTheDocument();

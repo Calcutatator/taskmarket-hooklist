@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import { cookies } from 'next/headers';
 
 import { AppSidebar } from '@/components/app-sidebar';
 import { SiteHeader } from '@/components/site-header';
@@ -7,13 +8,17 @@ import { buildNoIndexMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildNoIndexMetadata();
 
-export default function DashboardLayout({
+export default async function DashboardLayout({
   children,
 }: Readonly<{
   children: React.ReactNode;
 }>) {
+  const cookieStore = await cookies();
+  const defaultSidebarOpen = cookieStore.get('sidebar_state')?.value !== 'false';
+
   return (
     <SidebarProvider
+      defaultOpen={defaultSidebarOpen}
       style={
         {
           '--sidebar-width': 'calc(var(--spacing) * 72)',

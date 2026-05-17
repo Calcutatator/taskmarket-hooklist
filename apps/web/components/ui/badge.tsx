@@ -10,21 +10,18 @@ const badgeVariants = cva(
     variants: {
       variant: {
         default:
-          'border-primary/76 bg-primary text-primary-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.14)] [a&]:hover:bg-primary/92',
+          'border-primary/42 bg-primary/10 text-primary shadow-none [a&]:hover:bg-primary/14',
         secondary:
-          'border-border/78 bg-secondary/92 text-secondary-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.1)] [a&]:hover:bg-secondary',
+          'border-border/64 bg-secondary/54 text-secondary-foreground shadow-none [a&]:hover:bg-secondary/70',
         destructive:
-          'border-destructive/76 bg-destructive text-destructive-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.12)] focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/92',
+          'border-destructive/46 bg-destructive/12 text-destructive shadow-none focus-visible:ring-destructive/20 dark:focus-visible:ring-destructive/40 [a&]:hover:bg-destructive/16',
         outline:
-          'border-border/78 bg-background/46 text-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.08)] [a&]:hover:bg-accent/14 [a&]:hover:text-foreground',
+          'border-border/64 bg-background/34 text-foreground shadow-none [a&]:hover:bg-accent/10 [a&]:hover:text-foreground',
         ghost: '[a&]:hover:bg-accent/15 [a&]:hover:text-foreground',
         link: 'text-primary underline-offset-4 [a&]:hover:underline',
-        terminal:
-          'border-border/78 bg-surface/90 text-foreground/84 shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.09)]',
-        success:
-          'border-success/72 bg-success text-accent-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.13)]',
-        warning:
-          'border-warning/72 bg-warning text-background shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.13)]',
+        terminal: 'border-border/64 bg-surface/52 text-foreground/84 shadow-none',
+        success: 'border-success/46 bg-success/12 text-success shadow-none',
+        warning: 'border-warning/46 bg-warning/12 text-warning shadow-none',
       },
     },
     defaultVariants: {

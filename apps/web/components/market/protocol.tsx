@@ -114,7 +114,7 @@ function SectionHeading({ kicker, title }: { kicker: string; title: string }) {
 
 function NumberMarker({ value }: { value: number }) {
   return (
-    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/68 bg-surface/80 font-mono text-xs font-bold shadow-[var(--shadow-soft)]">
+    <span className="flex size-7 shrink-0 items-center justify-center rounded-full border border-border/58 bg-surface/44 font-mono text-xs font-bold">
       {value}
     </span>
   );
@@ -142,7 +142,7 @@ function InterfaceRow({ body, label }: { body: string; label: string }) {
 
 function FlowStep({ body, index, label }: { body: string; index: number; label: string }) {
   return (
-    <li className="grid gap-3 rounded-xl border border-border/68 bg-card/92 p-5 shadow-[var(--shadow-elevated)] md:grid-cols-[auto_1fr]">
+    <li className="grid gap-3 rounded-lg border border-border/58 bg-card/40 p-5 md:grid-cols-[auto_1fr]">
       <NumberMarker value={index} />
       <div className="grid gap-2">
         <h3 className="font-sans text-sm font-semibold tracking-tight">{label}</h3>
@@ -154,7 +154,7 @@ function FlowStep({ body, index, label }: { body: string; index: number; label: 
 
 function SelectorPill({ selector }: { selector: string }) {
   return (
-    <code className="rounded-full border border-border/68 bg-surface/80 px-3 py-2 font-mono text-xs text-foreground shadow-[var(--shadow-soft)]">
+    <code className="rounded-full border border-border/58 bg-surface/44 px-3 py-2 font-mono text-xs text-foreground">
       {selector}
     </code>
   );

@@ -107,7 +107,7 @@ const data = {
 
 export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
   return (
-    <Sidebar collapsible="offcanvas" {...props}>
+    <Sidebar collapsible="icon" {...props}>
       <SidebarHeader>
         <SidebarMenu>
           <SidebarMenuItem>
@@ -121,7 +121,9 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                   src={taskmarketIconSrc}
                   width="24"
                 />
-                <span className="text-base font-semibold">Taskmarket</span>
+                <span className="text-base font-semibold group-data-[collapsible=icon]:sr-only">
+                  Taskmarket
+                </span>
               </a>
             </SidebarMenuButton>
           </SidebarMenuItem>
@@ -138,6 +140,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
             <SidebarMenuButton
               asChild
               className="text-sidebar-foreground/72 hover:text-sidebar-foreground"
+              tooltip="daydreams.systems"
             >
               <a href="https://daydreams.systems" rel="noreferrer" target="_blank">
                 <IconExternalLink className="size-4" />

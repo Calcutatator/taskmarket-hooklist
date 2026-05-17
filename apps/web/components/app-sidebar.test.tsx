@@ -11,11 +11,21 @@ vi.mock('@/components/nav-user', () => ({
 }));
 
 vi.mock('@/components/ui/sidebar', () => ({
-  Sidebar: ({ children }: { children: React.ReactNode }) => <aside>{children}</aside>,
+  Sidebar: ({ children, collapsible }: { children: React.ReactNode; collapsible?: string }) => (
+    <aside data-collapsible={collapsible}>{children}</aside>
+  ),
   SidebarContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarFooter: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
-  SidebarGroup: ({ children }: { children: React.ReactNode }) => <nav>{children}</nav>,
-  SidebarGroupContent: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
+  SidebarGroup: ({ children, className }: { children: React.ReactNode; className?: string }) => (
+    <nav className={className}>{children}</nav>
+  ),
+  SidebarGroupContent: ({
+    children,
+    className,
+  }: {
+    children: React.ReactNode;
+    className?: string;
+  }) => <div className={className}>{children}</div>,
   SidebarGroupLabel: ({ children }: { children: React.ReactNode }) => <p>{children}</p>,
   SidebarHeader: ({ children }: { children: React.ReactNode }) => <div>{children}</div>,
   SidebarMenu: ({ children }: { children: React.ReactNode }) => <ul>{children}</ul>,
@@ -30,12 +40,19 @@ vi.mock('@/components/ui/sidebar', () => ({
 }));
 
 describe('AppSidebar', () => {
+  it('uses icon collapse so the desktop sidebar becomes an icon rail', () => {
+    render(<AppSidebar />);
+
+    expect(screen.getByRole('complementary')).toHaveAttribute('data-collapsible', 'icon');
+  });
+
   it('keeps docs and protocol in resources without duplicate secondary links', () => {
     render(<AppSidebar />);
 
     const resources = screen.getByText('Resources').closest('nav');
 
     expect(resources).not.toBeNull();
+    expect(resources).not.toHaveClass('group-data-[collapsible=icon]:hidden');
     expect(within(resources!).getByRole('link', { name: /task modes/i })).toHaveAttribute(
       'href',
       '/dashboard/task-types'

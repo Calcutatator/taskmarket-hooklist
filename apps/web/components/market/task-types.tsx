@@ -27,6 +27,13 @@ export function TaskTypesContent() {
         {taskModeOptions.map((mode) => (
           <Card key={mode.label}>
             <CardHeader>
+              <div
+                aria-hidden="true"
+                className="relative mb-1 aspect-[4/3] overflow-hidden rounded-md border border-border/58 bg-surface/50"
+                data-task-mode-image={mode.value}
+              >
+                <img alt="" className="size-full object-cover" loading="lazy" src={mode.imageSrc} />
+              </div>
               <mode.icon className="size-5 text-primary" />
               <h2 className="font-display font-semibold leading-none tracking-tight">
                 {mode.label}
@@ -63,7 +70,7 @@ export function TaskTypesContent() {
         <div className="grid gap-4 lg:grid-cols-4">
           {auctionTypeOptions.map((auctionType) => (
             <div
-              className="rounded-xl border border-border/68 bg-card/74 p-5 shadow-[var(--shadow-soft)]"
+              className="rounded-lg border border-border/58 bg-card/38 p-5"
               key={auctionType.label}
             >
               <p className="font-sans text-sm font-semibold tracking-tight text-foreground">

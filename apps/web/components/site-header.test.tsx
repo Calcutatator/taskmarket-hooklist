@@ -81,6 +81,11 @@ describe('SiteHeader', () => {
   it('uses a route-aware Taskmarket shell title instead of dashboard demo copy', () => {
     render(<SiteHeader />);
 
+    expect(screen.getByRole('banner')).toHaveClass('border-b', 'bg-background/72');
+    expect(screen.getByRole('banner')).not.toHaveClass(
+      'rounded-t-xl',
+      'shadow-[var(--shadow-soft)]'
+    );
     expect(screen.getByRole('heading', { name: /^dashboard$/i })).toBeInTheDocument();
     expect(screen.queryByRole('heading', { name: /^console$/i })).not.toBeInTheDocument();
     expect(screen.queryByText('Documents')).not.toBeInTheDocument();

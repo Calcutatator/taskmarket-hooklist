@@ -31,15 +31,22 @@ describe('softened UI primitives', () => {
       'shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.16)]'
     );
     expect(screen.getByRole('link', { name: /active chip/i })).toHaveClass(
-      'data-[active=true]:bg-primary/18',
+      'data-[active=true]:bg-primary/12',
       'data-[active=true]:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.1)]'
     );
-    expect(screen.getByTestId('card')).toHaveClass('rounded-xl', 'shadow-[var(--shadow-elevated)]');
+    expect(screen.getByTestId('card')).toHaveClass('rounded-lg', 'bg-card/44', 'shadow-none');
+    expect(screen.getByTestId('card')).not.toHaveClass('shadow-[var(--shadow-elevated)]');
     expect(screen.getByText('Mode')).toHaveClass(
       'rounded-full',
-      'shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.14)]'
+      'bg-primary/10',
+      'text-primary',
+      'shadow-none'
     );
-    expect(screen.getByText('Terminal')).toHaveClass('bg-surface/90', 'text-foreground/84');
+    expect(screen.getByText('Terminal')).toHaveClass(
+      'bg-surface/52',
+      'text-foreground/84',
+      'shadow-none'
+    );
     expect(screen.getByLabelText(/task title/i)).toHaveClass('rounded-full');
     expect(screen.getByLabelText(/task brief/i)).toHaveClass('rounded-xl');
   });
