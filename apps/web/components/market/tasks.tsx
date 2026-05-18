@@ -12,6 +12,8 @@ import type {
   TaskStatusType,
 } from '@taskmarket/shared';
 import { SlidersHorizontal } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
@@ -273,12 +275,12 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
   return (
     <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
       <div className="grid gap-2">
-        <a
+        <Link
           className="text-base font-semibold leading-6 text-foreground hover:text-primary"
-          href={detailHref}
+          href={detailHref as Route}
         >
           {taskTitle(task)}
-        </a>
+        </Link>
         <div className="flex flex-wrap gap-1.5">
           <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>{task.mode}</Badge>
           <Badge variant="terminal">{labelize(task.status)}</Badge>
@@ -310,7 +312,7 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
         </div>
       </dl>
       <Button asChild className="w-full sm:w-fit" variant="outline">
-        <a href={detailHref}>View task</a>
+        <Link href={detailHref as Route}>View task</Link>
       </Button>
     </li>
   );
@@ -378,11 +380,11 @@ export function TaskTable({
             <div className="flex flex-col justify-center gap-2 sm:flex-row">
               {hasActiveFilters ? (
                 <Button asChild variant="outline">
-                  <a href={listHref}>Clear filters</a>
+                  <Link href={listHref as Route}>Clear filters</Link>
                 </Button>
               ) : null}
               <Button asChild>
-                <a href={createHref}>Post task</a>
+                <Link href={createHref as Route}>Post task</Link>
               </Button>
             </div>
           </div>
@@ -413,12 +415,14 @@ export function TaskTable({
             {tasks.map((task) => (
               <TableRow key={task.id}>
                 <TableCell className="min-w-72">
-                  <a
+                  <Link
                     className="font-medium text-foreground hover:text-primary"
-                    href={`${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`}
+                    href={
+                      `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}` as Route
+                    }
                   >
                     {taskTitle(task)}
-                  </a>
+                  </Link>
                   <div className="mt-2 flex flex-wrap gap-1">
                     {task.tags.slice(0, 3).map((tag) => (
                       <Badge key={tag} variant="terminal">
@@ -492,12 +496,12 @@ function TaskFilterControls({
         <div className="grid grid-cols-1 gap-1">
           {modes.map((mode) => (
             <Button asChild key={mode} size="chip" variant="chip">
-              <a
+              <Link
                 data-active={selectedMode === mode}
-                href={taskFiltersHref(basePath, currentFilters, { mode })}
+                href={taskFiltersHref(basePath, currentFilters, { mode }) as Route}
               >
                 {mode === 'ALL' ? 'All modes' : labelize(mode)}
-              </a>
+              </Link>
             </Button>
           ))}
         </div>
@@ -507,12 +511,12 @@ function TaskFilterControls({
         <div className="grid grid-cols-1 gap-1">
           {statuses.map((status) => (
             <Button asChild key={status} size="chip" variant="chip">
-              <a
+              <Link
                 data-active={selectedStatus === status}
-                href={taskFiltersHref(basePath, currentFilters, { status })}
+                href={taskFiltersHref(basePath, currentFilters, { status }) as Route}
               >
                 {status === 'ALL' ? 'All statuses' : labelize(status)}
-              </a>
+              </Link>
             </Button>
           ))}
         </div>
@@ -522,12 +526,12 @@ function TaskFilterControls({
         <div className="grid grid-cols-1 gap-1">
           {actors.map((actor) => (
             <Button asChild key={actor} size="chip" variant="chip">
-              <a
+              <Link
                 data-active={selectedActor === actor}
-                href={taskFiltersHref(basePath, currentFilters, { actor })}
+                href={taskFiltersHref(basePath, currentFilters, { actor }) as Route}
               >
                 {actor === 'ALL' ? 'Any' : actor}
-              </a>
+              </Link>
             </Button>
           ))}
         </div>
@@ -591,9 +595,9 @@ function TaskFilterControls({
             Apply filters
           </Button>
           <Button asChild variant="outline">
-            <a aria-label="Clear filters" href={normalizeBasePath(basePath)}>
+            <Link aria-label="Clear filters" href={normalizeBasePath(basePath) as Route}>
               Clear
-            </a>
+            </Link>
           </Button>
         </div>
       </form>
@@ -702,7 +706,7 @@ export function TaskListPageContent({
               />
             </div>
             <Button asChild>
-              <a href={createHref}>Post task</a>
+              <Link href={createHref as Route}>Post task</Link>
             </Button>
           </div>
         </div>
@@ -717,7 +721,7 @@ export function TaskListPageContent({
               </Badge>
             ))}
             <Button asChild size="xs" variant="link">
-              <a href={listHref}>Clear filters</a>
+              <Link href={listHref as Route}>Clear filters</Link>
             </Button>
           </div>
         ) : null}
@@ -1221,7 +1225,9 @@ export function TaskDetailPanel({
         <Breadcrumb className="px-1">
           <BreadcrumbList className="font-mono text-xs uppercase">
             <BreadcrumbItem>
-              <BreadcrumbLink href={backHref}>Tasks</BreadcrumbLink>
+              <BreadcrumbLink asChild>
+                <Link href={backHref as Route}>Tasks</Link>
+              </BreadcrumbLink>
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem className="min-w-0">

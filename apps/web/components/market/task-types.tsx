@@ -1,4 +1,6 @@
 import { IconArrowRight } from '@tabler/icons-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -64,13 +66,13 @@ function TaskModeCard({ mode }: { mode: TaskMode }) {
           </dt>
           <dd className="text-sm leading-snug text-muted-foreground">{mode.concurrency}</dd>
         </dl>
-        <a
+        <Link
           className="inline-flex w-fit items-center gap-1.5 text-sm text-muted-foreground underline-offset-4 transition-colors hover:text-foreground hover:underline"
-          href={`/dashboard/tasks?mode=${mode.value}`}
+          href={`/dashboard/tasks?mode=${mode.value}` as Route}
         >
           View open {mode.label.toLowerCase()} tasks
           <IconArrowRight className="size-3.5" />
-        </a>
+        </Link>
       </CardContent>
     </Card>
   );
@@ -116,7 +118,7 @@ export function TaskTypesContent() {
           </p>
         </div>
         <Button asChild>
-          <a href="/dashboard/tasks/new">Post a task</a>
+          <Link href="/dashboard/tasks/new">Post a task</Link>
         </Button>
       </section>
 

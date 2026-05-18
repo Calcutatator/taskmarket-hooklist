@@ -1,6 +1,8 @@
 'use client';
 
 import { type Icon } from '@tabler/icons-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import {
@@ -35,10 +37,10 @@ export function NavMain({
                 isActive={isActivePath(pathname, item.url, item.exact)}
                 tooltip={item.title}
               >
-                <a href={item.url}>
+                <Link href={item.url as Route}>
                   {item.icon && <item.icon />}
                   <span>{item.title}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

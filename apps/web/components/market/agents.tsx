@@ -8,6 +8,8 @@ import {
   ShieldCheckIcon,
   StarIcon,
 } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import type { ReactNode } from 'react';
 
 import { CopyButton } from '@/components/market/copy-button';
@@ -144,12 +146,14 @@ export function AgentTable({
               <TableRow key={`${agent.rank}-${agent.address}`}>
                 <TableCell className="font-mono">#{agent.rank}</TableCell>
                 <TableCell>
-                  <a
+                  <Link
                     className="font-medium hover:text-primary"
-                    href={`${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}`}
+                    href={
+                      `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route
+                    }
                   >
                     {label}
-                  </a>
+                  </Link>
                   <p className="mt-1 font-mono text-xs text-muted-foreground">
                     {compactAddress(agent.address)}
                   </p>
@@ -282,21 +286,23 @@ export function AgentLeaderboardPanel({
               </Button>
               {hasActiveFilters ? (
                 <Button asChild type="button" variant="outline">
-                  <a
-                    href={leaderboardHref(
-                      state,
-                      {
-                        minRating: '',
-                        minTasks: '',
-                        page: undefined,
-                        search: '',
-                        skill: '',
-                      },
-                      basePath
-                    )}
+                  <Link
+                    href={
+                      leaderboardHref(
+                        state,
+                        {
+                          minRating: '',
+                          minTasks: '',
+                          page: undefined,
+                          search: '',
+                          skill: '',
+                        },
+                        basePath
+                      ) as Route
+                    }
                   >
                     Clear filters
-                  </a>
+                  </Link>
                 </Button>
               ) : null}
             </div>
@@ -307,20 +313,20 @@ export function AgentLeaderboardPanel({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <div className="flex flex-wrap gap-2">
           <Button asChild size="chip" variant="chip">
-            <a
+            <Link
               data-active={sort === 'reputation'}
-              href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath)}
+              href={leaderboardHref(state, { page: 1, sort: 'reputation' }, basePath) as Route}
             >
               Reputation
-            </a>
+            </Link>
           </Button>
           <Button asChild size="chip" variant="chip">
-            <a
+            <Link
               data-active={sort === 'tasks'}
-              href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath)}
+              href={leaderboardHref(state, { page: 1, sort: 'tasks' }, basePath) as Route}
             >
               Task count
-            </a>
+            </Link>
           </Button>
         </div>
         <p className="font-mono text-xs uppercase text-muted-foreground">Page {page}</p>
@@ -332,20 +338,24 @@ export function AgentLeaderboardPanel({
         <span className="font-mono text-sm text-muted-foreground">Page {page}</span>
         <div className="flex gap-2">
           <Button asChild disabled={!hasPrevPage} variant="outline">
-            <a
-              aria-disabled={!hasPrevPage}
-              href={hasPrevPage ? leaderboardHref(state, { page: page - 1 }, basePath) : '#'}
-            >
-              Previous
-            </a>
+            {hasPrevPage ? (
+              <Link href={leaderboardHref(state, { page: page - 1 }, basePath) as Route}>
+                Previous
+              </Link>
+            ) : (
+              <a aria-disabled="true" href="#">
+                Previous
+              </a>
+            )}
           </Button>
           <Button asChild disabled={!hasNextPage} variant="outline">
-            <a
-              aria-disabled={!hasNextPage}
-              href={hasNextPage ? leaderboardHref(state, { page: page + 1 }, basePath) : '#'}
-            >
-              Next
-            </a>
+            {hasNextPage ? (
+              <Link href={leaderboardHref(state, { page: page + 1 }, basePath) as Route}>Next</Link>
+            ) : (
+              <a aria-disabled="true" href="#">
+                Next
+              </a>
+            )}
           </Button>
         </div>
       </div>
@@ -565,11 +575,13 @@ export function AgentProfilePanel({
                   ) : null}
                   <div>
                     <Button asChild size="sm" variant="outline">
-                      <a
-                        href={`${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}`}
+                      <Link
+                        href={
+                          `${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}` as Route
+                        }
                       >
                         Open reviewed task
-                      </a>
+                      </Link>
                     </Button>
                   </div>
                 </article>

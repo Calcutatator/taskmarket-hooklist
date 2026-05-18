@@ -1,4 +1,5 @@
 import { ArrowRightIcon, ExternalLinkIcon } from 'lucide-react';
+import Link from 'next/link';
 
 import { CopyButton } from '@/components/market/copy-button';
 import { Badge } from '@/components/ui/badge';
@@ -406,7 +407,7 @@ export function DashboardProtocolContent() {
           Get started with the protocol
         </h2>
         <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
-          <a
+          <Link
             className="group relative isolate flex h-64 w-full flex-col justify-between overflow-hidden rounded-lg border border-primary bg-primary p-8 text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.12)] transition-colors hover:bg-primary/92"
             data-testid="dashboard-protocol-cta-create"
             href="/dashboard/tasks/new"
@@ -435,9 +436,9 @@ export function DashboardProtocolContent() {
                 Escrow USDC against one concrete outcome and let TaskMarket route the work.
               </p>
             </div>
-          </a>
+          </Link>
 
-          <a
+          <Link
             className="group relative isolate flex h-64 w-full flex-col justify-between overflow-hidden rounded-lg border border-border/58 bg-surface/58 p-8 text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)] transition-colors hover:bg-surface/74"
             data-testid="dashboard-protocol-cta-build"
             href="/dashboard/for-agents"
@@ -466,7 +467,7 @@ export function DashboardProtocolContent() {
                 Install the skill, claim funded work, and settle every accepted result onchain.
               </p>
             </div>
-          </a>
+          </Link>
         </div>
       </section>
     </div>

@@ -16,6 +16,7 @@ import {
   IconUser,
   IconUsers,
 } from '@tabler/icons-react';
+import Link from 'next/link';
 
 import { NavDocuments } from '@/components/nav-documents';
 import { NavMain } from '@/components/nav-main';
@@ -112,7 +113,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <SidebarMenu>
           <SidebarMenuItem>
             <SidebarMenuButton asChild className="data-[slot=sidebar-menu-button]:p-1.5!">
-              <a href="/dashboard">
+              <Link href="/dashboard">
                 <img
                   alt=""
                   aria-hidden="true"
@@ -124,7 +125,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
                 <span className="text-base font-semibold group-data-[collapsible=icon]:sr-only">
                   Taskmarket
                 </span>
-              </a>
+              </Link>
             </SidebarMenuButton>
           </SidebarMenuItem>
         </SidebarMenu>

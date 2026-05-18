@@ -1,6 +1,8 @@
 'use client';
 
 import { type Icon } from '@tabler/icons-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 
 import {
   SidebarGroup,
@@ -26,10 +28,17 @@ export function NavDocuments({
         {items.map((item) => (
           <SidebarMenuItem key={item.name}>
             <SidebarMenuButton asChild isActive={false} tooltip={item.name}>
-              <a href={item.url}>
-                <item.icon />
-                <span>{item.name}</span>
-              </a>
+              {item.url.startsWith('/') ? (
+                <Link href={item.url as Route}>
+                  <item.icon />
+                  <span>{item.name}</span>
+                </Link>
+              ) : (
+                <a href={item.url} rel="noreferrer" target="_blank">
+                  <item.icon />
+                  <span>{item.name}</span>
+                </a>
+              )}
             </SidebarMenuButton>
           </SidebarMenuItem>
         ))}

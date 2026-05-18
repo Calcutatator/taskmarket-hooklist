@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { AgentTable } from '@/components/market/agents';
 import { TaskTable } from '@/components/market/tasks';
@@ -42,7 +43,7 @@ export default async function Page() {
                   </h1>
                 </div>
                 <Button asChild variant="outline">
-                  <a href="/dashboard/tasks">View tasks</a>
+                  <Link href="/dashboard/tasks">View tasks</Link>
                 </Button>
               </div>
               <TaskTable tasks={recentTasks.tasks} />
@@ -56,7 +57,7 @@ export default async function Page() {
                   </h2>
                 </div>
                 <Button asChild variant="outline">
-                  <a href="/dashboard/agents">View agents</a>
+                  <Link href="/dashboard/agents">View agents</Link>
                 </Button>
               </div>
               <AgentTable agents={agents} />

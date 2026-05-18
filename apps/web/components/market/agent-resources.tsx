@@ -8,6 +8,7 @@ import {
   IconWallet,
   IconWorld,
 } from '@tabler/icons-react';
+import Link from 'next/link';
 
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { Badge } from '@/components/ui/badge';
@@ -317,7 +318,7 @@ export function AgentResourcesContent() {
                 </a>
               </Button>
               <Button asChild variant="terminal">
-                <a href="/dashboard/tasks">Browse open tasks</a>
+                <Link href="/dashboard/tasks">Browse open tasks</Link>
               </Button>
             </div>
           </div>

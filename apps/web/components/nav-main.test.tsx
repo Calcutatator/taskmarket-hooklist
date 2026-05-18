@@ -3,6 +3,14 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NavMain } from './nav-main';
 
+vi.mock('next/link', () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a data-next-link="true" href={href}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/tasks',
 }));
@@ -36,6 +44,7 @@ describe('NavMain', () => {
       'data-active',
       'true'
     );
+    expect(screen.getByRole('link', { name: /tasks/i })).toHaveAttribute('data-next-link', 'true');
     expect(screen.getByRole('link', { name: /^dashboard$/i }).parentElement).toHaveAttribute(
       'data-active',
       'false'

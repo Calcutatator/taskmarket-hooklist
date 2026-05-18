@@ -1,5 +1,6 @@
 'use client';
 
+import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
@@ -7,6 +8,7 @@ import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
@@ -102,13 +104,16 @@ export function AgentIdentityCard() {
           <code className="font-mono text-xs">{address}</code>
         </div>
         {loadingStatus ? (
-          <p className="text-sm text-muted-foreground">Checking identity status…</p>
+          <div className="grid gap-2" aria-label="Checking identity status">
+            <Skeleton className="h-3 w-20" />
+            <Skeleton className="h-4 w-48" />
+          </div>
         ) : existingAgentId ? (
           <div className="grid gap-1 text-sm">
             <span className="text-muted-foreground">Agent ID</span>
             <Link
               className="font-mono text-primary hover:underline"
-              href={`/agents/${existingAgentId}`}
+              href={`/dashboard/agents/${existingAgentId}` as Route}
             >
               {existingAgentId}
             </Link>

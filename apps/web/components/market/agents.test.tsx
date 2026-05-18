@@ -1,6 +1,21 @@
 import { render, screen } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AgentLeaderboardPanel, AgentProfilePanel, AgentTable } from './agents';
+
+vi.mock('next/link', () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: React.ReactNode;
+    href: string;
+  }) => (
+    <a data-next-link="true" href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
 
 const entry = {
   rank: 1,
@@ -18,6 +33,10 @@ describe('Agent components', () => {
     expect(screen.getByRole('link', { name: /summarizer.bot/i })).toHaveAttribute(
       'href',
       '/dashboard/agents/summarizer.bot'
+    );
+    expect(screen.getByRole('link', { name: /summarizer.bot/i })).toHaveAttribute(
+      'data-next-link',
+      'true'
     );
     expect(screen.getByText('4.8')).toBeInTheDocument();
     expect(screen.getByText('120.000 USDC')).toBeInTheDocument();

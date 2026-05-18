@@ -1,12 +1,14 @@
 'use client';
 
 import type { TaskResponse } from '@taskmarket/shared';
+import type { Route } from 'next';
 import Link from 'next/link';
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Skeleton } from '@/components/ui/skeleton';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 
 type InboxResponse = {
@@ -23,7 +25,7 @@ function TaskRow({ task, role }: { task: TaskResponse; role: 'requester' | 'work
   return (
     <Link
       className="grid gap-2 rounded-md border border-border/70 bg-surface/40 p-3 transition-colors hover:border-primary/60"
-      href={`/dashboard/tasks/${task.id}`}
+      href={`/dashboard/tasks/${task.id}` as Route}
     >
       <div className="flex flex-wrap items-start justify-between gap-2">
         <p className="font-mono text-sm font-semibold tracking-tight">{title}</p>
@@ -95,7 +97,18 @@ export function InboxClient() {
   }
 
   if (loading) {
-    return <p className="text-sm text-muted-foreground">Loading…</p>;
+    return (
+      <Card>
+        <CardHeader>
+          <Skeleton className="h-6 w-36" />
+        </CardHeader>
+        <CardContent className="grid gap-3">
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+          <Skeleton className="h-20 w-full" />
+        </CardContent>
+      </Card>
+    );
   }
 
   if (error) {

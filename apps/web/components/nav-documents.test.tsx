@@ -3,6 +3,14 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import { NavDocuments } from './nav-documents';
 
+vi.mock('next/link', () => ({
+  default: ({ children, href }: { children: React.ReactNode; href: string }) => (
+    <a data-next-link="true" href={href}>
+      {children}
+    </a>
+  ),
+}));
+
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/tasks',
 }));
@@ -33,6 +41,10 @@ describe('NavDocuments', () => {
     expect(screen.getByRole('link', { name: /open market/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks'
+    );
+    expect(screen.getByRole('link', { name: /open market/i })).toHaveAttribute(
+      'data-next-link',
+      'true'
     );
     expect(screen.getByRole('link', { name: /open market/i }).parentElement).toHaveAttribute(
       'data-active',

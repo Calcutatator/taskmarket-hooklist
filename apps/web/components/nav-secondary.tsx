@@ -2,6 +2,8 @@
 
 import * as React from 'react';
 import { type Icon } from '@tabler/icons-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import {
@@ -37,10 +39,10 @@ export function NavSecondary({
                 isActive={item.active === false ? false : isActivePath(pathname, item.url)}
                 tooltip={item.title}
               >
-                <a href={item.url}>
+                <Link href={item.url as Route}>
                   <item.icon />
                   <span>{item.title}</span>
-                </a>
+                </Link>
               </SidebarMenuButton>
             </SidebarMenuItem>
           ))}

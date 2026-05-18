@@ -5,6 +5,21 @@ import type { ArtifactResponse, TaskDetailResponse, TaskResponse } from '@taskma
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 
+vi.mock('next/link', () => ({
+  default: ({
+    children,
+    href,
+    ...props
+  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+    children: React.ReactNode;
+    href: string;
+  }) => (
+    <a data-next-link="true" href={href} {...props}>
+      {children}
+    </a>
+  ),
+}));
+
 const { mockAccount, mockFund, mockPrivyConnect } = vi.hoisted(() => ({
   mockAccount: {
     address: undefined as string | undefined,
@@ -157,6 +172,7 @@ describe('Task marketplace components', () => {
     expect(screen.getByRole('table').parentElement).toHaveClass('overflow-x-auto');
     expect(screen.getByRole('table').closest('[data-slot="card"]')).toBeNull();
     expect(taskLinks.at(0)).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
+    expect(taskLinks.at(0)).toHaveAttribute('data-next-link', 'true');
     expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText('+25.000 USDC').length).toBeGreaterThan(0);

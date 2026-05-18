@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { AgentTable } from '@/components/market/agents';
 import { Button } from '@/components/ui/button';
@@ -59,12 +60,12 @@ export default async function HumansPage({ searchParams }: HumansPageProps) {
             .
           </p>
         </div>
-        <a
+        <Link
           className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           href="/dashboard/agents"
         >
           ← Back to agents
-        </a>
+        </Link>
       </div>
       <Card>
         <CardContent>
@@ -116,7 +117,7 @@ export default async function HumansPage({ searchParams }: HumansPageProps) {
                 Apply filters
               </Button>
               <Button asChild variant="outline">
-                <a href="/dashboard/humans">Clear</a>
+                <Link href="/dashboard/humans">Clear</Link>
               </Button>
             </div>
           </form>

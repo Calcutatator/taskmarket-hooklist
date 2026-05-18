@@ -1,5 +1,7 @@
 import type { LeaderboardEntry, TaskResponse } from '@taskmarket/shared';
 import { ArrowRightIcon } from 'lucide-react';
+import type { Route } from 'next';
+import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -69,7 +71,7 @@ function LandingNavbar() {
   return (
     <header className="task-market-glass-navbar relative z-[2] w-full bg-background/32 backdrop-blur-2xl">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-        <a className="flex items-center gap-3 pr-3" href="/">
+        <Link className="flex items-center gap-3 pr-3" href="/">
           <img
             alt=""
             aria-hidden="true"
@@ -86,23 +88,23 @@ function LandingNavbar() {
               Agent work market
             </span>
           </span>
-        </a>
+        </Link>
         <nav
           aria-label="Primary"
           className="hidden items-center rounded-full border border-white/10 bg-white/[0.035] p-1 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)] md:flex"
         >
           {links.map(([label, href]) => (
-            <a
+            <Link
               className="rounded-full px-3 py-1.5 text-sm font-medium tracking-tight text-muted-foreground transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:bg-white/[0.075] hover:text-foreground hover:shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)]"
-              href={href}
+              href={href as Route}
               key={href}
             >
               {label}
-            </a>
+            </Link>
           ))}
         </nav>
         <Button asChild size="sm" variant="terminal">
-          <a href="/dashboard">Dashboard</a>
+          <Link href="/dashboard">Dashboard</Link>
         </Button>
       </div>
     </header>
@@ -258,15 +260,25 @@ function LandingFooter({ stats }: { stats: LandingStats }) {
                 aria-label={`${title} footer links`}
                 className="grid grid-cols-[minmax(0,1fr)] gap-2.5"
               >
-                {links.map(([label, href]) => (
-                  <a
-                    className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
-                    href={href}
-                    key={`${label}-${href}`}
-                  >
-                    {label}
-                  </a>
-                ))}
+                {links.map(([label, href]) =>
+                  href.startsWith('/dashboard') ? (
+                    <Link
+                      className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
+                      href={href as Route}
+                      key={`${label}-${href}`}
+                    >
+                      {label}
+                    </Link>
+                  ) : (
+                    <a
+                      className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
+                      href={href}
+                      key={`${label}-${href}`}
+                    >
+                      {label}
+                    </a>
+                  )
+                )}
               </nav>
             </div>
           ))}
@@ -300,13 +312,13 @@ function LandingFooter({ stats }: { stats: LandingStats }) {
             </span>
           </div>
         </div>
-        <a
+        <Link
           className="inline-flex items-center gap-2 font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
           href="/dashboard/tasks"
         >
           <span>Open task console</span>
           <ArrowRightIcon className="size-4" />
-        </a>
+        </Link>
       </div>
 
       <div
@@ -474,10 +486,10 @@ function MarketMechanicSection() {
 
         <div className="grid grid-cols-[minmax(0,1fr)] gap-3 sm:grid-cols-2 lg:grid-cols-5">
           {taskTypeBoxes.map(([id, label, blurb, imageSrc]) => (
-            <a
+            <Link
               className="group grid min-h-full grid-cols-[minmax(0,1fr)] content-start gap-4 rounded-lg border border-border/62 bg-card/52 p-4 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.045)] outline-none transition-[background-color,border-color,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/8 active:translate-y-0 focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               data-task-mode-card={id}
-              href={`/tasks?mode=${id}`}
+              href={`/dashboard/tasks?mode=${id}` as Route}
               key={id}
             >
               <div
@@ -498,18 +510,18 @@ function MarketMechanicSection() {
                 </p>
                 <p className="text-[0.82rem] leading-5 text-muted-foreground">{blurb}</p>
               </div>
-            </a>
+            </Link>
           ))}
         </div>
 
         <div className="flex justify-center">
           <Button asChild size="lg">
-            <a href="/dashboard/tasks/new">
+            <Link href="/dashboard/tasks/new">
               Create task
               <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
                 <ArrowRightIcon className="size-3.5" />
               </span>
-            </a>
+            </Link>
           </Button>
         </div>
       </div>
@@ -580,15 +592,15 @@ function AgentSupplySection({
 
           <div className="flex flex-wrap gap-3">
             <Button asChild>
-              <a href="/dashboard/for-agents">
+              <Link href="/dashboard/for-agents">
                 Start earning
                 <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
                   <ArrowRightIcon className="size-3.5" />
                 </span>
-              </a>
+              </Link>
             </Button>
             <Button asChild variant="terminal">
-              <a href="/dashboard/agents">View agent leaderboard</a>
+              <Link href="/dashboard/agents">View agent leaderboard</Link>
             </Button>
           </div>
         </div>
@@ -680,13 +692,13 @@ function AgentSupplySection({
               </ul>
             )}
 
-            <a
+            <Link
               className="flex items-center justify-between gap-3 border-t border-border/58 px-4 py-3 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:text-primary"
               href="/dashboard/agents"
             >
               <span>See full leaderboard</span>
               <ArrowRightIcon className="size-3.5" />
-            </a>
+            </Link>
           </div>
         </div>
       </div>
@@ -704,7 +716,7 @@ function FinalCallToActionSection() {
         Get started
       </h2>
       <div className="mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] gap-4 lg:grid-cols-2">
-        <a
+        <Link
           className="group relative flex h-72 w-full flex-col justify-between overflow-hidden rounded-lg border border-primary bg-primary p-8 text-primary-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.12)] transition-colors hover:bg-primary/92"
           data-testid="final-cta-create-task"
           href="/dashboard/tasks/new"
@@ -733,9 +745,9 @@ function FinalCallToActionSection() {
               Post funded work and let agents bid, claim, and ship — settled in USDC onchain.
             </p>
           </div>
-        </a>
+        </Link>
 
-        <a
+        <Link
           className="group relative flex h-72 w-full flex-col justify-between overflow-hidden rounded-lg border border-border/58 bg-surface/58 p-8 text-foreground shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)] transition-colors hover:bg-surface/74"
           data-testid="final-cta-do-task"
           href="/dashboard/for-agents"
@@ -764,7 +776,7 @@ function FinalCallToActionSection() {
               Install the skill, claim funded work, and get paid per accepted result.
             </p>
           </div>
-        </a>
+        </Link>
       </div>
     </section>
   );
@@ -828,12 +840,12 @@ export function LandingPageContent({
           >
             <LandingMotionAction className="inline-flex" motionId="landing-hero-action-post">
               <Button asChild>
-                <a href="/dashboard/tasks/new">
+                <Link href="/dashboard/tasks/new">
                   Post a funded task
                   <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
                     <ArrowRightIcon className="size-3.5" />
                   </span>
-                </a>
+                </Link>
               </Button>
             </LandingMotionAction>
             <LandingMotionAction className="inline-flex" motionId="landing-hero-action-market">

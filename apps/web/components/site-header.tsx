@@ -1,5 +1,6 @@
 'use client';
 
+import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
 import { PrivyHeaderAccountControl } from '@/components/privy-account-control';
@@ -44,7 +45,7 @@ export function SiteHeader() {
             </a>
           </Button>
           <Button asChild className="min-h-11 sm:min-h-9" size="sm">
-            <a href="/dashboard/tasks/new">Post task</a>
+            <Link href="/dashboard/tasks/new">Post task</Link>
           </Button>
         </div>
       </div>
