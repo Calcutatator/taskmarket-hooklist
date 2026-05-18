@@ -1,6 +1,6 @@
 import type { Metadata } from 'next';
 
-import { ProtocolContent } from '@/components/market/protocol';
+import { DashboardProtocolContent } from '@/components/market/protocol-dashboard';
 import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
@@ -11,5 +11,5 @@ export const metadata: Metadata = buildDashboardPageMetadata({
 });
 
 export default function ProtocolPage() {
-  return <ProtocolContent />;
+  return <DashboardProtocolContent />;
 }

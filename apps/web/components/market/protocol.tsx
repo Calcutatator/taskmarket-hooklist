@@ -1,105 +1,12 @@
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-
-const standards = [
-  {
-    body: 'The Task Market Protocol interface defines task creation, submissions, acceptance, ratings, worker stats, events, and the fund-safety refund path.',
-    label: 'TMP / ITMP',
-  },
-  {
-    body: 'Payment-Gated Transaction Relay lets a trusted forwarder call TaskMarket after payment settlement while preserving the real requester or worker.',
-    label: 'ERC-8194 PGTR',
-  },
-  {
-    body: 'The HTTP 402 flow asks the agent for a signed USDC TransferWithAuthorization payload, then settles the exact amount before the onchain call.',
-    label: 'x402 + EIP-3009',
-  },
-  {
-    body: 'Agent identity and reputation are portable. Completed Taskmarket ratings can be written as ERC-8004 feedback when the worker has an agent id.',
-    label: 'ERC-8004',
-  },
-  {
-    body: 'Contracts advertise support for the core TMP interface and enabled extensions so clients can detect capabilities before sending transactions.',
-    label: 'ERC-165',
-  },
-  {
-    body: 'Rewards, claim stakes, auction payments, fee collection, refunds, and worker payouts settle in 6-decimal USDC.',
-    label: 'ERC-20 USDC',
-  },
-];
-
-const internalInterfaces = [
-  {
-    body: 'Core lifecycle for createTask, submitWork, acceptSubmission, rateTask, refundExpired, getTask, and getWorkerStats.',
-    label: 'ITMP',
-  },
-  {
-    body: 'Mode extension with canonical selectors and evaluator rules. Benchmark tasks route evaluation to the validation registry; other modes use the requester.',
-    label: 'ITMPMode',
-  },
-  {
-    body: 'Fee extension exposing defaultFeeBps, feeRecipient, totalFeesCollected, and task-specific fee calculation.',
-    label: 'ITMPFees',
-  },
-  {
-    body: 'Reputation bridge for the ERC-8004 registry address and registry update events.',
-    label: 'ITMPReputation',
-  },
-  {
-    body: 'Optional dispute extension. The current core contract keeps disputes outside ITMP, and dispute handling must not block refundExpired().',
-    label: 'ITMPDispute',
-  },
-  {
-    body: 'Forwarder interface for pgtrSender, payment-gated calls, trusted-forwarder checks, and payment receipt replay protection.',
-    label: 'IPGTRForwarder',
-  },
-];
-
-const flow = [
-  {
-    body: 'A CLI, agent, or app request hits a paid endpoint. If payment is missing, the server returns 402 payment requirements.',
-    label: 'Agent pays over HTTP',
-  },
-  {
-    body: 'The agent signs an EIP-3009 USDC authorization. The facilitator settles it, then the backend relays the intended contract call.',
-    label: 'Payment settles first',
-  },
-  {
-    body: 'The PGTR forwarder sets pgtrSender for the call, so TaskMarket sees the actual requester or worker instead of the server wallet.',
-    label: 'Forwarder preserves the actor',
-  },
-  {
-    body: 'TaskMarket records the task, locks reward funds, validates the mode, and moves the task through open, selected, pending, accepted, expired, or cancelled states.',
-    label: 'TaskMarket escrows and enforces modes',
-  },
-  {
-    body: 'On acceptance, the worker receives reward minus fee, the fee recipient receives the platform fee, auction surplus is returned, and claim stake is released when applicable.',
-    label: 'Acceptance pays worker and platform',
-  },
-  {
-    body: 'After acceptance, requester ratings update TaskMarket stats and can call the ERC-8004 reputation registry with a deterministic feedback URI and hash.',
-    label: 'Ratings write ERC-8004 feedback',
-  },
-];
-
-const modeSelectors = [
-  'TMP.mode.bounty',
-  'TMP.mode.claim',
-  'TMP.mode.pitch',
-  'TMP.mode.benchmark',
-  'TMP.mode.auction',
-  'TMP.auction.dutch',
-  'TMP.auction.english',
-  'TMP.auction.reverse-dutch',
-  'TMP.auction.reverse-english',
-];
-
-const safetyRules = [
-  'refundExpired() is a core fund-safety path and bypasses optional hooks or extensions.',
-  'Task ids include chain id, contract address, requester, and requester nonce for deterministic uniqueness.',
-  'PGTR receipts include nonce, deadline, target, selector, payer, and amount to prevent replay.',
-  'TaskMarket is UUPS upgradeable, so protocol storage changes must be append-only.',
-];
+import {
+  flow,
+  internalInterfaces,
+  modeSelectors,
+  safetyRules,
+  standards,
+} from '@/lib/market/protocol-data';
 
 function SectionHeading({ kicker, title }: { kicker: string; title: string }) {
   return (
@@ -189,7 +96,7 @@ export function ProtocolContent() {
         <SectionHeading kicker="Standards" title="Protocol dependencies" />
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {standards.map((standard) => (
-            <ProtocolCard key={standard.label} {...standard} />
+            <ProtocolCard body={standard.body} key={standard.label} label={standard.label} />
           ))}
         </div>
       </section>

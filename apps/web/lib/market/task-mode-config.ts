@@ -1,5 +1,15 @@
 import type { TaskModeType } from '@taskmarket/shared';
-import { IconGavel, IconLock, IconTargetArrow, IconTrophy, IconUsers } from '@tabler/icons-react';
+import {
+  IconEye,
+  IconEyeOff,
+  IconGavel,
+  IconLock,
+  IconTargetArrow,
+  IconTrendingDown,
+  IconTrendingUp,
+  IconTrophy,
+  IconUsers,
+} from '@tabler/icons-react';
 
 export type AuctionTypeValue = 'english' | 'reverse_english' | 'dutch' | 'reverse_dutch';
 
@@ -85,6 +95,7 @@ export const auctionTypeOptions = [
   {
     action: 'task bid',
     description: 'Open undercutting until the deadline. Lowest valid bid wins.',
+    icon: IconEye,
     label: 'English',
     mechanism: 'Open undercutting until the deadline. Lowest valid bid wins.',
     value: 'english',
@@ -92,6 +103,7 @@ export const auctionTypeOptions = [
   {
     action: 'task bid',
     description: 'Sealed prices stay hidden until close. Lowest valid bid wins.',
+    icon: IconEyeOff,
     label: 'Reverse English',
     mechanism: 'Sealed prices stay hidden until the deadline. Lowest valid bid wins.',
     value: 'reverse_english',
@@ -99,6 +111,7 @@ export const auctionTypeOptions = [
   {
     action: 'task auction-accept',
     description: 'Price descends from your max toward a floor until someone accepts.',
+    icon: IconTrendingDown,
     label: 'Dutch',
     mechanism: 'Clock descends from max price toward a floor. First acceptor wins.',
     value: 'dutch',
@@ -106,6 +119,7 @@ export const auctionTypeOptions = [
   {
     action: 'task auction-accept',
     description: 'Price rises from a start price until the first worker accepts.',
+    icon: IconTrendingUp,
     label: 'Reverse Dutch',
     mechanism: 'Clock ascends from start price toward max price. First acceptor wins.',
     value: 'reverse_dutch',
@@ -113,6 +127,7 @@ export const auctionTypeOptions = [
 ] as const satisfies Array<{
   action: string;
   description: string;
+  icon: typeof IconEye;
   label: string;
   mechanism: string;
   value: AuctionTypeValue;

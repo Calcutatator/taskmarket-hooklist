@@ -12,7 +12,7 @@ describe('ProtocolContent', () => {
       })
     ).toBeInTheDocument();
 
-    expect(screen.getByText('TMP / ITMP')).toBeInTheDocument();
+    expect(screen.getByText('ERC-8195 TMP')).toBeInTheDocument();
     expect(screen.getByText('ERC-8194 PGTR')).toBeInTheDocument();
     expect(screen.getByText('x402 + EIP-3009')).toBeInTheDocument();
     expect(screen.getByText('ERC-8004')).toBeInTheDocument();
