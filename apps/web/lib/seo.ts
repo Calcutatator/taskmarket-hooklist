@@ -20,6 +20,7 @@ const deploymentUrlEnvKeys = [
   'URL',
   'DEPLOY_PRIME_URL',
   'RENDER_EXTERNAL_URL',
+  'RAILWAY_PUBLIC_DOMAIN',
 ] as const;
 
 type SeoMetadataInput = {

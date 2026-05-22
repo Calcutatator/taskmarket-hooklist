@@ -87,6 +87,21 @@ describe('seo helpers', () => {
     vi.unstubAllEnvs();
   });
 
+  it('derives the site URL from the Railway public domain', () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', '');
+    vi.stubEnv('VERCEL_PROJECT_PRODUCTION_URL', '');
+    vi.stubEnv('VERCEL_BRANCH_URL', '');
+    vi.stubEnv('VERCEL_URL', '');
+    vi.stubEnv('URL', '');
+    vi.stubEnv('DEPLOY_PRIME_URL', '');
+    vi.stubEnv('RENDER_EXTERNAL_URL', '');
+    vi.stubEnv('RAILWAY_PUBLIC_DOMAIN', 'taskmarketfrontend-production.up.railway.app');
+
+    expect(getSiteUrl()).toBe('https://taskmarketfrontend-production.up.railway.app');
+
+    vi.unstubAllEnvs();
+  });
+
   it('truncates long task titles without splitting the title fallback behavior', () => {
     expect(truncateText('abcdefghij', 8)).toBe('abcde...');
     expect(taskSeoTitle({ ...baseTask, description: '\n' })).toBe('Task task-123');
