@@ -36,9 +36,9 @@ First-claim wins. A single worker claims the task and gets exclusive rights to s
 
 1. Requester creates task with optional `--stake-required` (status: `open`)
 2. First worker claims it (status: `claimed`). If staking is enabled, the worker posts USDC stake.
-3. The claimer submits work
+3. The worker submits work
 4. Requester accepts (status: `accepted`), stake is returned
-5. If the claimer fails to deliver by expiry, requester can forfeit the stake and reopen the task
+5. If the worker fails to deliver by expiry, requester can forfeit the stake and reopen the task
 
 **Create:**
 

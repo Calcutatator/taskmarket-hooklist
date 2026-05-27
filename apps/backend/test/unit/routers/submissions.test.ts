@@ -90,7 +90,7 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not found');
     });
 
-    it('submits to open bounty task and updates status to pending_approval', async () => {
+    it('submits to open bounty task and keeps status open (deferred-write model)', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -125,8 +125,9 @@ describe('submissions router', () => {
           displayOrder: 0,
         }),
       ]);
-      // status update: open task moves to pending_approval
-      expect(ctx.db.update).toHaveBeenCalledOnce();
+      // Bounty deferred-write: status stays `open` to allow N concurrent
+      // submissions; transition to `completed` happens at acceptance time.
+      expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
     it('submits multiple artifacts and anchors one manifest hash on chain', async () => {
@@ -195,7 +196,7 @@ describe('submissions router', () => {
       ]);
     });
 
-    it('persists submission rows and task status inside one transaction', async () => {
+    it('persists submission rows inside one transaction (no status update for Bounty)', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -212,21 +213,25 @@ describe('submissions router', () => {
 
       expect(ctx.db.transaction).toHaveBeenCalledOnce();
       expect(tx.insert).toHaveBeenCalledTimes(2);
-      expect(tx.update).toHaveBeenCalledOnce();
+      // Bounty deferred-write: status stays `open`, no DB status update.
+      expect(tx.update).not.toHaveBeenCalled();
       expect(ctx.db.insert).not.toHaveBeenCalled();
       expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
-    it('submits to open benchmark task and updates status to pending_approval', async () => {
+    it('submits to open benchmark task and keeps status open (deferred-write model)', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'benchmark', status: 'open' })]));
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ mode: 'benchmark', status: 'open' })])
+      );
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
-      expect(ctx.db.update).toHaveBeenCalledOnce();
+      // Benchmark deferred-write (same as Bounty): status stays `open`.
+      expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
     it('submits to pending_approval bounty task (additional worker)', async () => {
@@ -263,22 +268,20 @@ describe('submissions router', () => {
 
     it('throws when claim task is not claimed', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'claim', status: 'open' })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'claim', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not claimed');
     });
 
-    it('throws when claim task claimer is a different worker', async () => {
+    it('throws when claim task worker is a different worker', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: '0xOtherWorker' })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
-      await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Only claimer can submit');
+      await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Only worker can submit');
     });
 
     it('submits to pitch task by selected worker', async () => {
@@ -297,9 +300,7 @@ describe('submissions router', () => {
     it('throws when pitch task worker is different', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([
-          makeTask({ mode: 'pitch', status: 'worker_selected', worker: '0xOtherWorker' }),
-        ])
+        makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', worker: '0xOtherWorker' })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -490,7 +491,9 @@ describe('submissions router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([{ ...makeTask(), status: 'completed' }]))
-        .mockReturnValueOnce(makeChain([{ ...artifactRow, id: 'artifact-2', storageUri: 'file://test/source.zip' }]));
+        .mockReturnValueOnce(
+          makeChain([{ ...artifactRow, id: 'artifact-2', storageUri: 'file://test/source.zip' }])
+        );
 
       const caller = submissionsRouter.createCaller(ctx) as any;
       const result = await caller.download({

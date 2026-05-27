@@ -1,0 +1,36 @@
+import { describe, it, expect, vi, beforeEach } from 'vitest';
+
+vi.mock('../../src/lib/x402.js', () => ({
+  x402Post: vi.fn(),
+}));
+
+vi.mock('../../src/lib/output.js', () => ({
+  printResult: vi.fn(),
+}));
+
+import { cancelCmd } from '../../src/commands/task/cancel.js';
+import { x402Post } from '../../src/lib/x402.js';
+import { printResult } from '../../src/lib/output.js';
+
+describe('task cancel command', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it('posts to cancel endpoint and prints result', async () => {
+    vi.mocked(x402Post).mockResolvedValue({ cancelled: true });
+
+    await cancelCmd.parseAsync(['node', 'cancel', '0xtask'], { from: 'node' });
+
+    expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/cancel', { taskId: '0xtask' });
+    expect(printResult).toHaveBeenCalledWith({ cancelled: true });
+  });
+
+  it('propagates errors from x402Post', async () => {
+    vi.mocked(x402Post).mockRejectedValueOnce(new Error('Task is not open'));
+
+    await expect(
+      cancelCmd.parseAsync(['node', 'cancel', '0xtask'], { from: 'node' })
+    ).rejects.toThrow('Task is not open');
+  });
+});

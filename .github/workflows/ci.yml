@@ -4,7 +4,6 @@ on:
   push:
     branches: [main]
   pull_request:
-    branches: [main]
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -45,6 +44,14 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Install Python (for Slither)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Slither
+        run: pip install slither-analyzer
+
       - run: make install
 
       - run: make build all
@@ -58,6 +65,20 @@ jobs:
       - run: make test
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
+
+      - name: Gas snapshot check
+        run: make contract snapshot-check
+
+      - name: Slither static analysis
+        run: make contract audit
+
+      - name: Upload Slither report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report
+          path: packages/contracts/reports/slither-audit.md
+          retention-days: 30
 
   ui-regression:
     runs-on: ubuntu-latest

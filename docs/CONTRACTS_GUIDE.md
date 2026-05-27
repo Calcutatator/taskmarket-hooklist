@@ -196,3 +196,80 @@ Foundry uses git submodules:
 ```bash
 forge install OpenZeppelin/openzeppelin-contracts
 ```
+
+## ERC-8195 Extensions
+
+### Hook Registration
+
+Pass an `ITMPHook` contract address as `hookContract` to `createTask()`. The hook is stored immutably in `task.hookContract`. Pass `address(0)` for no hook.
+
+The `check*` hooks (checkFund, checkClaim, etc.) block state transitions when they revert or return false. They are called after all state commits but before token transfers, so the hook sees the final committed state. The `on*` hooks run best-effort via try-catch after all transfers.
+
+`refundExpired` uses try-catch for `onExpire` so fund recovery is never blocked.
+
+### ITMPRegistry Views
+
+```solidity
+getTaskState(taskId)   -> TaskStatus
+getTaskContext(taskId) -> TaskContext  // includes evaluator fields, tags
+getTaskVerdict(taskId) -> Verdict      // issued=false until evaluate() is called
+```
+
+### Evaluator Flow
+
+Tasks are opt-in for evaluation. Assign an evaluator via `assignEvaluator()` on an open task. After work is submitted, the evaluator calls `evaluate()` which transitions the task to Appealing and starts the appeal window. The worker can `appeal()` within the window to escalate to Disputed; the dispute resolver calls `resolveDispute()` to pay workers. After the appeal window, anyone calls `finalizeVerdict()` to pay (APPROVE/PARTIAL) or reopen (REJECT). If the evaluator fails to evaluate within the evaluation window, the requester calls `evaluatorTimeout()` to forfeit the evaluator's stake and move to PendingApproval.
+
+See `packages/contracts/docs/specs/erc8195/rev003-hooks-evaluator-registry.md` for full specification.
+
+### Forge Tests
+
+New test groups in `packages/contracts/test/TaskMarket.t.sol`:
+- `HookRegistration` — checkFund, hook gates
+- `HookLifecycle` — all hook call points per mode
+- `TaskRegistry` — getTaskState/Context/Verdict
+- `EvaluatorFlow_Approve/Reject/Partial/Appeal/Timeout`
+
+---
+
+## Admin Operations
+
+Owner-only operations that would otherwise require raw Foundry or Etherscan calls are
+available as `make contract` targets. All three require `CONTRACT_ADDRESS`,
+`FORGE_DEV_PRIVATE_KEY`, and `EVM_RPC_URL` to be set in the environment.
+
+### Emergency pause
+
+Halts all state-mutating operations without exception. No USDC moves while paused; funds
+remain safe in escrow. Deploy a fix via UUPS upgrade then unpause. Task windows are
+measured in days so a short pause does not permanently strand funds.
+
+```bash
+make contract pause
+make contract unpause
+```
+
+### Two-step ownership transfer
+
+Ownership uses `Ownable2StepUpgradeable`. The current owner calls `transferOwnership`
+on-chain (raw cast or Etherscan), then the incoming owner calls `acceptOwnership`:
+
+```bash
+# Incoming owner runs this after the current owner calls transferOwnership:
+make contract accept-ownership
+```
+
+### Reinitializer convention
+
+Future upgrades that introduce new state variables MUST use `reinitializer(N)` with N
+incrementing by 1. The upgrade transaction calls `upgradeToAndCall(impl, calldata)` where
+`calldata` encodes the reinitializer. Upgrades with no new state pass empty calldata (`0x`).
+`__Ownable_init` and `__Pausable_init` must NOT be called in any reinitializer.
+
+### Supported interfaces
+
+`TaskMarket.supportsInterface` advertises the following interface IDs. Any upgrade must preserve
+all three declarations or integrators performing ERC-165 checks against the proxy will break.
+
+- `ITMPRegistry` — task/worker read queries
+- `ITMPEvaluator` — evaluation, appeal, and dispute resolution
+- `ITMPModes` — mode constants and `taskMode` view

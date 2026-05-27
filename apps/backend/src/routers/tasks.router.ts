@@ -16,12 +16,14 @@ import { tasks, submissions, proposals, agents, bids } from '../db/schema';
 import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc, inArray } from 'drizzle-orm';
 import {
   contractCreateTask,
+  contractAssignEvaluator,
   contractCancelTask,
   contractUpdateTask,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
 } from '../services/contract';
+import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 
@@ -40,6 +42,9 @@ function computePendingActions(task: {
   currentClockPrice: bigint | null;
   currentLowestBid: string | null;
   latestSubmissionWorker?: string | null;
+  evaluator?: string | null;
+  evaluatorDeadline?: Date | null;
+  appealDeadline?: Date | null;
 }): PendingAction[] {
   if (task.status === 'open' && task.expiryTime < new Date()) {
     return [];
@@ -194,6 +199,50 @@ function computePendingActions(task: {
         },
       ];
     }
+    case 'review': {
+      const actions: PendingAction[] = [];
+      if (task.evaluator) {
+        actions.push({
+          role: 'evaluator',
+          action: 'evaluate',
+          command: `taskmarket task evaluate ${id} --verdict approve --score 100`,
+        });
+      }
+      if (task.evaluatorDeadline && now >= task.evaluatorDeadline) {
+        actions.push({
+          role: 'requester',
+          action: 'evaluator_timeout',
+          command: `taskmarket task evaluator-timeout ${id}`,
+        });
+      }
+      return actions;
+    }
+    case 'appealing': {
+      const actions: PendingAction[] = [];
+      if (task.appealDeadline && now < task.appealDeadline) {
+        actions.push({
+          role: 'worker',
+          action: 'appeal',
+          command: `taskmarket task appeal ${id}`,
+        });
+      } else {
+        actions.push({
+          role: 'anyone',
+          action: 'finalize_verdict',
+          command: `taskmarket task finalize-verdict ${id}`,
+        });
+      }
+      return actions;
+    }
+    case 'disputed': {
+      return [
+        {
+          role: 'dispute_resolver',
+          action: 'resolve_dispute',
+          command: `taskmarket task resolve-dispute ${id} --verdict approve`,
+        },
+      ];
+    }
     case 'completed':
       if (task.rating === null) {
         const addr = workerAddr ?? '<address>';
@@ -298,6 +347,15 @@ export const tasksRouter = router({
           ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
           : ('0x00000000' as `0x${string}`);
 
+      // Hash tags to bytes32 for on-chain storage.
+      const hashedTags = (input.tags ?? []).map(
+        (tag: string) => keccak256(toHex(tag)) as `0x${string}`
+      );
+
+      const hookContractAddr = (input.hookContract ??
+        '0x0000000000000000000000000000000000000000') as `0x${string}`;
+      const hookDataBytes = (input.hookData ?? '0x') as `0x${string}`;
+
       const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
       const escrowTxHash = await contractCreateTask(
         payer as `0x${string}`,
@@ -307,6 +365,9 @@ export const tasksRouter = router({
         pitchDeadlineSecs,
         bidDeadlineSecs,
         auctionSubtype,
+        hookContractAddr,
+        hashedTags,
+        hookDataBytes,
         paymentTxHash
       );
 
@@ -347,7 +408,34 @@ export const tasksRouter = router({
         requesterAgentId: requesterAgent[0]?.agentId ?? null,
         chainId: config.CHAIN_ID,
         contractAddress: config.CONTRACT_ADDRESS,
+        hookContract: input.hookContract ?? null,
       });
+
+      // If evaluator is specified at creation time, assign it immediately.
+      if (input.evaluator) {
+        const evalWindowSecs = Math.round((input.evaluationWindowHours ?? 24) * 3600);
+        const appealWindowSecs = Math.round((input.appealWindowHours ?? 24) * 3600);
+        await contractAssignEvaluator(
+          taskId as `0x${string}`,
+          payer as `0x${string}`,
+          input.evaluator as `0x${string}`,
+          0n,
+          input.evaluatorFeeBps ?? 0,
+          evalWindowSecs,
+          appealWindowSecs,
+          (input.disputeResolver ?? '0x0000000000000000000000000000000000000000') as `0x${string}`
+        );
+        await ctx.db
+          .update(tasks)
+          .set({
+            evaluator: input.evaluator,
+            evaluatorFeeBps: input.evaluatorFeeBps ?? 0,
+            evaluationWindow: evalWindowSecs,
+            appealWindow: appealWindowSecs,
+            disputeResolver: input.disputeResolver ?? null,
+          })
+          .where(eq(tasks.id, taskId));
+      }
 
       return { success: true, taskId };
     }),
@@ -666,6 +754,19 @@ export const tasksRouter = router({
         auctionPriceReachesFloorAt,
         auctionPriceReachesMaxAt,
         currentLowestBid,
+        hookContract: task.hookContract ?? null,
+        evaluator: task.evaluator ?? null,
+        evaluatorStake: task.evaluatorStake ?? null,
+        evaluatorFeeBps: task.evaluatorFeeBps ?? null,
+        evaluationWindow: task.evaluationWindow ?? null,
+        appealWindow: task.appealWindow ?? null,
+        disputeResolver: task.disputeResolver ?? null,
+        appealDeadline: task.appealDeadline?.toISOString() ?? null,
+        evaluatorDeadline: task.evaluatorDeadline?.toISOString() ?? null,
+        verdictType: (task.verdictType as 'APPROVE' | 'REJECT' | 'PARTIAL' | null) ?? null,
+        verdictScore: task.verdictScore ?? null,
+        verdictConfidence: task.verdictConfidence ?? null,
+        verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         pendingActions: computePendingActions({
           id: task.id,
           status: task.status,
@@ -681,6 +782,9 @@ export const tasksRouter = router({
           currentClockPrice: clockPrice,
           currentLowestBid,
           latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
+          evaluator: task.evaluator,
+          evaluatorDeadline: task.evaluatorDeadline,
+          appealDeadline: task.appealDeadline,
         }),
       };
     }),
@@ -961,6 +1065,9 @@ export const tasksRouter = router({
           currentClockPrice:
             updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
           currentLowestBid: updateCurrentLowestBid,
+          evaluator: t.evaluator,
+          evaluatorDeadline: t.evaluatorDeadline,
+          appealDeadline: t.appealDeadline,
         }),
       };
     }),

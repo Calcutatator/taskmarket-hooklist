@@ -20,11 +20,12 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4) returns (bytes32)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4,address,bytes32[],bytes) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
-  'function acceptSubmission(bytes32,address)',
-  'function rateTask(bytes32,uint8,uint256,uint256,string,bytes32)',
+  'function acceptSubmission(bytes32,address,bytes32)',
+  'function acceptSubmissions(bytes32,address[],uint16[],bytes32[])',
+  'function rateTask(bytes32,address,uint8,uint256,uint256,string,bytes32)',
   'function submitWork(bytes32,bytes32)',
   'function submitBid(bytes32,uint256)',
   'function selectLowestBidder(bytes32)',
@@ -38,6 +39,12 @@ const MARKET_ABI = parseAbi([
   'function removeForwarder(address)',
   'function trustedForwarders(address) view returns (bool)',
   'function requesterNonce(address) view returns (uint256)',
+  'function assignEvaluator(bytes32,address,uint256,uint16,uint32,uint32,address)',
+  'function evaluate(bytes32,uint8,uint16,uint16,bytes32,(address,uint256,uint16)[])',
+  'function appeal(bytes32)',
+  'function finalizeVerdict(bytes32)',
+  'function resolveDispute(bytes32,uint8,(address,uint256,uint16)[])',
+  'function evaluatorTimeout(bytes32)',
 ]);
 
 // ERC-8194 PGTR forwarder ABI — TaskMarketForwarder.relay()
@@ -230,6 +237,9 @@ export async function contractCreateTask(
   pitchDeadlineSecs: bigint = 0n,
   bidDeadlineSecs: bigint = 0n,
   auctionSubtype: `0x${string}` = '0x00000000',
+  hookContract: `0x${string}` = '0x0000000000000000000000000000000000000000',
+  tags: readonly `0x${string}`[] = [],
+  hookData: `0x${string}` = '0x',
   paymentTxHash?: `0x${string}`
 ): Promise<`0x${string}`> {
   const publicClient = getPublicClient();
@@ -253,9 +263,107 @@ export async function contractCreateTask(
       '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
       '',
       auctionSubtype,
+      hookContract,
+      tags,
+      hookData,
     ],
   });
   return relayThroughForwarder(requester, reward, data);
+}
+
+export async function contractAssignEvaluator(
+  taskId: `0x${string}`,
+  requester: `0x${string}`,
+  evaluator: `0x${string}`,
+  stakeAmount: bigint,
+  feeBps: number,
+  evaluationWindowSecs: number,
+  appealWindowSecs: number,
+  disputeResolver: `0x${string}`
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'assignEvaluator',
+    args: [
+      taskId,
+      evaluator,
+      stakeAmount,
+      feeBps,
+      evaluationWindowSecs,
+      appealWindowSecs,
+      disputeResolver,
+    ],
+  });
+  // stakeAmount is pulled from the requester via USDC transferFrom inside assignEvaluator; requester pays 0 gas here
+  return relayThroughForwarder(requester, 0n, data);
+}
+
+export async function contractEvaluate(
+  taskId: `0x${string}`,
+  evaluator: `0x${string}`,
+  verdictType: number,
+  score: number,
+  confidence: number,
+  evidenceHash: `0x${string}`,
+  awards: readonly { worker: `0x${string}`; amount: bigint; rank: number }[]
+): Promise<`0x${string}`> {
+  const awardTuples = awards.map((a) => [a.worker, a.amount, a.rank] as const);
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'evaluate',
+    args: [taskId, verdictType, score, confidence, evidenceHash, awardTuples],
+  });
+  return relayThroughForwarder(evaluator, 0n, data);
+}
+
+export async function contractAppeal(
+  taskId: `0x${string}`,
+  worker: `0x${string}`
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'appeal',
+    args: [taskId],
+  });
+  return relayThroughForwarder(worker, 0n, data);
+}
+
+export async function contractFinalizeVerdict(taskId: `0x${string}`): Promise<`0x${string}`> {
+  // Anyone can call finalizeVerdict — use server wallet as the acting principal
+  const { address } = createServerWallet();
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'finalizeVerdict',
+    args: [taskId],
+  });
+  return relayThroughForwarder(address, 0n, data);
+}
+
+export async function contractResolveDispute(
+  taskId: `0x${string}`,
+  resolver: `0x${string}`,
+  verdictType: number,
+  awards: readonly { worker: `0x${string}`; amount: bigint; rank: number }[]
+): Promise<`0x${string}`> {
+  const awardTuples = awards.map((a) => [a.worker, a.amount, a.rank] as const);
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'resolveDispute',
+    args: [taskId, verdictType, awardTuples],
+  });
+  return relayThroughForwarder(resolver, 0n, data);
+}
+
+export async function contractEvaluatorTimeout(
+  taskId: `0x${string}`,
+  requester: `0x${string}`
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'evaluatorTimeout',
+    args: [taskId],
+  });
+  return relayThroughForwarder(requester, 0n, data);
 }
 
 export async function contractSubmitBid(
@@ -362,12 +470,29 @@ export async function contractAcceptSubmission(
   taskId: `0x${string}`,
   requester: `0x${string}`,
   worker: `0x${string}`,
+  deliverable: `0x${string}`,
   _contractAddress?: string | null
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptSubmission',
-    args: [taskId, worker],
+    args: [taskId, worker, deliverable],
+  });
+  return relayThroughForwarder(requester, 0n, data);
+}
+
+export async function contractAcceptSubmissions(
+  taskId: `0x${string}`,
+  requester: `0x${string}`,
+  workers: readonly `0x${string}`[],
+  shares: readonly number[],
+  deliverables: readonly `0x${string}`[],
+  _contractAddress?: string | null
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'acceptSubmissions',
+    args: [taskId, workers, shares, deliverables],
   });
   return relayThroughForwarder(requester, 0n, data);
 }
@@ -375,6 +500,7 @@ export async function contractAcceptSubmission(
 export async function contractRateTask(
   taskId: `0x${string}`,
   requester: `0x${string}`,
+  worker: `0x${string}`,
   rating: number,
   workerAgentId: bigint,
   raterAgentId: bigint,
@@ -386,7 +512,7 @@ export async function contractRateTask(
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'rateTask',
-    args: [taskId, rating, workerAgentId, raterAgentId, feedbackURI, feedbackHash],
+    args: [taskId, worker, rating, workerAgentId, raterAgentId, feedbackURI, feedbackHash],
   });
   const hash = await relayThroughForwarder(requester, 0n, data);
   const receipt = await publicClient.waitForTransactionReceipt({

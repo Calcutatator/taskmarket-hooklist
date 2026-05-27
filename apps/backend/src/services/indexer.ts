@@ -40,10 +40,10 @@ const IDENTITY_REGISTRY_ADDRESS = config.ERC8004_IDENTITY_REGISTRY as `0x${strin
 const ERC8004_SEED_BLOCK = config.ERC8004_SEED_BLOCK;
 
 const TASK_CREATED_EVENT = parseAbiItem(
-  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, uint256 expiryTime, bytes4 mode)'
+  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
 );
 const TASK_CLAIMED_EVENT = parseAbiItem(
-  'event TaskClaimed(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+  'event TaskClaimed(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
 );
 const TASK_WORKER_SELECTED_EVENT = parseAbiItem(
   'event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)'
@@ -64,10 +64,10 @@ const TASK_EXPIRED_EVENT = parseAbiItem(
   'event TaskExpired(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
 );
 const STAKE_FORFEITED_EVENT = parseAbiItem(
-  'event StakeForfeited(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+  'event StakeForfeited(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
 );
 const STAKE_RETURNED_EVENT = parseAbiItem(
-  'event StakeReturned(bytes32 indexed taskId, address indexed claimer, uint256 stakeAmount)'
+  'event StakeReturned(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
 );
 const TASK_REOPENED_EVENT = parseAbiItem('event TaskReopened(bytes32 indexed taskId)');
 const TASK_CANCELLED_EVENT = parseAbiItem(
@@ -96,6 +96,29 @@ const REPUTATION_REGISTRY_UPDATED_EVENT = parseAbiItem(
 
 const METADATA_SET_EVENT = parseAbiItem(
   'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
+);
+const HOOK_REGISTERED_EVENT = parseAbiItem(
+  'event HookRegistered(bytes32 indexed taskId, address hookContract)'
+);
+const EVALUATOR_ASSIGNED_EVENT = parseAbiItem(
+  'event EvaluatorAssigned(bytes32 indexed taskId, address indexed evaluator, uint256 stakeAmount)'
+);
+const TASK_EVALUATED_EVENT = parseAbiItem(
+  'event TaskEvaluated(bytes32 indexed taskId, address indexed evaluator, uint8 verdictType, uint16 score)'
+);
+const TASK_APPEALED_EVENT = parseAbiItem(
+  'event TaskAppealed(bytes32 indexed taskId, address indexed appellant)'
+);
+const TASK_DISPUTED_EVENT = parseAbiItem(
+  'event TaskDisputed(bytes32 indexed taskId, address indexed disputeResolver)'
+);
+const EVALUATOR_TIMED_OUT_EVENT = parseAbiItem(
+  'event EvaluatorTimedOut(bytes32 indexed taskId, address indexed evaluator, uint256 forfeitedStake)'
+);
+const PAUSED_EVENT = parseAbiItem('event Paused(address account)');
+const UNPAUSED_EVENT = parseAbiItem('event Unpaused(address account)');
+const OWNERSHIP_TRANSFER_STARTED_EVENT = parseAbiItem(
+  'event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner)'
 );
 
 // Mode is emitted as bytes4(keccak256("TMP.mode.<name>")) — see ITMPMode.sol.
@@ -205,13 +228,13 @@ async function processTaskCreatedEvent(log: EventLog): Promise<void> {
 }
 
 async function processTaskClaimedEvent(log: EventLog): Promise<void> {
-  const { taskId, claimer, stakeAmount } = log.args;
+  const { taskId, worker, stakeAmount } = log.args;
 
   await db
     .update(tasks)
     .set({
       status: 'claimed',
-      claimedBy: claimer as string,
+      claimedBy: worker as string,
       claimedAt: new Date(),
     })
     .where(eq(tasks.id, taskId as string));
@@ -221,7 +244,7 @@ async function processTaskClaimedEvent(log: EventLog): Promise<void> {
     .set({ stakeAmount: stakeAmount!.toString() })
     .where(eq(claims.taskId, taskId as string));
 
-  console.log(`TaskClaimed event: ${taskId} by ${claimer}, stake: ${stakeAmount}`);
+  console.log(`TaskClaimed event: ${taskId} by ${worker}, stake: ${stakeAmount}`);
 }
 
 async function processTaskWorkerSelectedEvent(log: EventLog): Promise<void> {
@@ -324,6 +347,27 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
       and(eq(submissions.taskId, taskId as string), eq(submissions.workerAddress, worker as string))
     );
 
+  // When an evaluator is assigned, acceptSubmission transitions the task to Review
+  // and starts the evaluation clock. Set review status and deadline from the DB-stored
+  // evaluationWindow (set at task creation or assignEvaluator time).
+  const taskRow = await db
+    .select({ evaluator: tasks.evaluator, evaluationWindow: tasks.evaluationWindow })
+    .from(tasks)
+    .where(eq(tasks.id, taskId as string))
+    .limit(1);
+  const task = taskRow[0];
+  if (task?.evaluator && task.evaluationWindow && log.blockNumber != null) {
+    const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
+    const submittedAt = Number(block.timestamp);
+    await db
+      .update(tasks)
+      .set({
+        status: 'review',
+        evaluatorDeadline: new Date((submittedAt + task.evaluationWindow) * 1000),
+      })
+      .where(eq(tasks.id, taskId as string));
+  }
+
   console.log(`TaskSubmitted event: ${taskId} by ${worker}, deliverable: ${deliverable}`);
 }
 
@@ -361,25 +405,25 @@ async function processBidSubmittedEvent(log: EventLog): Promise<void> {
 }
 
 async function processStakeForfeitedEvent(log: EventLog): Promise<void> {
-  const { taskId, claimer, stakeAmount } = log.args;
+  const { taskId, worker, stakeAmount } = log.args;
 
   await db
     .update(claims)
     .set({ status: 'forfeited' })
-    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, claimer as string)));
+    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, worker as string)));
 
-  console.log(`StakeForfeited event: ${taskId} from ${claimer}, amount: ${stakeAmount}`);
+  console.log(`StakeForfeited event: ${taskId} from ${worker}, amount: ${stakeAmount}`);
 }
 
 async function processStakeReturnedEvent(log: EventLog): Promise<void> {
-  const { taskId, claimer, stakeAmount } = log.args;
+  const { taskId, worker, stakeAmount } = log.args;
 
   await db
     .update(claims)
     .set({ status: 'returned' })
-    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, claimer as string)));
+    .where(and(eq(claims.taskId, taskId as string), eq(claims.workerAddress, worker as string)));
 
-  console.log(`StakeReturned event: ${taskId} to ${claimer}, amount: ${stakeAmount}`);
+  console.log(`StakeReturned event: ${taskId} to ${worker}, amount: ${stakeAmount}`);
 }
 
 async function processTaskExpiredEvent(log: EventLog): Promise<void> {
@@ -508,6 +552,76 @@ async function processTaskReopenedEvent(log: EventLog): Promise<void> {
   console.log(`TaskReopened event: ${taskId}`);
 }
 
+async function processHookRegisteredEvent(log: EventLog): Promise<void> {
+  const { taskId, hookContract } = log.args;
+  await db
+    .update(tasks)
+    .set({ hookContract: hookContract as string })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`HookRegistered event: task=${taskId} hook=${hookContract}`);
+}
+
+async function processEvaluatorAssignedEvent(log: EventLog): Promise<void> {
+  const { taskId, evaluator, stakeAmount } = log.args;
+  await db
+    .update(tasks)
+    .set({
+      evaluator: evaluator as string,
+      evaluatorStake: (stakeAmount as bigint).toString(),
+    })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`EvaluatorAssigned event: task=${taskId} evaluator=${evaluator}`);
+}
+
+async function processTaskEvaluatedEvent(log: EventLog): Promise<void> {
+  const { taskId, verdictType, score } = log.args;
+  const VERDICT_TYPES = ['APPROVE', 'REJECT', 'PARTIAL'];
+  const verdictStr = VERDICT_TYPES[Number(verdictType)] ?? 'APPROVE';
+  await db
+    .update(tasks)
+    .set({
+      status: 'appealing',
+      verdictType: verdictStr,
+      verdictScore: Number(score),
+    })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`TaskEvaluated event: task=${taskId} verdict=${verdictStr}`);
+}
+
+async function processTaskAppealedEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
+  await db
+    .update(tasks)
+    .set({ status: 'disputed' })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`TaskAppealed event: task=${taskId}`);
+}
+
+async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
+  await db
+    .update(tasks)
+    .set({ status: 'pending_approval', evaluatorStake: '0', evaluatorDeadline: null })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`EvaluatorTimedOut event: task=${taskId}`);
+}
+
+function processAdminAuditEvent(log: EventLog): void {
+  switch (log.eventName) {
+    case 'Paused':
+      console.log(`[audit] Contract paused by account=${log.args.account}`);
+      break;
+    case 'Unpaused':
+      console.log(`[audit] Contract unpaused by account=${log.args.account}`);
+      break;
+    case 'OwnershipTransferStarted':
+      console.log(
+        `[audit] Ownership transfer started: previousOwner=${log.args.previousOwner} newOwner=${log.args.newOwner}`
+      );
+      break;
+  }
+}
+
 async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
   const contractAddress = config.CONTRACT_ADDRESS as `0x${string}`;
 
@@ -536,6 +650,15 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       FEE_RECIPIENT_UPDATED_EVENT,
       FORWARDER_UPDATED_EVENT,
       REPUTATION_REGISTRY_UPDATED_EVENT,
+      HOOK_REGISTERED_EVENT,
+      EVALUATOR_ASSIGNED_EVENT,
+      TASK_EVALUATED_EVENT,
+      TASK_APPEALED_EVENT,
+      TASK_DISPUTED_EVENT,
+      EVALUATOR_TIMED_OUT_EVENT,
+      PAUSED_EVENT,
+      UNPAUSED_EVENT,
+      OWNERSHIP_TRANSFER_STARTED_EVENT,
     ] as any,
   })) as unknown as EventLog[];
 
@@ -597,6 +720,29 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
         case 'ForwarderUpdated':
         case 'ReputationRegistryUpdated':
           await processProtocolEvent(log);
+          break;
+        case 'HookRegistered':
+          await processHookRegisteredEvent(log);
+          break;
+        case 'EvaluatorAssigned':
+          await processEvaluatorAssignedEvent(log);
+          break;
+        case 'TaskEvaluated':
+          await processTaskEvaluatedEvent(log);
+          break;
+        case 'TaskAppealed':
+          await processTaskAppealedEvent(log);
+          break;
+        case 'TaskDisputed':
+          // TaskDisputed fires alongside TaskAppealed — no additional DB update needed
+          break;
+        case 'EvaluatorTimedOut':
+          await processEvaluatorTimedOutEvent(log);
+          break;
+        case 'Paused':
+        case 'Unpaused':
+        case 'OwnershipTransferStarted':
+          processAdminAuditEvent(log);
           break;
         default:
           continue;

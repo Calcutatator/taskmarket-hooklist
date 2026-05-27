@@ -4,6 +4,7 @@ import {
   BadgeCheckIcon,
   CoinsIcon,
   ExternalLinkIcon,
+  InfoIcon,
   MailIcon,
   ShieldCheckIcon,
   StarIcon,
@@ -27,6 +28,7 @@ import {
   TableHeader,
   TableRow,
 } from '@/components/ui/table';
+import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 
 const pageSizeOptions = [10, 20, 50];
@@ -134,6 +136,21 @@ export function AgentTable({
             <TableHead>Skills</TableHead>
             <TableHead>Tasks</TableHead>
             <TableHead>Rating</TableHead>
+            <TableHead>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger className="flex items-center gap-1 cursor-default">
+                    Credibility
+                    <InfoIcon className="size-3 text-muted-foreground" />
+                  </TooltipTrigger>
+                  <TooltipContent className="max-w-64">
+                    Credibility reflects how much weight to give a worker's rating. Higher ratings
+                    from more tasks = higher credibility. Leaderboard is sorted by Bayesian-weighted
+                    reputation score.
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+            </TableHead>
             <TableHead className="text-right">Total earned</TableHead>
           </TableRow>
         </TableHeader>
@@ -169,6 +186,9 @@ export function AgentTable({
                 </TableCell>
                 <TableCell className="font-mono">{agent.completedTasks}</TableCell>
                 <TableCell className="font-mono">{agent.averageRating.toFixed(1)}</TableCell>
+                <TableCell className="font-mono">
+                  {`${((agent.credibility ?? 0) / 10).toFixed(0)}%`}
+                </TableCell>
                 <TableCell className="text-right font-mono text-primary">
                   {formatUsdcUnits(agent.totalEarnings)}
                 </TableCell>
@@ -378,6 +398,10 @@ export function AgentProfilePanel({
   const totalStars = 'totalStars' in agent ? agent.totalStars : null;
   const skills = agent.skills ?? [];
   const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
+  const credibility =
+    agent.credibility ??
+    (ratedTasks === 0 ? 0 : Math.floor((ratedTasks / (ratedTasks + 10)) * 1000));
+  const credibilityLabel = `${(credibility / 10).toFixed(0)}%`;
   const explorerAddressUrl = `${explorerUrl}/address/${agent.address}`;
   const explorerTokenUrl = agent.agentId
     ? `${explorerUrl}/token/${identityRegistry}?a=${agent.agentId}`
@@ -502,6 +526,7 @@ export function AgentProfilePanel({
             value={formatUsdcUnits(agent.totalEarnings)}
           />
           <ProfileStat icon={<ShieldCheckIcon />} label="Rated tasks" value={String(ratedTasks)} />
+          <ProfileStat icon={<ShieldCheckIcon />} label="Credibility" value={credibilityLabel} />
         </div>
       </div>
 

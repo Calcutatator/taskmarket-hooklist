@@ -23,7 +23,6 @@ const MARKET_ABI = [
         { name: 'rating', type: 'uint8' },
         { name: 'mode', type: 'uint8' },
         { name: 'stakeAmount', type: 'uint256' },
-        { name: 'claimer', type: 'address' },
         { name: 'claimedAt', type: 'uint256' },
         { name: 'proposalDeadline', type: 'uint256' },
         { name: 'feeBps', type: 'uint16' },

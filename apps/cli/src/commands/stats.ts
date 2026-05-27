@@ -25,6 +25,7 @@ export const statsCommand = new Command('stats')
         completedTasks: number;
         ratedTasks: number;
         averageRating: number | null;
+        credibility: number;
         totalEarnings: string;
         skills: string[];
         emailAddress: string | null;
@@ -44,6 +45,7 @@ export const statsCommand = new Command('stats')
       completedTasks: result.completedTasks,
       ratedTasks: result.ratedTasks,
       averageRating: result.averageRating,
+      credibility: result.credibility,
       totalEarnings: result.totalEarnings,
       skills: result.skills,
       emailAddress: result.emailAddress,

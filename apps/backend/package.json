@@ -24,6 +24,7 @@
     "test:integration": "vitest run test/integration",
     "x402-sign": "tsx scripts/x402-sign.ts",
     "smoke:bounty": "tsx scripts/smoke-bounty.ts",
+    "smoke:ranked-payout": "tsx scripts/smoke-ranked-payout.ts",
     "smoke:claim": "tsx scripts/smoke-claim.ts",
     "smoke:pitch": "tsx scripts/smoke-pitch.ts",
     "smoke:benchmark": "tsx scripts/smoke-benchmark.ts",
@@ -46,7 +47,8 @@
     "smoke:artifacts": "tsx scripts/smoke-artifacts.ts",
     "smoke:submission-hash": "tsx scripts/smoke-submission-hash.ts",
     "smoke:task-search": "tsx scripts/smoke-task-search.ts",
-    "smoke:upgrade": "tsx scripts/smoke-upgrade.ts"
+    "smoke:upgrade": "tsx scripts/smoke-upgrade.ts",
+    "smoke:evaluator-timeout": "tsx scripts/smoke-evaluator-timeout.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

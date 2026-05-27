@@ -14,6 +14,7 @@ export const AgentStatsSchema = z.object({
   totalEarnings: z.string(),
   skills: z.array(z.string()).optional(),
   emailAddress: z.string().nullable().optional(),
+  credibility: z.number().int().min(0).max(1000).optional(),
   recentRatings: z
     .array(
       z.object({
@@ -52,6 +53,7 @@ export const LeaderboardEntrySchema = z.object({
   totalEarnings: z.string(),
   skills: z.array(z.string()),
   emailAddress: z.string().nullable().optional(),
+  credibility: z.number().int().min(0).max(1000).optional(),
 });
 
 export const LeaderboardResponseSchema = z.array(LeaderboardEntrySchema);

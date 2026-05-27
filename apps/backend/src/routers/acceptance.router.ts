@@ -1,8 +1,13 @@
+import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
-import { tasks, agents, feedbacks } from '../db/schema';
-import { eq, sql } from 'drizzle-orm';
-import { contractAcceptSubmission, contractRateTask } from '../services/contract';
+import { tasks, agents, feedbacks, submissions } from '../db/schema';
+import { and, eq, sql } from 'drizzle-orm';
+import {
+  contractAcceptSubmission,
+  contractAcceptSubmissions,
+  contractRateTask,
+} from '../services/contract';
 import { getServerConfig } from '../config/env';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
@@ -33,6 +38,13 @@ export const acceptanceRouter = router({
       z.object({
         taskId: z.string(),
         worker: z.string(),
+        /// Optional explicit deliverable hash. If omitted, the backend looks up
+        /// the matching submission row for (taskId, worker) and uses its
+        /// deliverableHash. Required at the contract level for Bounty / Benchmark.
+        deliverable: z
+          .string()
+          .regex(/^0x[0-9a-fA-F]{64}$/)
+          .optional(),
       })
     )
     .output(z.object({ success: z.boolean() }))
@@ -58,16 +70,156 @@ export const acceptanceRouter = router({
         throw new Error('Only the task requester can accept a submission');
       }
 
+      // Resolve the deliverable hash to commit. Order:
+      // 1. Explicit input.deliverable (CLI / web pass it through)
+      // 2. The submissions row for (taskId, worker) (backend lookup)
+      let deliverable: `0x${string}` =
+        (input.deliverable as `0x${string}` | undefined) ?? `0x${'00'.repeat(32)}`;
+      if (!input.deliverable) {
+        const submissionRow = await ctx.db
+          .select({ deliverableHash: submissions.deliverableHash })
+          .from(submissions)
+          .where(
+            and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, input.worker))
+          )
+          .orderBy(sql`${submissions.submittedAt} DESC`)
+          .limit(1);
+        if (submissionRow[0]?.deliverableHash) {
+          deliverable = submissionRow[0].deliverableHash as `0x${string}`;
+        }
+      }
+
+      const ZERO_HASH = `0x${'00'.repeat(32)}` as `0x${string}`;
+      if (deliverable === ZERO_HASH && (task.mode === 'bounty' || task.mode === 'benchmark')) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `No deliverable found for worker ${input.worker} on task ${input.taskId}. Bounty and benchmark tasks require a non-zero deliverable hash.`,
+        });
+      }
+
       await contractAcceptSubmission(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         input.worker as `0x${string}`,
+        deliverable,
         task.contractAddress
       );
 
       // No DB writes here — the indexer is the sole writer of task state.
       // It will set status to 'completed' and update agent stats when it
       // processes the TaskCompleted on-chain event.
+      return { success: true };
+    }),
+
+  acceptSubmissions: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/accept-submissions',
+        tags: ['Tasks'],
+        summary: 'Accept N submissions at once with explicit share basis points (X402 required)',
+      },
+    })
+    .input(
+      z.object({
+        taskId: z.string(),
+        winners: z
+          .array(
+            z.object({
+              worker: z.string(),
+              share: z.number().int().min(1).max(10000),
+              submissionId: z.string().optional(),
+              deliverable: z
+                .string()
+                .regex(/^0x[0-9a-fA-F]{64}$/)
+                .optional(),
+            })
+          )
+          .min(1, 'At least one winner required'),
+      })
+    )
+    .output(z.object({ success: z.boolean() }))
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new Error('Payment required: missing payer');
+      }
+
+      const sumShares = input.winners.reduce((acc, w) => acc + w.share, 0);
+      if (sumShares !== 10000) {
+        throw new Error(`Winner shares must sum to 10000 basis points (got ${sumShares})`);
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+      if (taskResult.length === 0) {
+        throw new Error('Task not found');
+      }
+      const task = taskResult[0];
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Only the task requester can accept submissions');
+      }
+
+      // Resolve each winner's deliverable hash. Priority:
+      // 1. Explicit input.winners[i].deliverable
+      // 2. submissions row by input.winners[i].submissionId
+      // 3. latest submissions row for (taskId, worker)
+      // 4. error — we can't accept without a deliverable
+      const workers: `0x${string}`[] = [];
+      const shares: number[] = [];
+      const deliverables: `0x${string}`[] = [];
+
+      for (const w of input.winners) {
+        workers.push(w.worker as `0x${string}`);
+        shares.push(w.share);
+
+        let deliverable: `0x${string}` | null = null;
+        if (w.deliverable) {
+          deliverable = w.deliverable as `0x${string}`;
+        } else if (w.submissionId) {
+          const row = await ctx.db
+            .select({ deliverableHash: submissions.deliverableHash })
+            .from(submissions)
+            .where(
+              and(
+                eq(submissions.id, w.submissionId),
+                eq(submissions.taskId, input.taskId),
+                eq(submissions.workerAddress, w.worker)
+              )
+            )
+            .limit(1);
+          deliverable = (row[0]?.deliverableHash as `0x${string}` | undefined) ?? null;
+        } else {
+          const row = await ctx.db
+            .select({ deliverableHash: submissions.deliverableHash })
+            .from(submissions)
+            .where(
+              and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, w.worker))
+            )
+            .orderBy(sql`${submissions.submittedAt} DESC`)
+            .limit(1);
+          deliverable = (row[0]?.deliverableHash as `0x${string}` | undefined) ?? null;
+        }
+        if (!deliverable) {
+          throw new Error(
+            `No deliverable found for worker ${w.worker}; pass deliverable or submissionId explicitly`
+          );
+        }
+        deliverables.push(deliverable);
+      }
+
+      await contractAcceptSubmissions(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        workers,
+        shares,
+        deliverables,
+        task.contractAddress
+      );
+
       return { success: true };
     }),
 
@@ -158,6 +310,7 @@ export const acceptanceRouter = router({
       const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
+        input.worker as `0x${string}`,
         input.rating,
         workerAgentId,
         raterAgentId,

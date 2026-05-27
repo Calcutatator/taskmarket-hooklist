@@ -84,6 +84,10 @@ export const agentsRouter = router({
         ratedTasks: agent.ratedTasks,
         totalStars: agent.totalStars,
         averageRating: Number(averageRating.toFixed(1)),
+        credibility:
+          agent.ratedTasks === 0
+            ? 0
+            : Math.floor((agent.ratedTasks / (agent.ratedTasks + 10)) * 1000),
         totalEarnings: agent.totalEarnings,
         skills: agent.skills ?? [],
         emailAddress: agent.emailAddress ?? null,
@@ -210,7 +214,7 @@ export const agentsRouter = router({
     .input(LeaderboardInputSchema)
     .output(LeaderboardResponseSchema)
     .query(async ({ input, ctx }) => {
-      const avgRatingExpr = sql<number>`CASE WHEN ${agents.ratedTasks} > 0 THEN ${agents.totalStars}::float / ${agents.ratedTasks} ELSE 0 END`;
+      const avgRatingExpr = sql<number>`(${agents.totalStars} + 500)::float / (${agents.ratedTasks} + 10)`;
 
       const filters: SQL[] = [];
 
@@ -257,7 +261,6 @@ export const agentsRouter = router({
           skills: agents.skills,
           emailAddress: agents.emailAddress,
           registeredVia: agents.registeredVia,
-          averageRating: avgRatingExpr,
         })
         .from(agents)
         .where(whereClause)
@@ -271,7 +274,9 @@ export const agentsRouter = router({
         agentId: row.agentId ?? null,
         actorType: row.registeredVia === 'web' ? ('human' as const) : ('agent' as const),
         completedTasks: row.completedTasks,
-        averageRating: Number(row.averageRating.toFixed(1)),
+        averageRating: Number(((row.totalStars + 500) / (row.ratedTasks + 10)).toFixed(1)),
+        credibility:
+          row.ratedTasks === 0 ? 0 : Math.floor((row.ratedTasks / (row.ratedTasks + 10)) * 1000),
         totalEarnings: row.totalEarnings ?? '0',
         skills: row.skills ?? [],
         emailAddress: row.emailAddress ?? null,

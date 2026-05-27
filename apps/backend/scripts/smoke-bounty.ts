@@ -32,25 +32,45 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  // 2. Worker submits
-  log('2/5', 'Worker submitting work...');
+  // 2. Worker submits TWICE — multi-submission Bounty semantic.
+  //    The contract emits TaskSubmitted per call without writing task.deliverable
+  //    or changing status. The requester finalises at acceptance time.
+  log('2/5', 'Worker submitting first artifact...');
   const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
-  const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
+  const { submissionId: submissionId1 } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
     signature: submitSig,
     artifacts: [
       {
-        fileName: 'submission.txt',
+        fileName: 'submission-v1.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-test-payload').toString('base64'),
+        file: Buffer.from('smoke-test-payload-v1').toString('base64'),
       },
     ],
   })) as { submissionId: string };
-  ok('submissionId', submissionId);
+  ok('submissionId1', submissionId1);
 
-  // 3. Requester accepts
+  log('2b/5', 'Worker submitting refined artifact (multi-submission)...');
+  const { submissionId: submissionId2 } = (await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission-v2.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('smoke-test-payload-v2-refined').toString('base64'),
+      },
+    ],
+  })) as { submissionId: string };
+  ok('submissionId2', submissionId2);
+
+  // 3. Requester accepts the SECOND submission. Backend looks up the
+  //    deliverable hash for (taskId, worker) and the contract writes it
+  //    to task.deliverable at acceptance.
   log('3/5', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);

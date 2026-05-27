@@ -24,6 +24,16 @@ export const createCmd = new Command('create')
     '--auction-floor-price <usdc>',
     'Floor price in USDC for dutch clock (optional, defaults to 0)'
   )
+  .option('--hook <address>', 'ITaskHook contract address (optional)')
+  .option(
+    '--hook-data <hex>',
+    'Hook config bytes forwarded to checkFund; encode uint32 as 4 big-endian bytes (e.g. 0x000006b4 for a 1800s TWAP window)'
+  )
+  .option('--evaluator <address>', 'Evaluator address (optional)')
+  .option('--evaluator-fee-bps <bps>', 'Evaluator fee in basis points (optional)')
+  .option('--evaluation-window <hours>', 'Evaluation window in hours (default: 24)')
+  .option('--appeal-window <hours>', 'Appeal window in hours (default: 24)')
+  .option('--dispute-resolver <address>', 'Dispute resolver address (optional)')
   .action(
     async (opts: {
       description: string;
@@ -37,6 +47,13 @@ export const createCmd = new Command('create')
       auctionType?: string;
       auctionStartPrice?: string;
       auctionFloorPrice?: string;
+      hook?: string;
+      hookData?: string;
+      evaluator?: string;
+      evaluatorFeeBps?: string;
+      evaluationWindow?: string;
+      appealWindow?: string;
+      disputeResolver?: string;
     }) => {
       if (opts.mode === 'auction') {
         if (!opts.maxPrice) {
@@ -95,6 +112,46 @@ export const createCmd = new Command('create')
 
       if (opts.auctionFloorPrice) {
         body.auctionFloorPrice = String(Math.round(parseFloat(opts.auctionFloorPrice) * 1e6));
+      }
+
+      const ethAddrRe = /^0x[0-9a-fA-F]{40}$/;
+      if (opts.hook && !ethAddrRe.test(opts.hook)) {
+        return void printError('--hook must be a valid Ethereum address (0x + 40 hex chars)');
+      }
+      if (opts.hookData && !/^0x(?:[0-9a-fA-F]{2})*$/.test(opts.hookData)) {
+        return void printError(
+          '--hook-data must be a 0x-prefixed hex string with an even number of hex digits'
+        );
+      }
+
+      let feeBps: number | undefined;
+      if (opts.evaluator) {
+        if (!ethAddrRe.test(opts.evaluator)) {
+          return void printError(
+            '--evaluator must be a valid Ethereum address (0x + 40 hex chars)'
+          );
+        }
+        if (opts.evaluatorFeeBps) {
+          feeBps = Number(opts.evaluatorFeeBps);
+          if (!Number.isInteger(feeBps) || feeBps < 0 || feeBps > 10000) {
+            return void printError('--evaluator-fee-bps must be an integer between 0 and 10000');
+          }
+        }
+        if (opts.disputeResolver && !ethAddrRe.test(opts.disputeResolver)) {
+          return void printError(
+            '--dispute-resolver must be a valid Ethereum address (0x + 40 hex chars)'
+          );
+        }
+      }
+
+      if (opts.hook) body.hookContract = opts.hook;
+      if (opts.hookData) body.hookData = opts.hookData;
+      if (opts.evaluator) {
+        body.evaluator = opts.evaluator;
+        if (feeBps !== undefined) body.evaluatorFeeBps = feeBps;
+        if (opts.evaluationWindow) body.evaluationWindowHours = parseFloat(opts.evaluationWindow);
+        if (opts.appealWindow) body.appealWindowHours = parseFloat(opts.appealWindow);
+        if (opts.disputeResolver) body.disputeResolver = opts.disputeResolver;
       }
 
       const result = (await x402Post('/api/tasks', body)) as { success: boolean; taskId: string };

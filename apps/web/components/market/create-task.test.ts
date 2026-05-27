@@ -20,6 +20,12 @@ describe('buildCreateTaskPayload', () => {
         stakeBps: '12.5',
         stakeRequired: true,
         tags: 'scrape, data',
+        hookContract: '',
+        evaluator: '',
+        evaluatorFeeBps: '',
+        evaluationWindow: '',
+        appealWindow: '',
+        disputeResolver: '',
       })
     ).toEqual({
       auctionFloorPrice: '4250000',

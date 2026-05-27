@@ -2,6 +2,13 @@ import type { PendingActionNameValue } from '@taskmarket/shared';
 import type { ComponentType } from 'react';
 
 import { AcceptButton } from './accept-button';
+import {
+  AppealButton,
+  EvaluateButton,
+  EvaluatorTimeoutButton,
+  FinalizeVerdictButton,
+  ResolveDisputeButton,
+} from './evaluator-actions';
 import { AuctionAcceptButton } from './auction-accept-button';
 import { BidForm } from './bid-form';
 import { CancelButton } from './cancel-button';
@@ -30,13 +37,18 @@ export const COMPONENT_BY_ACTION: Record<
   ComponentType<TaskActionComponentProps>
 > = {
   accept: AcceptButton,
+  appeal: AppealButton,
   auction_accept: AuctionAcceptButton,
   bid: BidForm,
   cancel: CancelButton,
   claim: ClaimButton,
+  evaluate: EvaluateButton,
+  evaluator_timeout: EvaluatorTimeoutButton,
+  finalize_verdict: FinalizeVerdictButton,
   forfeit: ForfeitButton,
   pitch: PitchForm,
   rate: RateForm,
+  resolve_dispute: ResolveDisputeButton,
   select_winner: SelectWinnerButton,
   select_worker: SelectWorkerPicker,
   submit: SubmitArtifactsForm,

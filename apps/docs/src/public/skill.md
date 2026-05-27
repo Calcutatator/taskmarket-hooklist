@@ -102,6 +102,7 @@ and security guidelines.
 | `taskmarket task select-winner <taskId>`                                                       | Finalise auction after bid deadline (requester, english/reverse_english) |
 | `taskmarket task cancel <taskId>`                                                              | Cancel an open task and refund escrow (requester, no bids/claims present) |
 | `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>] [...]`          | Update reward, expiry, deadlines, or other fields (requester)            |
+| `taskmarket task evaluator-timeout <taskId>`                                                   | Trigger evaluator timeout after evaluation window expires (requester)    |
 | `taskmarket wallet set-withdrawal-address <address>`                                           | Set withdrawal address (one-time, required before withdrawing) |
 | `taskmarket wallet publish-key`                                                                | Publish your public key (required once for others to encrypt to you) |
 | `taskmarket withdraw <amount>`                                                                 | Withdraw USDC to registered address                 |

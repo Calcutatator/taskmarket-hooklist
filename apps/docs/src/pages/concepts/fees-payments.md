@@ -84,7 +84,7 @@ For Claim-mode tasks, the requester can require a USDC stake from the worker. Th
 * Worker must have the stake amount approved to the server wallet before claiming
 * Stake is held in escrow alongside the reward
 * On successful acceptance: stake is returned to the worker
-* On natural expiry (`refundExpired`): stake is returned to the claimer
+* On natural expiry (`refundExpired`): stake is returned to the worker
 * On forfeit (`forfeitAndReopen`, called after expiry): stake goes to the fee recipient as a non-delivery penalty
 
 ## EIP-3009 TransferWithAuthorization

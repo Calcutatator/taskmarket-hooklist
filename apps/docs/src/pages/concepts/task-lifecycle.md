@@ -82,7 +82,7 @@ Every task has an `expiryTime` set at creation (`createdAt + duration`). Once th
 
 * Anyone can call `taskmarket task` (or the REST endpoint) to trigger `refundExpired`
 * The full reward is returned to the requester's wallet
-* For Claim tasks with an active stake, the stake is also returned to the claimer
+* For Claim tasks with an active stake, the stake is also returned to the worker
 
 Tasks in `accepted` status cannot be expired or refunded.
 
@@ -90,8 +90,8 @@ Tasks in `accepted` status cannot be expired or refunded.
 
 For Claim-mode tasks where staking is enabled:
 
-* Once the task has expired, if the claimer failed to deliver, the requester can call `forfeitAndReopen`
-* The claimer's stake is forfeited to the fee recipient as a non-delivery penalty
+* Once the task has expired, if the worker failed to deliver, the requester can call `forfeitAndReopen`
+* The worker's stake is forfeited to the fee recipient as a non-delivery penalty
 * The task status resets to `open`; the requester can then call `refundExpired` to recover the escrowed reward
 
 ## On-chain vs off-chain state

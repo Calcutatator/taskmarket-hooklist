@@ -185,7 +185,7 @@ export const submissionsRouter = router({
           throw new Error('Task not claimed');
         }
         if (task.claimedBy !== input.workerAddress) {
-          throw new Error('Only claimer can submit');
+          throw new Error('Only worker can submit');
         }
       } else if (task.mode === 'pitch') {
         if (task.status !== 'worker_selected') {
@@ -289,7 +289,12 @@ export const submissionsRouter = router({
 
         await tx.insert(artifacts).values(artifactRows);
 
-        if (task.status === 'open') {
+        // Bounty + Benchmark use the deferred-write model (ERC-8195): submitWork
+        // emits TaskSubmitted but does NOT transition status or write the
+        // on-chain deliverable. The task stays `open` until acceptance, allowing
+        // N workers to submit concurrently. Claim / Pitch / Auction don't reach
+        // this path (their own routers handle status changes).
+        if (task.status === 'open' && task.mode !== 'bounty' && task.mode !== 'benchmark') {
           await tx
             .update(tasks)
             .set({ status: 'pending_approval' })

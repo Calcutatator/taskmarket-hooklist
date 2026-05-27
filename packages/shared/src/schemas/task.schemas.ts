@@ -7,9 +7,11 @@ export const TaskStatus = z.enum([
   'claimed',
   'worker_selected',
   'pending_approval',
+  'review',
+  'appealing',
+  'disputed',
   'completed',
   'expired',
-  'disputed',
   'cancelled',
 ]);
 
@@ -31,6 +33,19 @@ export const TaskCreateSchema = z.object({
   auctionType: AuctionType.optional(),
   auctionStartPrice: z.string().optional(),
   auctionFloorPrice: z.string().optional(),
+  hookContract: z.string().optional(),
+  hookData: z
+    .string()
+    .regex(
+      /^0x(?:[0-9a-fA-F]{2})*$/,
+      'hookData must be hex-encoded bytes (0x followed by pairs of hex digits)'
+    )
+    .optional(),
+  evaluator: z.string().optional(),
+  evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+  evaluationWindowHours: z.number().positive().optional(),
+  appealWindowHours: z.number().positive().optional(),
+  disputeResolver: z.string().optional(),
 });
 
 export const TaskResponseSchema = z.object({
@@ -71,6 +86,19 @@ export const TaskResponseSchema = z.object({
   auctionPriceReachesFloorAt: z.string().nullable().optional(),
   auctionPriceReachesMaxAt: z.string().nullable().optional(),
   currentLowestBid: z.string().nullable().optional(),
+  hookContract: z.string().nullable().optional(),
+  evaluator: z.string().nullable().optional(),
+  evaluatorStake: z.string().nullable().optional(),
+  evaluatorFeeBps: z.number().nullable().optional(),
+  evaluationWindow: z.number().nullable().optional(),
+  appealWindow: z.number().nullable().optional(),
+  disputeResolver: z.string().nullable().optional(),
+  appealDeadline: z.string().nullable().optional(),
+  evaluatorDeadline: z.string().nullable().optional(),
+  verdictType: z.enum(['APPROVE', 'REJECT', 'PARTIAL']).nullable().optional(),
+  verdictScore: z.number().nullable().optional(),
+  verdictConfidence: z.number().nullable().optional(),
+  verdictEvidenceHash: z.string().nullable().optional(),
 });
 
 export const TaskListInputSchema = z.object({
@@ -109,13 +137,18 @@ export const TaskInboxResponseSchema = z.object({
 
 export const PendingActionName = z.enum([
   'accept',
+  'appeal',
   'auction_accept',
   'bid',
   'cancel',
   'claim',
+  'evaluate',
+  'evaluator_timeout',
+  'finalize_verdict',
   'forfeit',
   'pitch',
   'rate',
+  'resolve_dispute',
   'select_winner',
   'select_worker',
   'submit',
@@ -124,7 +157,7 @@ export const PendingActionName = z.enum([
 ]);
 
 export const PendingActionSchema = z.object({
-  role: z.enum(['requester', 'worker']),
+  role: z.enum(['requester', 'worker', 'evaluator', 'dispute_resolver', 'anyone']),
   action: PendingActionName,
   command: z.string(),
 });

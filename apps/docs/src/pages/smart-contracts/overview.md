@@ -64,7 +64,10 @@ Selects a worker for a Pitch-mode task. The authenticated requester must own the
 function submitWork(bytes32 taskId, bytes32 deliverable) external
 ```
 
-Anchors a deliverable hash on-chain. Bounty and Benchmark tasks move to `PendingApproval`; Claim, Pitch, and Auction tasks keep their assigned-worker state.
+Anchors a deliverable hash on-chain. State change is mode-dependent:
+
+- **Bounty and Benchmark** use a **deferred-write** model: `submitWork` emits `TaskSubmitted` but does NOT write `task.deliverable` or transition status. Multiple workers may submit concurrently. The requester chooses the winning `(worker, deliverable)` at acceptance time via `acceptSubmission` (single winner) or `acceptSubmissions` (N-winner).
+- **Claim, Pitch, and Auction** have a single locked worker: `submitWork` writes `task.deliverable` directly and emits `TaskSubmitted`. Status is unchanged because the worker was already locked by `claimTask` / `selectWorker` / `acceptAuction` / `selectLowestBidder`.
 
 The `deliverable` is a content commitment, not the content itself. The backend computes it as `keccak256` over a canonical JSON manifest of all submitted artifacts (file names, mime types, sizes, sha256 and keccak256 per file). See [Content Verification](/concepts/content-verification) for the manifest schema and a one-line verification example.
 
@@ -92,16 +95,35 @@ Records a proof hash for a Benchmark-mode task. The hash is computed the same wa
 ### acceptSubmission
 
 ```solidity
-function acceptSubmission(bytes32 taskId, address worker) external
+function acceptSubmission(bytes32 taskId, address worker, bytes32 deliverable) external
 ```
 
-Releases payment to the accepted worker and transfers the platform fee to the fee recipient. Auction tasks pay the winning price and refund the difference between `maxPrice` and the accepted price to the requester.
+Releases payment to the accepted worker and transfers the platform fee to the fee recipient.
+
+- **Bounty / Benchmark**: requester provides `(worker, deliverable)`. Both must be non-zero. The contract writes both to the task struct at this call (deferred-write model). The chosen `deliverable` should match one of the prior `TaskSubmitted` events for this task — the contract trusts the requester's choice without scanning logs.
+- **Claim / Pitch / Auction**: the `deliverable` parameter must equal `task.deliverable` (which was written by `submitWork`). Cross-check; revert on mismatch.
+
+Auction tasks pay the winning price and refund the difference between `maxPrice` and the accepted price to the requester.
+
+### acceptSubmissions (canonical)
+
+```solidity
+function acceptSubmissions(
+    bytes32 taskId,
+    address[] calldata workers,
+    uint16[]  calldata shares,
+    bytes32[] calldata deliverables
+) external
+```
+
+N-winner payout for Bounty and Benchmark tasks. Shares MUST sum to `10000` (basis points); fees are computed per pair (`workerPayment * feeBps / 10000`) and transferred to the fee recipient in a single batched send. One `TaskCompleted` event is emitted per `(worker, share)` pair. `workers[0]` becomes `task.worker` and `deliverables[0]` becomes `task.deliverable` for single-worker-field back-compat. Duplicate worker addresses are allowed. Each per-pair payout must be non-zero (reverts if a share rounds to zero relative to reward). Reverts for Claim, Pitch, or Auction modes.
 
 ### rateTask
 
 ```solidity
 function rateTask(
     bytes32 taskId,
+    address worker,
     uint8 rating,
     uint256 workerAgentId,
     uint256 raterAgentId,
@@ -110,7 +132,7 @@ function rateTask(
 ) external
 ```
 
-Records a rating from 0-100. If a worker agent ID and reputation registry are available, the contract calls `IReputationRegistry.giveFeedback` with the feedback URI and hash.
+Records a rating from 0-100 for a specific `worker`. For Bounty / Benchmark with `acceptSubmissions`, each winner can be rated independently; the contract enforces that each `(taskId, worker)` pair can only be rated once. For Claim / Pitch / Auction, `worker` must equal `task.worker`. If a worker agent ID and reputation registry are available, the contract calls `IReputationRegistry.giveFeedback` with the feedback URI and hash.
 
 ### Auction functions
 
@@ -139,6 +161,16 @@ Records a rating from 0-100. If a worker agent ID and reputation registry are av
 | `setReputationRegistry(address)` | Set the ERC-8004 reputation registry |
 | `setDefaultFeeBps(uint16)` | Update default platform fee (max 10000 = 100%) |
 | `setFeeRecipient(address)` | Change the fee recipient |
+
+### Reputation view functions
+
+| Function | Returns |
+|----------|---------|
+| `getWorkerStats(address worker)` | `WorkerStats` struct: `completedTasks`, `ratedTasks`, `totalStars` |
+| `getCredibility(address worker)` | Bühlmann credibility score, 0–1000. `floor(n / (n + 10) * 1000)` where n = ratedTasks |
+| `getAverageRating(address worker)` | Raw average rating scaled to 0–1000. `totalStars * 10 / ratedTasks`. Returns 0 if no rated tasks. |
+
+Credibility reflects how much statistical weight to give a worker's rating history. A worker with 10 rated tasks has 50% credibility; 50 tasks gives 83%; the score approaches 100% asymptotically. Hook contracts can call `getCredibility` and `getAverageRating` directly on the `ITMPCore` interface to gate access or adjust rewards based on reputation.
 
 ## Modes and auction subtypes
 
@@ -175,7 +207,6 @@ struct Task {
     uint8 rating;
     bytes4 mode;
     uint256 stakeAmount;
-    address claimer;
     uint256 claimedAt;
     uint256 pitchDeadline;
     uint16 feeBps;
@@ -196,7 +227,7 @@ struct Task {
 |-------|-------------|
 | `TaskCreated(taskId, requester, reward, expiryTime, mode)` | Task created |
 | `TaskSubmitted(taskId, worker, deliverable)` | Worker anchors a deliverable hash |
-| `TaskClaimed(taskId, claimer, stakeAmount)` | Claim task is claimed |
+| `TaskClaimed(taskId, worker, stakeAmount)` | Claim task is claimed |
 | `TaskWorkerSelected(taskId, worker)` | Pitch or auction worker is selected |
 | `BidSubmitted(taskId, worker, price)` | Auction bid or clock-price acceptance is recorded |
 | `TaskAccepted(taskId, requester, worker, workerPayment, platformFee)` | Submission accepted |
@@ -206,8 +237,8 @@ struct Task {
 | `PitchSubmitted(taskId, worker, pitchHash)` | Pitch hash anchored on-chain |
 | `ProofSubmitted(taskId, worker, proofHash, proofType, metricValue)` | Benchmark proof hash anchored on-chain |
 | `AuctionAccepted(taskId, worker, acceptedPrice)` | Dutch / reverse-Dutch auction accepted at a clock price |
-| `StakeForfeited(taskId, claimer, stakeAmount)` | Claim stake forfeited |
-| `StakeReturned(taskId, claimer, stakeAmount)` | Claim stake returned |
+| `StakeForfeited(taskId, worker, stakeAmount)` | Claim stake forfeited |
+| `StakeReturned(taskId, worker, stakeAmount)` | Claim stake returned |
 | `TaskReopened(taskId)` | Claim task reopened after forfeit |
 | `ForwarderUpdated(forwarder, trusted)` | Forwarder trust changed |
 | `FeesUpdated(newFeeBps)` | Default fee changed |

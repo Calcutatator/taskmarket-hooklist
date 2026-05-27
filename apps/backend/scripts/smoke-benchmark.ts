@@ -7,6 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-benchmark.ts
  */
+import { keccak256, toBytes } from 'viem';
 import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
@@ -34,12 +35,13 @@ async function main() {
 
   // 2. Worker submits proof (X402-paid, anchors hash on-chain)
   log('2/5', 'Worker submitting proof (X402)...');
+  const proofData = JSON.stringify({ gasPrice: '0.001 gwei', source: 'smoke-test' });
   const { proofId } = (await x402Post(
     `/api/tasks/${taskId}/proofs`,
     {
       taskId,
       workerAddress: worker.address,
-      proofData: JSON.stringify({ gasPrice: '0.001 gwei', source: 'smoke-test' }),
+      proofData,
       proofType: 'api_data',
       // uint256 on-chain — represent 0.001 gwei as 1_000_000 wei to keep integer
       metricValue: '1000000',
@@ -49,9 +51,18 @@ async function main() {
   )) as { proofId: string };
   ok('proofId', proofId);
 
-  // 3. Requester accepts worker
+  // 3. Requester accepts worker. Benchmark uses the deferred-write model in v2:
+  //    submitWork (which submissions go through) DID NOT write task.deliverable;
+  //    instead the requester names the deliverable hash at acceptance. For this
+  //    smoke we use the proof content hash as the deliverable since the worker
+  //    only submitted via the proof flow.
   log('3/5', 'Requester accepting submission (X402)...');
-  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
+  const deliverable = keccak256(toBytes(proofData));
+  await x402Post(
+    `/api/tasks/${taskId}/accept`,
+    { taskId, worker: worker.address, deliverable },
+    requester
+  );
   ok('accepted', true);
 
   // 4. Requester rates (0-100 scale per ERC-8004)

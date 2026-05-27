@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system smoke-identity smoke-agents smoke-inbox smoke-wallet smoke-withdraw smoke-encryption smoke-xmtp smoke-email smoke-broadcast smoke-auction-types smoke-cancel-update smoke-auction-full smoke-rater-agent-id smoke-bids-inbox smoke-pending-actions smoke-artifacts smoke-submission-hash smoke-task-search smoke-upgrade deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -25,11 +25,12 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
+	@echo "  make contract <cmd>       - Contract tools (audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|upgrade)"
+	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
@@ -340,6 +341,53 @@ fix:
 test:
 	$(ENV_LOADER) && pnpm turbo test
 
+contract:
+	@$(ENV_LOADER) && \
+	if [ -z "$(word 1,$(ARGS))" ]; then \
+		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		exit 1; \
+	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
+		mkdir -p packages/contracts/reports && \
+		cd packages/contracts && set -o pipefail && slither . --config-file slither.config.json 2>&1 | tee reports/slither-audit.md && \
+		echo "Report written to packages/contracts/reports/slither-audit.md"; \
+	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
+		mkdir -p packages/contracts/reports && \
+		cd packages/contracts && forge coverage --ir-minimum --report summary; \
+	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
+		cd packages/contracts && forge snapshot; \
+	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
+		cd packages/contracts && forge snapshot --check --tolerance 1; \
+	elif [ "$(word 1,$(ARGS))" = "doc" ]; then \
+		cd packages/contracts && forge doc --out docs/natspec && \
+		echo "Docs written to packages/contracts/docs/natspec"; \
+	elif [ "$(word 1,$(ARGS))" = "test" ]; then \
+		cd packages/contracts && forge test --summary; \
+	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
+		cd packages/contracts && FOUNDRY_PROFILE=ci forge test --summary; \
+	elif [ "$(word 1,$(ARGS))" = "pause" ]; then \
+		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
+			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
+		cast send $$CONTRACT_ADDRESS "pause()" \
+			--private-key $$FORGE_DEV_PRIVATE_KEY \
+			--rpc-url $$EVM_RPC_URL; \
+	elif [ "$(word 1,$(ARGS))" = "unpause" ]; then \
+		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
+			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
+		cast send $$CONTRACT_ADDRESS "unpause()" \
+			--private-key $$FORGE_DEV_PRIVATE_KEY \
+			--rpc-url $$EVM_RPC_URL; \
+	elif [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
+		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
+			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
+		cast send $$CONTRACT_ADDRESS "acceptOwnership()" \
+			--private-key $$FORGE_DEV_PRIVATE_KEY \
+			--rpc-url $$EVM_RPC_URL; \
+	else \
+		echo "Unknown command: $(word 1,$(ARGS))"; \
+		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		exit 1; \
+	fi
+
 ui-ci:
 	$(ENV_LOADER) && \
 	pnpm --filter @taskmarket/web lint:check && \
@@ -430,8 +478,12 @@ smoke:
 		cd apps/backend && pnpm smoke:task-search; \
 	elif [ "$(word 1,$(ARGS))" = "upgrade" ]; then \
 		cd apps/backend && pnpm smoke:upgrade; \
+	elif [ "$(word 1,$(ARGS))" = "ranked-payout" ]; then \
+		cd apps/backend && pnpm smoke:ranked-payout; \
+	elif [ "$(word 1,$(ARGS))" = "evaluator-timeout" ]; then \
+		cd apps/backend && pnpm smoke:evaluator-timeout; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout>"; \
 		exit 1; \
 	fi
 

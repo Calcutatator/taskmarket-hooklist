@@ -42,6 +42,12 @@ type CreateTaskFormValues = {
   stakeBps: string;
   stakeRequired: boolean;
   tags: string;
+  hookContract: string;
+  evaluator: string;
+  evaluatorFeeBps: string;
+  evaluationWindow: string;
+  appealWindow: string;
+  disputeResolver: string;
 };
 
 type Step = 'form' | 'payment' | 'signing' | 'submitting';
@@ -125,6 +131,21 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
     payload.auctionType = values.auctionType;
     if (auctionStartPrice) payload.auctionStartPrice = auctionStartPrice;
     if (auctionFloorPrice) payload.auctionFloorPrice = auctionFloorPrice;
+  }
+
+  if (values.hookContract.trim()) {
+    payload.hookContract = values.hookContract.trim();
+  }
+
+  if (values.evaluator.trim()) {
+    payload.evaluator = values.evaluator.trim();
+    const evalFeeBps = percentToBps(values.evaluatorFeeBps);
+    if (evalFeeBps > 0) payload.evaluatorFeeBps = evalFeeBps;
+    const evalWindowHours = optionalNumber(values.evaluationWindow);
+    if (evalWindowHours !== undefined) payload.evaluationWindowHours = evalWindowHours;
+    const appealWindowHours = optionalNumber(values.appealWindow);
+    if (appealWindowHours !== undefined) payload.appealWindowHours = appealWindowHours;
+    if (values.disputeResolver.trim()) payload.disputeResolver = values.disputeResolver.trim();
   }
 
   return payload;
@@ -213,6 +234,7 @@ function CreateTaskClientContent({
   const [mode, setMode] = useState('bounty');
   const [auctionType, setAuctionType] = useState('english');
   const [stakeRequired, setStakeRequired] = useState(false);
+  const [showAdvanced, setShowAdvanced] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>('form');
   const [error, setError] = useState<string | null>(null);
@@ -246,6 +268,12 @@ function CreateTaskClientContent({
       stakeBps: String(formData.get('stakeBps') ?? '0'),
       stakeRequired,
       tags: String(formData.get('tags') ?? ''),
+      hookContract: String(formData.get('hookContract') ?? ''),
+      evaluator: String(formData.get('evaluator') ?? ''),
+      evaluatorFeeBps: String(formData.get('evaluatorFeeBps') ?? ''),
+      evaluationWindow: String(formData.get('evaluationWindow') ?? ''),
+      appealWindow: String(formData.get('appealWindow') ?? ''),
+      disputeResolver: String(formData.get('disputeResolver') ?? ''),
     });
 
     setError(null);
@@ -703,6 +731,96 @@ function CreateTaskClientContent({
               </div>
             ) : null}
           </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader className="border-b border-border/75">
+            <div className="flex items-center justify-between gap-4">
+              <div>
+                <CardTitle>Advanced</CardTitle>
+                <CardDescription className="mt-2">
+                  Hook contracts and evaluator settings. Optional for all modes.
+                </CardDescription>
+              </div>
+              <Button
+                onClick={() => setShowAdvanced((v) => !v)}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                {showAdvanced ? 'Hide' : 'Show'}
+              </Button>
+            </div>
+          </CardHeader>
+          {showAdvanced ? (
+            <CardContent className="grid gap-5 pt-6">
+              <div className="grid gap-2">
+                <Label htmlFor="hookContract">Hook contract</Label>
+                <Input
+                  className="font-mono"
+                  id="hookContract"
+                  name="hookContract"
+                  placeholder="0x..."
+                  type="text"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="evaluator">Evaluator address</Label>
+                <Input
+                  className="font-mono"
+                  id="evaluator"
+                  name="evaluator"
+                  placeholder="0x..."
+                  type="text"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="evaluatorFeeBps">Evaluator fee %</Label>
+                <Input
+                  className="font-mono"
+                  id="evaluatorFeeBps"
+                  min="0"
+                  max="100"
+                  name="evaluatorFeeBps"
+                  placeholder="0"
+                  step="0.1"
+                  type="number"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="evaluationWindow">Evaluation window (hours)</Label>
+                <Input
+                  className="font-mono"
+                  id="evaluationWindow"
+                  min="1"
+                  name="evaluationWindow"
+                  placeholder="24"
+                  type="number"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="appealWindow">Appeal window (hours)</Label>
+                <Input
+                  className="font-mono"
+                  id="appealWindow"
+                  min="1"
+                  name="appealWindow"
+                  placeholder="24"
+                  type="number"
+                />
+              </div>
+              <div className="grid gap-2">
+                <Label htmlFor="disputeResolver">Dispute resolver address</Label>
+                <Input
+                  className="font-mono"
+                  id="disputeResolver"
+                  name="disputeResolver"
+                  placeholder="0x..."
+                  type="text"
+                />
+              </div>
+            </CardContent>
+          ) : null}
         </Card>
       </div>
 

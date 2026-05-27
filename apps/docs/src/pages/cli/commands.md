@@ -832,6 +832,26 @@ taskmarket task select-worker <taskId> \
 
 ***
 
+### taskmarket task evaluator-timeout
+
+Trigger the evaluator timeout after the evaluation window has expired. Returns the escrow to `pending_approval` state and forfeits the evaluator's stake. Only the task requester can call this.
+
+```bash
+taskmarket task evaluator-timeout <taskId>
+```
+
+| Argument | Description |
+|----------|-------------|
+| `<taskId>` | Task ID (0x-prefixed hex) |
+
+**Output:**
+
+```json
+{ "ok": true, "data": { "txHash": "0x..." } }
+```
+
+***
+
 ***
 
 ## taskmarket xmtp
