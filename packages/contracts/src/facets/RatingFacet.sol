@@ -1,21 +1,21 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibAppStorage, AppStorage} from "../libraries/LibAppStorage.sol";
-import {LibTaskMarket} from "../libraries/LibTaskMarket.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {IReputationRegistry} from "../interfaces/IReputationRegistry.sol";
-import {TMP_BOUNTY, TMP_CLAIM, TMP_PITCH, TMP_BENCHMARK, TMP_AUCTION} from "../interfaces/ITMPModes.sol";
+import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
+import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { IReputationRegistry } from "../interfaces/IReputationRegistry.sol";
+import { TMP_BOUNTY, TMP_CLAIM, TMP_PITCH, TMP_BENCHMARK, TMP_AUCTION } from "../interfaces/ITMPModes.sol";
 
 /// @title RatingFacet — task ratings, ERC-8004 reputation, and confidence scoring
 /// @notice Owns all reputation and rating concerns: workerStats updates, the IReputationRegistry
 ///         external call, and Bühlmann credibility calculations.
 contract RatingFacet {
-    bytes4 private constant BOUNTY    = TMP_BOUNTY;
-    bytes4 private constant CLAIM     = TMP_CLAIM;
-    bytes4 private constant PITCH     = TMP_PITCH;
+    bytes4 private constant BOUNTY = TMP_BOUNTY;
+    bytes4 private constant CLAIM = TMP_CLAIM;
+    bytes4 private constant PITCH = TMP_PITCH;
     bytes4 private constant BENCHMARK = TMP_BENCHMARK;
-    bytes4 private constant AUCTION   = TMP_AUCTION;
+    bytes4 private constant AUCTION = TMP_AUCTION;
 
     /// @notice Rate a completed task and submit ERC-8004 feedback.
     ///         The requester is the authenticated actor (pgtrSender).
@@ -65,16 +65,18 @@ contract RatingFacet {
         emit ITMPCore.TaskRated(taskId, worker, rating, raterAgentId);
 
         if (workerAgentId != 0 && s.reputationRegistry != address(0)) {
-            try IReputationRegistry(s.reputationRegistry).giveFeedback(
-                workerAgentId,
-                int128(int256(uint256(rating))),
-                0,
-                "tmp.task.rating",
-                _modeName(task.mode),
-                "",
-                feedbackURI,
-                feedbackHash
-            ) {} catch {}
+            try IReputationRegistry(s.reputationRegistry)
+                .giveFeedback(
+                    workerAgentId,
+                    int128(int256(uint256(rating))),
+                    0,
+                    "tmp.task.rating",
+                    _modeName(task.mode),
+                    "",
+                    feedbackURI,
+                    feedbackHash
+                ) { }
+                catch { }
         }
     }
 
@@ -96,11 +98,11 @@ contract RatingFacet {
 
     /// @dev Returns the canonical ERC-8004 tag2 string for a mode selector.
     function _modeName(bytes4 mode) private pure returns (string memory) {
-        if (mode == BOUNTY)    return "tmp.mode.bounty";
-        if (mode == CLAIM)     return "tmp.mode.claim";
-        if (mode == PITCH)     return "tmp.mode.pitch";
+        if (mode == BOUNTY) return "tmp.mode.bounty";
+        if (mode == CLAIM) return "tmp.mode.claim";
+        if (mode == PITCH) return "tmp.mode.pitch";
         if (mode == BENCHMARK) return "tmp.mode.benchmark";
-        if (mode == AUCTION)   return "tmp.mode.auction";
+        if (mode == AUCTION) return "tmp.mode.auction";
         return "";
     }
 }

@@ -1,8 +1,8 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibDiamond} from "./libraries/LibDiamond.sol";
-import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
+import { LibDiamond } from "./libraries/LibDiamond.sol";
+import { IDiamondCut } from "./interfaces/IDiamondCut.sol";
 
 /// @title Diamond — EIP-2535 proxy contract
 /// @notice Permanent proxy address. All logic lives in upgradeable facets.
@@ -15,18 +15,13 @@ import {IDiamondCut} from "./interfaces/IDiamondCut.sol";
 ///      to facets registered by the owner via diamondCut. The arbitrary-address
 ///      detector is a false positive here; routing is owner-controlled.
 contract Diamond {
-    constructor(
-        address _owner,
-        IDiamondCut.FacetCut[] memory _diamondCut,
-        address _init,
-        bytes memory _calldata
-    ) {
+    constructor(address _owner, IDiamondCut.FacetCut[] memory _diamondCut, address _init, bytes memory _calldata) {
         LibDiamond.setContractOwner(_owner);
         LibDiamond.diamondCut(_diamondCut, _init, _calldata);
     }
 
     // Receive ETH (no function matched, no calldata)
-    receive() external payable {}
+    receive() external payable { }
 
     // Route all calls to the appropriate facet via delegatecall.
     // slither-disable-next-line delegatecall-loop

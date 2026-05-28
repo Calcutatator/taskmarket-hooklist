@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibAppStorage, AppStorage} from "../libraries/LibAppStorage.sol";
-import {LibTaskMarket} from "../libraries/LibTaskMarket.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPHook} from "../interfaces/ITMPHook.sol";
+import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
+import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPHook } from "../interfaces/ITMPHook.sol";
 import {
     TMP_AUCTION,
     TMP_AUCTION_DUTCH,
@@ -15,10 +15,10 @@ import {
 
 /// @title AuctionFacet — bid submission, winner selection, and clock-price acceptance
 contract AuctionFacet {
-    bytes4 private constant AUCTION                = TMP_AUCTION;
-    bytes4 private constant AUCTION_DUTCH          = TMP_AUCTION_DUTCH;
-    bytes4 private constant AUCTION_ENGLISH        = TMP_AUCTION_ENGLISH;
-    bytes4 private constant AUCTION_REVERSE_DUTCH  = TMP_AUCTION_REVERSE_DUTCH;
+    bytes4 private constant AUCTION = TMP_AUCTION;
+    bytes4 private constant AUCTION_DUTCH = TMP_AUCTION_DUTCH;
+    bytes4 private constant AUCTION_ENGLISH = TMP_AUCTION_ENGLISH;
+    bytes4 private constant AUCTION_REVERSE_DUTCH = TMP_AUCTION_REVERSE_DUTCH;
     bytes4 private constant AUCTION_REVERSE_ENGLISH = TMP_AUCTION_REVERSE_ENGLISH;
 
     uint256 private constant MAX_BIDS_PER_TASK = 500;
@@ -39,7 +39,9 @@ contract AuctionFacet {
         ITMPCore.TaskAuctionConfig storage auctionCfg = s.taskAuctionConfigs[taskId];
         if (task.requester == address(0)) revert ITMPCore.TaskDoesNotExist();
         if (task.mode != AUCTION) revert ITMPCore.NotAnAuctionTask();
-        if (!(auctionCfg.auctionSubtype == AUCTION_ENGLISH || auctionCfg.auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.NotABidAuction();
+        if (!(auctionCfg.auctionSubtype == AUCTION_ENGLISH || auctionCfg.auctionSubtype == AUCTION_REVERSE_ENGLISH)) {
+            revert ITMPCore.NotABidAuction();
+        }
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
         if (block.timestamp >= auctionCfg.bidDeadline) revert ITMPCore.BidDeadlinePassed();
         if (price > auctionCfg.maxPrice) revert ITMPCore.BidExceedsMaxPrice();
@@ -69,7 +71,9 @@ contract AuctionFacet {
         ITMPCore.TaskAuctionConfig storage auctionCfg = s.taskAuctionConfigs[taskId];
         if (task.requester == address(0)) revert ITMPCore.TaskDoesNotExist();
         if (task.mode != AUCTION) revert ITMPCore.NotAnAuctionTask();
-        if (!(auctionCfg.auctionSubtype == AUCTION_ENGLISH || auctionCfg.auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.NotABidAuction();
+        if (!(auctionCfg.auctionSubtype == AUCTION_ENGLISH || auctionCfg.auctionSubtype == AUCTION_REVERSE_ENGLISH)) {
+            revert ITMPCore.NotABidAuction();
+        }
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
         if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (block.timestamp < auctionCfg.bidDeadline) revert ITMPCore.BidDeadlineNotPassed();
@@ -81,7 +85,8 @@ contract AuctionFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), auctionCfg.lowestBidder)) revert ITMPCore.HookCheckSelectWorkerRejected();
+            if (!ITMPHook(hook)
+                    .checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), auctionCfg.lowestBidder)) revert ITMPCore.HookCheckSelectWorkerRejected();
         }
 
         emit ITMPCore.TaskWorkerSelected(taskId, auctionCfg.lowestBidder);
@@ -104,7 +109,9 @@ contract AuctionFacet {
         ITMPCore.TaskAuctionConfig storage auctionCfg = s.taskAuctionConfigs[taskId];
         if (task.requester == address(0)) revert ITMPCore.TaskDoesNotExist();
         if (task.mode != AUCTION) revert ITMPCore.NotAnAuctionTask();
-        if (!(auctionCfg.auctionSubtype == AUCTION_DUTCH || auctionCfg.auctionSubtype == AUCTION_REVERSE_DUTCH)) revert ITMPCore.NotAClockPriceAuction();
+        if (!(auctionCfg.auctionSubtype == AUCTION_DUTCH || auctionCfg.auctionSubtype == AUCTION_REVERSE_DUTCH)) {
+            revert ITMPCore.NotAClockPriceAuction();
+        }
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
         if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (price > auctionCfg.maxPrice) revert ITMPCore.PriceExceedsMaxPrice();
@@ -115,7 +122,9 @@ contract AuctionFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), worker)) revert ITMPCore.HookCheckSelectWorkerRejected();
+            if (!ITMPHook(hook).checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), worker)) {
+                revert ITMPCore.HookCheckSelectWorkerRejected();
+            }
         }
 
         emit ITMPCore.AuctionAccepted(taskId, worker, price);

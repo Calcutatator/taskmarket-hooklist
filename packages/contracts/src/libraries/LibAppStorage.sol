@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
 
 /// @notice Unified application storage for all TaskMarket Diamond facets.
 ///         Stored at a fixed keccak256 slot; new fields must only be appended.

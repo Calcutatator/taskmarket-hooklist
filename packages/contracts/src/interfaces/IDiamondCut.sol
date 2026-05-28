@@ -3,7 +3,11 @@ pragma solidity ^0.8.24;
 
 /// @title IDiamondCut — EIP-2535 diamond cut interface
 interface IDiamondCut {
-    enum FacetCutAction { Add, Replace, Remove }
+    enum FacetCutAction {
+        Add,
+        Replace,
+        Remove
+    }
 
     struct FacetCut {
         address facetAddress;
@@ -19,9 +23,5 @@ interface IDiamondCut {
     /// @param _diamondCut Contains facet addresses and function selectors
     /// @param _init Address to delegatecall for initialization (address(0) = skip)
     /// @param _calldata Calldata for the _init delegatecall
-    function diamondCut(
-        FacetCut[] calldata _diamondCut,
-        address _init,
-        bytes calldata _calldata
-    ) external;
+    function diamondCut(FacetCut[] calldata _diamondCut, address _init, bytes calldata _calldata) external;
 }

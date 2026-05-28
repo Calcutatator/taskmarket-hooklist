@@ -10,9 +10,9 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  js:
+  quality:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 30
 
     services:
       postgres:
@@ -43,29 +43,6 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      - run: make install
-
-      - run: pnpm -r --filter '!@taskmarket/contracts' build
-
-      - run: pnpm -r --filter '!@taskmarket/contracts' lint:check
-
-      - run: pnpm -r --filter '!@taskmarket/contracts' format:check
-
-      - run: pnpm -r --filter '!@taskmarket/contracts' type-check
-
-      - run: make test
-        env:
-          DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
-
-  contracts:
-    runs-on: ubuntu-latest
-    timeout-minutes: 20
-
-    steps:
-      - uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
@@ -76,6 +53,20 @@ jobs:
 
       - name: Install Slither
         run: pip install slither-analyzer
+
+      - run: make install
+
+      - run: make build all
+
+      - run: make lint-check all
+
+      - run: make format-check all
+
+      - run: make type-check all
+
+      - run: make test
+        env:
+          DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
       - name: Gas snapshot check
         run: make contract snapshot-check

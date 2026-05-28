@@ -3,21 +3,21 @@ pragma solidity ^0.8.24;
 
 import "./helpers/DiamondTestHelper.sol";
 import "./helpers/ITaskMarketFull.sol";
-import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
-import {IDiamondLoupe} from "../src/interfaces/IDiamondLoupe.sol";
-import {Diamond} from "../src/Diamond.sol";
-import {DiamondCutFacet} from "../src/facets/DiamondCutFacet.sol";
-import {DiamondLoupeFacet} from "../src/facets/DiamondLoupeFacet.sol";
-import {AdminFacet} from "../src/facets/AdminFacet.sol";
-import {CoreFacet} from "../src/facets/CoreFacet.sol";
-import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
-import {ITMPCore} from "../src/interfaces/ITMPCore.sol";
-import {ITMPRegistry} from "../src/interfaces/ITMPRegistry.sol";
-import {ITMPEvaluator} from "../src/interfaces/ITMPEvaluator.sol";
-import {ITMPModes} from "../src/interfaces/ITMPModes.sol";
-import {ITMPFees} from "../src/interfaces/ITMPFees.sol";
-import {ITMPReputation} from "../src/interfaces/ITMPReputation.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
+import { IDiamondLoupe } from "../src/interfaces/IDiamondLoupe.sol";
+import { Diamond } from "../src/Diamond.sol";
+import { DiamondCutFacet } from "../src/facets/DiamondCutFacet.sol";
+import { DiamondLoupeFacet } from "../src/facets/DiamondLoupeFacet.sol";
+import { AdminFacet } from "../src/facets/AdminFacet.sol";
+import { CoreFacet } from "../src/facets/CoreFacet.sol";
+import { RegistryFacet } from "../src/facets/RegistryFacet.sol";
+import { ITMPCore } from "../src/interfaces/ITMPCore.sol";
+import { ITMPRegistry } from "../src/interfaces/ITMPRegistry.sol";
+import { ITMPEvaluator } from "../src/interfaces/ITMPEvaluator.sol";
+import { ITMPModes } from "../src/interfaces/ITMPModes.sol";
+import { ITMPFees } from "../src/interfaces/ITMPFees.sol";
+import { ITMPReputation } from "../src/interfaces/ITMPReputation.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "./mocks/MockUSDC.sol";
 
 contract MockPingFacet {

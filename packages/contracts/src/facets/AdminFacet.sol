@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/token/ERC20/IERC20.sol";
-import {Initializable} from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
-import {LibDiamond} from "../libraries/LibDiamond.sol";
-import {LibAppStorage, AppStorage} from "../libraries/LibAppStorage.sol";
-import {LibTaskMarket} from "../libraries/LibTaskMarket.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPFees} from "../interfaces/ITMPFees.sol";
-import {ITMPReputation} from "../interfaces/ITMPReputation.sol";
+import { Initializable } from "openzeppelin-contracts-upgradeable/contracts/proxy/utils/Initializable.sol";
+import { LibDiamond } from "../libraries/LibDiamond.sol";
+import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
+import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPFees } from "../interfaces/ITMPFees.sol";
+import { ITMPReputation } from "../interfaces/ITMPReputation.sol";
 
 /// @title AdminFacet — owner-only admin operations and proxy initialization
 /// @notice Handles initialization, pause/unpause, fee settings, forwarder registry,
@@ -32,11 +32,7 @@ contract AdminFacet is Initializable {
     /// @param _usdcToken    USDC token address on Base
     /// @param _feeRecipient Address to receive platform fees
     /// @param _defaultFeeBps Default platform fee in basis points (500 = 5%)
-    function initialize(
-        address _usdcToken,
-        address _feeRecipient,
-        uint16 _defaultFeeBps
-    ) external initializer {
+    function initialize(address _usdcToken, address _feeRecipient, uint16 _defaultFeeBps) external initializer {
         AppStorage storage s = LibAppStorage.appStorage();
         if (_usdcToken == address(0)) revert ITMPCore.InvalidUSDCToken();
         if (_feeRecipient == address(0)) revert ITMPCore.InvalidFeeRecipient();

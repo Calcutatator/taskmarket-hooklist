@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibAppStorage, AppStorage} from "../libraries/LibAppStorage.sol";
-import {LibTaskMarket} from "../libraries/LibTaskMarket.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPEvaluator} from "../interfaces/ITMPEvaluator.sol";
-import {ITMPHook} from "../interfaces/ITMPHook.sol";
-import {TMP_BOUNTY, TMP_BENCHMARK} from "../interfaces/ITMPModes.sol";
+import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
+import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPEvaluator } from "../interfaces/ITMPEvaluator.sol";
+import { ITMPHook } from "../interfaces/ITMPHook.sol";
+import { TMP_BOUNTY, TMP_BENCHMARK } from "../interfaces/ITMPModes.sol";
 
 /// @title EvaluatorFacet — ERC-8195 evaluator flow: assign, evaluate, appeal, finalize, dispute
 contract EvaluatorFacet {
-    bytes4 private constant BOUNTY    = TMP_BOUNTY;
+    bytes4 private constant BOUNTY = TMP_BOUNTY;
     bytes4 private constant BENCHMARK = TMP_BENCHMARK;
 
     /// @notice Assign an evaluator to an open task.
@@ -27,9 +27,9 @@ contract EvaluatorFacet {
         bytes32 taskId,
         address evaluator,
         uint256 stakeAmount,
-        uint16  feeBps,
-        uint32  evaluationWindowSecs,
-        uint32  appealWindowSecs,
+        uint16 feeBps,
+        uint32 evaluationWindowSecs,
+        uint32 appealWindowSecs,
         address disputeResolver
     ) external {
         AppStorage storage s = LibAppStorage.appStorage();
@@ -46,19 +46,21 @@ contract EvaluatorFacet {
         if (evalCfg.evaluator != address(0)) revert ITMPCore.EvaluatorAlreadyAssigned();
         if (feeBps > 10000) revert ITMPCore.FeeBpsTooHigh();
 
-        evalCfg.evaluator        = evaluator;
-        evalCfg.evaluatorStake   = stakeAmount;
-        evalCfg.evaluatorFeeBps  = feeBps;
+        evalCfg.evaluator = evaluator;
+        evalCfg.evaluatorStake = stakeAmount;
+        evalCfg.evaluatorFeeBps = feeBps;
         evalCfg.evaluationWindow = evaluationWindowSecs;
-        evalCfg.appealWindow     = appealWindowSecs;
-        evalCfg.disputeResolver  = disputeResolver;
+        evalCfg.appealWindow = appealWindowSecs;
+        evalCfg.disputeResolver = disputeResolver;
 
         if (stakeAmount > 0) {
             // Pull stake from the requester. Pulling from an arbitrary evaluator address would
             // let a malicious requester drain any address that has pre-approved this contract.
             // requester = _effectiveSender(s) = authenticated PGTR forwarder caller; not arbitrary
             // slither-disable-next-line arbitrary-send-erc20
-            if (!s.usdcToken.transferFrom(requester, address(this), stakeAmount)) revert ITMPCore.StakeTransferFailed();
+            if (!s.usdcToken.transferFrom(requester, address(this), stakeAmount)) {
+                revert ITMPCore.StakeTransferFailed();
+            }
         }
 
         emit ITMPEvaluator.EvaluatorAssigned(taskId, evaluator, stakeAmount);
@@ -74,11 +76,11 @@ contract EvaluatorFacet {
     /// @param evidenceHash keccak256 of off-chain evidence data
     /// @param awards       Per-worker award breakdown for Partial verdicts
     function evaluate(
-        bytes32                  taskId,
-        ITMPCore.VerdictType     verdictType,
-        uint16                   score,
-        uint16                   confidence,
-        bytes32                  evidenceHash,
+        bytes32 taskId,
+        ITMPCore.VerdictType verdictType,
+        uint16 score,
+        uint16 confidence,
+        bytes32 evidenceHash,
         ITMPCore.Award[] calldata awards
     ) external {
         AppStorage storage s = LibAppStorage.appStorage();
@@ -90,15 +92,16 @@ contract EvaluatorFacet {
         ITMPCore.Task storage task = s.tasks[taskId];
         ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
         if (evaluatorAddr != evalCfg.evaluator) revert ITMPCore.NotEvaluator();
-        if (!(task.status == ITMPCore.TaskStatus.Review ||
-            ((task.mode == BOUNTY || task.mode == BENCHMARK) &&
-                (task.status == ITMPCore.TaskStatus.Open || task.status == ITMPCore.TaskStatus.PendingApproval)))) revert ITMPCore.WrongStatusForEvaluation();
+        if (!(task.status == ITMPCore.TaskStatus.Review
+                    || ((task.mode == BOUNTY || task.mode == BENCHMARK)
+                        && (task.status == ITMPCore.TaskStatus.Open
+                            || task.status == ITMPCore.TaskStatus.PendingApproval)))) revert ITMPCore.WrongStatusForEvaluation();
 
         ITMPCore.Verdict storage v = s.taskVerdicts[taskId];
-        v.issued       = true;
-        v.verdictType  = verdictType;
-        v.score        = score;
-        v.confidence   = confidence;
+        v.issued = true;
+        v.verdictType = verdictType;
+        v.score = score;
+        v.confidence = confidence;
         v.evidenceHash = evidenceHash;
         delete v.awards;
         for (uint256 i; i < awards.length; ++i) {
@@ -109,7 +112,7 @@ contract EvaluatorFacet {
             task.worker = awards[0].worker;
         }
 
-        uint256 evalFee     = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
+        uint256 evalFee = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
         uint256 stakeReturn = evalCfg.evaluatorStake;
         evalCfg.evaluatorStake = 0;
         uint256 appealDeadline = block.timestamp + evalCfg.appealWindow;
@@ -121,13 +124,17 @@ contract EvaluatorFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkEvaluate(taskId, LibTaskMarket._buildContext(taskId, s), evaluatorAddr)) revert ITMPCore.HookCheckEvaluateRejected();
+            if (!ITMPHook(hook).checkEvaluate(taskId, LibTaskMarket._buildContext(taskId, s), evaluatorAddr)) {
+                revert ITMPCore.HookCheckEvaluateRejected();
+            }
         }
 
         emit ITMPEvaluator.TaskEvaluated(taskId, evaluatorAddr, uint8(verdictType), score);
 
         if (evalFee + stakeReturn > 0) {
-            if (!s.usdcToken.transfer(evalCfg.evaluator, evalFee + stakeReturn)) revert ITMPCore.EvaluatorPaymentFailed();
+            if (!s.usdcToken.transfer(evalCfg.evaluator, evalFee + stakeReturn)) {
+                revert ITMPCore.EvaluatorPaymentFailed();
+            }
         }
         LibTaskMarket._nonReentrantAfter(s);
     }
@@ -171,13 +178,13 @@ contract EvaluatorFacet {
         ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
         if (v.verdictType == ITMPCore.VerdictType.REJECT) {
             uint256 evalFee = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
-            uint256 refund  = task.reward - evalFee;
-            task.status      = ITMPCore.TaskStatus.Open;
-            task.worker      = address(0);
+            uint256 refund = task.reward - evalFee;
+            task.status = ITMPCore.TaskStatus.Open;
+            task.worker = address(0);
             task.deliverable = bytes32(0);
-            evalCfg.evaluator        = address(0);
+            evalCfg.evaluator = address(0);
             evalCfg.evaluationWindow = 0;
-            evalCfg.appealWindow     = 0;
+            evalCfg.appealWindow = 0;
             if (refund > 0) {
                 if (!s.usdcToken.transfer(task.requester, refund)) revert ITMPCore.RefundFailed();
             }
@@ -193,11 +200,9 @@ contract EvaluatorFacet {
     /// @param taskId      Task identifier
     /// @param verdictType Resolution type (must not be REJECT — must award workers)
     /// @param awards      Per-worker award breakdown
-    function resolveDispute(
-        bytes32                  taskId,
-        ITMPCore.VerdictType     verdictType,
-        ITMPCore.Award[] calldata awards
-    ) external {
+    function resolveDispute(bytes32 taskId, ITMPCore.VerdictType verdictType, ITMPCore.Award[] calldata awards)
+        external
+    {
         AppStorage storage s = LibAppStorage.appStorage();
         LibTaskMarket._requireNotPaused(s);
         LibTaskMarket._nonReentrantBefore(s);
@@ -236,10 +241,10 @@ contract EvaluatorFacet {
 
         ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
         address timedOutEvaluator = evalCfg.evaluator;
-        uint256 forfeited         = evalCfg.evaluatorStake;
-        evalCfg.evaluatorStake    = 0;
-        evalCfg.evaluator         = address(0);
-        task.status               = ITMPCore.TaskStatus.PendingApproval;
+        uint256 forfeited = evalCfg.evaluatorStake;
+        evalCfg.evaluatorStake = 0;
+        evalCfg.evaluator = address(0);
+        task.status = ITMPCore.TaskStatus.PendingApproval;
 
         if (forfeited > 0) {
             s.totalFeesCollected += forfeited;
@@ -252,10 +257,12 @@ contract EvaluatorFacet {
 
     // Complexity is inherent: iterates N winners applying per-winner fee, transfer, hook, and event; handles excess refund.
     // solhint-disable-next-line code-complexity
-    function _payAwards(bytes32 taskId, ITMPCore.Task storage task, ITMPCore.Verdict storage v, AppStorage storage s) private {
-        uint256 evalFee   = (task.reward * s.taskEvaluatorConfigs[taskId].evaluatorFeeBps) / 10000;
+    function _payAwards(bytes32 taskId, ITMPCore.Task storage task, ITMPCore.Verdict storage v, AppStorage storage s)
+        private
+    {
+        uint256 evalFee = (task.reward * s.taskEvaluatorConfigs[taskId].evaluatorFeeBps) / 10000;
         uint256 remaining = task.reward - evalFee;
-        uint256 n         = v.awards.length;
+        uint256 n = v.awards.length;
 
         ITMPCore.Verdict memory verdictMem = s.taskVerdicts[taskId];
 
@@ -269,7 +276,7 @@ contract EvaluatorFacet {
         uint256[] memory nets = new uint256[](n);
         uint256[] memory awardFees = new uint256[](n);
         for (uint256 i; i < n; ++i) {
-            address w   = v.awards[i].worker;
+            address w = v.awards[i].worker;
             uint256 amt = v.awards[i].amount;
             workers[i] = w;
             if (amt == 0) continue;
@@ -285,7 +292,9 @@ contract EvaluatorFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)) revert ITMPCore.HookCheckCompleteRejected();
+            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)) {
+                revert ITMPCore.HookCheckCompleteRejected();
+            }
         }
 
         // Multi-winner payouts require iterating recipients. State fully committed before loop (CEI).
@@ -304,7 +313,9 @@ contract EvaluatorFacet {
         }
 
         if (hook != address(0)) {
-            LibTaskMarket._afterHook(hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)));
+            LibTaskMarket._afterHook(
+                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem))
+            );
         }
     }
 }

@@ -1,19 +1,19 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibAppStorage, AppStorage} from "../libraries/LibAppStorage.sol";
-import {LibTaskMarket} from "../libraries/LibTaskMarket.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPHook} from "../interfaces/ITMPHook.sol";
-import {TMP_BOUNTY, TMP_CLAIM, TMP_PITCH, TMP_BENCHMARK, TMP_AUCTION} from "../interfaces/ITMPModes.sol";
+import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
+import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPHook } from "../interfaces/ITMPHook.sol";
+import { TMP_BOUNTY, TMP_CLAIM, TMP_PITCH, TMP_BENCHMARK, TMP_AUCTION } from "../interfaces/ITMPModes.sol";
 
 /// @title AcceptanceFacet — single and multi-winner submission acceptance with payouts
 contract AcceptanceFacet {
-    bytes4 private constant BOUNTY    = TMP_BOUNTY;
-    bytes4 private constant CLAIM     = TMP_CLAIM;
-    bytes4 private constant PITCH     = TMP_PITCH;
+    bytes4 private constant BOUNTY = TMP_BOUNTY;
+    bytes4 private constant CLAIM = TMP_CLAIM;
+    bytes4 private constant PITCH = TMP_PITCH;
     bytes4 private constant BENCHMARK = TMP_BENCHMARK;
-    bytes4 private constant AUCTION   = TMP_AUCTION;
+    bytes4 private constant AUCTION = TMP_AUCTION;
 
     /// @notice Accept submission and release payment to worker.
     ///         The requester is the authenticated actor (pgtrSender).
@@ -56,7 +56,9 @@ contract AcceptanceFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) revert ITMPCore.HookCheckCompleteRejected();
+            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) {
+                revert ITMPCore.HookCheckCompleteRejected();
+            }
         }
 
         if (!s.usdcToken.transfer(worker, workerPayment)) revert ITMPCore.WorkerPaymentFailed();
@@ -79,7 +81,9 @@ contract AcceptanceFacet {
         emit ITMPCore.TaskCompleted(taskId, requester, worker, workerPayment, fee);
 
         if (hook != address(0)) {
-            LibTaskMarket._afterHook(hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict)));
+            LibTaskMarket._afterHook(
+                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
+            );
         }
         LibTaskMarket._nonReentrantAfter(s);
     }
@@ -118,23 +122,32 @@ contract AcceptanceFacet {
         address evaluator = s.taskEvaluatorConfigs[taskId].evaluator;
         if (task.mode == CLAIM) {
             if (evaluator != address(0)) revert ITMPCore.UseEvaluate();
-            if (task.status != ITMPCore.TaskStatus.Claimed && task.status != ITMPCore.TaskStatus.PendingApproval) revert ITMPCore.TaskNotClaimed();
+            if (task.status != ITMPCore.TaskStatus.Claimed && task.status != ITMPCore.TaskStatus.PendingApproval) {
+                revert ITMPCore.TaskNotClaimed();
+            }
             if (worker != task.worker) revert ITMPCore.WorkerMismatch();
             if (deliverable != task.deliverable) revert ITMPCore.DeliverableMismatch();
         } else if (task.mode == PITCH) {
             if (evaluator != address(0)) revert ITMPCore.UseEvaluate();
-            if (task.status != ITMPCore.TaskStatus.WorkerSelected && task.status != ITMPCore.TaskStatus.PendingApproval) revert ITMPCore.WorkerNotSelected();
+            if (task.status != ITMPCore.TaskStatus.WorkerSelected && task.status != ITMPCore.TaskStatus.PendingApproval)
+            {
+                revert ITMPCore.WorkerNotSelected();
+            }
             if (worker != task.worker) revert ITMPCore.WorkerMismatch();
             if (deliverable != task.deliverable) revert ITMPCore.DeliverableMismatch();
         } else if (task.mode == AUCTION) {
             if (evaluator != address(0)) revert ITMPCore.UseEvaluate();
-            if (task.status != ITMPCore.TaskStatus.Claimed && task.status != ITMPCore.TaskStatus.PendingApproval) revert ITMPCore.WinnerNotSelected();
+            if (task.status != ITMPCore.TaskStatus.Claimed && task.status != ITMPCore.TaskStatus.PendingApproval) {
+                revert ITMPCore.WinnerNotSelected();
+            }
             if (worker != task.worker) revert ITMPCore.WorkerMismatch();
             if (deliverable != task.deliverable) revert ITMPCore.DeliverableMismatch();
         } else {
             // BOUNTY or BENCHMARK: deferred-write model
             if (evaluator != address(0)) revert ITMPCore.UseEvaluate();
-            if (task.status != ITMPCore.TaskStatus.Open && task.status != ITMPCore.TaskStatus.PendingApproval) revert ITMPCore.TaskNotOpen();
+            if (task.status != ITMPCore.TaskStatus.Open && task.status != ITMPCore.TaskStatus.PendingApproval) {
+                revert ITMPCore.TaskNotOpen();
+            }
             if (worker == address(0)) revert ITMPCore.WorkerRequired();
             if (deliverable == bytes32(0)) revert ITMPCore.DeliverableRequired();
             task.deliverable = deliverable;
@@ -156,7 +169,9 @@ contract AcceptanceFacet {
         if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (task.mode != BOUNTY && task.mode != BENCHMARK) revert ITMPCore.MultiSubmissionOnlyForBountyBenchmark();
         if (s.taskEvaluatorConfigs[taskId].evaluator != address(0)) revert ITMPCore.UseEvaluate();
-        if (task.status != ITMPCore.TaskStatus.Open && task.status != ITMPCore.TaskStatus.PendingApproval) revert ITMPCore.TaskNotOpen();
+        if (task.status != ITMPCore.TaskStatus.Open && task.status != ITMPCore.TaskStatus.PendingApproval) {
+            revert ITMPCore.TaskNotOpen();
+        }
 
         uint256 n = workers.length;
         if (n < 1) revert ITMPCore.NoWinners();
@@ -171,7 +186,8 @@ contract AcceptanceFacet {
 
         ITMPCore.Award[] memory awards = new ITMPCore.Award[](n);
         for (uint256 i; i < n; ++i) {
-            awards[i] = ITMPCore.Award({ worker: workers[i], amount: (task.reward * shares[i]) / 10000, rank: uint16(i + 1) });
+            awards[i] =
+                ITMPCore.Award({ worker: workers[i], amount: (task.reward * shares[i]) / 10000, rank: uint16(i + 1) });
         }
         ITMPCore.Verdict memory verdict = ITMPCore.Verdict({
             issued: true,
@@ -206,7 +222,9 @@ contract AcceptanceFacet {
 
         address hook = task.hookContract;
         if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) revert ITMPCore.HookCheckCompleteRejected();
+            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) {
+                revert ITMPCore.HookCheckCompleteRejected();
+            }
         }
 
         // Multi-winner payouts require iterating recipients. State fully committed before this loop (CEI).
@@ -220,7 +238,9 @@ contract AcceptanceFacet {
         }
 
         if (hook != address(0)) {
-            LibTaskMarket._afterHook(hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict)));
+            LibTaskMarket._afterHook(
+                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
+            );
         }
     }
 }

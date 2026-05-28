@@ -1,17 +1,17 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script, console} from "forge-std/Script.sol";
-import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
-import {DiamondCutFacet} from "../src/facets/DiamondCutFacet.sol";
-import {DiamondLoupeFacet} from "../src/facets/DiamondLoupeFacet.sol";
-import {AdminFacet} from "../src/facets/AdminFacet.sol";
-import {CoreFacet} from "../src/facets/CoreFacet.sol";
-import {AuctionFacet} from "../src/facets/AuctionFacet.sol";
-import {AcceptanceFacet} from "../src/facets/AcceptanceFacet.sol";
-import {EvaluatorFacet} from "../src/facets/EvaluatorFacet.sol";
-import {RatingFacet} from "../src/facets/RatingFacet.sol";
-import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
+import { Script, console } from "forge-std/Script.sol";
+import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
+import { DiamondCutFacet } from "../src/facets/DiamondCutFacet.sol";
+import { DiamondLoupeFacet } from "../src/facets/DiamondLoupeFacet.sol";
+import { AdminFacet } from "../src/facets/AdminFacet.sol";
+import { CoreFacet } from "../src/facets/CoreFacet.sol";
+import { AuctionFacet } from "../src/facets/AuctionFacet.sol";
+import { AcceptanceFacet } from "../src/facets/AcceptanceFacet.sol";
+import { EvaluatorFacet } from "../src/facets/EvaluatorFacet.sol";
+import { RatingFacet } from "../src/facets/RatingFacet.sol";
+import { RegistryFacet } from "../src/facets/RegistryFacet.sol";
 
 /// @title DiamondUpgrade — add, replace, or remove one facet in the Diamond
 /// @dev Required env vars:
@@ -34,7 +34,7 @@ import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
 ///          --rpc-url $BASE_SEPOLIA_RPC_URL --broadcast --verify
 contract DiamondUpgrade is Script {
     function run() external {
-        uint256 ownerKey       = vm.envUint("FORGE_DEV_PRIVATE_KEY");
+        uint256 ownerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
         address diamondAddress = vm.envAddress("DIAMOND_ADDRESS");
         string memory facetName = vm.envString("FACET_NAME");
         string memory actionStr = vm.envOr("ACTION", string("Replace"));
@@ -87,31 +87,31 @@ contract DiamondUpgrade is Script {
             selectors[4] = DiamondLoupeFacet.supportsInterface.selector;
         } else if (keccak256(bytes(name)) == keccak256("AdminFacet")) {
             selectors = new bytes4[](13);
-            selectors[0]  = AdminFacet.paused.selector;
-            selectors[1]  = AdminFacet.pause.selector;
-            selectors[2]  = AdminFacet.unpause.selector;
-            selectors[3]  = AdminFacet.transferOwnership.selector;
-            selectors[4]  = AdminFacet.acceptOwnership.selector;
-            selectors[5]  = AdminFacet.owner.selector;
-            selectors[6]  = AdminFacet.pendingOwner.selector;
-            selectors[7]  = AdminFacet.addForwarder.selector;
-            selectors[8]  = AdminFacet.removeForwarder.selector;
-            selectors[9]  = AdminFacet.isTrustedForwarder.selector;
+            selectors[0] = AdminFacet.paused.selector;
+            selectors[1] = AdminFacet.pause.selector;
+            selectors[2] = AdminFacet.unpause.selector;
+            selectors[3] = AdminFacet.transferOwnership.selector;
+            selectors[4] = AdminFacet.acceptOwnership.selector;
+            selectors[5] = AdminFacet.owner.selector;
+            selectors[6] = AdminFacet.pendingOwner.selector;
+            selectors[7] = AdminFacet.addForwarder.selector;
+            selectors[8] = AdminFacet.removeForwarder.selector;
+            selectors[9] = AdminFacet.isTrustedForwarder.selector;
             selectors[10] = AdminFacet.setDefaultFeeBps.selector;
             selectors[11] = AdminFacet.setFeeRecipient.selector;
             selectors[12] = AdminFacet.setReputationRegistry.selector;
         } else if (keccak256(bytes(name)) == keccak256("CoreFacet")) {
             selectors = new bytes4[](20);
-            selectors[0]  = bytes4(keccak256("BOUNTY()"));
-            selectors[1]  = bytes4(keccak256("CLAIM()"));
-            selectors[2]  = bytes4(keccak256("PITCH()"));
-            selectors[3]  = bytes4(keccak256("BENCHMARK()"));
-            selectors[4]  = bytes4(keccak256("AUCTION()"));
-            selectors[5]  = bytes4(keccak256("AUCTION_DUTCH()"));
-            selectors[6]  = bytes4(keccak256("AUCTION_ENGLISH()"));
-            selectors[7]  = bytes4(keccak256("AUCTION_REVERSE_DUTCH()"));
-            selectors[8]  = bytes4(keccak256("AUCTION_REVERSE_ENGLISH()"));
-            selectors[9]  = bytes4(keccak256("MAX_BIDS_PER_TASK()"));
+            selectors[0] = bytes4(keccak256("BOUNTY()"));
+            selectors[1] = bytes4(keccak256("CLAIM()"));
+            selectors[2] = bytes4(keccak256("PITCH()"));
+            selectors[3] = bytes4(keccak256("BENCHMARK()"));
+            selectors[4] = bytes4(keccak256("AUCTION()"));
+            selectors[5] = bytes4(keccak256("AUCTION_DUTCH()"));
+            selectors[6] = bytes4(keccak256("AUCTION_ENGLISH()"));
+            selectors[7] = bytes4(keccak256("AUCTION_REVERSE_DUTCH()"));
+            selectors[8] = bytes4(keccak256("AUCTION_REVERSE_ENGLISH()"));
+            selectors[9] = bytes4(keccak256("MAX_BIDS_PER_TASK()"));
             selectors[10] = CoreFacet.createTask.selector;
             selectors[11] = CoreFacet.claimTask.selector;
             selectors[12] = CoreFacet.selectWorker.selector;
@@ -146,16 +146,16 @@ contract DiamondUpgrade is Script {
             selectors[2] = RatingFacet.getAverageRating.selector;
         } else if (keccak256(bytes(name)) == keccak256("RegistryFacet")) {
             selectors = new bytes4[](21);
-            selectors[0]  = RegistryFacet.getTask.selector;
-            selectors[1]  = RegistryFacet.getWorkerStats.selector;
-            selectors[2]  = RegistryFacet.requesterNonce.selector;
-            selectors[3]  = RegistryFacet.getTaskState.selector;
-            selectors[4]  = RegistryFacet.getTaskContext.selector;
-            selectors[5]  = RegistryFacet.getTaskVerdict.selector;
-            selectors[6]  = RegistryFacet.evaluatorFor.selector;
-            selectors[7]  = RegistryFacet.taskMode.selector;
-            selectors[8]  = RegistryFacet.defaultFeeBps.selector;
-            selectors[9]  = RegistryFacet.feeRecipient.selector;
+            selectors[0] = RegistryFacet.getTask.selector;
+            selectors[1] = RegistryFacet.getWorkerStats.selector;
+            selectors[2] = RegistryFacet.requesterNonce.selector;
+            selectors[3] = RegistryFacet.getTaskState.selector;
+            selectors[4] = RegistryFacet.getTaskContext.selector;
+            selectors[5] = RegistryFacet.getTaskVerdict.selector;
+            selectors[6] = RegistryFacet.evaluatorFor.selector;
+            selectors[7] = RegistryFacet.taskMode.selector;
+            selectors[8] = RegistryFacet.defaultFeeBps.selector;
+            selectors[9] = RegistryFacet.feeRecipient.selector;
             selectors[10] = RegistryFacet.totalFeesCollected.selector;
             selectors[11] = RegistryFacet.feeForTask.selector;
             selectors[12] = RegistryFacet.reputationRegistry.selector;

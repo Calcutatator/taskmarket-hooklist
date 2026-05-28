@@ -184,7 +184,7 @@ lint-check:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt:check; \
+		cd packages/contracts && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:check; \
 	else \

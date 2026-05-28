@@ -63,12 +63,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     }
 
     // Relay helper: server relays a call on behalf of pgtrSender
-    function _relay(
-        address pgtrSenderAddr,
-        uint256 paymentAmount,
-        bytes memory data,
-        bytes32 nonce
-    ) internal {
+    function _relay(address pgtrSenderAddr, uint256 paymentAmount, bytes memory data, bytes32 nonce) internal {
         vm.prank(server);
         forwarder.relay(pgtrSenderAddr, paymentAmount, _validBefore, nonce, data);
     }
@@ -197,9 +192,8 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
         );
         bytes32 nonce = _nonce(100);
         bytes4 selector = market.createTask.selector;
-        bytes32 receiptHash = keccak256(
-            abi.encode(block.chainid, requester, REWARD, nonce, _validBefore, address(market), selector)
-        );
+        bytes32 receiptHash =
+            keccak256(abi.encode(block.chainid, requester, REWARD, nonce, _validBefore, address(market), selector));
 
         assertFalse(forwarder.consumedReceipts(receiptHash));
 

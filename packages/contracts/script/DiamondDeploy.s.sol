@@ -1,18 +1,18 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Script, console} from "forge-std/Script.sol";
-import {Diamond} from "../src/Diamond.sol";
-import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
-import {DiamondCutFacet} from "../src/facets/DiamondCutFacet.sol";
-import {DiamondLoupeFacet} from "../src/facets/DiamondLoupeFacet.sol";
-import {AdminFacet} from "../src/facets/AdminFacet.sol";
-import {CoreFacet} from "../src/facets/CoreFacet.sol";
-import {AuctionFacet} from "../src/facets/AuctionFacet.sol";
-import {AcceptanceFacet} from "../src/facets/AcceptanceFacet.sol";
-import {EvaluatorFacet} from "../src/facets/EvaluatorFacet.sol";
-import {RatingFacet} from "../src/facets/RatingFacet.sol";
-import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
+import { Script, console } from "forge-std/Script.sol";
+import { Diamond } from "../src/Diamond.sol";
+import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
+import { DiamondCutFacet } from "../src/facets/DiamondCutFacet.sol";
+import { DiamondLoupeFacet } from "../src/facets/DiamondLoupeFacet.sol";
+import { AdminFacet } from "../src/facets/AdminFacet.sol";
+import { CoreFacet } from "../src/facets/CoreFacet.sol";
+import { AuctionFacet } from "../src/facets/AuctionFacet.sol";
+import { AcceptanceFacet } from "../src/facets/AcceptanceFacet.sol";
+import { EvaluatorFacet } from "../src/facets/EvaluatorFacet.sol";
+import { RatingFacet } from "../src/facets/RatingFacet.sol";
+import { RegistryFacet } from "../src/facets/RegistryFacet.sol";
 
 /// @title DiamondDeploy — deploy TaskMarket Diamond proxy + all facets
 /// @dev Required env vars:
@@ -26,25 +26,25 @@ import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
 contract DiamondDeploy is Script {
     function run() external {
         uint256 deployerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
-        address deployer    = vm.addr(deployerKey);
-        address usdc        = vm.envAddress("USDC_ADDRESS");
+        address deployer = vm.addr(deployerKey);
+        address usdc = vm.envAddress("USDC_ADDRESS");
         address feeRecipient = vm.envAddress("FEE_RECIPIENT");
-        uint256 feeBpsRaw   = vm.envUint("DEFAULT_FEE_BPS");
+        uint256 feeBpsRaw = vm.envUint("DEFAULT_FEE_BPS");
         require(feeBpsRaw <= 10_000, "DEFAULT_FEE_BPS exceeds 10000");
-        uint16 feeBps       = uint16(feeBpsRaw);
+        uint16 feeBps = uint16(feeBpsRaw);
 
         vm.startBroadcast(deployerKey);
 
         // 1. Deploy all facet implementations
-        DiamondCutFacet  cutFacet     = new DiamondCutFacet();
-        DiamondLoupeFacet loupeFacet  = new DiamondLoupeFacet();
-        AdminFacet        adminFacet  = new AdminFacet();
-        CoreFacet         coreFacet   = new CoreFacet();
-        AuctionFacet      auctionFacet = new AuctionFacet();
-        AcceptanceFacet   acceptFacet = new AcceptanceFacet();
-        EvaluatorFacet    evalFacet   = new EvaluatorFacet();
-        RatingFacet       ratingFacet = new RatingFacet();
-        RegistryFacet     regFacet    = new RegistryFacet();
+        DiamondCutFacet cutFacet = new DiamondCutFacet();
+        DiamondLoupeFacet loupeFacet = new DiamondLoupeFacet();
+        AdminFacet adminFacet = new AdminFacet();
+        CoreFacet coreFacet = new CoreFacet();
+        AuctionFacet auctionFacet = new AuctionFacet();
+        AcceptanceFacet acceptFacet = new AcceptanceFacet();
+        EvaluatorFacet evalFacet = new EvaluatorFacet();
+        RatingFacet ratingFacet = new RatingFacet();
+        RegistryFacet regFacet = new RegistryFacet();
 
         // 2. Build FacetCut array
         IDiamondCut.FacetCut[] memory cuts = _buildCuts(
@@ -106,14 +106,14 @@ contract DiamondDeploy is Script {
         address registry
     ) internal pure returns (IDiamondCut.FacetCut[] memory cuts) {
         cuts = new IDiamondCut.FacetCut[](9);
-        cuts[0] = IDiamondCut.FacetCut(cut,      IDiamondCut.FacetCutAction.Add, _cutFacetSelectors());
-        cuts[1] = IDiamondCut.FacetCut(loupe,    IDiamondCut.FacetCutAction.Add, _loupeFacetSelectors());
-        cuts[2] = IDiamondCut.FacetCut(admin,    IDiamondCut.FacetCutAction.Add, _adminFacetSelectors());
-        cuts[3] = IDiamondCut.FacetCut(core,     IDiamondCut.FacetCutAction.Add, _coreFacetSelectors());
-        cuts[4] = IDiamondCut.FacetCut(auction,  IDiamondCut.FacetCutAction.Add, _auctionFacetSelectors());
-        cuts[5] = IDiamondCut.FacetCut(accept,   IDiamondCut.FacetCutAction.Add, _acceptFacetSelectors());
-        cuts[6] = IDiamondCut.FacetCut(eval,     IDiamondCut.FacetCutAction.Add, _evalFacetSelectors());
-        cuts[7] = IDiamondCut.FacetCut(rating,   IDiamondCut.FacetCutAction.Add, _ratingFacetSelectors());
+        cuts[0] = IDiamondCut.FacetCut(cut, IDiamondCut.FacetCutAction.Add, _cutFacetSelectors());
+        cuts[1] = IDiamondCut.FacetCut(loupe, IDiamondCut.FacetCutAction.Add, _loupeFacetSelectors());
+        cuts[2] = IDiamondCut.FacetCut(admin, IDiamondCut.FacetCutAction.Add, _adminFacetSelectors());
+        cuts[3] = IDiamondCut.FacetCut(core, IDiamondCut.FacetCutAction.Add, _coreFacetSelectors());
+        cuts[4] = IDiamondCut.FacetCut(auction, IDiamondCut.FacetCutAction.Add, _auctionFacetSelectors());
+        cuts[5] = IDiamondCut.FacetCut(accept, IDiamondCut.FacetCutAction.Add, _acceptFacetSelectors());
+        cuts[6] = IDiamondCut.FacetCut(eval, IDiamondCut.FacetCutAction.Add, _evalFacetSelectors());
+        cuts[7] = IDiamondCut.FacetCut(rating, IDiamondCut.FacetCutAction.Add, _ratingFacetSelectors());
         cuts[8] = IDiamondCut.FacetCut(registry, IDiamondCut.FacetCutAction.Add, _registryFacetSelectors());
     }
 
@@ -134,16 +134,16 @@ contract DiamondDeploy is Script {
     function _adminFacetSelectors() internal pure returns (bytes4[] memory s) {
         // initialize is NOT included — it is called once via Diamond constructor _init delegatecall
         s = new bytes4[](13);
-        s[0]  = AdminFacet.paused.selector;
-        s[1]  = AdminFacet.pause.selector;
-        s[2]  = AdminFacet.unpause.selector;
-        s[3]  = AdminFacet.transferOwnership.selector;
-        s[4]  = AdminFacet.acceptOwnership.selector;
-        s[5]  = AdminFacet.owner.selector;
-        s[6]  = AdminFacet.pendingOwner.selector;
-        s[7]  = AdminFacet.addForwarder.selector;
-        s[8]  = AdminFacet.removeForwarder.selector;
-        s[9]  = AdminFacet.isTrustedForwarder.selector;
+        s[0] = AdminFacet.paused.selector;
+        s[1] = AdminFacet.pause.selector;
+        s[2] = AdminFacet.unpause.selector;
+        s[3] = AdminFacet.transferOwnership.selector;
+        s[4] = AdminFacet.acceptOwnership.selector;
+        s[5] = AdminFacet.owner.selector;
+        s[6] = AdminFacet.pendingOwner.selector;
+        s[7] = AdminFacet.addForwarder.selector;
+        s[8] = AdminFacet.removeForwarder.selector;
+        s[9] = AdminFacet.isTrustedForwarder.selector;
         s[10] = AdminFacet.setDefaultFeeBps.selector;
         s[11] = AdminFacet.setFeeRecipient.selector;
         s[12] = AdminFacet.setReputationRegistry.selector;
@@ -152,16 +152,16 @@ contract DiamondDeploy is Script {
     function _coreFacetSelectors() internal pure returns (bytes4[] memory s) {
         s = new bytes4[](20);
         // public constant getters — must use keccak256; .selector syntax does not apply to constants
-        s[0]  = bytes4(keccak256("BOUNTY()"));
-        s[1]  = bytes4(keccak256("CLAIM()"));
-        s[2]  = bytes4(keccak256("PITCH()"));
-        s[3]  = bytes4(keccak256("BENCHMARK()"));
-        s[4]  = bytes4(keccak256("AUCTION()"));
-        s[5]  = bytes4(keccak256("AUCTION_DUTCH()"));
-        s[6]  = bytes4(keccak256("AUCTION_ENGLISH()"));
-        s[7]  = bytes4(keccak256("AUCTION_REVERSE_DUTCH()"));
-        s[8]  = bytes4(keccak256("AUCTION_REVERSE_ENGLISH()"));
-        s[9]  = bytes4(keccak256("MAX_BIDS_PER_TASK()"));
+        s[0] = bytes4(keccak256("BOUNTY()"));
+        s[1] = bytes4(keccak256("CLAIM()"));
+        s[2] = bytes4(keccak256("PITCH()"));
+        s[3] = bytes4(keccak256("BENCHMARK()"));
+        s[4] = bytes4(keccak256("AUCTION()"));
+        s[5] = bytes4(keccak256("AUCTION_DUTCH()"));
+        s[6] = bytes4(keccak256("AUCTION_ENGLISH()"));
+        s[7] = bytes4(keccak256("AUCTION_REVERSE_DUTCH()"));
+        s[8] = bytes4(keccak256("AUCTION_REVERSE_ENGLISH()"));
+        s[9] = bytes4(keccak256("MAX_BIDS_PER_TASK()"));
         // Core task functions
         s[10] = CoreFacet.createTask.selector;
         s[11] = CoreFacet.claimTask.selector;
@@ -207,16 +207,16 @@ contract DiamondDeploy is Script {
 
     function _registryFacetSelectors() internal pure returns (bytes4[] memory s) {
         s = new bytes4[](21);
-        s[0]  = RegistryFacet.getTask.selector;
-        s[1]  = RegistryFacet.getWorkerStats.selector;
-        s[2]  = RegistryFacet.requesterNonce.selector;
-        s[3]  = RegistryFacet.getTaskState.selector;
-        s[4]  = RegistryFacet.getTaskContext.selector;
-        s[5]  = RegistryFacet.getTaskVerdict.selector;
-        s[6]  = RegistryFacet.evaluatorFor.selector;
-        s[7]  = RegistryFacet.taskMode.selector;
-        s[8]  = RegistryFacet.defaultFeeBps.selector;
-        s[9]  = RegistryFacet.feeRecipient.selector;
+        s[0] = RegistryFacet.getTask.selector;
+        s[1] = RegistryFacet.getWorkerStats.selector;
+        s[2] = RegistryFacet.requesterNonce.selector;
+        s[3] = RegistryFacet.getTaskState.selector;
+        s[4] = RegistryFacet.getTaskContext.selector;
+        s[5] = RegistryFacet.getTaskVerdict.selector;
+        s[6] = RegistryFacet.evaluatorFor.selector;
+        s[7] = RegistryFacet.taskMode.selector;
+        s[8] = RegistryFacet.defaultFeeBps.selector;
+        s[9] = RegistryFacet.feeRecipient.selector;
         s[10] = RegistryFacet.totalFeesCollected.selector;
         s[11] = RegistryFacet.feeForTask.selector;
         s[12] = RegistryFacet.reputationRegistry.selector;

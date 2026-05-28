@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {ITMPCore} from "../../src/interfaces/ITMPCore.sol";
+import { ITMPCore } from "../../src/interfaces/ITMPCore.sol";
 
 /// @dev Combined interface for Diamond proxy test helpers.
 ///      Every function routes through Diamond.fallback to the correct facet.
@@ -24,12 +24,12 @@ interface ITaskMarketFull {
     function createTask(
         uint256 reward,
         uint256 durationSecs,
-        bytes4  mode,
+        bytes4 mode,
         uint256 pitchDeadlineSecs,
         uint256 bidDeadlineSecs,
         bytes32 contentHash,
         string calldata contentURI,
-        bytes4  auctionSubtype,
+        bytes4 auctionSubtype,
         address hookContract,
         bytes32[] calldata tags,
         bytes calldata hookData
@@ -76,29 +76,25 @@ interface ITaskMarketFull {
         bytes32 taskId,
         address evaluator,
         uint256 stakeAmount,
-        uint16  feeBps,
-        uint32  evaluationWindowSecs,
-        uint32  appealWindowSecs,
+        uint16 feeBps,
+        uint32 evaluationWindowSecs,
+        uint32 appealWindowSecs,
         address disputeResolver
     ) external;
 
     function evaluate(
-        bytes32                   taskId,
-        ITMPCore.VerdictType      verdictType,
-        uint16                    score,
-        uint16                    confidence,
-        bytes32                   evidenceHash,
+        bytes32 taskId,
+        ITMPCore.VerdictType verdictType,
+        uint16 score,
+        uint16 confidence,
+        bytes32 evidenceHash,
         ITMPCore.Award[] calldata awards
     ) external;
 
     function appeal(bytes32 taskId) external;
     function finalizeVerdict(bytes32 taskId) external;
 
-    function resolveDispute(
-        bytes32                   taskId,
-        ITMPCore.VerdictType      verdictType,
-        ITMPCore.Award[] calldata awards
-    ) external;
+    function resolveDispute(bytes32 taskId, ITMPCore.VerdictType verdictType, ITMPCore.Award[] calldata awards) external;
 
     function evaluatorTimeout(bytes32 taskId) external;
 
@@ -108,7 +104,7 @@ interface ITaskMarketFull {
     function rateTask(
         bytes32 taskId,
         address worker,
-        uint8   rating,
+        uint8 rating,
         uint256 workerAgentId,
         uint256 raterAgentId,
         string calldata feedbackURI,

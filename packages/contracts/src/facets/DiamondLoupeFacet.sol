@@ -1,16 +1,16 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {LibDiamond} from "../libraries/LibDiamond.sol";
-import {IDiamondLoupe} from "../interfaces/IDiamondLoupe.sol";
-import {IDiamondCut} from "../interfaces/IDiamondCut.sol";
-import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPEvaluator} from "../interfaces/ITMPEvaluator.sol";
-import {ITMPRegistry} from "../interfaces/ITMPRegistry.sol";
-import {ITMPReputation} from "../interfaces/ITMPReputation.sol";
-import {ITMPFees} from "../interfaces/ITMPFees.sol";
-import {ITMPModes} from "../interfaces/ITMPModes.sol";
+import { LibDiamond } from "../libraries/LibDiamond.sol";
+import { IDiamondLoupe } from "../interfaces/IDiamondLoupe.sol";
+import { IDiamondCut } from "../interfaces/IDiamondCut.sol";
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPEvaluator } from "../interfaces/ITMPEvaluator.sol";
+import { ITMPRegistry } from "../interfaces/ITMPRegistry.sol";
+import { ITMPReputation } from "../interfaces/ITMPReputation.sol";
+import { ITMPFees } from "../interfaces/ITMPFees.sol";
+import { ITMPModes } from "../interfaces/ITMPModes.sol";
 
 /// @title DiamondLoupeFacet — EIP-2535 introspection + ERC-165
 /// @notice Provides facet and selector enumeration for off-chain tooling and
@@ -61,15 +61,10 @@ contract DiamondLoupeFacet is IDiamondLoupe, IERC165 {
     ///      ds.supportedInterfaces mapping provides an escape hatch for dynamic overrides.
     function supportsInterface(bytes4 interfaceId) external view override returns (bool) {
         LibDiamond.DiamondStorage storage ds = LibDiamond.diamondStorage();
-        return ds.supportedInterfaces[interfaceId]
-            || interfaceId == type(IERC165).interfaceId
-            || interfaceId == type(IDiamondCut).interfaceId
-            || interfaceId == type(IDiamondLoupe).interfaceId
-            || interfaceId == type(ITMPCore).interfaceId
-            || interfaceId == type(ITMPEvaluator).interfaceId
-            || interfaceId == type(ITMPRegistry).interfaceId
-            || interfaceId == type(ITMPReputation).interfaceId
-            || interfaceId == type(ITMPFees).interfaceId
-            || interfaceId == type(ITMPModes).interfaceId;
+        return ds.supportedInterfaces[interfaceId] || interfaceId == type(IERC165).interfaceId
+            || interfaceId == type(IDiamondCut).interfaceId || interfaceId == type(IDiamondLoupe).interfaceId
+            || interfaceId == type(ITMPCore).interfaceId || interfaceId == type(ITMPEvaluator).interfaceId
+            || interfaceId == type(ITMPRegistry).interfaceId || interfaceId == type(ITMPReputation).interfaceId
+            || interfaceId == type(ITMPFees).interfaceId || interfaceId == type(ITMPModes).interfaceId;
     }
 }

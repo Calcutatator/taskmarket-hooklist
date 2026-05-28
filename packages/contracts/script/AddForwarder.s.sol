@@ -2,7 +2,7 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Script.sol";
-import {AdminFacet} from "../src/facets/AdminFacet.sol";
+import { AdminFacet } from "../src/facets/AdminFacet.sol";
 
 contract AddForwarder is Script {
     function run() external {

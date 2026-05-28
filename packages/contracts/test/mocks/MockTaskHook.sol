@@ -2,8 +2,8 @@
 pragma solidity ^0.8.24;
 
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import {ITMPHook} from "../../src/interfaces/ITMPHook.sol";
-import {ITMPCore} from "../../src/interfaces/ITMPCore.sol";
+import { ITMPHook } from "../../src/interfaces/ITMPHook.sol";
+import { ITMPCore } from "../../src/interfaces/ITMPCore.sol";
 
 /// @dev Configurable mock for ITMPHook.
 ///      Each check* function can be configured to revert or return false.
@@ -34,15 +34,37 @@ contract MockTaskHook is ITMPHook {
     uint8 public lastSeenStatusOnCheckComplete;
     address public taskMarketAddress;
 
-    function setTaskMarket(address tm) external { taskMarketAddress = tm; }
+    function setTaskMarket(address tm) external {
+        taskMarketAddress = tm;
+    }
 
-    function setRevertOnCheckFund(bool v) external { revertOnCheckFund = v; }
-    function setRejectOnCheckFund(bool v) external { rejectOnCheckFund = v; }
-    function setRevertOnCheckClaim(bool v) external { revertOnCheckClaim = v; }
-    function setRevertOnCheckSelectWorker(bool v) external { revertOnCheckSelectWorker = v; }
-    function setRevertOnCheckSubmit(bool v) external { revertOnCheckSubmit = v; }
-    function setRevertOnCheckEvaluate(bool v) external { revertOnCheckEvaluate = v; }
-    function setRevertOnCheckComplete(bool v) external { revertOnCheckComplete = v; }
+    function setRevertOnCheckFund(bool v) external {
+        revertOnCheckFund = v;
+    }
+
+    function setRejectOnCheckFund(bool v) external {
+        rejectOnCheckFund = v;
+    }
+
+    function setRevertOnCheckClaim(bool v) external {
+        revertOnCheckClaim = v;
+    }
+
+    function setRevertOnCheckSelectWorker(bool v) external {
+        revertOnCheckSelectWorker = v;
+    }
+
+    function setRevertOnCheckSubmit(bool v) external {
+        revertOnCheckSubmit = v;
+    }
+
+    function setRevertOnCheckEvaluate(bool v) external {
+        revertOnCheckEvaluate = v;
+    }
+
+    function setRevertOnCheckComplete(bool v) external {
+        revertOnCheckComplete = v;
+    }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
         return interfaceId == type(ITMPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
@@ -78,7 +100,11 @@ contract MockTaskHook is ITMPHook {
         return true;
     }
 
-    function checkComplete(bytes32 taskId, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) external override returns (bool) {
+    function checkComplete(bytes32 taskId, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata)
+        external
+        override
+        returns (bool)
+    {
         checkCompleteCalls++;
         // Record task status to verify CEI order: state must be committed before hook fires.
         if (taskMarketAddress != address(0)) {

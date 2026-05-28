@@ -1,10 +1,10 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {AppStorage} from "./LibAppStorage.sol";
-import {ITMPCore} from "../interfaces/ITMPCore.sol";
-import {ITMPHook} from "../interfaces/ITMPHook.sol";
-import {IPGTRForwarder} from "../interfaces/IPGTRForwarder.sol";
+import { AppStorage } from "./LibAppStorage.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITMPHook } from "../interfaces/ITMPHook.sol";
+import { IPGTRForwarder } from "../interfaces/IPGTRForwarder.sol";
 
 /// @title LibTaskMarket — shared internal helpers for TaskMarket facets
 /// @dev All helpers take AppStorage as an explicit parameter so they can be called
@@ -98,12 +98,9 @@ library LibTaskMarket {
     }
 
     /// @notice Calls checkFund on a hook contract, reverts if rejected.
-    function _checkFundHook(
-        bytes32 taskId,
-        address hookContract,
-        bytes calldata hookData,
-        AppStorage storage s
-    ) internal {
+    function _checkFundHook(bytes32 taskId, address hookContract, bytes calldata hookData, AppStorage storage s)
+        internal
+    {
         if (!ITMPHook(hookContract).checkFund(taskId, _buildContext(taskId, s), hookData)) {
             revert ITMPCore.HookCheckFundRejected();
         }
