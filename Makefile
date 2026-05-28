@@ -211,7 +211,7 @@ lint-fix:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt; \
+		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:write; \
 	else \
@@ -238,7 +238,7 @@ format-check:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt:check; \
+		cd packages/contracts && pnpm run format:check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:check; \
 	else \
@@ -265,7 +265,7 @@ format-fix:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt; \
+		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:write; \
 	else \

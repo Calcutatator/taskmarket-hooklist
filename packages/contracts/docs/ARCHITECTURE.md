@@ -94,10 +94,8 @@ EOAs or non-registered contracts will revert. The following functions are explic
 and may be called without a PGTR forwarder:
 
 - `refundExpired` — fund-recovery invariant; must always be callable once a task expires
-- `selectLowestBidder` — permissionless after bid deadline
 - `finalizeVerdict` — permissionless after appeal window closes
 - `resolveDispute` — callable by the designated dispute resolver address only
-- `evaluatorTimeout` — permissionless after the evaluator phase deadline
 - All `AdminFacet` functions — owner-only via `LibDiamond.enforceIsContractOwner`
 - `diamondCut` — owner-only
 

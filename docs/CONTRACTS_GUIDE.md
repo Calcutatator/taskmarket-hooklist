@@ -195,10 +195,8 @@ The following functions are intentionally callable without a PGTR forwarder:
 | Function | Caller |
 |---|---|
 | `refundExpired` | Anyone — fund-recovery invariant requires this always be callable |
-| `selectLowestBidder` | Anyone — permissionless after bid deadline |
 | `finalizeVerdict` | Anyone — permissionless after appeal window |
 | `resolveDispute` | Designated dispute resolver only |
-| `evaluatorTimeout` | Anyone — permissionless after evaluator deadline |
 | All `AdminFacet` functions | Contract owner via `LibDiamond.enforceIsContractOwner` |
 | `diamondCut` | Contract owner only |
 
@@ -239,7 +237,11 @@ Requires in `packages/contracts/.env`:
 
 After deployment:
 1. Set `CONTRACT_ADDRESS` in backend `.env`
-2. Call `setReputationRegistry(0x8004B663...)` via `make contract set-registry` (if configured)
+2. If `REPUTATION_REGISTRY` was not set at deploy time, call `setReputationRegistry` directly:
+   ```bash
+   cast send $DIAMOND_ADDRESS "setReputationRegistry(address)" $REGISTRY_ADDRESS \
+     --rpc-url $RPC_URL --private-key $PRIVATE_KEY
+   ```
 3. Submit the Diamond proxy address on Basescan via "Is this a proxy?" for EIP-2535 detection
 
 ## Upgrading facets
@@ -249,9 +251,9 @@ make upgrade testnet
 make upgrade mainnet
 ```
 
-`DiamondUpgrade.s.sol` reads `DIAMOND_ADDRESS`, `FACET_NAME`, and `ACTION` (ADD/REPLACE/REMOVE)
-from the environment, deploys a new facet implementation, and calls `diamondCut`. Only the
-contract owner may upgrade.
+`DiamondUpgrade.s.sol` reads `DIAMOND_ADDRESS`, `FACET_NAME`, and `ACTION` (`Add`/`Replace`/`Remove`,
+default `Replace`) from the environment, deploys a new facet implementation, and calls `diamondCut`.
+Only the contract owner may upgrade.
 
 ## Admin Operations
 

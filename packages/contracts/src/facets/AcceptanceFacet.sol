@@ -179,6 +179,7 @@ contract AcceptanceFacet {
 
         uint256 sumShares = 0;
         for (uint256 i; i < n; ++i) {
+            if (workers[i] == address(0)) revert ITMPCore.WorkerRequired();
             if (deliverables[i] == bytes32(0)) revert ITMPCore.DeliverableRequired();
             sumShares += shares[i];
         }
