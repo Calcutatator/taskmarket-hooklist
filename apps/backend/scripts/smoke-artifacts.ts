@@ -307,6 +307,13 @@ async function main() {
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
+  // Wait for indexer to process TaskCompleted event before rating
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
   console.log('\n=== Generic artifact smoke test passed ===');
   console.log('taskId:', taskId);
   console.log('submissionId:', submissionId);

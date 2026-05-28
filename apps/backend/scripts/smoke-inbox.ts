@@ -82,6 +82,13 @@ async function main() {
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
+  // Wait for indexer to process TaskCompleted event before rating
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
   // 6. Verify worker inbox after acceptance
   // When requester == worker (single-wallet dev setup), the task appears in both sections.
   log('6/7', 'Checking worker inbox (after acceptance)...');
