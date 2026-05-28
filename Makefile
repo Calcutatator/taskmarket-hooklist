@@ -25,7 +25,7 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
-	@echo "  make contract <cmd>       - Contract tools (audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
+	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
@@ -344,15 +344,21 @@ test:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
 		mkdir -p packages/contracts/reports && \
 		cd packages/contracts && set -o pipefail && slither . --config-file slither.config.json 2>&1 | tee reports/slither-audit.md && \
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
-		mkdir -p packages/contracts/reports && \
-		cd packages/contracts && forge coverage --ir-minimum --report summary; \
+		mkdir -p packages/contracts/reports/coverage && \
+		cd packages/contracts && forge coverage --ir-minimum --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
+	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
+		mkdir -p packages/contracts/reports/coverage && \
+		cd packages/contracts && forge coverage --ir-minimum --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		echo "lcov report written to reports/coverage/lcov.info" && \
+		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
 		cd packages/contracts && forge snapshot; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
@@ -384,7 +390,7 @@ contract:
 			--rpc-url $$EVM_RPC_URL; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	fi
 
