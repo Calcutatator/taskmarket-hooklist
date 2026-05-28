@@ -37,7 +37,7 @@ const MARKET_ABI = parseAbi([
   'function forfeitAndReopen(bytes32)',
   'function addForwarder(address)',
   'function removeForwarder(address)',
-  'function trustedForwarders(address) view returns (bool)',
+  'function isTrustedForwarder(address) view returns (bool)',
   'function requesterNonce(address) view returns (uint256)',
   'function assignEvaluator(bytes32,address,uint256,uint16,uint32,uint32,address)',
   'function evaluate(bytes32,uint8,uint16,uint16,bytes32,(address,uint256,uint16)[])',

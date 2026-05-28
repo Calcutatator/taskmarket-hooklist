@@ -2,8 +2,6 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
-import "../src/TaskMarket.sol";
 import "../src/interfaces/ITMPCore.sol";
 import "../src/interfaces/ITMPEvaluator.sol";
 import "../src/interfaces/ITMPRegistry.sol";
@@ -12,6 +10,12 @@ import "../src/interfaces/IPGTRForwarder.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "./mocks/MockTaskHook.sol";
+import "./helpers/DiamondTestHelper.sol";
+import "./helpers/ITaskMarketFull.sol";
+import {IDiamondCut} from "../src/interfaces/IDiamondCut.sol";
+import {CoreFacet} from "../src/facets/CoreFacet.sol";
+import {AdminFacet} from "../src/facets/AdminFacet.sol";
+import {Diamond} from "../src/Diamond.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock USDC", "USDC") {
@@ -80,8 +84,8 @@ contract MockPGTRForwarder is IPGTRForwarder {
     }
 }
 
-contract TaskMarketTest is Test {
-    TaskMarket public market;
+contract TaskMarketTest is DiamondTestHelper {
+    ITaskMarketFull public market;
     MockERC20 public usdc;
     MockPGTRForwarder public forwarder;
 
@@ -109,12 +113,7 @@ contract TaskMarketTest is Test {
         vm.startPrank(owner);
         usdc = new MockERC20();
 
-        TaskMarket implementation = new TaskMarket();
-        bytes memory initData = abi.encodeCall(
-            TaskMarket.initialize, (address(usdc), feeRecipient, defaultFeeBps)
-        );
-        ERC1967Proxy proxy = new ERC1967Proxy(address(implementation), initData);
-        market = TaskMarket(address(proxy));
+        market = deployDiamond(owner, address(usdc), feeRecipient, defaultFeeBps);
 
         forwarder = new MockPGTRForwarder(address(usdc));
         market.addForwarder(address(forwarder));
@@ -199,7 +198,7 @@ contract TaskMarketTest is Test {
     /// For Bounty/Benchmark the contract requires a non-zero deliverable, so the helper
     /// substitutes keccak256("work") to keep existing test flows working unchanged.
     function _acceptSubmission(bytes32 taskId, address _req, address _worker) internal {
-        TaskMarket.Task memory _task = market.getTask(taskId);
+        ITMPCore.Task memory _task = market.getTask(taskId);
         bytes32 _deliverable;
         if (_task.mode == market.BOUNTY() || _task.mode == market.BENCHMARK()) {
             _deliverable = keccak256("work");
@@ -239,7 +238,7 @@ contract TaskMarketTest is Test {
         assertEq(address(market.usdcToken()), address(usdc));
         assertEq(market.feeRecipient(), feeRecipient);
         assertEq(market.defaultFeeBps(), defaultFeeBps);
-        assertTrue(market.trustedForwarders(address(forwarder)));
+        assertTrue(market.isTrustedForwarder(address(forwarder)));
     }
 
     // -----------------------------------------------------------------------
@@ -284,7 +283,7 @@ contract TaskMarketTest is Test {
 
         assertEq(taskId, expectedId);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
         assertEq(task.reward, REWARD);
         assertEq(task.mode, market.BOUNTY());
@@ -325,7 +324,7 @@ contract TaskMarketTest is Test {
         assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + expectedFee);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
         assertEq(task.worker, worker1);
 
@@ -341,7 +340,7 @@ contract TaskMarketTest is Test {
 
         _claimTask(taskId, worker1, stakeAmount);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Claimed));
         assertEq(task.worker, worker1);
         assertEq(task.stakeAmount, stakeAmount);
@@ -373,7 +372,7 @@ contract TaskMarketTest is Test {
 
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + stakeAmount);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Open));
         assertEq(task.worker, address(0));
         assertEq(task.stakeAmount, 0);
@@ -387,7 +386,7 @@ contract TaskMarketTest is Test {
 
         _selectWorker(taskId, requester, worker1);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.WorkerSelected));
         assertEq(task.worker, worker1);
     }
@@ -403,7 +402,7 @@ contract TaskMarketTest is Test {
 
         assertEq(usdc.balanceOf(worker1) - 1000 * 10 ** 6, expectedWorkerPayment);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -417,7 +416,7 @@ contract TaskMarketTest is Test {
 
         assertEq(usdc.balanceOf(worker1) - 1000 * 10 ** 6, expectedWorkerPayment);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -430,7 +429,7 @@ contract TaskMarketTest is Test {
 
         _rateTask(taskId, requester, 5, 0, 0, "", bytes32(0));
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.rating, 5);
 
         ITMPCore.WorkerStats memory ws = market.getWorkerStats(worker1);
@@ -447,7 +446,7 @@ contract TaskMarketTest is Test {
         market.refundExpired(taskId);
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Expired));
     }
 
@@ -587,14 +586,14 @@ contract TaskMarketTest is Test {
         market.addForwarder(address(newForwarder));
         vm.stopPrank();
 
-        assertTrue(market.trustedForwarders(address(newForwarder)));
+        assertTrue(market.isTrustedForwarder(address(newForwarder)));
 
         bytes32 taskId = abi.decode(
             newForwarder.relay(address(market), requester, REWARD, abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex""))),
             (bytes32)
         );
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
     }
 
@@ -602,7 +601,7 @@ contract TaskMarketTest is Test {
         vm.prank(owner);
         market.removeForwarder(address(forwarder));
 
-        assertFalse(market.trustedForwarders(address(forwarder)));
+        assertFalse(market.isTrustedForwarder(address(forwarder)));
 
         bytes memory data = abi.encodeCall(market.createTask, (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex""));
         vm.expectRevert(ITMPCore.NotTrustedForwarder.selector);
@@ -626,17 +625,22 @@ contract TaskMarketTest is Test {
     // -----------------------------------------------------------------------
 
     function test_RevertWhen_Constructor_ZeroFeeRecipient() public {
-        TaskMarket impl = new TaskMarket();
-        bytes memory initData = abi.encodeCall(TaskMarket.initialize, (address(usdc), address(0), defaultFeeBps));
+        // Build the cuts array using the same selectors as setUp.
+        AdminFacet adminFacet = new AdminFacet();
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(adminFacet), IDiamondCut.FacetCutAction.Add, _adminSelectors());
+        bytes memory badInit = abi.encodeCall(AdminFacet.initialize, (address(usdc), address(0), defaultFeeBps));
         vm.expectRevert(ITMPCore.InvalidFeeRecipient.selector);
-        new ERC1967Proxy(address(impl), initData);
+        new Diamond(owner, cuts, address(adminFacet), badInit);
     }
 
     function test_RevertWhen_Constructor_FeeBpsTooHigh() public {
-        TaskMarket impl = new TaskMarket();
-        bytes memory initData = abi.encodeCall(TaskMarket.initialize, (address(usdc), feeRecipient, 10001));
+        AdminFacet adminFacet = new AdminFacet();
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(adminFacet), IDiamondCut.FacetCutAction.Add, _adminSelectors());
+        bytes memory badInit = abi.encodeCall(AdminFacet.initialize, (address(usdc), feeRecipient, 10001));
         vm.expectRevert(ITMPCore.FeeBpsTooHigh.selector);
-        new ERC1967Proxy(address(impl), initData);
+        new Diamond(owner, cuts, address(adminFacet), badInit);
     }
 
     // -----------------------------------------------------------------------
@@ -786,7 +790,7 @@ contract TaskMarketTest is Test {
 
         _submitWork(taskId, worker1, deliverable);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         // First submission transitions Open → PendingApproval.
         // task.deliverable stays zero until acceptSubmission (deferred-write model).
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.PendingApproval));
@@ -803,7 +807,7 @@ contract TaskMarketTest is Test {
         _submitWork(taskId, worker2, deliverableB);
         _submitWork(taskId, alice,   deliverableC);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.PendingApproval), "subsequent submissions must stay PendingApproval");
         assertEq(task.deliverable, bytes32(0), "task.deliverable must stay zero until acceptance");
     }
@@ -814,7 +818,7 @@ contract TaskMarketTest is Test {
 
         _submitWork(taskId, worker1, deliverable);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.PendingApproval));
         assertEq(task.deliverable, bytes32(0));
     }
@@ -825,7 +829,7 @@ contract TaskMarketTest is Test {
         _submitWork(taskId, worker1, keccak256("proof A"));
         _submitWork(taskId, worker2, keccak256("proof B"));
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.PendingApproval));
         assertEq(task.deliverable, bytes32(0));
     }
@@ -855,7 +859,7 @@ contract TaskMarketTest is Test {
         bytes32 deliverable = keccak256("claim work");
         _submitWork(taskId, worker1, deliverable);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Claimed));
         assertEq(task.deliverable, deliverable);
     }
@@ -867,7 +871,7 @@ contract TaskMarketTest is Test {
         bytes32 deliverable = keccak256("pitch work");
         _submitWork(taskId, worker1, deliverable);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.WorkerSelected));
         assertEq(task.deliverable, deliverable);
     }
@@ -877,7 +881,7 @@ contract TaskMarketTest is Test {
         _submitWork(taskId, worker1, keccak256("work"));
         _acceptSubmission(taskId, requester, worker1);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -905,7 +909,7 @@ contract TaskMarketTest is Test {
         forwarder.relay(address(market), worker2, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
         // State must be unchanged
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.WorkerSelected));
         assertEq(task.deliverable, bytes32(0));
     }
@@ -1052,8 +1056,8 @@ contract TaskMarketTest is Test {
 
         assertEq(market.getWorkerStats(worker1).completedTasks, 2);
 
-        TaskMarket.Task memory t1 = market.getTask(taskId1);
-        TaskMarket.Task memory t2 = market.getTask(taskId2);
+        ITMPCore.Task memory t1 = market.getTask(taskId1);
+        ITMPCore.Task memory t2 = market.getTask(taskId2);
         assertEq(t1.worker, worker1);
         assertEq(t2.worker, worker1);
     }
@@ -1078,7 +1082,7 @@ contract TaskMarketTest is Test {
         uint256 price = REWARD / 2;
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_ENGLISH());
         _submitBid(taskId, worker1, price);
-        TaskMarket.Bid[] memory bids = market.getBids(taskId);
+        ITMPCore.Bid[] memory bids = market.getBids(taskId);
         assertEq(bids.length, 1);
         assertEq(bids[0].worker, worker1);
         assertEq(bids[0].price, price);
@@ -1107,7 +1111,7 @@ contract TaskMarketTest is Test {
         emit ITMPCore.AuctionAccepted(taskId, worker1, acceptPrice);
         _acceptAuction(taskId, worker1, acceptPrice);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Claimed));
         assertEq(task.worker, worker1);
         assertEq(task.stakeAmount, acceptPrice);
@@ -1130,7 +1134,7 @@ contract TaskMarketTest is Test {
         assertEq(usdc.balanceOf(worker1), workerBalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + expectedRefund);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -1185,19 +1189,23 @@ contract TaskMarketTest is Test {
     }
 
     // -----------------------------------------------------------------------
-    // UUPS Upgrade tests
+    // Diamond upgrade tests (replaces UUPS upgrade tests)
     // -----------------------------------------------------------------------
 
-    function test_Upgrade_preservesState() public {
+    function test_DiamondCut_PreservesState() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, REWARD / 2);
 
+        // Re-deploy CoreFacet and replace one selector — state must be preserved.
+        CoreFacet newCore = new CoreFacet();
+        bytes4[] memory sels = new bytes4[](1);
+        sels[0] = CoreFacet.claimTask.selector;
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(newCore), IDiamondCut.FacetCutAction.Replace, sels);
         vm.prank(owner);
-        TaskMarket newImpl = new TaskMarket();
-        vm.prank(owner);
-        market.upgradeToAndCall(address(newImpl), "");
+        IDiamondCut(address(market)).diamondCut(cuts, address(0), "");
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.requester, requester);
         assertEq(task.worker, worker1);
         assertEq(task.stakeAmount, REWARD / 2);
@@ -1205,11 +1213,15 @@ contract TaskMarketTest is Test {
         assertEq(task.mode, market.AUCTION());
     }
 
-    function test_Upgrade_onlyOwner() public {
-        TaskMarket newImpl = new TaskMarket();
+    function test_DiamondCut_OnlyOwner() public {
+        CoreFacet newCore = new CoreFacet();
+        bytes4[] memory sels = new bytes4[](1);
+        sels[0] = CoreFacet.claimTask.selector;
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(newCore), IDiamondCut.FacetCutAction.Replace, sels);
         vm.prank(alice);
         vm.expectRevert();
-        market.upgradeToAndCall(address(newImpl), "");
+        IDiamondCut(address(market)).diamondCut(cuts, address(0), "");
     }
 
     // -----------------------------------------------------------------------
@@ -1224,7 +1236,7 @@ contract TaskMarketTest is Test {
         market.refundExpired(taskId);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Expired));
     }
 
@@ -1251,7 +1263,7 @@ contract TaskMarketTest is Test {
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + expectedRequesterRefund);
         assertEq(usdc.balanceOf(feeRecipient), feeRecipientBalanceBefore + fee);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
 
         assertEq(market.getWorkerStats(worker1).completedTasks, 1);
@@ -1275,7 +1287,7 @@ contract TaskMarketTest is Test {
         assertEq(usdc.balanceOf(worker1), worker1BalanceBefore + expectedWorkerPayment);
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -1293,7 +1305,7 @@ contract TaskMarketTest is Test {
         _cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Cancelled));
     }
 
@@ -1304,7 +1316,7 @@ contract TaskMarketTest is Test {
         _cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Cancelled));
     }
 
@@ -1315,7 +1327,7 @@ contract TaskMarketTest is Test {
         _cancelTask(taskId, requester);
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD);
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Cancelled));
     }
 
@@ -1366,7 +1378,7 @@ contract TaskMarketTest is Test {
 
         _updateTask(taskId, requester, additionalPayment, newReward, 0, 0, 0);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.reward, newReward);
     }
 
@@ -1379,7 +1391,7 @@ contract TaskMarketTest is Test {
 
         assertEq(usdc.balanceOf(requester), requesterBalanceBefore + (REWARD - newReward));
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.reward, newReward);
     }
 
@@ -1450,7 +1462,7 @@ contract TaskMarketTest is Test {
         uint256 newReward = REWARD * 2;
         uint256 additionalPayment = newReward - REWARD;
         _updateTask(taskId, requester, additionalPayment, newReward, 0, 0, 0);
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(task.reward, newReward);
         assertEq(market.getTaskAuctionConfig(taskId).maxPrice, newReward);
     }
@@ -1583,21 +1595,18 @@ contract TaskMarketTest is Test {
     }
 
     // -----------------------------------------------------------------------
-    // Storage layout — __gap is now 38 slots after consuming 12 slots for extension
-    // mappings (trustedForwarders, requesterNonce, taskPitchHashes, taskProofHashes,
-    // taskWorkerRated, taskTags, taskVerdicts, phaseDeadline, taskEvaluatorConfigs,
-    // taskAuctionConfigs, taskMetadata, taskPitchConfigs). If a future upgrade reorders
-    // or shrinks gap incorrectly, this read of the last gap slot will fail.
+    // Diamond AppStorage layout — state is stored at a fixed keccak256 slot,
+    // not at sequential slots 0-N. Verify the AppStorage slot holds the USDC
+    // token address written during initialize().
     // -----------------------------------------------------------------------
 
-    function test_StorageGapIs38Slots() public view {
-        // Slots 0–19 are occupied by TaskMarket state variables (all OZ v5 inherited
-        // contracts use ERC-7201 namespaced storage so they claim no sequential slots).
-        // __gap starts at slot 20 and spans 38 slots, ending at 20+38-1 = 57.
-        bytes32 firstGapSlot = vm.load(address(market), bytes32(uint256(20)));
-        bytes32 lastGapSlot = vm.load(address(market), bytes32(uint256(57)));
-        assertEq(firstGapSlot, bytes32(0));
-        assertEq(lastGapSlot, bytes32(0));
+    function test_AppStorageSlot_HoldsUSDCToken() public view {
+        // AppStorage is at keccak256("taskmarket.appstorage.v1").
+        // The first field (usdcToken) lives at that slot.
+        bytes32 slot = keccak256("taskmarket.appstorage.v1");
+        bytes32 raw = vm.load(address(market), slot);
+        address storedUsdc = address(uint160(uint256(raw)));
+        assertEq(storedUsdc, address(usdc));
     }
 
     // =======================================================================
@@ -1662,7 +1671,7 @@ contract TaskMarketTest is Test {
 
         _acceptSubmissions(taskId, requester, workers, shares, deliverables);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
         assertEq(task.worker, worker1, "task.worker = workers[0]");
         assertEq(task.deliverable, keccak256("A"), "task.deliverable = deliverables[0]");
@@ -1695,7 +1704,7 @@ contract TaskMarketTest is Test {
 
         _acceptSubmissions(taskId, requester, workers, shares, deliverables);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
@@ -1802,7 +1811,7 @@ contract TaskMarketTest is Test {
         uint256 w1Before = usdc.balanceOf(worker1);
         _acceptSubmissions(taskId, requester, workers, shares, deliverables);
 
-        TaskMarket.Task memory task = market.getTask(taskId);
+        ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
         assertEq(task.worker, worker1);
         assertEq(task.deliverable, keccak256("the work"));
@@ -3045,10 +3054,11 @@ contract TaskMarketTest is Test {
     function test_RevertWhen_SubmitBid_LimitReached() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 14 days, market.AUCTION_ENGLISH());
         uint256 limit = market.MAX_BIDS_PER_TASK();
-        // Set taskBids[taskId].length = limit via storage cheat. taskBids is at slot 5.
-        // For mapping(bytes32 => Bid[]) at slot p, the array length for key k is at
+        // AppStorage is at keccak256("taskmarket.appstorage.v1"). taskBids is at offset 5 within
+        // the struct. For mapping(bytes32 => Bid[]) at slot p, the array length for key k is at
         // keccak256(abi.encode(k, p)). Writing the limit directly avoids 500 gas-heavy bids.
-        bytes32 arrayLengthSlot = keccak256(abi.encode(taskId, uint256(5)));
+        uint256 taskBidsSlot = uint256(keccak256("taskmarket.appstorage.v1")) + 5;
+        bytes32 arrayLengthSlot = keccak256(abi.encode(taskId, taskBidsSlot));
         vm.store(address(market), arrayLengthSlot, bytes32(limit));
         vm.expectRevert(ITMPCore.BidLimitReached.selector);
         _submitBid(taskId, worker1, REWARD / 2);

@@ -47,13 +47,13 @@ deploy:
 	TMPFILE=$$(mktemp) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		CHAINID=84532; \
-		cd packages/contracts && forge script script/DeployTestnet.s.sol:DeployTestnet \
+		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
 		CHAINID=8453; \
-		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
+		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
@@ -62,7 +62,7 @@ deploy:
 		echo "Usage: make deploy <testnet|mainnet>"; \
 		exit 1; \
 	fi; \
-	PROXY=$$(grep "Proxy (CONTRACT_ADDRESS):" $$TMPFILE | awk '{print $$NF}'); \
+	PROXY=$$(grep "Diamond deployed at:" $$TMPFILE | awk '{print $$NF}'); \
 	rm -f $$TMPFILE; \
 	if [ -n "$$PROXY" ]; then \
 		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
@@ -80,12 +80,12 @@ deploy:
 upgrade:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
-		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
 			--rpc-url base \
 			--broadcast \
 			--verify; \

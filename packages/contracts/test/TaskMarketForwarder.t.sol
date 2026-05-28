@@ -2,20 +2,20 @@
 pragma solidity ^0.8.24;
 
 import "forge-std/Test.sol";
-import "@openzeppelin/contracts/proxy/ERC1967/ERC1967Proxy.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import "../src/TaskMarket.sol";
 import "../src/TaskMarketForwarder.sol";
 import "../src/interfaces/IPGTRForwarder.sol";
 import "../src/interfaces/ITMPCore.sol";
 import "./mocks/MockUSDC.sol";
+import "./helpers/DiamondTestHelper.sol";
+import "./helpers/ITaskMarketFull.sol";
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-contract TaskMarketForwarderTest is Test {
-    TaskMarket public market;
+contract TaskMarketForwarderTest is DiamondTestHelper {
+    ITaskMarketFull public market;
     TaskMarketForwarder public forwarder;
     MockUSDC public usdc;
 
@@ -37,10 +37,7 @@ contract TaskMarketForwarderTest is Test {
 
         usdc = new MockUSDC();
 
-        // Deploy TaskMarket via UUPS proxy (msg.sender == owner -> sets ownable)
-        address impl = address(new TaskMarket());
-        bytes memory init = abi.encodeCall(TaskMarket.initialize, (address(usdc), owner, 500));
-        market = TaskMarket(address(new ERC1967Proxy(impl, init)));
+        market = deployDiamond(owner, address(usdc), owner, 500);
 
         // Deploy TaskMarketForwarder and register it
         forwarder = new TaskMarketForwarder(address(usdc), address(market), server);
