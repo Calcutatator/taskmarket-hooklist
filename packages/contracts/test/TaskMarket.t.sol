@@ -10,6 +10,7 @@ import "../src/interfaces/IPGTRForwarder.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "./mocks/MockTaskHook.sol";
+import "./mocks/MockUSDC.sol";
 import "./helpers/DiamondTestHelper.sol";
 import "./helpers/ITaskMarketFull.sol";
 import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
@@ -78,6 +79,25 @@ contract MockPGTRForwarder is IPGTRForwarder {
             revert("relay failed");
         }
         return result;
+    }
+}
+
+contract MockReputationRegistry {
+    uint256 public calls;
+    string public lastTag2;
+
+    function giveFeedback(
+        uint256,
+        int128,
+        uint8,
+        string calldata,
+        string calldata tag2,
+        string calldata,
+        string calldata,
+        bytes32
+    ) external {
+        calls++;
+        lastTag2 = tag2;
     }
 }
 
@@ -3394,5 +3414,413 @@ contract TaskMarketTest is DiamondTestHelper {
         vm.store(address(market), arrayLengthSlot, bytes32(limit));
         vm.expectRevert(ITMPCore.BidLimitReached.selector);
         _submitBid(taskId, worker1, REWARD / 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // RegistryFacet view coverage: taskMode, totalFeesCollected, getTaskMetadata
+    // -------------------------------------------------------------------------
+
+    function test_TaskMode_ReturnsBountyMode() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        assertEq(market.taskMode(taskId), market.BOUNTY());
+    }
+
+    function test_TaskMode_ReturnsClaimMode() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        assertEq(market.taskMode(taskId), market.CLAIM());
+    }
+
+    function test_TotalFeesCollected_ZeroInitially() public view {
+        assertEq(market.totalFeesCollected(), 0);
+    }
+
+    function test_TotalFeesCollected_IncreasesAfterAccept() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        uint256 before = market.totalFeesCollected();
+        _acceptSubmission(taskId, requester, worker1);
+        assertGt(market.totalFeesCollected(), before);
+    }
+
+    function test_GetTaskMetadata_CreatedAt() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        ITMPCore.TaskMetadata memory meta = market.getTaskMetadata(taskId);
+        assertEq(meta.createdAt, block.timestamp);
+    }
+
+    function test_GetTaskMetadata_ContentHashAndURI() public {
+        bytes32 contentHash = keccak256("some-content");
+        bytes32[] memory emptyTags = new bytes32[](0);
+        bytes32 taskId = abi.decode(
+            _relay(
+                requester,
+                REWARD,
+                abi.encodeCall(
+                    market.createTask,
+                    (
+                        REWARD,
+                        DURATION,
+                        market.BOUNTY(),
+                        0,
+                        0,
+                        contentHash,
+                        "ipfs://xyz",
+                        bytes4(0),
+                        address(0),
+                        emptyTags,
+                        hex""
+                    )
+                )
+            ),
+            (bytes32)
+        );
+        ITMPCore.TaskMetadata memory meta = market.getTaskMetadata(taskId);
+        assertEq(meta.contentHash, contentHash);
+        assertEq(meta.contentURI, "ipfs://xyz");
+    }
+
+    // -------------------------------------------------------------------------
+    // RatingFacet coverage: _modeName branches via reputationRegistry
+    // -------------------------------------------------------------------------
+
+    function test_RateTask_WithRegistry_BountyModeName() public {
+        MockReputationRegistry reg = new MockReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 80, 1, 0, "", bytes32(0));
+        assertEq(reg.calls(), 1);
+        assertEq(reg.lastTag2(), "tmp.mode.bounty");
+    }
+
+    function test_RateTask_WithRegistry_ClaimModeName() public {
+        MockReputationRegistry reg = new MockReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        _claimTask(taskId, worker1, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 80, 1, 0, "", bytes32(0));
+        assertEq(reg.calls(), 1);
+        assertEq(reg.lastTag2(), "tmp.mode.claim");
+    }
+
+    function test_RateTask_WithRegistry_PitchModeName() public {
+        MockReputationRegistry reg = new MockReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        _selectWorker(taskId, requester, worker1);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 70, 1, 0, "", bytes32(0));
+        assertEq(reg.calls(), 1);
+        assertEq(reg.lastTag2(), "tmp.mode.pitch");
+    }
+
+    function test_RateTask_WithRegistry_BenchmarkModeName() public {
+        MockReputationRegistry reg = new MockReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BENCHMARK(), 0, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 90, 1, 0, "", bytes32(0));
+        assertEq(reg.calls(), 1);
+        assertEq(reg.lastTag2(), "tmp.mode.benchmark");
+    }
+
+    function test_RateTask_WithRegistry_AuctionModeName() public {
+        MockReputationRegistry reg = new MockReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
+        _acceptAuction(taskId, worker1, REWARD / 2);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 85, 1, 0, "", bytes32(0));
+        assertEq(reg.calls(), 1);
+        assertEq(reg.lastTag2(), "tmp.mode.auction");
+    }
+
+    function test_RateTask_NoRegistry_SkipsExternalCall() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        _rateTask(taskId, requester, worker1, 80, 1, 0, "", bytes32(0));
+        assertEq(market.getWorkerStats(worker1).ratedTasks, 1);
+    }
+
+    // -------------------------------------------------------------------------
+    // AcceptanceFacet: validate-branch reverts and hook paths
+    // -------------------------------------------------------------------------
+
+    function test_AcceptSubmission_Claim_NotClaimed_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        vm.expectRevert(ITMPCore.TaskNotClaimed.selector);
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, bytes32(0)))
+        );
+    }
+
+    function test_AcceptSubmission_Pitch_WorkerNotSelected_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        vm.expectRevert(ITMPCore.WorkerNotSelected.selector);
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, bytes32(0)))
+        );
+    }
+
+    function test_AcceptSubmission_Auction_WinnerNotSelected_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
+        vm.expectRevert(ITMPCore.WinnerNotSelected.selector);
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, bytes32(0)))
+        );
+    }
+
+    function test_AcceptSubmission_Bounty_AlreadyAccepted_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        vm.expectRevert(ITMPCore.TaskNotOpen.selector);
+        forwarder.relay(
+            address(market),
+            requester,
+            0,
+            abi.encodeCall(market.acceptSubmission, (taskId, worker2, keccak256("work2")))
+        );
+    }
+
+    function test_AcceptSubmissions_AlreadyAccepted_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        address[] memory workers = new address[](1);
+        workers[0] = worker1;
+        uint16[] memory shares = new uint16[](1);
+        shares[0] = 10000;
+        bytes32[] memory deliverables = new bytes32[](1);
+        deliverables[0] = keccak256("A");
+        _acceptSubmissions(taskId, requester, workers, shares, deliverables);
+
+        vm.expectRevert(ITMPCore.TaskNotOpen.selector);
+        forwarder.relay(
+            address(market),
+            requester,
+            0,
+            abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, deliverables))
+        );
+    }
+
+    function test_AcceptSubmission_Hook_CheckComplete_Rejected_Reverts() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.BOUNTY(), address(hook));
+        hook.setRejectOnCheckComplete(true);
+        vm.expectRevert(ITMPCore.HookCheckCompleteRejected.selector);
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, keccak256("work")))
+        );
+    }
+
+    // -------------------------------------------------------------------------
+    // CoreFacet: hook-reject paths and submitWork status guards
+    // -------------------------------------------------------------------------
+
+    function test_HookCheckSelectWorker_RejectFalse_BlocksSelectWorker() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.PITCH(), address(hook));
+        hook.setRejectOnCheckSelectWorker(true);
+        vm.expectRevert(ITMPCore.HookCheckSelectWorkerRejected.selector);
+        forwarder.relay(address(market), requester, 0, abi.encodeCall(market.selectWorker, (taskId, worker1)));
+    }
+
+    function test_HookCheckSubmit_RejectFalse_BlocksSubmit() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.BOUNTY(), address(hook));
+        hook.setRejectOnCheckSubmit(true);
+        vm.expectRevert(ITMPCore.HookCheckSubmitRejected.selector);
+        forwarder.relay(address(market), worker1, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+    }
+
+    function test_SubmitWork_Bounty_WhenAccepted_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _acceptSubmission(taskId, requester, worker1);
+        vm.expectRevert(ITMPCore.TaskNotOpen.selector);
+        forwarder.relay(address(market), worker2, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+    }
+
+    function test_SubmitWork_Pitch_WhenOpen_WorkerNotSelected_Reverts() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.PITCH(), 2 days, 0);
+        vm.expectRevert(ITMPCore.WorkerNotSelected.selector);
+        forwarder.relay(address(market), worker1, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+    }
+
+    // -------------------------------------------------------------------------
+    // EvaluatorFacet: evaluatorTimeout with stake forfeit, hook reject paths
+    // -------------------------------------------------------------------------
+
+    function test_EvaluatorTimeout_WithStake_ForfeitsStake() public {
+        uint256 stakeAmount = 50 * 10 ** 6;
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        uint32 evalWindow = uint32(2 days);
+
+        usdc.mint(requester, stakeAmount);
+        vm.prank(requester);
+        usdc.approve(address(market), stakeAmount);
+
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, stakeAmount, 0, evalWindow, uint32(1 days), address(0))
+            )
+        );
+
+        _claimTask(taskId, worker1, 0);
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        vm.warp(block.timestamp + evalWindow + 1 seconds);
+
+        uint256 feeBefore = market.totalFeesCollected();
+        uint256 feeRecipientBefore = usdc.balanceOf(feeRecipient);
+        _relay(requester, 0, abi.encodeCall(market.evaluatorTimeout, (taskId)));
+        assertGt(market.totalFeesCollected(), feeBefore);
+        assertGt(usdc.balanceOf(feeRecipient), feeRecipientBefore);
+    }
+
+    function test_HookCheckEvaluate_RejectFalse_BlocksEvaluate() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.CLAIM(), address(hook));
+        _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
+        _claimTask(taskId, worker1, 0);
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        hook.setRejectOnCheckEvaluate(true);
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: worker1, amount: REWARD, rank: 1 });
+        vm.expectRevert(ITMPCore.HookCheckEvaluateRejected.selector);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 1000, awards);
+    }
+
+    // -------------------------------------------------------------------------
+    // EvaluatorFacet: hook reject path in _payAwards (finalizeVerdict)
+    // -------------------------------------------------------------------------
+
+    function test_FinalizeVerdict_Hook_CheckComplete_RejectFalse_Reverts() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.CLAIM(), address(hook));
+        _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
+        _claimTask(taskId, worker1, 0);
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: worker1, amount: REWARD, rank: 1 });
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 1000, awards);
+
+        vm.warp(block.timestamp + 2 days + 1 seconds);
+
+        hook.setRejectOnCheckComplete(true);
+        vm.expectRevert(ITMPCore.HookCheckCompleteRejected.selector);
+        market.finalizeVerdict(taskId);
+    }
+
+    // -------------------------------------------------------------------------
+    // AuctionFacet: hook reject path for acceptAuction
+    // -------------------------------------------------------------------------
+
+    function test_AcceptAuction_Hook_CheckSelectWorker_RejectFalse_Reverts() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32[] memory emptyTags = new bytes32[](0);
+        bytes32 taskId = abi.decode(
+            _relay(
+                requester,
+                REWARD,
+                abi.encodeCall(
+                    market.createTask,
+                    (
+                        REWARD,
+                        DURATION,
+                        market.AUCTION(),
+                        0,
+                        1 days,
+                        bytes32(0),
+                        "",
+                        market.AUCTION_DUTCH(),
+                        address(hook),
+                        emptyTags,
+                        hex""
+                    )
+                )
+            ),
+            (bytes32)
+        );
+        hook.setRejectOnCheckSelectWorker(true);
+        vm.expectRevert(ITMPCore.HookCheckSelectWorkerRejected.selector);
+        _acceptAuction(taskId, worker1, REWARD / 2);
+    }
+
+    // -------------------------------------------------------------------------
+    // MockTaskHook setter coverage: setRejectOnCheckClaim, setRevertOnCheckComplete,
+    // supportsInterface
+    // -------------------------------------------------------------------------
+
+    // -------------------------------------------------------------------------
+    // MockERC20 and MockPGTRForwarder helper method coverage
+    // -------------------------------------------------------------------------
+
+    function test_MockERC20_Decimals() public view {
+        assertEq(usdc.decimals(), 6);
+    }
+
+    function test_MockUSDC_Decimals() public {
+        MockUSDC mockUsdc = new MockUSDC();
+        assertEq(mockUsdc.decimals(), 6);
+    }
+
+    function test_MockPGTRForwarder_IsPGTRForwarder() public view {
+        assertTrue(forwarder.isPGTRForwarder());
+    }
+
+    function test_MockPGTRForwarder_IsTrustedForwarder_Self() public view {
+        assertTrue(forwarder.isTrustedForwarder(address(forwarder)));
+    }
+
+    function test_MockPGTRForwarder_IsTrustedForwarder_Other_False() public view {
+        assertFalse(forwarder.isTrustedForwarder(address(0x1234)));
+    }
+
+    function test_MockPGTRForwarder_SupportsInterface_IPGTRForwarder() public view {
+        assertTrue(forwarder.supportsInterface(type(IPGTRForwarder).interfaceId));
+    }
+
+    function test_MockPGTRForwarder_SupportsInterface_IERC165() public view {
+        assertTrue(forwarder.supportsInterface(type(IERC165).interfaceId));
+    }
+
+    function test_MockPGTRForwarder_SupportsInterface_Unknown_False() public view {
+        assertFalse(forwarder.supportsInterface(bytes4(0xdeadbeef)));
+    }
+
+    function test_MockHook_SetRejectOnCheckClaim_BlocksClaim() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.CLAIM(), address(hook));
+        hook.setRejectOnCheckClaim(true);
+        vm.expectRevert(ITMPCore.HookCheckClaimRejected.selector);
+        forwarder.relay(address(market), worker1, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+    }
+
+    function test_MockHook_SetRevertOnCheckComplete_BlocksAccept() public {
+        MockTaskHook hook = new MockTaskHook();
+        bytes32 taskId = _createTaskWithHook(requester, REWARD, DURATION, market.BOUNTY(), address(hook));
+        hook.setRevertOnCheckComplete(true);
+        vm.expectRevert();
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, keccak256("work")))
+        );
+    }
+
+    function test_MockHook_SupportsInterface() public {
+        MockTaskHook hook = new MockTaskHook();
+        assertTrue(hook.supportsInterface(type(ITMPHook).interfaceId));
+        assertFalse(hook.supportsInterface(bytes4(0xdeadbeef)));
     }
 }

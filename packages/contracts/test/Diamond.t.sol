@@ -26,6 +26,12 @@ contract MockPingFacet {
     }
 }
 
+contract MockRevertingInit {
+    function initialize() external pure {
+        revert("MockRevertingInit: intentional revert");
+    }
+}
+
 /// @title DiamondTest — tests for Diamond proxy routing, diamondCut, ownership, and ERC-165.
 contract DiamondTest is DiamondTestHelper {
     ITaskMarketFull public diamond;
@@ -268,6 +274,26 @@ contract DiamondTest is DiamondTestHelper {
         assertEq(facet, address(0));
     }
 
+    function test_Loupe_Facets_ReturnsAllFacetsWithSelectors() public view {
+        IDiamondLoupe.Facet[] memory allFacets = IDiamondLoupe(address(diamond)).facets();
+        assertEq(allFacets.length, 9, "Exactly 9 facets expected");
+        for (uint256 i = 0; i < allFacets.length; i++) {
+            assertNotEq(allFacets[i].facetAddress, address(0), "Facet address must be non-zero");
+            assertGt(allFacets[i].functionSelectors.length, 0, "Each facet must expose at least one selector");
+        }
+    }
+
+    function test_Loupe_FacetFunctionSelectors_ReturnsSelectorsForLoupe() public view {
+        address loupeAddr = IDiamondLoupe(address(diamond)).facetAddress(DiamondLoupeFacet.facets.selector);
+        bytes4[] memory sels = IDiamondLoupe(address(diamond)).facetFunctionSelectors(loupeAddr);
+        assertEq(sels.length, 5, "DiamondLoupeFacet exposes exactly 5 selectors");
+    }
+
+    function test_Loupe_FacetFunctionSelectors_UnknownAddress_Empty() public view {
+        bytes4[] memory sels = IDiamondLoupe(address(diamond)).facetFunctionSelectors(address(0x9999));
+        assertEq(sels.length, 0, "Unknown facet address must return empty selector list");
+    }
+
     // -------------------------------------------------------------------------
     // State preservation across upgrade
     // -------------------------------------------------------------------------
@@ -289,5 +315,36 @@ contract DiamondTest is DiamondTestHelper {
         assertEq(diamond.feeRecipient(), feeRecipient);
         assertEq(diamond.defaultFeeBps(), FEE_BPS);
         assertEq(diamond.usdcToken(), address(usdc));
+    }
+
+    // -------------------------------------------------------------------------
+    // LibDiamond: _initializeDiamondCut failure propagates revert data
+    // -------------------------------------------------------------------------
+
+    function test_DiamondCut_InitFunctionReverts_PropagatesError() public {
+        MockPingFacet mockPing = new MockPingFacet();
+        bytes4[] memory sels = new bytes4[](1);
+        sels[0] = MockPingFacet.ping.selector;
+
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(mockPing), IDiamondCut.FacetCutAction.Add, sels);
+
+        vm.prank(owner);
+        vm.expectRevert();
+        IDiamondCut(address(diamond)).diamondCut(cuts, address(mockPing), abi.encodeWithSignature("nonExistentFn()"));
+    }
+
+    function test_DiamondCut_InitFunctionReverts_WithData_PropagatesRevertData() public {
+        MockRevertingInit revertInit = new MockRevertingInit();
+        MockPingFacet mockPing = new MockPingFacet();
+        bytes4[] memory sels = new bytes4[](1);
+        sels[0] = MockPingFacet.ping.selector;
+
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(mockPing), IDiamondCut.FacetCutAction.Add, sels);
+
+        vm.prank(owner);
+        vm.expectRevert("MockRevertingInit: intentional revert");
+        IDiamondCut(address(diamond)).diamondCut(cuts, address(revertInit), abi.encodeWithSignature("initialize()"));
     }
 }

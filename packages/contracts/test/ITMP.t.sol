@@ -554,4 +554,32 @@ contract ITMPCompliance is DiamondTestHelper {
         assertEq(task.mode, mode);
         assertEq(task.reward, REWARD);
     }
+
+    // -------------------------------------------------------------------------
+    // ComplianceMockForwarder interface coverage
+    // -------------------------------------------------------------------------
+
+    function test_Compliance_Forwarder_IsPGTRForwarder() public view {
+        assertTrue(fwd.isPGTRForwarder());
+    }
+
+    function test_Compliance_Forwarder_IsTrustedForwarder_Self() public view {
+        assertTrue(fwd.isTrustedForwarder(address(fwd)));
+    }
+
+    function test_Compliance_Forwarder_IsTrustedForwarder_Other_False() public view {
+        assertFalse(fwd.isTrustedForwarder(address(0x1234)));
+    }
+
+    function test_Compliance_Forwarder_SupportsInterface_IPGTRForwarder() public view {
+        assertTrue(fwd.supportsInterface(type(IPGTRForwarder).interfaceId));
+    }
+
+    function test_Compliance_Forwarder_SupportsInterface_IERC165() public view {
+        assertTrue(fwd.supportsInterface(type(IERC165).interfaceId));
+    }
+
+    function test_Compliance_Forwarder_SupportsInterface_Unknown_False() public view {
+        assertFalse(fwd.supportsInterface(bytes4(0xdeadbeef)));
+    }
 }

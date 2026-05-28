@@ -14,10 +14,15 @@ contract MockTaskHook is ITMPHook {
     bool public revertOnCheckFund;
     bool public rejectOnCheckFund;
     bool public revertOnCheckClaim;
+    bool public rejectOnCheckClaim;
     bool public revertOnCheckSelectWorker;
+    bool public rejectOnCheckSelectWorker;
     bool public revertOnCheckSubmit;
+    bool public rejectOnCheckSubmit;
     bool public revertOnCheckEvaluate;
+    bool public rejectOnCheckEvaluate;
     bool public revertOnCheckComplete;
+    bool public rejectOnCheckComplete;
 
     uint256 public checkFundCalls;
     uint256 public checkClaimCalls;
@@ -50,20 +55,40 @@ contract MockTaskHook is ITMPHook {
         revertOnCheckClaim = v;
     }
 
+    function setRejectOnCheckClaim(bool v) external {
+        rejectOnCheckClaim = v;
+    }
+
     function setRevertOnCheckSelectWorker(bool v) external {
         revertOnCheckSelectWorker = v;
+    }
+
+    function setRejectOnCheckSelectWorker(bool v) external {
+        rejectOnCheckSelectWorker = v;
     }
 
     function setRevertOnCheckSubmit(bool v) external {
         revertOnCheckSubmit = v;
     }
 
+    function setRejectOnCheckSubmit(bool v) external {
+        rejectOnCheckSubmit = v;
+    }
+
     function setRevertOnCheckEvaluate(bool v) external {
         revertOnCheckEvaluate = v;
     }
 
+    function setRejectOnCheckEvaluate(bool v) external {
+        rejectOnCheckEvaluate = v;
+    }
+
     function setRevertOnCheckComplete(bool v) external {
         revertOnCheckComplete = v;
+    }
+
+    function setRejectOnCheckComplete(bool v) external {
+        rejectOnCheckComplete = v;
     }
 
     function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
@@ -79,25 +104,25 @@ contract MockTaskHook is ITMPHook {
     function checkClaim(bytes32, ITMPCore.TaskContext calldata, address) external override returns (bool) {
         checkClaimCalls++;
         if (revertOnCheckClaim) revert("MockTaskHook: checkClaim reverted");
-        return true;
+        return !rejectOnCheckClaim;
     }
 
     function checkSelectWorker(bytes32, ITMPCore.TaskContext calldata, address) external override returns (bool) {
         checkSelectWorkerCalls++;
         if (revertOnCheckSelectWorker) revert("MockTaskHook: checkSelectWorker reverted");
-        return true;
+        return !rejectOnCheckSelectWorker;
     }
 
     function checkSubmit(bytes32, ITMPCore.TaskContext calldata, address, bytes32) external override returns (bool) {
         checkSubmitCalls++;
         if (revertOnCheckSubmit) revert("MockTaskHook: checkSubmit reverted");
-        return true;
+        return !rejectOnCheckSubmit;
     }
 
     function checkEvaluate(bytes32, ITMPCore.TaskContext calldata, address) external override returns (bool) {
         checkEvaluateCalls++;
         if (revertOnCheckEvaluate) revert("MockTaskHook: checkEvaluate reverted");
-        return true;
+        return !rejectOnCheckEvaluate;
     }
 
     function checkComplete(bytes32 taskId, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata)
@@ -112,7 +137,7 @@ contract MockTaskHook is ITMPHook {
             lastSeenStatusOnCheckComplete = uint8(t.status);
         }
         if (revertOnCheckComplete) revert("MockTaskHook: checkComplete reverted");
-        return true;
+        return !rejectOnCheckComplete;
     }
 
     function onComplete(bytes32, ITMPCore.TaskContext calldata, ITMPCore.Verdict calldata) external override {
