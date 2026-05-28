@@ -10,8 +10,10 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
-  quality:
+  js:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+
     services:
       postgres:
         image: postgres:15-alpine
@@ -41,17 +43,6 @@ jobs:
           node-version: 22
           cache: 'pnpm'
 
-      - name: Install Foundry
-        uses: foundry-rs/foundry-toolchain@v1
-
-      - name: Install Python (for Slither)
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.12'
-
-      - name: Install Slither
-        run: pip install slither-analyzer
-
       - run: make install
 
       - run: make build all
@@ -66,23 +57,9 @@ jobs:
         env:
           DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
 
-      - name: Gas snapshot check
-        run: make contract snapshot-check
-
-      - name: Slither static analysis
-        run: make contract audit
-
-      - name: Upload Slither report
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: slither-report
-          path: packages/contracts/reports/slither-audit.md
-          retention-days: 30
-
-  contract-coverage:
+  contracts:
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v4
@@ -92,8 +69,30 @@ jobs:
       - name: Install Foundry
         uses: foundry-rs/foundry-toolchain@v1
 
+      - name: Install Python (for Slither)
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+
+      - name: Install Slither
+        run: pip install slither-analyzer
+
+      - name: Gas snapshot check
+        run: make contract snapshot-check
+
+      - name: Slither static analysis
+        run: make contract audit
+
       - name: Coverage check
         run: make contract coverage-check
+
+      - name: Upload Slither report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: slither-report
+          path: packages/contracts/reports/slither-audit.md
+          retention-days: 30
 
       - name: Upload coverage report
         if: always()
@@ -103,7 +102,7 @@ jobs:
           path: packages/contracts/reports/coverage/lcov.info
           retention-days: 30
 
-  ui-regression:
+  ui:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

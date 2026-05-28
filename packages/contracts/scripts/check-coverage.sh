@@ -7,7 +7,7 @@ FORGE_OUTPUT="${1}"
 
 LINE_THRESHOLD=74
 BRANCH_THRESHOLD=54
-FUNC_THRESHOLD=80
+FUNC_THRESHOLD=82
 
 if [ -z "$FORGE_OUTPUT" ] || [ ! -f "$FORGE_OUTPUT" ]; then
     echo "error: forge coverage output file not found: ${FORGE_OUTPUT}"
