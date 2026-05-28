@@ -47,11 +47,11 @@ jobs:
 
       - run: pnpm -r --filter '!@taskmarket/contracts' build
 
-      - run: make lint-check all
+      - run: pnpm -r --filter '!@taskmarket/contracts' lint:check
 
-      - run: make format-check all
+      - run: pnpm -r --filter '!@taskmarket/contracts' format:check
 
-      - run: make type-check all
+      - run: pnpm -r --filter '!@taskmarket/contracts' type-check
 
       - run: make test
         env:
