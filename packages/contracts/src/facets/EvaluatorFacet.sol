@@ -56,6 +56,8 @@ contract EvaluatorFacet {
         if (stakeAmount > 0) {
             // Pull stake from the requester. Pulling from an arbitrary evaluator address would
             // let a malicious requester drain any address that has pre-approved this contract.
+            // requester = _effectiveSender(s) = authenticated PGTR forwarder caller; not arbitrary
+            // slither-disable-next-line arbitrary-send-erc20
             if (!s.usdcToken.transferFrom(requester, address(this), stakeAmount)) revert ITMPCore.StakeTransferFailed();
         }
 
