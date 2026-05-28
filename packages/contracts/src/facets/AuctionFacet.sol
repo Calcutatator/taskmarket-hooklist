@@ -71,6 +71,7 @@ contract AuctionFacet {
         if (task.mode != AUCTION) revert ITMPCore.NotAnAuctionTask();
         if (!(auctionCfg.auctionSubtype == AUCTION_ENGLISH || auctionCfg.auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.NotABidAuction();
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
+        if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (block.timestamp < auctionCfg.bidDeadline) revert ITMPCore.BidDeadlineNotPassed();
         if (auctionCfg.lowestBidder == address(0)) revert ITMPCore.NoBidsSubmitted();
 
@@ -105,6 +106,7 @@ contract AuctionFacet {
         if (task.mode != AUCTION) revert ITMPCore.NotAnAuctionTask();
         if (!(auctionCfg.auctionSubtype == AUCTION_DUTCH || auctionCfg.auctionSubtype == AUCTION_REVERSE_DUTCH)) revert ITMPCore.NotAClockPriceAuction();
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
+        if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (price > auctionCfg.maxPrice) revert ITMPCore.PriceExceedsMaxPrice();
 
         task.worker = worker;

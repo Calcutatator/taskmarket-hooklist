@@ -40,7 +40,7 @@ const ACTION_ADD = 0;
 const ACTION_REMOVE = 2;
 
 // bytes4(keccak256("getTask(bytes32)"))
-const GET_TASK_SELECTOR = '0xe8a3d485' as `0x${string}`;
+const GET_TASK_SELECTOR = '0x15a29035' as `0x${string}`;
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as `0x${string}`;
 
 async function main() {

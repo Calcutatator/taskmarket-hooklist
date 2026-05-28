@@ -147,8 +147,10 @@ contract TaskMarketTest is DiamondTestHelper {
 
     function _createTaskWithHook(address _req, uint256 _reward, uint256 _dur, bytes4 _mode, address _hook) internal returns (bytes32) {
         bytes32[] memory emptyTags = new bytes32[](0);
+        // Pass _dur as pitchDeadline/bidDeadline so PITCH and AUCTION modes satisfy the >0 check.
+        // Non-PITCH/AUCTION modes ignore these values.
         return abi.decode(
-            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, 0, 0, bytes32(0), "", bytes4(0), _hook, emptyTags, hex""))),
+            _relay(_req, _reward, abi.encodeCall(market.createTask, (_reward, _dur, _mode, _dur, _dur, bytes32(0), "", bytes4(0), _hook, emptyTags, hex""))),
             (bytes32)
         );
     }

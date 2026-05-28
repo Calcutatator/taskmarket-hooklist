@@ -97,8 +97,12 @@ contract CoreFacet {
         meta.contentHash = contentHash;
         meta.contentURI  = contentURI;
 
-        if (mode == PITCH) s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + pitchDeadline;
+        if (mode == PITCH) {
+            if (pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
+            s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + pitchDeadline;
+        }
         if (mode == AUCTION) {
+            if (bidDeadline == 0) revert ITMPCore.BidDeadlineMustBeGreaterThanZero();
             ITMPCore.TaskAuctionConfig storage ac = s.taskAuctionConfigs[taskId];
             ac.bidDeadline    = block.timestamp + bidDeadline;
             ac.maxPrice       = reward;
@@ -162,6 +166,7 @@ contract CoreFacet {
         if (requester != task.requester) revert ITMPCore.NotRequester();
         if (task.mode != PITCH) revert ITMPCore.NotAPitchTask();
         if (task.status != ITMPCore.TaskStatus.Open) revert ITMPCore.TaskNotOpen();
+        if (block.timestamp > task.expiryTime) revert ITMPCore.TaskIsExpired();
         if (block.timestamp > s.taskPitchConfigs[taskId].pitchDeadline) revert ITMPCore.PitchDeadlinePassed();
 
         task.worker = worker;

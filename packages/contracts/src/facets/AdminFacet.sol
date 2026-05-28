@@ -38,6 +38,7 @@ contract AdminFacet is Initializable {
         uint16 _defaultFeeBps
     ) external initializer {
         AppStorage storage s = LibAppStorage.appStorage();
+        if (_usdcToken == address(0)) revert ITMPCore.InvalidUSDCToken();
         if (_feeRecipient == address(0)) revert ITMPCore.InvalidFeeRecipient();
         if (_defaultFeeBps > 10000) revert ITMPCore.FeeBpsTooHigh();
         s.usdcToken = IERC20(_usdcToken);

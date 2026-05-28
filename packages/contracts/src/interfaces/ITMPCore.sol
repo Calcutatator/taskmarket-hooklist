@@ -97,11 +97,14 @@ interface ITMPCore is IERC165 {
 
     // Config / params
     error InvalidFeeRecipient();
+    error InvalidUSDCToken();
     error InvalidRecipient();
     error InvalidForwarderAddress();
     error FeeBpsTooHigh();
     error RewardMustBeGreaterThanZero();
     error DurationMustBeGreaterThanZero();
+    error PitchDeadlineMustBeGreaterThanZero();
+    error BidDeadlineMustBeGreaterThanZero();
     error EmptyPitchHash();
     error EmptyProofHash();
     error RatingMustBe0To100();
