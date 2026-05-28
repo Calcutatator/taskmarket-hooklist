@@ -82,8 +82,12 @@ Then add the CVA variant in `apps/frontend/src/components/ui/badge.tsx`.
 
 ## Smart Contract Storage Layout
 
-`TaskMarket.sol` is UUPS upgradeable (proxy address is permanent). When adding new state variables:
+The contracts use the Diamond proxy pattern (EIP-2535). All state lives in `AppStorage`, a struct
+stored at a fixed `keccak256("taskmarket.appstorage.v1")` slot in `src/libraries/LibAppStorage.sol`.
 
-- **Append only**: new variables must be added after all existing state variables, never inserted between them
-- **Consume from `__gap`**: shrink `__gap` by the number of slots the new variable uses (current value is `uint256[38]`; started at 50, consumed by: trustedForwarders, requesterNonce, taskPitchHashes, taskProofHashes, taskWorkerRated, taskTags, taskVerdicts, phaseDeadline, taskEvaluatorConfigs, taskAuctionConfigs, taskMetadata, taskPitchConfigs)
-- Never reorder, rename, or remove existing state variables between upgrades
+When adding new state variables:
+
+- **Append only**: new variables must be added at the END of the `AppStorage` struct, never inserted between existing fields
+- **No `__gap` needed**: the struct is at a fixed `keccak256` slot; appending is always safe with no slot budget to track
+- Never reorder, rename, or remove existing fields between upgrades
+- New fields zero-initialise by default; use lazy-init in the facet function body if a non-zero default is needed

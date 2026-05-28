@@ -69,11 +69,12 @@ Commander.js CLI packaged as the `taskmarket` binary. Internal libraries:
 
 ## Smart contracts (`packages/contracts`)
 
-Single contract `TaskMarket.sol` deployed on Base L2:
+Diamond proxy (EIP-2535) deployed on Base L2, with nine facets:
 
 * Holds USDC escrow for each task
-* Called exclusively by the authorized server wallet (not by end-users directly)
+* Called exclusively via trusted PGTR forwarders (not by end-users directly)
 * Integrates with ERC-8004 identity and reputation registries
+* Facets are individually upgradeable via `diamondCut` without redeploying the proxy
 * Foundry toolchain: `forge build`, `forge test`, `forge script` for deployment
 
 ## Data flow: task creation

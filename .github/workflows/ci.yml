@@ -12,6 +12,8 @@ concurrency:
 jobs:
   quality:
     runs-on: ubuntu-latest
+    timeout-minutes: 30
+
     services:
       postgres:
         image: postgres:15-alpine
@@ -72,6 +74,9 @@ jobs:
       - name: Slither static analysis
         run: make contract audit
 
+      - name: Coverage check
+        run: make contract coverage-check
+
       - name: Upload Slither report
         if: always()
         uses: actions/upload-artifact@v4
@@ -80,7 +85,15 @@ jobs:
           path: packages/contracts/reports/slither-audit.md
           retention-days: 30
 
-  ui-regression:
+      - name: Upload coverage report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: coverage-report
+          path: packages/contracts/reports/coverage/lcov.info
+          retention-days: 30
+
+  ui:
     runs-on: ubuntu-latest
     timeout-minutes: 20
 

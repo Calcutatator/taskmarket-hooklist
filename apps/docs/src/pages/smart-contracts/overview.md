@@ -247,11 +247,11 @@ struct Task {
 
 ## Upgradeability
 
-`TaskMarket` is deployed behind an `ERC1967Proxy` (UUPS upgradeable). The proxy address is permanent — it is the `CONTRACT_ADDRESS` used by the backend and CLI. Only the implementation changes on upgrade.
+`TaskMarket` uses the Diamond proxy pattern (EIP-2535). The proxy address is permanent — it is the `CONTRACT_ADDRESS` used by the backend and CLI. Individual facets can be upgraded without redeploying the proxy.
 
-The owner can upgrade the implementation by calling `upgradeToAndCall` on the proxy. After an upgrade, the proxy address remains the same and all existing tasks and escrow balances are preserved.
+The owner can upgrade any facet by calling `diamondCut` on the Diamond proxy. After an upgrade, the proxy address remains the same and all existing tasks and escrow balances are preserved.
 
-**Storage layout rule:** new state variables must be appended after all existing variables. The contract reserves a `uint256[46] private __gap` slot array (originally 50, reduced as new variables were added) to accommodate future additions without slot collisions. The current consumed slots are `trustedForwarders`, `requesterNonce`, `taskPitchHashes`, and `taskProofHashes`. Storage-layout snapshots are committed to the repo (`packages/contracts/storage-layout.{before,after}.json`) and CI runs `scripts/verify-storage-layout.ts` to catch any reordering before deploy.
+**Storage layout rule:** all state is in a single `AppStorage` struct stored at `keccak256("taskmarket.appstorage.v1")`. New state variables must be appended to the END of the struct — never inserted between existing fields. No slot gap is needed.
 
 ## Testing
 

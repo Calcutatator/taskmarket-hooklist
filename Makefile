@@ -25,7 +25,7 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
-	@echo "  make contract <cmd>       - Contract tools (audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
+	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
@@ -47,13 +47,13 @@ deploy:
 	TMPFILE=$$(mktemp) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		CHAINID=84532; \
-		cd packages/contracts && forge script script/DeployTestnet.s.sol:DeployTestnet \
+		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
 		CHAINID=8453; \
-		cd packages/contracts && forge script script/Deploy.s.sol:DeployScript \
+		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
@@ -62,7 +62,7 @@ deploy:
 		echo "Usage: make deploy <testnet|mainnet>"; \
 		exit 1; \
 	fi; \
-	PROXY=$$(grep "Proxy (CONTRACT_ADDRESS):" $$TMPFILE | awk '{print $$NF}'); \
+	PROXY=$$(grep "Diamond deployed at:" $$TMPFILE | awk '{print $$NF}'); \
 	rm -f $$TMPFILE; \
 	if [ -n "$$PROXY" ]; then \
 		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
@@ -80,12 +80,12 @@ deploy:
 upgrade:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
-		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/Upgrade.s.sol:UpgradeScript \
+		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
 			--rpc-url base \
 			--broadcast \
 			--verify; \
@@ -184,7 +184,7 @@ lint-check:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt:check; \
+		cd packages/contracts && pnpm lint:check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:check; \
 	else \
@@ -211,7 +211,7 @@ lint-fix:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm lint:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt; \
+		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:write; \
 	else \
@@ -238,7 +238,7 @@ format-check:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:check; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt:check; \
+		cd packages/contracts && pnpm run format:check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:check; \
 	else \
@@ -265,7 +265,7 @@ format-fix:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		cd packages/shared && pnpm format:write; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm fmt; \
+		cd packages/contracts && pnpm run format:write; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm format:write; \
 	else \
@@ -344,15 +344,21 @@ test:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
 		mkdir -p packages/contracts/reports && \
 		cd packages/contracts && set -o pipefail && slither . --config-file slither.config.json 2>&1 | tee reports/slither-audit.md && \
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
-		mkdir -p packages/contracts/reports && \
-		cd packages/contracts && forge coverage --ir-minimum --report summary; \
+		mkdir -p packages/contracts/reports/coverage && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
+	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
+		mkdir -p packages/contracts/reports/coverage && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		echo "lcov report written to reports/coverage/lcov.info" && \
+		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
 		cd packages/contracts && forge snapshot; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
@@ -384,7 +390,7 @@ contract:
 			--rpc-url $$EVM_RPC_URL; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|coverage|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	fi
 
