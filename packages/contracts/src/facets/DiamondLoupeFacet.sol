@@ -53,6 +53,12 @@ contract DiamondLoupeFacet is IDiamondLoupe, IERC165 {
 
     /// @notice ERC-165 interface detection.
     ///         Returns true for all interfaces advertised by the Diamond.
+    /// @dev The ITMP interface IDs are hardcoded rather than derived from the selector registry
+    ///      because the registry maps selectors to facet addresses, not interface memberships.
+    ///      Trade-off: if a facet implementing one of these interfaces is removed via diamondCut
+    ///      without updating this function, supportsInterface will return a false positive.
+    ///      Operators must keep this list in sync with the deployed facet set. The
+    ///      ds.supportedInterfaces mapping provides an escape hatch for dynamic overrides.
     function supportsInterface(bytes4 interfaceId) external view override returns (bool) {
         LibDiamond.DiamondStorage storage ds = LibDiamond.diamondStorage();
         return ds.supportedInterfaces[interfaceId]

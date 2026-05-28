@@ -89,13 +89,22 @@ be in one of these states at a time.
 
 ## PGTR-Only Mutating Functions
 
-All state-mutating functions call `LibTaskMarket._requireForwarder(s)`. Direct calls from
-EOAs or non-registered contracts will revert. The PGTR forwarder is the only supported entry
-point.
+User-facing task-flow functions call `LibTaskMarket._requireForwarder(s)`. Direct calls from
+EOAs or non-registered contracts will revert. The following functions are explicitly exempt
+and may be called without a PGTR forwarder:
+
+- `refundExpired` — fund-recovery invariant; must always be callable once a task expires
+- `selectLowestBidder` — permissionless after bid deadline
+- `finalizeVerdict` — permissionless after appeal window closes
+- `resolveDispute` — callable by the designated dispute resolver address only
+- `evaluatorTimeout` — permissionless after the evaluator phase deadline
+- All `AdminFacet` functions — owner-only via `LibDiamond.enforceIsContractOwner`
+- `diamondCut` — owner-only
 
 `LibTaskMarket._effectiveSender(s)` returns `IPGTRForwarder(msg.sender).pgtrSender()` when
 the caller is a trusted forwarder, otherwise `msg.sender`. The `msg.sender` branch is
-unreachable in normal operation but is retained as a defensive fallback.
+unreachable for PGTR-gated functions in normal operation but is retained as a defensive
+fallback for the exempt paths above.
 
 ---
 

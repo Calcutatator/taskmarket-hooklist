@@ -19,14 +19,19 @@ import {RegistryFacet} from "../src/facets/RegistryFacet.sol";
 ///      FORGE_DEV_PRIVATE_KEY  — deployer/owner key
 ///      USDC_ADDRESS           — USDC token on target chain
 ///      FEE_RECIPIENT          — address to receive platform fees
-///      DEFAULT_FEE_BPS        — default fee in bps (e.g. 500 = 5%)
+///      DEFAULT_FEE_BPS        — default fee in bps (e.g. 500 = 5%); must be <= 10000
+/// @dev Optional env vars:
+///      PGTR_FORWARDER         — if set, registers the PGTR forwarder via addForwarder
+///      REPUTATION_REGISTRY    — if set, registers the reputation registry via setReputationRegistry
 contract DiamondDeploy is Script {
     function run() external {
         uint256 deployerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
         address deployer    = vm.addr(deployerKey);
         address usdc        = vm.envAddress("USDC_ADDRESS");
         address feeRecipient = vm.envAddress("FEE_RECIPIENT");
-        uint16 feeBps       = uint16(vm.envUint("DEFAULT_FEE_BPS"));
+        uint256 feeBpsRaw   = vm.envUint("DEFAULT_FEE_BPS");
+        require(feeBpsRaw <= 10_000, "DEFAULT_FEE_BPS exceeds 10000");
+        uint16 feeBps       = uint16(feeBpsRaw);
 
         vm.startBroadcast(deployerKey);
 
@@ -60,7 +65,22 @@ contract DiamondDeploy is Script {
         // 4. Deploy Diamond
         Diamond diamond = new Diamond(deployer, cuts, address(adminFacet), initData);
 
+        // 5. Register optional PGTR forwarder and reputation registry
+        address forwarder = vm.envOr("PGTR_FORWARDER", address(0));
+        if (forwarder != address(0)) {
+            AdminFacet(address(diamond)).addForwarder(forwarder);
+        }
+
+        address reputationRegistry = vm.envOr("REPUTATION_REGISTRY", address(0));
+        if (reputationRegistry != address(0)) {
+            AdminFacet(address(diamond)).setReputationRegistry(reputationRegistry);
+        }
+
         vm.stopBroadcast();
+
+        if (forwarder == address(0)) {
+            console.log("WARN: no PGTR_FORWARDER set; run addForwarder before task creation");
+        }
 
         console.log("Diamond deployed at:", address(diamond));
         console.log("DiamondCutFacet:    ", address(cutFacet));

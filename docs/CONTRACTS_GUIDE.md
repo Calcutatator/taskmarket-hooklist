@@ -106,7 +106,7 @@ struct WorkerStats {
 }
 ```
 
-Average rating = `(totalStars * 100) / ratedTasks`.
+Average rating = `(totalStars * 10) / ratedTasks` — scaled to 0-1000 (i.e. a 5-star rating contributes 50 points).
 
 ### Key functions by facet
 
@@ -184,8 +184,23 @@ do not retroactively affect existing tasks.
 
 ### PGTR forwarder pattern
 
-All state-mutating functions call `LibTaskMarket._requireForwarder(s)`. Direct calls from EOAs
-or non-registered contracts will revert. The PGTR forwarder is the only supported entry point.
+User-facing task-flow functions (`createTask`, `claimTask`, `selectWorker`, `submitWork`,
+`submitPitch`, `submitProof`, `forfeitAndReopen`, `cancelTask`, `updateTask`,
+`acceptSubmission`, `acceptSubmissions`, `submitBid`, `acceptAuction`, `assignEvaluator`,
+`evaluate`, `appeal`, `rateTask`) call `LibTaskMarket._requireForwarder(s)`. Direct calls from
+EOAs or non-registered contracts will revert.
+
+The following functions are intentionally callable without a PGTR forwarder:
+
+| Function | Caller |
+|---|---|
+| `refundExpired` | Anyone — fund-recovery invariant requires this always be callable |
+| `selectLowestBidder` | Anyone — permissionless after bid deadline |
+| `finalizeVerdict` | Anyone — permissionless after appeal window |
+| `resolveDispute` | Designated dispute resolver only |
+| `evaluatorTimeout` | Anyone — permissionless after evaluator deadline |
+| All `AdminFacet` functions | Contract owner via `LibDiamond.enforceIsContractOwner` |
+| `diamondCut` | Contract owner only |
 
 `LibTaskMarket._effectiveSender(s)` returns `IPGTRForwarder(msg.sender).pgtrSender()` when the
 caller is a trusted forwarder, otherwise `msg.sender`.
@@ -193,7 +208,7 @@ caller is a trusted forwarder, otherwise `msg.sender`.
 ## Testing
 
 ```bash
-make test contracts
+make contract test
 ```
 
 Test files:
@@ -211,9 +226,16 @@ make deploy mainnet    # Base mainnet
 ```
 
 Requires in `packages/contracts/.env`:
-- `DEPLOYER_PRIVATE_KEY` — deployer wallet
-- `FEE_RECIPIENT` — address to receive platform fees
-- `BASE_SEPOLIA_RPC_URL` / `BASE_MAINNET_RPC_URL`
+
+| Variable | Required | Description |
+|---|---|---|
+| `FORGE_DEV_PRIVATE_KEY` | yes | Deployer/owner private key |
+| `USDC_ADDRESS` | yes | USDC token address on target chain |
+| `FEE_RECIPIENT` | yes | Address to receive platform fees |
+| `DEFAULT_FEE_BPS` | yes | Default fee in basis points (e.g. 500 = 5%; max 10000) |
+| `BASE_SEPOLIA_RPC_URL` / `BASE_MAINNET_RPC_URL` | yes | RPC endpoint |
+| `PGTR_FORWARDER` | optional | If set, `addForwarder` is called in the same broadcast |
+| `REPUTATION_REGISTRY` | optional | If set, `setReputationRegistry` is called in the same broadcast |
 
 After deployment:
 1. Set `CONTRACT_ADDRESS` in backend `.env`

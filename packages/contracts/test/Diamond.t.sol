@@ -20,6 +20,12 @@ import {ITMPReputation} from "../src/interfaces/ITMPReputation.sol";
 import {IERC165} from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
 import "./mocks/MockUSDC.sol";
 
+contract MockPingFacet {
+    function ping() external pure returns (bytes32) {
+        return keccak256("pong");
+    }
+}
+
 /// @title DiamondTest — tests for Diamond proxy routing, diamondCut, ownership, and ERC-165.
 contract DiamondTest is DiamondTestHelper {
     ITaskMarketFull public diamond;
@@ -43,13 +49,26 @@ contract DiamondTest is DiamondTestHelper {
     // -------------------------------------------------------------------------
 
     function test_DiamondCut_Add_NewSelectorRoutes() public {
-        // Deploy a fresh CoreFacet and ADD one extra selector (selectWorker) to a new slot.
-        // We can't duplicate existing ones, so instead test REMOVE then ADD pattern.
-        // Verify that an added selector correctly routes.
+        MockPingFacet mockPing = new MockPingFacet();
 
-        // claimTask is registered during setUp. If we can call it without revert the routing works.
-        // Just call a view function to verify routing is correct for all registered facets.
-        assertEq(diamond.feeRecipient(), feeRecipient);
+        bytes4[] memory sels = new bytes4[](1);
+        sels[0] = MockPingFacet.ping.selector;
+
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
+        cuts[0] = IDiamondCut.FacetCut(address(mockPing), IDiamondCut.FacetCutAction.Add, sels);
+
+        vm.prank(owner);
+        IDiamondCut(address(diamond)).diamondCut(cuts, address(0), "");
+
+        // The loupe must report the mock facet address for the new selector.
+        address registered = IDiamondLoupe(address(diamond)).facetAddress(MockPingFacet.ping.selector);
+        assertEq(registered, address(mockPing));
+
+        // A low-level call through the diamond proxy must succeed and return keccak256("pong").
+        (bool ok, bytes memory ret) = address(diamond).call(abi.encodeWithSelector(MockPingFacet.ping.selector));
+        assertTrue(ok, "ping call through diamond must succeed");
+        bytes32 result = abi.decode(ret, (bytes32));
+        assertEq(result, keccak256("pong"));
     }
 
     function test_DiamondCut_Add_DuplicateSelectorReverts() public {

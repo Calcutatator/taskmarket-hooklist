@@ -64,15 +64,15 @@ AppStorage storage s = LibAppStorage.appStorage();
 | 9 | reputationRegistry | address |
 | 10 | requesterNonce | mapping(address => uint256) |
 | 11 | taskPitchHashes | mapping(bytes32 => bytes32[]) |
-| 12 | taskProofHashes | mapping(bytes32 => bytes32) |
-| 13 | taskWorkerRated | mapping(bytes32 => bool) |
-| 14 | taskTags | mapping(bytes32 => string[]) |
+| 12 | taskProofHashes | mapping(bytes32 => bytes32[]) |
+| 13 | taskWorkerRated | mapping(bytes32 => mapping(address => bool)) |
+| 14 | taskTags | mapping(bytes32 => bytes32[]) |
 | 15 | taskVerdicts | mapping(bytes32 => ITMPCore.Verdict) |
-| 16 | phaseDeadline | mapping(bytes32 => ITMPCore.PhaseDeadline) |
-| 17 | taskEvaluatorConfigs | mapping(bytes32 => ITMPCore.EvaluatorConfig) |
-| 18 | taskAuctionConfigs | mapping(bytes32 => ITMPCore.AuctionConfig) |
+| 16 | phaseDeadline | mapping(bytes32 => uint256) |
+| 17 | taskEvaluatorConfigs | mapping(bytes32 => ITMPCore.TaskEvaluatorConfig) |
+| 18 | taskAuctionConfigs | mapping(bytes32 => ITMPCore.TaskAuctionConfig) |
 | 19 | taskMetadata | mapping(bytes32 => ITMPCore.TaskMetadata) |
-| 20 | taskPitchConfigs | mapping(bytes32 => ITMPCore.PitchConfig) |
+| 20 | taskPitchConfigs | mapping(bytes32 => ITMPCore.TaskPitchConfig) |
 | 21 | reentrancyStatus | uint256 |
 | 22 | paused | bool |
 
@@ -139,12 +139,12 @@ Basescan supports EIP-2535 detection via `IDiamondLoupe`.
 
 Helpers used by more than one facet live in `src/libraries/LibTaskMarket.sol`:
 
-- `_requireForwarder` / `_effectiveSender` — PGTR forwarder check and sender resolution
-- `_requireNotPaused` — pause guard
-- `_nonReentrantBefore` / `_nonReentrantAfter` — reentrancy guard using AppStorage slot
-- `_calcFee` / `_payoutWithFee` — fee calculation and USDC transfer
-- `_buildContext` — TaskContext snapshot for hook callbacks
-- `_dispatchHookCheck` / `_dispatchHookOn` — ITMPHook dispatch with try-catch
+- `_requireForwarder(s)` / `_effectiveSender(s)` — PGTR forwarder check and sender resolution
+- `_requireNotPaused(s)` — pause guard
+- `_nonReentrantBefore(s)` / `_nonReentrantAfter(s)` — reentrancy guard using AppStorage slot
+- `_buildContext(taskId, s)` — TaskContext snapshot for hook callbacks
+- `_checkFundHook(taskId, hook, hookData, s)` — calls `ITMPHook.checkFund`, reverts on rejection
+- `_afterHook(hook, data)` — fire-and-forget after-hook dispatch, swallows failures
 
 Helpers used by only one facet remain `private` within that facet.
 
