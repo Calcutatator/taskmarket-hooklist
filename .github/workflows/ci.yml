@@ -45,10 +45,7 @@ jobs:
 
       - run: make install
 
-      - run: pnpm --filter @taskmarket/shared build
-      - run: pnpm --filter @taskmarket/backend build
-      - run: pnpm --filter @taskmarket/frontend build
-      - run: pnpm --filter @taskmarket/web build
+      - run: pnpm -r --filter '!@taskmarket/contracts' build
 
       - run: make lint-check all
 
