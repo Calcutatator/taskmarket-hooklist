@@ -45,7 +45,10 @@ jobs:
 
       - run: make install
 
-      - run: pnpm turbo build --filter=!@taskmarket/contracts
+      - run: pnpm --filter @taskmarket/shared build
+      - run: pnpm --filter @taskmarket/backend build
+      - run: pnpm --filter @taskmarket/frontend build
+      - run: pnpm --filter @taskmarket/web build
 
       - run: make lint-check all
 
