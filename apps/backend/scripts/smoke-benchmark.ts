@@ -65,6 +65,13 @@ async function main() {
   );
   ok('accepted', true);
 
+  // Wait for indexer to process TaskCompleted event before rating
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+
   // 4. Requester rates (0-100 scale per ERC-8004)
   log('4/5', 'Requester rating 95/100 (X402)...');
   const { feedbackId } = (await x402Post(
