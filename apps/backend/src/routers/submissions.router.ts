@@ -289,12 +289,12 @@ export const submissionsRouter = router({
 
         await tx.insert(artifacts).values(artifactRows);
 
-        // Bounty + Benchmark use the deferred-write model (ERC-8195): submitWork
-        // emits TaskSubmitted but does NOT transition status or write the
-        // on-chain deliverable. The task stays `open` until acceptance, allowing
-        // N workers to submit concurrently. Claim / Pitch / Auction don't reach
-        // this path (their own routers handle status changes).
-        if (task.status === 'open' && task.mode !== 'bounty' && task.mode !== 'benchmark') {
+        // Mirror the on-chain status transition: submitWork moves the task to
+        // PendingApproval for all modes. For Bounty/Benchmark the deliverable is
+        // not written on-chain at submission time (deferred-write model), but the
+        // status does transition so that pendingActions shows an accept action.
+        // Subsequent submissions are still allowed at pending_approval status.
+        if (task.status === 'open') {
           await tx
             .update(tasks)
             .set({ status: 'pending_approval' })

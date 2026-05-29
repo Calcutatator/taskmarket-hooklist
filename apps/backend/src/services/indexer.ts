@@ -283,12 +283,26 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
       .onConflictDoNothing();
   }
 
+  const taskRow = await db
+    .select({ tags: tasks.tags })
+    .from(tasks)
+    .where(eq(tasks.id, taskId as string))
+    .limit(1);
+  const tags = taskRow[0]?.tags ?? [];
+
   if (Number(workerPayment) > 0) {
     // The cumulative `agents.totalEarnings` and `agents.completedTasks` updates
     // below use SQL `+` aggregation, which would double-count if the indexer
     // re-processed this event. The idempotency guard at the top of processEvents
     // prevents that: the event row exists in indexed_events before this handler
     // runs again, so we never re-enter this branch for the same log.
+    const skillsExpr =
+      tags.length === 0
+        ? sql`ARRAY[]::text[]`
+        : sql`ARRAY(SELECT DISTINCT unnest(ARRAY[${sql.join(
+            tags.map((t) => sql`${t}`),
+            sql`, `
+          )}]))`;
     await db
       .insert(agents)
       .values({
@@ -297,12 +311,14 @@ async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
         completedTasks: 1,
         ratedTasks: 0,
         totalStars: 0,
+        skills: tags,
       })
       .onConflictDoUpdate({
         target: agents.address,
         set: {
           totalEarnings: sql`${agents.totalEarnings} + ${(workerPayment as bigint).toString()}`,
           completedTasks: sql`${agents.completedTasks} + 1`,
+          skills: sql`ARRAY(SELECT DISTINCT unnest(${agents.skills} || ${skillsExpr}))`,
           updatedAt: new Date(),
         },
       });

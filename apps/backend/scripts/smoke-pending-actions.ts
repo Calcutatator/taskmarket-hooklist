@@ -125,20 +125,20 @@ async function main() {
     await new Promise((r) => setTimeout(r, 3000));
   }
 
-  // 6. GET task (accepted) — expect rate action with worker address
-  log('6/7', 'Checking pendingActions after acceptance (accepted)...');
+  // 6. GET task (completed) — expect rate action with worker address
+  log('6/7', 'Checking pendingActions after acceptance (completed)...');
   const acceptedTask = (await get(`/api/tasks/${taskId}`)) as {
     status: string;
     pendingActions: PendingAction[];
   };
-  if (acceptedTask.status !== 'accepted') {
-    throw new Error(`Expected status=accepted, got ${acceptedTask.status}`);
+  if (acceptedTask.status !== 'completed') {
+    throw new Error(`Expected status=completed, got ${acceptedTask.status}`);
   }
 
   const acceptedActions = acceptedTask.pendingActions;
   const hasRate = acceptedActions.some((a) => a.action === 'rate' && a.role === 'requester');
   if (!hasRate) {
-    throw new Error(`Expected rate action in accepted status. Got: ${JSON.stringify(acceptedActions)}`);
+    throw new Error(`Expected rate action in completed status. Got: ${JSON.stringify(acceptedActions)}`);
   }
   const rateAction = acceptedActions.find((a) => a.action === 'rate')!;
   if (!rateAction.command.includes(worker.address.toLowerCase()) &&
@@ -146,8 +146,8 @@ async function main() {
     throw new Error(`Expected rate command to include worker address ${worker.address}. Got: ${rateAction.command}`);
   }
 
-  ok('accepted: rate action present', hasRate);
-  ok('accepted: command includes worker address', true);
+  ok('completed: rate action present', hasRate);
+  ok('completed: command includes worker address', true);
 
   // 7. Requester rates → task becomes rated → pendingActions is empty
   log('7/7', 'Requester rating 75/100 (X402) then verifying empty pendingActions...');
@@ -163,8 +163,8 @@ async function main() {
     rating: number | null;
     pendingActions: PendingAction[];
   };
-  if (ratedTask.status !== 'accepted' || ratedTask.rating === null) {
-    throw new Error(`Expected status=accepted with rating set, got status=${ratedTask.status} rating=${ratedTask.rating}`);
+  if (ratedTask.status !== 'completed' || ratedTask.rating === null) {
+    throw new Error(`Expected status=completed with rating set, got status=${ratedTask.status} rating=${ratedTask.rating}`);
   }
   if (ratedTask.pendingActions.length !== 0) {
     throw new Error(`Expected empty pendingActions after rating. Got: ${JSON.stringify(ratedTask.pendingActions)}`);

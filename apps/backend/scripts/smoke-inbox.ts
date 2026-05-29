@@ -69,11 +69,19 @@ async function main() {
 
   // 4. Worker submits work
   log('4/7', 'Worker submitting work...');
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: Buffer.from('inbox smoke test submission').toString('base64'),
-    signature: '0x' + '00'.repeat(65),
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('inbox smoke test submission').toString('base64'),
+      },
+    ],
+    signature: submitSig,
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 

@@ -219,6 +219,10 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Accept submission' })
 );
 app.post(
+  '/api/tasks/:taskId/accept-submissions',
+  x402Middleware({ getAmount: () => '1000', description: 'Accept submissions' })
+);
+app.post(
   '/api/tasks/:taskId/rate',
   x402Middleware({ getAmount: () => '1000', description: 'Rate task' })
 );
