@@ -90,7 +90,7 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not found');
     });
 
-    it('submits to open bounty task and keeps status open (deferred-write model)', async () => {
+    it('submits to open bounty task and sets status to pending_approval', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -125,9 +125,9 @@ describe('submissions router', () => {
           displayOrder: 0,
         }),
       ]);
-      // Bounty deferred-write: status stays `open` to allow N concurrent
-      // submissions; transition to `completed` happens at acceptance time.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      // Bounty submission transitions DB status to pending_approval so that
+      // pendingActions shows an accept action for the requester.
+      expect(ctx.db.update).toHaveBeenCalled();
     });
 
     it('submits multiple artifacts and anchors one manifest hash on chain', async () => {
@@ -196,7 +196,7 @@ describe('submissions router', () => {
       ]);
     });
 
-    it('persists submission rows inside one transaction (no status update for Bounty)', async () => {
+    it('persists submission rows inside one transaction (with status update to pending_approval for Bounty)', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -213,13 +213,14 @@ describe('submissions router', () => {
 
       expect(ctx.db.transaction).toHaveBeenCalledOnce();
       expect(tx.insert).toHaveBeenCalledTimes(2);
-      // Bounty deferred-write: status stays `open`, no DB status update.
-      expect(tx.update).not.toHaveBeenCalled();
+      // Bounty submission sets status to pending_approval so pendingActions
+      // shows an accept action. The update happens inside the transaction.
+      expect(tx.update).toHaveBeenCalledOnce();
       expect(ctx.db.insert).not.toHaveBeenCalled();
       expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
-    it('submits to open benchmark task and keeps status open (deferred-write model)', async () => {
+    it('submits to open benchmark task and sets status to pending_approval', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
@@ -230,8 +231,8 @@ describe('submissions router', () => {
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
-      // Benchmark deferred-write (same as Bounty): status stays `open`.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      // Benchmark submission transitions DB status to pending_approval (same as Bounty).
+      expect(ctx.db.update).toHaveBeenCalled();
     });
 
     it('submits to pending_approval bounty task (additional worker)', async () => {
