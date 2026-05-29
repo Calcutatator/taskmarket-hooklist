@@ -30,7 +30,7 @@ help:
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio)"
-	@echo "  make smoke <mode>         - Run smoke test (bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout)"
+	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
@@ -434,60 +434,65 @@ db:
 
 smoke:
 	@$(ENV_LOADER) && \
+	if [ "$(word 2,$(ARGS))" = "testnet" ]; then \
+		SMOKE_API_URL="$$TESTNET_API_URL"; \
+	else \
+		SMOKE_API_URL="$$API_URL"; \
+	fi && \
 	if [ "$(word 1,$(ARGS))" = "bounty" ]; then \
-		cd apps/backend && pnpm smoke:bounty; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:bounty; \
 	elif [ "$(word 1,$(ARGS))" = "claim" ]; then \
-		cd apps/backend && pnpm smoke:claim; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:claim; \
 	elif [ "$(word 1,$(ARGS))" = "pitch" ]; then \
-		cd apps/backend && pnpm smoke:pitch; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:pitch; \
 	elif [ "$(word 1,$(ARGS))" = "benchmark" ]; then \
-		cd apps/backend && pnpm smoke:benchmark; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:benchmark; \
 	elif [ "$(word 1,$(ARGS))" = "auction" ]; then \
-		cd apps/backend && pnpm smoke:auction; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:auction; \
 	elif [ "$(word 1,$(ARGS))" = "identity" ]; then \
-		cd apps/backend && pnpm smoke:identity; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:identity; \
 	elif [ "$(word 1,$(ARGS))" = "agents" ]; then \
-		cd apps/backend && pnpm smoke:agents; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:agents; \
 	elif [ "$(word 1,$(ARGS))" = "inbox" ]; then \
-		cd apps/backend && pnpm smoke:inbox; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:inbox; \
 	elif [ "$(word 1,$(ARGS))" = "wallet" ]; then \
-		cd apps/backend && pnpm smoke:wallet; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:wallet; \
 	elif [ "$(word 1,$(ARGS))" = "withdraw" ]; then \
-		cd apps/backend && pnpm smoke:withdraw; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:withdraw; \
 	elif [ "$(word 1,$(ARGS))" = "encryption" ]; then \
-		cd apps/backend && pnpm smoke:encryption; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:encryption; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp" ]; then \
-		cd apps/backend && pnpm smoke:xmtp; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:xmtp; \
 	elif [ "$(word 1,$(ARGS))" = "xmtp-live" ]; then \
-		cd apps/cli && pnpm smoke:xmtp-live; \
+		cd apps/cli && API_URL="$$SMOKE_API_URL" pnpm smoke:xmtp-live; \
 	elif [ "$(word 1,$(ARGS))" = "auction-types" ]; then \
-		cd apps/backend && pnpm smoke:auction-types; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:auction-types; \
 	elif [ "$(word 1,$(ARGS))" = "cancel-update" ]; then \
-		cd apps/backend && pnpm smoke:cancel-update; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:cancel-update; \
 	elif [ "$(word 1,$(ARGS))" = "email" ]; then \
-		cd apps/backend && pnpm smoke:email; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:email; \
 	elif [ "$(word 1,$(ARGS))" = "broadcast" ]; then \
-		cd apps/backend && pnpm smoke:broadcast; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:broadcast; \
 	elif [ "$(word 1,$(ARGS))" = "auction-full" ]; then \
-		cd apps/backend && pnpm smoke:auction-full; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:auction-full; \
 	elif [ "$(word 1,$(ARGS))" = "rater-agent-id" ]; then \
-		cd apps/backend && pnpm smoke:rater-agent-id; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:rater-agent-id; \
 	elif [ "$(word 1,$(ARGS))" = "bids-inbox" ]; then \
-		cd apps/backend && pnpm smoke:bids-inbox; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:bids-inbox; \
 	elif [ "$(word 1,$(ARGS))" = "pending-actions" ]; then \
-		cd apps/backend && pnpm smoke:pending-actions; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:pending-actions; \
 	elif [ "$(word 1,$(ARGS))" = "artifacts" ]; then \
-		cd apps/backend && pnpm smoke:artifacts; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:artifacts; \
 	elif [ "$(word 1,$(ARGS))" = "submission-hash" ]; then \
-		cd apps/backend && pnpm smoke:submission-hash; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-hash; \
 	elif [ "$(word 1,$(ARGS))" = "task-search" ]; then \
-		cd apps/backend && pnpm smoke:task-search; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:task-search; \
 	elif [ "$(word 1,$(ARGS))" = "upgrade" ]; then \
-		cd apps/backend && pnpm smoke:upgrade; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:upgrade; \
 	elif [ "$(word 1,$(ARGS))" = "ranked-payout" ]; then \
-		cd apps/backend && pnpm smoke:ranked-payout; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:ranked-payout; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator-timeout" ]; then \
-		cd apps/backend && pnpm smoke:evaluator-timeout; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator-timeout; \
 	else \
 		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout>"; \
 		exit 1; \
