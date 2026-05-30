@@ -77,12 +77,13 @@ Rules:
 
 ## Process
 
-1. Read the current `CHANGELOG.md` to understand the existing version and format.
-2. Review git log or diff since the last changelog version to identify user-facing changes. Focus on `apps/cli/src/commands/`, API route additions, and schema changes.
-3. Group changes into Added / Changed / Removed / Fixed / Security.
-4. Determine the correct semver bump.
-5. Write the new entry at the top of the file, above the previous version.
-6. Do not rewrite or reformat existing entries.
+This project uses **Changesets** (`@changesets/cli`). `CHANGELOG.md` and `package.json` versions are **generated automatically** by the versioning workflow — never edit them by hand.
+
+1. Read `.changeset/` to find the active changeset file (e.g. `v2-release.md`).
+2. Review git log or diff since the last release to identify user-facing changes. Focus on `apps/cli/src/commands/`, API route additions, and schema changes.
+3. Edit the existing changeset file — add missing user-facing changes, remove internal implementation details.
+4. The frontmatter (`'@lucid-agents/taskmarket': major`) determines the semver bump — do not change it unless the bump level is wrong.
+5. Never edit `CHANGELOG.md` or `package.json` version directly — the workflow does this on release.
 
 ---
 
