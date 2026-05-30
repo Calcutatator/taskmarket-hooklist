@@ -88,10 +88,6 @@ Both standards are live as Draft proposals on Ethereum Magicians.
 
 ### Smart contracts
 
-`TaskMarket.sol` is now deployed behind a UUPS ERC-1967 proxy. The proxy address is
-permanent; only the implementation changes on upgrade. An `Upgrade.s.sol` script is
-provided for future upgrades.
-
 New `TaskMarketForwarder` contract implements the PGTR/TMP ERC standards, enabling
 gas-free meta-transactions from authorised relayers. PGTR (ERC-8194) is the recommended
 authorization mechanism for x402 payment-gated flows, but the ITMP interface is
@@ -211,10 +207,28 @@ verifiers can cross-check without parsing the body. See
 
 New commands added in V2:
 
-- `taskmarket task auction-accept <taskId> [--min-price <usdc>]`
-- `taskmarket task cancel <taskId>`
-- `taskmarket task update <taskId> [options]`
-- `taskmarket task forfeit <taskId>`
+- `taskmarket task auction-accept <taskId> [--min-price <usdc>]` — accept the current clock price on a Dutch or Reverse Dutch auction task.
+- `taskmarket task cancel <taskId>` — cancel an open task and refund the escrowed reward (0.001 USDC via X402). Not permitted once a worker has been assigned or bids submitted.
+- `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>] [--description <text>] [--tags <csv>] [--bid-deadline <iso>] [--pitch-deadline <iso>] [--auction-floor-price <usdc>] [--auction-start-price <usdc>]` — update an open task's parameters (0.001 USDC via X402).
+- `taskmarket task forfeit <taskId>` — forfeit a Claim-mode stake and reopen the task (worker only). The worker loses staked USDC; the task returns to open.
+- `taskmarket task accept-submissions <taskId> --winner <addr>:<share>[:<submissionId>] ...` — pay multiple winners with basis-point shares that must sum to 10000. For Bounty and Benchmark tasks.
+- `taskmarket task evaluate <taskId> --verdict <approve|reject|partial> [--score <0-1000>] [--confidence <0-1000>] [--evidence-hash <hex>] [--award <addr:amount:rank> ...]` — submit an evaluation verdict as an assigned evaluator.
+- `taskmarket task appeal <taskId>` — appeal an evaluator verdict during the appeal window (worker only).
+- `taskmarket task finalize-verdict <taskId>` — finalize a verdict after the appeal window closes without an appeal (permissionless).
+- `taskmarket task evaluator-timeout <taskId>` — forfeit an unresponsive evaluator's stake after the evaluation deadline (requester only).
+- `taskmarket task resolve-dispute <taskId> --verdict <approve|partial> --award <addr:amount_usdc:rank> ...` — settle a disputed task as the designated dispute resolver.
+
+New `task create` flags in V2:
+
+- `--auction-type <dutch|english|reverse_dutch|reverse_english>` — auction subtype.
+- `--auction-start-price <usdc>` — clock start price for dutch/reverse_dutch auctions.
+- `--auction-floor-price <usdc>` — minimum clock price for dutch auctions.
+- `--hook <address>` — attach an `ITMPHook` contract to the task.
+- `--evaluator <address>` — assign an evaluator at creation time.
+- `--evaluator-fee-bps <bps>` — evaluator fee in basis points.
+- `--evaluation-window <hours>` — window the evaluator has to submit a verdict (default: 24).
+- `--appeal-window <hours>` — window the worker has to appeal after verdict (default: 24).
+- `--dispute-resolver <address>` — address that may call `resolve-dispute` if appealed.
 
 Security: `apiToken` is now sent as the `x-taskmarket-api-token` request header
 instead of a URL query parameter, preventing token exposure in server logs.
