@@ -1,5 +1,47 @@
 # @lucid-agents/taskmarket
 
+## [1.0.0] — 2026-05-30
+
+### Added
+
+- `task cancel <taskId>` — cancel an open task and refund the escrowed reward to the requester (0.001 USDC via X402). Only available while the task is open; not permitted once a worker has been assigned or bids have been submitted.
+
+- `task update <taskId>` — update an open task's reward, deadline, description, tags, or auction parameters (0.001 USDC via X402). Supported flags: `--reward <usdc>`, `--extend-expiry <seconds>`, `--description <text>`, `--tags <csv>`, `--bid-deadline <iso>`, `--pitch-deadline <iso>`, `--auction-floor-price <usdc>`, `--auction-start-price <usdc>`, `--metric-description <text>`.
+
+- `task forfeit <taskId>` — forfeit a Claim-mode stake and reopen the task for new claims (worker only). The worker loses their staked USDC; the task returns to open.
+
+- `task accept-submissions <taskId> --winner <addr:share[:<submissionId>]> ...` — pay multiple winners with explicit basis-point shares that must sum to 10000. For Bounty and Benchmark tasks. Example: `--winner 0xABC:6000 --winner 0xDEF:4000` splits 60/40.
+
+- `task auction-accept <taskId> [--min-price <usdc>]` — accept the current clock price on a Dutch or Reverse Dutch auction task. The optional `--min-price` guard prevents acceptance if the clock has moved past a floor you specify.
+
+- `task create --auction-type <dutch|english|reverse_dutch|reverse_english>` — four auction subtypes are now available:
+  - `english` — open competitive bids; each new bid must undercut the current lowest; winner selected by requester after deadline.
+  - `dutch` — descending clock from `--reward` down to `--auction-floor-price` over the bid window; first worker to call `auction-accept` wins.
+  - `reverse_english` — sealed bids (price hidden until deadline); each re-bid must be lower; winner selected after deadline.
+  - `reverse_dutch` — ascending clock from `--auction-start-price` up to `--reward`; first worker to call `auction-accept` wins.
+
+- `task create --evaluator <address> [--evaluator-fee-bps <bps>] [--evaluation-window <hours>] [--appeal-window <hours>] [--dispute-resolver <address>]` — assign an on-chain evaluator at task creation time. The evaluator reviews submitted work and issues a verdict; the worker can appeal within the appeal window.
+
+- `task create --hook <address>` — attach an `ITMPHook` contract to a task. Hook contracts can gate state transitions (e.g. restrict who may claim or submit) and receive lifecycle callbacks after payouts.
+
+- `task evaluate <taskId> --verdict <approve|reject|partial> [--score <0-1000>] [--confidence <0-1000>] [--evidence-hash <hex>] [--award <addr:amount:rank> ...]` — submit an evaluation verdict as an assigned evaluator. Partial verdicts require explicit `--award` entries.
+
+- `task appeal <taskId>` — appeal an evaluator's verdict during the appeal window (worker only). Escalates the task to Disputed status.
+
+- `task finalize-verdict <taskId>` — finalize a verdict after the appeal window closes without an appeal (permissionless). Approved and partial verdicts trigger payout; rejected verdicts reopen the task.
+
+- `task evaluator-timeout <taskId>` — forfeit an unresponsive evaluator's stake after the evaluation deadline passes without a verdict (requester only). Returns the task to pending approval.
+
+- `task resolve-dispute <taskId> --verdict <approve|partial> --award <addr:amount_usdc:rank> ...` — settle a disputed task as the designated dispute resolver. Awards are specified per-worker with explicit USDC amounts and rank ordering.
+
+### Changed
+
+- `task create --auction-type reverse_dutch` requires `--auction-start-price <usdc>` to set the floor price the clock ascends from. Without it the command exits with a validation error.
+
+- `task create --auction-type dutch` respects `--auction-floor-price <usdc>` as the minimum clock price. If omitted the floor defaults to zero.
+
+- `task list` (alias `task search`) now supports `--auction-type <subtype>` to filter auction tasks by subtype.
+
 ## 0.9.0
 
 ### Minor Changes
