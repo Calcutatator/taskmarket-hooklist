@@ -1,70 +1,90 @@
-# ERC-8195 Multi-hop Task Delegation
+# ERC-8195 Task Workflows
 
-## Problem
+## What This Proposal Is About
 
-ERC-8195 models tasks as independent, flat escrow units. Each task has one requester, one
-(or more) worker(s), and its own locked reward. The protocol has no concept of a relationship
-between tasks.
+**ERC-8195 has no concept of task workflows.**
 
-This works for direct procurement but breaks when agents subcontract. If Agent A hires Agent B,
-and B delegates part of the work to Agent C, the chain looks like two independent tasks:
+A task workflow is a set of tasks that are related by delegation: a requester posts a root
+task, a worker decomposes that task into subtasks and assigns them to other agents, who may
+further decompose their subtasks, and so on. The completed subtasks collectively constitute
+completion of the root task. The requester cares about the root task outcome; the protocol
+should handle the coordination and settlement of everything underneath it.
 
-- Task A-B: A is requester, B is worker
-- Task B-C: B is requester, C is worker
+Today, ERC-8195 cannot express this. Every task is an isolated escrow unit. The protocol has
+no way to represent that Task B was created because of Task A, that Task C is a subtask of
+Task B, or that settling Task C should contribute toward settling Task A. There is no task
+workflow primitive.
 
-These tasks have no on-chain relationship. Settlement does not propagate. B must manually call
-`acceptSubmission` on Task A-B after C completes Task B-C. Between those two events, B is
-exposed: A's task could expire, the relay could fail, or B could be under-capitalised and unable
-to front C's reward at all. The settlement is a series of bilateral IOUs with no protocol-level
-guarantee they clear.
+This proposal defines task workflows for ERC-8195 and presents three implementation approaches.
 
-This also means the trust relationship is invisible to the protocol. A trusted B to do the work.
-If B subcontracts to C, A has no on-chain visibility into C's involvement, cannot rate C, and
-has no recourse if C delivered junk that B accepted. The ERC-8004 reputation signal lands only
-on B. Reputation and accountability do not propagate through the chain.
+---
 
-There is a hook mechanism (`ITMPHook.onComplete`) that fires after settlement, but it cannot
-solve this. The `nonReentrant` guard blocks any re-entrant call back into the same TaskMarket
-contract, so a hook on Task B-C cannot synchronously trigger `acceptSubmission` on Task A-B
-within the same call. Off-chain relay works but reintroduces the trust problem the protocol was
-meant to eliminate.
+## Why the Absence of Task Workflows Is a Problem
+
+Without task workflows, a worker who wants to subcontract must create a second independent
+task out of their own pocket. The two tasks — the one they were hired on and the one they
+created — have no on-chain connection.
+
+Consider Agent A hiring Agent B, and B subcontracting to Agent C:
+
+- Task A-B: A is requester, B is worker, reward escrowed
+- Task B-C: B is requester, B fronts C's reward from their own wallet
+
+When C completes Task B-C, nothing happens to Task A-B. B must manually call
+`acceptSubmission` on Task A-B in a separate transaction. If A's task has expired by then,
+B loses the reward they fronted to C. If B lacked the capital to front C's reward at all,
+the subcontract cannot happen.
+
+There is also no visibility. A does not know C is involved. A cannot rate C. If C delivers
+bad work that B accepts without checking, A has no recourse and C receives no negative
+reputation signal. The ERC-8004 reputation record shows B as the sole worker regardless
+of what actually happened.
+
+The `ITMPHook.onComplete` callback cannot bridge this gap. The `nonReentrant` guard prevents
+any re-entrant call into the same TaskMarket contract, so a hook on Task B-C cannot
+synchronously trigger `acceptSubmission` on Task A-B within the same call. Off-chain relays
+work mechanically but reintroduce exactly the trust problem the protocol exists to eliminate.
 
 ---
 
 ## Approaches
 
-Three approaches exist across a spectrum. The two problems they address are separable:
-scheduling (unblocking downstream tasks as upstream complete) and attribution (proving who
-delegated what to whom, tamper-evidently). Not every approach solves both.
+Three approaches exist for adding task workflow support. They differ in where the workflow
+graph is stored and how settlement is enforced.
 
 | | On-chain Workflow | Hybrid Workflow | Off-chain Workflow |
 |---|---|---|---|
+| Workflow graph stored | On-chain (contract state) | On-chain (contract state) | Off-chain (database) |
 | Settlement guarantees | Trustless, atomic | Atomic (requester signs batch) | Backend-enforced, bypassable |
-| Protocol changes | Yes (new facet, state machine) | None | None |
-| Capital exposure | Eliminated (escrow splitting) | Eliminated | Remains |
+| Protocol changes | Yes — new facet + state machine additions | Yes — new facet only (`ITMPWorkflow`) | None |
+| Capital exposure during execution | Eliminated (escrow splitting) | Remains (worker fronts child rewards) | Remains |
 | Attribution tamper-proof | Yes | Yes | No |
-| Cross-market support | Via SettlementRelay | No | No |
-| Iteration speed | Slow (contract upgrades) | Fast | Fast |
+| Cross-market task workflows | Yes, via SettlementRelay | No | No |
+| Iteration speed | Slow (contract upgrade required) | Fast | Fast |
 | Right for | Adversarial environments, heterogeneous markets | Trusted ecosystems needing atomic settlement | Early-stage, low-stakes delegation |
 
 ---
 
-## Approach 1: On-chain Workflow
+## Approach 1: On-chain Task Workflows
 
-### Minimal Form (Linked Tree)
+This approach adds task workflow structure directly to the ERC-8195 core state machine.
+Every task can optionally declare a parent task. The contract enforces the relationship,
+splits the parent escrow into child escrows, and propagates settlement automatically.
+
+### Minimal Form: Linked Task Tree
 
 Add `bytes32 parentTaskId` (zero for root tasks) to `createTask`. The contract enforces:
 
-- The caller must be the current worker on the parent task.
-- The child reward must not exceed the parent's remaining available balance.
-- Child rewards are funded by splitting from the parent's locked escrow, not from the worker's
-  wallet. C gets paid directly from A's original deposit when the child is accepted.
+- The caller creating the child task must be the current worker on the parent task.
+- The child task reward is funded by splitting from the parent task's locked escrow — not
+  from the worker's wallet. When C is paid, the funds come directly from A's original deposit.
+- The sum of all child task rewards must not exceed the parent task's available balance.
 
-The parent tracks `uint256 pendingChildCount`. It cannot reach `Accepted` until all children
-are in a terminal state (`Accepted`, `Expired`, or `Cancelled`). If a child expires, its
-reserved portion refunds back into the parent's available balance.
+The parent task tracks `uint256 pendingChildCount`. It cannot reach `Accepted` until all
+child tasks are in a terminal state (`Accepted`, `Expired`, or `Cancelled`). If a child task
+expires, its reserved portion refunds back into the parent's available balance.
 
-State machine additions:
+New task states for workflow tasks:
 
 ```
 Open
@@ -72,271 +92,154 @@ Open
   --[createChildTask*]----------> Delegating
 
 Delegating
-  --[childAccepted]-------------> Delegating        (more children pending)
-  --[lastChildAccepted]---------> PendingApproval
+  --[childTaskAccepted]---------> Delegating        (more child tasks pending)
+  --[lastChildTaskAccepted]-----> PendingApproval
   --[expire]--------------------> Expired
 ```
 
-This eliminates capital exposure at every hop. No agent in the middle needs to front rewards.
-Settlement flows atomically from A's escrow to C without B touching the funds.
-
-Reputation attribution is straightforward: the root requester rates the root worker (B). If B
-created child tasks, the protocol knows which agent IDs worked each child and can emit
-`TaskRated` events for each, letting the ERC-8004 Reputation Registry record contribution at
-every level.
+No worker in the chain fronts capital. Settlement flows from the root escrow down to every
+leaf task worker atomically. The `refundExpired` invariant is maintained by extending
+`task.expiryTime` on the parent task when a child task is created, matching the evaluator
+extension pattern in Part VII of the ERC-8195 spec.
 
 **Trade-offs:**
 
-- Simple to reason about. Trees are acyclic; no dependency cycle risk.
-- `refundExpired` remains straightforward: parent cannot expire while children are live because
-  child creation extends `task.expiryTime` by the child's duration (matching the evaluator
-  extension pattern in Part VII of the spec).
-- Depth should be bounded (suggested limit: 8 hops) to keep gas predictable and prevent
-  pathological nesting.
-- Cannot express parallel branches that fan out from a single node and re-merge (no join
-  semantics).
+- Trees are acyclic — no dependency cycle risk, straightforward to reason about.
+- Depth must be bounded (recommended: 8 hops) to keep gas costs predictable.
+- Cannot express parallel branches that fan out and re-merge (no join semantics). For that,
+  see the maximal form below.
 
-### Maximal Form (Durable Workflow DAG)
+### Maximal Form: Full Task Workflow DAG
 
 Replace the single `parentTaskId` with `bytes32[] dependencyTaskIds`. A task with multiple
-dependencies is a join node: it transitions from `Blocked` to `Open` only when all dependencies
-reach `Accepted`. Fork/join patterns become expressible on-chain.
+dependencies becomes a join node: it transitions from `Blocked` to `Open` only when all
+dependency tasks reach `Accepted`. Fork/join task workflow patterns become expressible
+on-chain.
 
-The analogy is Temporal (durable execution engine): Temporal guarantees a workflow runs to
-completion across failures by replaying an authoritative event log. The on-chain task DAG serves
-the same role — a durable, tamper-evident record of what has happened, enabling the system to
-resume correctly after any relay failure, process crash, or expired subtask. This is the right
-frame because "workflow" in this context means execution guarantees, not just scheduling, which
-is what distinguishes it from lighter-weight DAG schedulers like Prefect or Airflow.
+A `TaskScheduler` facet monitors dependency state. When all dependencies for a blocked task
+resolve, the scheduler calls `_unblock(taskId)` internally, transitioning it from `Blocked`
+to `Open` without requiring an external transaction.
 
-A `TaskScheduler` facet watches dependency state and transitions nodes automatically. When all
-dependencies for a node reach terminal state, the scheduler calls an internal `_unblock(taskId)`
-that transitions it from `Blocked` to `Open` without requiring an external transaction.
-
-Additional state machine nodes:
+Additional task workflow states:
 
 ```
-Blocked      -- one or more dependencies not yet Accepted
-Open         -- dependencies cleared, accepting workers
-Delegating   -- worker has created children
-Merging      -- all children terminal, aggregating results upward
+Blocked      -- one or more dependency tasks not yet Accepted
+Open         -- all dependencies cleared, accepting workers
+Delegating   -- worker has created child tasks
+Merging      -- all child tasks terminal, propagating results upward
 Accepted
 ```
 
-Cross-contract settlement becomes necessary here. If B's submarket is a different ERC-8195
-deployment than A's (specialist agent marketplaces are likely heterogeneous), the settlement
-chain crosses contract boundaries. A `SettlementRelay` coordinator holds cross-contract
-obligations and settles them via a two-phase pattern: reserve on source contract, confirm on
-destination contract, release only when both sides commit.
-
-Reward distribution in the maximal form is post-hoc: the root requester rates the root task,
-and a share of that rating event propagates down the DAG proportional to each node's contribution
-weight (set at child creation time). This requires a `giveFeedbackBatch` call on the ERC-8004
-Reputation Registry that the current spec does not define.
+If a worker's submarket is a different ERC-8195 deployment (specialist agent markets are
+likely heterogeneous), settlement crosses contract boundaries. A `SettlementRelay` coordinator
+handles cross-contract task workflow settlement via a two-phase pattern: reserve on the source
+contract, confirm on the destination, release when both sides commit.
 
 **Trade-offs:**
 
-- Full expressiveness: parallel subtask branches, conditional paths, multi-market orchestration.
-- The `refundExpired` invariant (Part VII) becomes recursive. A parent cannot expire until its
-  children resolve, but children may be on different contracts with different clocks. The
-  fund recovery guarantee requires a cross-contract coordination protocol, not just a local
-  timestamp check.
+- Full expressiveness: parallel task branches, conditional paths, cross-market task workflows.
+- The `refundExpired` invariant becomes recursive across contracts with independent clocks.
+  A cross-contract coordination protocol is required, not just a local timestamp check.
 - On-chain scheduling is expensive. Every dependency edge is a storage write. Every `_unblock`
-  call is an on-chain state transition. Deep graphs with many parallel branches can become
+  call is an on-chain state transition. Deep task graphs with many parallel branches become
   cost-prohibitive.
-- Realistic implementation: DAG structure on-chain for trustless settlement guarantees; an
-  authorized off-chain sequencer calls `resolveNode(taskId)` when dependencies clear. The
-  on-chain graph is the source of truth for who gets paid and when; the sequencer is a
-  liveness concern, not a safety concern.
-
-### Interface Sketch (Minimal Form)
-
-```solidity
-// Addition to createTask parameters
-function createTask(
-    address  requester,
-    uint256  reward,
-    uint256  duration,
-    bytes4   mode,
-    uint256  pitchDeadline,
-    uint256  bidDeadline,
-    bytes32  parentTaskId   // zero for root tasks
-) external returns (bytes32 taskId);
-
-// New event
-event ChildTaskCreated(
-    bytes32 indexed parentTaskId,
-    bytes32 indexed childTaskId,
-    address indexed worker,
-    uint256         reservedReward
-);
-
-// New event
-event ChildTaskSettled(
-    bytes32 indexed parentTaskId,
-    bytes32 indexed childTaskId,
-    bool            accepted,
-    uint256         releasedReward
-);
-```
-
-The `ITMPHook` interface would need two additions:
-
-```solidity
-function checkCreateChildTask(
-    bytes32 parentTaskId,
-    bytes32 childTaskId,
-    ITMPCore.TaskContext calldata ctx,
-    uint256 reservedReward
-) external returns (bool);
-
-function onChildTaskSettled(
-    bytes32 parentTaskId,
-    bytes32 childTaskId,
-    ITMPCore.TaskContext calldata ctx,
-    bool accepted
-) external;
-```
+- In practice: put the task workflow DAG on-chain for trustless settlement guarantees, but use
+  an authorized off-chain sequencer to call `resolveNode(taskId)` when dependencies clear.
+  The on-chain graph is the authority for who gets paid and when; the sequencer is a liveness
+  concern, not a safety concern.
 
 ---
 
-## Approach 2: Hybrid Workflow
+## Approach 2: Hybrid Task Workflows
 
-The hybrid approach separates the two problems. Scheduling stays off-chain (the backend
-unblocks downstream tasks as upstream complete). Attribution goes on-chain via a standalone
-`WorkflowRegistry` contract — not a facet, not an ERC-8195 protocol change, just an
-independent registry that records delegation relationships.
+This approach separates the two problems. Task workflow scheduling stays off-chain (the backend
+unblocks downstream tasks as upstream tasks complete). Task workflow attribution goes on-chain
+via a new `WorkflowFacet` implementing the `ITMPWorkflow` extension interface.
+
+The key insight: you do not need on-chain escrow splitting to get tamper-evident attribution.
+A standalone facet that records which tasks belong to which workflow, and which agent delegated
+which subtask to which worker, gives you on-chain proof of the delegation graph without
+touching the ERC-8195 core state machine.
+
+This is the recommended approach for most production deployments. It requires a contract
+upgrade (adding the `WorkflowFacet` via `diamondCut`) but no changes to the existing task
+lifecycle. It provides on-chain attribution and atomic settlement, while leaving coordination
+to the backend where it is cheaper and faster to iterate on.
 
 ### ITMPWorkflow Extension Interface
 
-The `WorkflowRegistry` is defined as an optional extension interface to ERC-8195, following
-the same pattern as `ITMPEvaluator`, `ITMPFees`, and `ITMPReputation`. Implementations declare
-support via ERC-165; agents and aggregators detect it and know the contract natively understands
-workflow relationships.
-
-Living inside the Diamond alongside the other facets gives the workflow graph direct access to
-live task state. `addTask` can enforce "caller must be current worker on parentTaskId" against
-local storage without an external call. Workflow relationships are surfaced in the standard ABI
-alongside tasks — consumers do not need to know a separate registry address.
+`ITMPWorkflow` is an optional ERC-8195 extension, following the same pattern as
+`ITMPEvaluator`, `ITMPFees`, and `ITMPReputation`. Implementations declare support via
+ERC-165. The facet has direct access to live task state — `addWorkflowTask` enforces
+"caller must be current worker on parentTaskId" against local `AppStorage` without an
+external call.
 
 ```solidity
 interface ITMPWorkflow is IERC165 {
-    event WorkflowCreated(
-        bytes32 indexed workflowId,
-        bytes32 indexed rootTaskId,
-        address         creator
-    );
+    event WorkflowCreated(bytes32 indexed workflowId, bytes32 indexed rootTaskId, address creator);
+    event TaskLinked(bytes32 indexed workflowId, bytes32 indexed taskId, bytes32 indexed parentTaskId, address worker, uint256 depth);
+    event WorkflowSettled(bytes32 indexed workflowId, address requester, uint256 taskCount, uint256 totalPaid);
 
-    event TaskLinked(
-        bytes32 indexed workflowId,
-        bytes32 indexed taskId,
-        bytes32 indexed parentTaskId,
-        address         worker
-    );
-
-    event WorkflowSettled(
-        bytes32 indexed workflowId,
-        address         requester,
-        uint256         totalPaid
-    );
-
-    // Create a workflow rooted at an existing task. Caller must be the requester on rootTaskId.
+    // Create a task workflow rooted at an existing task. Caller must be the requester on rootTaskId.
     function createWorkflow(bytes32 rootTaskId) external returns (bytes32 workflowId);
 
     // Link a task into the workflow as a child of parentTaskId.
     // Caller must be the current worker on parentTaskId.
     function addWorkflowTask(bytes32 workflowId, bytes32 taskId, bytes32 parentTaskId) external;
 
-    // Requester signs the final distribution; contract calls acceptSubmission on each task
-    // and distributes from the root escrow atomically.
+    // Settle all tasks in the workflow atomically.
+    // Only the root requester signs — workers consented when they accepted their individual tasks.
     function settleWorkflow(
-        bytes32          workflowId,
+        bytes32           workflowId,
         address[] calldata workers,
         uint256[] calldata amounts,
         bytes32[] calldata deliverables,
         bytes     calldata requesterSig
     ) external;
 
-    function getWorkflow(bytes32 workflowId) external view returns (
-        bytes32 rootTaskId,
-        address creator,
-        uint256 taskCount,
-        bool    settled
-    );
-
-    function getWorkflowTask(bytes32 workflowId, bytes32 taskId) external view returns (
-        bytes32 parentTaskId,
-        address worker,
-        uint256 depth
-    );
+    function getWorkflow(bytes32 workflowId) external view returns (bytes32 rootTaskId, address creator, uint256 taskCount, bool settled);
+    function getWorkflowTask(bytes32 workflowId, bytes32 taskId) external view returns (bytes32 parentTaskId, address worker, uint256 depth);
+    function maxWorkflowDepth() external pure returns (uint256);
 }
 ```
 
-No escrow splitting, no state machine extensions, no re-entrancy concerns. The backend reads
-`TaskLinked` events as its source of truth for the DAG shape. If the backend is replaced or
-goes down, the graph is fully reconstructable from chain history.
+### Settlement: Requester-Only Authorization
 
-### Attribution Without Co-signing
+Only the root requester signs `settleWorkflow`. Workers do not co-sign. They consented to
+their terms when they accepted their individual tasks — that consent is already recorded
+on-chain. Requiring all workers to co-sign would create a coordination problem that worsens
+with depth: in automated agent pipelines no agent is reliably online at settlement time, and
+chasing signatures across an entire task workflow chain is worse than the manual per-task
+`acceptSubmission` approach it replaces.
 
-Workers do not sign the settlement. They consented to their terms when they accepted their
-individual tasks — that consent is already recorded on-chain. Only the root requester signs
-the final distribution manifest (EIP-712), which is the same party who would call
-`acceptSubmission` in the non-workflow case. The signature authorizes the `WorkflowRegistry`
-to act as their agent for that single batch settlement call.
+The requester signs an EIP-712 manifest specifying which worker gets which amount for which
+deliverable. The contract verifies the signature and executes all `acceptSubmission` calls
+in a single transaction. If any call reverts, the entire settlement reverts — full atomicity.
 
-Requiring all parties to co-sign would impose a coordination problem that worsens with chain
-depth. In automated agent pipelines, no agent is reliably "online" at settlement time, and
-chasing signatures across multiple agents before payout can execute is worse than the manual
-per-task approach it replaces.
+### Remaining Gap vs On-chain Approach
 
-### Atomic Settlement Without Escrow Splitting
-
-`settleWorkflow` executes all `acceptSubmission` calls atomically in a single transaction.
-If any call reverts (expired task, wrong deliverable), the whole settlement reverts. Workers
-are paid directly from the root task's escrow — but B still fronts C's reward during
-execution. The atomic guarantee is at settlement time, not during the workflow run.
-
-This is the remaining gap vs the full on-chain approach: capital exposure during execution
-persists. For short-duration workflows or reputation-staked workers this is acceptable. For
-long-running workflows where B cannot afford to front C's reward for days, the on-chain
-approach with escrow splitting is required.
-
-### What This Gives an Agent
-
-`task get <taskId>` returns task detail plus:
-
-```json
-{
-  "workflow": {
-    "id": "0x...",
-    "registryAddress": "0x...",
-    "depth": 2,
-    "totalTasks": 5,
-    "completedTasks": 3,
-    "parentTaskId": "0x..."
-  }
-}
-```
-
-Any third party can verify the delegation chain by reading `WorkflowRegistry` events. The
-backend is not the authority — the chain is.
+Workers still front child task rewards during execution. `ITMPWorkflow` provides atomic
+settlement at the end, not during the workflow run. If B cannot afford to front C's reward
+for the duration of the workflow, the on-chain approach with escrow splitting is required.
 
 ---
 
-## Approach 3: Off-chain Workflow
+## Approach 3: Off-chain Task Workflows
 
-The on-chain approach provides trustless settlement but requires protocol changes, contract
-upgrades, and accepts the gas cost of on-chain scheduling. For environments where workers are
-known and reputation-staked, those guarantees may not be worth the cost. The off-chain workflow
-solves the visibility and coordination problems without touching the protocol.
+If trustless attribution is not required — for example, in a closed ecosystem of
+reputation-staked agents where the backend operator is trusted — task workflows can be
+implemented entirely in the backend database with no contract changes.
 
-**Name: Workflows.**
+The backend tracks the task workflow graph in a `workflows` table. When a task in the
+workflow reaches `Accepted` (detected via the `TaskCompleted` event), the workflow service
+unblocks downstream tasks by marking them `open` in `workflow_tasks`. Settlement still
+happens task-by-task on-chain; the workflow is purely a coordination layer.
 
-A workflow is a named DAG of tasks managed by the backend. Settlement still happens task-by-task
-on-chain. The backend tracks the graph, resolves dependencies, and surfaces the full workflow to
-all participants. The name aligns with the Temporal frame: agents familiar with workflow engines
-understand immediately what this means — a graph of steps that execute in dependency order, with
-the system tracking progress and unblocking downstream steps automatically.
+A malicious worker can bypass backend validation and create an overbudget child task
+directly on-chain, because nothing in the contract enforces workflow relationships.
+For adversarial environments, use the hybrid or on-chain approach. For trusted environments
+where speed of iteration matters more than trustless guarantees, off-chain task workflows
+are a reasonable starting point.
 
 ### Data Model
 
@@ -346,9 +249,7 @@ CREATE TABLE workflows (
     created_by      bigint REFERENCES agents(id),
     root_task_id    text NOT NULL,
     title           text,
-    status          text NOT NULL DEFAULT 'active',
-                    -- active | completed | failed | cancelled
-    metadata        jsonb,
+    status          text NOT NULL DEFAULT 'active',  -- active | completed | failed | cancelled
     created_at      timestamptz NOT NULL DEFAULT now(),
     completed_at    timestamptz
 );
@@ -356,90 +257,45 @@ CREATE TABLE workflows (
 CREATE TABLE workflow_tasks (
     workflow_id     uuid REFERENCES workflows(id),
     task_id         text NOT NULL,
-    parent_task_id  text,               -- null for root node
+    parent_task_id  text,
     agent_id        bigint REFERENCES agents(id),
     depth           int NOT NULL DEFAULT 0,
-    status          text NOT NULL DEFAULT 'blocked',
-                    -- blocked | open | in_progress | completed | failed
+    status          text NOT NULL DEFAULT 'blocked',  -- blocked | open | in_progress | completed | failed
     created_at      timestamptz NOT NULL DEFAULT now(),
     PRIMARY KEY (workflow_id, task_id)
 );
 ```
-
-Tasks gain optional `workflow_id` and `parent_task_id` columns. No on-chain state.
-
-### Backend Logic
-
-When a task reaches `Accepted` (backend receives `TaskCompleted` from the contract event
-listener), the workflow service:
-
-1. Marks that node `completed` in `workflow_tasks`.
-2. Queries for downstream nodes whose `parent_task_id` equals the completed task and whose
-   other dependencies (if any) are all `completed`.
-3. Transitions those nodes from `blocked` to `open`.
-4. If all nodes are terminal, marks the workflow `completed`.
 
 ### tRPC Router Surface
 
 ```typescript
 // workflows.router.ts
 workflows.create   // create a workflow, returns workflow_id
-workflows.get      // full DAG with status of each node
+workflows.get      // full task DAG with status of each node
 workflows.list     // workflows by agent (as requester or worker in any node)
-workflows.addTask  // attach an on-chain task to a workflow with optional parent
+workflows.addTask  // attach a task to a workflow with optional parent task
 workflows.status   // aggregate: X/N tasks complete, current blockers
 ```
-
-### What This Gives an Agent
-
-`task get <taskId>` on a task that belongs to a workflow returns the task detail plus:
-
-```json
-{
-  "workflow": {
-    "id": "...",
-    "depth": 2,
-    "totalTasks": 5,
-    "completedTasks": 3,
-    "parentTaskId": "0x..."
-  }
-}
-```
-
-The agent knows whether it is part of a larger job, who commissioned the root, what is still
-outstanding, and whether it is authorised to create child tasks.
-
-### Constraint Enforcement (Off-chain)
-
-The backend validates at `task create` time:
-
-- Sum of child task rewards does not exceed the parent task's reward.
-- Creating agent is the current worker on the parent task.
-- Workflow depth does not exceed the configured limit (default: 8).
-
-A malicious worker can bypass backend validation and create an overbudget child task directly
-on-chain. For trusted, reputation-staked environments this is acceptable. For adversarial
-environments, use the on-chain approach.
 
 ---
 
 ## Open Questions
 
-1. **Fee model.** Does the platform fee apply at every hop or only at the root? Per-hop fees
-   compound quickly in deep chains and may make delegation economically unviable.
+1. **Fee model.** Does the platform fee apply at every task in the workflow or only at the
+   root? Per-hop fees compound quickly in deep chains and may make task workflow delegation
+   economically unviable.
 
-2. **Partial acceptance.** Can a parent accept a subset of children and release partial reward
-   while other children are still running?
+2. **Partial settlement.** Can a requester settle a subset of workflow tasks and release
+   partial reward while other tasks are still running?
 
-3. **Worker authority to sub-delegate.** Should the root requester be able to restrict whether
-   their task can be sub-delegated? A `delegationPolicy` flag on `createTask` (none / one-hop /
-   unbounded) would let requesters opt out of chains they did not anticipate. Applies to both
-   approaches.
+3. **Delegation policy.** Should requesters be able to restrict whether their task can be
+   sub-delegated into a workflow? A `delegationPolicy` flag on `createTask`
+   (`none | one-hop | unbounded`) would let requesters opt out of task workflows they did
+   not anticipate.
 
-4. **Cross-contract children (on-chain maximal only).** What authority does the parent contract
-   have to verify that a child task on a foreign ERC-8195 contract actually completed? ERC-165
-   interface detection confirms compliance but not honest behavior. An oracle or staking bond on
-   the child contract may be required.
+4. **Cross-market task workflows (on-chain maximal only).** What authority does the parent
+   contract have to verify that a child task on a foreign ERC-8195 contract actually
+   completed honestly? ERC-165 confirms interface compliance but not honest behavior.
 
-5. **Depth limit enforcement.** On-chain: gas exhaustion risk if not bounded. Off-chain: policy
-   decision, configurable per deployment.
+5. **Depth limit.** On-chain: must be enforced in the contract to prevent gas exhaustion.
+   Off-chain: configurable per deployment.
