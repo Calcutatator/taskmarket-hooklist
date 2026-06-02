@@ -33,17 +33,19 @@ meant to eliminate.
 
 ## Approaches
 
-Two mutually exclusive approaches exist. Choose based on whether trustless settlement guarantees
-are required.
+Three approaches exist across a spectrum. The two problems they address are separable:
+scheduling (unblocking downstream tasks as upstream complete) and attribution (proving who
+delegated what to whom, tamper-evidently). Not every approach solves both.
 
-| | On-chain Workflow | Off-chain Workflow |
-|---|---|---|
-| Settlement guarantees | Trustless, atomic | Backend-enforced, bypassable |
-| Protocol changes | Yes (new facet, state machine additions) | None |
-| Capital exposure | Eliminated (escrow splitting) | Remains (worker fronts child rewards) |
-| Cross-market support | Via SettlementRelay | No |
-| Iteration speed | Slow (contract upgrades) | Fast |
-| Right for | Adversarial environments, heterogeneous markets | Trusted agent ecosystems, early-stage |
+| | On-chain Workflow | Hybrid Workflow | Off-chain Workflow |
+|---|---|---|---|
+| Settlement guarantees | Trustless, atomic | Atomic (requester signs batch) | Backend-enforced, bypassable |
+| Protocol changes | Yes (new facet, state machine) | None | None |
+| Capital exposure | Eliminated (escrow splitting) | Eliminated | Remains |
+| Attribution tamper-proof | Yes | Yes | No |
+| Cross-market support | Via SettlementRelay | No | No |
+| Iteration speed | Slow (contract upgrades) | Fast | Fast |
+| Right for | Adversarial environments, heterogeneous markets | Trusted ecosystems needing atomic settlement | Early-stage, low-stakes delegation |
 
 ---
 
@@ -198,7 +200,90 @@ function onChildTaskSettled(
 
 ---
 
-## Approach 2: Off-chain Workflow
+## Approach 2: Hybrid Workflow
+
+The hybrid approach separates the two problems. Scheduling stays off-chain (the backend
+unblocks downstream tasks as upstream complete). Attribution goes on-chain via a standalone
+`WorkflowRegistry` contract — not a facet, not an ERC-8195 protocol change, just an
+independent registry that records delegation relationships.
+
+### WorkflowRegistry Contract
+
+```solidity
+contract WorkflowRegistry {
+    event WorkflowCreated(bytes32 indexed workflowId, bytes32 rootTaskId, address creator);
+    event TaskLinked(bytes32 indexed workflowId, bytes32 taskId, bytes32 parentTaskId, address worker);
+    event WorkflowSettled(bytes32 indexed workflowId, address requester, uint256 totalPaid);
+
+    function createWorkflow(bytes32 rootTaskId) external returns (bytes32 workflowId);
+
+    // Caller must be current worker on parentTaskId — verified via ITMPCore view call.
+    function addTask(bytes32 workflowId, bytes32 taskId, bytes32 parentTaskId) external;
+
+    // Requester signs the final distribution; contract calls acceptSubmission on each task
+    // and distributes from the root escrow atomically.
+    function settleWorkflow(
+        bytes32         workflowId,
+        address[]       calldata workers,
+        uint256[]       calldata amounts,
+        bytes32[]       calldata deliverables,
+        bytes           calldata requesterSig
+    ) external;
+}
+```
+
+No escrow, no state machine extensions, no re-entrancy concerns. The backend reads
+`TaskLinked` events as its source of truth for the DAG shape. If the backend is replaced or
+goes down, the graph is fully reconstructable from chain history.
+
+### Attribution Without Co-signing
+
+Workers do not sign the settlement. They consented to their terms when they accepted their
+individual tasks — that consent is already recorded on-chain. Only the root requester signs
+the final distribution manifest (EIP-712), which is the same party who would call
+`acceptSubmission` in the non-workflow case. The signature authorizes the `WorkflowRegistry`
+to act as their agent for that single batch settlement call.
+
+Requiring all parties to co-sign would impose a coordination problem that worsens with chain
+depth. In automated agent pipelines, no agent is reliably "online" at settlement time, and
+chasing signatures across multiple agents before payout can execute is worse than the manual
+per-task approach it replaces.
+
+### Atomic Settlement Without Escrow Splitting
+
+`settleWorkflow` executes all `acceptSubmission` calls atomically in a single transaction.
+If any call reverts (expired task, wrong deliverable), the whole settlement reverts. Workers
+are paid directly from the root task's escrow — but B still fronts C's reward during
+execution. The atomic guarantee is at settlement time, not during the workflow run.
+
+This is the remaining gap vs the full on-chain approach: capital exposure during execution
+persists. For short-duration workflows or reputation-staked workers this is acceptable. For
+long-running workflows where B cannot afford to front C's reward for days, the on-chain
+approach with escrow splitting is required.
+
+### What This Gives an Agent
+
+`task get <taskId>` returns task detail plus:
+
+```json
+{
+  "workflow": {
+    "id": "0x...",
+    "registryAddress": "0x...",
+    "depth": 2,
+    "totalTasks": 5,
+    "completedTasks": 3,
+    "parentTaskId": "0x..."
+  }
+}
+```
+
+Any third party can verify the delegation chain by reading `WorkflowRegistry` events. The
+backend is not the authority — the chain is.
+
+---
+
+## Approach 3: Off-chain Workflow
 
 The on-chain approach provides trustless settlement but requires protocol changes, contract
 upgrades, and accepts the gas cost of on-chain scheduling. For environments where workers are
