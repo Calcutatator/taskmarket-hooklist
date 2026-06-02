@@ -207,32 +207,72 @@ unblocks downstream tasks as upstream complete). Attribution goes on-chain via a
 `WorkflowRegistry` contract — not a facet, not an ERC-8195 protocol change, just an
 independent registry that records delegation relationships.
 
-### WorkflowRegistry Contract
+### ITMPWorkflow Extension Interface
+
+The `WorkflowRegistry` is defined as an optional extension interface to ERC-8195, following
+the same pattern as `ITMPEvaluator`, `ITMPFees`, and `ITMPReputation`. Implementations declare
+support via ERC-165; agents and aggregators detect it and know the contract natively understands
+workflow relationships.
+
+Living inside the Diamond alongside the other facets gives the workflow graph direct access to
+live task state. `addTask` can enforce "caller must be current worker on parentTaskId" against
+local storage without an external call. Workflow relationships are surfaced in the standard ABI
+alongside tasks — consumers do not need to know a separate registry address.
 
 ```solidity
-contract WorkflowRegistry {
-    event WorkflowCreated(bytes32 indexed workflowId, bytes32 rootTaskId, address creator);
-    event TaskLinked(bytes32 indexed workflowId, bytes32 taskId, bytes32 parentTaskId, address worker);
-    event WorkflowSettled(bytes32 indexed workflowId, address requester, uint256 totalPaid);
+interface ITMPWorkflow is IERC165 {
+    event WorkflowCreated(
+        bytes32 indexed workflowId,
+        bytes32 indexed rootTaskId,
+        address         creator
+    );
 
+    event TaskLinked(
+        bytes32 indexed workflowId,
+        bytes32 indexed taskId,
+        bytes32 indexed parentTaskId,
+        address         worker
+    );
+
+    event WorkflowSettled(
+        bytes32 indexed workflowId,
+        address         requester,
+        uint256         totalPaid
+    );
+
+    // Create a workflow rooted at an existing task. Caller must be the requester on rootTaskId.
     function createWorkflow(bytes32 rootTaskId) external returns (bytes32 workflowId);
 
-    // Caller must be current worker on parentTaskId — verified via ITMPCore view call.
-    function addTask(bytes32 workflowId, bytes32 taskId, bytes32 parentTaskId) external;
+    // Link a task into the workflow as a child of parentTaskId.
+    // Caller must be the current worker on parentTaskId.
+    function addWorkflowTask(bytes32 workflowId, bytes32 taskId, bytes32 parentTaskId) external;
 
     // Requester signs the final distribution; contract calls acceptSubmission on each task
     // and distributes from the root escrow atomically.
     function settleWorkflow(
-        bytes32         workflowId,
-        address[]       calldata workers,
-        uint256[]       calldata amounts,
-        bytes32[]       calldata deliverables,
-        bytes           calldata requesterSig
+        bytes32          workflowId,
+        address[] calldata workers,
+        uint256[] calldata amounts,
+        bytes32[] calldata deliverables,
+        bytes     calldata requesterSig
     ) external;
+
+    function getWorkflow(bytes32 workflowId) external view returns (
+        bytes32 rootTaskId,
+        address creator,
+        uint256 taskCount,
+        bool    settled
+    );
+
+    function getWorkflowTask(bytes32 workflowId, bytes32 taskId) external view returns (
+        bytes32 parentTaskId,
+        address worker,
+        uint256 depth
+    );
 }
 ```
 
-No escrow, no state machine extensions, no re-entrancy concerns. The backend reads
+No escrow splitting, no state machine extensions, no re-entrancy concerns. The backend reads
 `TaskLinked` events as its source of truth for the DAG shape. If the backend is replaced or
 goes down, the graph is fully reconstructable from chain history.
 
