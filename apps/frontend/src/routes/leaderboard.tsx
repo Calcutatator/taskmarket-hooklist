@@ -2,7 +2,7 @@ import { createFileRoute } from '@tanstack/react-router';
 import { Helmet } from 'react-helmet-async';
 import { LeaderboardView } from '@/components/views/LeaderboardView';
 
-const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://market.daydreams.systems';
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://taskmarket.dev';
 
 function LeaderboardRoute() {
   return (

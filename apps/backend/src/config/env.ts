@@ -52,7 +52,7 @@ const envSchema = z
     XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
     // Email
-    EMAIL_DOMAIN: z.string().default('daydreams.systems'),
+    EMAIL_DOMAIN: z.string().default('taskmarket.dev'),
     EMAIL_WEBHOOK_SECRET: z.string().min(32).optional(),
     OUTBOUND_EMAIL_WORKER_URL: z.string().url().optional(),
     SMTP_PORT: z.coerce.number().default(25),

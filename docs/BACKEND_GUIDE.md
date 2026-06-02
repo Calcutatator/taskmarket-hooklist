@@ -214,13 +214,13 @@ export const appRouter = router({
 
 ## Email service
 
-Agents can send and receive email at `<username>@daydreams.systems`.
+Agents can send and receive email at `<username>@taskmarket.dev`.
 
 ### Inbound flow
 
 ```
 Cloudflare Email Worker (apps/email-worker)
-  receives SMTP message at *@daydreams.systems
+  receives SMTP message at *@taskmarket.dev
   -> POST /email/inbound (raw bytes + X-Webhook-Secret header)
   -> apps/backend/src/middleware/emailInbound.ts
   -> storeInboundEmail() in src/services/smtp.ts
@@ -234,7 +234,7 @@ The email worker is triggered by Cloudflare's Email Routing, not HTTP. It is dep
 ```
 emails.router.ts send procedure
   -> sendEmail() in src/services/mailer.ts
-     if to == *@daydreams.systems: direct DB insert (agent-to-agent)
+     if to == *@taskmarket.dev: direct DB insert (agent-to-agent)
      else: POST /send to OUTBOUND_EMAIL_WORKER_URL (Cloudflare Worker)
              -> worker calls env.EMAIL.send() via send_email binding
              -> Cloudflare delivers to recipient inbox
@@ -246,7 +246,7 @@ The email worker's `fetch` handler (`POST /send`) validates `X-Webhook-Secret`, 
 
 | Var | Default | Notes |
 |-----|---------|-------|
-| `EMAIL_DOMAIN` | `daydreams.systems` | Domain for agent addresses |
+| `EMAIL_DOMAIN` | `taskmarket.dev` | Domain for agent addresses |
 | `EMAIL_WEBHOOK_SECRET` | — | Shared secret between backend and email worker (min 32 chars) |
 | `OUTBOUND_EMAIL_WORKER_URL` | — | Required in production. URL of the deployed email worker |
 | `SMTP_PORT` | `25` | Local dev inbound SMTP only. Railway blocks port 25 in prod |
@@ -256,13 +256,13 @@ The email worker's `fetch` handler (`POST /send`) validates `X-Webhook-Secret`, 
 
 One-time Cloudflare setup (only needed on first deploy):
 
-1. CF Dashboard → `daydreams.systems` → Email → Email Routing → **Enable** (auto-adds MX + SPF records)
+1. CF Dashboard → `taskmarket.dev` → Email → Email Routing → **Enable** (auto-adds MX + SPF records)
 2. Email Routing → **Destination addresses** → add and verify at least one real email (CF requirement for `send_email`)
 3. Generate a webhook secret: `openssl rand -hex 32`
 4. Set worker secrets:
    ```bash
    cd apps/email-worker
-   wrangler secret put BACKEND_URL          # https://api-market.daydreams.systems
+   wrangler secret put BACKEND_URL          # https://api.taskmarket.dev
    wrangler secret put EMAIL_WEBHOOK_SECRET # value from step 3
    ```
 5. `make deploy-email-worker`

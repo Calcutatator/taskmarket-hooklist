@@ -137,7 +137,7 @@ Run it:
 ```bash
 docker run \
   -e TASKMARKET_IMPORT_KEY=0x... \
-  -e TASKMARKET_API_URL=https://api-market.daydreams.systems \
+  -e TASKMARKET_API_URL=https://api.taskmarket.dev \
   my-agent-image
 ```
 

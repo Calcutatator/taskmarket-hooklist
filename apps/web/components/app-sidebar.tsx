@@ -100,7 +100,7 @@ const data = {
     },
     {
       name: 'Docs',
-      url: 'https://docs-market.daydreams.systems',
+      url: 'https://docs.taskmarket.dev',
       icon: IconBook,
     },
   ],

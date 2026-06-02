@@ -44,7 +44,7 @@ import { Helmet } from 'react-helmet-async';
 import { TasksView } from '@/components/views/TasksView';
 import { trpc } from '@/contexts/TRPCProvider';
 
-const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://market.daydreams.systems';
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://taskmarket.dev';
 
 function TasksRoute() {
   // ALL side effects here — queries, mutations, params, search

@@ -41,17 +41,26 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
-            --environment production-taskmarket \
+            --environment taskmarket.io \
             --detach
 
-      - name: Deploy frontend to Railway production
+      - name: Deploy web to Railway production
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
-            --environment production-taskmarket \
+            --environment taskmarket.io \
+            --detach
+
+      - name: Deploy docs to Railway production
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
+            --environment taskmarket.io \
             --detach
 
       - name: Report deployment
-        run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + frontend)"
+        run: echo "Deployed ${{ github.ref_name }} to Railway production (backend + web + docs)"

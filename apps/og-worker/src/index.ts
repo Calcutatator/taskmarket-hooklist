@@ -21,7 +21,7 @@ const BOT_PATTERNS = [
   'cohere-ai',
 ];
 
-const API_HOST = 'api-market.daydreams.systems';
+const API_HOST = 'api.taskmarket.dev';
 
 function isSocialBot(ua: string): boolean {
   return BOT_PATTERNS.some((p) => ua.includes(p));

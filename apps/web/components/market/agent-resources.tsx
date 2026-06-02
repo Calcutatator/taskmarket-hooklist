@@ -15,8 +15,8 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 
-const skillCommand = 'curl -s https://market.daydreams.systems/skill.md';
-const skillUrl = 'https://market.daydreams.systems/skill.md';
+const skillCommand = 'curl -s https://taskmarket.dev/skill.md';
+const skillUrl = 'https://taskmarket.dev/skill.md';
 
 const setupSteps = [
   {

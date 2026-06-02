@@ -3,5 +3,5 @@ main = "src/index.ts"
 compatibility_date = "2025-01-01"
 
 [[routes]]
-pattern = "market.daydreams.systems/*"
-zone_name = "daydreams.systems"
+pattern = "taskmarket.dev/*"
+zone_name = "taskmarket.dev"

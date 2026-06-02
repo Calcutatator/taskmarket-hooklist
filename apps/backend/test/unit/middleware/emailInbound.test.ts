@@ -21,8 +21,8 @@ import { storeInboundEmail } from '../../../src/services/smtp';
 
 const VALID_SECRET = 'a-very-long-secret-that-is-at-least-32-chars';
 const VALID_FROM = 'sender@example.com';
-const VALID_TO = 'alice@daydreams.systems';
-const RAW_EMAIL = Buffer.from('From: sender@example.com\r\nTo: alice@daydreams.systems\r\n\r\nHello');
+const VALID_TO = 'alice@taskmarket.dev';
+const RAW_EMAIL = Buffer.from('From: sender@example.com\r\nTo: alice@taskmarket.dev\r\n\r\nHello');
 
 function makeReqRes(overrides: {
   headers?: Record<string, string>;
@@ -113,14 +113,14 @@ describe('emailInboundHandler', () => {
       headers: {
         'x-webhook-secret': VALID_SECRET,
         'x-email-from': VALID_FROM,
-        'x-email-to': 'unknown@daydreams.systems',
+        'x-email-to': 'unknown@taskmarket.dev',
       },
     });
 
     await emailInboundHandler(req, res);
 
     expect(storeInboundEmail).toHaveBeenCalledWith({}, expect.anything(), [
-      'unknown@daydreams.systems',
+      'unknown@taskmarket.dev',
     ]);
     expect(jsonSpy).toHaveBeenCalledWith({ ok: true });
   });
