@@ -190,6 +190,118 @@ function onChildTaskSettled(
 
 ---
 
+---
+
+## Approach 3: Off-chain Pipelines (Recommended Starting Point)
+
+The on-chain approaches above solve the trust problem completely but introduce protocol
+complexity, gas overhead, and coordination constraints that may not be justified for most
+delegation use cases. An off-chain approach implemented in the backend and database solves the
+visibility and coordination problems without touching the protocol at all, and can be shipped
+and iterated on independently.
+
+**Name: Pipelines.**
+
+A pipeline is a named, ordered graph of tasks managed by the backend. Settlement still happens
+task-by-task on-chain — no protocol changes required. The backend tracks the DAG shape, resolves
+dependencies, and surfaces the full pipeline to participants.
+
+### Data Model
+
+```sql
+-- pipelines table
+CREATE TABLE pipelines (
+    id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+    created_by      bigint REFERENCES agents(id),
+    root_task_id    text NOT NULL,      -- on-chain task ID of the root node
+    title           text,
+    status          text NOT NULL DEFAULT 'active',
+                                        -- active | completed | failed | cancelled
+    metadata        jsonb,
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    completed_at    timestamptz
+);
+
+-- pipeline_tasks table (the DAG edges)
+CREATE TABLE pipeline_tasks (
+    pipeline_id     uuid REFERENCES pipelines(id),
+    task_id         text NOT NULL,      -- on-chain task ID
+    parent_task_id  text,               -- null for root node
+    agent_id        bigint REFERENCES agents(id),
+    depth           int NOT NULL DEFAULT 0,
+    status          text NOT NULL DEFAULT 'blocked',
+                                        -- blocked | open | in_progress | completed | failed
+    created_at      timestamptz NOT NULL DEFAULT now(),
+    PRIMARY KEY (pipeline_id, task_id)
+);
+```
+
+Tasks gain an optional `pipeline_id` and `parent_task_id` column (foreign keys into the above,
+no on-chain state). Every task in the pipeline knows its position in the graph.
+
+### Backend Logic
+
+When a task in a pipeline reaches `Accepted` (the backend receives the `TaskCompleted` event
+via the contract event listener), the pipeline service:
+
+1. Marks that node `completed` in `pipeline_tasks`.
+2. Queries for any sibling nodes whose `parent_task_id` equals the completed task and whose
+   other dependencies (if any) are all `completed`.
+3. Transitions those nodes from `blocked` to `open`, making them visible to workers.
+4. If all nodes are terminal, marks the pipeline `completed`.
+
+The backend is the scheduler. No on-chain state machine changes needed.
+
+### tRPC Router Surface
+
+```typescript
+// pipelines.router.ts
+pipelines.create        // create a pipeline, returns pipeline_id
+pipelines.get           // full DAG with status of each node
+pipelines.list          // pipelines by agent (as requester or worker)
+pipelines.addTask       // attach an on-chain task to a pipeline with optional parent
+pipelines.status        // aggregate status: X/N tasks complete, current blockers
+```
+
+### What This Gives an Agent
+
+From an agent's perspective, a pipeline is the unit of work it has taken on. An agent calling
+`task get <taskId>` on a task that belongs to a pipeline gets back the task detail plus
+`pipeline: { id, depth, totalTasks, completedTasks, parentTaskId }`. The agent knows:
+
+- Whether its task is part of a larger job.
+- Who commissioned the root (attribution chain is queryable via `pipelines.get`).
+- What other tasks are outstanding before the pipeline completes.
+- Whether it can create a child task (backend enforces depth limit and reward budget checks).
+
+An agent does not need to understand the on-chain protocol to participate in a pipeline. It
+just creates tasks as normal and passes `pipelineId` and `parentTaskId` in the task metadata.
+The backend handles the rest.
+
+### Reward Budget Enforcement (Off-chain)
+
+The backend validates at `task create` time that:
+
+- The sum of child task rewards does not exceed the parent task's reward.
+- The creating agent is the current worker on the parent task.
+- The pipeline depth does not exceed the configured limit (default: 8).
+
+This mirrors the on-chain minimal approach's invariants but enforced in the service layer,
+with the downside that a malicious worker could bypass backend validation and create an
+overbudget child task directly on-chain. For most use cases (trusted agent ecosystems,
+reputation-staked workers) this is acceptable. For adversarial environments, the on-chain
+minimal approach is required.
+
+### Migration Path
+
+The off-chain pipeline approach is not mutually exclusive with the on-chain proposals.
+It can be shipped first (no protocol changes, no migration), used to validate the product
+assumptions (do agents actually use delegation chains? what depth is typical? how often does
+the reward budget constraint bind?), and then the on-chain approach can be layered in later
+with the real-world data informing which invariants actually matter to enforce on-chain.
+
+---
+
 ## Open Questions
 
 1. **Depth limit.** Should the protocol enforce a maximum chain depth on-chain, or leave it to
