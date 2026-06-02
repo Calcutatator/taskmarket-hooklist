@@ -31,11 +31,25 @@ meant to eliminate.
 
 ---
 
-## Design Space
+## Approaches
 
-Two approaches exist, differing in how much structure the protocol enforces.
+Two mutually exclusive approaches exist. Choose based on whether trustless settlement guarantees
+are required.
 
-### Approach 1: Minimal (Linked Tree)
+| | On-chain Workflow | Off-chain Workflow |
+|---|---|---|
+| Settlement guarantees | Trustless, atomic | Backend-enforced, bypassable |
+| Protocol changes | Yes (new facet, state machine additions) | None |
+| Capital exposure | Eliminated (escrow splitting) | Remains (worker fronts child rewards) |
+| Cross-market support | Via SettlementRelay | No |
+| Iteration speed | Slow (contract upgrades) | Fast |
+| Right for | Adversarial environments, heterogeneous markets | Trusted agent ecosystems, early-stage |
+
+---
+
+## Approach 1: On-chain Workflow
+
+### Minimal Form (Linked Tree)
 
 Add `bytes32 parentTaskId` (zero for root tasks) to `createTask`. The contract enforces:
 
@@ -80,22 +94,18 @@ every level.
 - Cannot express parallel branches that fan out from a single node and re-merge (no join
   semantics).
 
-### Approach 2: Maximal (Durable Workflow DAG)
+### Maximal Form (Durable Workflow DAG)
 
 Replace the single `parentTaskId` with `bytes32[] dependencyTaskIds`. A task with multiple
 dependencies is a join node: it transitions from `Blocked` to `Open` only when all dependencies
 reach `Accepted`. Fork/join patterns become expressible on-chain.
 
-This turns ERC-8195 into a workflow execution protocol. The analogy is Temporal (durable
-execution engine) rather than Prefect (DAG scheduler):
-
-- **Temporal** guarantees a workflow runs to completion across failures by replaying an
-  authoritative event log. The on-chain task DAG serves the same role: it is the durable,
-  tamper-evident record of what has happened, enabling the system to resume correctly after any
-  relay failure, process crash, or expired subtask.
-- **Prefect** handles scheduling and dependency resolution for data pipelines, but does not
-  provide the fault-tolerance guarantees that trustless multi-agent settlement requires. It is
-  useful as a mental model for the DAG shape, not for the execution guarantees.
+The analogy is Temporal (durable execution engine): Temporal guarantees a workflow runs to
+completion across failures by replaying an authoritative event log. The on-chain task DAG serves
+the same role — a durable, tamper-evident record of what has happened, enabling the system to
+resume correctly after any relay failure, process crash, or expired subtask. This is the right
+frame because "workflow" in this context means execution guarantees, not just scheduling, which
+is what distinguishes it from lighter-weight DAG schedulers like Prefect or Airflow.
 
 A `TaskScheduler` facet watches dependency state and transitions nodes automatically. When all
 dependencies for a node reach terminal state, the scheduler calls an internal `_unblock(taskId)`
@@ -105,7 +115,7 @@ Additional state machine nodes:
 
 ```
 Blocked      -- one or more dependencies not yet Accepted
-Open         -- dependencies cleared, accepting workers  
+Open         -- dependencies cleared, accepting workers
 Delegating   -- worker has created children
 Merging      -- all children terminal, aggregating results upward
 Accepted
@@ -137,9 +147,7 @@ Reputation Registry that the current spec does not define.
   on-chain graph is the source of truth for who gets paid and when; the sequencer is a
   liveness concern, not a safety concern.
 
----
-
-## Interface Sketch (Minimal Form)
+### Interface Sketch (Minimal Form)
 
 ```solidity
 // Addition to createTask parameters
@@ -190,136 +198,123 @@ function onChildTaskSettled(
 
 ---
 
----
+## Approach 2: Off-chain Workflow
 
-## Approach 3: Off-chain Pipelines (Recommended Starting Point)
+The on-chain approach provides trustless settlement but requires protocol changes, contract
+upgrades, and accepts the gas cost of on-chain scheduling. For environments where workers are
+known and reputation-staked, those guarantees may not be worth the cost. The off-chain workflow
+solves the visibility and coordination problems without touching the protocol.
 
-The on-chain approaches above solve the trust problem completely but introduce protocol
-complexity, gas overhead, and coordination constraints that may not be justified for most
-delegation use cases. An off-chain approach implemented in the backend and database solves the
-visibility and coordination problems without touching the protocol at all, and can be shipped
-and iterated on independently.
+**Name: Workflows.**
 
-**Name: Pipelines.**
-
-A pipeline is a named, ordered graph of tasks managed by the backend. Settlement still happens
-task-by-task on-chain — no protocol changes required. The backend tracks the DAG shape, resolves
-dependencies, and surfaces the full pipeline to participants.
+A workflow is a named DAG of tasks managed by the backend. Settlement still happens task-by-task
+on-chain. The backend tracks the graph, resolves dependencies, and surfaces the full workflow to
+all participants. The name aligns with the Temporal frame: agents familiar with workflow engines
+understand immediately what this means — a graph of steps that execute in dependency order, with
+the system tracking progress and unblocking downstream steps automatically.
 
 ### Data Model
 
 ```sql
--- pipelines table
-CREATE TABLE pipelines (
+CREATE TABLE workflows (
     id              uuid PRIMARY KEY DEFAULT gen_random_uuid(),
     created_by      bigint REFERENCES agents(id),
-    root_task_id    text NOT NULL,      -- on-chain task ID of the root node
+    root_task_id    text NOT NULL,
     title           text,
     status          text NOT NULL DEFAULT 'active',
-                                        -- active | completed | failed | cancelled
+                    -- active | completed | failed | cancelled
     metadata        jsonb,
     created_at      timestamptz NOT NULL DEFAULT now(),
     completed_at    timestamptz
 );
 
--- pipeline_tasks table (the DAG edges)
-CREATE TABLE pipeline_tasks (
-    pipeline_id     uuid REFERENCES pipelines(id),
-    task_id         text NOT NULL,      -- on-chain task ID
+CREATE TABLE workflow_tasks (
+    workflow_id     uuid REFERENCES workflows(id),
+    task_id         text NOT NULL,
     parent_task_id  text,               -- null for root node
     agent_id        bigint REFERENCES agents(id),
     depth           int NOT NULL DEFAULT 0,
     status          text NOT NULL DEFAULT 'blocked',
-                                        -- blocked | open | in_progress | completed | failed
+                    -- blocked | open | in_progress | completed | failed
     created_at      timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (pipeline_id, task_id)
+    PRIMARY KEY (workflow_id, task_id)
 );
 ```
 
-Tasks gain an optional `pipeline_id` and `parent_task_id` column (foreign keys into the above,
-no on-chain state). Every task in the pipeline knows its position in the graph.
+Tasks gain optional `workflow_id` and `parent_task_id` columns. No on-chain state.
 
 ### Backend Logic
 
-When a task in a pipeline reaches `Accepted` (the backend receives the `TaskCompleted` event
-via the contract event listener), the pipeline service:
+When a task reaches `Accepted` (backend receives `TaskCompleted` from the contract event
+listener), the workflow service:
 
-1. Marks that node `completed` in `pipeline_tasks`.
-2. Queries for any sibling nodes whose `parent_task_id` equals the completed task and whose
+1. Marks that node `completed` in `workflow_tasks`.
+2. Queries for downstream nodes whose `parent_task_id` equals the completed task and whose
    other dependencies (if any) are all `completed`.
-3. Transitions those nodes from `blocked` to `open`, making them visible to workers.
-4. If all nodes are terminal, marks the pipeline `completed`.
-
-The backend is the scheduler. No on-chain state machine changes needed.
+3. Transitions those nodes from `blocked` to `open`.
+4. If all nodes are terminal, marks the workflow `completed`.
 
 ### tRPC Router Surface
 
 ```typescript
-// pipelines.router.ts
-pipelines.create        // create a pipeline, returns pipeline_id
-pipelines.get           // full DAG with status of each node
-pipelines.list          // pipelines by agent (as requester or worker)
-pipelines.addTask       // attach an on-chain task to a pipeline with optional parent
-pipelines.status        // aggregate status: X/N tasks complete, current blockers
+// workflows.router.ts
+workflows.create   // create a workflow, returns workflow_id
+workflows.get      // full DAG with status of each node
+workflows.list     // workflows by agent (as requester or worker in any node)
+workflows.addTask  // attach an on-chain task to a workflow with optional parent
+workflows.status   // aggregate: X/N tasks complete, current blockers
 ```
 
 ### What This Gives an Agent
 
-From an agent's perspective, a pipeline is the unit of work it has taken on. An agent calling
-`task get <taskId>` on a task that belongs to a pipeline gets back the task detail plus
-`pipeline: { id, depth, totalTasks, completedTasks, parentTaskId }`. The agent knows:
+`task get <taskId>` on a task that belongs to a workflow returns the task detail plus:
 
-- Whether its task is part of a larger job.
-- Who commissioned the root (attribution chain is queryable via `pipelines.get`).
-- What other tasks are outstanding before the pipeline completes.
-- Whether it can create a child task (backend enforces depth limit and reward budget checks).
+```json
+{
+  "workflow": {
+    "id": "...",
+    "depth": 2,
+    "totalTasks": 5,
+    "completedTasks": 3,
+    "parentTaskId": "0x..."
+  }
+}
+```
 
-An agent does not need to understand the on-chain protocol to participate in a pipeline. It
-just creates tasks as normal and passes `pipelineId` and `parentTaskId` in the task metadata.
-The backend handles the rest.
+The agent knows whether it is part of a larger job, who commissioned the root, what is still
+outstanding, and whether it is authorised to create child tasks.
 
-### Reward Budget Enforcement (Off-chain)
+### Constraint Enforcement (Off-chain)
 
-The backend validates at `task create` time that:
+The backend validates at `task create` time:
 
-- The sum of child task rewards does not exceed the parent task's reward.
-- The creating agent is the current worker on the parent task.
-- The pipeline depth does not exceed the configured limit (default: 8).
+- Sum of child task rewards does not exceed the parent task's reward.
+- Creating agent is the current worker on the parent task.
+- Workflow depth does not exceed the configured limit (default: 8).
 
-This mirrors the on-chain minimal approach's invariants but enforced in the service layer,
-with the downside that a malicious worker could bypass backend validation and create an
-overbudget child task directly on-chain. For most use cases (trusted agent ecosystems,
-reputation-staked workers) this is acceptable. For adversarial environments, the on-chain
-minimal approach is required.
-
-### Migration Path
-
-The off-chain pipeline approach is not mutually exclusive with the on-chain proposals.
-It can be shipped first (no protocol changes, no migration), used to validate the product
-assumptions (do agents actually use delegation chains? what depth is typical? how often does
-the reward budget constraint bind?), and then the on-chain approach can be layered in later
-with the real-world data informing which invariants actually matter to enforce on-chain.
+A malicious worker can bypass backend validation and create an overbudget child task directly
+on-chain. For trusted, reputation-staked environments this is acceptable. For adversarial
+environments, use the on-chain approach.
 
 ---
 
 ## Open Questions
 
-1. **Depth limit.** Should the protocol enforce a maximum chain depth on-chain, or leave it to
-   implementations? On-chain enforcement prevents gas exhaustion attacks; off-chain policy is
-   more flexible.
-
-2. **Fee model.** Does the platform fee apply at every hop or only at the root? Per-hop fees
+1. **Fee model.** Does the platform fee apply at every hop or only at the root? Per-hop fees
    compound quickly in deep chains and may make delegation economically unviable.
 
-3. **Partial acceptance.** Can a parent accept a subset of children and release partial reward
-   while other children are still running? Useful for long pipelines but complicates the state
-   machine.
+2. **Partial acceptance.** Can a parent accept a subset of children and release partial reward
+   while other children are still running?
 
-4. **Worker authority to sub-delegate.** Should the root requester be able to restrict whether
+3. **Worker authority to sub-delegate.** Should the root requester be able to restrict whether
    their task can be sub-delegated? A `delegationPolicy` flag on `createTask` (none / one-hop /
-   unbounded) would let requesters opt out of chains they did not anticipate.
+   unbounded) would let requesters opt out of chains they did not anticipate. Applies to both
+   approaches.
 
-5. **Cross-contract children (maximal only).** What authority does the parent contract have to
-   verify that a child task on a foreign ERC-8195 contract actually completed? ERC-165 interface
-   detection confirms compliance but not honest behavior. An oracle or staking bond on the child
-   contract may be required.
+4. **Cross-contract children (on-chain maximal only).** What authority does the parent contract
+   have to verify that a child task on a foreign ERC-8195 contract actually completed? ERC-165
+   interface detection confirms compliance but not honest behavior. An oracle or staking bond on
+   the child contract may be required.
+
+5. **Depth limit enforcement.** On-chain: gas exhaustion risk if not bounded. Off-chain: policy
+   decision, configurable per deployment.
