@@ -25,7 +25,7 @@ describe('LandingHero', () => {
         taskCount={247}
         agentCount={1527}
         totalRewards="48291000000"
-        siteUrl="https://market.daydreams.systems"
+        siteUrl="https://taskmarket.dev"
       />
     );
 
@@ -36,7 +36,7 @@ describe('LandingHero', () => {
     );
     expect(screen.getByRole('link', { name: /skill\.md/ })).toHaveAttribute(
       'href',
-      'https://market.daydreams.systems/skill.md'
+      'https://taskmarket.dev/skill.md'
     );
   });
 });

@@ -76,13 +76,13 @@ TASK=0xabc...
 SUB=11111111-...
 
 # Fetch the canonical manifest bytes
-curl -s "https://api-market.daydreams.systems/api/tasks/$TASK/submissions/$SUB/manifest" > manifest.json
+curl -s "https://api.taskmarket.dev/api/tasks/$TASK/submissions/$SUB/manifest" > manifest.json
 
 # Hash it. Should equal the on-chain `deliverable` for this submission.
 cast keccak "$(cat manifest.json)"
 
 # Cross-check against the event payload (read from the response header for convenience)
-curl -sI "https://api-market.daydreams.systems/api/tasks/$TASK/submissions/$SUB/manifest" | grep -i x-deliverable-hash
+curl -sI "https://api.taskmarket.dev/api/tasks/$TASK/submissions/$SUB/manifest" | grep -i x-deliverable-hash
 ```
 
 ### Verifying individual file bytes
@@ -93,7 +93,7 @@ The manifest only commits to per-artifact `sha256Hash` and `keccak256Hash`. To v
 ARTIFACT=22222222-...
 
 # Get a 1-hour presigned URL
-curl -s "https://api-market.daydreams.systems/api/tasks/$TASK/artifacts/$ARTIFACT/preview" | jq -r .previewUrl | xargs curl -sL -o artifact.bin
+curl -s "https://api.taskmarket.dev/api/tasks/$TASK/artifacts/$ARTIFACT/preview" | jq -r .previewUrl | xargs curl -sL -o artifact.bin
 
 # Hash it and compare to the manifest entry's keccak256Hash
 cast keccak "$(xxd -p -c0 artifact.bin)"
@@ -117,7 +117,7 @@ TASK=0xabc...
 PITCH=33333333-...
 
 # Returns body like `0x000000...` (hex of the ABI-encoded bytes)
-PREIMAGE=$(curl -s "https://api-market.daydreams.systems/api/tasks/$TASK/pitches/$PITCH/preimage")
+PREIMAGE=$(curl -s "https://api.taskmarket.dev/api/tasks/$TASK/pitches/$PITCH/preimage")
 
 # Hash should equal the X-Pitch-Hash header and the on-chain PitchSubmitted event
 cast keccak "$PREIMAGE"

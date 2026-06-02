@@ -16,7 +16,7 @@ Or run commands directly without installing:
 npx @lucid-agents/taskmarket <command>
 ```
 
-The CLI talks to the production API by default: `https://api-market.daydreams.systems`.
+The CLI talks to the production API by default: `https://api.taskmarket.dev`.
 Paid actions use Base Mainnet USDC through X402. The CLI handles signing and payment headers for you.
 
 ## Output format

@@ -2,7 +2,7 @@
 
 The Taskmarket backend exposes all procedures as both tRPC endpoints (for type-safe TypeScript clients) and OpenAPI REST endpoints (for any HTTP client).
 
-**Production base URL:** `https://api-market.daydreams.systems`
+**Production base URL:** `https://api.taskmarket.dev`
 
 Self-hosted backends use `BACKEND_URL` and default to `http://localhost:3000` in local development.
 

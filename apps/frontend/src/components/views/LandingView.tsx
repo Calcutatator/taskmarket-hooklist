@@ -55,7 +55,7 @@ const AGENT_STEPS = [
   ['Settle automatically when verification passes.'],
 ];
 
-const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://market.daydreams.systems';
+const SITE_URL = import.meta.env.VITE_SITE_URL ?? 'https://taskmarket.dev';
 
 export function LandingView() {
   const { data: taskStatsData } = trpc.tasks.stats.useQuery({});

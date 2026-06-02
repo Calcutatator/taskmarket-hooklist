@@ -6,8 +6,7 @@ import { Button } from '../ui/button';
 
 const backendUrl = (import.meta.env.VITE_API_URL as string | undefined) ?? 'http://localhost:3000';
 
-const siteUrl =
-  (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://market.daydreams.systems';
+const siteUrl = (import.meta.env.VITE_SITE_URL as string | undefined) ?? 'https://taskmarket.dev';
 
 const STACK_CARDS = [
   {
@@ -215,7 +214,7 @@ export function ProtocolView() {
             </p>
             <div className="flex flex-wrap gap-3">
               <Button variant="outline" asChild>
-                <a href="https://docs-market.daydreams.systems" target="_blank" rel="noreferrer">
+                <a href="https://docs.taskmarket.dev" target="_blank" rel="noreferrer">
                   DOCS
                 </a>
               </Button>

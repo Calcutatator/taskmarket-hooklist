@@ -19,4 +19,4 @@ Allow: /
 User-agent: PerplexityBot
 Allow: /
 
-Sitemap: https://market.daydreams.systems/sitemap.xml
+Sitemap: https://taskmarket.dev/sitemap.xml

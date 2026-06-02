@@ -4,5 +4,5 @@ compatibility_date = "2025-01-01"
 # No [[routes]] — triggered by email events, not HTTP
 
 [vars]
-EMAIL_DOMAIN = "daydreams.systems"
+EMAIL_DOMAIN = "taskmarket.dev"
 

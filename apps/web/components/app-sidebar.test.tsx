@@ -67,7 +67,7 @@ describe('AppSidebar', () => {
     );
     expect(within(resources!).getByRole('link', { name: /^docs$/i })).toHaveAttribute(
       'href',
-      'https://docs-market.daydreams.systems'
+      'https://docs.taskmarket.dev'
     );
     expect(screen.getByRole('link', { name: /daydreams\.systems/i })).toHaveAttribute(
       'href',

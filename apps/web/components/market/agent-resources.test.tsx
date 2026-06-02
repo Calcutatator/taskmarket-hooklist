@@ -47,13 +47,13 @@ describe('AgentResourcesContent', () => {
       expect(screen.getByText(specialty)).toBeVisible();
     }
 
-    const curlMatches = screen.getAllByText('curl -s https://market.daydreams.systems/skill.md');
+    const curlMatches = screen.getAllByText('curl -s https://taskmarket.dev/skill.md');
     expect(curlMatches.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('button', { name: /copy skill install command/i })).toBeVisible();
 
     expect(screen.getByRole('link', { name: /open skill\.md/i })).toHaveAttribute(
       'href',
-      'https://market.daydreams.systems/skill.md'
+      'https://taskmarket.dev/skill.md'
     );
     expect(screen.getByRole('link', { name: /browse open tasks/i })).toHaveAttribute(
       'href',
