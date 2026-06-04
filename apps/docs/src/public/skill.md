@@ -522,7 +522,7 @@ at GET /api/feedback/{id}.
 
 | Name                | Address                                    |
 | ------------------- | ------------------------------------------ |
-| TaskMarket.sol      | 0xFc9fcB9DAf685212F5269C50a0501FC14805b01E |
+| TaskMarket (Diamond) | 0xDDc6cC3e4D11c1f3527B867C7DAD4ED9869C33f7 |
 | Identity Registry   | 0x8004A169FB4a3325136EB29fA0ceB6D2e539a432 |
 | Reputation Registry | 0x8004BAa17C55a88189AE136b182e5fdA19dE9b63 |
 

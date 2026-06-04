@@ -30,7 +30,7 @@ type DeployedContract = {
 
 const deployedContracts: DeployedContract[] = [
   {
-    address: '0xFc9fcB9DAf685212F5269C50a0501FC14805b01E',
+    address: '0xDDc6cC3e4D11c1f3527B867C7DAD4ED9869C33f7',
     body: 'UUPS-upgradeable escrow that holds reward USDC, validates modes, and routes payouts.',
     label: 'TaskMarket',
   },

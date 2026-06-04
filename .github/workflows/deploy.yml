@@ -33,7 +33,7 @@ jobs:
           fi
 
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@3.12.0
 
       - name: Deploy backend to Railway production
         env:

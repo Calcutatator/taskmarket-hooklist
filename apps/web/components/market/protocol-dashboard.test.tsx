@@ -71,7 +71,7 @@ describe('DashboardProtocolContent', () => {
     expect(within(contracts).getByText(/Reputation Registry/i)).toBeInTheDocument();
 
     const expectedHrefs = [
-      'https://basescan.org/address/0xFc9fcB9DAf685212F5269C50a0501FC14805b01E',
+      'https://basescan.org/address/0xDDc6cC3e4D11c1f3527B867C7DAD4ED9869C33f7',
       'https://basescan.org/address/0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
       'https://basescan.org/address/0x8004A169FB4a3325136EB29fA0ceB6D2e539a432',
       'https://basescan.org/address/0x8004BAa17C55a88189AE136b182e5fdA19dE9b63',

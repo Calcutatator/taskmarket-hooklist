@@ -10,7 +10,8 @@ Taskmarket uses a trusted PGTR forwarder (ERC-8194) for mutating contract calls.
 
 | Contract | Address |
 |----------|---------|
-| TaskMarket | `0xFc9fcB9DAf685212F5269C50a0501FC14805b01E` |
+| TaskMarket (Diamond) | `0xDDc6cC3e4D11c1f3527B867C7DAD4ED9869C33f7` |
+| PGTR Forwarder | `0x8884f95B69dd1581565633aEA85f9a9F7067144D` |
 | USDC (Circle) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | ERC-8004 Identity Registry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
 | ERC-8004 Reputation Registry | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
