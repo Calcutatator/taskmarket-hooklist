@@ -279,6 +279,37 @@ workflows.status   // aggregate: X/N tasks complete, current blockers
 
 ---
 
+## Related Systems
+
+The task workflow concepts in this proposal have analogues in existing workflow orchestration
+software. Understanding the differences clarifies what ERC-8195 task workflows are and are not.
+
+**Temporal** (temporal.io) is a durable execution engine. You write workflow code in a normal
+programming language (Go, TypeScript, Python, Java) and Temporal guarantees it runs to
+completion even if the process crashes or a step fails. It does this by replaying the entire
+workflow execution history from a persistent event log — the log is the authoritative record
+of what has happened. The on-chain task workflow DAG in Approach 1 (on-chain) serves the same
+role: a tamper-evident, append-only record that allows the system to reconstruct state and
+resume correctly after any failure. The key property shared with Temporal is durable execution
+with an authoritative history.
+
+**Prefect** (prefect.io) is a data pipeline orchestrator. You define tasks and flows in Python;
+Prefect handles scheduling, dependency resolution, retries, and observability. The mental model
+is a DAG of jobs that run in dependency order — closer to a scheduler than an execution engine.
+The off-chain workflow approach (Approach 3) resembles Prefect: the backend is the scheduler,
+it resolves dependencies and unblocks downstream tasks, but it does not provide the
+fault-tolerance or tamper-evidence guarantees that Temporal does.
+
+**The critical distinction for ERC-8195:** Temporal cares about *how* code executes —
+durability, exactly-once semantics, surviving failures. Prefect cares about *what* runs and
+in what order. For trustless multi-agent settlement, the Temporal property (authoritative
+durable record) is what matters. Prefect's scheduling model is useful for thinking about DAG
+shape but insufficient as a trust model. This is why the on-chain and hybrid approaches store
+the workflow graph on-chain rather than purely in the backend — the chain is the Temporal-style
+authoritative log.
+
+---
+
 ## Open Questions
 
 1. **Fee model.** Does the platform fee apply at every task in the workflow or only at the
