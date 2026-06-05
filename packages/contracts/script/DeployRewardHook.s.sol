@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 import { Script, console } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { AerodromeOracle } from "../src/oracle/AerodromeOracle.sol";
+import { CompositeTwapOracle } from "../src/oracle/CompositeTwapOracle.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
@@ -13,10 +13,12 @@ import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 ///
 ///   FORGE_DEV_PRIVATE_KEY            — deployer/owner key
 ///   FORGE_PROTOCOL_TOKEN             — DREAMS token address
-///   FORGE_AERODROME_POOL             — TOKEN/USDC Aerodrome CL pool address
+///   FORGE_AERODROME_POOL             — TOKEN/WETH Aerodrome CL pool (leg A)
+///   FORGE_WETH_USDC_POOL             — WETH/USDC Aerodrome CL pool (leg B)
 ///   FORGE_DIAMOND_ADDRESS            — TaskMarket Diamond proxy
 ///   FORGE_TWAP_WINDOW                — TWAP window in seconds (e.g. 3600)
-///   FORGE_MIN_LIQUIDITY              — minimum pool in-range liquidity
+///   FORGE_MIN_LIQUIDITY_A            — min in-range liquidity for poolA
+///   FORGE_MIN_LIQUIDITY_B            — min in-range liquidity for poolB
 ///   FORGE_MAX_STALENESS              — max seconds since last observation (e.g. 3600)
 ///   FORGE_EPOCH_DURATION             — epoch length in seconds (e.g. 604800 = 7 days)
 ///   FORGE_GLOBAL_EPOCH_CAP           — max tokens emitted per epoch (wei)
@@ -24,23 +26,27 @@ import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 ///   FORGE_REQUESTER_CAP              — per-requester per-epoch cap (wei)
 ///   FORGE_MAX_TOKENS_PER_TASK        — per-task emission cap (wei)
 ///   FORGE_DRIFT_BAND_BPS             — price drift tolerance in bps (e.g. 2000 = 20%)
-///   FORGE_INITIAL_VAULT_BALANCE      — tokens to seed vault with (wei, optional)
 ///
-///   Optional: FORGE_USDC_TOKEN_ADDRESS — defaults to Base mainnet USDC
+///   Optional:
+///     FORGE_WETH_ADDRESS             — defaults to Base canonical WETH
+///     FORGE_INITIAL_VAULT_BALANCE    — tokens to seed vault with (wei)
 contract DeployRewardHook is Script {
-    address constant BASE_MAINNET_USDC = 0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913;
+    address constant BASE_WETH = 0x4200000000000000000000000000000000000006;
+    uint8 constant WETH_DECIMALS = 18;
 
     function run() external {
         uint256 deployerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
 
         address protocolToken = vm.envAddress("FORGE_PROTOCOL_TOKEN");
-        address pool = vm.envAddress("FORGE_AERODROME_POOL");
+        address poolA = vm.envAddress("FORGE_AERODROME_POOL");
+        address poolB = vm.envAddress("FORGE_WETH_USDC_POOL");
         address diamondAddress = vm.envAddress("FORGE_DIAMOND_ADDRESS");
-        address usdc = vm.envOr("FORGE_USDC_TOKEN_ADDRESS", BASE_MAINNET_USDC);
+        address weth = vm.envOr("FORGE_WETH_ADDRESS", BASE_WETH);
 
         uint32 twapWindow = uint32(vm.envUint("FORGE_TWAP_WINDOW"));
-        uint256 minLiquidity = vm.envUint("FORGE_MIN_LIQUIDITY");
+        uint256 minLiquidityA = vm.envUint("FORGE_MIN_LIQUIDITY_A");
+        uint256 minLiquidityB = vm.envUint("FORGE_MIN_LIQUIDITY_B");
         uint256 maxStaleness = vm.envUint("FORGE_MAX_STALENESS");
         uint256 epochDuration = vm.envUint("FORGE_EPOCH_DURATION");
         uint256 globalCap = vm.envUint("FORGE_GLOBAL_EPOCH_CAP");
@@ -54,9 +60,19 @@ contract DeployRewardHook is Script {
 
         vm.startBroadcast(deployerKey);
 
-        // 1. Oracle
-        AerodromeOracle oracle = new AerodromeOracle(
-            pool, protocolToken, usdc, tokenDecimals, twapWindow, minLiquidity, maxStaleness, deployer
+        // 1. Composite oracle: TOKEN/WETH * WETH/USDC -> USDC per TOKEN
+        CompositeTwapOracle oracle = new CompositeTwapOracle(
+            poolA,
+            protocolToken,
+            tokenDecimals,
+            poolB,
+            weth,
+            WETH_DECIMALS,
+            twapWindow,
+            minLiquidityA,
+            minLiquidityB,
+            maxStaleness,
+            deployer
         );
 
         // 2. Vault
@@ -83,7 +99,9 @@ contract DeployRewardHook is Script {
         vm.stopBroadcast();
 
         console.log("=== TaskTokenRewardHook deployment ===");
-        console.log("AerodromeOracle:      ", address(oracle));
+        console.log("CompositeTwapOracle:  ", address(oracle));
+        console.log("  poolA (TOKEN/WETH): ", poolA);
+        console.log("  poolB (WETH/USDC):  ", poolB);
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
