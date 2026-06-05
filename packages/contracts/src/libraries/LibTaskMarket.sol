@@ -85,16 +85,10 @@ library LibTaskMarket {
         });
     }
 
-    /// @notice Returns the effective hook list for a task.
-    ///         Rev007: uses taskHooks[taskId] if populated; falls back to legacy task.hookContract.
+    /// @notice Returns the hook list for a task (Rev007).
+    ///         task.hookContract is deprecated dead storage; taskHooks is authoritative.
     function _resolveHooks(bytes32 taskId, AppStorage storage s) internal view returns (address[] memory) {
-        address[] storage h = s.taskHooks[taskId];
-        if (h.length > 0) return h;
-        address legacy = s.tasks[taskId].hookContract;
-        if (legacy == address(0)) return new address[](0);
-        address[] memory arr = new address[](1);
-        arr[0] = legacy;
-        return arr;
+        return s.taskHooks[taskId];
     }
 
     /// @notice Calls check* on every hook in order. Reverts with errSelector if any hook rejects.
