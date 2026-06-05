@@ -1,0 +1,377 @@
+// SPDX-License-Identifier: MIT
+pragma solidity ^0.8.24;
+
+import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
+import { ITMPHook } from "../interfaces/ITMPHook.sol";
+import { ITMPCore } from "../interfaces/ITMPCore.sol";
+import { ITokenUsdOracle, PriceData } from "../interfaces/ITokenUsdOracle.sol";
+import { IRewardVault } from "../interfaces/IRewardVault.sol";
+import { EpochBudget } from "./EpochBudget.sol";
+import { FullMath } from "../lib/FullMath.sol";
+
+interface ITaskMarketRegistry {
+    function getTask(bytes32 taskId) external view returns (ITMPCore.Task memory);
+}
+
+/// @title TaskTokenRewardHook
+/// @notice Hook that pays DREAMS tokens to workers on task completion.
+///         Rewards are priced in USD (using the task's USDC reward value) and
+///         converted to tokens at the Aerodrome CL TWAP rate.
+///
+///         For Claim / Pitch / Auction tasks: price locks when worker is selected,
+///         tokens are reserved from the vault, and paid atomically at completion.
+///
+///         For Bounty tasks: price and payment happen atomically at completion,
+///         with no pre-reservation.
+contract TaskTokenRewardHook is ITMPHook, Ownable {
+    struct RewardState {
+        uint256 rewardUsd; // USDC 6-decimal amount (= task reward)
+        uint256 startPrice; // TOKEN per USDC at lock time, 1e18
+        uint256 minSettlePrice; // startPrice * (10000 - driftBandBps) / 10000
+        uint256 maxSettlePrice; // startPrice * (10000 + driftBandBps) / 10000
+        uint256 reservedTokenAmount; // max tokens reserved from vault
+        address requester;
+        address worker;
+        bool reserved; // true for Claim/Pitch/Auction (pre-reserved)
+        bool paid;
+    }
+
+    ITokenUsdOracle public oracle;
+    IRewardVault public vault;
+    EpochBudget public epochBudget;
+    address public diamond; // TaskMarket Diamond proxy for registry lookups
+    uint16 public driftBandBps; // default 2000 = 20%
+    uint8 public immutable tokenDecimals;
+
+    // 10^(tokenDecimals + 12) bridges 6-decimal USDC → 18-decimal price space
+    uint256 public immutable priceScaler;
+
+    mapping(bytes32 => RewardState) public rewardStates;
+
+    event RewardConfigured(bytes32 indexed taskId, uint256 rewardUsd);
+    event RewardReserved(bytes32 indexed taskId, address indexed worker, uint256 startPrice, uint256 reservedAmount);
+    event RewardPaid(
+        bytes32 indexed taskId,
+        address indexed worker,
+        uint256 rewardUsd,
+        uint256 settlePrice,
+        uint256 effectivePrice,
+        uint256 tokenAmount
+    );
+    event RewardReserveReleased(bytes32 indexed taskId, uint256 releasedAmount);
+
+    error OracleInvalid();
+    error RewardAlreadyPaid(bytes32 taskId);
+    error RewardNotReserved(bytes32 taskId);
+    error WorkerMismatch(bytes32 taskId, address expected, address got);
+    error ZeroReward();
+    error NoWorkerFound(bytes32 taskId);
+
+    constructor(
+        address _oracle,
+        address _vault,
+        address _epochBudget,
+        address _diamond,
+        uint8 _tokenDecimals,
+        uint16 _driftBandBps,
+        address _owner
+    ) Ownable(_owner) {
+        oracle = ITokenUsdOracle(_oracle);
+        vault = IRewardVault(_vault);
+        epochBudget = EpochBudget(_epochBudget);
+        diamond = _diamond;
+        tokenDecimals = _tokenDecimals;
+        driftBandBps = _driftBandBps;
+        // scaler: bridges 6-decimal USDC amount to tokenDecimals-precision reward
+        priceScaler = 10 ** (uint256(_tokenDecimals) + 12);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ITMPHook — check hooks (revert to block, return false not used)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Validate config at task creation and store initial state.
+    ///         hookData is ignored — all config lives on this contract.
+    function checkFund(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata ctx,
+        bytes calldata /* hookData */
+    )
+        external
+        override
+        returns (bool)
+    {
+        PriceData memory price = oracle.getPrice();
+        if (!price.valid) revert OracleInvalid();
+
+        rewardStates[taskId] = RewardState({
+            rewardUsd: ctx.reward,
+            startPrice: 0,
+            minSettlePrice: 0,
+            maxSettlePrice: 0,
+            reservedTokenAmount: 0,
+            requester: ctx.requester,
+            worker: address(0),
+            reserved: false,
+            paid: false
+        });
+
+        emit RewardConfigured(taskId, ctx.reward);
+        return true;
+    }
+
+    /// @notice Lock price and reserve max tokens when a worker claims (Claim mode).
+    function checkClaim(bytes32 taskId, ITMPCore.TaskContext calldata ctx, address worker)
+        external
+        override
+        returns (bool)
+    {
+        return _reserveForWorker(taskId, ctx.requester, worker);
+    }
+
+    /// @notice Lock price and reserve max tokens when a worker is selected (Pitch/Auction).
+    function checkSelectWorker(bytes32 taskId, ITMPCore.TaskContext calldata ctx, address worker)
+        external
+        override
+        returns (bool)
+    {
+        return _reserveForWorker(taskId, ctx.requester, worker);
+    }
+
+    /// @notice For reserved tasks, verify the submitting worker matches the locked worker.
+    function checkSubmit(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata,
+        /* ctx */
+        address worker,
+        bytes32 /* deliverableHash */
+    )
+        external
+        view
+        override
+        returns (bool)
+    {
+        RewardState storage state = rewardStates[taskId];
+        if (state.reserved && state.worker != worker) {
+            revert WorkerMismatch(taskId, state.worker, worker);
+        }
+        return true;
+    }
+
+    /// @notice Not used — return true.
+    function checkEvaluate(
+        bytes32,
+        /* taskId */
+        ITMPCore.TaskContext calldata,
+        /* ctx */
+        address /* evaluator */
+    )
+        external
+        pure
+        override
+        returns (bool)
+    {
+        return true;
+    }
+
+    /// @notice Atomic token payout at task completion.
+    ///         Path A (reserved): settle with clamped price, release unused reserve.
+    ///         Path B (Bounty): read worker from Diamond, pay at current TWAP directly.
+    function checkComplete(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata ctx,
+        ITMPCore.Verdict calldata /* verdict */
+    )
+        external
+        override
+        returns (bool)
+    {
+        RewardState storage state = rewardStates[taskId];
+
+        if (state.paid) revert RewardAlreadyPaid(taskId);
+
+        PriceData memory settlePrice = oracle.getPrice();
+        if (!settlePrice.valid) revert OracleInvalid();
+
+        // Effects before interactions: mark paid up front so a token-transfer
+        // callback cannot re-enter and double-pay.
+        state.paid = true;
+
+        if (state.reserved) {
+            // Path A — Claim / Pitch / Auction
+            uint256 effectivePrice = _clamp(settlePrice.price, state.minSettlePrice, state.maxSettlePrice);
+            uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, effectivePrice);
+
+            uint256 budgetRemaining = epochBudget.remaining(state.requester, state.worker);
+            uint256 tokenReward = _min3(rawReward, state.reservedTokenAmount, budgetRemaining);
+
+            epochBudget.checkAndConsume(state.requester, state.worker, tokenReward);
+            vault.pay(taskId, state.worker, tokenReward);
+
+            uint256 unused = state.reservedTokenAmount - tokenReward;
+            if (unused > 0) vault.release(taskId, unused);
+
+            emit RewardPaid(taskId, state.worker, state.rewardUsd, settlePrice.price, effectivePrice, tokenReward);
+        } else {
+            // Path B — Bounty (no pre-reservation)
+            address worker = ITaskMarketRegistry(diamond).getTask(taskId).worker;
+            if (worker == address(0)) revert NoWorkerFound(taskId);
+
+            uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, settlePrice.price);
+            uint256 budgetRemaining = epochBudget.remaining(ctx.requester, worker);
+            uint256 vaultAvail = vault.available();
+            uint256 taskCap = epochBudget.maxTokensPerTask();
+
+            uint256 tokenReward = _min4(rawReward, budgetRemaining, vaultAvail, taskCap);
+            if (tokenReward == 0) revert ZeroReward();
+
+            epochBudget.checkAndConsume(ctx.requester, worker, tokenReward);
+            vault.payDirect(worker, tokenReward);
+
+            emit RewardPaid(taskId, worker, state.rewardUsd, settlePrice.price, settlePrice.price, tokenReward);
+        }
+
+        return true;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ITMPHook — on hooks (try-catch wrapped by Diamond, must not revert)
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function onComplete(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata,
+        /* ctx */
+        ITMPCore.Verdict calldata /* verdict */
+    )
+        external
+        override
+    {
+        // Payment was already handled in checkComplete. Defensive: if somehow
+        // reserved but not paid, release the reserve.
+        RewardState storage state = rewardStates[taskId];
+        if (state.reserved && !state.paid && state.reservedTokenAmount > 0) {
+            try vault.release(taskId, state.reservedTokenAmount) { } catch { }
+            try epochBudget.release(state.requester, state.worker, state.reservedTokenAmount) { } catch { }
+            emit RewardReserveReleased(taskId, state.reservedTokenAmount);
+        }
+    }
+
+    function onForfeit(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata,
+        /* ctx */
+        address /* worker */
+    )
+        external
+        override
+    {
+        _releaseReserve(taskId);
+    }
+
+    function onCancel(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata /* ctx */
+    )
+        external
+        override
+    {
+        _releaseReserve(taskId);
+    }
+
+    function onExpire(
+        bytes32 taskId,
+        ITMPCore.TaskContext calldata /* ctx */
+    )
+        external
+        override
+    {
+        _releaseReserve(taskId);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // ERC-165
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
+        return interfaceId == type(ITMPHook).interfaceId || interfaceId == type(IERC165).interfaceId;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Owner config
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function setOracle(address _oracle) external onlyOwner {
+        oracle = ITokenUsdOracle(_oracle);
+    }
+
+    function setVault(address _vault) external onlyOwner {
+        vault = IRewardVault(_vault);
+    }
+
+    function setEpochBudget(address _epochBudget) external onlyOwner {
+        epochBudget = EpochBudget(_epochBudget);
+    }
+
+    function setDiamond(address _diamond) external onlyOwner {
+        diamond = _diamond;
+    }
+
+    function setDriftBandBps(uint16 _driftBandBps) external onlyOwner {
+        driftBandBps = _driftBandBps;
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
+    // Internal helpers
+    // ─────────────────────────────────────────────────────────────────────────
+
+    function _reserveForWorker(bytes32 taskId, address requester, address worker) internal returns (bool) {
+        RewardState storage state = rewardStates[taskId];
+
+        PriceData memory price = oracle.getPrice();
+        if (!price.valid) revert OracleInvalid();
+
+        uint256 startPrice = price.price;
+        uint256 minSettle = (startPrice * (10000 - driftBandBps)) / 10000;
+        uint256 maxSettle = (startPrice * (10000 + driftBandBps)) / 10000;
+
+        // Worst case: price falls to minSettle — maximum token payout
+        uint256 maxTokenReward = FullMath.mulDiv(state.rewardUsd, priceScaler, minSettle);
+
+        epochBudget.checkAndConsume(requester, worker, maxTokenReward);
+        vault.reserve(taskId, maxTokenReward);
+
+        state.startPrice = startPrice;
+        state.minSettlePrice = minSettle;
+        state.maxSettlePrice = maxSettle;
+        state.reservedTokenAmount = maxTokenReward;
+        state.worker = worker;
+        state.reserved = true;
+
+        emit RewardReserved(taskId, worker, startPrice, maxTokenReward);
+        return true;
+    }
+
+    function _releaseReserve(bytes32 taskId) internal {
+        RewardState storage state = rewardStates[taskId];
+        if (!state.reserved || state.paid || state.reservedTokenAmount == 0) return;
+        try vault.release(taskId, state.reservedTokenAmount) { } catch { }
+        try epochBudget.release(state.requester, state.worker, state.reservedTokenAmount) { } catch { }
+        emit RewardReserveReleased(taskId, state.reservedTokenAmount);
+    }
+
+    function _clamp(uint256 value, uint256 lo, uint256 hi) internal pure returns (uint256) {
+        if (value < lo) return lo;
+        if (value > hi) return hi;
+        return value;
+    }
+
+    function _min3(uint256 a, uint256 b, uint256 c) internal pure returns (uint256) {
+        return a < b ? (a < c ? a : c) : (b < c ? b : c);
+    }
+
+    function _min4(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (uint256) {
+        return _min3(_min3(a, b, c), d, d);
+    }
+}
