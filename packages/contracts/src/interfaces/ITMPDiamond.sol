@@ -33,9 +33,8 @@ interface ITMPDiamond {
         bytes32 contentHash,
         string calldata contentURI,
         bytes4 auctionSubtype,
-        address hookContract,
-        bytes32[] calldata tags,
-        bytes calldata hookData
+        ITMPCore.HookConfig calldata hookConfig,
+        bytes32[] calldata tags
     ) external returns (bytes32);
 
     function claimTask(bytes32 taskId, uint256 stakeAmount) external;
@@ -164,6 +163,9 @@ interface ITMPDiamond {
     function setDefaultFeeBps(uint16 feeBps) external;
     function setFeeRecipient(address recipient) external;
     function setReputationRegistry(address registry) external;
+    function setDefaultHooks(address[] calldata hooks) external;
+    function getDefaultHooks() external view returns (address[] memory);
+    function getTaskHooks(bytes32 taskId) external view returns (address[] memory);
 
     // -------------------------------------------------------------------------
     // DiamondLoupeFacet

@@ -75,7 +75,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
 
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         _relay(requester, REWARD, data, _nonce(0));
     }
@@ -154,7 +165,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_Relay_EmitsPaymentGatedCall() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         bytes4 expectedSelector = market.createTask.selector;
 
@@ -171,7 +193,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_Relay_Replay_Reverts() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         bytes32 nonce = _nonce(99);
 
@@ -188,7 +221,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_ConsumedReceipts_Stored() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         bytes32 nonce = _nonce(100);
         bytes4 selector = market.createTask.selector;
@@ -210,7 +254,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_Relay_Expired_Reverts() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         uint256 expiredBefore = block.timestamp - 1;
 
@@ -222,7 +277,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_Relay_ExactlyAtDeadline_Succeeds() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         // validBefore == block.timestamp (inclusive, <= check)
         vm.prank(server);
@@ -248,7 +314,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
         // createTask with reward=0 must revert with the TaskMarket error
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (0, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                0,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         vm.prank(server);
         vm.expectRevert(ITMPCore.RewardMustBeGreaterThanZero.selector);
@@ -266,7 +343,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
 
         bytes memory createData = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.CLAIM(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.CLAIM(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         _relay(requester, REWARD, createData, _nonce(0));
 
@@ -287,7 +375,18 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
     function test_Relay_UnauthorizedCaller_Reverts() public {
         bytes memory data = abi.encodeCall(
             market.createTask,
-            (REWARD, DURATION, market.BOUNTY(), 0, 0, bytes32(0), "", bytes4(0), address(0), new bytes32[](0), hex"")
+            (
+                REWARD,
+                DURATION,
+                market.BOUNTY(),
+                0,
+                0,
+                bytes32(0),
+                "",
+                bytes4(0),
+                ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                new bytes32[](0)
+            )
         );
         vm.prank(attacker);
         vm.expectRevert(TaskMarketForwarder.UnauthorizedRelayer.selector);

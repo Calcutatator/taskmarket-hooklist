@@ -122,11 +122,13 @@ contract EvaluatorFacet {
         }
         task.status = ITMPCore.TaskStatus.Appealing;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook).checkEvaluate(taskId, LibTaskMarket._buildContext(taskId, s), evaluatorAddr)) {
-                revert ITMPCore.HookCheckEvaluateRejected();
-            }
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(ITMPHook.checkEvaluate, (taskId, LibTaskMarket._buildContext(taskId, s), evaluatorAddr)),
+                ITMPCore.HookCheckEvaluateRejected.selector
+            );
         }
 
         emit ITMPEvaluator.TaskEvaluated(taskId, evaluatorAddr, uint8(verdictType), score);
@@ -290,11 +292,13 @@ contract EvaluatorFacet {
         if (totalAwarded > remaining) revert ITMPCore.AwardsExceedEscrow();
         if (totalFee > 0) s.totalFeesCollected += totalFee;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)) {
-                revert ITMPCore.HookCheckCompleteRejected();
-            }
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(ITMPHook.checkComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)),
+                ITMPCore.HookCheckCompleteRejected.selector
+            );
         }
 
         // Multi-winner payouts require iterating recipients. State fully committed before loop (CEI).
@@ -312,10 +316,8 @@ contract EvaluatorFacet {
             if (!s.usdcToken.transfer(task.requester, remaining - totalAwarded)) revert ITMPCore.ExcessRefundFailed();
         }
 
-        if (hook != address(0)) {
-            LibTaskMarket._afterHook(
-                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem))
-            );
-        }
+        LibTaskMarket._dispatchAfterHooks(
+            hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem))
+        );
     }
 }

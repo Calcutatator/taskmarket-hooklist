@@ -178,9 +178,8 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     bytes32(0),
                     "",
                     bytes4(0),
-                    address(hook),
-                    new bytes32[](0),
-                    ""
+                    ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
+                    new bytes32[](0)
                 )
             )
         );
@@ -202,13 +201,17 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     bytes32(0),
                     "",
                     bytes4(0),
-                    address(hook),
-                    new bytes32[](0),
-                    ""
+                    ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
+                    new bytes32[](0)
                 )
             )
         );
         taskId = abi.decode(result, (bytes32));
+    }
+
+    function _hookArr(address h) internal pure returns (address[] memory arr) {
+        arr = new address[](1);
+        arr[0] = h;
     }
 
     // ─── ERC-165 ──────────────────────────────────────────────────────────────
@@ -248,7 +251,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
         // Requester accepts — hook pays tokens. Price unchanged so effectivePrice = startPrice.
         uint256 workerDreamsBefore = dreamsToken.balanceOf(worker);
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
 
         uint256 workerDreamsAfter = dreamsToken.balanceOf(worker);
         // 100e6 * 1e30 / 1e17 = 1000 DREAMS
@@ -270,7 +273,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
         uint256 workerDreamsBefore = dreamsToken.balanceOf(worker);
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
 
         assertGt(dreamsToken.balanceOf(worker), workerDreamsBefore);
     }
@@ -287,7 +290,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
         uint256 before = dreamsToken.balanceOf(worker);
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
         uint256 paid = dreamsToken.balanceOf(worker) - before;
 
         // At floor price (10e18 * 0.8 = 8e18): reward = 100e6 * 1e30 / 8e18 = 1250 DREAMS
@@ -305,7 +308,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
         uint256 before = dreamsToken.balanceOf(worker);
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
         uint256 paid = dreamsToken.balanceOf(worker) - before;
 
         // At ceiling price (10e18 * 1.2 = 12e18): reward = 100e6 * 1e30 / 12e18 ≈ 833 DREAMS
@@ -328,9 +331,8 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                 bytes32(0),
                 "",
                 bytes4(0),
-                address(hook),
-                new bytes32[](0),
-                ""
+                ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
+                new bytes32[](0)
             )
         );
         oracle.setValid(false);
@@ -352,7 +354,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
         oracle.setValid(false);
         vm.expectRevert();
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
     }
 
     // ─── Worker mismatch ─────────────────────────────────────────────────────
@@ -372,7 +374,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         bytes32 taskId = _createClaimTask();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
 
         // Call checkComplete directly again — should revert with RewardAlreadyPaid
         ITMPCore.Verdict memory verdict;
@@ -403,7 +405,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     function test_cancel_noReserve_noRevert() public {
         bytes32 taskId = _createClaimTask();
         // Task is Open (unclaimed) — cancelTask fires onCancel with no reserve
-        _relay(requester, 0, abi.encodeCall(market.cancelTask, (taskId)));
+        _relay(requester, 0, abi.encodeCall(market.cancelTask, (taskId, 0)));
         assertEq(vault.taskReserve(taskId), 0);
     }
 
@@ -416,7 +418,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
         // Fast-forward past expiry
         vm.warp(block.timestamp + 2 days);
-        market.refundExpired(taskId);
+        market.refundExpired(taskId, 0);
 
         assertEq(vault.taskReserve(taskId), 0);
     }
@@ -440,7 +442,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         bytes32 taskId = _createClaimTask();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("w"))));
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("w"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("w"), 0)));
 
         assertGt(budget.workerUsed(worker), 0);
 
@@ -476,6 +478,6 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         vault.withdraw(owner, avail);
 
         vm.expectRevert();
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"))));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
     }
 }

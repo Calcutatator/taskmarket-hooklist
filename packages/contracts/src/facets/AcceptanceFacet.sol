@@ -58,11 +58,13 @@ contract AcceptanceFacet {
         s.workerStats[worker].completedTasks++;
         if (fee > 0) s.totalFeesCollected += fee;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) {
-                revert ITMPCore.HookCheckCompleteRejected();
-            }
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(ITMPHook.checkComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict)),
+                ITMPCore.HookCheckCompleteRejected.selector
+            );
         }
 
         if (!s.usdcToken.transfer(worker, workerPayment)) revert ITMPCore.WorkerPaymentFailed();
@@ -105,11 +107,9 @@ contract AcceptanceFacet {
             }
         }
 
-        if (hook != address(0)) {
-            LibTaskMarket._afterHook(
-                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
-            );
-        }
+        LibTaskMarket._dispatchAfterHooks(
+            hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
+        );
         LibTaskMarket._nonReentrantAfter(s);
     }
 
@@ -270,11 +270,13 @@ contract AcceptanceFacet {
         }
         if (totalFee > 0) s.totalFeesCollected += totalFee;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook).checkComplete(taskId, LibTaskMarket._buildContext(taskId, s), verdict)) {
-                revert ITMPCore.HookCheckCompleteRejected();
-            }
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(ITMPHook.checkComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict)),
+                ITMPCore.HookCheckCompleteRejected.selector
+            );
         }
 
         // Multi-winner payouts require iterating recipients. State fully committed before this loop (CEI).
@@ -308,11 +310,9 @@ contract AcceptanceFacet {
                 catch { }
         }
 
-        if (hook != address(0)) {
-            LibTaskMarket._afterHook(
-                hook, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
-            );
-        }
+        LibTaskMarket._dispatchAfterHooks(
+            hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
+        );
     }
 
     function _modeName(bytes4 mode) private pure returns (string memory) {

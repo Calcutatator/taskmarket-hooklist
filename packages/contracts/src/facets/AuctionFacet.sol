@@ -83,10 +83,16 @@ contract AuctionFacet {
         task.stakeAmount = auctionCfg.lowestBidPrice;
         task.status = ITMPCore.TaskStatus.Claimed;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook)
-                    .checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), auctionCfg.lowestBidder)) revert ITMPCore.HookCheckSelectWorkerRejected();
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(
+                    ITMPHook.checkSelectWorker,
+                    (taskId, LibTaskMarket._buildContext(taskId, s), auctionCfg.lowestBidder)
+                ),
+                ITMPCore.HookCheckSelectWorkerRejected.selector
+            );
         }
 
         emit ITMPCore.TaskWorkerSelected(taskId, auctionCfg.lowestBidder);
@@ -120,11 +126,13 @@ contract AuctionFacet {
         task.stakeAmount = price;
         task.status = ITMPCore.TaskStatus.Claimed;
 
-        address hook = task.hookContract;
-        if (hook != address(0)) {
-            if (!ITMPHook(hook).checkSelectWorker(taskId, LibTaskMarket._buildContext(taskId, s), worker)) {
-                revert ITMPCore.HookCheckSelectWorkerRejected();
-            }
+        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
+        if (hooks.length > 0) {
+            LibTaskMarket._dispatchCheckHooks(
+                hooks,
+                abi.encodeCall(ITMPHook.checkSelectWorker, (taskId, LibTaskMarket._buildContext(taskId, s), worker)),
+                ITMPCore.HookCheckSelectWorkerRejected.selector
+            );
         }
 
         emit ITMPCore.AuctionAccepted(taskId, worker, price);

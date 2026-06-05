@@ -144,4 +144,10 @@ contract RegistryFacet {
     function taskSubmissionHashes(bytes32 taskId, address worker) external view returns (bytes32[] memory) {
         return LibAppStorage.appStorage().taskSubmissionHashes[taskId][worker];
     }
+
+    /// @notice Returns the effective hook list for a task (Rev008).
+    ///         Uses taskHooks[taskId] if populated; falls back to legacy task.hookContract.
+    function getTaskHooks(bytes32 taskId) external view returns (address[] memory) {
+        return LibTaskMarket._resolveHooks(taskId, LibAppStorage.appStorage());
+    }
 }

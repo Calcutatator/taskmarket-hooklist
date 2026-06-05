@@ -144,4 +144,26 @@ contract AdminFacet is Initializable {
         LibAppStorage.appStorage().reputationRegistry = registry;
         emit ITMPReputation.ReputationRegistryUpdated(registry);
     }
+
+    // -------------------------------------------------------------------------
+    // Default hooks (Rev007)
+    // -------------------------------------------------------------------------
+
+    /// @notice Replace the protocol default hook list (owner only).
+    ///         These hooks are prepended to every new task's hook list at createTask().
+    ///         Does not affect tasks already created.
+    function setDefaultHooks(address[] calldata hooks) external onlyOwner {
+        AppStorage storage s = LibAppStorage.appStorage();
+        delete s.defaultHooks;
+        for (uint256 i; i < hooks.length; i++) {
+            if (hooks[i] == address(0)) revert ITMPCore.InvalidHookAddress();
+            s.defaultHooks.push(hooks[i]);
+        }
+        emit ITMPCore.DefaultHooksSet(hooks);
+    }
+
+    /// @notice Return the current protocol default hook list.
+    function getDefaultHooks() external view returns (address[] memory) {
+        return LibAppStorage.appStorage().defaultHooks;
+    }
 }

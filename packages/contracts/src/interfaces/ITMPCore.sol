@@ -102,6 +102,7 @@ interface ITMPCore is IERC165 {
     error InvalidFeeRecipient();
     error InvalidUSDCToken();
     error InvalidRecipient();
+    error InvalidHookAddress();
     error InvalidForwarderAddress();
     error FeeBpsTooHigh();
     error RewardMustBeGreaterThanZero();
@@ -271,6 +272,14 @@ interface ITMPCore is IERC165 {
         uint256 price;
     }
 
+    /// @notice Hook configuration passed to createTask (Rev007).
+    ///         Packs hookContracts and hookData into one calldata pointer to stay
+    ///         within the 16-slot Yul stack limit.
+    struct HookConfig {
+        address[] contracts;
+        bytes data;
+    }
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -282,6 +291,9 @@ interface ITMPCore is IERC165 {
 
     /// @notice Emitted when a hook contract is registered for a task.
     event HookRegistered(bytes32 indexed taskId, address hookContract);
+
+    /// @notice Emitted when the protocol default hook list is replaced.
+    event DefaultHooksSet(address[] hooks);
 
     /// @notice Emitted when an after-hook call fails. Failures are swallowed so a buggy
     ///         hook cannot block fund recovery; this event makes failures observable on-chain.
@@ -393,9 +405,8 @@ interface ITMPCore is IERC165 {
     /// @param contentHash     Optional keccak256 of off-chain task description (bytes32(0) if unused)
     /// @param contentURI      Optional URI pointing to extended task metadata (empty string if unused)
     /// @param auctionSubtype  Auction subtype selector (see ITMPModes; bytes4(0) for non-auction tasks)
-    /// @param hookContract    ITMPHook address; address(0) for no hook (ERC-8195)
+    /// @param hookConfig      Hook contracts and per-task hookData (Rev007). Use HookConfig({contracts: [], data: ""}) for no hooks.
     /// @param tags            keccak256-hashed classification labels stored on-chain (ERC-8195)
-    /// @param hookData        Arbitrary bytes forwarded verbatim to checkFund; use for per-task hook config
     /// @return taskId         Contract-generated canonical task identifier
     function createTask(
         uint256 reward,
@@ -406,9 +417,8 @@ interface ITMPCore is IERC165 {
         bytes32 contentHash,
         string calldata contentURI,
         bytes4 auctionSubtype,
-        address hookContract,
-        bytes32[] calldata tags,
-        bytes calldata hookData
+        ITMPCore.HookConfig calldata hookConfig,
+        bytes32[] calldata tags
     ) external returns (bytes32 taskId);
 
     /// @notice Accept a worker's submission and release escrowed payment.
