@@ -12,6 +12,21 @@ import { createContext } from './context';
 import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
+import {
+  TaskCreateSchema,
+  ProofSubmitSchema,
+  PitchCreateSchema,
+  UpdateTaskInputSchema,
+  CancelTaskInputSchema,
+  BidCreateSchema,
+  AuctionAcceptSchema,
+} from '@taskmarket/shared';
+import {
+  AcceptInputSchema,
+  AcceptSubmissionsInputSchema,
+  RateInputSchema,
+} from './schemas/acceptance.schemas';
+import { validateBody } from './middleware/validateBody';
 import { x402Middleware } from './middleware/x402';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
@@ -212,42 +227,52 @@ app.get('/api/tasks/:taskId/proofs/:proofId/preimage', async (req, res) => {
 // X402 guards — mount BEFORE the OpenAPI handler
 app.post(
   '/api/tasks',
+  validateBody(TaskCreateSchema),
   x402Middleware({ getAmount: (req) => String(req.body.reward), description: 'Create task' })
 );
 app.post(
   '/api/tasks/:taskId/accept',
+  validateBody(AcceptInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Accept submission' })
 );
 app.post(
   '/api/tasks/:taskId/accept-submissions',
+  validateBody(AcceptSubmissionsInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Accept submissions' })
 );
 app.post(
   '/api/tasks/:taskId/rate',
+  validateBody(RateInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Rate task' })
 );
 app.post(
   '/api/tasks/:taskId/bids',
+  validateBody(BidCreateSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Submit bid' })
 );
 app.post(
   '/api/tasks/:taskId/bids/accept',
+  validateBody(AuctionAcceptSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
 );
 app.post(
   '/api/tasks/:taskId/cancel',
+  validateBody(CancelTaskInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
 );
 app.post(
   '/api/tasks/:taskId/update',
+  validateBody(UpdateTaskInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Update task' })
 );
 app.post(
   '/api/tasks/:taskId/pitches',
+  validateBody(PitchCreateSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Submit pitch' })
 );
 app.post(
   '/api/tasks/:taskId/proofs',
+  validateBody(ProofSubmitSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
 );
 app.post(

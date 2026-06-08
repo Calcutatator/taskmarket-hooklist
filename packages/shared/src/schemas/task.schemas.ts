@@ -178,9 +178,9 @@ export const UpdateTaskInputSchema = z.object({
   pitchDeadline: z.number().optional(),
   auctionFloorPrice: z.string().optional(),
   auctionStartPrice: z.string().optional(),
-  description: z.string().optional(),
-  tags: z.array(z.string()).optional(),
-  metricDescription: z.string().optional(),
+  description: z.string().max(2000, 'Description is too long').optional(),
+  tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed').optional(),
+  metricDescription: z.string().max(500).optional(),
 });
 
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;

@@ -11,6 +11,11 @@ import {
 import { getServerConfig } from '../config/env';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
+import {
+  AcceptInputSchema,
+  AcceptSubmissionsInputSchema,
+  RateInputSchema,
+} from '../schemas/acceptance.schemas';
 
 function sortKeys(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(sortKeys);
@@ -34,19 +39,7 @@ export const acceptanceRouter = router({
         summary: 'Accept submission (X402 required)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        worker: z.string(),
-        /// Optional explicit deliverable hash. If omitted, the backend looks up
-        /// the matching submission row for (taskId, worker) and uses its
-        /// deliverableHash. Required at the contract level for Bounty / Benchmark.
-        deliverable: z
-          .string()
-          .regex(/^0x[0-9a-fA-F]{64}$/)
-          .optional(),
-      })
-    )
+    .input(AcceptInputSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -120,24 +113,7 @@ export const acceptanceRouter = router({
         summary: 'Accept N submissions at once with explicit share basis points (X402 required)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        winners: z
-          .array(
-            z.object({
-              worker: z.string(),
-              share: z.number().int().min(1).max(10000),
-              submissionId: z.string().optional(),
-              deliverable: z
-                .string()
-                .regex(/^0x[0-9a-fA-F]{64}$/)
-                .optional(),
-            })
-          )
-          .min(1, 'At least one winner required'),
-      })
-    )
+    .input(AcceptSubmissionsInputSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -232,14 +208,7 @@ export const acceptanceRouter = router({
         summary: 'Rate task (X402 required)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        worker: z.string(),
-        rating: z.number().int().min(0).max(100),
-        feedbackText: z.string().max(500).optional(),
-      })
-    )
+    .input(RateInputSchema)
     .output(z.object({ success: z.boolean(), feedbackId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
