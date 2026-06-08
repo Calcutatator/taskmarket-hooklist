@@ -37,77 +37,71 @@ contract DeployRewardHook is Script {
     function run() external {
         uint256 deployerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
-
-        address protocolToken = vm.envAddress("FORGE_PROTOCOL_TOKEN");
-        address poolA = vm.envAddress("FORGE_AERODROME_POOL");
-        address poolB = vm.envAddress("FORGE_WETH_USDC_POOL");
-        address diamondAddress = vm.envAddress("FORGE_DIAMOND_ADDRESS");
-        address weth = vm.envOr("FORGE_WETH_ADDRESS", BASE_WETH);
-
-        uint32 twapWindow = uint32(vm.envUint("FORGE_TWAP_WINDOW"));
-        uint256 minLiquidityA = vm.envUint("FORGE_MIN_LIQUIDITY_A");
-        uint256 minLiquidityB = vm.envUint("FORGE_MIN_LIQUIDITY_B");
-        uint256 maxStaleness = vm.envUint("FORGE_MAX_STALENESS");
-        uint256 epochDuration = vm.envUint("FORGE_EPOCH_DURATION");
-        uint256 globalCap = vm.envUint("FORGE_GLOBAL_EPOCH_CAP");
-        uint256 workerCap = vm.envUint("FORGE_WORKER_CAP");
-        uint256 requesterCap = vm.envUint("FORGE_REQUESTER_CAP");
-        uint256 maxTokensPerTask = vm.envUint("FORGE_MAX_TOKENS_PER_TASK");
-        uint16 driftBandBps = uint16(vm.envUint("FORGE_DRIFT_BAND_BPS"));
-        uint256 initialVaultBalance = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(0));
-
-        uint8 tokenDecimals = IERC20Metadata(protocolToken).decimals();
-
         vm.startBroadcast(deployerKey);
 
-        // 1. Composite oracle: TOKEN/WETH * WETH/USDC -> USDC per TOKEN
-        CompositeTwapOracle oracle = new CompositeTwapOracle(
-            poolA,
-            protocolToken,
-            tokenDecimals,
-            poolB,
-            weth,
-            WETH_DECIMALS,
-            twapWindow,
-            minLiquidityA,
-            minLiquidityB,
-            maxStaleness,
-            deployer
-        );
+        (CompositeTwapOracle oracle, RewardVault vault, EpochBudget budget) = _deployCore(deployer);
+        TaskTokenRewardHook hook = _deployHook(oracle, vault, budget, deployer);
 
-        // 2. Vault
-        RewardVault vault = new RewardVault(protocolToken, deployer);
-
-        // 3. Epoch budget
-        EpochBudget budget =
-            new EpochBudget(epochDuration, globalCap, workerCap, requesterCap, maxTokensPerTask, deployer);
-
-        // 4. Hook
-        TaskTokenRewardHook hook = new TaskTokenRewardHook(
-            address(oracle), address(vault), address(budget), diamondAddress, tokenDecimals, driftBandBps, deployer
-        );
-
-        // 5. Wire permissions
         vault.setHook(address(hook));
         budget.setHook(address(hook));
 
-        // 6. Seed vault if configured
+        uint256 initialVaultBalance = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(0));
         if (initialVaultBalance > 0) {
-            IERC20(protocolToken).transfer(address(vault), initialVaultBalance);
+            IERC20(vm.envAddress("FORGE_PROTOCOL_TOKEN")).transfer(address(vault), initialVaultBalance);
         }
 
         vm.stopBroadcast();
 
         console.log("=== TaskTokenRewardHook deployment ===");
         console.log("CompositeTwapOracle:  ", address(oracle));
-        console.log("  poolA (TOKEN/WETH): ", poolA);
-        console.log("  poolB (WETH/USDC):  ", poolB);
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
-        console.log("Token decimals:       ", tokenDecimals);
-        console.log("TWAP window (s):      ", twapWindow);
-        console.log("Drift band bps:       ", driftBandBps);
         console.log("Vault seeded (wei):   ", initialVaultBalance);
+    }
+
+    function _deployCore(address deployer)
+        internal
+        returns (CompositeTwapOracle oracle, RewardVault vault, EpochBudget budget)
+    {
+        address protocolToken = vm.envAddress("FORGE_PROTOCOL_TOKEN");
+        oracle = new CompositeTwapOracle(
+            vm.envAddress("FORGE_AERODROME_POOL"),
+            protocolToken,
+            IERC20Metadata(protocolToken).decimals(),
+            vm.envAddress("FORGE_WETH_USDC_POOL"),
+            vm.envOr("FORGE_WETH_ADDRESS", BASE_WETH),
+            WETH_DECIMALS,
+            uint32(vm.envUint("FORGE_TWAP_WINDOW")),
+            vm.envUint("FORGE_MIN_LIQUIDITY_A"),
+            vm.envUint("FORGE_MIN_LIQUIDITY_B"),
+            vm.envUint("FORGE_MAX_STALENESS"),
+            deployer
+        );
+        vault = new RewardVault(protocolToken, deployer);
+        budget = new EpochBudget(
+            vm.envUint("FORGE_EPOCH_DURATION"),
+            vm.envUint("FORGE_GLOBAL_EPOCH_CAP"),
+            vm.envUint("FORGE_WORKER_CAP"),
+            vm.envUint("FORGE_REQUESTER_CAP"),
+            vm.envUint("FORGE_MAX_TOKENS_PER_TASK"),
+            deployer
+        );
+    }
+
+    function _deployHook(CompositeTwapOracle oracle, RewardVault vault, EpochBudget budget, address deployer)
+        internal
+        returns (TaskTokenRewardHook hook)
+    {
+        address protocolToken = vm.envAddress("FORGE_PROTOCOL_TOKEN");
+        hook = new TaskTokenRewardHook(
+            address(oracle),
+            address(vault),
+            address(budget),
+            vm.envAddress("FORGE_DIAMOND_ADDRESS"),
+            IERC20Metadata(protocolToken).decimals(),
+            uint16(vm.envUint("FORGE_DRIFT_BAND_BPS")),
+            deployer
+        );
     }
 }

@@ -171,8 +171,6 @@ contract TaskMarketTest is DiamondTestHelper {
         uint256 _bd,
         bytes4 _auctionSubtype
     ) internal returns (bytes32) {
-        bytes32[] memory emptyTags = new bytes32[](0);
-        address[] memory noHooks = new address[](0);
         return abi.decode(
             _relay(
                 _req,
@@ -185,11 +183,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         _mode,
                         _pd,
                         _bd,
-                        bytes32(0),
-                        "",
                         _auctionSubtype,
-                        ITMPCore.HookConfig({ contracts: noHooks, data: hex"" }),
-                        emptyTags
+                        ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -201,7 +197,6 @@ contract TaskMarketTest is DiamondTestHelper {
         internal
         returns (bytes32)
     {
-        bytes32[] memory emptyTags = new bytes32[](0);
         address[] memory hooks = new address[](1);
         hooks[0] = _hook;
         // Pass _dur as pitchDeadline/bidDeadline so PITCH and AUCTION modes satisfy the >0 check.
@@ -218,11 +213,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         _mode,
                         _dur,
                         _dur,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -677,11 +670,9 @@ contract TaskMarketTest is DiamondTestHelper {
             bounty,
             0,
             0,
-            bytes32(0),
-            "",
             bytes4(0),
             ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-            new bytes32[](0)
+            ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
         );
     }
 
@@ -758,11 +749,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.BOUNTY(),
                         0,
                         0,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                        new bytes32[](0)
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -787,11 +776,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.NotTrustedForwarder.selector);
@@ -846,11 +833,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.InvalidRequester.selector);
@@ -866,11 +851,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.RewardMustBeGreaterThanZero.selector);
@@ -886,11 +869,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.DurationMustBeGreaterThanZero.selector);
@@ -906,11 +887,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 bytes4(0xdeadbeef),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.InvalidMode.selector);
@@ -926,11 +905,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.AUCTION(),
                 0,
                 1 days,
-                bytes32(0),
-                "",
                 bytes4(0xdeadbeef),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.InvalidAuctionSubtype.selector);
@@ -2526,11 +2503,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 mode,
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                emptyTags
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert();
@@ -2550,11 +2525,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 mode,
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                emptyTags
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.HookCheckFundRejected.selector);
@@ -2655,11 +2628,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.BOUNTY(),
                         0,
                         0,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -2689,11 +2660,9 @@ contract TaskMarketTest is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
-                emptyTags
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert();
@@ -2776,11 +2745,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.BOUNTY(),
                         0,
                         0,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                        tags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: tags })
                     )
                 )
             ),
@@ -2948,11 +2915,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.AUCTION(),
                         0,
                         1 days,
-                        bytes32(0),
-                        "",
                         market.AUCTION_DUTCH(),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -2985,11 +2950,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.AUCTION(),
                         0,
                         1 days,
-                        bytes32(0),
-                        "",
                         market.AUCTION_DUTCH(),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -3294,11 +3257,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.CLAIM(),
                         0,
                         0,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -3899,11 +3860,9 @@ contract TaskMarketTest is DiamondTestHelper {
                     bountyMode,
                     0,
                     0,
-                    bytes32(0),
-                    "",
                     bytes4(0),
                     ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                    emptyTags
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );
@@ -4015,11 +3974,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.BOUNTY(),
                         0,
                         0,
-                        contentHash,
-                        "ipfs://xyz",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: contentHash, contentURI: "ipfs://xyz", tags: emptyTags })
                     )
                 )
             ),
@@ -4298,11 +4255,9 @@ contract TaskMarketTest is DiamondTestHelper {
                         market.AUCTION(),
                         0,
                         1 days,
-                        bytes32(0),
-                        "",
                         market.AUCTION_DUTCH(),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
-                        emptyTags
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),

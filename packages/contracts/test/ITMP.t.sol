@@ -137,11 +137,9 @@ contract ITMPCompliance is DiamondTestHelper {
                         _mode,
                         _pd,
                         _bd,
-                        bytes32(0),
-                        "",
                         _auctionSubtype,
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                        new bytes32[](0)
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -498,11 +496,9 @@ contract ITMPCompliance is DiamondTestHelper {
                         market.BOUNTY(),
                         0,
                         0,
-                        bytes32(0),
-                        "",
                         bytes4(0),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                        new bytes32[](0)
+                        ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                     )
                 )
             ),
@@ -526,11 +522,9 @@ contract ITMPCompliance is DiamondTestHelper {
                 market.BOUNTY(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.expectRevert(ITMPCore.NotTrustedForwarder.selector);

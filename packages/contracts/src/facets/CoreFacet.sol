@@ -44,11 +44,9 @@ contract CoreFacet {
     /// @param mode            4-byte mode selector (use BOUNTY/CLAIM/PITCH/BENCHMARK/AUCTION)
     /// @param pitchDeadline   Seconds from now for pitch window (Pitch mode only, 0 otherwise)
     /// @param bidDeadline     Seconds from now for bid window (Auction mode only, 0 otherwise)
-    /// @param contentHash     Optional keccak256 of off-chain task description (bytes32(0) if unused)
-    /// @param contentURI      Optional URI pointing to extended task metadata (empty string if unused)
     /// @param auctionSubtype  Auction subtype selector (bytes4(0) for non-auction tasks)
     /// @param hookConfig      Hook contracts + hookData packed into one calldata pointer (Rev007).
-    /// @param tags            keccak256-hashed classification labels stored on-chain (ERC-8195)
+    /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
     // solhint-disable-next-line code-complexity
     function createTask(
         uint256 reward,
@@ -56,11 +54,9 @@ contract CoreFacet {
         bytes4 mode,
         uint256 pitchDeadline,
         uint256 bidDeadline,
-        bytes32 contentHash,
-        string calldata contentURI,
         bytes4 auctionSubtype,
         ITMPCore.HookConfig calldata hookConfig,
-        bytes32[] calldata tags
+        ITMPCore.TaskContent calldata content
     ) external returns (bytes32 taskId) {
         AppStorage storage s = LibAppStorage.appStorage();
         LibTaskMarket._requireForwarder(s);
@@ -89,13 +85,11 @@ contract CoreFacet {
         t.status = ITMPCore.TaskStatus.Open;
         t.mode = mode;
         t.feeBps = s.defaultFeeBps;
-        // hookContract deprecated in Rev007; kept as zero for new tasks
-        t.hookContract = address(0);
 
         ITMPCore.TaskMetadata storage meta = s.taskMetadata[taskId];
         meta.createdAt = block.timestamp;
-        meta.contentHash = contentHash;
-        meta.contentURI = contentURI;
+        meta.contentHash = content.contentHash;
+        meta.contentURI = content.contentURI;
 
         if (mode == PITCH) {
             if (pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
@@ -109,8 +103,8 @@ contract CoreFacet {
             ac.auctionSubtype = auctionSubtype;
         }
 
-        if (tags.length > 0) {
-            s.taskTags[taskId] = tags;
+        if (content.tags.length > 0) {
+            s.taskTags[taskId] = content.tags;
         }
 
         _buildAndCheckHooks(taskId, hookConfig, s);
@@ -141,14 +135,7 @@ contract CoreFacet {
         task.status = ITMPCore.TaskStatus.Claimed;
         s.taskMetadata[taskId].claimedAt = block.timestamp;
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(ITMPHook.checkClaim, (taskId, LibTaskMarket._buildContext(taskId, s), worker)),
-                ITMPCore.HookCheckClaimRejected.selector
-            );
-        }
+        LibTaskMarket._checkClaimHooks(taskId, worker, s);
 
         emit ITMPCore.TaskClaimed(taskId, worker, stakeAmount);
         LibTaskMarket._nonReentrantAfter(s);
@@ -175,14 +162,7 @@ contract CoreFacet {
         task.worker = worker;
         task.status = ITMPCore.TaskStatus.WorkerSelected;
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(ITMPHook.checkSelectWorker, (taskId, LibTaskMarket._buildContext(taskId, s), worker)),
-                ITMPCore.HookCheckSelectWorkerRejected.selector
-            );
-        }
+        LibTaskMarket._checkSelectWorkerHooks(taskId, worker, s);
 
         emit ITMPCore.TaskWorkerSelected(taskId, worker);
         LibTaskMarket._nonReentrantAfter(s);
@@ -291,16 +271,7 @@ contract CoreFacet {
             }
         }
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(
-                    ITMPHook.checkSubmit, (taskId, LibTaskMarket._buildContext(taskId, s), worker, deliverable)
-                ),
-                ITMPCore.HookCheckSubmitRejected.selector
-            );
-        }
+        LibTaskMarket._checkSubmitHooks(taskId, worker, deliverable, s);
 
         emit ITMPCore.TaskSubmitted(taskId, worker, deliverable);
         LibTaskMarket._nonReentrantAfter(s);
@@ -372,10 +343,7 @@ contract CoreFacet {
         if (forfeited > 0) emit ITMPCore.StakeForfeited(taskId, forfeiter, forfeited);
         emit ITMPCore.TaskReopened(taskId);
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        LibTaskMarket._dispatchAfterHooks(
-            hooks, abi.encodeCall(ITMPHook.onForfeit, (taskId, LibTaskMarket._buildContext(taskId, s), forfeiter))
-        );
+        LibTaskMarket._onForfeitHooks(taskId, forfeiter, s);
         LibTaskMarket._nonReentrantAfter(s);
     }
 
@@ -428,10 +396,7 @@ contract CoreFacet {
         }
 
         emit ITMPCore.TaskCancelled(taskId, requesterAddr, refundAmount);
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        LibTaskMarket._dispatchAfterHooks(
-            hooks, abi.encodeCall(ITMPHook.onCancel, (taskId, LibTaskMarket._buildContext(taskId, s)))
-        );
+        LibTaskMarket._onCancelHooks(taskId, s);
         LibTaskMarket._nonReentrantAfter(s);
     }
 

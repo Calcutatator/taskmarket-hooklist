@@ -179,6 +179,55 @@ contract CompositeTwapOracleTest is Test {
         assertFalse(data.valid);
     }
 
+    function test_invalidWhenPoolBLow() public {
+        _setTick(poolA, -104_140);
+        _setTick(poolB, -196_247);
+        poolB.setLiquidity(0);
+
+        oracle = new CompositeTwapOracle(
+            address(poolA),
+            DREAMS,
+            DREAMS_DECIMALS,
+            address(poolB),
+            WETH,
+            WETH_DECIMALS,
+            TWAP_WINDOW,
+            0,
+            1e10, // minLiquidityB = 1e10, pool has 0
+            3600,
+            OWNER
+        );
+
+        PriceData memory data = oracle.getPrice();
+        assertFalse(data.valid);
+    }
+
+    function test_bridgeInverse_poolB() public {
+        // poolB with USDC=token0, WETH=token1 (inverted ordering)
+        MockCLPool poolBInv = new MockCLPool(USDC, WETH, 1e18);
+        CompositeTwapOracle oracleInv = new CompositeTwapOracle(
+            address(poolA),
+            DREAMS,
+            DREAMS_DECIMALS,
+            address(poolBInv),
+            WETH,
+            WETH_DECIMALS,
+            TWAP_WINDOW,
+            0,
+            0,
+            3600,
+            OWNER
+        );
+        assertFalse(oracleInv.bridgeIsToken0InB());
+
+        _setTick(poolA, -104_140);
+        _setTick(poolBInv, 196_247);
+
+        PriceData memory data = oracleInv.getPrice();
+        assertTrue(data.valid);
+        assertGt(data.price, 0);
+    }
+
     function test_invalidWhenPoolBObserveReverts() public {
         _setTick(poolA, -104_140);
         poolB.setObserveReverts(true);
@@ -228,6 +277,19 @@ contract CompositeTwapOracleTest is Test {
         uint256 expectedB = _expectedPriceB(80_068);
         uint256 expected = FullMath.mulDiv(expectedA, expectedB, 1e18);
         assertEq(data.price, expected);
+    }
+
+    function test_negativeTickRoundsTowardNegativeInfinity() public {
+        // Set a tickCumulative delta that is negative and NOT an even multiple of the window,
+        // exercising the round-towards-negative-infinity adjustment in _twapPrice.
+        int56 windowI = int56(uint56(TWAP_WINDOW));
+        // delta = -104_140 * window - 1  => not divisible, negative
+        poolA.setTickCumulatives(0, int56(-104_140) * windowI - 1);
+        _setTick(poolB, -196_247);
+
+        PriceData memory data = oracle.getPrice();
+        assertTrue(data.valid);
+        assertGt(data.price, 0);
     }
 
     function test_getTwapWindow() public view {

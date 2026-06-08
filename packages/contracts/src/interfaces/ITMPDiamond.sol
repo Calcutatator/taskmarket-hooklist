@@ -30,11 +30,9 @@ interface ITMPDiamond {
         bytes4 mode,
         uint256 pitchDeadlineSecs,
         uint256 bidDeadlineSecs,
-        bytes32 contentHash,
-        string calldata contentURI,
         bytes4 auctionSubtype,
         ITMPCore.HookConfig calldata hookConfig,
-        bytes32[] calldata tags
+        ITMPCore.TaskContent calldata content
     ) external returns (bytes32);
 
     function claimTask(bytes32 taskId, uint256 stakeAmount) external;

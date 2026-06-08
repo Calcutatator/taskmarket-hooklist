@@ -60,7 +60,7 @@ library LibTaskMarket {
     }
 
     // -------------------------------------------------------------------------
-    // Hook helpers
+    // Hook helpers — low-level
     // -------------------------------------------------------------------------
 
     /// @notice Builds a TaskContext snapshot for hook callbacks.
@@ -115,6 +115,10 @@ library LibTaskMarket {
         }
     }
 
+    // -------------------------------------------------------------------------
+    // Hook helpers — typed dispatch (keep abi.encodeCall out of facet stack frames)
+    // -------------------------------------------------------------------------
+
     /// @notice Calls checkFund on all hooks, reverts if any reject. Emits HookRegistered per hook.
     function _checkFundHooks(bytes32 taskId, address[] memory hooks, bytes calldata hookData, AppStorage storage s)
         internal
@@ -128,5 +132,75 @@ library LibTaskMarket {
             }
             emit ITMPCore.HookRegistered(taskId, hooks[i]);
         }
+    }
+
+    function _checkClaimHooks(bytes32 taskId, address worker, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        if (hooks.length == 0) return;
+        _dispatchCheckHooks(
+            hooks,
+            abi.encodeCall(ITMPHook.checkClaim, (taskId, _buildContext(taskId, s), worker)),
+            ITMPCore.HookCheckClaimRejected.selector
+        );
+    }
+
+    function _checkSelectWorkerHooks(bytes32 taskId, address worker, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        if (hooks.length == 0) return;
+        _dispatchCheckHooks(
+            hooks,
+            abi.encodeCall(ITMPHook.checkSelectWorker, (taskId, _buildContext(taskId, s), worker)),
+            ITMPCore.HookCheckSelectWorkerRejected.selector
+        );
+    }
+
+    function _checkSubmitHooks(bytes32 taskId, address worker, bytes32 deliverable, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        if (hooks.length == 0) return;
+        _dispatchCheckHooks(
+            hooks,
+            abi.encodeCall(ITMPHook.checkSubmit, (taskId, _buildContext(taskId, s), worker, deliverable)),
+            ITMPCore.HookCheckSubmitRejected.selector
+        );
+    }
+
+    function _checkEvaluateHooks(bytes32 taskId, address evaluator, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        if (hooks.length == 0) return;
+        _dispatchCheckHooks(
+            hooks,
+            abi.encodeCall(ITMPHook.checkEvaluate, (taskId, _buildContext(taskId, s), evaluator)),
+            ITMPCore.HookCheckEvaluateRejected.selector
+        );
+    }
+
+    function _checkCompleteHooks(bytes32 taskId, AppStorage storage s, ITMPCore.Verdict memory verdict) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        if (hooks.length == 0) return;
+        _dispatchCheckHooks(
+            hooks,
+            abi.encodeCall(ITMPHook.checkComplete, (taskId, _buildContext(taskId, s), verdict)),
+            ITMPCore.HookCheckCompleteRejected.selector
+        );
+    }
+
+    function _onCompleteHooks(bytes32 taskId, AppStorage storage s, ITMPCore.Verdict memory verdict) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        _dispatchAfterHooks(hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, _buildContext(taskId, s), verdict)));
+    }
+
+    function _onForfeitHooks(bytes32 taskId, address forfeiter, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        _dispatchAfterHooks(hooks, abi.encodeCall(ITMPHook.onForfeit, (taskId, _buildContext(taskId, s), forfeiter)));
+    }
+
+    function _onCancelHooks(bytes32 taskId, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        _dispatchAfterHooks(hooks, abi.encodeCall(ITMPHook.onCancel, (taskId, _buildContext(taskId, s))));
+    }
+
+    function _onExpireHooks(bytes32 taskId, AppStorage storage s) internal {
+        address[] memory hooks = _resolveHooks(taskId, s);
+        _dispatchAfterHooks(hooks, abi.encodeCall(ITMPHook.onExpire, (taskId, _buildContext(taskId, s))));
     }
 }

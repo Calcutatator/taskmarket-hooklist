@@ -122,14 +122,7 @@ contract EvaluatorFacet {
         }
         task.status = ITMPCore.TaskStatus.Appealing;
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(ITMPHook.checkEvaluate, (taskId, LibTaskMarket._buildContext(taskId, s), evaluatorAddr)),
-                ITMPCore.HookCheckEvaluateRejected.selector
-            );
-        }
+        LibTaskMarket._checkEvaluateHooks(taskId, evaluatorAddr, s);
 
         emit ITMPEvaluator.TaskEvaluated(taskId, evaluatorAddr, uint8(verdictType), score);
 
@@ -262,62 +255,68 @@ contract EvaluatorFacet {
     function _payAwards(bytes32 taskId, ITMPCore.Task storage task, ITMPCore.Verdict storage v, AppStorage storage s)
         private
     {
-        uint256 evalFee = (task.reward * s.taskEvaluatorConfigs[taskId].evaluatorFeeBps) / 10000;
-        uint256 remaining = task.reward - evalFee;
-        uint256 n = v.awards.length;
-
+        uint256 remaining = task.reward - (task.reward * s.taskEvaluatorConfigs[taskId].evaluatorFeeBps) / 10000;
         ITMPCore.Verdict memory verdictMem = s.taskVerdicts[taskId];
 
         task.status = ITMPCore.TaskStatus.Accepted;
-        if (n > 0) task.worker = v.awards[0].worker;
+        if (v.awards.length > 0) task.worker = v.awards[0].worker;
 
-        uint16 feeBps = task.feeBps;
+        // Commit award accounting (worker stats + fees) and validate escrow before the check hook;
+        // transfers happen after. Accounting and distribution live in separate frames to avoid
+        // stack-too-deep under --ir-minimum coverage compilation.
+        uint256 totalAwarded = _commitEvalAccounting(v, task.feeBps, remaining, s);
+
+        LibTaskMarket._checkCompleteHooks(taskId, s, verdictMem);
+        _distributeEvalAwards(taskId, task.requester, v, task.feeBps, remaining, totalAwarded, s);
+        LibTaskMarket._onCompleteHooks(taskId, s, verdictMem);
+    }
+
+    /// @dev Tallies awards, increments worker stats, commits fees, and validates escrow. No transfers.
+    function _commitEvalAccounting(ITMPCore.Verdict storage v, uint16 feeBps, uint256 remaining, AppStorage storage s)
+        private
+        returns (uint256 totalAwarded)
+    {
+        uint256 n = v.awards.length;
         uint256 totalFee = 0;
-        uint256 totalAwarded = 0;
-        address[] memory workers = new address[](n);
-        uint256[] memory nets = new uint256[](n);
-        uint256[] memory awardFees = new uint256[](n);
         for (uint256 i; i < n; ++i) {
-            address w = v.awards[i].worker;
             uint256 amt = v.awards[i].amount;
-            workers[i] = w;
             if (amt == 0) continue;
             totalAwarded += amt;
-            uint256 fee = (amt * feeBps) / 10000;
-            nets[i] = amt - fee;
-            awardFees[i] = fee;
-            totalFee += fee;
-            s.workerStats[w].completedTasks++;
+            totalFee += (amt * feeBps) / 10000;
+            s.workerStats[v.awards[i].worker].completedTasks++;
         }
         if (totalAwarded > remaining) revert ITMPCore.AwardsExceedEscrow();
         if (totalFee > 0) s.totalFeesCollected += totalFee;
+    }
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(ITMPHook.checkComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem)),
-                ITMPCore.HookCheckCompleteRejected.selector
-            );
-        }
-
+    /// @dev Transfers per-winner nets, the aggregate fee, and any escrow excess. Isolated in its own
+    ///      frame so the payout-loop locals do not pressure the orchestrator's stack.
+    function _distributeEvalAwards(
+        bytes32 taskId,
+        address requester,
+        ITMPCore.Verdict storage v,
+        uint16 feeBps,
+        uint256 remaining,
+        uint256 totalAwarded,
+        AppStorage storage s
+    ) private {
+        uint256 n = v.awards.length;
+        uint256 totalFee = 0;
         // Multi-winner payouts require iterating recipients. State fully committed before loop (CEI).
         // slither-disable-next-line calls-loop
         for (uint256 i; i < n; ++i) {
-            if (nets[i] == 0 && awardFees[i] == 0) continue;
-            if (!s.usdcToken.transfer(workers[i], nets[i])) revert ITMPCore.WorkerPaymentFailed();
-            emit ITMPCore.TaskCompleted(taskId, task.requester, workers[i], nets[i], awardFees[i]);
+            uint256 amt = v.awards[i].amount;
+            if (amt == 0) continue;
+            uint256 fee = (amt * feeBps) / 10000;
+            totalFee += fee;
+            if (!s.usdcToken.transfer(v.awards[i].worker, amt - fee)) revert ITMPCore.WorkerPaymentFailed();
+            emit ITMPCore.TaskCompleted(taskId, requester, v.awards[i].worker, amt - fee, fee);
         }
         if (totalFee > 0) {
             if (!s.usdcToken.transfer(s.feeRecipient, totalFee)) revert ITMPCore.FeeTransferFailed();
         }
-
         if (remaining > totalAwarded) {
-            if (!s.usdcToken.transfer(task.requester, remaining - totalAwarded)) revert ITMPCore.ExcessRefundFailed();
+            if (!s.usdcToken.transfer(requester, remaining - totalAwarded)) revert ITMPCore.ExcessRefundFailed();
         }
-
-        LibTaskMarket._dispatchAfterHooks(
-            hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdictMem))
-        );
     }
 }

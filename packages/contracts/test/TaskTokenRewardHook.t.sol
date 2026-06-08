@@ -175,11 +175,9 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     market.CLAIM(),
                     0,
                     0,
-                    bytes32(0),
-                    "",
                     bytes4(0),
                     ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                    new bytes32[](0)
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );
@@ -198,11 +196,9 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     market.BOUNTY(),
                     0,
                     0,
-                    bytes32(0),
-                    "",
                     bytes4(0),
                     ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                    new bytes32[](0)
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );
@@ -328,11 +324,9 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                 market.CLAIM(),
                 0,
                 0,
-                bytes32(0),
-                "",
                 bytes4(0),
                 ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                new bytes32[](0)
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         oracle.setValid(false);

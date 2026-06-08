@@ -19,7 +19,7 @@ interface ICLPool {
 /// @title CompositeTwapOracle
 /// @notice Chains two Aerodrome CL (Uniswap V3-compatible) pool TWAPs to price a token in USD.
 ///         Intended for TOKEN/BRIDGE -> BRIDGE/USDC composition when no direct TOKEN/USDC pool exists.
-///         Returns USDC per 1 whole TOKEN, scaled to 1e18 — same convention as AerodromeOracle.
+///         Returns USDC per 1 whole TOKEN, scaled to 1e18.
 ///
 /// Math:
 ///   priceA = BRIDGE per TOKEN, 1e18  (from poolA)

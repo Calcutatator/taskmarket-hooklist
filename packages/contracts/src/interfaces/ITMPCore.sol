@@ -280,6 +280,15 @@ interface ITMPCore is IERC165 {
         bytes data;
     }
 
+    /// @notice Content and classification metadata passed to createTask.
+    ///         Packs contentHash, contentURI, and tags into one calldata pointer
+    ///         to reduce stack depth under the legacy coverage codegen.
+    struct TaskContent {
+        bytes32 contentHash;
+        string contentURI;
+        bytes32[] tags;
+    }
+
     // -------------------------------------------------------------------------
     // Events
     // -------------------------------------------------------------------------
@@ -402,11 +411,9 @@ interface ITMPCore is IERC165 {
     /// @param mode            4-byte mode selector (see ITMPModes for canonical values)
     /// @param pitchDeadline   Seconds from now for pitch acceptance (Pitch mode only, 0 otherwise)
     /// @param bidDeadline     Seconds from now for bid submission (Auction mode only, 0 otherwise)
-    /// @param contentHash     Optional keccak256 of off-chain task description (bytes32(0) if unused)
-    /// @param contentURI      Optional URI pointing to extended task metadata (empty string if unused)
     /// @param auctionSubtype  Auction subtype selector (see ITMPModes; bytes4(0) for non-auction tasks)
-    /// @param hookConfig      Hook contracts and per-task hookData (Rev007). Use HookConfig({contracts: [], data: ""}) for no hooks.
-    /// @param tags            keccak256-hashed classification labels stored on-chain (ERC-8195)
+    /// @param hookConfig      Hook contracts and per-task hookData (Rev007).
+    /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
     /// @return taskId         Contract-generated canonical task identifier
     function createTask(
         uint256 reward,
@@ -414,11 +421,9 @@ interface ITMPCore is IERC165 {
         bytes4 mode,
         uint256 pitchDeadline,
         uint256 bidDeadline,
-        bytes32 contentHash,
-        string calldata contentURI,
         bytes4 auctionSubtype,
         ITMPCore.HookConfig calldata hookConfig,
-        bytes32[] calldata tags
+        ITMPCore.TaskContent calldata content
     ) external returns (bytes32 taskId);
 
     /// @notice Accept a worker's submission and release escrowed payment.

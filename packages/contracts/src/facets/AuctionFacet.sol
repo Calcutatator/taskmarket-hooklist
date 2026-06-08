@@ -83,17 +83,7 @@ contract AuctionFacet {
         task.stakeAmount = auctionCfg.lowestBidPrice;
         task.status = ITMPCore.TaskStatus.Claimed;
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(
-                    ITMPHook.checkSelectWorker,
-                    (taskId, LibTaskMarket._buildContext(taskId, s), auctionCfg.lowestBidder)
-                ),
-                ITMPCore.HookCheckSelectWorkerRejected.selector
-            );
-        }
+        LibTaskMarket._checkSelectWorkerHooks(taskId, auctionCfg.lowestBidder, s);
 
         emit ITMPCore.TaskWorkerSelected(taskId, auctionCfg.lowestBidder);
         LibTaskMarket._nonReentrantAfter(s);
@@ -126,14 +116,7 @@ contract AuctionFacet {
         task.stakeAmount = price;
         task.status = ITMPCore.TaskStatus.Claimed;
 
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            LibTaskMarket._dispatchCheckHooks(
-                hooks,
-                abi.encodeCall(ITMPHook.checkSelectWorker, (taskId, LibTaskMarket._buildContext(taskId, s), worker)),
-                ITMPCore.HookCheckSelectWorkerRejected.selector
-            );
-        }
+        LibTaskMarket._checkSelectWorkerHooks(taskId, worker, s);
 
         emit ITMPCore.AuctionAccepted(taskId, worker, price);
         LibTaskMarket._nonReentrantAfter(s);
