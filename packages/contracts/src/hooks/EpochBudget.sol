@@ -82,6 +82,7 @@ contract EpochBudget is Ownable {
     }
 
     function _usedIn(Usage storage u, uint64 epoch) internal view returns (uint256) {
+        // slither-disable-next-line incorrect-equality
         return u.epoch == epoch ? uint256(u.used) : 0;
     }
 
@@ -110,6 +111,7 @@ contract EpochBudget is Ownable {
 
     function _rollEpochIfStale() internal returns (uint64) {
         if (block.timestamp >= epochStart + epochDuration) {
+            // slither-disable-next-line divide-before-multiply
             uint256 elapsed = (block.timestamp - epochStart) / epochDuration;
             currentEpoch = uint64(currentEpoch + elapsed);
             epochStart = epochStart + elapsed * epochDuration;

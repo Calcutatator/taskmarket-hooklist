@@ -339,15 +339,16 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         // Worst case: price falls to minSettle — maximum token payout
         uint256 maxTokenReward = FullMath.mulDiv(state.rewardUsd, priceScaler, minSettle);
 
-        epochBudget.checkAndConsume(requester, worker, maxTokenReward);
-        vault.reserve(taskId, maxTokenReward);
-
+        // CEI: commit state before external calls so reentrancy sees reserved=true
         state.startPrice = startPrice;
         state.minSettlePrice = minSettle;
         state.maxSettlePrice = maxSettle;
         state.reservedTokenAmount = maxTokenReward;
         state.worker = worker;
         state.reserved = true;
+
+        epochBudget.checkAndConsume(requester, worker, maxTokenReward);
+        vault.reserve(taskId, maxTokenReward);
 
         emit RewardReserved(taskId, worker, startPrice, maxTokenReward);
         return true;

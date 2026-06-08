@@ -92,6 +92,7 @@ contract AerodromeOracle is ITokenUsdOracle, Ownable {
         secondsAgos[0] = twapWindow;
         secondsAgos[1] = 0;
 
+        // slither-disable-next-line uninitialized-local
         int56[] memory tickCumulatives;
         try pool.observe(secondsAgos) returns (int56[] memory tc, uint160[] memory) {
             tickCumulatives = tc;

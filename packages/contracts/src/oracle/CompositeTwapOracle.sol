@@ -112,6 +112,7 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         secondsAgos[1] = 0;
 
         // --- Pool A: BRIDGE per TOKEN ---
+        // slither-disable-next-line uninitialized-local
         int56[] memory tcA;
         try poolA.observe(secondsAgos) returns (int56[] memory tc, uint160[] memory) {
             tcA = tc;
@@ -123,6 +124,7 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         if (priceA == 0) return data;
 
         // --- Pool B: USDC per BRIDGE ---
+        // slither-disable-next-line uninitialized-local
         int56[] memory tcB;
         try poolB.observe(secondsAgos) returns (int56[] memory tc, uint160[] memory) {
             tcB = tc;
