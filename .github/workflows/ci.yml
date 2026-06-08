@@ -52,7 +52,8 @@ jobs:
           python-version: '3.12'
 
       - name: Install Slither
-        run: pip install slither-analyzer
+        # Pinned for deterministic results — bump in lockstep with the local Homebrew/pip version.
+        run: pip install slither-analyzer==0.11.5
 
       - run: make install
 
