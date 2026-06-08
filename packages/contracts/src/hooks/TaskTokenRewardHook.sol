@@ -339,7 +339,6 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         // Worst case: price falls to minSettle — maximum token payout
         uint256 maxTokenReward = FullMath.mulDiv(state.rewardUsd, priceScaler, minSettle);
 
-        // CEI: commit state before external calls so reentrancy sees reserved=true
         state.startPrice = startPrice;
         state.minSettlePrice = minSettle;
         state.maxSettlePrice = maxSettle;

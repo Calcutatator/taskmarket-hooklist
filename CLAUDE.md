@@ -80,6 +80,16 @@ Then add the CVA variant in `apps/frontend/src/components/ui/badge.tsx`.
 - Prefer simple solutions over clever ones
 - Follow existing patterns in the guides above before inventing new ones
 
+## Smart Contract CI Requirements
+
+After any change to contract source files (`packages/contracts/src/`), always regenerate the gas snapshot before committing:
+
+```
+cd packages/contracts && forge snapshot
+```
+
+CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
+
 ## Smart Contract Storage Layout
 
 The contracts use the Diamond proxy pattern (EIP-2535). All state lives in `AppStorage`, a struct
