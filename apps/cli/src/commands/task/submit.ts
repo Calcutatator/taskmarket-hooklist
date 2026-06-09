@@ -1,7 +1,8 @@
-import { Command } from 'commander';
-import { createReadStream, statSync, readFileSync } from 'fs';
+import { Command, Option } from 'commander';
+import { promises as fsPromises } from 'fs';
 import { basename, extname } from 'path';
 import { createHash } from 'crypto';
+import { Readable } from 'stream';
 import https from 'https';
 import http from 'http';
 import { keccak256 } from 'viem';
@@ -50,9 +51,13 @@ function mimeTypeForPath(filePath: string): string {
   }
 }
 
-function streamingPut(uploadUrl: string, filePath: string, mimeType: string): Promise<void> {
+function streamingPut(
+  uploadUrl: string,
+  data: Buffer,
+  mimeType: string,
+  label: string
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const stat = statSync(filePath);
     const url = new URL(uploadUrl);
     const transport = url.protocol === 'https:' ? https : http;
     const req = transport.request(
@@ -61,17 +66,23 @@ function streamingPut(uploadUrl: string, filePath: string, mimeType: string): Pr
         method: 'PUT',
         headers: {
           'Content-Type': mimeType,
-          'Content-Length': String(stat.size),
+          'Content-Length': String(data.length),
         },
       },
       (res) => {
-        res.resume();
+        const chunks: Buffer[] = [];
+        res.on('data', (chunk: Buffer) => chunks.push(chunk));
         res.on('end', () => {
           if (res.statusCode && res.statusCode >= 200 && res.statusCode < 300) {
             process.stderr.write('\n');
             resolve();
           } else {
-            reject(new Error(`Upload failed with status ${res.statusCode ?? 'unknown'}`));
+            const body = Buffer.concat(chunks).toString('utf8').slice(0, 500);
+            reject(
+              new Error(
+                `Upload failed (${res.statusCode ?? 'unknown'}): ${body || 'no response body'}`
+              )
+            );
           }
         });
       }
@@ -80,30 +91,27 @@ function streamingPut(uploadUrl: string, filePath: string, mimeType: string): Pr
     req.on('error', reject);
 
     let uploaded = 0;
-    const name = basename(filePath);
-    const stream = createReadStream(filePath);
-    stream.on('data', (chunk: Buffer | string) => {
-      uploaded += typeof chunk === 'string' ? Buffer.byteLength(chunk) : chunk.length;
-      const pct = Math.round((uploaded / stat.size) * 100);
-      process.stderr.write(`\r  ${name}: ${pct}%`);
+    const stream = Readable.from([data]);
+    stream.on('data', (chunk: Buffer) => {
+      uploaded += chunk.length;
+      const pct = Math.round((uploaded / data.length) * 100);
+      process.stderr.write(`\r  ${label}: ${pct}%`);
     });
     stream.on('error', reject);
     stream.pipe(req);
   });
 }
 
-function computeFileHashes(filePath: string): { sha256Hash: string; keccak256Hash: string } {
-  const data = readFileSync(filePath);
-  const sha256Hash = createHash('sha256').update(data).digest('hex');
-  const keccak256Hash = keccak256(new Uint8Array(data)) as string;
-  return { sha256Hash, keccak256Hash };
-}
-
 export const submitCmd = new Command('submit')
   .description('Submit work for a task')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .option('--file <path>', 'Path to a submission file (repeatable)', collectFile, [])
-  .action(async (taskId: string, opts: { file: string[] }) => {
+  .addOption(
+    new Option('--role <role>', 'Artifact role applied to all files')
+      .choices(['preview', 'source', 'final', 'attachment'])
+      .default('attachment')
+  )
+  .action(async (taskId: string, opts: { file: string[]; role: string }) => {
     try {
       if (!opts.file || opts.file.length === 0) {
         printError('--file is required');
@@ -115,13 +123,14 @@ export const submitCmd = new Command('submit')
       const artifactInputs = await Promise.all(
         opts.file.map(async (filePath) => {
           const mimeType = mimeTypeForPath(filePath);
-          const stat = statSync(filePath);
 
-          if (stat.size === 0) {
+          // Read file once — used for hashing and as the upload source
+          const data = await fsPromises.readFile(filePath);
+
+          if (data.length === 0) {
             printError(`File is empty: ${basename(filePath)}`);
           }
 
-          // Request presigned upload URL
           const { uploadUrl, artifactKey } = (await apiPost(
             `/api/tasks/${taskId}/submissions/request-upload-url`,
             {
@@ -130,24 +139,23 @@ export const submitCmd = new Command('submit')
               signature,
               fileName: basename(filePath),
               mimeType,
-              role: 'attachment',
-              sizeBytes: stat.size,
+              role: opts.role,
+              sizeBytes: data.length,
             }
           )) as { uploadUrl: string; artifactKey: string };
 
-          // Hash the file before uploading
-          const { sha256Hash, keccak256Hash } = computeFileHashes(filePath);
+          const sha256Hash = createHash('sha256').update(data).digest('hex');
+          const keccak256Hash = keccak256(new Uint8Array(data)) as string;
 
-          // Stream upload with progress on stderr
           process.stderr.write(`  Uploading ${basename(filePath)}...\n`);
-          await streamingPut(uploadUrl, filePath, mimeType);
+          await streamingPut(uploadUrl, data, mimeType, basename(filePath));
 
           return {
             artifactKey,
             fileName: basename(filePath),
             mimeType,
-            role: 'attachment',
-            sizeBytes: stat.size,
+            role: opts.role,
+            sizeBytes: data.length,
             sha256Hash,
             keccak256Hash,
           };

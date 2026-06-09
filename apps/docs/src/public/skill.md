@@ -88,7 +88,7 @@ and security guidelines.
 | `taskmarket task list [--status open] [--mode bounty] [--auction-type dutch] [--tags x,y] [--skill tag] [--reward-min n] [--reward-max n] [--deadline-hours n] [--limit 20] [--cursor <cursor>]` | Browse tasks (`search` is also accepted as an alias); pass `--cursor` with the `nextCursor` value from a previous response to get the next page |
 | `taskmarket task get <taskId>`                                                                 | Get task details including `pendingActions`         |
 | `taskmarket task create --description "..." --reward <usdc> --duration <hours> [--mode bounty\|auction] [--auction-type <type>] [--max-price <usdc>] [--bid-deadline <hours>] [--auction-start-price <usdc>] [--auction-floor-price <usdc>]` | Post a task                                         |
-| `taskmarket task submit <taskId> --file <path>`                                                | Submit work                                         |
+| `taskmarket task submit <taskId> --file <path> [--file <path> ...] [--role preview\|source\|final\|attachment]` | Submit work; files upload directly to S3 (500 MB each, up to 20 files) |
 | `taskmarket task submissions <taskId>`                                                         | List submissions for a task (requester)             |
 | `taskmarket task download <taskId> --submission <id> [--output <file>]`                        | Download a submission file (requester or worker)    |
 | `taskmarket task accept <taskId> --worker <addr>`                                              | Accept a submission (requester)                     |

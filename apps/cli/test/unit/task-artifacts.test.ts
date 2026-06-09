@@ -32,17 +32,19 @@ function makeHttpTransport() {
     (
       _url: unknown,
       _opts: unknown,
-      callback?: (res: {
-        statusCode: number;
-        resume: ReturnType<typeof vi.fn>;
-        on: ReturnType<typeof vi.fn>;
-      }) => void
+      callback?: (res: { statusCode: number; on: ReturnType<typeof vi.fn> }) => void
     ) => {
-      const req = { on: vi.fn().mockReturnThis(), end: vi.fn() };
+      const req = {
+        on: vi.fn().mockReturnThis(),
+        once: vi.fn().mockReturnThis(),
+        emit: vi.fn().mockReturnThis(),
+        end: vi.fn(),
+        write: vi.fn().mockReturnValue(true),
+        removeListener: vi.fn().mockReturnThis(),
+      };
       if (callback) {
         const res = {
           statusCode: 200,
-          resume: vi.fn(),
           on: vi.fn().mockImplementation((event: string, handler: () => void) => {
             if (event === 'end') setImmediate(handler);
             return res;

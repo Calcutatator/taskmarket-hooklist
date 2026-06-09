@@ -101,10 +101,13 @@ apps/cli/
 
 ## Submitting files
 
-`taskmarket task submit <taskId> --file <path>` uploads files directly to S3/R2 via presigned PUT
-URLs — file bytes never pass through the backend server.
+`taskmarket task submit <taskId> --file <path> [--role <role>]` uploads files directly to S3/R2
+via presigned PUT URLs — file bytes never pass through the backend server.
 
 - `--file` is repeatable; up to 20 files per submission, 500 MB each
+- `--role` sets the artifact role for all files: `preview`, `source`, `final`, or `attachment`
+  (default: `attachment`)
+- Each file is read once from disk — the same buffer is used for hashing and upload
 - Upload progress is written to stderr (does not affect the JSON result on stdout)
 - SHA256 and keccak256 hashes are computed locally before upload and stored per-artifact; the
   backend builds a canonical JSON manifest of all artifacts whose keccak256 hash is committed
