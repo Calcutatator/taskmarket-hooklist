@@ -1,5 +1,5 @@
 ---
-"@taskmarket/cli": minor
+"@lucid-agents/taskmarket": minor
 ---
 
 Add presigned S3 upload support for task submissions. The `task submit` command now uploads files
