@@ -2,6 +2,7 @@ import express from 'express';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
+import fs from 'fs';
 import { fileURLToPath } from 'url';
 import compression from 'compression';
 import morgan from 'morgan';
@@ -70,6 +71,18 @@ app.use(express.json({ limit: '50mb' }));
 
 if (config.NODE_ENV !== 'production') {
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
+  // Target for LocalStorage.getPresignedUploadUrl — receives raw binary PUT from browser/CLI
+  app.put('/uploads-local/:key(*)', express.raw({ type: '*/*', limit: '500mb' }), (req, res) => {
+    const uploadsDir = path.resolve(process.cwd(), 'uploads');
+    const filePath = path.resolve(uploadsDir, req.params.key);
+    if (!filePath.startsWith(uploadsDir + path.sep)) {
+      res.status(400).json({ error: 'Invalid key' });
+      return;
+    }
+    fs.mkdirSync(path.dirname(filePath), { recursive: true });
+    fs.writeFileSync(filePath, req.body as Buffer);
+    res.status(200).end();
+  });
 }
 
 // Cloudflare Email Worker webhook — raw bytes, before bot-detection and JSON middleware

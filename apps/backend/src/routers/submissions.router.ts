@@ -1,6 +1,9 @@
 import { router, publicProcedure } from '../trpc';
 import {
   SubmissionCreateSchema,
+  SubmissionCreateFromKeysSchema,
+  RequestUploadUrlInputSchema,
+  RequestUploadUrlOutputSchema,
   SubmissionResponseSchema,
   type ArtifactMediaKindValue,
   type ArtifactRoleValue,
@@ -175,35 +178,44 @@ export const submissionsRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode === 'claim') {
         if (task.status !== 'claimed') {
-          throw new Error('Task not claimed');
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not claimed' });
         }
         if (task.claimedBy !== input.workerAddress) {
-          throw new Error('Only worker can submit');
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only worker can submit',
+          });
         }
       } else if (task.mode === 'pitch') {
         if (task.status !== 'worker_selected') {
-          throw new Error('Worker not selected');
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
         }
         if (task.worker !== input.workerAddress) {
-          throw new Error('Only selected worker can submit');
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only selected worker can submit',
+          });
         }
       } else if (task.mode === 'auction') {
         if (task.status !== 'claimed') {
-          throw new Error('Winner not selected yet');
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
         }
         if (task.worker !== input.workerAddress) {
-          throw new Error('Only winning bidder can submit');
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only the winning bidder can submit',
+          });
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         if (task.status !== 'open' && task.status !== 'pending_approval') {
-          throw new Error('Task not open for submissions');
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
         }
       }
 
@@ -294,6 +306,222 @@ export const submissionsRouter = router({
         // not written on-chain at submission time (deferred-write model), but the
         // status does transition so that pendingActions shows an accept action.
         // Subsequent submissions are still allowed at pending_approval status.
+        if (task.status === 'open') {
+          await tx
+            .update(tasks)
+            .set({ status: 'pending_approval' })
+            .where(eq(tasks.id, input.taskId));
+        }
+      });
+
+      return { success: true, submissionId };
+    }),
+
+  requestUploadUrl: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/submissions/request-upload-url',
+        tags: ['Tasks'],
+        summary: 'Request a presigned S3 PUT URL for direct artifact upload',
+      },
+    })
+    .input(RequestUploadUrlInputSchema)
+    .output(RequestUploadUrlOutputSchema)
+    .mutation(async ({ input, ctx }) => {
+      // Verify signature before issuing any URL
+      const message = `taskmarket:submit:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
+      }
+
+      // Guard against storage abuse: only issue URLs for tasks that are
+      // actively accepting submissions. Full worker eligibility is enforced
+      // at submitFromKeys time.
+      const taskResult = await ctx.db
+        .select({ status: tasks.status, mode: tasks.mode })
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      const task = taskResult[0];
+      const submittable =
+        task.mode === 'bounty' || task.mode === 'benchmark'
+          ? task.status === 'open' || task.status === 'pending_approval'
+          : task.status === 'claimed' || task.status === 'worker_selected';
+
+      if (!submittable) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not accepting submissions' });
+      }
+
+      const storage = getStorageBackend();
+      const artifactKey = `submissions/${input.taskId}/pending/${randomUUID()}-${safeFileName(input.fileName)}`;
+      const uploadUrl = await storage.getPresignedUploadUrl(artifactKey, input.mimeType);
+      return { uploadUrl, artifactKey };
+    }),
+
+  submitFromKeys: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/submissions/from-keys',
+        tags: ['Tasks'],
+        summary: 'Submit work using artifact keys from presigned uploads',
+      },
+    })
+    .input(SubmissionCreateFromKeysSchema)
+    .output(z.object({ success: z.boolean(), submissionId: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      const task = taskResult[0];
+
+      if (task.mode === 'claim') {
+        if (task.status !== 'claimed') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not claimed' });
+        }
+        if (task.claimedBy !== input.workerAddress) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only worker can submit',
+          });
+        }
+      } else if (task.mode === 'pitch') {
+        if (task.status !== 'worker_selected') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
+        }
+        if (task.worker !== input.workerAddress) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only selected worker can submit',
+          });
+        }
+      } else if (task.mode === 'auction') {
+        if (task.status !== 'claimed') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
+        }
+        if (task.worker !== input.workerAddress) {
+          throw new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Only the winning bidder can submit',
+          });
+        }
+      } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
+        if (task.status !== 'open' && task.status !== 'pending_approval') {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
+        }
+      }
+
+      const message = `taskmarket:submit:${input.taskId}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Signature does not match worker address',
+        });
+      }
+
+      const storage = getStorageBackend();
+      const submissionId = randomUUID();
+
+      // Reject keys that were not generated by requestUploadUrl for this task,
+      // preventing clients from referencing arbitrary objects in the bucket.
+      const expectedPrefix = `submissions/${input.taskId}/`;
+      for (const artifactInput of input.artifacts) {
+        if (!artifactInput.artifactKey.startsWith(expectedPrefix)) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Artifact key does not belong to task ${input.taskId}`,
+          });
+        }
+      }
+
+      const artifactRows: ArtifactInsertRow[] = [];
+      for (const [index, artifactInput] of input.artifacts.entries()) {
+        const head = await storage.headObject(artifactInput.artifactKey);
+        if (!head) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Artifact key not found in storage: ${artifactInput.artifactKey}`,
+          });
+        }
+        if (head.contentLength !== artifactInput.sizeBytes) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Artifact size mismatch for ${artifactInput.fileName}: expected ${artifactInput.sizeBytes}, got ${head.contentLength}`,
+          });
+        }
+
+        artifactRows.push({
+          id: randomUUID(),
+          taskId: input.taskId,
+          submissionId,
+          role: artifactInput.role,
+          fileName: artifactInput.fileName,
+          mimeType: artifactInput.mimeType,
+          mediaKind: mediaKindFor(artifactInput.mimeType, artifactInput.fileName),
+          storageUri: storage.storageUriForKey(artifactInput.artifactKey),
+          sizeBytes: artifactInput.sizeBytes,
+          sha256Hash: artifactInput.sha256Hash,
+          keccak256Hash: artifactInput.keccak256Hash as `0x${string}`,
+          displayOrder: index,
+        });
+      }
+
+      const deliverableHash = buildArtifactManifestHash(artifactRows);
+
+      const submitTxHash = await contractSubmitWork(
+        input.taskId as `0x${string}`,
+        input.workerAddress as `0x${string}`,
+        deliverableHash,
+        task.contractAddress
+      );
+
+      await ctx.db.transaction(async (tx) => {
+        await tx.insert(submissions).values({
+          id: submissionId,
+          taskId: input.taskId,
+          workerAddress: input.workerAddress,
+          fileUrl: artifactRows[0]!.storageUri,
+          signature: input.signature,
+          deliverableHash,
+          submitTxHash,
+        });
+
+        await tx.insert(artifacts).values(artifactRows);
+
         if (task.status === 'open') {
           await tx
             .update(tasks)

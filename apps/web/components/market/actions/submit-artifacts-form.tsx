@@ -2,6 +2,7 @@
 
 import { useCallback, useRef, useState } from 'react';
 import { useAccount, useSignMessage } from 'wagmi';
+import { keccak256 } from 'viem';
 
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
@@ -13,7 +14,6 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { signAndPost } from '@/lib/wallet-sign-action';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -22,13 +22,15 @@ const ARTIFACT_ROLES = ['preview', 'source', 'final', 'attachment'] as const;
 type ArtifactRole = (typeof ARTIFACT_ROLES)[number];
 
 const MAX_FILES = 20;
-const MAX_FILE_SIZE = 5 * 1024 * 1024;
+const MAX_FILE_SIZE = 500 * 1024 * 1024;
 
 type Staged = {
   id: string;
   file: File;
   role: ArtifactRole;
 };
+
+type UploadProgress = Record<string, number>;
 
 function detectMimeType(file: File): string {
   return file.type || 'application/octet-stream';
@@ -40,20 +42,62 @@ function bytesToDisplay(bytes: number): string {
   return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
 }
 
-async function fileToBase64(file: File): Promise<string> {
+async function computeHashes(
+  buffer: ArrayBuffer
+): Promise<{ sha256Hash: string; keccak256Hash: string }> {
+  const sha256Bytes = await crypto.subtle.digest('SHA-256', buffer);
+  const sha256Hash = Array.from(new Uint8Array(sha256Bytes))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('');
+  const keccak256Hash = keccak256(new Uint8Array(buffer)) as string;
+  return { sha256Hash, keccak256Hash };
+}
+
+async function requestUploadUrl(
+  apiUrl: string,
+  params: {
+    taskId: string;
+    workerAddress: string;
+    signature: string;
+    fileName: string;
+    mimeType: string;
+    role: ArtifactRole;
+    sizeBytes: number;
+  }
+): Promise<{ uploadUrl: string; artifactKey: string }> {
+  const res = await fetch(`${apiUrl}/api/tasks/${params.taskId}/submissions/request-upload-url`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(params),
+  });
+  if (!res.ok) {
+    const body = (await res.json().catch(() => ({}))) as { error?: string };
+    throw new Error(body.error ?? `Failed to get upload URL (${res.status})`);
+  }
+  return res.json() as Promise<{ uploadUrl: string; artifactKey: string }>;
+}
+
+function uploadToS3(
+  uploadUrl: string,
+  file: File,
+  onProgress: (pct: number) => void
+): Promise<void> {
   return new Promise((resolve, reject) => {
-    const reader = new FileReader();
-    reader.onerror = () => reject(reader.error);
-    reader.onload = () => {
-      const result = reader.result;
-      if (typeof result !== 'string') {
-        reject(new Error('FileReader produced non-string result'));
-        return;
-      }
-      const idx = result.indexOf(',');
-      resolve(idx >= 0 ? result.slice(idx + 1) : result);
+    const xhr = new XMLHttpRequest();
+    xhr.open('PUT', uploadUrl);
+    xhr.setRequestHeader('Content-Type', detectMimeType(file));
+    xhr.upload.onprogress = (e) => {
+      if (e.lengthComputable) onProgress(Math.round((e.loaded / e.total) * 100));
     };
-    reader.readAsDataURL(file);
+    xhr.onload = () => {
+      if (xhr.status >= 200 && xhr.status < 300) {
+        resolve();
+      } else {
+        reject(new Error(`Upload failed with status ${xhr.status}`));
+      }
+    };
+    xhr.onerror = () => reject(new Error('Upload network error'));
+    xhr.send(file);
   });
 }
 
@@ -63,6 +107,7 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [pending, setPending] = useState(false);
+  const [uploadProgress, setUploadProgress] = useState<UploadProgress>({});
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [dragging, setDragging] = useState(false);
@@ -78,8 +123,8 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
       if (oversized.length > 0) {
         messages.push(
           oversized.length === 1
-            ? `File "${oversized[0].name}" exceeds 5 MB and was skipped.`
-            : `${oversized.length} files exceed 5 MB and were skipped.`
+            ? `File "${oversized[0].name}" exceeds 500 MB and was skipped.`
+            : `${oversized.length} files exceed 500 MB and were skipped.`
         );
       }
       if (fitting.length > remaining) {
@@ -120,41 +165,91 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
     }
     setPending(true);
     setError(null);
+    setUploadProgress({});
 
-    let artifacts: Array<{ fileName: string; mimeType: string; role: ArtifactRole; file: string }>;
+    const apiUrl = getBrowserApiBaseUrl();
+
+    let signature: string;
     try {
-      artifacts = await Promise.all(
-        staged.map(async (s) => ({
-          fileName: s.file.name,
-          mimeType: detectMimeType(s.file),
-          role: s.role,
-          file: await fileToBase64(s.file),
-        }))
-      );
+      signature = await signMessageAsync({ message: `taskmarket:submit:${task.id}` });
     } catch (err) {
       setPending(false);
-      setError(err instanceof Error ? err.message : 'Failed to read files');
+      const isRejected =
+        typeof err === 'object' &&
+        err !== null &&
+        ((err as { code?: unknown }).code === 4001 ||
+          (typeof (err as { message?: unknown }).message === 'string' &&
+            ((err as { message: string }).message.toLowerCase().includes('user rejected') ||
+              (err as { message: string }).message.toLowerCase().includes('user denied'))));
+      if (isRejected) return;
+      setError(err instanceof Error ? err.message : 'Signing failed');
       return;
     }
 
-    const result = await signAndPost<{ submissionId: string }>({
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      extraBody: { artifacts },
-      path: `/api/tasks/${task.id}/submissions`,
-      taskId: task.id,
-      verbForMessage: 'submit',
-    });
-    setPending(false);
-    if (result.ok) {
+    try {
+      // Upload all files in parallel, tracking per-file progress by staged id
+      const artifactInputs = await Promise.all(
+        staged.map(async (s) => {
+          const mimeType = detectMimeType(s.file);
+
+          const { uploadUrl, artifactKey } = await requestUploadUrl(apiUrl, {
+            taskId: task.id,
+            workerAddress: address!,
+            signature,
+            fileName: s.file.name,
+            mimeType,
+            role: s.role,
+            sizeBytes: s.file.size,
+          });
+
+          const buffer = await s.file.arrayBuffer();
+          const { sha256Hash, keccak256Hash } = await computeHashes(buffer);
+
+          await uploadToS3(uploadUrl, s.file, (pct) => {
+            setUploadProgress((prev) => ({ ...prev, [s.id]: pct }));
+          });
+
+          return {
+            artifactKey,
+            fileName: s.file.name,
+            mimeType,
+            role: s.role,
+            sizeBytes: s.file.size,
+            sha256Hash,
+            keccak256Hash,
+          };
+        })
+      );
+
+      const res = await fetch(`${apiUrl}/api/tasks/${task.id}/submissions/from-keys`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          taskId: task.id,
+          workerAddress: address,
+          artifacts: artifactInputs,
+          signature,
+        }),
+      });
+
+      if (!res.ok) {
+        const body = (await res.json().catch(() => ({}))) as { error?: string };
+        throw new Error(body.error ?? `Submission failed (${res.status})`);
+      }
+
       setDone(true);
-    } else if (!result.rejected) {
-      setError(result.error);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Submission failed');
+    } finally {
+      setPending(false);
     }
   }
 
   if (done) {
-    return <span className="font-mono text-sm text-primary">✓ Submission posted</span>;
+    return <span className="font-mono text-sm text-primary">Submission posted</span>;
   }
+
+  const isUploading = pending && Object.keys(uploadProgress).length > 0;
 
   return (
     <div className="grid gap-3">
@@ -189,37 +284,58 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
           ref={inputRef}
           type="file"
         />
-        <p className="mt-2 text-xs text-muted-foreground">Up to {MAX_FILES} files, ~5 MB each.</p>
+        <p className="mt-2 text-xs text-muted-foreground">Up to {MAX_FILES} files, 500 MB each.</p>
       </div>
 
       {staged.length > 0 ? (
         <div className="grid gap-2">
           {staged.map((s) => (
             <div
-              className="grid grid-cols-[1fr_auto_auto] items-center gap-2 rounded-md border border-border/60 bg-surface/40 px-3 py-2 text-sm"
+              className="grid gap-1 rounded-md border border-border/60 bg-surface/40 px-3 py-2 text-sm"
               key={s.id}
             >
-              <div className="min-w-0">
-                <p className="truncate font-mono text-xs">{s.file.name}</p>
-                <p className="text-xs text-muted-foreground">
-                  {bytesToDisplay(s.file.size)} · {detectMimeType(s.file)}
-                </p>
+              <div className="grid grid-cols-[1fr_auto_auto] items-center gap-2">
+                <div className="min-w-0">
+                  <p className="truncate font-mono text-xs">{s.file.name}</p>
+                  <p className="text-xs text-muted-foreground">
+                    {bytesToDisplay(s.file.size)} · {detectMimeType(s.file)}
+                  </p>
+                </div>
+                <Select onValueChange={(v) => setRole(s.id, v as ArtifactRole)} value={s.role}>
+                  <SelectTrigger className="h-8 w-32">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {ARTIFACT_ROLES.map((r) => (
+                      <SelectItem key={r} value={r}>
+                        {r}
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+                <Button
+                  disabled={pending}
+                  onClick={() => removeStaged(s.id)}
+                  size="sm"
+                  type="button"
+                  variant="ghost"
+                >
+                  Remove
+                </Button>
               </div>
-              <Select onValueChange={(v) => setRole(s.id, v as ArtifactRole)} value={s.role}>
-                <SelectTrigger className="h-8 w-32">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {ARTIFACT_ROLES.map((r) => (
-                    <SelectItem key={r} value={r}>
-                      {r}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-              <Button onClick={() => removeStaged(s.id)} size="sm" type="button" variant="ghost">
-                Remove
-              </Button>
+              {isUploading && uploadProgress[s.id] !== undefined ? (
+                <div className="mt-1">
+                  <div className="h-1 w-full overflow-hidden rounded-full bg-border/40">
+                    <div
+                      className="h-full bg-primary transition-all duration-100"
+                      style={{ width: `${uploadProgress[s.id]}%` }}
+                    />
+                  </div>
+                  <p className="mt-0.5 text-right text-xs text-muted-foreground">
+                    {uploadProgress[s.id]}%
+                  </p>
+                </div>
+              ) : null}
             </div>
           ))}
         </div>
@@ -235,7 +351,7 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
         onClick={handleSubmit}
         size="sm"
       >
-        {pending ? 'Submitting…' : 'Submit work'}
+        {isUploading ? 'Uploading...' : pending ? 'Submitting...' : 'Submit work'}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

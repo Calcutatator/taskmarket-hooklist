@@ -1,4 +1,9 @@
-import { S3Client, PutObjectCommand, GetObjectCommand } from '@aws-sdk/client-s3';
+import {
+  S3Client,
+  PutObjectCommand,
+  GetObjectCommand,
+  HeadObjectCommand,
+} from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { writeFile, mkdir } from 'fs/promises';
 import { join, dirname } from 'path';
@@ -7,6 +12,9 @@ import { getServerConfig } from '../config/env';
 export interface StorageBackend {
   upload(key: string, data: Buffer, options?: { contentType?: string }): Promise<string>;
   getPresignedUrl(key: string, expiresIn?: number): Promise<string>;
+  getPresignedUploadUrl(key: string, contentType: string, expiresIn?: number): Promise<string>;
+  storageUriForKey(key: string): string;
+  headObject(key: string): Promise<{ contentLength: number } | null>;
 }
 
 class S3Storage implements StorageBackend {
@@ -45,6 +53,32 @@ class S3Storage implements StorageBackend {
     });
     return await getSignedUrl(this.client, command, { expiresIn });
   }
+
+  async getPresignedUploadUrl(key: string, contentType: string, expiresIn = 900): Promise<string> {
+    const command = new PutObjectCommand({
+      Bucket: this.bucket,
+      Key: key,
+      ContentType: contentType,
+    });
+    return await getSignedUrl(this.client, command, { expiresIn });
+  }
+
+  storageUriForKey(key: string): string {
+    return `s3://${this.bucket}/${key}`;
+  }
+
+  async headObject(key: string): Promise<{ contentLength: number } | null> {
+    try {
+      const result = await this.client.send(
+        new HeadObjectCommand({ Bucket: this.bucket, Key: key })
+      );
+      return { contentLength: result.ContentLength ?? 0 };
+    } catch (err) {
+      const status = (err as { $metadata?: { httpStatusCode?: number } }).$metadata?.httpStatusCode;
+      if (status === 404 || status === 403) return null;
+      throw err;
+    }
+  }
 }
 
 class LocalStorage implements StorageBackend {
@@ -64,6 +98,30 @@ class LocalStorage implements StorageBackend {
       objectKey = objectKey.slice(uploadPrefix.length + 1);
     }
     return `http://localhost:3000/uploads/${objectKey}`;
+  }
+
+  async getPresignedUploadUrl(
+    key: string,
+    _contentType: string,
+    _expiresIn?: number
+  ): Promise<string> {
+    // In local dev, route PUT uploads to the dedicated Express handler in app.ts
+    return `http://localhost:3000/uploads-local/${encodeURIComponent(key)}`;
+  }
+
+  storageUriForKey(key: string): string {
+    return `file://${join(this.uploadDir, key)}`;
+  }
+
+  async headObject(key: string): Promise<{ contentLength: number } | null> {
+    const { stat } = await import('fs/promises');
+    const filePath = join(this.uploadDir, key);
+    try {
+      const s = await stat(filePath);
+      return { contentLength: s.size };
+    } catch {
+      return null;
+    }
   }
 }
 

@@ -27,7 +27,7 @@ All routers are registered in `src/router.ts` and composed into the root tRPC ro
 | Router | File | Key procedures |
 |--------|------|----------------|
 | tasks | `routers/tasks.router.ts` | `create` (X402), `list`, `get` |
-| submissions | `routers/submissions.router.ts` | `submit`, `listByTask`, `download` |
+| submissions | `routers/submissions.router.ts` | `submit`, `requestUploadUrl`, `submitFromKeys`, `listByTask`, `download` |
 | acceptance | `routers/acceptance.router.ts` | `accept` (X402), `rate` (X402) |
 | claims | `routers/claims.router.ts` | `claim`, `getByTask` |
 | pitches | `routers/pitches.router.ts` | `submit`, `listByTask`, `select` |

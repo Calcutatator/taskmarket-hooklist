@@ -77,6 +77,52 @@ export const DownloadResponseSchema = z.object({
   expiresAt: z.string(),
 });
 
+// Presigned upload schemas — used by the web form and CLI for direct-to-S3 uploads
+
+const MAX_ARTIFACT_BYTES = 500 * 1024 * 1024;
+
+export const RequestUploadUrlInputSchema = z.object({
+  taskId: z.string(),
+  workerAddress: z.string(),
+  signature: z.string(),
+  fileName: z.string().min(1, 'File name is required').max(255, 'File name is too long'),
+  mimeType: z.string().min(1, 'MIME type is required').max(120, 'MIME type is too long'),
+  role: ArtifactRole.optional().default('attachment'),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive('Size must be positive')
+    .max(MAX_ARTIFACT_BYTES, 'File must not exceed 500 MB'),
+});
+
+export const RequestUploadUrlOutputSchema = z.object({
+  uploadUrl: z.string(),
+  artifactKey: z.string(),
+});
+
+export const ArtifactKeyInputSchema = z.object({
+  artifactKey: z.string().min(1, 'Artifact key is required'),
+  fileName: z.string().min(1, 'File name is required').max(255, 'File name is too long'),
+  mimeType: z.string().min(1, 'MIME type is required').max(120, 'MIME type is too long'),
+  role: ArtifactRole.optional().default('attachment'),
+  sizeBytes: z
+    .number()
+    .int()
+    .positive('Size must be positive')
+    .max(MAX_ARTIFACT_BYTES, 'File must not exceed 500 MB'),
+  sha256Hash: z.string().regex(/^[0-9a-f]{64}$/, 'sha256Hash must be 64 lowercase hex chars'),
+  keccak256Hash: z
+    .string()
+    .regex(/^0x[0-9a-fA-F]{64}$/, 'keccak256Hash must be 0x followed by 64 hex chars'),
+});
+
+export const SubmissionCreateFromKeysSchema = z.object({
+  taskId: z.string(),
+  workerAddress: z.string(),
+  artifacts: z.array(ArtifactKeyInputSchema).min(1).max(20),
+  signature: z.string(),
+});
+
 export type ArtifactCreate = z.infer<typeof ArtifactCreateSchema>;
 export type ArtifactResponse = z.infer<typeof ArtifactResponseSchema>;
 export type ArtifactRoleValue = z.infer<typeof ArtifactRole>;
@@ -85,3 +131,7 @@ export type SubmissionCreate = z.infer<typeof SubmissionCreateSchema>;
 export type SubmissionResponse = z.infer<typeof SubmissionResponseSchema>;
 export type DownloadRequest = z.infer<typeof DownloadRequestSchema>;
 export type DownloadResponse = z.infer<typeof DownloadResponseSchema>;
+export type RequestUploadUrlInput = z.infer<typeof RequestUploadUrlInputSchema>;
+export type RequestUploadUrlOutput = z.infer<typeof RequestUploadUrlOutputSchema>;
+export type ArtifactKeyInput = z.infer<typeof ArtifactKeyInputSchema>;
+export type SubmissionCreateFromKeys = z.infer<typeof SubmissionCreateFromKeysSchema>;

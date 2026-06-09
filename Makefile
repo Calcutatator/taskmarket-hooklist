@@ -483,6 +483,8 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:pending-actions; \
 	elif [ "$(word 1,$(ARGS))" = "artifacts" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:artifacts; \
+	elif [ "$(word 1,$(ARGS))" = "presigned-upload" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:presigned-upload; \
 	elif [ "$(word 1,$(ARGS))" = "submission-hash" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-hash; \
 	elif [ "$(word 1,$(ARGS))" = "task-search" ]; then \
