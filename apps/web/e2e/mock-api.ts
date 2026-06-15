@@ -454,6 +454,24 @@ const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
       submission({
         artifacts: [
           artifact({
+            fileName: 'candidate-a.png',
+            id: 'e2e-artifact-image',
+            mediaKind: 'image',
+            mimeType: 'image/png',
+            role: 'preview',
+            submissionId: 'e2e-submission-1',
+            taskId: 'e2e-pending-review',
+          }),
+          artifact({
+            fileName: 'candidate-a-demo.mp4',
+            id: 'e2e-artifact-video',
+            mediaKind: 'video',
+            mimeType: 'video/mp4',
+            role: 'preview',
+            submissionId: 'e2e-submission-1',
+            taskId: 'e2e-pending-review',
+          }),
+          artifact({
             fileName:
               'final-analysis-pack-with-very-long-name-and-settlement-receipt-reference-2026-05-13.pdf',
             id: 'e2e-artifact-pdf',
@@ -810,6 +828,43 @@ function findArtifact(artifactId: string) {
   return null;
 }
 
+function mockPreviewUrl(artifactItem: ArtifactResponse) {
+  if (artifactItem.mediaKind === 'image') {
+    const svg = [
+      '<svg xmlns="http://www.w3.org/2000/svg" width="640" height="360" viewBox="0 0 640 360">',
+      '<rect width="640" height="360" fill="#f6f3ef"/>',
+      '<rect x="42" y="42" width="556" height="276" rx="18" fill="#ffffff" stroke="#d7d0c7"/>',
+      '<text x="72" y="118" fill="#1f1b16" font-family="Arial, sans-serif" font-size="34" font-weight="700">Taskmarket artifact</text>',
+      `<text x="72" y="168" fill="#6f665c" font-family="Arial, sans-serif" font-size="22">${artifactItem.fileName}</text>`,
+      '</svg>',
+    ].join('');
+    return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
+  }
+
+  return `https://files.example.com/mock/${encodeURIComponent(artifactItem.fileName)}`;
+}
+
+function submissionsForResponse(taskId: string, includePreviewUrls: boolean) {
+  const submissions = submissionsByTaskId.get(taskId) ?? [];
+
+  if (!includePreviewUrls) {
+    return submissions;
+  }
+
+  return submissions.map((submissionItem) => ({
+    ...submissionItem,
+    artifacts: (submissionItem.artifacts ?? []).map((artifactItem) =>
+      artifactItem.mediaKind === 'image' || artifactItem.mediaKind === 'video'
+        ? {
+            ...artifactItem,
+            previewExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            previewUrl: mockPreviewUrl(artifactItem),
+          }
+        : artifactItem
+    ),
+  }));
+}
+
 function writeJson(serverResponse: ServerResponse, body: unknown, status = 200) {
   serverResponse.writeHead(status, {
     'access-control-allow-headers': 'content-type, x-trpc-source',
@@ -966,7 +1021,10 @@ export async function startMockApiServer(
     if (submissionsMatch) {
       writeJson(
         response,
-        submissionsByTaskId.get(decodeURIComponent(submissionsMatch[1] ?? '')) ?? []
+        submissionsForResponse(
+          decodeURIComponent(submissionsMatch[1] ?? ''),
+          url.searchParams.get('includePreviewUrls') === 'media'
+        )
       );
       return;
     }

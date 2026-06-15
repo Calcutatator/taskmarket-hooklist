@@ -109,6 +109,14 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
     page.getByRole('heading', { name: /Bounty - pending requester review/i })
   ).toBeVisible();
   await expect(page.getByRole('heading', { name: /Submission review/i })).toBeVisible();
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await expect(comparison).toBeVisible();
+  await expect(
+    comparison.getByRole('button', { name: /Open candidate-a\.png preview/i })
+  ).toBeVisible();
+  await expect(
+    comparison.getByRole('button', { name: /Open candidate-a-demo\.mp4 preview/i })
+  ).toBeVisible();
   const payoutRequirement = page
     .getByRole('group', { name: /Payout release requirement/i })
     .first();

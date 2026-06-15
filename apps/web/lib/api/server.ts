@@ -164,8 +164,18 @@ export async function fetchTask(taskId: string) {
   }
 }
 
-export async function fetchTaskSubmissions(taskId: string) {
-  return readJson<SubmissionResponse[]>(`/api/tasks/${taskId}/submissions`);
+export async function fetchTaskSubmissions(
+  taskId: string,
+  options?: { includePreviewUrls?: 'none' | 'media' }
+) {
+  const params = new URLSearchParams();
+  if (options?.includePreviewUrls) {
+    params.set('includePreviewUrls', options.includePreviewUrls);
+  }
+  const query = params.toString();
+  return readJson<SubmissionResponse[]>(
+    `/api/tasks/${taskId}/submissions${query ? `?${query}` : ''}`
+  );
 }
 
 export async function fetchTaskBids(taskId: string) {
@@ -195,7 +205,9 @@ export async function fetchTaskClaim(taskId: string) {
 
 export async function fetchTaskModeData(task: TaskDetailResponse | TaskResponse) {
   const [submissions, pitches, proofs, bids, claim] = await Promise.all([
-    task.mode === 'bounty' || task.mode === 'claim' ? fetchTaskSubmissions(task.id) : [],
+    task.mode === 'bounty' || task.mode === 'claim'
+      ? fetchTaskSubmissions(task.id, { includePreviewUrls: 'media' })
+      : [],
     task.mode === 'pitch' ? fetchTaskPitches(task.id) : [],
     task.mode === 'benchmark' ? fetchTaskProofs(task.id) : [],
     task.mode === 'auction' ? fetchTaskBids(task.id) : [],

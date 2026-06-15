@@ -1,7 +1,8 @@
 'use client';
 
 import type { ArtifactResponse } from '@taskmarket/shared';
-import { useEffect, useState } from 'react';
+import { FileArchive, FileIcon, FileText, ImageIcon, Play, VideoIcon } from 'lucide-react';
+import { useEffect, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 
 import { Button } from '@/components/ui/button';
@@ -18,6 +19,44 @@ type Props = {
   artifact: ArtifactResponse;
   taskId: string;
 };
+
+type PreviewTriggerState = {
+  error: string | null;
+  loading: boolean;
+  openPreview: () => void;
+};
+
+type ArtifactPreviewTriggerProps = Props & {
+  children: (state: PreviewTriggerState) => ReactNode;
+  initialPreviewExpiresAt?: string | null;
+  initialPreviewUrl?: string | null;
+};
+
+type PreviewState = {
+  expiresAt: string | null;
+  url: string | null;
+};
+
+function isPreviewUrlCurrent(expiresAt: string | null) {
+  if (!expiresAt) {
+    return true;
+  }
+
+  const expiresAtMs = Date.parse(expiresAt);
+  if (!Number.isFinite(expiresAtMs)) {
+    return false;
+  }
+
+  return expiresAtMs > Date.now() + 30_000;
+}
+
+function currentPreviewUrl(preview: PreviewState) {
+  if (!preview.url || !isPreviewUrlCurrent(preview.expiresAt)) {
+    return null;
+  }
+
+  return preview.url;
+}
 
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
@@ -36,6 +75,53 @@ function formatBytes(value: number) {
   const formatted =
     Number.isInteger(size) || size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1);
   return `${formatted} ${units[unitIndex] ?? 'B'}`;
+}
+
+function usableArtifactPreviewUrl(artifact: ArtifactResponse) {
+  if (!artifact.previewUrl) {
+    return null;
+  }
+
+  if (!artifact.previewExpiresAt) {
+    return artifact.previewUrl;
+  }
+
+  const expiresAtMs = Date.parse(artifact.previewExpiresAt);
+  if (!Number.isFinite(expiresAtMs)) {
+    return null;
+  }
+
+  return expiresAtMs > Date.now() + 30_000 ? artifact.previewUrl : null;
+}
+
+function ArtifactKindIcon({ artifact }: { artifact: ArtifactResponse }) {
+  if (artifact.mediaKind === 'image') {
+    return <ImageIcon className="size-4" />;
+  }
+  if (artifact.mediaKind === 'video') {
+    return <VideoIcon className="size-4" />;
+  }
+  if (artifact.mediaKind === 'text' || artifact.mediaKind === 'pdf') {
+    return <FileText className="size-4" />;
+  }
+  if (artifact.mediaKind === 'archive') {
+    return <FileArchive className="size-4" />;
+  }
+  return <FileIcon className="size-4" />;
+}
+
+function MediaPreviewFallback({ artifact }: { artifact: ArtifactResponse }) {
+  return (
+    <div className="grid h-full min-h-32 place-items-center gap-3 bg-muted/32 p-4 text-center text-sm text-muted-foreground">
+      <div className="grid justify-items-center gap-2">
+        <span className="grid size-11 place-items-center rounded-full border border-border/64 bg-background/60 text-foreground">
+          <ArtifactKindIcon artifact={artifact} />
+        </span>
+        <span className="font-medium text-foreground">Open preview</span>
+        <span className="max-w-48 break-words text-xs leading-5">{artifact.mimeType}</span>
+      </div>
+    </div>
+  );
 }
 
 function ArtifactMetadata({
@@ -208,17 +294,44 @@ function ArtifactPreviewContent({
   );
 }
 
-export function ArtifactPreviewButton({ artifact, taskId }: Props) {
+export function ArtifactPreviewTrigger({
+  artifact,
+  children,
+  initialPreviewExpiresAt,
+  initialPreviewUrl,
+  taskId,
+}: ArtifactPreviewTriggerProps) {
   const [open, setOpen] = useState(false);
-  const [previewUrl, setPreviewUrl] = useState<string | null>(null);
+  const providedPreviewUrl = initialPreviewUrl ?? artifact.previewUrl ?? null;
+  const providedPreviewExpiresAt = initialPreviewExpiresAt ?? artifact.previewExpiresAt ?? null;
+  const [preview, setPreview] = useState<PreviewState>({
+    expiresAt: providedPreviewExpiresAt,
+    url: providedPreviewUrl,
+  });
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const previewUrl = currentPreviewUrl(preview);
 
-  async function handlePreview() {
-    setOpen(true);
+  useEffect(() => {
+    setPreview({
+      expiresAt: providedPreviewExpiresAt,
+      url: providedPreviewUrl,
+    });
+    setError(null);
+  }, [artifact.id, providedPreviewExpiresAt, providedPreviewUrl]);
+
+  async function loadPreview(force = false) {
+    const existingPreviewUrl = currentPreviewUrl(preview);
+    if (!force && existingPreviewUrl) {
+      return existingPreviewUrl;
+    }
+
     setLoading(true);
     setError(null);
-    setPreviewUrl(null);
+    if (force) {
+      setPreview({ expiresAt: null, url: null });
+    }
+
     try {
       const base = getBrowserApiBaseUrl();
       const res = await fetch(
@@ -230,21 +343,34 @@ export function ArtifactPreviewButton({ artifact, taskId }: Props) {
         throw new Error(body.message ?? `Request failed (${res.status})`);
       }
 
-      const { previewUrl } = (await res.json()) as { previewUrl: string };
-      setPreviewUrl(previewUrl);
+      const { expiresAt, previewUrl } = (await res.json()) as {
+        expiresAt?: string;
+        previewUrl: string;
+      };
+      setPreview({ expiresAt: expiresAt ?? null, url: previewUrl });
+      return previewUrl;
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Preview failed');
+      return null;
     } finally {
       setLoading(false);
     }
   }
 
   return (
-    <div className="flex items-center gap-2">
-      <Button disabled={loading} onClick={handlePreview} size="sm" type="button" variant="ghost">
-        {loading ? 'Loading...' : 'View'}
-      </Button>
-      {error ? <span className="text-xs text-destructive">{error}</span> : null}
+    <>
+      {children({
+        error,
+        loading,
+        openPreview: () => {
+          if (currentPreviewUrl(preview)) {
+            setOpen(true);
+            return;
+          }
+
+          void loadPreview().finally(() => setOpen(true));
+        },
+      })}
       <Dialog open={open} onOpenChange={setOpen}>
         <DialogContent className="max-h-[90vh] max-w-4xl overflow-auto">
           <DialogHeader>
@@ -257,7 +383,12 @@ export function ArtifactPreviewButton({ artifact, taskId }: Props) {
           {error ? (
             <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
               <p>{error}</p>
-              <Button disabled={loading} onClick={handlePreview} size="sm" type="button">
+              <Button
+                disabled={loading}
+                onClick={() => void loadPreview(true)}
+                size="sm"
+                type="button"
+              >
                 Retry
               </Button>
             </div>
@@ -268,6 +399,106 @@ export function ArtifactPreviewButton({ artifact, taskId }: Props) {
           <ArtifactMetadata artifact={artifact} previewUrl={previewUrl} />
         </DialogContent>
       </Dialog>
-    </div>
+    </>
+  );
+}
+
+export function ArtifactMediaTile({ artifact, taskId }: Props) {
+  const previewUrl = usableArtifactPreviewUrl(artifact);
+  const openLabel = `Open ${artifact.fileName} preview`;
+
+  return (
+    <ArtifactPreviewTrigger
+      artifact={artifact}
+      initialPreviewExpiresAt={artifact.previewExpiresAt ?? null}
+      initialPreviewUrl={artifact.previewUrl ?? null}
+      taskId={taskId}
+    >
+      {({ error, loading, openPreview }) => (
+        <div className="grid min-w-0 overflow-hidden rounded-lg border border-border/58 bg-background/42 shadow-[var(--shadow-soft)]">
+          <div className="aspect-video bg-muted/26">
+            {artifact.mediaKind === 'image' && previewUrl ? (
+              <button
+                aria-label={openLabel}
+                className="block h-full w-full cursor-zoom-in overflow-hidden"
+                onClick={openPreview}
+                type="button"
+              >
+                <img
+                  alt={artifact.fileName}
+                  className="h-full w-full object-contain"
+                  loading="lazy"
+                  src={previewUrl}
+                />
+              </button>
+            ) : artifact.mediaKind === 'video' && previewUrl ? (
+              <video
+                className="h-full w-full object-contain"
+                controls
+                muted
+                preload="metadata"
+                src={previewUrl}
+              />
+            ) : (
+              <button
+                aria-label={openLabel}
+                className="h-full w-full cursor-pointer"
+                onClick={openPreview}
+                type="button"
+              >
+                <MediaPreviewFallback artifact={artifact} />
+              </button>
+            )}
+          </div>
+          <div className="grid gap-2 border-t border-border/52 p-3">
+            <div className="grid min-w-0 gap-2">
+              <div className="grid min-w-0 gap-1.5">
+                <div className="flex min-w-0 items-center gap-2">
+                  <span className="text-muted-foreground">
+                    <ArtifactKindIcon artifact={artifact} />
+                  </span>
+                  <span className="min-w-0 truncate font-mono text-sm" title={artifact.fileName}>
+                    {artifact.fileName}
+                  </span>
+                </div>
+                <span className="font-mono text-xs text-muted-foreground">
+                  {artifact.mimeType} / {formatBytes(artifact.sizeBytes)}
+                </span>
+              </div>
+              {artifact.mediaKind === 'video' && previewUrl ? (
+                <Button
+                  aria-label={openLabel}
+                  className="w-fit"
+                  disabled={loading}
+                  onClick={openPreview}
+                  size="sm"
+                  type="button"
+                  variant="outline"
+                >
+                  <Play className="size-3" />
+                  {loading ? 'Loading...' : 'Open'}
+                </Button>
+              ) : null}
+            </div>
+            {error ? <span className="text-xs text-destructive">{error}</span> : null}
+          </div>
+        </div>
+      )}
+    </ArtifactPreviewTrigger>
+  );
+}
+
+export function ArtifactPreviewButton({ artifact, taskId }: Props) {
+  return (
+    <ArtifactPreviewTrigger artifact={artifact} taskId={taskId}>
+      {({ error, loading, openPreview }) => (
+        <div className="flex items-center gap-2">
+          <Button disabled={loading} onClick={openPreview} size="sm" type="button" variant="ghost">
+            {loading ? 'Loading...' : 'View'}
+          </Button>
+          {error ? <span className="text-xs text-destructive">{error}</span> : null}
+        </div>
+      )}
+    </ArtifactPreviewTrigger>
   );
 }

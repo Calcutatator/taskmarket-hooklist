@@ -471,6 +471,96 @@ describe('submissions router', () => {
       expect(JSON.stringify(result)).not.toContain('previewUrl');
     });
 
+    it('includes media preview URLs on request while batching worker agent lookup', async () => {
+      const storage = getStorageBackend();
+      const ctx = createMockCtx();
+      const secondSubmissionRow = {
+        ...submissionRow,
+        id: '00000000-0000-0000-0000-000000000002',
+        workerAddress: '0xWorker0000000000000000000000000000000002',
+      };
+      const textArtifactRow = {
+        ...artifactRow,
+        id: 'artifact-text',
+        fileName: 'notes.txt',
+        mediaKind: 'text',
+        mimeType: 'text/plain',
+        displayOrder: 2,
+      };
+      const videoArtifactRow = {
+        ...artifactRow,
+        id: 'artifact-video',
+        fileName: 'demo.mp4',
+        mediaKind: 'video',
+        mimeType: 'video/mp4',
+        storageUri: 'file://test/demo.mp4',
+        displayOrder: 1,
+      };
+      const imageArtifactRow = {
+        ...artifactRow,
+        id: 'artifact-image',
+        submissionId: secondSubmissionRow.id,
+        fileName: 'result.png',
+        mediaKind: 'image',
+        mimeType: 'image/png',
+        storageUri: 'file://test/result.png',
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow, secondSubmissionRow]))
+        .mockReturnValueOnce(makeChain([textArtifactRow, videoArtifactRow, imageArtifactRow]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              address: WORKER,
+              agentId: 'agent-one',
+              averageRating: 0,
+              completedTasks: 7,
+              ratedTasks: 2,
+              totalStars: 9,
+            },
+            {
+              address: secondSubmissionRow.workerAddress,
+              agentId: 'agent-two',
+              averageRating: 0,
+              completedTasks: 3,
+              ratedTasks: 1,
+              totalStars: 5,
+            },
+          ])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({
+        includePreviewUrls: 'media',
+        taskId: TASK_ID,
+      });
+
+      expect(ctx.db.select).toHaveBeenCalledTimes(3);
+      expect(storage.getPresignedUrl).toHaveBeenCalledTimes(2);
+      expect(storage.getPresignedUrl).toHaveBeenNthCalledWith(1, 'file://test/demo.mp4', 3600);
+      expect(storage.getPresignedUrl).toHaveBeenNthCalledWith(2, 'file://test/result.png', 3600);
+      expect(result[0]?.workerAgentId).toBe('agent-one');
+      expect(result[1]?.workerAgentId).toBe('agent-two');
+      expect(result[0]?.artifacts.map((artifact) => artifact.id)).toEqual([
+        'artifact-video',
+        'artifact-text',
+      ]);
+      expect(result[0]?.artifacts[0]).toEqual(
+        expect.objectContaining({
+          id: 'artifact-video',
+          previewExpiresAt: expect.any(String),
+          previewUrl: 'https://presigned.example.com/file',
+        })
+      );
+      expect(result[0]?.artifacts[1]).not.toHaveProperty('previewUrl');
+      expect(result[1]?.artifacts[0]).toEqual(
+        expect.objectContaining({
+          id: 'artifact-image',
+          previewUrl: 'https://presigned.example.com/file',
+        })
+      );
+    });
+
     it('returns presigned URL when task is completed', async () => {
       const ctx = createMockCtx();
       ctx.db.select

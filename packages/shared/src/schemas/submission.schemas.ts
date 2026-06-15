@@ -35,6 +35,8 @@ export const ArtifactResponseSchema = z.object({
   keccak256Hash: z.string(),
   displayOrder: z.number(),
   textPreview: z.string().optional(),
+  previewUrl: z.string().optional(),
+  previewExpiresAt: z.string().optional(),
 });
 
 export const SubmissionCreateSchema = z.object({

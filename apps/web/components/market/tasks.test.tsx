@@ -1,7 +1,12 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { ArtifactResponse, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+import type {
+  ArtifactResponse,
+  SubmissionResponse,
+  TaskDetailResponse,
+  TaskResponse,
+} from '@taskmarket/shared';
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 
@@ -130,29 +135,39 @@ function makeArtifact(overrides: Partial<ArtifactResponse>): ArtifactResponse {
 }
 
 function renderBountyArtifacts(artifacts: ArtifactResponse[]) {
+  return renderReviewSubmissions([
+    {
+      artifacts,
+      fileUrl: 'ipfs://deliverable',
+      id: 'sub-1',
+      signature: '0xsig',
+      submittedAt: new Date().toISOString(),
+      taskId: task.id,
+      workerAddress: '0x3333333333333333333333333333333333333333',
+    },
+  ]);
+}
+
+function renderReviewSubmissions(submissions: SubmissionResponse[]) {
   return render(
     <TaskDetailPanel
       modeData={{
-        submissions: [
-          {
-            artifacts,
-            fileUrl: 'ipfs://deliverable',
-            id: 'sub-1',
-            signature: '0xsig',
-            submittedAt: new Date().toISOString(),
-            taskId: task.id,
-            workerAddress: '0x3333333333333333333333333333333333333333',
-          },
-        ],
+        submissions,
       }}
       task={{
         ...taskDetail,
         auctionBidCount: null,
         auctionType: null,
         mode: 'bounty',
-        pendingActions: [],
+        pendingActions: [
+          {
+            action: 'accept',
+            command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333`,
+            role: 'requester',
+          },
+        ],
         status: 'pending_approval',
-        submissionCount: 1,
+        submissionCount: submissions.length,
       }}
     />
   );
@@ -160,7 +175,7 @@ function renderBountyArtifacts(artifacts: ArtifactResponse[]) {
 
 function mockPreviewFetch(previewUrl: string) {
   return vi.spyOn(globalThis, 'fetch').mockResolvedValue({
-    json: async () => ({ expiresAt: '2026-05-12T08:00:00.000Z', previewUrl }),
+    json: async () => ({ expiresAt: new Date(Date.now() + 3_600_000).toISOString(), previewUrl }),
     ok: true,
   } as Response);
 }
@@ -582,6 +597,120 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
 
+  it('renders pending approval submissions as media comparison cards', () => {
+    renderReviewSubmissions([
+      {
+        artifacts: [
+          makeArtifact({
+            fileName: 'candidate-a.png',
+            id: 'artifact-image-a',
+            previewUrl: 'https://files.example.com/candidate-a.png',
+            role: 'preview',
+          }),
+          makeArtifact({
+            fileName: 'notes.txt',
+            id: 'artifact-notes-a',
+            mediaKind: 'text',
+            mimeType: 'text/plain',
+            role: 'source',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable-a',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+      {
+        artifacts: [
+          makeArtifact({
+            fileName: 'candidate-b.mp4',
+            id: 'artifact-video-b',
+            mediaKind: 'video',
+            mimeType: 'video/mp4',
+            previewUrl: 'https://files.example.com/candidate-b.mp4',
+            role: 'preview',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable-b',
+        id: 'sub-b',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x4444444444444444444444444444444444444444',
+      },
+    ]);
+
+    const comparison = screen.getByRole('region', { name: /artifact comparison/i });
+    expect(within(comparison).getAllByRole('article', { name: /submission from/i })).toHaveLength(
+      2
+    );
+    expect(within(comparison).getByAltText('candidate-a.png')).toHaveAttribute(
+      'src',
+      'https://files.example.com/candidate-a.png'
+    );
+    expect(
+      within(comparison).getByRole('button', { name: /open candidate-a\.png preview/i })
+    ).toBeInTheDocument();
+    expect(
+      within(comparison).getByRole('button', { name: /open candidate-b\.mp4 preview/i })
+    ).toBeInTheDocument();
+    expect(within(comparison).getByText('notes.txt')).toBeInTheDocument();
+  });
+
+  it('opens batch-preview media artifacts without refetching the preview URL', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch');
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'logo.png',
+        id: 'artifact-image',
+        previewExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        previewUrl: 'https://files.example.com/logo.png',
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /open logo\.png preview/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByAltText('logo.png')).toHaveAttribute(
+      'src',
+      'https://files.example.com/logo.png'
+    );
+    expect(fetchMock).not.toHaveBeenCalled();
+
+    fetchMock.mockRestore();
+  });
+
+  it('refreshes expired batch-preview media URLs before opening the artifact', async () => {
+    const fetchMock = mockPreviewFetch('https://files.example.com/logo-fresh.png');
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'logo.png',
+        id: 'artifact-image',
+        previewExpiresAt: new Date(Date.now() - 1_000).toISOString(),
+        previewUrl: 'https://files.example.com/logo-expired.png',
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /open logo\.png preview/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByAltText('logo.png')).toHaveAttribute(
+      'src',
+      'https://files.example.com/logo-fresh.png'
+    );
+    expect(fetchMock).toHaveBeenCalledWith(
+      `/api/tasks/${task.id}/artifacts/artifact-image/preview?taskId=${task.id}&artifactId=artifact-image`
+    );
+
+    fetchMock.mockRestore();
+  });
+
   it('blocks pending approval payout release when the requester wallet needs funding', async () => {
     mockAccount.address = task.requester;
     mockAccount.isConnected = true;
@@ -725,7 +854,7 @@ describe('Task marketplace components', () => {
 
     renderBountyArtifacts([makeArtifact({ fileName: 'logo.png', id: 'artifact-image' })]);
 
-    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    await user.click(screen.getByRole('button', { name: /open logo\.png preview/i }));
 
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('heading', { name: 'logo.png' })).toBeInTheDocument();
@@ -745,7 +874,10 @@ describe('Task marketplace components', () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
       if (typeof url === 'string' && url.includes('/artifacts/')) {
         return {
-          json: async () => ({ expiresAt: '2026-05-12T08:00:00.000Z', previewUrl: presignedUrl }),
+          json: async () => ({
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            previewUrl: presignedUrl,
+          }),
           ok: true,
         } as Response;
       }

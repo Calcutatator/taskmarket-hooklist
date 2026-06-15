@@ -15,6 +15,7 @@ import {
   agents,
   devices,
   artifacts,
+  type Agent,
   type Artifact,
   type NewArtifact,
 } from '../db/schema';
@@ -139,7 +140,21 @@ function safeFileName(fileName: string): string {
   return fileName.replace(/[^a-zA-Z0-9._-]/g, '_').slice(0, 255) || 'artifact';
 }
 
-function toArtifactResponse(row: Artifact, workerAddress: string, workerAgentId: string | null) {
+type ArtifactPreview = {
+  previewExpiresAt: string;
+  previewUrl: string;
+};
+
+function canEmbedMediaPreview(row: Artifact) {
+  return row.mediaKind === 'image' || row.mediaKind === 'video';
+}
+
+function toArtifactResponse(
+  row: Artifact,
+  workerAddress: string,
+  workerAgentId: string | null,
+  preview?: ArtifactPreview
+) {
   return {
     id: row.id,
     taskId: row.taskId,
@@ -155,6 +170,9 @@ function toArtifactResponse(row: Artifact, workerAddress: string, workerAgentId:
     sha256Hash: row.sha256Hash,
     keccak256Hash: row.keccak256Hash,
     displayOrder: row.displayOrder,
+    ...(preview
+      ? { previewExpiresAt: preview.previewExpiresAt, previewUrl: preview.previewUrl }
+      : {}),
   };
 }
 
@@ -542,7 +560,12 @@ export const submissionsRouter = router({
         summary: 'List submissions for a task',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(
+      z.object({
+        taskId: z.string(),
+        includePreviewUrls: z.enum(['none', 'media']).optional().default('none'),
+      })
+    )
     .output(z.array(SubmissionResponseSchema))
     .query(async ({ input, ctx }) => {
       const results = await ctx.db
@@ -563,6 +586,34 @@ export const submissionsRouter = router({
               )
           : [];
 
+      const uniqueWorkerAddresses = Array.from(new Set(results.map((sub) => sub.workerAddress)));
+      const agentResults =
+        uniqueWorkerAddresses.length > 0
+          ? await ctx.db
+              .select()
+              .from(agents)
+              .where(inArray(agents.address, uniqueWorkerAddresses))
+          : [];
+      const agentsByAddress = new Map<string, Agent>();
+      for (const agent of agentResults) {
+        agentsByAddress.set(agent.address.toLowerCase(), agent);
+      }
+
+      const previewByArtifactId = new Map<string, ArtifactPreview>();
+      if (input.includePreviewUrls === 'media') {
+        const expiresIn = 3600;
+        const previewExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+        const mediaArtifacts = artifactResults.filter(canEmbedMediaPreview);
+        await Promise.all(
+          mediaArtifacts.map(async (artifact) => {
+            previewByArtifactId.set(artifact.id, {
+              previewExpiresAt,
+              previewUrl: await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn),
+            });
+          })
+        );
+      }
+
       const artifactsBySubmission = new Map<string, Artifact[]>();
       for (const artifact of artifactResults) {
         const existing = artifactsBySubmission.get(artifact.submissionId) ?? [];
@@ -570,42 +621,41 @@ export const submissionsRouter = router({
         artifactsBySubmission.set(artifact.submissionId, existing);
       }
 
-      const submissionsWithStats = await Promise.all(
-        results.map(async (sub) => {
-          const agentResult = await ctx.db
-            .select()
-            .from(agents)
-            .where(eq(agents.address, sub.workerAddress))
-            .limit(1);
+      const submissionsWithStats = results.map((sub) => {
+        const agent = agentsByAddress.get(sub.workerAddress.toLowerCase());
 
-          const agent = agentResult[0];
-
-          return {
-            id: sub.id,
-            taskId: sub.taskId,
-            workerAddress: sub.workerAddress,
-            fileUrl: sub.fileUrl,
-            signature: sub.signature,
-            submittedAt: sub.submittedAt.toISOString(),
-            workerAgentId: agent?.agentId ?? null,
-            deliverableHash: sub.deliverableHash ?? null,
-            submitTxHash: sub.submitTxHash ?? null,
-            artifacts: (artifactsBySubmission.get(sub.id) ?? [])
-              .slice()
-              .sort((a, b) => a.displayOrder - b.displayOrder)
-              .map((row) => toArtifactResponse(row, sub.workerAddress, agent?.agentId ?? null)),
-            workerStats: agent
-              ? {
-                  completedTasks: agent.completedTasks,
-                  ratedTasks: agent.ratedTasks,
-                  totalStars: Number(agent.totalStars),
-                  averageRating:
-                    agent.ratedTasks > 0 ? Number(agent.totalStars) / agent.ratedTasks : 0,
-                }
-              : { completedTasks: 0, ratedTasks: 0, totalStars: 0, averageRating: 0 },
-          };
-        })
-      );
+        return {
+          id: sub.id,
+          taskId: sub.taskId,
+          workerAddress: sub.workerAddress,
+          fileUrl: sub.fileUrl,
+          signature: sub.signature,
+          submittedAt: sub.submittedAt.toISOString(),
+          workerAgentId: agent?.agentId ?? null,
+          deliverableHash: sub.deliverableHash ?? null,
+          submitTxHash: sub.submitTxHash ?? null,
+          artifacts: (artifactsBySubmission.get(sub.id) ?? [])
+            .slice()
+            .sort((a, b) => a.displayOrder - b.displayOrder)
+            .map((row) =>
+              toArtifactResponse(
+                row,
+                sub.workerAddress,
+                agent?.agentId ?? null,
+                previewByArtifactId.get(row.id)
+              )
+            ),
+          workerStats: agent
+            ? {
+                completedTasks: agent.completedTasks,
+                ratedTasks: agent.ratedTasks,
+                totalStars: Number(agent.totalStars),
+                averageRating:
+                  agent.ratedTasks > 0 ? Number(agent.totalStars) / agent.ratedTasks : 0,
+              }
+            : { completedTasks: 0, ratedTasks: 0, totalStars: 0, averageRating: 0 },
+        };
+      });
 
       return submissionsWithStats;
     }),
