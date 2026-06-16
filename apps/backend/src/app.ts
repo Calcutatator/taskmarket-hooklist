@@ -308,12 +308,25 @@ app.use(
   })
 );
 
+const skillTextHeaders = { 'Content-Type': 'text/plain; charset=utf-8' };
+
 // skill.md — plain text agent integration guide (served from file, no restart needed to update)
 app.get('/skill.md', (_, res) => {
   res.sendFile(path.resolve(process.cwd(), 'skill.md'), {
-    headers: { 'Content-Type': 'text/plain; charset=utf-8' },
+    headers: skillTextHeaders,
   });
 });
+
+for (const directory of ['modes', 'reference', 'examples']) {
+  app.use(
+    `/${directory}`,
+    express.static(path.resolve(process.cwd(), directory), {
+      setHeaders(res) {
+        res.set(skillTextHeaders);
+      },
+    })
+  );
+}
 
 // OpenAPI docs
 const openApiDocument = generateOpenAPI();
