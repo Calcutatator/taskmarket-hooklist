@@ -589,10 +589,7 @@ export const submissionsRouter = router({
       const uniqueWorkerAddresses = Array.from(new Set(results.map((sub) => sub.workerAddress)));
       const agentResults =
         uniqueWorkerAddresses.length > 0
-          ? await ctx.db
-              .select()
-              .from(agents)
-              .where(inArray(agents.address, uniqueWorkerAddresses))
+          ? await ctx.db.select().from(agents).where(inArray(agents.address, uniqueWorkerAddresses))
           : [];
       const agentsByAddress = new Map<string, Agent>();
       for (const agent of agentResults) {

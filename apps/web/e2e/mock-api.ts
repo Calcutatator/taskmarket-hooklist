@@ -841,7 +841,13 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
     return `data:image/svg+xml;charset=utf-8,${encodeURIComponent(svg)}`;
   }
 
-  return `https://files.example.com/mock/${encodeURIComponent(artifactItem.fileName)}`;
+  if (artifactItem.mediaKind === 'video') {
+    // Minimal ftyp box as a data URL — avoids any DNS resolution in CI.
+    // Media decode errors from invalid data do not surface as console.error.
+    return 'data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb20=';
+  }
+
+  return undefined;
 }
 
 function submissionsForResponse(taskId: string, includePreviewUrls: boolean) {
