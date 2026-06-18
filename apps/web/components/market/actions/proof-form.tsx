@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +25,7 @@ import type { TaskActionComponentProps } from './types';
 
 const PROOF_TYPES = ['custom', 'eval', 'tlsn', 'zk'] as const;
 
-export function ProofForm({ disabled, task }: TaskActionComponentProps) {
+export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -75,9 +77,20 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const url = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Proof submitted',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -85,7 +98,10 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Proof submitted</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Proof submitted
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -102,11 +118,11 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
 
   const label =
     step === 'payment'
-      ? 'Fetching payment…'
+      ? 'Fetching payment...'
       : step === 'signing'
-        ? 'Sign payment…'
+        ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Anchoring on-chain…'
+          ? 'Anchoring on-chain...'
           : 'Submit proof';
 
   return (
@@ -114,6 +130,8 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
       <div className="grid gap-1">
         <Label htmlFor="proof-data">Proof data</Label>
         <Textarea
+          aria-describedby={fieldErrors.proofData ? 'proof-data-error' : undefined}
+          aria-invalid={Boolean(fieldErrors.proofData)}
           id="proof-data"
           onChange={(e) => setProofData(e.currentTarget.value)}
           placeholder="Raw proof bytes / hash / URI"
@@ -121,7 +139,9 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
           value={proofData}
         />
         {fieldErrors.proofData ? (
-          <p className="text-xs text-destructive">{fieldErrors.proofData}</p>
+          <p className="text-xs text-destructive" id="proof-data-error">
+            {fieldErrors.proofData}
+          </p>
         ) : null}
       </div>
       <div className="grid gap-1">
@@ -142,6 +162,8 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
       <div className="grid gap-1">
         <Label htmlFor="proof-metric">Metric value (optional, integer)</Label>
         <Input
+          aria-describedby={fieldErrors.metricValue ? 'proof-metric-error' : undefined}
+          aria-invalid={Boolean(fieldErrors.metricValue)}
           id="proof-metric"
           inputMode="numeric"
           onChange={(e) => setMetricValue(e.currentTarget.value)}
@@ -150,7 +172,9 @@ export function ProofForm({ disabled, task }: TaskActionComponentProps) {
           value={metricValue}
         />
         {fieldErrors.metricValue ? (
-          <p className="text-xs text-destructive">{fieldErrors.metricValue}</p>
+          <p className="text-xs text-destructive" id="proof-metric-error">
+            {fieldErrors.metricValue}
+          </p>
         ) : null}
       </div>
       <Button disabled={disabled || busy} onClick={handleProof} size="sm">

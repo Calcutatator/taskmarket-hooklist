@@ -13,7 +13,7 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
-import { eq, sql, desc, and, gt, lt, lte, arrayOverlaps, asc, inArray } from 'drizzle-orm';
+import { eq, or, sql, desc, and, gt, lt, lte, arrayOverlaps, asc, inArray } from 'drizzle-orm';
 import {
   contractCreateTask,
   contractAssignEvaluator,
@@ -469,6 +469,12 @@ export const tasksRouter = router({
             sql`(${tasks.requester} IN (SELECT ${agents.address} FROM ${agents} WHERE ${agents.registeredVia} = 'cli') OR ${tasks.requester} NOT IN (SELECT ${agents.address} FROM ${agents}))`
           );
         }
+      }
+      if (input.requester) {
+        conditions.push(eq(tasks.requester, input.requester));
+      }
+      if (input.worker) {
+        conditions.push(or(eq(tasks.worker, input.worker), eq(tasks.claimedBy, input.worker)));
       }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));

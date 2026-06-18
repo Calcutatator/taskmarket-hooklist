@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -9,7 +11,7 @@ import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
-export function SelectWinnerButton({ disabled, task }: TaskActionComponentProps) {
+export function SelectWinnerButton({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [pending, setPending] = useState(false);
@@ -45,7 +47,9 @@ export function SelectWinnerButton({ disabled, task }: TaskActionComponentProps)
     } catch (err) {
       setPending(false);
       if (typeof err === 'object' && err !== null && 'code' in err && err.code === 4001) return;
-      setError(err instanceof Error ? err.message : 'Signing failed');
+      const message = err instanceof Error ? err.message : 'Signing failed';
+      setError(message);
+      toast.error(message);
       return;
     }
 
@@ -62,25 +66,41 @@ export function SelectWinnerButton({ disabled, task }: TaskActionComponentProps)
       setPending(false);
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { message?: string };
-        setError(errBody.message ?? `Server error: ${res.status}`);
+        const message = errBody.message ?? `Server error: ${res.status}`;
+        setError(message);
+        toast.error(message);
         return;
       }
       setDone(true);
+      onSuccess?.();
+      toast.success('Winner selected');
     } catch (err) {
       setPending(false);
-      setError(err instanceof Error ? err.message : 'Request failed');
+      const message = err instanceof Error ? err.message : 'Request failed';
+      setError(message);
+      toast.error(message);
     }
   }
 
   if (done) {
-    return <span className="font-mono text-sm text-primary">✓ Winner selected</span>;
+    return (
+      <div className="grid gap-1 text-sm">
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Winner selected
+        </span>
+        <p className="text-xs text-muted-foreground">
+          The winning bidder can now begin work on this task.
+        </p>
+      </div>
+    );
   }
 
   if (stillOpen) {
     return (
       <div className="grid gap-2">
         <Button aria-disabled disabled size="sm">
-          Select winner — available in {countdown}
+          Select winner - available in {countdown}
         </Button>
         <p className="text-xs text-muted-foreground">Available after the bid deadline passes.</p>
       </div>
@@ -90,7 +110,7 @@ export function SelectWinnerButton({ disabled, task }: TaskActionComponentProps)
   return (
     <div className="grid gap-2">
       <Button disabled={disabled || pending} onClick={handleSelect} size="sm">
-        {pending ? 'Confirming…' : 'Select winner'}
+        {pending ? 'Confirming...' : 'Select winner'}
       </Button>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
 
 // Mock contract service before importing router
@@ -304,6 +305,54 @@ describe('tasks router', () => {
       expect(result.tasks).toHaveLength(1);
       expect(result.hasMore).toBe(true);
       expect(result.nextCursor).toBe(mockTaskRow.createdAt.toISOString());
+    });
+  });
+
+  describe('list filters', () => {
+    const dialect = new PgDialect();
+    const WORKER = '0xWorker000000000000000000000000000000001';
+    const REQUESTER = '0xRequester0000000000000000000000000000001';
+
+    // Captures the SQL condition passed to the main list query's .where() so we
+    // can assert the filter produces exact-match address conditions.
+    function captureListWhere(input: Record<string, unknown>) {
+      const mainChain = makeChain([mockTaskRow]);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(mainChain)
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      return caller.list(input as any).then(() => {
+        const whereArg = mainChain.where.mock.calls[0][0];
+        return dialect.sqlToQuery(whereArg);
+      });
+    }
+
+    it('filters by worker matching worker OR claimedBy with exact addresses', async () => {
+      const query = await captureListWhere({ worker: WORKER });
+
+      expect(query.sql).toContain('"tasks"."worker" = ');
+      expect(query.sql).toContain('"tasks"."claimed_by" = ');
+      expect(query.sql).toMatch(/"tasks"."worker" = \$\d+ or "tasks"."claimed_by" = \$\d+/);
+      expect(query.params).toEqual([WORKER, WORKER]);
+    });
+
+    it('filters by requester with an exact address match', async () => {
+      const query = await captureListWhere({ requester: REQUESTER });
+
+      expect(query.sql).toContain('"tasks"."requester" = ');
+      expect(query.params).toEqual([REQUESTER]);
+    });
+
+    it('combines requester and worker filters', async () => {
+      const query = await captureListWhere({ requester: REQUESTER, worker: WORKER });
+
+      expect(query.sql).toContain('"tasks"."requester" = ');
+      expect(query.sql).toContain('"tasks"."worker" = ');
+      expect(query.sql).toContain('"tasks"."claimed_by" = ');
+      expect(query.params).toEqual([REQUESTER, WORKER, WORKER]);
     });
   });
 });

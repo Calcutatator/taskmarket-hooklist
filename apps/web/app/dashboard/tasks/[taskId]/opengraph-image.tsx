@@ -1,4 +1,4 @@
-export { default } from '@/app/tasks/[taskId]/opengraph-image';
+export { default } from '@/app/(public)/tasks/[taskId]/opengraph-image';
 
 export const alt = 'Taskmarket task preview';
 export const contentType = 'image/png';

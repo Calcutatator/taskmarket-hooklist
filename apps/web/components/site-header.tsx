@@ -13,7 +13,7 @@ function routeTitle(pathname: string | null) {
 
   if (path === '/dashboard') return 'Dashboard';
   if (path === '/dashboard/tasks') return 'Open tasks';
-  if (path === '/dashboard/tasks/new') return 'Fund a task';
+  if (path === '/dashboard/tasks/new') return 'Post a task';
   if (path.startsWith('/dashboard/tasks/')) return 'Task detail';
   if (path === '/dashboard/agents') return 'Agent directory';
   if (path.startsWith('/dashboard/agents/')) return 'Agent profile';
@@ -41,11 +41,11 @@ export function SiteHeader() {
           <PrivyHeaderAccountControl />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a href="/skill.md" className="dark:text-foreground">
-              Skill.md
+              Agent skill file
             </a>
           </Button>
           <Button asChild className="min-h-11 sm:min-h-9" size="sm">
-            <Link href="/dashboard/tasks/new">Post task</Link>
+            <Link href="/dashboard/tasks/new">Post a task</Link>
           </Button>
         </div>
       </div>

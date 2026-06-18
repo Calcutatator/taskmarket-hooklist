@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -23,7 +25,7 @@ type Pitch = {
   pitchText: string;
 };
 
-export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps) {
+export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [pitches, setPitches] = useState<Pitch[] | null>(null);
@@ -68,7 +70,7 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
   }
 
   if (pitches === null) {
-    return <p className="text-sm text-muted-foreground">Loading pitches…</p>;
+    return <p className="text-sm text-muted-foreground">Loading pitches...</p>;
   }
 
   if (pitches.length === 0) {
@@ -91,7 +93,9 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
     } catch (err) {
       setPending(false);
       if (typeof err === 'object' && err !== null && 'code' in err && err.code === 4001) return;
-      setError(err instanceof Error ? err.message : 'Signing failed');
+      const message = err instanceof Error ? err.message : 'Signing failed';
+      setError(message);
+      toast.error(message);
       return;
     }
 
@@ -109,18 +113,29 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
       setPending(false);
       if (!res.ok) {
         const errBody = (await res.json().catch(() => ({}))) as { message?: string };
-        setError(errBody.message ?? `Server error: ${res.status}`);
+        const message = errBody.message ?? `Server error: ${res.status}`;
+        setError(message);
+        toast.error(message);
         return;
       }
       setDone(true);
+      onSuccess?.();
+      toast.success('Worker selected');
     } catch (err) {
       setPending(false);
-      setError(err instanceof Error ? err.message : 'Request failed');
+      const message = err instanceof Error ? err.message : 'Request failed';
+      setError(message);
+      toast.error(message);
     }
   }
 
   if (done) {
-    return <span className="font-mono text-sm text-primary">✓ Worker selected</span>;
+    return (
+      <span className="flex items-center gap-1.5 font-mono text-sm text-primary">
+        <CircleCheckIcon aria-hidden="true" className="size-4" />
+        Worker selected
+      </span>
+    );
   }
 
   return (
@@ -128,13 +143,17 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
       <div className="grid gap-1">
         <Label htmlFor="select-pitch">Choose a pitch</Label>
         <Select onValueChange={setSelectedId} value={selectedId}>
-          <SelectTrigger id="select-pitch">
-            <SelectValue placeholder="Pick a worker…" />
+          <SelectTrigger
+            aria-describedby={error ? 'select-pitch-error' : undefined}
+            aria-invalid={Boolean(error)}
+            id="select-pitch"
+          >
+            <SelectValue placeholder="Pick a worker" />
           </SelectTrigger>
           <SelectContent>
             {pitches.map((p) => (
               <SelectItem key={p.id} value={p.id}>
-                {p.workerAddress.slice(0, 6)}…{p.workerAddress.slice(-4)} —{' '}
+                {p.workerAddress.slice(0, 6)}...{p.workerAddress.slice(-4)} -{' '}
                 {p.pitchText.slice(0, 60)}
               </SelectItem>
             ))}
@@ -142,9 +161,13 @@ export function SelectWorkerPicker({ disabled, task }: TaskActionComponentProps)
         </Select>
       </div>
       <Button disabled={disabled || pending || !selectedId} onClick={handleSelect} size="sm">
-        {pending ? 'Confirming…' : 'Select worker'}
+        {pending ? 'Confirming...' : 'Select worker'}
       </Button>
-      {error ? <p className="text-xs text-destructive">{error}</p> : null}
+      {error ? (
+        <p className="text-xs text-destructive" id="select-pitch-error">
+          {error}
+        </p>
+      ) : null}
     </div>
   );
 }

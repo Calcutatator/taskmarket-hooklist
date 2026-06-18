@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,7 @@ function formatUsdc(base: string | null | undefined): string {
   return (Number(base ?? 0) / 1_000_000).toFixed(3);
 }
 
-export function BidForm({ disabled, task }: TaskActionComponentProps) {
+export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -51,7 +53,8 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
 
   const busy = step !== 'idle' && step !== 'done';
 
-  async function handleBid() {
+  async function handleBid(event?: React.FormEvent) {
+    event?.preventDefault();
     setError(null);
     setFieldErrors({});
 
@@ -72,9 +75,25 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const successUrl = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Bid placed',
+        successUrl
+          ? {
+              action: {
+                label: 'View on explorer',
+                onClick: () => window.open(successUrl, '_blank'),
+              },
+            }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -82,7 +101,10 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Bid placed</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Bid placed
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -99,20 +121,22 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
 
   const label =
     step === 'payment'
-      ? 'Fetching payment…'
+      ? 'Fetching payment...'
       : step === 'signing'
-        ? 'Sign payment…'
+        ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Confirming…'
+          ? 'Confirming...'
           : 'Place bid';
 
   const currentLowest = (task as { currentLowestBid?: string | null }).currentLowestBid;
 
   return (
-    <div className="grid gap-3">
+    <form className="grid gap-3" onSubmit={handleBid}>
       <div className="grid gap-1">
         <Label htmlFor="bid-price">Your price (USDC)</Label>
         <Input
+          aria-describedby={fieldErrors.price ? 'bid-price-error' : undefined}
+          aria-invalid={Boolean(fieldErrors.price)}
           id="bid-price"
           inputMode="decimal"
           onChange={(e) => setPriceUsdc(e.currentTarget.value)}
@@ -120,7 +144,11 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
           type="text"
           value={priceUsdc}
         />
-        {fieldErrors.price ? <p className="text-xs text-destructive">{fieldErrors.price}</p> : null}
+        {fieldErrors.price ? (
+          <p className="text-xs text-destructive" id="bid-price-error">
+            {fieldErrors.price}
+          </p>
+        ) : null}
         {currentLowest ? (
           <p className="text-xs text-muted-foreground">
             Current lowest bid: {formatUsdc(currentLowest)} USDC
@@ -130,11 +158,11 @@ export function BidForm({ disabled, task }: TaskActionComponentProps) {
           <p className="text-xs text-muted-foreground">Deadline: {countdown} remaining</p>
         ) : null}
       </div>
-      <Button disabled={disabled || busy} onClick={handleBid} size="sm">
+      <Button disabled={disabled || busy} size="sm" type="submit">
         {label}
       </Button>
       <p className="text-xs text-muted-foreground">Costs 0.001 USDC.</p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
-    </div>
+    </form>
   );
 }

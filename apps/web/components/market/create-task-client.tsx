@@ -1,20 +1,18 @@
 'use client';
 
 import { useRouter } from 'next/navigation';
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { IconBolt, IconClockHour4, IconCoin, IconFileText } from '@tabler/icons-react';
 import { usePrivy } from '@privy-io/react-auth';
+import { TaskCreateSchema } from '@taskmarket/shared';
 import { parseUnits } from 'viem';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
-import {
-  FundingGuard,
-  isPrivyFiatOnboardingEnabled,
-  type FundingStatus,
-} from '@/components/market/fund-wallet-button';
+import { FundingGuard, type FundingStatus } from '@/components/market/fund-wallet-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
@@ -88,6 +86,38 @@ function optionalNumber(value: string) {
   return value.trim() ? Number(value) : undefined;
 }
 
+function countTags(value: string) {
+  return value
+    .split(',')
+    .map((tag) => tag.trim())
+    .filter(Boolean).length;
+}
+
+// WAI-ARIA radiogroup keyboard handler: arrows move selection and focus, the
+// group is a single tab stop via roving tabindex on the buttons.
+function handleRadioGroupKeyDown(
+  event: React.KeyboardEvent<HTMLDivElement>,
+  values: string[],
+  current: string,
+  select: (value: string) => void
+) {
+  const forward = event.key === 'ArrowRight' || event.key === 'ArrowDown';
+  const backward = event.key === 'ArrowLeft' || event.key === 'ArrowUp';
+  if (!forward && !backward) {
+    return;
+  }
+
+  event.preventDefault();
+  const currentIndex = Math.max(0, values.indexOf(current));
+  const delta = forward ? 1 : -1;
+  const nextIndex = (currentIndex + delta + values.length) % values.length;
+  const nextValue = values[nextIndex];
+  select(nextValue);
+
+  const buttons = event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="radio"]');
+  buttons[nextIndex]?.focus();
+}
+
 function optionalHoursToSeconds(value: string) {
   const hours = optionalNumber(value);
   return hours === undefined ? undefined : Math.round(hours * 3_600);
@@ -149,6 +179,70 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
   }
 
   return payload;
+}
+
+export type CreateTaskFieldErrors = Partial<Record<keyof CreateTaskFormValues, string>>;
+
+// Maps schema/payload field names to the matching form field where they diverge.
+const PAYLOAD_FIELD_TO_FORM: Record<string, keyof CreateTaskFormValues> = {
+  evaluationWindowHours: 'evaluationWindow',
+  appealWindowHours: 'appealWindow',
+};
+
+// Upper bound for task duration so a typo cannot escrow funds for years.
+const MAX_DURATION_HOURS = 8_760;
+
+// DOM order of focusable form fields, used to focus the first invalid one on submit.
+const FIELD_FOCUS_ORDER: (keyof CreateTaskFormValues)[] = [
+  'description',
+  'reward',
+  'duration',
+  'tags',
+  'maxPrice',
+  'auctionFloorPrice',
+  'auctionStartPrice',
+  'metricDescription',
+  'metricTarget',
+];
+
+export function validateCreateTask(values: CreateTaskFormValues): CreateTaskFieldErrors | null {
+  const errors: CreateTaskFieldErrors = {};
+  const body = buildCreateTaskPayload(values);
+  const parsed = TaskCreateSchema.safeParse(body);
+
+  if (!parsed.success) {
+    for (const issue of parsed.error.issues) {
+      const payloadField = String(issue.path[0] ?? '');
+      const field = (PAYLOAD_FIELD_TO_FORM[payloadField] ??
+        payloadField) as keyof CreateTaskFormValues;
+      if (field && !errors[field]) {
+        errors[field] = issue.message;
+      }
+    }
+  }
+
+  const duration = Number(values.duration);
+  if (Number.isFinite(duration) && duration > MAX_DURATION_HOURS) {
+    errors.duration = `Duration must be ${MAX_DURATION_HOURS} hours or fewer.`;
+  }
+
+  if (values.mode === 'auction') {
+    const maxPrice = optionalNumber(values.maxPrice);
+    if (values.auctionType === 'dutch') {
+      const floor = optionalNumber(values.auctionFloorPrice);
+      if (maxPrice !== undefined && floor !== undefined && floor >= maxPrice) {
+        errors.auctionFloorPrice = 'Floor price must be below the max price.';
+      }
+    }
+    if (values.auctionType === 'reverse_dutch') {
+      const start = optionalNumber(values.auctionStartPrice);
+      if (maxPrice !== undefined && start !== undefined && start >= maxPrice) {
+        errors.auctionStartPrice = 'Start price must be below the max price.';
+      }
+    }
+  }
+
+  return Object.keys(errors).length > 0 ? errors : null;
 }
 
 function randomNonce() {
@@ -234,12 +328,15 @@ function CreateTaskClientContent({
   const [mode, setMode] = useState('bounty');
   const [auctionType, setAuctionType] = useState('english');
   const [stakeRequired, setStakeRequired] = useState(false);
+  const [tagCount, setTagCount] = useState(0);
   const [showAdvanced, setShowAdvanced] = useState(false);
   const [mounted, setMounted] = useState(false);
   const [step, setStep] = useState<Step>('form');
   const [error, setError] = useState<string | null>(null);
+  const [fieldErrors, setFieldErrors] = useState<CreateTaskFieldErrors>({});
   const [fundingPrompt, setFundingPrompt] = useState<FundingPromptState | null>(null);
   const [fundingNotice, setFundingNotice] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
 
   const isSubmitting = step !== 'form';
   const walletReady = mounted && isConnected && Boolean(address);
@@ -248,11 +345,29 @@ function CreateTaskClientContent({
     setMounted(true);
   }, []);
 
+  function focusFirstInvalidField(errors: CreateTaskFieldErrors) {
+    const form = formRef.current;
+    if (!form) {
+      return;
+    }
+    for (const name of FIELD_FOCUS_ORDER) {
+      if (!errors[name]) {
+        continue;
+      }
+      const field = form.elements.namedItem(name);
+      if (field instanceof HTMLElement) {
+        field.focus();
+        field.scrollIntoView?.({ behavior: 'smooth', block: 'center' });
+        return;
+      }
+    }
+  }
+
   async function handleSubmit(event: React.FormEvent<HTMLFormElement>) {
     event.preventDefault();
 
     const formData = new FormData(event.currentTarget);
-    const body = buildCreateTaskPayload({
+    const values: CreateTaskFormValues = {
       auctionFloorPrice: String(formData.get('auctionFloorPrice') ?? ''),
       auctionStartPrice: String(formData.get('auctionStartPrice') ?? ''),
       auctionType: String(formData.get('auctionType') ?? 'english'),
@@ -274,25 +389,34 @@ function CreateTaskClientContent({
       evaluationWindow: String(formData.get('evaluationWindow') ?? ''),
       appealWindow: String(formData.get('appealWindow') ?? ''),
       disputeResolver: String(formData.get('disputeResolver') ?? ''),
-    });
+    };
+    const body = buildCreateTaskPayload(values);
 
     setError(null);
+    setFieldErrors({});
     setFundingPrompt(null);
     setFundingNotice(null);
+
+    const validationErrors = validateCreateTask(values);
+    if (validationErrors) {
+      setFieldErrors(validationErrors);
+      setError('Fix the highlighted fields before publishing this task.');
+      focusFirstInvalidField(validationErrors);
+      return;
+    }
+
     if (!address) {
       setError('Connect a wallet before publishing this task.');
       return;
     }
 
     try {
-      if (isPrivyFiatOnboardingEnabled()) {
-        const rewardBaseUnits = String(body.reward);
-        const balance = await loadWalletBalance(address);
-        const nextFundingPrompt = buildFundingPrompt(balance, rewardBaseUnits);
-        if (nextFundingPrompt) {
-          setFundingPrompt(nextFundingPrompt);
-          return;
-        }
+      const rewardBaseUnits = String(body.reward);
+      const balance = await loadWalletBalance(address);
+      const nextFundingPrompt = buildFundingPrompt(balance, rewardBaseUnits);
+      if (nextFundingPrompt) {
+        setFundingPrompt(nextFundingPrompt);
+        return;
       }
 
       setStep('payment');
@@ -302,7 +426,8 @@ function CreateTaskClientContent({
         method: 'POST',
       });
       if (probeRes.status !== 402) {
-        throw new Error(`Expected payment challenge, got ${probeRes.status}`);
+        const probeBody = await probeRes.json().catch(() => ({}) as { error?: string });
+        throw new Error(probeBody.error ?? `Task creation failed (status ${probeRes.status}).`);
       }
 
       const payReq = await probeRes.json();
@@ -405,8 +530,8 @@ function CreateTaskClientContent({
         : step === 'submitting'
           ? 'Creating task'
           : walletReady
-            ? 'Create task'
-            : 'Connect wallet to create';
+            ? 'Post a task'
+            : 'Connect wallet to post';
 
   const currentMode =
     taskModeOptions.find((taskMode) => taskMode.value === mode) ?? taskModeOptions[0];
@@ -446,9 +571,28 @@ function CreateTaskClientContent({
     connectOrCreateWallet();
   }
 
+  const errorSummary = Object.values(fieldErrors).filter(Boolean);
+
   return (
-    <form className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]" onSubmit={handleSubmit}>
+    <form
+      className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]"
+      onSubmit={handleSubmit}
+      ref={formRef}
+    >
       <div className="grid gap-6">
+        {errorSummary.length > 0 ? (
+          <div
+            className="rounded-xl border border-destructive/65 bg-destructive/10 p-4 text-sm text-destructive"
+            role="alert"
+          >
+            <p className="font-semibold">Fix the following before publishing:</p>
+            <ul className="mt-2 list-disc space-y-1 pl-5">
+              {errorSummary.map((message) => (
+                <li key={message}>{message}</li>
+              ))}
+            </ul>
+          </div>
+        ) : null}
         <Card>
           <CardHeader className="border-b border-border/75">
             <div className="flex items-start justify-between gap-4">
@@ -463,24 +607,47 @@ function CreateTaskClientContent({
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
             <div className="grid gap-2">
-              <Label htmlFor="description">Description</Label>
+              <Label htmlFor="description">
+                Description
+                <span aria-hidden="true" className="text-destructive">
+                  *
+                </span>
+              </Label>
               <Textarea
-                className="min-h-40 resize-y text-sm leading-6"
+                aria-describedby={fieldErrors.description ? 'description-error' : undefined}
+                aria-invalid={fieldErrors.description ? true : undefined}
+                aria-required="true"
+                className="min-h-40 resize-y text-base leading-6 md:text-sm"
                 id="description"
+                maxLength={2000}
                 name="description"
                 placeholder="Define the goal, input materials, acceptance criteria, review process, and delivery format."
                 required
               />
-              <p className="text-xs leading-5 text-muted-foreground">
-                Include inputs, constraints, acceptance criteria, and delivery format.
-              </p>
+              {fieldErrors.description ? (
+                <p className="text-xs leading-5 text-destructive" id="description-error">
+                  {fieldErrors.description}
+                </p>
+              ) : (
+                <p className="text-xs leading-5 text-muted-foreground">
+                  Include inputs, constraints, acceptance criteria, and delivery format.
+                </p>
+              )}
             </div>
             <div className="grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
               <div className="grid gap-2">
-                <Label htmlFor="reward">Reward</Label>
+                <Label htmlFor="reward">
+                  Reward
+                  <span aria-hidden="true" className="text-destructive">
+                    *
+                  </span>
+                </Label>
                 <div className="relative">
                   <IconCoin className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
+                    aria-describedby={fieldErrors.reward ? 'reward-error' : undefined}
+                    aria-invalid={fieldErrors.reward ? true : undefined}
+                    aria-required="true"
                     className="pl-9 font-mono"
                     id="reward"
                     min="0.01"
@@ -491,12 +658,25 @@ function CreateTaskClientContent({
                     type="number"
                   />
                 </div>
+                {fieldErrors.reward ? (
+                  <p className="text-xs leading-5 text-destructive" id="reward-error">
+                    {fieldErrors.reward}
+                  </p>
+                ) : null}
               </div>
               <div className="grid gap-2">
-                <Label htmlFor="duration">Duration hours</Label>
+                <Label htmlFor="duration">
+                  Duration hours
+                  <span aria-hidden="true" className="text-destructive">
+                    *
+                  </span>
+                </Label>
                 <div className="relative">
                   <IconClockHour4 className="pointer-events-none absolute top-1/2 left-3 size-4 -translate-y-1/2 text-muted-foreground" />
                   <Input
+                    aria-describedby={fieldErrors.duration ? 'duration-error' : undefined}
+                    aria-invalid={fieldErrors.duration ? true : undefined}
+                    aria-required="true"
                     className="pl-9 font-mono"
                     defaultValue="72"
                     id="duration"
@@ -506,15 +686,32 @@ function CreateTaskClientContent({
                     type="number"
                   />
                 </div>
+                {fieldErrors.duration ? (
+                  <p className="text-xs leading-5 text-destructive" id="duration-error">
+                    {fieldErrors.duration}
+                  </p>
+                ) : null}
               </div>
               <div className="grid gap-2 sm:col-span-2 lg:col-span-1">
                 <Label htmlFor="tags">Tags</Label>
                 <Input
+                  aria-describedby={fieldErrors.tags ? 'tags-error' : 'tags-hint'}
+                  aria-invalid={fieldErrors.tags ? true : undefined}
                   className="font-mono"
                   id="tags"
                   name="tags"
+                  onChange={(event) => setTagCount(countTags(event.target.value))}
                   placeholder="research, code, audit"
                 />
+                {fieldErrors.tags ? (
+                  <p className="text-xs leading-5 text-destructive" id="tags-error">
+                    {fieldErrors.tags}
+                  </p>
+                ) : (
+                  <p className="text-xs leading-5 text-muted-foreground" id="tags-hint">
+                    {tagCount}/10 tags
+                  </p>
+                )}
               </div>
             </div>
           </CardContent>
@@ -529,7 +726,19 @@ function CreateTaskClientContent({
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
             <input name="mode" type="hidden" value={mode} />
-            <div aria-label="Task mode" className="grid gap-3 sm:grid-cols-2" role="radiogroup">
+            <div
+              aria-label="Task mode"
+              className="grid gap-3 sm:grid-cols-2"
+              onKeyDown={(event) =>
+                handleRadioGroupKeyDown(
+                  event,
+                  taskModeOptions.map((option) => option.value),
+                  mode,
+                  setMode
+                )
+              }
+              role="radiogroup"
+            >
               {taskModeOptions.map((taskMode) => {
                 const Icon = taskMode.icon;
                 const selected = taskMode.value === mode;
@@ -544,6 +753,7 @@ function CreateTaskClientContent({
                     key={taskMode.value}
                     onClick={() => setMode(taskMode.value)}
                     role="radio"
+                    tabIndex={selected ? 0 : -1}
                     type="button"
                   >
                     <span className="flex items-center justify-between gap-3">
@@ -575,12 +785,9 @@ function CreateTaskClientContent({
             {mode === 'claim' ? (
               <div className="grid gap-4 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)] sm:grid-cols-2">
                 <label className="flex min-h-20 items-center gap-3 rounded-xl border border-border/68 bg-background/52 p-4 text-sm font-semibold tracking-tight">
-                  <input
+                  <Checkbox
                     checked={stakeRequired}
-                    className="size-4 accent-primary"
-                    name="stakeRequired"
-                    onChange={(event) => setStakeRequired(event.target.checked)}
-                    type="checkbox"
+                    onCheckedChange={(checked) => setStakeRequired(checked === true)}
                   />
                   Require stake
                 </label>
@@ -648,6 +855,14 @@ function CreateTaskClientContent({
                 <div
                   aria-label="Auction type"
                   className="grid gap-3 sm:grid-cols-2"
+                  onKeyDown={(event) =>
+                    handleRadioGroupKeyDown(
+                      event,
+                      auctionTypeOptions.map((option) => option.value),
+                      auctionType,
+                      setAuctionType
+                    )
+                  }
                   role="radiogroup"
                 >
                   {auctionTypeOptions.map((type) => {
@@ -664,6 +879,7 @@ function CreateTaskClientContent({
                         key={type.value}
                         onClick={() => setAuctionType(type.value)}
                         role="radio"
+                        tabIndex={selected ? 0 : -1}
                         type="button"
                       >
                         <span className="font-sans text-xs font-semibold tracking-tight">
@@ -678,8 +894,16 @@ function CreateTaskClientContent({
                 </div>
                 <div className="grid gap-4 sm:grid-cols-2">
                   <div className="grid gap-2">
-                    <Label htmlFor="maxPrice">Max price</Label>
+                    <Label htmlFor="maxPrice">
+                      Max price
+                      <span aria-hidden="true" className="text-destructive">
+                        *
+                      </span>
+                    </Label>
                     <Input
+                      aria-describedby={fieldErrors.maxPrice ? 'maxPrice-error' : undefined}
+                      aria-invalid={fieldErrors.maxPrice ? true : undefined}
+                      aria-required="true"
                       className="font-mono"
                       id="maxPrice"
                       min="0.01"
@@ -688,6 +912,11 @@ function CreateTaskClientContent({
                       step="0.01"
                       type="number"
                     />
+                    {fieldErrors.maxPrice ? (
+                      <p className="text-xs leading-5 text-destructive" id="maxPrice-error">
+                        {fieldErrors.maxPrice}
+                      </p>
+                    ) : null}
                   </div>
                   <div className="grid gap-2">
                     <Label htmlFor="bidDeadline">Bid deadline hours</Label>
@@ -701,8 +930,18 @@ function CreateTaskClientContent({
                   </div>
                   {auctionType === 'dutch' ? (
                     <div className="grid gap-2">
-                      <Label htmlFor="auctionFloorPrice">Floor price</Label>
+                      <Label htmlFor="auctionFloorPrice">
+                        Floor price
+                        <span aria-hidden="true" className="text-destructive">
+                          *
+                        </span>
+                      </Label>
                       <Input
+                        aria-describedby={
+                          fieldErrors.auctionFloorPrice ? 'auctionFloorPrice-error' : undefined
+                        }
+                        aria-invalid={fieldErrors.auctionFloorPrice ? true : undefined}
+                        aria-required="true"
                         className="font-mono"
                         id="auctionFloorPrice"
                         min="0.01"
@@ -711,12 +950,30 @@ function CreateTaskClientContent({
                         step="0.01"
                         type="number"
                       />
+                      {fieldErrors.auctionFloorPrice ? (
+                        <p
+                          className="text-xs leading-5 text-destructive"
+                          id="auctionFloorPrice-error"
+                        >
+                          {fieldErrors.auctionFloorPrice}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                   {auctionType === 'reverse_dutch' ? (
                     <div className="grid gap-2">
-                      <Label htmlFor="auctionStartPrice">Start price</Label>
+                      <Label htmlFor="auctionStartPrice">
+                        Start price
+                        <span aria-hidden="true" className="text-destructive">
+                          *
+                        </span>
+                      </Label>
                       <Input
+                        aria-describedby={
+                          fieldErrors.auctionStartPrice ? 'auctionStartPrice-error' : undefined
+                        }
+                        aria-invalid={fieldErrors.auctionStartPrice ? true : undefined}
+                        aria-required="true"
                         className="font-mono"
                         id="auctionStartPrice"
                         min="0.01"
@@ -725,6 +982,14 @@ function CreateTaskClientContent({
                         step="0.01"
                         type="number"
                       />
+                      {fieldErrors.auctionStartPrice ? (
+                        <p
+                          className="text-xs leading-5 text-destructive"
+                          id="auctionStartPrice-error"
+                        >
+                          {fieldErrors.auctionStartPrice}
+                        </p>
+                      ) : null}
                     </div>
                   ) : null}
                 </div>
@@ -824,7 +1089,7 @@ function CreateTaskClientContent({
         </Card>
       </div>
 
-      <aside className="grid gap-6 self-start lg:sticky lg:top-6">
+      <aside className="order-first grid gap-6 self-start lg:order-none lg:sticky lg:top-6">
         <Card>
           <CardHeader className="border-b border-border/75">
             <CardTitle>Publish status</CardTitle>

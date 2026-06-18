@@ -30,16 +30,35 @@ const entry = {
 describe('Agent components', () => {
   it('renders leaderboard/profile links and ranking data', () => {
     render(<AgentTable agents={[entry]} />);
-    expect(screen.getByRole('link', { name: /summarizer.bot/i })).toHaveAttribute(
-      'href',
-      '/dashboard/agents/summarizer.bot'
-    );
-    expect(screen.getByRole('link', { name: /summarizer.bot/i })).toHaveAttribute(
-      'data-next-link',
-      'true'
-    );
-    expect(screen.getByText('4.8')).toBeInTheDocument();
-    expect(screen.getByText('120.000 USDC')).toBeInTheDocument();
+    const profileLinks = screen.getAllByRole('link', { name: /summarizer.bot/i });
+    expect(profileLinks.length).toBeGreaterThan(0);
+    for (const link of profileLinks) {
+      expect(link).toHaveAttribute('href', '/dashboard/agents/summarizer.bot');
+      expect(link).toHaveAttribute('data-next-link', 'true');
+    }
+    expect(screen.getAllByText('4.8').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('120.000 USDC').length).toBeGreaterThan(0);
+  });
+
+  it('renders both a desktop table and a mobile card list for the directory', () => {
+    const { container } = render(<AgentTable agents={[entry]} />);
+
+    const desktopTable = container.querySelector('.hidden.md\\:block table');
+    expect(desktopTable).not.toBeNull();
+
+    const mobileList = container.querySelector('ul.md\\:hidden');
+    expect(mobileList).not.toBeNull();
+  });
+
+  it('links mobile cards to the agent profile with the encoded id', () => {
+    const encodedEntry = { ...entry, agentId: 'space agent', address: entry.address };
+    const { container } = render(<AgentTable agents={[encodedEntry]} profileBasePath="/agents" />);
+
+    const mobileList = container.querySelector('ul.md\\:hidden');
+    expect(mobileList).not.toBeNull();
+    const mobileLink = mobileList?.querySelector('a[href^="/agents/"]');
+    expect(mobileLink).not.toBeNull();
+    expect(mobileLink).toHaveAttribute('href', '/agents/space%20agent');
   });
 
   it('renders leaderboard filters, sort links, earnings, and pagination parity controls', () => {
@@ -110,6 +129,44 @@ describe('Agent components', () => {
     expect(
       screen.getByText('taskmarket stats --address 0x1111111111111111111111111111111111111111')
     ).toBeInTheDocument();
+  });
+
+  it('renders a back-to-directory link using the default directory base path', () => {
+    render(<AgentProfilePanel agent={entry} />);
+    expect(screen.getByRole('link', { name: /back to agents/i })).toHaveAttribute(
+      'href',
+      '/dashboard/agents'
+    );
+  });
+
+  it('renders a back-to-directory link using a custom directory base path', () => {
+    render(<AgentProfilePanel agent={entry} directoryBasePath="/agents" taskBasePath="/tasks" />);
+    expect(screen.getByRole('link', { name: /back to agents/i })).toHaveAttribute(
+      'href',
+      '/agents'
+    );
+  });
+
+  it('links to tasks worked by this agent using the default task base path', () => {
+    render(<AgentProfilePanel agent={entry} />);
+    expect(screen.getByRole('link', { name: /tasks worked by this agent/i })).toHaveAttribute(
+      'href',
+      `/dashboard/tasks?worker=${encodeURIComponent(entry.address)}`
+    );
+  });
+
+  it('links to tasks worked by this agent using a custom task base path', () => {
+    render(<AgentProfilePanel agent={entry} directoryBasePath="/agents" taskBasePath="/tasks" />);
+    expect(screen.getByRole('link', { name: /tasks worked by this agent/i })).toHaveAttribute(
+      'href',
+      `/tasks?worker=${encodeURIComponent(entry.address)}`
+    );
+  });
+
+  it('exposes an accessible tooltip description for the ERC-8004 identity', () => {
+    render(<AgentProfilePanel agent={entry} />);
+    const triggers = screen.getAllByRole('button', { name: /what is erc-8004/i });
+    expect(triggers.length).toBeGreaterThan(0);
   });
 
   it('adds task context to recent agent ratings when available', () => {

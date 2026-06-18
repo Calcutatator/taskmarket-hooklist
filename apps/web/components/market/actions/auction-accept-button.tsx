@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useEffect, useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -17,7 +19,7 @@ function formatUsdc(value: string | null | undefined): string {
   return parsed.toFixed(3);
 }
 
-export function AuctionAcceptButton({ disabled, task }: TaskActionComponentProps) {
+export function AuctionAcceptButton({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -25,7 +27,7 @@ export function AuctionAcceptButton({ disabled, task }: TaskActionComponentProps
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
 
-  // Refresh the clock price every 5s by re-fetching the task — dutch/reverse_dutch
+  // Refresh the clock price every 5s by re-fetching the task - dutch/reverse_dutch
   // price changes on the wall clock, so a stale SSR snapshot would mislead.
   const [livePrice, setLivePrice] = useState<string | null>(
     (task as { currentAuctionPrice?: string | null }).currentAuctionPrice ?? null
@@ -79,9 +81,20 @@ export function AuctionAcceptButton({ disabled, task }: TaskActionComponentProps
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const url = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Auction accepted',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -89,7 +102,10 @@ export function AuctionAcceptButton({ disabled, task }: TaskActionComponentProps
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Accepted at {formatUsdc(livePrice)} USDC</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Accepted at {formatUsdc(livePrice)} USDC
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -106,11 +122,11 @@ export function AuctionAcceptButton({ disabled, task }: TaskActionComponentProps
 
   const label =
     step === 'payment'
-      ? 'Fetching payment terms…'
+      ? 'Fetching payment terms...'
       : step === 'signing'
-        ? 'Sign payment…'
+        ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Confirming…'
+          ? 'Confirming...'
           : `Accept at ${formatUsdc(livePrice)} USDC`;
 
   return (

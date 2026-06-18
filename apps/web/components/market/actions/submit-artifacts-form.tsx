@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 import { keccak256 } from 'viem';
 
@@ -101,7 +103,7 @@ function uploadToS3(
   });
 }
 
-export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps) {
+export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const inputRef = useRef<HTMLInputElement | null>(null);
@@ -128,7 +130,7 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
         );
       }
       if (fitting.length > remaining) {
-        messages.push(`At most ${MAX_FILES} files per submission — extra files were dropped.`);
+        messages.push(`At most ${MAX_FILES} files per submission - extra files were dropped.`);
       }
       if (messages.length > 0) setError(messages.join(' '));
       const accepted = fitting.slice(0, remaining).map((file, i) => ({
@@ -238,15 +240,29 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
       }
 
       setDone(true);
+      onSuccess?.();
+      toast.success('Submission posted');
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Submission failed');
+      const message = err instanceof Error ? err.message : 'Submission failed';
+      setError(message);
+      toast.error(message);
     } finally {
       setPending(false);
     }
   }
 
   if (done) {
-    return <span className="font-mono text-sm text-primary">Submission posted</span>;
+    return (
+      <div className="grid gap-1 text-sm">
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Submission posted
+        </span>
+        <p className="text-xs text-muted-foreground">
+          The requester will review your deliverable and release the reward.
+        </p>
+      </div>
+    );
   }
 
   const isUploading = pending && Object.keys(uploadProgress).length > 0;
@@ -298,7 +314,7 @@ export function SubmitArtifactsForm({ disabled, task }: TaskActionComponentProps
                 <div className="min-w-0">
                   <p className="truncate font-mono text-xs">{s.file.name}</p>
                   <p className="text-xs text-muted-foreground">
-                    {bytesToDisplay(s.file.size)} · {detectMimeType(s.file)}
+                    {bytesToDisplay(s.file.size)} - {detectMimeType(s.file)}
                   </p>
                 </div>
                 <Select onValueChange={(v) => setRole(s.id, v as ArtifactRole)} value={s.role}>

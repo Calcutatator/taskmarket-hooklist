@@ -21,6 +21,7 @@ import {
   ArtifactMediaTile,
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
+import { InfoTooltip } from '@/components/market/info-tooltip';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -53,7 +54,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { compactAddress } from '@/lib/format';
+import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import { normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
 import type { ActiveFilter, TaskSearchParams } from '@/lib/market/task-filters';
 
@@ -107,30 +108,8 @@ function taskDetailTags(task: TaskResponse) {
   return task.tags.filter((tag) => !duplicateValues.has(tag.toLowerCase().replaceAll(' ', '_')));
 }
 
-function formatUsdc(value: string | null | undefined) {
-  const parsed = Number(value ?? 0) / 1_000_000;
-  if (!Number.isFinite(parsed)) {
-    return '+0.000 USDC';
-  }
-
-  return `+${parsed.toFixed(3)} USDC`;
-}
-
 function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
-}
-
-function formatDateTime(value?: string | null) {
-  if (!value) {
-    return 'Not set';
-  }
-
-  const date = new Date(value);
-  if (Number.isNaN(date.getTime())) {
-    return 'Not set';
-  }
-
-  return date.toLocaleString();
 }
 
 function formatBps(value?: number | null) {
@@ -297,7 +276,7 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div className="min-w-0">
           <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Reward</dt>
-          <dd className="mt-1 font-mono text-primary">{formatUsdc(task.reward)}</dd>
+          <dd className="mt-1 font-mono text-primary">{formatUsdcUnits(task.reward)}</dd>
         </div>
         <div className="min-w-0">
           <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Due</dt>
@@ -341,10 +320,13 @@ export function TaskTable({
   if (errorMessage) {
     return (
       <Card>
-        <CardContent>
+        <CardContent className="grid gap-4">
           <p className="font-mono text-sm text-destructive" role="alert">
             {errorMessage}
           </p>
+          <Button asChild className="w-fit" variant="outline">
+            <Link href={normalizeBasePath(listHref) as Route}>Reload</Link>
+          </Button>
         </CardContent>
       </Card>
     );
@@ -446,7 +428,7 @@ export function TaskTable({
                   {compactAddress(task.requester)}
                 </TableCell>
                 <TableCell className="text-right font-mono text-primary">
-                  {formatUsdc(task.reward)}
+                  {formatUsdcUnits(task.reward)}
                 </TableCell>
               </TableRow>
             ))}
@@ -654,6 +636,7 @@ export function TaskListPageContent({
   basePath = '/dashboard/tasks',
   createHref = '/dashboard/tasks/new',
   detailBasePath = '/dashboard/tasks',
+  errorMessage,
   filterParams,
   listHref = '/dashboard/tasks',
   tasks,
@@ -662,6 +645,7 @@ export function TaskListPageContent({
   basePath?: string;
   createHref?: string;
   detailBasePath?: string;
+  errorMessage?: string;
   filterParams: {
     deadlineHours?: string;
     maxReward?: string;
@@ -731,6 +715,7 @@ export function TaskListPageContent({
         <TaskTable
           createHref={createHref}
           detailBasePath={detailBasePath}
+          errorMessage={errorMessage}
           hasActiveFilters={activeFilters.length > 0}
           listHref={listHref}
           tasks={tasks}
@@ -849,11 +834,54 @@ function commandForSubmissionWorker(command: string, worker: string) {
   return `${command} --worker ${worker}`;
 }
 
+function actorProfileHref(profileBasePath: string, identity?: string | null) {
+  return `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(identity ?? '')}` as Route;
+}
+
+function ActorLink({
+  agentId,
+  address,
+  className,
+  label,
+  profileBasePath,
+  title,
+}: {
+  agentId?: string | null;
+  address?: string | null;
+  className?: string;
+  label?: ReactNode;
+  profileBasePath: string;
+  title?: string;
+}) {
+  const identity = agentId ?? address;
+  const text = label ?? compactAddress(identity);
+
+  if (!identity) {
+    return (
+      <span className={className} title={title}>
+        {text}
+      </span>
+    );
+  }
+
+  return (
+    <Link
+      className={className ?? 'hover:text-primary'}
+      href={actorProfileHref(profileBasePath, identity)}
+      title={title}
+    >
+      {text}
+    </Link>
+  );
+}
+
 function SubmissionCard({
+  profileBasePath,
   reviewAction,
   submission,
   task,
 }: {
+  profileBasePath: string;
   reviewAction?: PendingAction;
   submission: SubmissionResponse;
   task: TaskDetailResponse | TaskResponse;
@@ -886,9 +914,14 @@ function SubmissionCard({
           <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
             Deliverable submitted by
           </p>
-          <span className="min-w-0 truncate font-mono text-sm" title={worker}>
-            {workerLabel}
-          </span>
+          <ActorLink
+            address={submission.workerAddress}
+            agentId={submission.workerAgentId}
+            className="min-w-0 truncate font-mono text-sm hover:text-primary"
+            label={workerLabel}
+            profileBasePath={profileBasePath}
+            title={worker}
+          />
         </div>
       </div>
       {mediaArtifacts.length > 0 ? (
@@ -918,10 +951,12 @@ function SubmissionCard({
 
 function ModeDataPanel({
   modeData,
+  profileBasePath,
   reviewAction,
   task,
 }: {
   modeData?: TaskModeData;
+  profileBasePath: string;
   reviewAction?: PendingAction;
   task: TaskDetailResponse | TaskResponse;
 }) {
@@ -967,6 +1002,7 @@ function ModeDataPanel({
             {submissions.map((submission) => (
               <SubmissionCard
                 key={submission.id}
+                profileBasePath={profileBasePath}
                 reviewAction={reviewAction}
                 submission={submission}
                 task={task}
@@ -979,7 +1015,12 @@ function ModeDataPanel({
           <div className="rounded-lg border border-border/52 bg-background/30 p-3" key={pitch.id}>
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="outline">{pitch.status}</Badge>
-              <span className="font-mono text-sm">{compactAddress(pitch.workerAddress)}</span>
+              <ActorLink
+                address={pitch.workerAddress}
+                agentId={pitch.workerAgentId}
+                className="font-mono text-sm hover:text-primary"
+                profileBasePath={profileBasePath}
+              />
             </div>
             <p className="mt-2 text-sm leading-6 text-muted-foreground">{pitch.pitchText}</p>
           </div>
@@ -1005,8 +1046,13 @@ function ModeDataPanel({
             className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm"
             key={bid.id}
           >
-            <span>{compactAddress(bid.workerAgentId ?? bid.workerAddress)}</span>
-            <span className="text-primary">{formatUsdc(bid.price)}</span>
+            <ActorLink
+              address={bid.workerAddress}
+              agentId={bid.workerAgentId}
+              className="hover:text-primary"
+              profileBasePath={profileBasePath}
+            />
+            <span className="text-primary">{formatUsdcUnits(bid.price)}</span>
           </div>
         ))}
 
@@ -1014,11 +1060,15 @@ function ModeDataPanel({
           <div className="grid gap-2 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm">
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">Claim worker</span>
-              <span>{compactAddress(claim.workerAddress)}</span>
+              <ActorLink
+                address={claim.workerAddress}
+                className="hover:text-primary"
+                profileBasePath={profileBasePath}
+              />
             </div>
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">Claim stake</span>
-              <span>{formatUsdc(claim.stakeAmount)}</span>
+              <span>{formatUsdcUnits(claim.stakeAmount)}</span>
             </div>
             <div className="flex justify-between gap-3">
               <span className="text-muted-foreground">Claim status</span>
@@ -1068,10 +1118,24 @@ function DetailMetric({
   );
 }
 
-function SummaryRow({ label, value }: { label: string; value: ReactNode }) {
+function SummaryRow({
+  label,
+  labelTooltip,
+  value,
+}: {
+  label: string;
+  labelTooltip?: string;
+  value: ReactNode;
+}) {
   return (
     <div className="flex min-w-0 items-center justify-between gap-3">
-      <span className="text-muted-foreground">{label}</span>
+      {labelTooltip ? (
+        <InfoTooltip label={labelTooltip}>
+          <span className="text-muted-foreground">{label}</span>
+        </InfoTooltip>
+      ) : (
+        <span className="text-muted-foreground">{label}</span>
+      )}
       <span
         className="min-w-0 truncate text-right"
         title={typeof value === 'string' ? value : undefined}
@@ -1092,7 +1156,7 @@ function SummaryGroup({ children, title }: { children: ReactNode; title: string 
 }
 
 function requirementRows(task: TaskDetailResponse | TaskResponse) {
-  const rows: Array<{ label: string; value: ReactNode }> = [];
+  const rows: Array<{ label: string; labelTooltip?: string; value: ReactNode }> = [];
 
   if (task.mode === 'auction') {
     rows.push({
@@ -1121,7 +1185,12 @@ function requirementRows(task: TaskDetailResponse | TaskResponse) {
   }
 
   if (task.stakeRequired || task.stakeBps > 0) {
-    rows.push({ label: 'Stake', value: `${formatBps(task.stakeBps)} of reward` });
+    rows.push({
+      label: 'Stake',
+      labelTooltip:
+        'Refundable deposit a worker locks up to take the task and gets back on successful delivery.',
+      value: `${formatBps(task.stakeBps)} of reward`,
+    });
   }
 
   if (rows.length === 0) {
@@ -1148,7 +1217,17 @@ function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskRespon
       <div className="divide-y divide-border/52 border-y border-border/52">
         {rows.map((row) => (
           <div className="grid gap-1 py-3" key={row.label}>
-            <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{row.label}</p>
+            {row.labelTooltip ? (
+              <InfoTooltip label={row.labelTooltip}>
+                <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">
+                  {row.label}
+                </p>
+              </InfoTooltip>
+            ) : (
+              <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">
+                {row.label}
+              </p>
+            )}
             <div className="text-sm leading-6 text-foreground">{row.value}</div>
           </div>
         ))}
@@ -1157,7 +1236,13 @@ function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskRespon
   );
 }
 
-function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) {
+function TaskSummaryRail({
+  profileBasePath,
+  task,
+}: {
+  profileBasePath: string;
+  task: TaskDetailResponse | TaskResponse;
+}) {
   const showAuctionPricing = Boolean(
     task.maxPrice ||
     task.currentAuctionPrice ||
@@ -1175,35 +1260,52 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
         <SummaryGroup title="Requester">
           <SummaryRow
             label="Wallet"
-            value={compactAddress(task.requesterAgentId ?? task.requester)}
+            value={
+              <ActorLink
+                address={task.requester}
+                agentId={task.requesterAgentId}
+                className="min-w-0 truncate hover:text-primary"
+                profileBasePath={profileBasePath}
+              />
+            }
           />
         </SummaryGroup>
 
         <SummaryGroup title="Settlement">
           <SummaryRow label="Task ID" value={compactAddress(task.id)} />
-          <SummaryRow label="Escrow tx" value={compactAddress(task.escrowTxHash)} />
-          <SummaryRow label="Platform fee" value={formatBps(task.platformFeeBps)} />
+          <SummaryRow
+            label="Escrow tx"
+            labelTooltip="On-chain transaction that locked the reward in escrow until the work is accepted."
+            value={compactAddress(task.escrowTxHash)}
+          />
+          <SummaryRow
+            label="Platform fee"
+            labelTooltip="Share of the reward kept by Taskmarket when the task settles."
+            value={formatBps(task.platformFeeBps)}
+          />
         </SummaryGroup>
 
         {showAuctionPricing ? (
           <SummaryGroup title="Auction pricing">
             {task.maxPrice ? (
-              <SummaryRow label="Max price" value={formatUsdc(task.maxPrice)} />
+              <SummaryRow label="Max price" value={formatUsdcUnits(task.maxPrice)} />
             ) : null}
             {task.currentAuctionPrice ? (
               <SummaryRow
                 label="Clock price"
-                value={<span className="text-primary">{formatUsdc(task.currentAuctionPrice)}</span>}
+                value={
+                  <span className="text-primary">{formatUsdcUnits(task.currentAuctionPrice)}</span>
+                }
               />
             ) : null}
             {task.currentLowestBid ? (
-              <SummaryRow label="Lowest bid" value={formatUsdc(task.currentLowestBid)} />
+              <SummaryRow label="Lowest bid" value={formatUsdcUnits(task.currentLowestBid)} />
             ) : null}
             {task.auctionStartPrice ? (
-              <SummaryRow label="Start price" value={formatUsdc(task.auctionStartPrice)} />
+              <SummaryRow label="Start price" value={formatUsdcUnits(task.auctionStartPrice)} />
             ) : null}
             {task.auctionFloorPrice ? (
-              <SummaryRow label="Floor price" value={formatUsdc(task.auctionFloorPrice)} />
+              <SummaryRow label="Floor price" value={formatUsdcUnits(task.auctionFloorPrice)} />
             ) : null}
           </SummaryGroup>
         ) : null}
@@ -1230,7 +1332,12 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
               label="Worker"
               value={
                 <span className="flex items-center gap-1.5">
-                  {compactAddress(task.workerAgentId ?? task.worker ?? task.claimedBy)}
+                  <ActorLink
+                    address={task.worker ?? task.claimedBy}
+                    agentId={task.workerAgentId}
+                    className="min-w-0 truncate hover:text-primary"
+                    profileBasePath={profileBasePath}
+                  />
                   {task.workerActorType === 'human' ? (
                     <Badge variant="outline" title="Registered as a human via the web app">
                       human
@@ -1255,12 +1362,18 @@ function TaskSummaryRail({ task }: { task: TaskDetailResponse | TaskResponse }) 
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
   modeData,
+  profileBasePath = '/dashboard/agents',
   task,
 }: {
   backHref?: string;
   modeData?: TaskModeData;
+  profileBasePath?: string;
   task: TaskDetailResponse | TaskResponse;
 }) {
+  const listBase = normalizeBasePath(backHref);
+  const isDashboardSurface = listBase.startsWith('/dashboard');
+  const taskTypesHref = isDashboardSurface ? ('/dashboard/task-types' as Route) : null;
+  const modeHref = taskFiltersHref(listBase, { mode: task.mode }) as Route;
   const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
   const reviewAction =
     task.status === 'pending_approval' && (modeData?.submissions?.length ?? 0) > 0
@@ -1303,7 +1416,7 @@ export function TaskDetailPanel({
             footerLabel="Due"
             footerValue={taskDeadlineLabel(task)}
             label="Reward"
-            value={<span className="text-primary">{formatUsdc(task.reward)}</span>}
+            value={<span className="text-primary">{formatUsdcUnits(task.reward)}</span>}
           />
           <DetailMetric
             footerLabel="Status"
@@ -1315,11 +1428,21 @@ export function TaskDetailPanel({
         <section className="grid gap-5 border-t border-border/58 pt-5">
           <div>
             <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex flex-wrap gap-2">
-                <Badge>{task.mode}</Badge>
+              <div className="flex flex-wrap items-center gap-2">
+                <Link href={modeHref}>
+                  <Badge className="hover:opacity-80">{task.mode}</Badge>
+                </Link>
                 <Badge variant="outline">{labelize(task.status)}</Badge>
                 {task.auctionType ? (
                   <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
+                ) : null}
+                {taskTypesHref ? (
+                  <Link
+                    className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
+                    href={taskTypesHref}
+                  >
+                    How {task.mode} works
+                  </Link>
                 ) : null}
               </div>
               <span className="font-mono text-xs uppercase text-primary">
@@ -1339,16 +1462,23 @@ export function TaskDetailPanel({
             {detailTags.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {detailTags.map((tag) => (
-                  <Badge key={tag} variant="terminal">
-                    {tag}
-                  </Badge>
+                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                    <Badge className="hover:opacity-80" variant="terminal">
+                      {tag}
+                    </Badge>
+                  </Link>
                 ))}
               </div>
             ) : null}
           </div>
         </section>
         {reviewAction ? (
-          <ModeDataPanel modeData={modeData} reviewAction={reviewAction} task={task} />
+          <ModeDataPanel
+            modeData={modeData}
+            profileBasePath={profileBasePath}
+            reviewAction={reviewAction}
+            task={task}
+          />
         ) : null}
         {showNextActions ? (
           <TaskActionsPanel
@@ -1361,10 +1491,12 @@ export function TaskDetailPanel({
           />
         ) : null}
         <WorkRequirementsPanel task={task} />
-        {!reviewAction ? <ModeDataPanel modeData={modeData} task={task} /> : null}
+        {!reviewAction ? (
+          <ModeDataPanel modeData={modeData} profileBasePath={profileBasePath} task={task} />
+        ) : null}
       </div>
       <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
-        <TaskSummaryRail task={task} />
+        <TaskSummaryRail profileBasePath={profileBasePath} task={task} />
         {cancelActions.length > 0 ? (
           <TaskActionsPanel
             claimedBy={task.claimedBy}

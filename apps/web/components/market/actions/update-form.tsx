@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -18,7 +20,7 @@ function currentRewardUsdc(rewardBase: string): string {
   return (Number(rewardBase) / 1_000_000).toFixed(3);
 }
 
-export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
+export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -57,7 +59,7 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
       if (rewardBase !== task.reward) body.reward = rewardBase;
     }
 
-    // expiry — convert hours-from-current-expiry to absolute seconds
+    // expiry - convert hours-from-current-expiry to absolute seconds
     const currentExpirySec = Math.floor(new Date(task.expiryTime).getTime() / 1000);
     if (extendHours.trim().length > 0) {
       const hrs = Number(extendHours);
@@ -114,7 +116,7 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
       return;
     }
     if (Object.keys(body).length === 1) {
-      setError('Nothing to update — change at least one field.');
+      setError('Nothing to update - change at least one field.');
       return;
     }
 
@@ -127,9 +129,20 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const url = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Updated',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -137,7 +150,10 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Updated</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Updated
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -154,11 +170,11 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
 
   const label =
     step === 'payment'
-      ? 'Fetching payment…'
+      ? 'Fetching payment...'
       : step === 'signing'
-        ? 'Sign payment…'
+        ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Updating…'
+          ? 'Updating...'
           : 'Update task';
 
   return (
@@ -166,6 +182,8 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
       <div className="grid gap-1">
         <Label htmlFor="update-reward">Reward (USDC)</Label>
         <Input
+          aria-describedby={fieldErrors.reward ? 'update-reward-error' : undefined}
+          aria-invalid={Boolean(fieldErrors.reward)}
           id="update-reward"
           inputMode="decimal"
           onChange={(e) => setRewardUsdc(e.currentTarget.value)}
@@ -173,12 +191,16 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
           value={rewardUsdc}
         />
         {fieldErrors.reward ? (
-          <p className="text-xs text-destructive">{fieldErrors.reward}</p>
+          <p className="text-xs text-destructive" id="update-reward-error">
+            {fieldErrors.reward}
+          </p>
         ) : null}
       </div>
       <div className="grid gap-1">
         <Label htmlFor="extend-hours">Extend deadline (hours, optional)</Label>
         <Input
+          aria-describedby={fieldErrors.extendHours ? 'extend-hours-error' : undefined}
+          aria-invalid={Boolean(fieldErrors.extendHours)}
           id="extend-hours"
           inputMode="decimal"
           onChange={(e) => setExtendHours(e.currentTarget.value)}
@@ -187,16 +209,21 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
           value={extendHours}
         />
         {fieldErrors.extendHours ? (
-          <p className="text-xs text-destructive">{fieldErrors.extendHours}</p>
+          <p className="text-xs text-destructive" id="extend-hours-error">
+            {fieldErrors.extendHours}
+          </p>
         ) : null}
         <p className="text-xs text-muted-foreground">
-          Current expiry: {new Date(task.expiryTime).toLocaleString()}
+          Current expiry:{' '}
+          {new Date(task.expiryTime).toLocaleString(undefined, { timeZoneName: 'short' })}
         </p>
       </div>
       {task.mode === 'pitch' ? (
         <div className="grid gap-1">
           <Label htmlFor="pitch-extend-hours">Extend pitch deadline (hours, optional)</Label>
           <Input
+            aria-describedby={fieldErrors.pitchExtendHours ? 'pitch-extend-hours-error' : undefined}
+            aria-invalid={Boolean(fieldErrors.pitchExtendHours)}
             id="pitch-extend-hours"
             inputMode="decimal"
             onChange={(e) => setPitchExtendHours(e.currentTarget.value)}
@@ -205,7 +232,9 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
             value={pitchExtendHours}
           />
           {fieldErrors.pitchExtendHours ? (
-            <p className="text-xs text-destructive">{fieldErrors.pitchExtendHours}</p>
+            <p className="text-xs text-destructive" id="pitch-extend-hours-error">
+              {fieldErrors.pitchExtendHours}
+            </p>
           ) : null}
         </div>
       ) : null}
@@ -213,6 +242,8 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
         <div className="grid gap-1">
           <Label htmlFor="bid-extend-hours">Extend bid deadline (hours, optional)</Label>
           <Input
+            aria-describedby={fieldErrors.bidExtendHours ? 'bid-extend-hours-error' : undefined}
+            aria-invalid={Boolean(fieldErrors.bidExtendHours)}
             disabled={auctionLocked}
             id="bid-extend-hours"
             inputMode="decimal"
@@ -223,11 +254,13 @@ export function UpdateForm({ disabled, task }: TaskActionComponentProps) {
           />
           {auctionLocked ? (
             <p className="text-xs text-muted-foreground">
-              Auction has bids — bid deadline can no longer be changed.
+              Auction has bids - bid deadline can no longer be changed.
             </p>
           ) : null}
           {fieldErrors.bidExtendHours ? (
-            <p className="text-xs text-destructive">{fieldErrors.bidExtendHours}</p>
+            <p className="text-xs text-destructive" id="bid-extend-hours-error">
+              {fieldErrors.bidExtendHours}
+            </p>
           ) : null}
         </div>
       ) : null}

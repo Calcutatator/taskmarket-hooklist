@@ -119,6 +119,8 @@ export async function fetchTasks(searchParams?: {
   minReward?: string;
   maxReward?: string;
   deadlineHours?: number;
+  requester?: string;
+  worker?: string;
 }) {
   const params = new URLSearchParams();
   if (searchParams?.status) {
@@ -147,6 +149,12 @@ export async function fetchTasks(searchParams?: {
   }
   if (searchParams?.deadlineHours) {
     params.set('deadlineHours', String(searchParams.deadlineHours));
+  }
+  if (searchParams?.requester) {
+    params.set('requester', searchParams.requester);
+  }
+  if (searchParams?.worker) {
+    params.set('worker', searchParams.worker);
   }
 
   const query = params.toString();
@@ -276,89 +284,3 @@ export async function fetchAgentStats(input: { address?: string; agentId?: strin
     throw error;
   }
 }
-
-export const fallbackTasks: TaskResponse[] = [
-  {
-    bidDeadline: null,
-    claimedAt: null,
-    claimedBy: null,
-    createdAt: new Date(0).toISOString(),
-    description: 'Summarize settlement data and flag duplicate task submissions.',
-    escrowTxHash: '0xreference1',
-    expiryTime: new Date(0).toISOString(),
-    id: 'reference-1',
-    maxPrice: null,
-    metricDescription: null,
-    metricTarget: null,
-    mode: 'bounty',
-    platformFeeBps: 250,
-    pitchDeadline: null,
-    rating: null,
-    requester: '0x8f12A4c661F9b365D408bF4a3Dd079fd9a5E2011',
-    requesterPubkey: '0x8f12A4c661F9b365D408bF4a3Dd079fd9a5E2011',
-    reward: '240000000',
-    pitchCount: 0,
-    status: 'open',
-    stakeBps: 0,
-    stakeRequired: false,
-    submissionCount: 0,
-    tags: ['analysis', 'verification'],
-    worker: null,
-  },
-  {
-    auctionBidCount: 3,
-    auctionType: 'english',
-    bidDeadline: null,
-    claimedAt: null,
-    claimedBy: null,
-    createdAt: new Date(0).toISOString(),
-    description: 'Build a typed parser for agent capability manifests.',
-    escrowTxHash: '0xreference2',
-    expiryTime: new Date(0).toISOString(),
-    id: 'reference-2',
-    maxPrice: null,
-    metricDescription: null,
-    metricTarget: null,
-    mode: 'auction',
-    platformFeeBps: 250,
-    pitchDeadline: null,
-    rating: null,
-    requester: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
-    requesterPubkey: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
-    reward: '850000000',
-    pitchCount: 0,
-    status: 'open',
-    stakeBps: 0,
-    stakeRequired: false,
-    submissionCount: 0,
-    tags: ['typescript', 'agents'],
-    worker: null,
-  },
-  {
-    bidDeadline: null,
-    claimedAt: null,
-    claimedBy: null,
-    createdAt: new Date(0).toISOString(),
-    description: 'Review marketplace flows and prepare a conversion audit.',
-    escrowTxHash: '0xreference3',
-    expiryTime: new Date(0).toISOString(),
-    id: 'reference-3',
-    maxPrice: null,
-    metricDescription: null,
-    metricTarget: null,
-    mode: 'pitch',
-    platformFeeBps: 250,
-    pitchDeadline: null,
-    rating: null,
-    requester: '0x3f6AB9167bb68d542D7936073f2252a77074A2f1',
-    requesterPubkey: '0x3f6AB9167bb68d542D7936073f2252a77074A2f1',
-    reward: '1200000000',
-    pitchCount: 0,
-    status: 'open',
-    stakeBps: 0,
-    stakeRequired: false,
-    submissionCount: 0,
-    tags: ['ux', 'marketplace'],
-    worker: null,
-  },
-];

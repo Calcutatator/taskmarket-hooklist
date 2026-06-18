@@ -16,6 +16,7 @@ import { LiveMarketPulseSection } from '@/components/market/live-market-pulse';
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
 import { taskModeImageSrcByMode } from '@/lib/market/task-mode-config';
+import { skillInstallCommand } from '@/lib/skill';
 
 type LandingStats = {
   agentCount?: number;
@@ -23,7 +24,6 @@ type LandingStats = {
   totalRewards?: string;
 };
 
-const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 const settlementRailAssets = [
   {
     alt: 'USDC coin logo',
@@ -58,288 +58,6 @@ function HeroMetric({ label, value }: { label: string; value: string }) {
       </dt>
       <dd className="font-mono text-xl font-semibold tracking-tight text-foreground">{value}</dd>
     </div>
-  );
-}
-
-function LandingNavbar() {
-  const links = [
-    ['Tasks', '/dashboard/tasks'],
-    ['Agents', '/dashboard/agents'],
-    ['Protocol', '/dashboard/protocol'],
-  ];
-
-  return (
-    <header className="task-market-glass-navbar relative z-[2] w-full bg-background/32 backdrop-blur-2xl">
-      <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
-        <Link className="flex items-center gap-3 pr-3" href="/">
-          <img
-            alt=""
-            aria-hidden="true"
-            className="size-10 shrink-0"
-            height="40"
-            src={taskmarketIconSrc}
-            width="40"
-          />
-          <span className="grid gap-0.5 leading-none">
-            <span className="font-display text-lg font-semibold tracking-tight text-foreground">
-              Taskmarket
-            </span>
-            <span className="hidden font-mono text-[0.64rem] font-semibold uppercase text-primary sm:block">
-              Agent work market
-            </span>
-          </span>
-        </Link>
-        <nav
-          aria-label="Primary"
-          className="hidden items-center rounded-full border border-white/10 bg-white/[0.035] p-1 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)] md:flex"
-        >
-          {links.map(([label, href]) => (
-            <Link
-              className="rounded-full px-3 py-1.5 text-sm font-medium tracking-tight text-muted-foreground transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:bg-white/[0.075] hover:text-foreground hover:shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)]"
-              href={href as Route}
-              key={href}
-            >
-              {label}
-            </Link>
-          ))}
-        </nav>
-        <Button asChild size="sm" variant="terminal">
-          <Link href="/dashboard">Dashboard</Link>
-        </Button>
-      </div>
-    </header>
-  );
-}
-
-function BaseLogo() {
-  return (
-    <svg
-      aria-label="Base Blockchain logo"
-      className="size-5 shrink-0"
-      fill="none"
-      role="img"
-      viewBox="0 0 24 24"
-    >
-      <circle cx="12" cy="12" fill="#0052FF" r="12" />
-      <path
-        d="M12.16 18.9a6.9 6.9 0 1 0 0-13.8 6.9 6.9 0 0 0 0 13.8Zm0-4.05a2.85 2.85 0 1 1 0-5.7h6.1a6.91 6.91 0 0 1 0 5.7h-6.1Z"
-        fill="white"
-      />
-    </svg>
-  );
-}
-
-function UsdcLogo() {
-  return (
-    <svg
-      aria-label="USDC logo"
-      className="size-5 shrink-0"
-      fill="none"
-      role="img"
-      viewBox="0 0 24 24"
-    >
-      <circle cx="12" cy="12" fill="#2775CA" r="12" />
-      <path
-        d="M8.15 15.72a5.9 5.9 0 0 1 0-7.44M15.85 8.28a5.9 5.9 0 0 1 0 7.44"
-        stroke="white"
-        strokeLinecap="round"
-        strokeWidth="1.6"
-      />
-      <path
-        d="M12 6.7v10.6M14.55 9.7c-.18-.85-1.02-1.48-2.37-1.48-1.43 0-2.34.65-2.34 1.63 0 .88.68 1.31 2.22 1.6 1.84.36 2.78.88 2.78 2.1 0 1.05-.97 2.23-2.8 2.23-1.67 0-2.72-.75-2.95-1.8"
-        stroke="white"
-        strokeLinecap="round"
-        strokeLinejoin="round"
-        strokeWidth="1.4"
-      />
-    </svg>
-  );
-}
-
-function LandingFooter({ stats }: { stats: LandingStats }) {
-  const columns = [
-    [
-      'Market',
-      [
-        ['Browse tasks', '/dashboard/tasks'],
-        ['Agents', '/dashboard/agents'],
-        ['Leaderboard', '/dashboard/leaderboard'],
-      ],
-    ],
-    [
-      'Build',
-      [
-        ['Dashboard', '/dashboard'],
-        ['Post task', '/dashboard/tasks/new'],
-        ['skill.md', '/skill.md'],
-      ],
-    ],
-    [
-      'Protocol',
-      [
-        ['Overview', '/dashboard/protocol'],
-        ['Task modes', '/dashboard/task-types'],
-        ['Network', '/dashboard'],
-      ],
-    ],
-  ] as const;
-
-  const ticker = [
-    ['Open tasks', formatNumber(stats.taskCount)],
-    ['Agents online', formatNumber(stats.agentCount)],
-    ['USDC settled', formatUsdcUnits(stats.totalRewards)],
-  ] as const;
-
-  return (
-    <footer
-      className="relative isolate overflow-hidden border-t border-border/58 bg-surface/58 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]"
-      role="contentinfo"
-    >
-      <div
-        aria-label="Live market status"
-        className="flex flex-wrap items-center gap-x-6 gap-y-2 border-b border-border/58 bg-background/44 px-6 py-3 font-mono text-[0.68rem] font-semibold uppercase tracking-widest sm:px-10 lg:px-12"
-        data-testid="footer-status-ticker"
-      >
-        <span className="inline-flex items-center gap-2 text-primary">
-          <span className="relative inline-flex size-2">
-            <span className="absolute inset-0 animate-ping rounded-full bg-primary opacity-75" />
-            <span className="relative inline-flex size-2 rounded-full bg-primary" />
-          </span>
-          Market live
-        </span>
-        {ticker.map(([label, value]) => (
-          <span className="inline-flex items-center gap-2 text-muted-foreground" key={label}>
-            <span className="text-foreground">{value}</span>
-            <span>{label}</span>
-          </span>
-        ))}
-        <span className="ml-auto hidden text-muted-foreground sm:inline">
-          Base · USDC · Settled per accepted result
-        </span>
-      </div>
-
-      <div className="grid grid-cols-[minmax(0,1fr)] border-b border-border/58 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)]">
-        <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-6 border-b border-border/58 p-6 sm:p-10 lg:border-b-0 lg:border-r lg:p-12">
-          <div className="flex items-center gap-4">
-            <img
-              alt=""
-              aria-hidden="true"
-              className="size-12 shrink-0 sm:size-14"
-              height="56"
-              src={taskmarketIconSrc}
-              width="56"
-            />
-            <div className="grid gap-1.5 leading-none">
-              <p className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                Taskmarket
-              </p>
-              <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-primary">
-                Paid agent work, settled onchain
-              </p>
-            </div>
-          </div>
-          <p className="max-w-md text-sm leading-6 text-muted-foreground">
-            One funded task. A market of specialist agents. The first accepted receipt wins —
-            settled in USDC, onchain, within seconds. No subscriptions, no waitlists, no prompt
-            babysitting.
-          </p>
-        </div>
-
-        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3">
-          {columns.map(([title, links], index) => (
-            <div
-              className={`grid grid-cols-[minmax(0,1fr)] content-start gap-4 border-border/58 p-6 sm:p-8 lg:p-12 ${
-                index > 0 ? 'border-t sm:border-l sm:border-t-0' : ''
-              }`}
-              key={title}
-            >
-              <h2 className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-primary">
-                {title}
-              </h2>
-              <nav
-                aria-label={`${title} footer links`}
-                className="grid grid-cols-[minmax(0,1fr)] gap-2.5"
-              >
-                {links.map(([label, href]) =>
-                  href.startsWith('/dashboard') ? (
-                    <Link
-                      className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
-                      href={href as Route}
-                      key={`${label}-${href}`}
-                    >
-                      {label}
-                    </Link>
-                  ) : (
-                    <a
-                      className="w-fit text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
-                      href={href}
-                      key={`${label}-${href}`}
-                    >
-                      {label}
-                    </a>
-                  )
-                )}
-              </nav>
-            </div>
-          ))}
-        </div>
-      </div>
-
-      <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 text-sm sm:px-10 lg:px-12">
-        <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
-          <p className="font-medium tracking-tight text-foreground">
-            Fund work. Route agents. Settle receipts.
-          </p>
-          <a
-            className="font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
-            href="https://daydreams.systems"
-            rel="noreferrer"
-            target="_blank"
-          >
-            made by daydreams.systems
-          </a>
-          <div
-            aria-label="Supported settlement network and token"
-            className="flex items-center gap-2"
-          >
-            <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border/58 bg-background/44 px-3 font-mono text-xs font-semibold text-foreground">
-              <BaseLogo />
-              Base
-            </span>
-            <span className="inline-flex h-8 items-center gap-2 rounded-full border border-border/58 bg-background/44 px-3 font-mono text-xs font-semibold text-foreground">
-              <UsdcLogo />
-              USDC
-            </span>
-          </div>
-        </div>
-        <Link
-          className="inline-flex items-center gap-2 font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
-          href="/dashboard/tasks"
-        >
-          <span>Open task console</span>
-          <ArrowRightIcon className="size-4" />
-        </Link>
-      </div>
-
-      <div
-        aria-hidden="true"
-        className="relative isolate overflow-hidden border-t border-border/58 bg-background/74"
-      >
-        <span
-          className="task-market-cta-dither"
-          style={{
-            ['--dither-color' as string]: 'var(--primary)',
-            ['--dither-opacity' as string]: '0.4',
-          }}
-        />
-        <p
-          className="relative z-[1] select-none px-4 pb-0 pt-6 text-center font-display font-semibold leading-[0.78] tracking-[-0.04em] text-primary/15 sm:px-6 lg:px-8"
-          style={{ fontSize: 'clamp(3.5rem, 22vw, 22rem)' }}
-        >
-          Taskmarket
-        </p>
-      </div>
-    </footer>
   );
 }
 
@@ -489,7 +207,7 @@ function MarketMechanicSection() {
             <Link
               className="group grid min-h-full grid-cols-[minmax(0,1fr)] content-start gap-4 rounded-lg border border-border/62 bg-card/52 p-4 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.045)] outline-none transition-[background-color,border-color,transform] duration-300 ease-[var(--ease-premium)] hover:-translate-y-0.5 hover:border-primary/40 hover:bg-primary/8 active:translate-y-0 focus-visible:ring-2 focus-visible:ring-ring/55 focus-visible:ring-offset-2 focus-visible:ring-offset-background"
               data-task-mode-card={id}
-              href={`/dashboard/tasks?mode=${id}` as Route}
+              href={`/tasks?mode=${id}` as Route}
               key={id}
             >
               <div
@@ -517,7 +235,7 @@ function MarketMechanicSection() {
         <div className="flex justify-center">
           <Button asChild size="lg">
             <Link href="/dashboard/tasks/new">
-              Create task
+              Post a task
               <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
                 <ArrowRightIcon className="size-3.5" />
               </span>
@@ -600,7 +318,7 @@ function AgentSupplySection({
               </Link>
             </Button>
             <Button asChild variant="terminal">
-              <Link href="/dashboard/agents">View agent leaderboard</Link>
+              <Link href="/agents">View agent leaderboard</Link>
             </Button>
           </div>
         </div>
@@ -694,7 +412,7 @@ function AgentSupplySection({
 
             <Link
               className="flex items-center justify-between gap-3 border-t border-border/58 px-4 py-3 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:text-primary"
-              href="/dashboard/agents"
+              href="/leaderboard"
             >
               <span>See full leaderboard</span>
               <ArrowRightIcon className="size-3.5" />
@@ -739,7 +457,7 @@ function FinalCallToActionSection() {
           </div>
           <div className="relative z-[1] grid grid-cols-[minmax(0,1fr)] gap-2">
             <p className="font-display text-4xl font-semibold leading-none tracking-tight sm:text-5xl">
-              Create a task now
+              Post a task
             </p>
             <p className="max-w-md text-sm leading-6 text-primary-foreground/80">
               Post funded work and let agents bid, claim, and ship — settled in USDC onchain.
@@ -791,8 +509,7 @@ export function LandingPageContent({
   tasks: TaskResponse[];
   topAgents?: LeaderboardEntry[];
 }) {
-  const siteUrl = process.env.NEXT_PUBLIC_SITE_URL ?? 'https://taskmarket.example';
-  const skillInstallCommand = `curl -fsSL ${siteUrl}/skill.md -o skill.md`;
+  const installCommand = skillInstallCommand();
 
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background">
@@ -802,7 +519,6 @@ export function LandingPageContent({
       >
         <div aria-hidden="true" className="task-market-hero-backdrop" />
         <HeroDottedWave />
-        <LandingNavbar />
 
         <div className="relative z-[1] mx-auto grid w-full max-w-5xl flex-1 grid-cols-[minmax(0,1fr)] content-center gap-10 px-4 py-12 sm:px-6 lg:px-8 lg:py-16">
           <LandingMotionGroup
@@ -841,7 +557,7 @@ export function LandingPageContent({
             <LandingMotionAction className="inline-flex" motionId="landing-hero-action-post">
               <Button asChild>
                 <Link href="/dashboard/tasks/new">
-                  Post a funded task
+                  Post a task
                   <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">
                     <ArrowRightIcon className="size-3.5" />
                   </span>
@@ -857,7 +573,7 @@ export function LandingPageContent({
 
           <LandingMotionGroup delay={0.5} motionId="landing-hero-install">
             <LandingMotionItem motionId="landing-hero-install-snippet">
-              <SkillInstallSnippet command={skillInstallCommand} />
+              <SkillInstallSnippet command={installCommand} />
             </LandingMotionItem>
           </LandingMotionGroup>
 
@@ -883,16 +599,14 @@ export function LandingPageContent({
         <MarketMechanicSection />
       </LandingMotionSection>
       <LandingMotionSection motionId="landing-section-pulse">
-        <LiveMarketPulseSection initialStats={stats} initialTasks={tasks} />
+        <LiveMarketPulseSection detailBasePath="/tasks" initialStats={stats} initialTasks={tasks} />
       </LandingMotionSection>
       <LandingMotionSection motionId="landing-section-supply">
-        <AgentSupplySection skillInstallCommand={skillInstallCommand} topAgents={topAgents} />
+        <AgentSupplySection skillInstallCommand={installCommand} topAgents={topAgents} />
       </LandingMotionSection>
       <LandingMotionSection motionId="landing-section-final-cta">
         <FinalCallToActionSection />
       </LandingMotionSection>
-
-      <LandingFooter stats={stats} />
     </div>
   );
 }

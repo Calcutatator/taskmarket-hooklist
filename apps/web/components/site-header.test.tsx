@@ -92,6 +92,21 @@ describe('SiteHeader', () => {
     expect(screen.queryByRole('link', { name: /github/i })).not.toBeInTheDocument();
   });
 
+  it('standardizes the primary create-task CTA and renames the skill link', () => {
+    render(<SiteHeader />);
+
+    expect(screen.getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks/new'
+    );
+    expect(screen.queryByRole('link', { name: /^post task$/i })).not.toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /agent skill file/i })).toHaveAttribute(
+      'href',
+      '/skill.md'
+    );
+    expect(screen.queryByRole('link', { name: /^skill\.md$/i })).not.toBeInTheDocument();
+  });
+
   it('names task routes by the active user flow', () => {
     const { rerender } = render(<SiteHeader />);
 
@@ -101,7 +116,7 @@ describe('SiteHeader', () => {
 
     routeState.pathname = '/dashboard/tasks/new';
     rerender(<SiteHeader />);
-    expect(screen.getByRole('heading', { name: /^fund a task$/i })).toBeInTheDocument();
+    expect(screen.getByRole('heading', { name: /^post a task$/i })).toBeInTheDocument();
 
     routeState.pathname = '/dashboard/tasks/0xabc123';
     rerender(<SiteHeader />);

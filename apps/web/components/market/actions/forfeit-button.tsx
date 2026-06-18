@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -12,7 +14,7 @@ import { ConfirmDialog } from './confirm-dialog';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
-export function ForfeitButton({ disabled, task }: TaskActionComponentProps) {
+export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
   const [pending, setPending] = useState(false);
@@ -37,9 +39,19 @@ export function ForfeitButton({ disabled, task }: TaskActionComponentProps) {
     setPending(false);
     if (result.ok) {
       setDone(true);
-      setTxHash(result.data.txHash ?? result.txHash ?? null);
+      const resolvedTxHash = result.data.txHash ?? result.txHash ?? null;
+      setTxHash(resolvedTxHash);
+      onSuccess?.();
+      const url = resolvedTxHash ? explorerTxUrl(resolvedTxHash) : null;
+      toast.success(
+        'Forfeited',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else if (!result.rejected) {
       setError(result.error);
+      toast.error(result.error);
     }
   }
 
@@ -47,7 +59,10 @@ export function ForfeitButton({ disabled, task }: TaskActionComponentProps) {
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Forfeited</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Forfeited
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -66,9 +81,9 @@ export function ForfeitButton({ disabled, task }: TaskActionComponentProps) {
     <div className="grid gap-2">
       <ConfirmDialog
         confirmCta="Forfeit claim"
-        description="Reclaim this task from the current worker because their claim has expired. The task returns to 'open' and any stake is forfeited to you. The contract enforces the expiry — if the worker's claim is still active this will revert."
+        description="Reclaim this task from the current worker because their claim has expired. The task returns to 'open' and any stake is forfeited to you. The contract enforces the expiry - if the worker's claim is still active this will revert."
         disabled={disabled || pending}
-        loadingCta="Forfeiting…"
+        loadingCta="Forfeiting..."
         onConfirm={handleForfeit}
         title="Forfeit this claim?"
       >

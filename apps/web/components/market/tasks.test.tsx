@@ -9,6 +9,21 @@ import type {
 } from '@taskmarket/shared';
 import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
+import { compactAddress } from '@/lib/format';
+
+function compactAddressLabel(value: string) {
+  return compactAddress(value);
+}
+
+const { refreshSpy } = vi.hoisted(() => ({ refreshSpy: vi.fn() }));
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => '/dashboard/tasks',
+  useRouter: () => ({
+    push: vi.fn(),
+    refresh: refreshSpy,
+  }),
+}));
 
 vi.mock('next/link', () => ({
   default: ({
@@ -190,7 +205,7 @@ describe('Task marketplace components', () => {
     expect(taskLinks.at(0)).toHaveAttribute('data-next-link', 'true');
     expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('+25.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('25.000 USDC').length).toBeGreaterThan(0);
 
     rerender(<TaskTable tasks={[]} />);
     expect(screen.getByText(/no open tasks yet/i)).toBeInTheDocument();
@@ -213,8 +228,9 @@ describe('Task marketplace components', () => {
     rerender(<TaskTable tasks={[]} isLoading />);
     expect(screen.getByText(/loading tasks/i)).toBeInTheDocument();
 
-    rerender(<TaskTable tasks={[]} errorMessage="Network failed" />);
+    rerender(<TaskTable listHref="/tasks" tasks={[]} errorMessage="Network failed" />);
     expect(screen.getByRole('alert')).toHaveTextContent('Network failed');
+    expect(screen.getByRole('link', { name: /reload/i })).toHaveAttribute('href', '/tasks');
   });
 
   it('keeps filter links serializable and exposes a clear action', () => {
@@ -294,7 +310,7 @@ describe('Task marketplace components', () => {
     expect(metricCards).toHaveLength(2);
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
-    expect(within(rewardSummary).getByText('+25.000 USDC')).toBeInTheDocument();
+    expect(within(rewardSummary).getByText('25.000 USDC')).toBeInTheDocument();
     expect(within(rewardSummary).getByText(/^due$/i)).toBeInTheDocument();
     const activitySummary = within(metrics).getByRole('article', { name: /bids summary/i });
     expect(within(activitySummary).getByText(/^bids$/i)).toBeInTheDocument();
@@ -318,7 +334,7 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/^research$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/english auction/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/lowest bid/i)).toBeInTheDocument();
-    expect(screen.getAllByText('+12.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
     expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
@@ -1033,6 +1049,113 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/task reference/i)).toBeInTheDocument();
     expect(screen.getByText(/settlement/i)).toBeInTheDocument();
     expect(screen.getByText(/history/i)).toBeInTheDocument();
-    expect(screen.getAllByText('+25.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('25.000 USDC').length).toBeGreaterThan(0);
+  });
+
+  it('links task detail actors to their profiles using the dashboard base path', () => {
+    render(
+      <TaskDetailPanel
+        modeData={{
+          bids: [
+            {
+              createdAt: new Date().toISOString(),
+              id: 'bid-1',
+              price: '12000000',
+              taskId: task.id,
+              workerAddress: '0x2222222222222222222222222222222222222222',
+            },
+          ],
+        }}
+        task={taskDetail}
+      />
+    );
+
+    const requesterLink = screen.getByRole('link', {
+      name: compactAddressLabel(task.requester),
+    });
+    expect(requesterLink).toHaveAttribute(
+      'href',
+      `/dashboard/agents/${encodeURIComponent(task.requester)}`
+    );
+
+    const bidderLink = screen.getByRole('link', {
+      name: compactAddressLabel('0x2222222222222222222222222222222222222222'),
+    });
+    expect(bidderLink).toHaveAttribute(
+      'href',
+      `/dashboard/agents/${encodeURIComponent('0x2222222222222222222222222222222222222222')}`
+    );
+  });
+
+  it('links task detail actors to public agent profiles when given a public base path', () => {
+    render(
+      <TaskDetailPanel
+        backHref="/tasks"
+        modeData={{
+          submissions: [
+            {
+              artifacts: [],
+              fileUrl: 'ipfs://deliverable',
+              id: 'sub-1',
+              signature: '0xsig',
+              submittedAt: new Date().toISOString(),
+              taskId: task.id,
+              workerAddress: '0x3333333333333333333333333333333333333333',
+            },
+          ],
+        }}
+        profileBasePath="/agents"
+        task={{
+          ...taskDetail,
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [],
+        }}
+      />
+    );
+
+    const workerLink = screen.getByRole('link', {
+      name: compactAddressLabel('0x3333333333333333333333333333333333333333'),
+    });
+    expect(workerLink).toHaveAttribute(
+      'href',
+      `/agents/${encodeURIComponent('0x3333333333333333333333333333333333333333')}`
+    );
+  });
+
+  it('links the task mode and tags to filtered task lists', () => {
+    render(
+      <TaskDetailPanel
+        backHref="/dashboard/tasks"
+        modeData={{ bids: [] }}
+        task={{
+          ...taskDetail,
+          tags: ['research', 'analysis'],
+        }}
+      />
+    );
+
+    const modeLink = screen
+      .getAllByText('auction')
+      .map((node) => node.closest('a'))
+      .find((node): node is HTMLAnchorElement => node !== null);
+    expect(modeLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction');
+
+    const tagLink = screen.getByText('research').closest('a');
+    expect(tagLink).toHaveAttribute('href', '/dashboard/tasks?tags=research');
+  });
+
+  it('shows the mode explainer link only on the dashboard surface', () => {
+    const { rerender } = render(
+      <TaskDetailPanel backHref="/dashboard/tasks" modeData={{ bids: [] }} task={taskDetail} />
+    );
+    expect(screen.getByRole('link', { name: /how auction works/i })).toHaveAttribute(
+      'href',
+      '/dashboard/task-types'
+    );
+
+    rerender(<TaskDetailPanel backHref="/tasks" modeData={{ bids: [] }} task={taskDetail} />);
+    expect(screen.queryByRole('link', { name: /how auction works/i })).not.toBeInTheDocument();
   });
 });

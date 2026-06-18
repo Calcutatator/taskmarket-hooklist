@@ -1,10 +1,12 @@
 import type { AgentStats, LeaderboardEntry } from '@taskmarket/shared';
 import { getAgentName } from '@taskmarket/shared';
 import {
+  ArrowLeftIcon,
   BadgeCheckIcon,
   CoinsIcon,
   ExternalLinkIcon,
   InfoIcon,
+  ListChecksIcon,
   MailIcon,
   ShieldCheckIcon,
   StarIcon,
@@ -128,76 +130,152 @@ export function AgentTable({
 
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
-      <Table>
-        <TableHeader>
-          <TableRow>
-            <TableHead>Rank</TableHead>
-            <TableHead>{identityLabel}</TableHead>
-            <TableHead>Skills</TableHead>
-            <TableHead>Tasks</TableHead>
-            <TableHead>Rating</TableHead>
-            <TableHead>
-              <TooltipProvider>
-                <Tooltip>
-                  <TooltipTrigger className="flex items-center gap-1 cursor-default">
-                    Credibility
-                    <InfoIcon className="size-3 text-muted-foreground" />
-                  </TooltipTrigger>
-                  <TooltipContent className="max-w-64">
-                    Credibility reflects how much weight to give a worker's rating. Higher ratings
-                    from more tasks = higher credibility. Leaderboard is sorted by Bayesian-weighted
-                    reputation score.
-                  </TooltipContent>
-                </Tooltip>
-              </TooltipProvider>
-            </TableHead>
-            <TableHead className="text-right">Total earned</TableHead>
-          </TableRow>
-        </TableHeader>
-        <TableBody>
-          {agents.map((agent) => {
-            const label = agent.agentId ?? compactAddress(agent.address);
-            const profileId = agent.agentId ?? agent.address;
+      <ul aria-label={`${identityLabel} cards`} className="grid gap-3 p-3 md:hidden" role="list">
+        {agents.map((agent) => (
+          <AgentMobileCard
+            agent={agent}
+            identityLabel={identityLabel}
+            key={`${agent.rank}-${agent.address}`}
+            profileBasePath={profileBasePath}
+          />
+        ))}
+      </ul>
+      <div className="hidden w-full max-w-full overflow-x-auto md:block">
+        <Table>
+          <TableHeader>
+            <TableRow>
+              <TableHead>Rank</TableHead>
+              <TableHead>{identityLabel}</TableHead>
+              <TableHead>Skills</TableHead>
+              <TableHead>Tasks</TableHead>
+              <TableHead>Rating</TableHead>
+              <TableHead>
+                <TooltipProvider>
+                  <Tooltip>
+                    <TooltipTrigger className="flex items-center gap-1 cursor-default">
+                      Credibility
+                      <InfoIcon className="size-3 text-muted-foreground" />
+                    </TooltipTrigger>
+                    <TooltipContent className="max-w-64">
+                      Credibility reflects how much weight to give a worker's rating. Higher ratings
+                      from more tasks = higher credibility. Leaderboard is sorted by
+                      Bayesian-weighted reputation score.
+                    </TooltipContent>
+                  </Tooltip>
+                </TooltipProvider>
+              </TableHead>
+              <TableHead className="text-right">Total earned</TableHead>
+            </TableRow>
+          </TableHeader>
+          <TableBody>
+            {agents.map((agent) => {
+              const label = agent.agentId ?? compactAddress(agent.address);
+              const profileId = agent.agentId ?? agent.address;
 
-            return (
-              <TableRow key={`${agent.rank}-${agent.address}`}>
-                <TableCell className="font-mono">#{agent.rank}</TableCell>
-                <TableCell>
-                  <Link
-                    className="font-medium hover:text-primary"
-                    href={
-                      `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route
-                    }
-                  >
-                    {label}
-                  </Link>
-                  <p className="mt-1 font-mono text-xs text-muted-foreground">
-                    {compactAddress(agent.address)}
-                  </p>
-                </TableCell>
-                <TableCell>
-                  <div className="flex flex-wrap gap-1">
-                    {agent.skills.slice(0, 3).map((skill) => (
-                      <Badge key={skill} variant="terminal">
-                        {skill}
-                      </Badge>
-                    ))}
-                  </div>
-                </TableCell>
-                <TableCell className="font-mono">{agent.completedTasks}</TableCell>
-                <TableCell className="font-mono">{agent.averageRating.toFixed(1)}</TableCell>
-                <TableCell className="font-mono">
-                  {`${((agent.credibility ?? 0) / 10).toFixed(0)}%`}
-                </TableCell>
-                <TableCell className="text-right font-mono text-primary">
-                  {formatUsdcUnits(agent.totalEarnings)}
-                </TableCell>
-              </TableRow>
-            );
-          })}
-        </TableBody>
-      </Table>
+              return (
+                <TableRow key={`${agent.rank}-${agent.address}`}>
+                  <TableCell className="font-mono">#{agent.rank}</TableCell>
+                  <TableCell>
+                    <Link
+                      className="font-medium hover:text-primary"
+                      href={
+                        `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route
+                      }
+                    >
+                      {label}
+                    </Link>
+                    <p className="mt-1 font-mono text-xs text-muted-foreground">
+                      {compactAddress(agent.address)}
+                    </p>
+                  </TableCell>
+                  <TableCell>
+                    <div className="flex flex-wrap gap-1">
+                      {agent.skills.slice(0, 3).map((skill) => (
+                        <Badge key={skill} variant="terminal">
+                          {skill}
+                        </Badge>
+                      ))}
+                    </div>
+                  </TableCell>
+                  <TableCell className="font-mono">{agent.completedTasks}</TableCell>
+                  <TableCell className="font-mono">{agent.averageRating.toFixed(1)}</TableCell>
+                  <TableCell className="font-mono">
+                    {`${((agent.credibility ?? 0) / 10).toFixed(0)}%`}
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-primary">
+                    {formatUsdcUnits(agent.totalEarnings)}
+                  </TableCell>
+                </TableRow>
+              );
+            })}
+          </TableBody>
+        </Table>
+      </div>
     </div>
+  );
+}
+
+function AgentMobileCard({
+  agent,
+  identityLabel,
+  profileBasePath,
+}: {
+  agent: LeaderboardEntry;
+  identityLabel: string;
+  profileBasePath: string;
+}) {
+  const label = agent.agentId ?? compactAddress(agent.address);
+  const profileId = agent.agentId ?? agent.address;
+  const profileHref = `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}`;
+  const credibilityLabel = `${((agent.credibility ?? 0) / 10).toFixed(0)}%`;
+
+  return (
+    <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
+      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
+        <span className="font-mono text-xs text-muted-foreground">#{agent.rank}</span>
+        <div className="min-w-0">
+          <Link
+            className="block truncate text-base font-semibold leading-6 text-foreground hover:text-primary"
+            href={profileHref as Route}
+          >
+            {label}
+          </Link>
+          <p className="mt-1 truncate font-mono text-xs text-muted-foreground">
+            {compactAddress(agent.address)}
+          </p>
+          {agent.skills.length ? (
+            <div className="mt-2 flex flex-wrap gap-1">
+              {agent.skills.slice(0, 3).map((skill) => (
+                <Badge key={skill} variant="terminal">
+                  {skill}
+                </Badge>
+              ))}
+            </div>
+          ) : null}
+        </div>
+      </div>
+      <dl className="grid grid-cols-2 gap-3 text-sm">
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Rating</dt>
+          <dd className="mt-1 font-mono text-foreground">{agent.averageRating.toFixed(1)}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Credibility</dt>
+          <dd className="mt-1 font-mono text-foreground">{credibilityLabel}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Tasks</dt>
+          <dd className="mt-1 font-mono text-foreground">{agent.completedTasks}</dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Total earned</dt>
+          <dd className="mt-1 font-mono text-primary">{formatUsdcUnits(agent.totalEarnings)}</dd>
+        </div>
+      </dl>
+      <Button asChild className="w-full sm:w-fit" variant="outline">
+        <Link href={profileHref as Route}>View {identityLabel.toLowerCase()}</Link>
+      </Button>
+    </li>
   );
 }
 
@@ -386,9 +464,11 @@ export function AgentLeaderboardPanel({
 export function AgentProfilePanel({
   agent,
   taskBasePath = '/dashboard/tasks',
+  directoryBasePath = '/dashboard/agents',
 }: {
   agent: AgentStats | LeaderboardEntry;
   taskBasePath?: string;
+  directoryBasePath?: string;
 }) {
   const label = agent.agentId
     ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
@@ -422,8 +502,30 @@ export function AgentProfilePanel({
     2
   );
 
+  const tasksWorkedHref = agent.address
+    ? (`${normalizeBasePath(taskBasePath)}?worker=${encodeURIComponent(agent.address)}` as Route)
+    : null;
+
   return (
     <div className="grid gap-6">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <Link
+          className="inline-flex w-fit items-center gap-1.5 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:text-primary"
+          href={normalizeBasePath(directoryBasePath) as Route}
+        >
+          <ArrowLeftIcon className="size-3.5" />
+          Back to agents
+        </Link>
+        {tasksWorkedHref ? (
+          <Link
+            className="inline-flex w-fit items-center gap-1.5 font-mono text-xs font-semibold uppercase text-muted-foreground transition-colors hover:text-primary"
+            href={tasksWorkedHref}
+          >
+            <ListChecksIcon className="size-3.5" />
+            Tasks worked by this agent
+          </Link>
+        ) : null}
+      </div>
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="overflow-hidden">
           <CardContent className="grid gap-7 pt-0">
@@ -434,7 +536,22 @@ export function AgentProfilePanel({
                   <div className="flex flex-wrap items-center gap-2">
                     {rank ? <Badge>Rank #{rank}</Badge> : null}
                     <Badge variant="outline">{ratingLabel} rating</Badge>
-                    {agent.agentId ? <Badge variant="terminal">ERC-8004 identity</Badge> : null}
+                    {agent.agentId ? (
+                      <TooltipProvider>
+                        <Tooltip>
+                          <TooltipTrigger aria-label="What is ERC-8004" className="cursor-default">
+                            <Badge variant="terminal">
+                              ERC-8004 identity
+                              <InfoIcon className="size-3 text-muted-foreground" />
+                            </Badge>
+                          </TooltipTrigger>
+                          <TooltipContent className="max-w-64">
+                            ERC-8004 is an on-chain identity standard - this agent has a verifiable,
+                            portable identity registered on-chain.
+                          </TooltipContent>
+                        </Tooltip>
+                      </TooltipProvider>
+                    ) : null}
                   </div>
                   <h1 className="mt-3 break-words font-display text-3xl font-semibold leading-tight tracking-tight text-foreground sm:text-4xl">
                     {label}
@@ -480,7 +597,23 @@ export function AgentProfilePanel({
                     ) : null
                   }
                   copyLabel="Copy agent ID"
-                  label="ERC-8004"
+                  label={
+                    <TooltipProvider>
+                      <Tooltip>
+                        <TooltipTrigger
+                          aria-label="What is ERC-8004"
+                          className="flex items-center gap-1 cursor-default uppercase"
+                        >
+                          ERC-8004
+                          <InfoIcon className="size-3 text-muted-foreground" />
+                        </TooltipTrigger>
+                        <TooltipContent className="max-w-64 normal-case">
+                          ERC-8004 is an on-chain identity standard - this token is the agent's
+                          verifiable, portable on-chain identity.
+                        </TooltipContent>
+                      </Tooltip>
+                    </TooltipProvider>
+                  }
                   value={`token #${agent.agentId}`}
                   valueToCopy={agent.agentId}
                 />
@@ -664,7 +797,7 @@ function IdentityRow({
   action?: ReactNode;
   copyLabel?: string;
   icon?: ReactNode;
-  label: string;
+  label: ReactNode;
   value: string;
   valueToCopy?: string;
 }) {

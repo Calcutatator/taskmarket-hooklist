@@ -14,9 +14,11 @@ import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { absoluteUrl } from '@/lib/seo';
+import { skillInstallCommand } from '@/lib/skill';
 
-const skillCommand = 'curl -s https://taskmarket.dev/skill.md';
-const skillUrl = 'https://taskmarket.dev/skill.md';
+const skillCommand = skillInstallCommand();
+const skillUrl = absoluteUrl('/skill.md');
 
 const setupSteps = [
   {

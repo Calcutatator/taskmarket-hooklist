@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -9,6 +11,7 @@ import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
+import { ConfirmDialog } from './confirm-dialog';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
@@ -28,7 +31,7 @@ function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
 
-export function AcceptButton({ action, disabled, task }: TaskActionComponentProps) {
+export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -51,12 +54,6 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
       setError('No worker on this task');
       return;
     }
-    const confirmed = window.confirm(
-      `Release ${formatUsdcUnits(task.reward)} to ${workerLabel}? This accepts the deliverable and cannot be undone.`
-    );
-    if (!confirmed) {
-      return;
-    }
     setError(null);
     const result = await payX402Post<{ txHash?: string }>(
       `/api/tasks/${task.id}/accept`,
@@ -67,9 +64,20 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const url = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Payout released',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -77,7 +85,10 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">Payout released</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Payout released
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -92,20 +103,20 @@ export function AcceptButton({ action, disabled, task }: TaskActionComponentProp
     );
   }
 
-  const label =
-    step === 'payment'
-      ? 'Fetching payment terms...'
-      : step === 'signing'
-        ? 'Sign payment...'
-        : step === 'submitting'
-          ? 'Releasing payout...'
-          : `Release payout`;
-
   return (
     <div className="grid gap-2">
-      <Button disabled={blocked} onClick={handleAccept} size="sm">
-        {label}
-      </Button>
+      <ConfirmDialog
+        confirmCta="Release payout"
+        description={`Release ${formatUsdcUnits(task.reward)} to ${workerLabel}. This accepts the deliverable and cannot be undone.`}
+        disabled={blocked}
+        loadingCta="Releasing..."
+        onConfirm={handleAccept}
+        title="Release payout?"
+      >
+        <Button disabled={blocked} size="sm">
+          Release payout
+        </Button>
+      </ConfirmDialog>
       <p className="text-xs leading-5 text-muted-foreground">
         Accepts the deliverable and releases {formatUsdcUnits(task.reward)} to {workerLabel}. Costs
         0.001 USDC.

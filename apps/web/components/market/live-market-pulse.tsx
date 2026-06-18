@@ -1,7 +1,7 @@
 'use client';
 
 import type { TaskResponse } from '@taskmarket/shared';
-import { AnimatePresence, motion } from 'motion/react';
+import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
 
 import { LiveTetrisBackground } from '@/components/market/live-tetris-background';
 import { Badge } from '@/components/ui/badge';
@@ -16,6 +16,13 @@ type LandingStats = {
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
 
+function useMotionDisabled() {
+  const isJsdom =
+    typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
+
+  return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
+}
+
 function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
 }
@@ -26,49 +33,61 @@ function taskTitle(task: TaskResponse) {
 }
 
 function PulseStat({ label, value }: { label: string; value: string }) {
+  const motionDisabled = useMotionDisabled();
+
   return (
     <div className="grid grid-cols-[minmax(0,1fr)] gap-1 border-l border-border/58 bg-card/44 px-3 py-2 first:border-l-0">
       <p className="font-mono text-[0.65rem] font-semibold uppercase text-muted-foreground">
         {label}
       </p>
-      <AnimatePresence mode="popLayout">
-        <motion.span
-          animate={{ opacity: 1, y: 0 }}
-          className="block font-mono text-2xl font-semibold text-foreground"
-          exit={{ opacity: 0, y: -8 }}
-          initial={{ opacity: 0, y: 8 }}
-          key={value}
-          transition={{ duration: 0.4, ease: easeOut }}
-        >
-          {value}
-        </motion.span>
-      </AnimatePresence>
+      {motionDisabled ? (
+        <span className="block font-mono text-2xl font-semibold text-foreground">{value}</span>
+      ) : (
+        <AnimatePresence mode="popLayout">
+          <motion.span
+            animate={{ opacity: 1, y: 0 }}
+            className="block font-mono text-2xl font-semibold text-foreground"
+            exit={{ opacity: 0, y: -8 }}
+            initial={{ opacity: 0, y: 8 }}
+            key={value}
+            transition={{ duration: 0.4, ease: easeOut }}
+          >
+            {value}
+          </motion.span>
+        </AnimatePresence>
+      )}
     </div>
   );
 }
 
 function AnimatedCount({ label, value }: { label: string; value: number }) {
+  const motionDisabled = useMotionDisabled();
+
   return (
     <span className="inline-flex items-center gap-1 font-mono text-[0.7rem] uppercase text-muted-foreground">
-      <AnimatePresence mode="popLayout">
-        <motion.span
-          animate={{ opacity: 1, y: 0 }}
-          className="inline-block font-semibold text-foreground"
-          exit={{ opacity: 0, y: -6 }}
-          initial={{ opacity: 0, y: 6 }}
-          key={value}
-          transition={{ duration: 0.3, ease: easeOut }}
-        >
-          {formatNumber(value)}
-        </motion.span>
-      </AnimatePresence>
+      {motionDisabled ? (
+        <span className="inline-block font-semibold text-foreground">{formatNumber(value)}</span>
+      ) : (
+        <AnimatePresence mode="popLayout">
+          <motion.span
+            animate={{ opacity: 1, y: 0 }}
+            className="inline-block font-semibold text-foreground"
+            exit={{ opacity: 0, y: -6 }}
+            initial={{ opacity: 0, y: 6 }}
+            key={value}
+            transition={{ duration: 0.3, ease: easeOut }}
+          >
+            {formatNumber(value)}
+          </motion.span>
+        </AnimatePresence>
+      )}
       <span>{label}</span>
     </span>
   );
 }
 
-function TaskPulseCard({ task }: { task: TaskResponse }) {
-  const href = `/dashboard/tasks/${task.id}`;
+function TaskPulseCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
+  const href = `${detailBasePath}/${task.id}`;
   const modeLabel = task.auctionType
     ? `${labelize(task.auctionType)} auction`
     : labelize(task.mode);
@@ -122,9 +141,11 @@ function TaskPulseCard({ task }: { task: TaskResponse }) {
 }
 
 export function LiveMarketPulseSection({
+  detailBasePath = '/tasks',
   initialStats,
   initialTasks,
 }: {
+  detailBasePath?: string;
   initialTasks: TaskResponse[];
   initialStats: LandingStats;
 }) {
@@ -182,7 +203,7 @@ export function LiveMarketPulseSection({
             data-testid="live-market-task-list"
           >
             {visibleTasks.map((task) => (
-              <TaskPulseCard key={task.id} task={task} />
+              <TaskPulseCard detailBasePath={detailBasePath} key={task.id} task={task} />
             ))}
           </ul>
         )}

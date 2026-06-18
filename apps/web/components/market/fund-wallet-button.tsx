@@ -3,7 +3,9 @@
 import { useEffect, useState } from 'react';
 import { IconCoin } from '@tabler/icons-react';
 import { useFiatOnramp } from '@privy-io/react-auth';
+import { useAccount } from 'wagmi';
 
+import { CopyButton } from '@/components/market/copy-button';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { isPrivyConfigured } from '@/lib/privy-config';
@@ -158,11 +160,44 @@ export function usePaidActionFundingPrompt({
   };
 }
 
+function HowToFundFallback({
+  address,
+  className,
+  fullWidth = false,
+}: {
+  address?: string | null;
+  className?: string;
+  fullWidth?: boolean;
+}) {
+  const account = useAccount();
+  const fundingAddress = address ?? account.address ?? null;
+
+  if (!fundingAddress) {
+    return null;
+  }
+
+  return (
+    <div className={cn(fullWidth ? 'grid w-full' : 'inline-grid w-fit', 'gap-2', className)}>
+      <p className="text-xs leading-5 text-muted-foreground">
+        Send USDC on Base to this address to fund your wallet.
+      </p>
+      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border/68 bg-background/48 px-3 py-2">
+        <span className="min-w-0 break-all font-mono text-xs text-foreground">
+          {fundingAddress}
+        </span>
+        <CopyButton label="Copy wallet address" text={fundingAddress} />
+      </div>
+    </div>
+  );
+}
+
 export function FundWalletButton(props: FundWalletButtonProps) {
   const { buttonClassName, className, fullWidth, label, size, variant } = props;
 
   if (!isPrivyFiatOnboardingEnabled()) {
-    return null;
+    return (
+      <HowToFundFallback address={props.address} className={className} fullWidth={fullWidth} />
+    );
   }
 
   if (!isPrivyConfigured()) {
@@ -176,7 +211,7 @@ export function FundWalletButton(props: FundWalletButtonProps) {
           variant={variant ?? 'outline'}
         >
           <IconCoin className="size-4" />
-          {label ?? 'Add USDC'}
+          <span className="hidden xl:inline">{label ?? 'Add USDC'}</span>
         </Button>
       </div>
     );
@@ -251,7 +286,7 @@ function FundWalletButtonInner({
         variant={variant}
       >
         <IconCoin className="size-4" />
-        {busy ? 'Opening funding' : label}
+        <span className="hidden xl:inline">{busy ? 'Opening funding' : label}</span>
       </Button>
       {message ? <p className="text-xs leading-5 text-muted-foreground">{message}</p> : null}
       {error ? (

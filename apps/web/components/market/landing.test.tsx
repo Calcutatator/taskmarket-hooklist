@@ -90,30 +90,17 @@ function renderLanding(props?: {
 }
 
 describe('LandingPageContent', () => {
-  it('links the navbar and primary buyer actions into market destinations', () => {
+  it('links the primary buyer actions into market destinations', () => {
     const { container } = renderLanding();
 
-    const header = container.querySelector('header');
-    const primaryNav = screen.getByRole('navigation', { name: /primary/i });
-
-    expect(header).not.toBeNull();
-    expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
-    expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks'
-    );
-    expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/agents'
-    );
-    expect(within(primaryNav).getByRole('link', { name: /^protocol$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/protocol'
-    );
-    expect(
-      within(header as HTMLElement).getByRole('link', { name: /^dashboard$/i })
-    ).toHaveAttribute('href', '/dashboard');
-    expect(screen.getByRole('link', { name: /^post a funded task$/i })).toHaveAttribute(
+    // The shared navbar/header now lives in the public route-group layout, not
+    // in LandingPageContent.
+    expect(container.querySelector('header')).toBeNull();
+    expect(screen.queryByRole('navigation', { name: /primary/i })).not.toBeInTheDocument();
+    const heroAction = container.querySelector(
+      '[data-motion="landing-hero-action-post"]'
+    ) as HTMLElement;
+    expect(within(heroAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks/new'
     );
@@ -127,7 +114,7 @@ describe('LandingPageContent', () => {
       )
     ).toBeVisible();
     expect(
-      screen.getAllByText('curl -fsSL https://taskmarket.example/skill.md -o skill.md').length
+      screen.getAllByText('curl -fsSL http://localhost:3001/skill.md -o skill.md').length
     ).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: /copy skill install command/i }).length).toBe(2);
     expect(screen.queryByRole('link', { name: /read protocol/i })).not.toBeInTheDocument();
@@ -245,7 +232,7 @@ describe('LandingPageContent', () => {
       within(taskCards[0] as HTMLElement).getByRole('link', {
         name: /build a typed parser for agent capability manifests\. 1/i,
       })
-    ).toHaveAttribute('href', '/dashboard/tasks/live-auction-1');
+    ).toHaveAttribute('href', '/tasks/live-auction-1');
     expect(within(taskCards[0] as HTMLElement).getByText('850.000 USDC')).toBeVisible();
     expect(within(taskCards[0] as HTMLElement).getByText(/english auction/i)).toBeVisible();
     expect(within(taskCards[0] as HTMLElement).getByText(/^typescript$/i)).toBeVisible();
@@ -313,7 +300,7 @@ describe('LandingPageContent', () => {
     ).toBe('/auction.png');
     expect(screen.queryByRole('link', { name: /compare task modes/i })).not.toBeInTheDocument();
     expect(
-      within(mechanicsSection as HTMLElement).getByRole('link', { name: /create task/i })
+      within(mechanicsSection as HTMLElement).getByRole('link', { name: /^post a task$/i })
     ).toHaveAttribute('href', '/dashboard/tasks/new');
   });
 
@@ -354,7 +341,7 @@ describe('LandingPageContent', () => {
     expect(screen.getByText('1,825.000 USDC')).toBeVisible();
     expect(
       within(supplySectionElement).getByText(
-        'curl -fsSL https://taskmarket.example/skill.md -o skill.md'
+        'curl -fsSL http://localhost:3001/skill.md -o skill.md'
       )
     ).toBeVisible();
     expect(
@@ -362,36 +349,25 @@ describe('LandingPageContent', () => {
     ).toHaveAttribute('href', '/dashboard/for-agents');
     expect(
       within(supplySectionElement).getByRole('link', { name: /see full leaderboard/i })
-    ).toHaveAttribute('href', '/dashboard/agents');
+    ).toHaveAttribute('href', '/leaderboard');
+    expect(
+      within(supplySectionElement).getByRole('link', { name: /view agent leaderboard/i })
+    ).toHaveAttribute('href', '/agents');
   });
 
-  it('drops the duplicate action section and finishes with the footer', () => {
+  it('drops the duplicate action section and delegates the footer to the layout', () => {
     renderLanding({ tasks: [liveTask] });
 
     expect(screen.queryByRole('heading', { name: /post the outcome/i })).not.toBeInTheDocument();
     expect(screen.queryByText(/^Post the outcome\.$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^Bring an agent\.$/i)).not.toBeInTheDocument();
 
-    const footer = screen.getByRole('contentinfo');
-
-    expect(within(footer).getByRole('link', { name: /browse tasks/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks'
-    );
-    expect(within(footer).getByRole('link', { name: /skill\.md/i })).toHaveAttribute(
-      'href',
-      '/skill.md'
-    );
-    expect(within(footer).getByRole('link', { name: /open task console/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks'
-    );
+    // The shared footer now lives in the public route-group layout, so
+    // LandingPageContent no longer renders its own contentinfo region.
+    expect(screen.queryByRole('contentinfo')).not.toBeInTheDocument();
     expect(
-      within(footer).getByRole('link', { name: /made by daydreams\.systems/i })
-    ).toHaveAttribute('href', 'https://daydreams.systems');
-    expect(within(footer).getByRole('img', { name: /base blockchain logo/i })).toBeVisible();
-    expect(within(footer).getByRole('img', { name: /usdc logo/i })).toBeVisible();
-    expect(within(footer).getByText(/fund work\. route agents\. settle receipts\./i)).toBeVisible();
+      screen.queryByText(/fund work\. route agents\. settle receipts\./i)
+    ).not.toBeInTheDocument();
   });
 
   it('renders a direct empty market state when no live tasks exist', () => {

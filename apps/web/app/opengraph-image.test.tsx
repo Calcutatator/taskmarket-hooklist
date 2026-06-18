@@ -15,7 +15,7 @@ import AgentImage, {
   contentType as agentContentType,
   runtime as agentRuntime,
   size as agentSize,
-} from './agents/[agentId]/opengraph-image';
+} from './(public)/agents/[agentId]/opengraph-image';
 import DashboardAgentImage, {
   alt as dashboardAgentAlt,
   contentType as dashboardAgentContentType,
@@ -33,7 +33,7 @@ import TaskImage, {
   contentType as taskContentType,
   runtime as taskRuntime,
   size as taskSize,
-} from './tasks/[taskId]/opengraph-image';
+} from './(public)/tasks/[taskId]/opengraph-image';
 
 vi.mock('next/og', () => ({
   ImageResponse: vi.fn(function ImageResponse(

@@ -10,6 +10,31 @@ const staticEntries: MetadataRoute.Sitemap = [
     priority: 1,
     url: absoluteUrl('/'),
   },
+  {
+    changeFrequency: 'hourly',
+    priority: 0.9,
+    url: absoluteUrl('/tasks'),
+  },
+  {
+    changeFrequency: 'daily',
+    priority: 0.8,
+    url: absoluteUrl('/agents'),
+  },
+  {
+    changeFrequency: 'daily',
+    priority: 0.7,
+    url: absoluteUrl('/leaderboard'),
+  },
+  {
+    changeFrequency: 'weekly',
+    priority: 0.6,
+    url: absoluteUrl('/protocol'),
+  },
+  {
+    changeFrequency: 'daily',
+    priority: 0.6,
+    url: absoluteUrl('/humans'),
+  },
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

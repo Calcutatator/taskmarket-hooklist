@@ -2,33 +2,86 @@ import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { FundWalletButton } from './fund-wallet-button';
+import { FundingGuard, FundWalletButton } from './fund-wallet-button';
 
-const { fund } = vi.hoisted(() => ({
+const { fund, walletState } = vi.hoisted(() => ({
   fund: vi.fn(),
+  walletState: {
+    address: undefined as `0x${string}` | undefined,
+    isConnected: false,
+  },
 }));
 
 vi.mock('@privy-io/react-auth', () => ({
   useFiatOnramp: () => ({ fund }),
 }));
 
+vi.mock('wagmi', () => ({
+  useAccount: () => ({
+    address: walletState.address,
+    isConnected: walletState.isConnected,
+  }),
+}));
+
 describe('FundWalletButton', () => {
   beforeEach(() => {
     fund.mockReset();
+    walletState.address = undefined;
+    walletState.isConnected = false;
     vi.unstubAllEnvs();
     vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
     vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'true');
   });
 
-  it('hides fiat onboarding when the public feature flag is disabled', () => {
+  it('shows a how-to-fund fallback when the fiat onboarding flag is disabled', () => {
     vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'false');
 
-    const { container } = render(
-      <FundWalletButton address="0x1234567890abcdef1234567890abcdef12345678" />
-    );
+    render(<FundWalletButton address="0x1234567890abcdef1234567890abcdef12345678" />);
+
+    expect(screen.queryByRole('button', { name: /add usdc/i })).not.toBeInTheDocument();
+    expect(screen.getByText(/send usdc on base to this address/i)).toBeInTheDocument();
+    expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy/i })).toBeInTheDocument();
+  });
+
+  it('falls back to the connected wagmi address when no address prop is provided', () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'false');
+    walletState.address = '0xabcabcabcabcabcabcabcabcabcabcabcabcabca';
+    walletState.isConnected = true;
+
+    render(<FundWalletButton />);
+
+    expect(screen.getByText('0xabcabcabcabcabcabcabcabcabcabcabcabcabca')).toBeInTheDocument();
+  });
+
+  it('renders nothing in the fallback when there is no wallet address', () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'false');
+
+    const { container } = render(<FundWalletButton />);
 
     expect(container).toBeEmptyDOMElement();
-    expect(screen.queryByRole('button', { name: /add usdc/i })).not.toBeInTheDocument();
+  });
+
+  it('surfaces the how-to-fund fallback inside FundingGuard when the flag is off', () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'false');
+
+    render(
+      <FundingGuard
+        address="0x1234567890abcdef1234567890abcdef12345678"
+        message="Add funds before signing."
+      />
+    );
+
+    expect(screen.getByText('Add funds before signing.')).toBeInTheDocument();
+    expect(screen.getByText(/send usdc on base to this address/i)).toBeInTheDocument();
+    expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
+  });
+
+  it('hides the on-ramp label below xl while keeping it for screen readers', () => {
+    render(<FundWalletButton address="0x1234567890abcdef1234567890abcdef12345678" />);
+
+    const label = screen.getByText('Add USDC');
+    expect(label).toHaveClass('hidden', 'xl:inline');
   });
 
   it('starts a Privy fiat onramp flow for Base USDC', async () => {

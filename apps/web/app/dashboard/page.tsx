@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import Link from 'next/link';
 
 import { AgentTable } from '@/components/market/agents';
+import { FirstRunChecklist } from '@/components/market/first-run-checklist';
 import { TaskTable } from '@/components/market/tasks';
 import { SectionCards } from '@/components/section-cards';
 import { Button } from '@/components/ui/button';
@@ -27,6 +28,7 @@ export default async function Page() {
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          {taskStats.count === 0 ? <FirstRunChecklist /> : null}
           <SectionCards
             agentCount={agentCount}
             openTaskCount={openTasks.tasks.length}

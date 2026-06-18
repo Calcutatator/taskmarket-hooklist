@@ -1,11 +1,15 @@
+import { compactAddress } from '@/lib/format';
+
 export type TaskSearchParams = {
   actor?: string;
   deadlineHours?: string;
   maxReward?: string;
   minReward?: string;
   mode?: string;
+  requester?: string;
   status?: string;
   tags?: string;
+  worker?: string;
 };
 
 export type ActiveFilter = {
@@ -20,11 +24,13 @@ export type ParsedTaskFilters = {
   maxReward?: string;
   minReward?: string;
   mode?: string;
+  requester?: string;
   selectedActor: 'ALL' | 'agent' | 'human';
   selectedMode: string;
   selectedStatus: string;
   status?: string;
   tags?: string[];
+  worker?: string;
 };
 
 function labelize(value: string) {
@@ -79,6 +85,12 @@ export function parseTaskFilters(
   if (params.actor && params.actor !== 'ALL') {
     activeFilters.push({ label: 'Actor', value: labelize(params.actor) });
   }
+  if (params.requester) {
+    activeFilters.push({ label: 'Requester', value: compactAddress(params.requester) });
+  }
+  if (params.worker) {
+    activeFilters.push({ label: 'Worker', value: compactAddress(params.worker) });
+  }
 
   const actor = params.actor === 'agent' || params.actor === 'human' ? params.actor : undefined;
 
@@ -89,11 +101,13 @@ export function parseTaskFilters(
     maxReward: toBaseUnits(params.maxReward),
     minReward: toBaseUnits(params.minReward),
     mode: params.mode,
+    requester: params.requester,
     selectedActor: actor ?? 'ALL',
     selectedMode: params.mode ?? 'ALL',
     selectedStatus: status ?? 'ALL',
     status: status === 'ALL' ? undefined : status,
     tags: parseTags(params.tags),
+    worker: params.worker,
   };
 }
 
@@ -125,6 +139,12 @@ export function taskFiltersHref(
   }
   if (next.actor && next.actor !== 'ALL') {
     params.set('actor', next.actor);
+  }
+  if (next.requester) {
+    params.set('requester', next.requester);
+  }
+  if (next.worker) {
+    params.set('worker', next.worker);
   }
 
   const normalized = normalizeBasePath(basePath);

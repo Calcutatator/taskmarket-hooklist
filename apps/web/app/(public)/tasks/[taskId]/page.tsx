@@ -50,7 +50,12 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <TaskDetailPanel backHref="/tasks" modeData={modeData} task={task} />
+      <TaskDetailPanel
+        backHref="/tasks"
+        modeData={modeData}
+        profileBasePath="/agents"
+        task={task}
+      />
     </div>
   );
 }

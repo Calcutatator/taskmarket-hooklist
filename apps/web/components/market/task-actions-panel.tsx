@@ -2,6 +2,7 @@
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { Terminal } from 'lucide-react';
+import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 
 import { COMPONENT_BY_ACTION } from '@/components/market/actions';
@@ -83,6 +84,7 @@ export function TaskActionsPanel({
   worker,
 }: TaskActionPanelProps) {
   const { address } = useAccount();
+  const router = useRouter();
   const visibleActions = pendingActions.filter((action) =>
     canViewAction({ action, address, claimedBy, requester, worker })
   );
@@ -141,13 +143,14 @@ export function TaskActionsPanel({
                   <Component
                     action={action}
                     disabled={blockedByFunding || (!canRun && Boolean(address))}
+                    onSuccess={() => router.refresh()}
                     task={task}
                   />
                 </div>
                 <details className="min-w-0">
                   <summary
                     aria-label={`Show ${action.action} command`}
-                    className="ml-auto flex size-7 cursor-pointer list-none items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-[color,background-color,border-color,opacity] duration-200 hover:border-border/58 hover:bg-background/52 hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none [&::-webkit-details-marker]:hidden"
+                    className="ml-auto flex size-11 cursor-pointer list-none items-center justify-center rounded-full border border-transparent text-muted-foreground/40 transition-[color,background-color,border-color,opacity] duration-200 hover:border-border/58 hover:bg-background/52 hover:text-muted-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none md:size-7 [&::-webkit-details-marker]:hidden"
                     title="Show command"
                   >
                     <Terminal aria-hidden="true" className="size-3.5" />

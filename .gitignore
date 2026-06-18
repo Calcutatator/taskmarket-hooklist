@@ -58,3 +58,6 @@ Thumbs.db
 
 #Uploads
 apps/backend/uploads/
+
+# Claude tooling cache
+.claude/tsc-cache/

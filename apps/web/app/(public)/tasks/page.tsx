@@ -1,7 +1,7 @@
 import type { Metadata } from 'next';
 
 import { TaskListPageContent } from '@/components/market/tasks';
-import { fetchTasks } from '@/lib/api/server';
+import { ApiConnectionError, fetchTasks } from '@/lib/api/server';
 import { parseTaskFilters } from '@/lib/market/task-filters';
 import { buildPageMetadata } from '@/lib/seo';
 
@@ -19,24 +19,39 @@ type TasksPageProps = {
     maxReward?: string;
     minReward?: string;
     mode?: string;
+    requester?: string;
     status?: string;
     tags?: string;
+    worker?: string;
   }>;
 };
 
 export default async function TasksPage({ searchParams }: TasksPageProps) {
   const params = await searchParams;
   const filters = parseTaskFilters(params);
-  const taskList = await fetchTasks({
-    deadlineHours: filters.deadlineHours,
-    limit: 40,
-    maxReward: filters.maxReward,
-    minReward: filters.minReward,
-    mode: filters.mode,
-    requesterActorType: filters.actor,
-    status: filters.status,
-    tags: filters.tags,
-  });
+
+  let tasks: Awaited<ReturnType<typeof fetchTasks>>['tasks'] = [];
+  let errorMessage: string | undefined;
+  try {
+    const taskList = await fetchTasks({
+      deadlineHours: filters.deadlineHours,
+      limit: 40,
+      maxReward: filters.maxReward,
+      minReward: filters.minReward,
+      mode: filters.mode,
+      requester: filters.requester,
+      requesterActorType: filters.actor,
+      status: filters.status,
+      tags: filters.tags,
+      worker: filters.worker,
+    });
+    tasks = taskList.tasks;
+  } catch (error) {
+    if (!(error instanceof ApiConnectionError)) {
+      throw error;
+    }
+    errorMessage = 'Could not load tasks right now. The marketplace API may be unavailable.';
+  }
 
   return (
     <TaskListPageContent
@@ -44,6 +59,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
       basePath="/tasks"
       createHref="/dashboard/tasks/new"
       detailBasePath="/tasks"
+      errorMessage={errorMessage}
       filterParams={{
         deadlineHours: params.deadlineHours,
         maxReward: params.maxReward,
@@ -54,7 +70,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         tags: params.tags,
       }}
       listHref="/tasks"
-      tasks={taskList.tasks}
+      tasks={tasks}
     />
   );
 }

@@ -1,6 +1,8 @@
 'use client';
 
+import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
+import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
@@ -12,7 +14,7 @@ import { ConfirmDialog } from './confirm-dialog';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
-export function CancelButton({ disabled, task }: TaskActionComponentProps) {
+export function CancelButton({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -37,9 +39,20 @@ export function CancelButton({ disabled, task }: TaskActionComponentProps) {
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
+      onSuccess?.();
+      const url = result.txHash ? explorerTxUrl(result.txHash) : null;
+      toast.success(
+        'Cancelled',
+        url
+          ? { action: { label: 'View on explorer', onClick: () => window.open(url, '_blank') } }
+          : undefined
+      );
     } else {
       setStep('idle');
-      if (!result.rejected) setError(result.error);
+      if (!result.rejected) {
+        setError(result.error);
+        toast.error(result.error);
+      }
     }
   }
 
@@ -47,7 +60,10 @@ export function CancelButton({ disabled, task }: TaskActionComponentProps) {
     const url = txHash ? explorerTxUrl(txHash) : null;
     return (
       <div className="grid gap-1 text-sm">
-        <span className="font-mono text-primary">✓ Cancelled</span>
+        <span className="flex items-center gap-1.5 font-mono text-primary">
+          <CircleCheckIcon aria-hidden="true" className="size-4" />
+          Cancelled
+        </span>
         {url ? (
           <a
             className="text-xs text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
@@ -75,12 +91,12 @@ export function CancelButton({ disabled, task }: TaskActionComponentProps) {
         disabled={disabled || busy}
         loadingCta={
           step === 'payment'
-            ? 'Fetching payment…'
+            ? 'Fetching payment...'
             : step === 'signing'
-              ? 'Sign payment…'
+              ? 'Sign payment...'
               : step === 'submitting'
-                ? 'Cancelling…'
-                : 'Cancelling…'
+                ? 'Cancelling...'
+                : 'Cancelling...'
         }
         onConfirm={handleCancel}
         title="Cancel this task?"

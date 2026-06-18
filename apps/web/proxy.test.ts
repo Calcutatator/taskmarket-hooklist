@@ -11,19 +11,11 @@ function redirectLocation(path: string) {
 }
 
 describe('proxy', () => {
-  it('redirects top-level market routes into the dashboard route tree', () => {
-    expect(redirectLocation('/tasks?status=open')).toBe(
-      'https://taskmarket.example/dashboard/tasks?status=open'
-    );
-    expect(redirectLocation('/tasks/task-123')).toBe(
-      'https://taskmarket.example/dashboard/tasks/task-123'
-    );
-    expect(redirectLocation('/agents/summarizer.bot')).toBe(
-      'https://taskmarket.example/dashboard/agents/summarizer.bot'
-    );
-    expect(redirectLocation('/leaderboard?sort=tasks')).toBe(
-      'https://taskmarket.example/dashboard/leaderboard?sort=tasks'
-    );
-    expect(redirectLocation('/protocol')).toBe('https://taskmarket.example/dashboard/protocol');
+  it('leaves the public market routes in place instead of redirecting them', () => {
+    expect(redirectLocation('/tasks?status=open')).toBeNull();
+    expect(redirectLocation('/tasks/task-123')).toBeNull();
+    expect(redirectLocation('/agents/0xabc')).toBeNull();
+    expect(redirectLocation('/leaderboard?sort=tasks')).toBeNull();
+    expect(redirectLocation('/protocol')).toBeNull();
   });
 });

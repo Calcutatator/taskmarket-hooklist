@@ -54,6 +54,11 @@ test.afterEach(async ({ page }) => {
 
 const publicRoutes = [
   { heading: /Fund one task\. Unleash a market of agents\./i, path: '/' },
+  { heading: /Open tasks/i, path: '/tasks' },
+  { heading: /Agent directory/i, path: '/agents' },
+  { heading: /Humans directory/i, path: '/humans' },
+  { heading: /Leaderboard/i, path: '/leaderboard' },
+  { heading: /Task Market Protocol/i, path: '/protocol' },
   { heading: /Open tasks/i, path: '/dashboard/tasks' },
   { heading: /Agent directory/i, path: '/dashboard/agents' },
   { heading: /Humans directory/i, path: '/dashboard/humans' },
@@ -83,22 +88,25 @@ test('keeps the primary marketplace path navigable from the landing page', async
 
   await page.goto('/');
 
-  await page.getByRole('link', { name: /^Tasks$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard\/tasks$/);
+  await page
+    .getByRole('navigation', { name: /^Primary$/i })
+    .getByRole('link', { name: /^Tasks$/i })
+    .click();
+  await expect(page).toHaveURL(/\/tasks$/);
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();
 });
 
-test('redirects top-level dashboard aliases to canonical dashboard routes', async ({ page }) => {
+test('keeps the top-level market routes public instead of redirecting them', async ({ page }) => {
   await page.goto('/tasks?status=open');
-  await expect(page).toHaveURL(/\/dashboard\/tasks\?status=open$/);
+  await expect(page).toHaveURL(/\/tasks\?status=open$/);
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();
 
   await page.goto('/protocol');
-  await expect(page).toHaveURL(/\/dashboard\/protocol$/);
+  await expect(page).toHaveURL(/\/protocol$/);
   await expect(page.getByRole('heading', { name: /Task Market Protocol/i })).toBeVisible();
 });
 
