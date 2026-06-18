@@ -61,3 +61,7 @@ apps/backend/uploads/
 
 # Claude tooling cache
 .claude/tsc-cache/
+
+# Playwright
+apps/web/playwright-report/
+apps/web/test-results/

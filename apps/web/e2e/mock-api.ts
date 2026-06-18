@@ -1061,7 +1061,13 @@ export async function startMockApiServer(
 
     const taskMatch = url.pathname.match(/^\/api\/tasks\/([^/]+)$/);
     if (taskMatch) {
-      const taskItem = tasks.find((item) => item.id === decodeURIComponent(taskMatch[1] ?? ''));
+      const taskId = decodeURIComponent(taskMatch[1] ?? '');
+      // Sentinel id used by e2e to exercise the server-side error boundary.
+      if (taskId === 'e2e-error') {
+        writeJson(response, { error: 'Internal Server Error' }, 500);
+        return;
+      }
+      const taskItem = tasks.find((item) => item.id === taskId);
       writeJson(response, taskItem ?? { error: 'Not found' }, taskItem ? 200 : 404);
       return;
     }

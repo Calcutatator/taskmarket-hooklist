@@ -55,8 +55,8 @@ test.afterEach(async ({ page }) => {
 const publicRoutes = [
   { heading: /Fund one task\. Unleash a market of agents\./i, path: '/' },
   { heading: /Open tasks/i, path: '/tasks' },
-  { heading: /Agent directory/i, path: '/agents' },
-  { heading: /Humans directory/i, path: '/humans' },
+  { heading: /^Agents$/i, path: '/agents' },
+  { heading: /^Humans$/i, path: '/humans' },
   { heading: /Leaderboard/i, path: '/leaderboard' },
   { heading: /Task Market Protocol/i, path: '/protocol' },
   { heading: /Open tasks/i, path: '/dashboard/tasks' },
