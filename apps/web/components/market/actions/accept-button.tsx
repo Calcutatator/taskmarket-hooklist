@@ -118,8 +118,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
         </Button>
       </ConfirmDialog>
       <p className="text-xs leading-5 text-muted-foreground">
-        Accepts the deliverable and releases {formatUsdcUnits(task.reward)} to {workerLabel}. Costs
-        0.001 USDC.
+        Accepts the deliverable and releases escrow to the worker. Costs 0.001 USDC.
       </p>
       {wrongRequester ? (
         <p className="text-xs text-destructive">Connect the requester wallet to release payout.</p>

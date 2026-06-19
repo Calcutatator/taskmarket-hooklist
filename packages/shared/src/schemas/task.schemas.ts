@@ -120,6 +120,7 @@ export const TaskListInputSchema = z.object({
   deadlineHours: z.number().int().positive().optional(),
   requester: z.string().optional(),
   worker: z.string().optional(),
+  sort: z.enum(['newest', 'reward_desc', 'reward_asc', 'deadline_asc']).optional().default('newest'),
 });
 
 export const TaskListResponseSchema = z.object({

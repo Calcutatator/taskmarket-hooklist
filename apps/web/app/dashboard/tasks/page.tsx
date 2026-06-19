@@ -20,6 +20,7 @@ type TasksPageProps = {
     minReward?: string;
     mode?: string;
     requester?: string;
+    sort?: string;
     status?: string;
     tags?: string;
     worker?: string;
@@ -41,6 +42,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
       mode: filters.mode,
       requester: filters.requester,
       requesterActorType: filters.actor,
+      sort: filters.sort,
       status: filters.status,
       tags: filters.tags,
       worker: filters.worker,
@@ -63,6 +65,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         minReward: params.minReward,
         selectedActor: filters.selectedActor,
         selectedMode: filters.selectedMode,
+        selectedSort: filters.selectedSort,
         selectedStatus: filters.selectedStatus,
         tags: params.tags,
       }}

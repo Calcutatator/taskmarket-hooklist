@@ -7,7 +7,13 @@ import type {
   TaskDetailResponse,
   TaskResponse,
 } from '@taskmarket/shared';
-import { CreateTaskPanel, TaskDetailPanel, TaskFilterRail, TaskTable } from './tasks';
+import {
+  CreateTaskPanel,
+  TaskDetailPanel,
+  TaskFilterRail,
+  TaskListPageContent,
+  TaskTable,
+} from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
 
@@ -205,11 +211,12 @@ describe('Task marketplace components', () => {
     expect(taskLinks.at(0)).toHaveAttribute('data-next-link', 'true');
     expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
-    expect(screen.getAllByText('25.000 USDC').length).toBeGreaterThan(0);
+    // Listing reward splits the amount and the de-emphasised USDC unit into separate nodes.
+    expect(screen.getAllByText('25.000').length).toBeGreaterThan(0);
 
     rerender(<TaskTable tasks={[]} />);
-    expect(screen.getByText(/no open tasks yet/i)).toBeInTheDocument();
-    expect(screen.getByText(/no open tasks yet/i).closest('[data-slot="card"]')).toHaveClass(
+    expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument();
+    expect(screen.getByText(/no tasks yet/i).closest('[data-slot="card"]')).toHaveClass(
       'w-full',
       'border-dashed'
     );
@@ -231,6 +238,38 @@ describe('Task marketplace components', () => {
     rerender(<TaskTable listHref="/tasks" tasks={[]} errorMessage="Network failed" />);
     expect(screen.getByRole('alert')).toHaveTextContent('Network failed');
     expect(screen.getByRole('link', { name: /reload/i })).toHaveAttribute('href', '/tasks');
+  });
+
+  it('renders due/activity columns, colour-coded status, and the requester actor signal', () => {
+    render(<TaskTable tasks={[{ ...task, requesterActorType: 'human' }]} />);
+
+    expect(screen.getByRole('columnheader', { name: /^due$/i })).toBeInTheDocument();
+    expect(screen.getByRole('columnheader', { name: /^activity$/i })).toBeInTheDocument();
+
+    const openBadges = screen.getAllByText(/^open$/i);
+    expect(
+      openBadges.some(
+        (node) => node.closest('[data-slot="badge"]')?.getAttribute('data-variant') === 'success'
+      )
+    ).toBe(true);
+
+    expect(screen.getAllByText('2 bids').length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^human$/i).length).toBeGreaterThan(0);
+  });
+
+  it('exposes sort controls that preserve the active filters', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{ selectedMode: 'auction', selectedSort: 'newest', selectedStatus: 'ALL' }}
+        tasks={[task]}
+      />
+    );
+
+    expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&sort=reward_desc'
+    );
   });
 
   it('keeps filter links serializable and exposes a clear action', () => {
@@ -310,11 +349,15 @@ describe('Task marketplace components', () => {
     expect(metricCards).toHaveLength(2);
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
-    expect(within(rewardSummary).getByText('25.000 USDC')).toBeInTheDocument();
+    // Auction reward metric surfaces the live operative price (lowest bid), not the static reward.
+    expect(within(rewardSummary).getByText('12.000 USDC')).toBeInTheDocument();
+    expect(within(rewardSummary).getByText(/lowest bid/i)).toBeInTheDocument();
     expect(within(rewardSummary).getByText(/^due$/i)).toBeInTheDocument();
-    const activitySummary = within(metrics).getByRole('article', { name: /bids summary/i });
-    expect(within(activitySummary).getByText(/^bids$/i)).toBeInTheDocument();
-    expect(within(activitySummary).getByText('2 bids')).toBeInTheDocument();
+    const statusSummary = within(metrics).getByRole('article', { name: /status summary/i });
+    expect(within(statusSummary).getByText(/^status$/i)).toBeInTheDocument();
+    expect(within(statusSummary).getByText(/accepting work/i)).toBeInTheDocument();
+    expect(within(statusSummary).getByText(/^bids$/i)).toBeInTheDocument();
+    expect(within(statusSummary).getByText('2 bids')).toBeInTheDocument();
     expect(metrics.closest('[data-slot="card"]')).toBeNull();
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
     expect(screen.getByText(/task reference/i).closest('[data-slot="card"]')).toBeNull();
@@ -443,8 +486,11 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: /^cancel task$/i })).toBeInTheDocument();
     expect(screen.getByLabelText(/reward \(usdc\)/i)).toBeInTheDocument();
+    // The sidebar is reference-only now; requester controls live in the main column.
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
-    expect(within(sidebar).getByRole('button', { name: /^cancel task$/i })).toBeInTheDocument();
+    expect(
+      within(sidebar).queryByRole('button', { name: /^cancel task$/i })
+    ).not.toBeInTheDocument();
     expect(within(sidebar).queryByLabelText(/reward \(usdc\)/i)).not.toBeInTheDocument();
   });
 
@@ -1150,12 +1196,12 @@ describe('Task marketplace components', () => {
     const { rerender } = render(
       <TaskDetailPanel backHref="/dashboard/tasks" modeData={{ bids: [] }} task={taskDetail} />
     );
-    expect(screen.getByRole('link', { name: /how auction works/i })).toHaveAttribute(
+    expect(screen.getByRole('link', { name: /how this works/i })).toHaveAttribute(
       'href',
       '/dashboard/task-types'
     );
 
     rerender(<TaskDetailPanel backHref="/tasks" modeData={{ bids: [] }} task={taskDetail} />);
-    expect(screen.queryByRole('link', { name: /how auction works/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /how this works/i })).not.toBeInTheDocument();
   });
 });

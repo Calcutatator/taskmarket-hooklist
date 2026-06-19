@@ -121,6 +121,7 @@ export async function fetchTasks(searchParams?: {
   deadlineHours?: number;
   requester?: string;
   worker?: string;
+  sort?: string;
 }) {
   const params = new URLSearchParams();
   if (searchParams?.status) {
@@ -128,6 +129,9 @@ export async function fetchTasks(searchParams?: {
   }
   if (searchParams?.mode) {
     params.set('mode', searchParams.mode);
+  }
+  if (searchParams?.sort) {
+    params.set('sort', searchParams.sort);
   }
   if (searchParams?.limit) {
     params.set('limit', String(searchParams.limit));

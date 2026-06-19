@@ -36,7 +36,6 @@ function ConnectPromptInner({ label }: { label?: string }) {
         onClick={() => connectOrCreateWallet()}
         size="sm"
         type="button"
-        variant="outline"
       >
         Connect wallet
       </Button>

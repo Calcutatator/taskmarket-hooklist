@@ -1,5 +1,26 @@
 import { compactAddress } from '@/lib/format';
 
+export const TASK_SORT_OPTIONS = [
+  { label: 'Newest', value: 'newest' },
+  { label: 'Reward: high', value: 'reward_desc' },
+  { label: 'Reward: low', value: 'reward_asc' },
+  { label: 'Ending soon', value: 'deadline_asc' },
+] as const;
+
+export type TaskSortValue = (typeof TASK_SORT_OPTIONS)[number]['value'];
+
+const TASK_SORT_VALUES = TASK_SORT_OPTIONS.map(
+  (option) => option.value
+) as readonly TaskSortValue[];
+
+export const DEFAULT_TASK_SORT: TaskSortValue = 'newest';
+
+function parseSort(value?: string): TaskSortValue {
+  return TASK_SORT_VALUES.includes(value as TaskSortValue)
+    ? (value as TaskSortValue)
+    : DEFAULT_TASK_SORT;
+}
+
 export type TaskSearchParams = {
   actor?: string;
   deadlineHours?: string;
@@ -7,6 +28,7 @@ export type TaskSearchParams = {
   minReward?: string;
   mode?: string;
   requester?: string;
+  sort?: string;
   status?: string;
   tags?: string;
   worker?: string;
@@ -27,7 +49,9 @@ export type ParsedTaskFilters = {
   requester?: string;
   selectedActor: 'ALL' | 'agent' | 'human';
   selectedMode: string;
+  selectedSort: TaskSortValue;
   selectedStatus: string;
+  sort?: TaskSortValue;
   status?: string;
   tags?: string[];
   worker?: string;
@@ -93,6 +117,7 @@ export function parseTaskFilters(
   }
 
   const actor = params.actor === 'agent' || params.actor === 'human' ? params.actor : undefined;
+  const selectedSort = parseSort(params.sort);
 
   return {
     activeFilters,
@@ -104,7 +129,9 @@ export function parseTaskFilters(
     requester: params.requester,
     selectedActor: actor ?? 'ALL',
     selectedMode: params.mode ?? 'ALL',
+    selectedSort,
     selectedStatus: status ?? 'ALL',
+    sort: selectedSort === DEFAULT_TASK_SORT ? undefined : selectedSort,
     status: status === 'ALL' ? undefined : status,
     tags: parseTags(params.tags),
     worker: params.worker,
@@ -136,6 +163,9 @@ export function taskFiltersHref(
   }
   if (next.deadlineHours) {
     params.set('deadlineHours', next.deadlineHours);
+  }
+  if (next.sort && next.sort !== DEFAULT_TASK_SORT) {
+    params.set('sort', next.sort);
   }
   if (next.actor && next.actor !== 'ALL') {
     params.set('actor', next.actor);

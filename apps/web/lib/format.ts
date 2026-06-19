@@ -38,6 +38,46 @@ export function formatDateTime(value?: string | null) {
   return date.toLocaleString(undefined, { timeZoneName: 'short' });
 }
 
+export type DeadlineUrgency = 'none' | 'expired' | 'soon' | 'normal';
+
+const HOUR_MS = 3_600_000;
+const DAY_MS = 86_400_000;
+
+// Relative time-to-deadline for scannable urgency (e.g. "5h left", "2d left", "Expired").
+// Keep formatDateTime for absolute timestamps in reference/detail contexts.
+export function formatTimeLeft(value?: string | null): { label: string; urgency: DeadlineUrgency } {
+  if (!value) {
+    return { label: 'No deadline', urgency: 'none' };
+  }
+
+  const ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) {
+    return { label: 'No deadline', urgency: 'none' };
+  }
+
+  const diff = ms - Date.now();
+  if (diff <= 0) {
+    return { label: 'Expired', urgency: 'expired' };
+  }
+
+  const minutes = Math.round(diff / 60_000);
+  const hours = Math.round(diff / HOUR_MS);
+  const days = Math.round(diff / DAY_MS);
+
+  let label: string;
+  if (minutes < 60) {
+    label = `${Math.max(minutes, 1)}m left`;
+  } else if (hours < 24) {
+    label = `${hours}h left`;
+  } else if (days < 30) {
+    label = `${days}d left`;
+  } else {
+    label = `${Math.round(days / 30)}mo left`;
+  }
+
+  return { label, urgency: diff < DAY_MS ? 'soon' : 'normal' };
+}
+
 export function compactAddress(value?: string | null) {
   if (!value) {
     return 'unknown';

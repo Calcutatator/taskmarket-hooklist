@@ -54,9 +54,14 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
-import { normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
-import type { ActiveFilter, TaskSearchParams } from '@/lib/market/task-filters';
+import { compactAddress, formatDateTime, formatTimeLeft, formatUsdcUnits } from '@/lib/format';
+import {
+  TASK_TAG_BADGE_VARIANT,
+  taskModeBadgeVariant,
+  taskStatusBadgeVariant,
+} from '@/lib/market/task-badges';
+import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
+import type { ActiveFilter, TaskSearchParams, TaskSortValue } from '@/lib/market/task-filters';
 
 const modes: Array<'ALL' | TaskModeType> = [
   'ALL',
@@ -124,16 +129,131 @@ function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function taskDeadlineLabel(task: TaskDetailResponse | TaskResponse) {
+function taskDeadlineSource(task: TaskDetailResponse | TaskResponse) {
   if (task.mode === 'auction' && task.bidDeadline) {
-    return formatDateTime(task.bidDeadline);
+    return task.bidDeadline;
   }
 
   if (task.mode === 'pitch' && task.pitchDeadline) {
-    return formatDateTime(task.pitchDeadline);
+    return task.pitchDeadline;
   }
 
-  return formatDateTime(task.expiryTime);
+  return task.expiryTime;
+}
+
+function taskDeadlineLabel(task: TaskDetailResponse | TaskResponse) {
+  return formatDateTime(taskDeadlineSource(task));
+}
+
+// For auctions the operative figure is the live clock price (dutch) or lowest bid
+// (english), not the static reward. Fall back to reward when the live value is absent.
+function taskDisplayReward(task: TaskDetailResponse | TaskResponse) {
+  if (task.mode === 'auction') {
+    if (
+      (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') &&
+      task.currentAuctionPrice
+    ) {
+      return task.currentAuctionPrice;
+    }
+    if (
+      (task.auctionType === 'english' || task.auctionType === 'reverse_english') &&
+      task.currentLowestBid
+    ) {
+      return task.currentLowestBid;
+    }
+  }
+
+  return task.reward;
+}
+
+function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
+  if (task.mode !== 'auction') {
+    return null;
+  }
+  if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
+    return task.currentAuctionPrice ? 'clock price' : null;
+  }
+  if (task.auctionType === 'english' || task.auctionType === 'reverse_english') {
+    return task.currentLowestBid ? 'lowest bid' : null;
+  }
+  return null;
+}
+
+// Reward as a scannable headline: larger/bolder than the surrounding cells, plus an
+// auction caption when the figure is a live clock/bid price rather than the static reward.
+function RewardAmount({
+  align = 'start',
+  task,
+}: {
+  align?: 'start' | 'end';
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  const caption = auctionPriceCaption(task);
+  const formatted = formatUsdcUnits(taskDisplayReward(task));
+  const lastSpace = formatted.lastIndexOf(' ');
+  const amount = lastSpace === -1 ? formatted : formatted.slice(0, lastSpace);
+  const unit = lastSpace === -1 ? '' : formatted.slice(lastSpace + 1);
+
+  return (
+    <span className={`flex flex-col gap-0.5 ${align === 'end' ? 'items-end' : 'items-start'}`}>
+      <span className="font-mono leading-none text-primary">
+        <span className="text-base font-semibold">{amount}</span>
+        {unit ? <span className="ml-1 text-[0.7rem] text-muted-foreground">{unit}</span> : null}
+      </span>
+      {caption ? (
+        <span className="font-mono text-[0.6rem] uppercase tracking-wide text-muted-foreground">
+          {caption}
+        </span>
+      ) : null}
+    </span>
+  );
+}
+
+// Relative time-to-deadline coloured by urgency, with the absolute timestamp on hover.
+function DeadlineLabel({
+  className,
+  task,
+}: {
+  className?: string;
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  // A countdown is only meaningful while a task can still progress. For settled tasks
+  // (completed/cancelled) a "3d left" reads as misleading, so show a neutral placeholder.
+  if (task.status === 'completed' || task.status === 'cancelled') {
+    return <span className={`font-mono text-muted-foreground ${className ?? ''}`}>--</span>;
+  }
+
+  const { label, urgency } = formatTimeLeft(taskDeadlineSource(task));
+  const tone =
+    urgency === 'expired'
+      ? 'text-destructive'
+      : urgency === 'soon'
+        ? 'text-warning'
+        : 'text-muted-foreground';
+
+  return (
+    <span className={`font-mono ${tone} ${className ?? ''}`} title={taskDeadlineLabel(task)}>
+      {label}
+    </span>
+  );
+}
+
+// Agent-vs-human trust signal next to a requester/worker address.
+function ActorTypeBadge({ actorType }: { actorType?: 'agent' | 'human' | null }) {
+  if (!actorType) {
+    return null;
+  }
+
+  return (
+    <Badge
+      title={
+        actorType === 'human' ? 'Registered as a human via the web app' : 'Automated agent account'
+      }
+      variant="outline"
+    >
+      {actorType}
+    </Badge>
+  );
 }
 
 function statusContext(task: TaskDetailResponse | TaskResponse) {
@@ -264,32 +384,41 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
           {taskTitle(task)}
         </Link>
         <div className="flex flex-wrap gap-1.5">
-          <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>{task.mode}</Badge>
-          <Badge variant="terminal">{labelize(task.status)}</Badge>
-          {task.tags.slice(0, 2).map((tag) => (
-            <Badge key={tag} variant="outline">
-              {tag}
-            </Badge>
-          ))}
+          <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
+          <Badge variant={taskStatusBadgeVariant(task)}>{labelize(task.status)}</Badge>
+          {taskDetailTags(task)
+            .slice(0, 2)
+            .map((tag) => (
+              <Badge key={tag} variant={TASK_TAG_BADGE_VARIANT}>
+                {tag}
+              </Badge>
+            ))}
         </div>
       </div>
       <dl className="grid grid-cols-2 gap-3 text-sm">
         <div className="min-w-0">
-          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Reward</dt>
-          <dd className="mt-1 font-mono text-primary">{formatUsdcUnits(task.reward)}</dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Due</dt>
-          <dd className="mt-1 truncate font-mono text-muted-foreground">
-            {taskDeadlineLabel(task)}
+          <dt className="font-mono text-xs uppercase text-muted-foreground">Reward</dt>
+          <dd className="mt-1">
+            <RewardAmount task={task} />
           </dd>
         </div>
         <div className="min-w-0">
-          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Requester</dt>
-          <dd className="mt-1 font-mono text-muted-foreground">{compactAddress(task.requester)}</dd>
+          <dt className="font-mono text-xs uppercase text-muted-foreground">Due</dt>
+          <dd className="mt-1 truncate">
+            <DeadlineLabel task={task} />
+          </dd>
         </div>
         <div className="min-w-0">
-          <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Activity</dt>
+          <dt className="font-mono text-xs uppercase text-muted-foreground">Requester</dt>
+          <dd className="mt-1 flex flex-wrap items-center gap-1.5">
+            <span className="font-mono text-muted-foreground" title={task.requester}>
+              {compactAddress(task.requester)}
+            </span>
+            <ActorTypeBadge actorType={task.requesterActorType} />
+          </dd>
+        </div>
+        <div className="min-w-0">
+          <dt className="font-mono text-xs uppercase text-muted-foreground">Activity</dt>
           <dd className="mt-1 font-mono text-muted-foreground">{activityLabel(task)}</dd>
         </div>
       </dl>
@@ -354,11 +483,11 @@ export function TaskTable({
           <div className="grid max-w-md gap-4 text-center">
             <div className="grid gap-2">
               <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
-                {hasActiveFilters ? 'No tasks match these filters' : 'No open tasks yet'}
+                {hasActiveFilters ? 'No tasks match these filters' : 'No tasks yet'}
               </p>
               <p className="text-sm text-muted-foreground">
                 {hasActiveFilters
-                  ? 'Change filters or clear them to return to open tasks.'
+                  ? 'Adjust or clear the filters to see more tasks.'
                   : 'Create a funded task to make work visible to agents.'}
               </p>
             </div>
@@ -386,13 +515,15 @@ export function TaskTable({
         ))}
       </ul>
       <div className="hidden w-full max-w-full overflow-x-auto md:block">
-        <Table>
+        <Table className="[&_td]:py-2.5">
           <TableHeader>
             <TableRow>
               <TableHead>Task</TableHead>
               <TableHead>Mode</TableHead>
               <TableHead>Status</TableHead>
               <TableHead>Requester</TableHead>
+              <TableHead>Due</TableHead>
+              <TableHead className="text-right">Activity</TableHead>
               <TableHead className="text-right">Reward</TableHead>
             </TableRow>
           </TableHeader>
@@ -409,26 +540,40 @@ export function TaskTable({
                     {taskTitle(task)}
                   </Link>
                   <div className="mt-2 flex flex-wrap gap-1">
-                    {task.tags.slice(0, 3).map((tag) => (
-                      <Badge key={tag} variant="terminal">
-                        {tag}
-                      </Badge>
-                    ))}
+                    {taskDetailTags(task)
+                      .slice(0, 3)
+                      .map((tag) => (
+                        <Badge key={tag} variant={TASK_TAG_BADGE_VARIANT}>
+                          {tag}
+                        </Badge>
+                      ))}
                   </div>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={task.mode === 'auction' ? 'default' : 'outline'}>
-                    {task.mode}
-                  </Badge>
+                  <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
                 </TableCell>
-                <TableCell className="font-mono text-sm uppercase">
-                  {labelize(task.status)}
+                <TableCell>
+                  <Badge variant={taskStatusBadgeVariant(task)}>{labelize(task.status)}</Badge>
                 </TableCell>
-                <TableCell className="font-mono text-xs text-muted-foreground">
-                  {compactAddress(task.requester)}
+                <TableCell>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span
+                      className="font-mono text-xs text-muted-foreground"
+                      title={task.requester}
+                    >
+                      {compactAddress(task.requester)}
+                    </span>
+                    <ActorTypeBadge actorType={task.requesterActorType} />
+                  </span>
                 </TableCell>
-                <TableCell className="text-right font-mono text-primary">
-                  {formatUsdcUnits(task.reward)}
+                <TableCell>
+                  <DeadlineLabel className="text-sm" task={task} />
+                </TableCell>
+                <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                  {activityLabel(task)}
+                </TableCell>
+                <TableCell className="text-right">
+                  <RewardAmount align="end" task={task} />
                 </TableCell>
               </TableRow>
             ))}
@@ -449,6 +594,7 @@ type TaskFilterControlsProps = {
   minReward?: string;
   selectedActor?: 'ALL' | 'agent' | 'human' | string;
   selectedMode?: 'ALL' | TaskModeType | string;
+  selectedSort?: string;
   selectedStatus?: 'ALL' | TaskStatusType | string;
   tags?: string;
 };
@@ -461,6 +607,7 @@ function TaskFilterControls({
   minReward = '',
   selectedActor = 'ALL',
   selectedMode = 'ALL',
+  selectedSort = 'newest',
   selectedStatus = 'ALL',
   tags = '',
 }: TaskFilterControlsProps) {
@@ -470,6 +617,7 @@ function TaskFilterControls({
     maxReward,
     minReward,
     mode: selectedMode,
+    sort: selectedSort,
     status: selectedStatus,
     tags,
   };
@@ -528,6 +676,9 @@ function TaskFilterControls({
         ) : null}
         {selectedActor !== 'ALL' ? (
           <input name="actor" type="hidden" value={selectedActor} />
+        ) : null}
+        {selectedSort !== 'newest' ? (
+          <input name="sort" type="hidden" value={selectedSort} />
         ) : null}
         <div className="grid gap-2">
           <Label htmlFor={`task-filter-${idPrefix}-tags`}>Tags</Label>
@@ -631,6 +782,32 @@ function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>
   );
 }
 
+function TaskSortControl({
+  basePath,
+  currentFilters,
+  selectedSort,
+}: {
+  basePath: string;
+  currentFilters: TaskSearchParams;
+  selectedSort: TaskSortValue;
+}) {
+  return (
+    <div className="flex flex-wrap items-center gap-1.5">
+      <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">Sort</span>
+      {TASK_SORT_OPTIONS.map((option) => (
+        <Button asChild key={option.value} size="chip" variant="chip">
+          <Link
+            data-active={selectedSort === option.value}
+            href={taskFiltersHref(basePath, currentFilters, { sort: option.value }) as Route}
+          >
+            {option.label}
+          </Link>
+        </Button>
+      ))}
+    </div>
+  );
+}
+
 export function TaskListPageContent({
   activeFilters,
   basePath = '/dashboard/tasks',
@@ -652,12 +829,30 @@ export function TaskListPageContent({
     minReward?: string;
     selectedActor?: string;
     selectedMode: string;
+    selectedSort: TaskSortValue;
     selectedStatus: string;
     tags?: string;
   };
   listHref?: string;
   tasks: TaskResponse[];
 }) {
+  const sortFilters: TaskSearchParams = {
+    actor: filterParams.selectedActor,
+    deadlineHours: filterParams.deadlineHours,
+    maxReward: filterParams.maxReward,
+    minReward: filterParams.minReward,
+    mode: filterParams.selectedMode,
+    status: filterParams.selectedStatus,
+    tags: filterParams.tags,
+  };
+
+  // Reflect the active status filter so a completed/cancelled view is not mislabelled "Open tasks".
+  const { selectedStatus } = filterParams;
+  const heading =
+    selectedStatus && selectedStatus !== 'ALL' && selectedStatus !== 'open'
+      ? `${labelize(selectedStatus).replace(/^./, (char) => char.toUpperCase())} tasks`
+      : 'Open tasks';
+
   return (
     <div className="@container/main grid w-full grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-4 md:gap-6 md:py-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[220px_minmax(0,1fr)]">
       <TaskFilterRail
@@ -667,6 +862,7 @@ export function TaskListPageContent({
         minReward={filterParams.minReward}
         selectedActor={filterParams.selectedActor}
         selectedMode={filterParams.selectedMode}
+        selectedSort={filterParams.selectedSort}
         selectedStatus={filterParams.selectedStatus}
         tags={filterParams.tags}
       />
@@ -677,7 +873,7 @@ export function TaskListPageContent({
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
           <div>
             <p className="font-mono text-xs uppercase text-primary">Tasks</p>
-            <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">Open tasks</h1>
+            <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">{heading}</h1>
           </div>
           <div className="flex flex-wrap gap-2">
             <div className="lg:hidden">
@@ -688,6 +884,7 @@ export function TaskListPageContent({
                 minReward={filterParams.minReward}
                 selectedActor={filterParams.selectedActor}
                 selectedMode={filterParams.selectedMode}
+                selectedSort={filterParams.selectedSort}
                 selectedStatus={filterParams.selectedStatus}
                 tags={filterParams.tags}
               />
@@ -712,6 +909,11 @@ export function TaskListPageContent({
             </Button>
           </div>
         ) : null}
+        <TaskSortControl
+          basePath={basePath}
+          currentFilters={sortFilters}
+          selectedSort={filterParams.selectedSort}
+        />
         <TaskTable
           createHref={createHref}
           detailBasePath={detailBasePath}
@@ -1095,11 +1297,15 @@ function DetailMetric({
   footerValue,
   label,
   value,
+  valueCaption,
+  valueClassName,
 }: {
   footerLabel: string;
   footerValue: ReactNode;
   label: string;
   value: ReactNode;
+  valueCaption?: ReactNode;
+  valueClassName?: string;
 }) {
   return (
     <article
@@ -1107,9 +1313,17 @@ function DetailMetric({
       className="min-w-0 border-t border-border/52 p-5 first:border-t-0 md:border-l md:border-t-0 md:first:border-l-0"
     >
       <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
-      <div className="mt-2 truncate font-mono text-2xl font-semibold tracking-tight text-foreground md:text-3xl">
+      <div
+        className={
+          valueClassName ??
+          'mt-2 truncate font-mono text-2xl font-semibold tracking-tight text-foreground md:text-3xl'
+        }
+      >
         {value}
       </div>
+      {valueCaption ? (
+        <p className="mt-1 truncate text-sm text-muted-foreground">{valueCaption}</p>
+      ) : null}
       <div className="mt-4 grid gap-1 border-t border-border/52 pt-3">
         <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{footerLabel}</p>
         <div className="truncate text-sm text-muted-foreground">{footerValue}</div>
@@ -1243,12 +1457,11 @@ function TaskSummaryRail({
   profileBasePath: string;
   task: TaskDetailResponse | TaskResponse;
 }) {
+  // Only the static price anchors live in the reference rail. The live clock price /
+  // lowest bid are shown in the headline metric and the action button, which poll live,
+  // so duplicating an SSR snapshot here would risk a stale, contradicting value.
   const showAuctionPricing = Boolean(
-    task.maxPrice ||
-    task.currentAuctionPrice ||
-    task.currentLowestBid ||
-    task.auctionStartPrice ||
-    task.auctionFloorPrice
+    task.maxPrice || task.auctionStartPrice || task.auctionFloorPrice
   );
 
   return (
@@ -1289,17 +1502,6 @@ function TaskSummaryRail({
           <SummaryGroup title="Auction pricing">
             {task.maxPrice ? (
               <SummaryRow label="Max price" value={formatUsdcUnits(task.maxPrice)} />
-            ) : null}
-            {task.currentAuctionPrice ? (
-              <SummaryRow
-                label="Clock price"
-                value={
-                  <span className="text-primary">{formatUsdcUnits(task.currentAuctionPrice)}</span>
-                }
-              />
-            ) : null}
-            {task.currentLowestBid ? (
-              <SummaryRow label="Lowest bid" value={formatUsdcUnits(task.currentLowestBid)} />
             ) : null}
             {task.auctionStartPrice ? (
               <SummaryRow label="Start price" value={formatUsdcUnits(task.auctionStartPrice)} />
@@ -1348,12 +1550,6 @@ function TaskSummaryRail({
             />
           </SummaryGroup>
         ) : null}
-
-        {task.rating !== null ? (
-          <SummaryGroup title="Outcome">
-            <SummaryRow label="Rating" value={`${task.rating}/100`} />
-          </SummaryGroup>
-        ) : null}
       </div>
     </div>
   );
@@ -1389,10 +1585,13 @@ export function TaskDetailPanel({
   const descriptionBody = taskBody(task);
   const detailTags = taskDetailTags(task);
   const taskActivityTitle = activityTitle(task);
+  // A finished task's rating is its headline outcome, so surface it in the metric instead of
+  // the activity count (and drop the duplicate sidebar Outcome row).
+  const rated = task.rating !== null;
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
-      <div className="block w-full min-w-0 space-y-6">
+      <div className="block w-full min-w-0 space-y-5">
         <Breadcrumb className="px-1">
           <BreadcrumbList className="font-mono text-xs uppercase">
             <BreadcrumbItem>
@@ -1414,63 +1613,46 @@ export function TaskDetailPanel({
         >
           <DetailMetric
             footerLabel="Due"
-            footerValue={taskDeadlineLabel(task)}
+            footerValue={<DeadlineLabel task={task} />}
             label="Reward"
-            value={<span className="text-primary">{formatUsdcUnits(task.reward)}</span>}
+            value={<span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>}
+            valueCaption={auctionPriceCaption(task)}
           />
           <DetailMetric
-            footerLabel="Status"
-            footerValue={statusContext(task)}
-            label={taskActivityTitle}
-            value={activityLabel(task, modeData)}
+            footerLabel={rated ? 'Rating' : taskActivityTitle}
+            footerValue={rated ? `${task.rating}/100` : activityLabel(task, modeData)}
+            label="Status"
+            value={
+              <Badge className="px-3.5 py-1.5 text-base" variant={taskStatusBadgeVariant(task)}>
+                {labelize(task.status)}
+              </Badge>
+            }
+            valueCaption={statusContext(task)}
+            valueClassName="mt-2 flex min-w-0 items-center"
           />
         </section>
-        <section className="grid gap-5 border-t border-border/58 pt-5">
-          <div>
-            <div className="flex flex-wrap items-start justify-between gap-4">
-              <div className="flex flex-wrap items-center gap-2">
-                <Link href={modeHref}>
-                  <Badge className="hover:opacity-80">{task.mode}</Badge>
-                </Link>
-                <Badge variant="outline">{labelize(task.status)}</Badge>
-                {task.auctionType ? (
-                  <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
-                ) : null}
-                {taskTypesHref ? (
-                  <Link
-                    className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
-                    href={taskTypesHref}
-                  >
-                    How {task.mode} works
-                  </Link>
-                ) : null}
-              </div>
-              <span className="font-mono text-xs uppercase text-primary">
-                {statusContext(task)}
-              </span>
-            </div>
-            <h1 className="mt-3 font-display text-2xl font-semibold tracking-tight text-foreground">
-              {taskTitle(task)}
-            </h1>
-          </div>
-          <div className="grid gap-5">
-            {descriptionBody ? (
-              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                {descriptionBody}
-              </p>
+        <section className="grid gap-3 border-t border-border/58 pt-5">
+          <div className="flex flex-wrap items-center gap-2">
+            <Link href={modeHref}>
+              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                {task.mode}
+              </Badge>
+            </Link>
+            {task.auctionType ? (
+              <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
             ) : null}
-            {detailTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {detailTags.map((tag) => (
-                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
-                    <Badge className="hover:opacity-80" variant="terminal">
-                      {tag}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
+            {taskTypesHref ? (
+              <Link
+                className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
+                href={taskTypesHref}
+              >
+                How this works
+              </Link>
             ) : null}
           </div>
+          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
+            {taskTitle(task)}
+          </h1>
         </section>
         {reviewAction ? (
           <ModeDataPanel
@@ -1480,6 +1662,7 @@ export function TaskDetailPanel({
             task={task}
           />
         ) : null}
+        <WorkRequirementsPanel task={task} />
         {showNextActions ? (
           <TaskActionsPanel
             claimedBy={task.claimedBy}
@@ -1490,13 +1673,6 @@ export function TaskDetailPanel({
             worker={task.worker}
           />
         ) : null}
-        <WorkRequirementsPanel task={task} />
-        {!reviewAction ? (
-          <ModeDataPanel modeData={modeData} profileBasePath={profileBasePath} task={task} />
-        ) : null}
-      </div>
-      <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
-        <TaskSummaryRail profileBasePath={profileBasePath} task={task} />
         {cancelActions.length > 0 ? (
           <TaskActionsPanel
             claimedBy={task.claimedBy}
@@ -1509,6 +1685,35 @@ export function TaskDetailPanel({
             worker={task.worker}
           />
         ) : null}
+        {descriptionBody || detailTags.length > 0 ? (
+          <section className="grid gap-5 border-t border-border/58 pt-5">
+            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+              Details
+            </h2>
+            {descriptionBody ? (
+              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+                {descriptionBody}
+              </p>
+            ) : null}
+            {detailTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {detailTags.map((tag) => (
+                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
+                      {tag}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
+        {!reviewAction ? (
+          <ModeDataPanel modeData={modeData} profileBasePath={profileBasePath} task={task} />
+        ) : null}
+      </div>
+      <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
+        <TaskSummaryRail profileBasePath={profileBasePath} task={task} />
       </aside>
     </div>
   );

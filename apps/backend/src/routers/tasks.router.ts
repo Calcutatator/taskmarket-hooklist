@@ -490,15 +490,38 @@ export const tasksRouter = router({
         conditions.push(gt(tasks.expiryTime, now));
         conditions.push(lte(tasks.expiryTime, cutoff));
       }
-      if (input.cursor) {
+      // Cursor keyset pagination is keyed on createdAt and is only valid for the
+      // default 'newest' ordering. Alternate sorts are single-page (the web listing
+      // fetches one page without a cursor), so we skip the keyset filter for them.
+      const sort = input.sort ?? 'newest';
+      if (input.cursor && sort === 'newest') {
         conditions.push(lt(tasks.createdAt, new Date(input.cursor)));
+      }
+
+      // 'newest' (default) keeps the existing createdAt+cursor path. reward is a
+      // numeric column, so ordering by it directly is numerically correct.
+      let orderBy;
+      switch (sort) {
+        case 'reward_desc':
+          orderBy = desc(tasks.reward);
+          break;
+        case 'reward_asc':
+          orderBy = asc(tasks.reward);
+          break;
+        case 'deadline_asc':
+          orderBy = asc(tasks.expiryTime);
+          break;
+        case 'newest':
+        default:
+          orderBy = desc(tasks.createdAt);
+          break;
       }
 
       const results = await ctx.db
         .select()
         .from(tasks)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
-        .orderBy(desc(tasks.createdAt))
+        .orderBy(orderBy)
         .limit(limit + 1);
 
       const hasMore = results.length > limit;

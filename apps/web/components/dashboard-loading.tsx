@@ -64,7 +64,15 @@ function MetricCardsSkeleton({ count = 4 }: { count?: number }) {
   );
 }
 
-function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; rows?: number }) {
+function TableSkeleton({
+  columns = 5,
+  mobileVariant = 'card',
+  rows = 6,
+}: {
+  columns?: number;
+  mobileVariant?: 'card' | 'task';
+  rows?: number;
+}) {
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
       <div className="hidden w-full max-w-full overflow-x-auto md:block">
@@ -95,21 +103,45 @@ function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; rows?: num
         </div>
       </div>
       <div className="grid gap-3 p-3 md:hidden">
-        {tableRows.slice(0, Math.min(rows, tableRows.length)).map((row) => (
-          <Card className="py-4" key={row}>
-            <CardContent className="grid gap-4">
-              <div className="flex items-start justify-between gap-4">
-                <Skeleton className="h-5 w-40" />
-                <Skeleton className="h-6 w-16 rounded-full" />
-              </div>
+        {tableRows.slice(0, Math.min(rows, tableRows.length)).map((row) =>
+          mobileVariant === 'task' ? (
+            <div
+              className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4"
+              key={row}
+            >
               <div className="grid gap-2">
-                <Skeleton className="h-3 w-full" />
-                <Skeleton className="h-3 w-4/5" />
+                <Skeleton className="h-5 w-44" />
+                <div className="flex flex-wrap gap-1.5">
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                  <Skeleton className="h-5 w-16 rounded-full" />
+                </div>
+              </div>
+              <div className="grid grid-cols-2 gap-3">
+                {metricSlots.map((slot) => (
+                  <div className="grid gap-1" key={slot}>
+                    <Skeleton className="h-3 w-14" />
+                    <Skeleton className="h-4 w-20" />
+                  </div>
+                ))}
               </div>
               <Skeleton className="h-9 w-full" />
-            </CardContent>
-          </Card>
-        ))}
+            </div>
+          ) : (
+            <Card className="py-4" key={row}>
+              <CardContent className="grid gap-4">
+                <div className="flex items-start justify-between gap-4">
+                  <Skeleton className="h-5 w-40" />
+                  <Skeleton className="h-6 w-16 rounded-full" />
+                </div>
+                <div className="grid gap-2">
+                  <Skeleton className="h-3 w-full" />
+                  <Skeleton className="h-3 w-4/5" />
+                </div>
+                <Skeleton className="h-9 w-full" />
+              </CardContent>
+            </Card>
+          )
+        )}
       </div>
     </div>
   );
@@ -117,18 +149,18 @@ function TableSkeleton({ columns = 5, rows = 6 }: { columns?: number; rows?: num
 
 function FilterRailSkeleton() {
   return (
-    <aside className="hidden lg:block">
-      <Card className="sticky top-20 py-5">
-        <CardContent className="grid gap-5">
+    <aside className="hidden gap-4 lg:sticky lg:top-20 lg:grid">
+      <div className="grid gap-4 border-r border-border/58 pr-4">
+        <div className="border-b border-border/58 pb-3">
           <Skeleton className="h-4 w-24" />
-          {filterRows.map((row) => (
-            <div className="grid gap-2" key={row}>
-              <Skeleton className="h-3 w-16" />
-              <Skeleton className="h-9 w-full" />
-            </div>
-          ))}
-        </CardContent>
-      </Card>
+        </div>
+        {filterRows.map((row) => (
+          <div className="grid gap-2" key={row}>
+            <Skeleton className="h-3 w-16" />
+            <Skeleton className="h-9 w-full" />
+          </div>
+        ))}
+      </div>
     </aside>
   );
 }
@@ -185,7 +217,8 @@ export function TaskListLoading() {
       <FilterRailSkeleton />
       <section className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden">
         <PageHeadingSkeleton />
-        <TableSkeleton columns={5} rows={6} />
+        <Skeleton className="h-7 w-72 max-w-full" />
+        <TableSkeleton columns={7} mobileVariant="task" rows={6} />
       </section>
     </LoadingFrame>
   );

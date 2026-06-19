@@ -167,11 +167,15 @@ export function TaskActionsPanel({
               </article>
             );
           })
-        ) : (
+        ) : pendingActions.length > 0 ? (
           <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
             <p className="text-sm font-semibold tracking-tight text-foreground">{emptyTitle}</p>
             <p className="mt-1 text-sm leading-5 text-muted-foreground">{emptyDescription}</p>
           </div>
+        ) : (
+          <p className="text-sm leading-5 text-muted-foreground">
+            <span className="font-medium text-foreground">{emptyTitle}.</span> {emptyDescription}
+          </p>
         )}
       </div>
     </section>
