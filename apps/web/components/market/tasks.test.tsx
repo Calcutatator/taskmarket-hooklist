@@ -21,14 +21,37 @@ function compactAddressLabel(value: string) {
   return compactAddress(value);
 }
 
-const { refreshSpy } = vi.hoisted(() => ({ refreshSpy: vi.fn() }));
+const { refreshSpy, stubQuery } = vi.hoisted(() => ({
+  refreshSpy: vi.fn(),
+  stubQuery: (_input: unknown, options?: { initialData?: unknown }) => ({
+    data: options?.initialData,
+  }),
+}));
 
 vi.mock('next/navigation', () => ({
   usePathname: () => '/dashboard/tasks',
   useRouter: () => ({
     push: vi.fn(),
+    replace: vi.fn(),
     refresh: refreshSpy,
   }),
+  useSearchParams: () => new URLSearchParams(),
+}));
+
+// The live activity feed seeds its per-mode queries from the SSR mode data and
+// only polls for the requester; in these static-render tests we mirror that by
+// returning the provided initialData verbatim.
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    bids: { listByTask: { useQuery: stubQuery } },
+    pitches: { listByTask: { useQuery: stubQuery } },
+    proofs: { listByTask: { useQuery: stubQuery } },
+    submissions: { listByTask: { useQuery: stubQuery } },
+  },
+}));
+
+vi.mock('sonner', () => ({
+  toast: Object.assign(vi.fn(), { success: vi.fn() }),
 }));
 
 vi.mock('next/link', () => ({

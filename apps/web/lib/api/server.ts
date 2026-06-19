@@ -35,6 +35,16 @@ type TaskStats = {
   totalRewards: string;
 };
 
+export type MarketStats = {
+  registeredWorkers: number;
+  activeWorkers7d: number;
+  openTasks: number;
+};
+
+// Fail fast when the backend is unreachable or slow so a down/hanging API can
+// never block server-side rendering (callers already handle ApiConnectionError).
+const SERVER_FETCH_TIMEOUT_MS = 8_000;
+
 function isNextDynamicServerError(error: unknown) {
   return (
     typeof error === 'object' &&
@@ -51,6 +61,7 @@ async function readJson<T>(path: string): Promise<T> {
       headers: {
         accept: 'application/json',
       },
+      signal: AbortSignal.timeout(SERVER_FETCH_TIMEOUT_MS),
     });
 
     if (!response.ok) {
@@ -107,6 +118,10 @@ export async function fetchTaskStats() {
 export async function fetchAgentCount() {
   const data = await readJson<{ count?: number }>('/api/agents/count');
   return data.count;
+}
+
+export async function fetchMarketStats() {
+  return readJson<MarketStats>('/api/market/stats');
 }
 
 export async function fetchTasks(searchParams?: {

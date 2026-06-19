@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateTaskPayload, validateCreateTask } from './create-task-client';
+import { buildCreateTaskPayload, validateCreateTask } from '@/lib/market/create-task-form';
 
 describe('buildCreateTaskPayload', () => {
   it('converts human task form values into backend task create payload', () => {

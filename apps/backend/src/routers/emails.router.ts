@@ -1,11 +1,11 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { eq, desc, and, isNotNull, gte, sql } from 'drizzle-orm';
-import type { SQL } from 'drizzle-orm';
+import { eq, desc, and } from 'drizzle-orm';
 import { agents, emails } from '../db/schema';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { sendEmail } from '../services/mailer';
+import { selectTargetAgents } from '../services/agent-targeting';
 import { getServerConfig } from '../config/env';
 import { EmailSchema, BroadcastInputSchema, BroadcastResultSchema } from '@taskmarket/shared';
 
@@ -378,25 +378,7 @@ export const emailsRouter = router({
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid admin secret' });
       }
 
-      const conditions: SQL[] = [isNotNull(agents.emailAddress)];
-
-      if (input.filters?.skills && input.filters.skills.length > 0) {
-        for (const skill of input.filters.skills) {
-          conditions.push(sql`${skill} = ANY(${agents.skills})`);
-        }
-      }
-      if (input.filters?.minTasks !== undefined) {
-        conditions.push(gte(agents.completedTasks, input.filters.minTasks));
-      }
-      if (input.filters?.actorType && input.filters.actorType !== 'all') {
-        const channel = input.filters.actorType === 'human' ? 'web' : 'cli';
-        conditions.push(eq(agents.registeredVia, channel));
-      }
-
-      const recipients = await ctx.db
-        .select({ address: agents.address, emailAddress: agents.emailAddress })
-        .from(agents)
-        .where(and(...conditions));
+      const recipients = await selectTargetAgents(ctx.db, input.filters);
 
       const fromAddress = `noreply@${config.EMAIL_DOMAIN}`;
       const CHUNK_SIZE = 50;
@@ -410,7 +392,7 @@ export const emailsRouter = router({
             await sendEmail({
               db: ctx.db,
               from: fromAddress,
-              to: recipient.emailAddress!,
+              to: recipient.emailAddress,
               subject: input.subject,
               bodyText: input.body,
             });

@@ -1,6 +1,6 @@
 // Reusable browser X402 payment flow.
 //
-// Mirrors the probe-then-sign-then-retry flow from create-task-client.tsx
+// Mirrors the probe-then-sign-then-retry flow from wizard/step-publish.tsx
 // so any X402-paid action button can call payX402Post() instead of
 // duplicating the full 90-line dance.
 

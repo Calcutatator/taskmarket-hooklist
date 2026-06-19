@@ -26,6 +26,8 @@ import {
 import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
+import { notifyNewTask } from '../services/task-notifications';
+import { logger } from '../lib/logger';
 
 function computePendingActions(task: {
   id: string;
@@ -436,6 +438,23 @@ export const tasksRouter = router({
           })
           .where(eq(tasks.id, taskId));
       }
+
+      // Fire-and-forget targeted "new task" notification to eligible worker agents.
+      // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
+      // task creation. Idempotent by taskId (embedded in the body); the daemon's
+      // task poll remains the fallback if a send fails. Never awaited.
+      void notifyNewTask({
+        db: ctx.db,
+        taskId,
+        description: input.description,
+        reward: input.reward,
+        mode: input.mode ?? 'bounty',
+        tags: input.tags,
+      }).catch((err: unknown) => {
+        logger.warn(
+          `notifyNewTask failed for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`
+        );
+      });
 
       return { success: true, taskId };
     }),

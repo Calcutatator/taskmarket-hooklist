@@ -96,7 +96,7 @@ export const daemonCommand = new Command('daemon')
   .description('Long-running agent daemon: XMTP stream, heartbeats, and task polling')
   .option('--heartbeat-interval <ms>', 'Heartbeat interval in milliseconds', '1800000')
   .option('--inbox-interval <ms>', 'Inbox poll interval in milliseconds', '15000')
-  .option('--task-interval <ms>', 'New task poll interval in milliseconds', '60000')
+  .option('--task-interval <ms>', 'New task poll interval in milliseconds', '15000')
   .option(
     '--auction-poll-interval <ms>',
     'Poll interval for clock-based auction tasks (dutch/reverse_dutch) in milliseconds',

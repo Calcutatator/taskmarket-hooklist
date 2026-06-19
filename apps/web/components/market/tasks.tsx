@@ -22,6 +22,8 @@ import {
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
 import { InfoTooltip } from '@/components/market/info-tooltip';
+import { LiveActivityPanel } from '@/components/market/live-activity';
+import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -54,6 +56,7 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
+import type { MarketStats } from '@/lib/api/server';
 import { compactAddress, formatDateTime, formatTimeLeft, formatUsdcUnits } from '@/lib/format';
 import {
   TASK_TAG_BADGE_VARIANT,
@@ -80,7 +83,7 @@ const statuses: Array<'ALL' | TaskStatusType> = [
   'cancelled',
 ];
 
-type TaskModeData = {
+export type TaskModeData = {
   bids?: BidResponse[];
   claim?: ClaimResponse | null;
   pitches?: PitchResponse[];
@@ -125,7 +128,7 @@ function formatBps(value?: number | null) {
   return `${(value / 100).toFixed(2)}%`;
 }
 
-function countLabel(count: number, singular: string, plural = `${singular}s`) {
+export function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
@@ -306,7 +309,7 @@ function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
   }
 }
 
-function activityEmptyCopy(task: TaskDetailResponse | TaskResponse) {
+export function activityEmptyCopy(task: TaskDetailResponse | TaskResponse) {
   switch (task.mode) {
     case 'auction':
       return task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch'
@@ -339,7 +342,7 @@ function activityCount(task: TaskDetailResponse | TaskResponse, modeData?: TaskM
   }
 }
 
-function activityLabel(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
+export function activityLabel(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
   const count = activityCount(task, modeData);
 
   switch (task.mode) {
@@ -1040,7 +1043,7 @@ function actorProfileHref(profileBasePath: string, identity?: string | null) {
   return `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(identity ?? '')}` as Route;
 }
 
-function ActorLink({
+export function ActorLink({
   agentId,
   address,
   className,
@@ -1077,7 +1080,7 @@ function ActorLink({
   );
 }
 
-function SubmissionCard({
+export function SubmissionCard({
   profileBasePath,
   reviewAction,
   submission,
@@ -1151,144 +1154,110 @@ function SubmissionCard({
   );
 }
 
+export function PitchRow({
+  pitch,
+  profileBasePath,
+}: {
+  pitch: PitchResponse;
+  profileBasePath: string;
+}) {
+  return (
+    <div className="rounded-lg border border-border/52 bg-background/30 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{pitch.status}</Badge>
+        <ActorLink
+          address={pitch.workerAddress}
+          agentId={pitch.workerAgentId}
+          className="font-mono text-sm hover:text-primary"
+          profileBasePath={profileBasePath}
+        />
+      </div>
+      <p className="mt-2 text-sm leading-6 text-muted-foreground">{pitch.pitchText}</p>
+    </div>
+  );
+}
+
+export function ProofRow({ proof }: { proof: ProofResponse }) {
+  return (
+    <div className="rounded-lg border border-border/52 bg-background/30 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <Badge variant="outline">{proof.status}</Badge>
+        <Badge variant="terminal">{proof.proofType}</Badge>
+        {proof.metricValue ? <span className="font-mono text-sm">{proof.metricValue}</span> : null}
+      </div>
+      <p className="mt-2 break-all text-sm leading-6 text-muted-foreground">{proof.proofData}</p>
+    </div>
+  );
+}
+
+export function BidRow({ bid, profileBasePath }: { bid: BidResponse; profileBasePath: string }) {
+  return (
+    <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm">
+      <ActorLink
+        address={bid.workerAddress}
+        agentId={bid.workerAgentId}
+        className="hover:text-primary"
+        profileBasePath={profileBasePath}
+      />
+      <span className="text-primary">{formatUsdcUnits(bid.price)}</span>
+    </div>
+  );
+}
+
+export function ClaimRow({
+  claim,
+  profileBasePath,
+}: {
+  claim: ClaimResponse;
+  profileBasePath: string;
+}) {
+  return (
+    <div className="grid gap-2 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm">
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">Claim worker</span>
+        <ActorLink
+          address={claim.workerAddress}
+          className="hover:text-primary"
+          profileBasePath={profileBasePath}
+        />
+      </div>
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">Claim stake</span>
+        <span>{formatUsdcUnits(claim.stakeAmount)}</span>
+      </div>
+      <div className="flex justify-between gap-3">
+        <span className="text-muted-foreground">Claim status</span>
+        <span>{claim.status}</span>
+      </div>
+    </div>
+  );
+}
+
 function ModeDataPanel({
+  marketStats,
   modeData,
   profileBasePath,
   reviewAction,
   task,
 }: {
+  marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath: string;
   reviewAction?: PendingAction;
   task: TaskDetailResponse | TaskResponse;
 }) {
   const submissions = modeData?.submissions ?? [];
-  const pitches = modeData?.pitches ?? [];
-  const proofs = modeData?.proofs ?? [];
-  const bids = modeData?.bids ?? [];
-  const claim = modeData?.claim ?? null;
-
-  const hasActivity =
-    submissions.length > 0 ||
-    pitches.length > 0 ||
-    proofs.length > 0 ||
-    bids.length > 0 ||
-    claim != null;
-
-  const isReviewQueue = reviewAction && submissions.length > 0;
-  const title = isReviewQueue ? 'Submission review' : 'Activity';
-  const description = isReviewQueue
-    ? 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
-    : 'Work, bids, proofs, and reviews tied to this task.';
+  const isReviewQueue = Boolean(reviewAction && submissions.length > 0);
 
   return (
-    <section className="grid gap-4 border-t border-border/58 pt-5">
-      <div>
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div className="grid gap-1">
-            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
-              {title}
-            </h2>
-            <p className="text-sm leading-5 text-muted-foreground">{description}</p>
-          </div>
-          <Badge variant="terminal">{activityLabel(task, modeData)}</Badge>
-        </div>
-      </div>
-      <div className="grid gap-3">
-        {submissions.length > 0 ? (
-          <div
-            aria-label={isReviewQueue ? 'Artifact comparison' : undefined}
-            className={isReviewQueue ? 'grid items-start gap-3 xl:grid-cols-2' : 'grid gap-3'}
-            role={isReviewQueue ? 'region' : undefined}
-          >
-            {submissions.map((submission) => (
-              <SubmissionCard
-                key={submission.id}
-                profileBasePath={profileBasePath}
-                reviewAction={reviewAction}
-                submission={submission}
-                task={task}
-              />
-            ))}
-          </div>
-        ) : null}
-
-        {pitches.map((pitch) => (
-          <div className="rounded-lg border border-border/52 bg-background/30 p-3" key={pitch.id}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{pitch.status}</Badge>
-              <ActorLink
-                address={pitch.workerAddress}
-                agentId={pitch.workerAgentId}
-                className="font-mono text-sm hover:text-primary"
-                profileBasePath={profileBasePath}
-              />
-            </div>
-            <p className="mt-2 text-sm leading-6 text-muted-foreground">{pitch.pitchText}</p>
-          </div>
-        ))}
-
-        {proofs.map((proof) => (
-          <div className="rounded-lg border border-border/52 bg-background/30 p-3" key={proof.id}>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline">{proof.status}</Badge>
-              <Badge variant="terminal">{proof.proofType}</Badge>
-              {proof.metricValue ? (
-                <span className="font-mono text-sm">{proof.metricValue}</span>
-              ) : null}
-            </div>
-            <p className="mt-2 break-all text-sm leading-6 text-muted-foreground">
-              {proof.proofData}
-            </p>
-          </div>
-        ))}
-
-        {bids.map((bid) => (
-          <div
-            className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm"
-            key={bid.id}
-          >
-            <ActorLink
-              address={bid.workerAddress}
-              agentId={bid.workerAgentId}
-              className="hover:text-primary"
-              profileBasePath={profileBasePath}
-            />
-            <span className="text-primary">{formatUsdcUnits(bid.price)}</span>
-          </div>
-        ))}
-
-        {claim ? (
-          <div className="grid gap-2 rounded-lg border border-border/52 bg-background/30 p-3 font-mono text-sm">
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Claim worker</span>
-              <ActorLink
-                address={claim.workerAddress}
-                className="hover:text-primary"
-                profileBasePath={profileBasePath}
-              />
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Claim stake</span>
-              <span>{formatUsdcUnits(claim.stakeAmount)}</span>
-            </div>
-            <div className="flex justify-between gap-3">
-              <span className="text-muted-foreground">Claim status</span>
-              <span>{claim.status}</span>
-            </div>
-          </div>
-        ) : null}
-
-        {!hasActivity ? (
-          <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
-            <p className="text-sm font-semibold tracking-tight text-foreground">No activity yet</p>
-            <p className="mt-1 text-sm leading-5 text-muted-foreground">
-              {activityEmptyCopy(task)}
-            </p>
-          </div>
-        ) : null}
-      </div>
-    </section>
+    <LiveActivityPanel
+      initialModeData={modeData}
+      isReviewQueue={isReviewQueue}
+      marketStats={marketStats}
+      profileBasePath={profileBasePath}
+      reviewAction={reviewAction}
+      task={task}
+    />
   );
 }
 
@@ -1557,11 +1526,13 @@ function TaskSummaryRail({
 
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
+  marketStats,
   modeData,
   profileBasePath = '/dashboard/agents',
   task,
 }: {
   backHref?: string;
+  marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath?: string;
   task: TaskDetailResponse | TaskResponse;
@@ -1591,6 +1562,7 @@ export function TaskDetailPanel({
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+      <PublishedCelebration />
       <div className="block w-full min-w-0 space-y-5">
         <Breadcrumb className="px-1">
           <BreadcrumbList className="font-mono text-xs uppercase">
@@ -1656,6 +1628,7 @@ export function TaskDetailPanel({
         </section>
         {reviewAction ? (
           <ModeDataPanel
+            marketStats={marketStats}
             modeData={modeData}
             profileBasePath={profileBasePath}
             reviewAction={reviewAction}
@@ -1709,7 +1682,12 @@ export function TaskDetailPanel({
           </section>
         ) : null}
         {!reviewAction ? (
-          <ModeDataPanel modeData={modeData} profileBasePath={profileBasePath} task={task} />
+          <ModeDataPanel
+            marketStats={marketStats}
+            modeData={modeData}
+            profileBasePath={profileBasePath}
+            task={task}
+          />
         ) : null}
       </div>
       <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">

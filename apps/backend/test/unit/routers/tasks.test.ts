@@ -21,6 +21,11 @@ vi.mock('../../../src/services/contract', () => ({
   },
 }));
 
+// Mock the targeted new-task notifier so create() does not touch the mailer.
+vi.mock('../../../src/services/task-notifications', () => ({
+  notifyNewTask: vi.fn().mockResolvedValue({ sent: 0, failed: 0, total: 0 }),
+}));
+
 // Mock config so no real env vars are needed
 vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
@@ -40,6 +45,10 @@ vi.mock('../../../src/config/env', () => ({
 
 import { tasksRouter } from '../../../src/routers/tasks.router';
 import { contractCreateTask } from '../../../src/services/contract';
+import { notifyNewTask } from '../../../src/services/task-notifications';
+
+// Allow microtask-queued fire-and-forget work (notifyNewTask) to settle.
+const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
 const PAYER = '0xRequester0000000000000000000000000000001';
 
@@ -110,6 +119,46 @@ describe('tasks router', () => {
 
       const [, , , mode] = (contractCreateTask as any).mock.calls[0];
       expect(mode).toBe('0x00000002'); // MODE_MAP.claim
+    });
+
+    it('fires the targeted new-task notification exactly once on success', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      const result = await caller.create(baseTaskInput);
+
+      expect(result.success).toBe(true);
+      expect(notifyNewTask).toHaveBeenCalledOnce();
+      const [arg] = vi.mocked(notifyNewTask).mock.calls[0];
+      expect(arg.taskId).toBe(result.taskId);
+      expect(arg.description).toBe(baseTaskInput.description);
+      expect(arg.reward).toBe(baseTaskInput.reward);
+      expect(arg.mode).toBe('bounty');
+      expect(arg.tags).toEqual(baseTaskInput.tags);
+    });
+
+    it('passes task tags through to the notifier for skill targeting', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      await caller.create({ ...baseTaskInput, tags: ['design', 'logo'] });
+
+      const [arg] = vi.mocked(notifyNewTask).mock.calls[0];
+      expect(arg.tags).toEqual(['design', 'logo']);
+    });
+
+    it('still returns success when the notification send fails (fire-and-forget)', async () => {
+      vi.mocked(notifyNewTask).mockRejectedValueOnce(new Error('mailer down'));
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      const result = await caller.create(baseTaskInput);
+
+      expect(result.success).toBe(true);
+      expect(typeof result.taskId).toBe('string');
+      // The fire-and-forget rejection is swallowed by the router's .catch handler.
+      await flushAsync();
+      expect(notifyNewTask).toHaveBeenCalledOnce();
     });
   });
 

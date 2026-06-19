@@ -3,7 +3,7 @@ import { notFound } from 'next/navigation';
 import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
-import { fetchTask, fetchTaskModeData } from '@/lib/api/server';
+import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
 import {
   buildDashboardPageMetadata,
   buildDashboardTaskMetadata,
@@ -18,6 +18,17 @@ type TaskDetailPageProps = {
 };
 
 const getTask = cache(fetchTask);
+
+// The market signal is decorative: never let it delay (or block) rendering.
+// Take whichever resolves first - the stats or a short fallback to null.
+async function loadMarketStats(): Promise<MarketStats | null> {
+  return Promise.race([
+    fetchMarketStats().catch(() => null),
+    new Promise<null>((resolve) => {
+      setTimeout(() => resolve(null), 1_500);
+    }),
+  ]);
+}
 
 export async function generateMetadata({ params }: TaskDetailPageProps): Promise<Metadata> {
   const { taskId } = await params;
@@ -51,11 +62,11 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     notFound();
   }
 
-  const modeData = await fetchTaskModeData(task);
+  const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
-      <TaskDetailPanel modeData={modeData} task={task} />
+      <TaskDetailPanel marketStats={marketStats} modeData={modeData} task={task} />
     </div>
   );
 }
