@@ -180,14 +180,14 @@ export function StepBrief({ fieldErrors, form, onChangeTemplate, templateId }: S
                 </span>
               </Label>
               <div className="relative">
-                <span className="pointer-events-none absolute top-1/2 left-3 flex size-4 -translate-y-1/2 items-center justify-center font-mono text-sm leading-none text-muted-foreground">
+                <span className="pointer-events-none absolute top-1/2 left-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center font-mono text-sm leading-none text-muted-foreground">
                   $
                 </span>
                 <Input
                   aria-describedby={fieldErrors.reward ? 'reward-error' : undefined}
                   aria-invalid={fieldErrors.reward ? true : undefined}
                   aria-required="true"
-                  className="pl-9 font-mono"
+                  className="pl-11 font-mono"
                   id="reward"
                   min="0.01"
                   placeholder="25.00"

@@ -1,12 +1,19 @@
 'use client';
 
-import { IconLogin, IconLogout, IconRefresh } from '@tabler/icons-react';
+import {
+  IconChevronDown,
+  IconLogin,
+  IconLogout,
+  IconRefresh,
+  IconWallet,
+} from '@tabler/icons-react';
 import { usePrivy, useWallets, type User } from '@privy-io/react-auth';
 import { useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import { FundWalletButton } from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
 import { compactAddress } from '@/lib/format';
 import { isPrivyConfigured } from '@/lib/privy-config';
 
@@ -109,33 +116,50 @@ function PrivyHeaderAccountControlInner() {
   }
 
   return (
-    <div className="flex min-w-0 items-center gap-2" id="wallet-connect">
-      <span className="hidden max-w-28 truncate font-mono text-xs text-muted-foreground xl:inline">
-        {compactAddress(address)}
-      </span>
-      <FundWalletButton address={address} size="sm" />
-      <Button
-        className="min-h-11 sm:min-h-9"
-        aria-label="Switch wallet"
-        onClick={() => connectOrCreateWallet()}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <IconRefresh className="size-4" />
-        <span className="hidden xl:inline">Switch</span>
-      </Button>
-      <Button
-        className="min-h-11 sm:min-h-9"
-        aria-label="Log out"
-        onClick={() => logout()}
-        size="sm"
-        type="button"
-        variant="outline"
-      >
-        <IconLogout className="size-4" />
-        <span className="hidden xl:inline">Log out</span>
-      </Button>
-    </div>
+    <Popover>
+      <PopoverTrigger asChild>
+        <Button
+          aria-label={`Wallet ${compactAddress(address)}`}
+          className="min-h-11 sm:min-h-9"
+          id="wallet-connect"
+          size="sm"
+          type="button"
+          variant="outline"
+        >
+          <IconWallet className="size-4" />
+          <span className="hidden font-mono text-xs sm:inline">{compactAddress(address)}</span>
+          <IconChevronDown className="size-3.5 text-muted-foreground" />
+        </Button>
+      </PopoverTrigger>
+      <PopoverContent align="end" className="grid gap-3 p-3">
+        <div className="grid gap-1 rounded-lg border border-border/68 bg-background/48 px-3 py-2">
+          <span className="text-xs font-medium text-muted-foreground">Connected wallet</span>
+          <span className="break-all font-mono text-xs text-foreground">{address}</span>
+        </div>
+        <FundWalletButton address={address} buttonClassName="w-full" fullWidth size="sm" />
+        <div className="grid gap-2">
+          <Button
+            className="w-full justify-start"
+            onClick={() => connectOrCreateWallet()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <IconRefresh className="size-4" />
+            Switch wallet
+          </Button>
+          <Button
+            className="w-full justify-start"
+            onClick={() => logout()}
+            size="sm"
+            type="button"
+            variant="outline"
+          >
+            <IconLogout className="size-4" />
+            Log out
+          </Button>
+        </div>
+      </PopoverContent>
+    </Popover>
   );
 }

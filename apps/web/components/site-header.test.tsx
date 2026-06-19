@@ -136,13 +136,17 @@ describe('SiteHeader', () => {
     vi.stubEnv('NEXT_PUBLIC_PRIVY_FIAT_ONBOARDING_ENABLED', 'true');
     rerender(<SiteHeader />);
 
-    expect(screen.getByText('0x1234...5678')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /wallet 0x1234\.\.\.5678/i }));
+    expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
+    expect(screen.getByRole('button', { name: /switch wallet/i })).toBeEnabled();
     await user.click(screen.getByRole('button', { name: /log out/i }));
     expect(logout).toHaveBeenCalled();
   });
 
-  it('treats an authenticated Privy wallet as signed in before wagmi connects', () => {
+  it('treats an authenticated Privy wallet as signed in before wagmi connects', async () => {
+    const user = userEvent.setup();
+
     walletState.authenticated = true;
     walletState.isConnected = false;
     walletState.privyAddress = '0x1234567890abcdef1234567890abcdef12345678';
@@ -150,7 +154,8 @@ describe('SiteHeader', () => {
 
     render(<SiteHeader />);
 
-    expect(screen.getByText('0x1234...5678')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /wallet 0x1234\.\.\.5678/i }));
+    expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
   });

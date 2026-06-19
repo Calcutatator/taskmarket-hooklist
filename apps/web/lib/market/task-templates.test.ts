@@ -93,6 +93,14 @@ describe('findTemplate', () => {
   });
 });
 
+describe('taskTemplates', () => {
+  it('sets reduced suggested rewards for starter creative templates', () => {
+    expect(findTemplate('logo')?.suggestedRewardUsdc).toBe('2');
+    expect(findTemplate('infographic')?.suggestedRewardUsdc).toBe('2');
+    expect(findTemplate('landing-copy')?.suggestedRewardUsdc).toBe('2');
+  });
+});
+
 describe('DEFAULT_TEMPLATE_ID', () => {
   it('points at the custom template', () => {
     expect(DEFAULT_TEMPLATE_ID).toBe('custom');

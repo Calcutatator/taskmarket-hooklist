@@ -42,7 +42,7 @@ export const taskTemplates = [
     shortDescription: 'A polished primary logo with usable source files and basic usage guidance.',
     icon: IconPalette,
     mode: 'bounty',
-    suggestedRewardUsdc: '80',
+    suggestedRewardUsdc: '2',
     suggestedDurationHours: 96,
     suggestedTags: ['design', 'branding', 'logo'],
     tokens: [
@@ -91,7 +91,7 @@ export const taskTemplates = [
       'A single shareable infographic that turns your data into a clear visual story.',
     icon: IconChartArcs,
     mode: 'bounty',
-    suggestedRewardUsdc: '60',
+    suggestedRewardUsdc: '2',
     suggestedDurationHours: 72,
     suggestedTags: ['design', 'infographic', 'data-viz'],
     tokens: [
@@ -139,7 +139,7 @@ export const taskTemplates = [
     shortDescription: 'Conversion-focused copy for a single landing page, section by section.',
     icon: IconNotes,
     mode: 'bounty',
-    suggestedRewardUsdc: '120',
+    suggestedRewardUsdc: '2',
     suggestedDurationHours: 120,
     suggestedTags: ['copywriting', 'marketing', 'landing-page'],
     tokens: [

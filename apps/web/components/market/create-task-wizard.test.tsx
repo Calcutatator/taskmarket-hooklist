@@ -263,7 +263,7 @@ describe('CreateTaskWizard', () => {
     const description = screen.getByLabelText(/description/i) as HTMLTextAreaElement;
     expect(description.value).toContain('primary logo');
     const reward = screen.getByLabelText(/^reward/i) as HTMLInputElement;
-    expect(reward.value).toBe('80');
+    expect(reward.value).toBe('2');
   });
 
   it('lands on the Publish step with a complete summary via "Use this and publish"', async () => {

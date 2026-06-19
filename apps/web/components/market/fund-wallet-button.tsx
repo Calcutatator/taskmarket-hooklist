@@ -211,7 +211,9 @@ export function FundWalletButton(props: FundWalletButtonProps) {
           variant={variant ?? 'outline'}
         >
           <IconCoin className="size-4" />
-          <span className="hidden xl:inline">{label ?? 'Add USDC'}</span>
+          <span className={cn(fullWidth ? 'inline' : 'hidden xl:inline')}>
+            {label ?? 'Add USDC'}
+          </span>
         </Button>
       </div>
     );
@@ -286,7 +288,9 @@ function FundWalletButtonInner({
         variant={variant}
       >
         <IconCoin className="size-4" />
-        <span className="hidden xl:inline">{busy ? 'Opening funding' : label}</span>
+        <span className={cn(fullWidth ? 'inline' : 'hidden xl:inline')}>
+          {busy ? 'Opening funding' : label}
+        </span>
       </Button>
       {message ? <p className="text-xs leading-5 text-muted-foreground">{message}</p> : null}
       {error ? (

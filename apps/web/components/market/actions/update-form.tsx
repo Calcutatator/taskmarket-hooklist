@@ -178,8 +178,8 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
           : 'Update task';
 
   return (
-    <div className="grid gap-3">
-      <div className="grid gap-1">
+    <div className="grid gap-4">
+      <div className="grid gap-2">
         <Label htmlFor="update-reward">Reward (USDC)</Label>
         <Input
           aria-describedby={fieldErrors.reward ? 'update-reward-error' : undefined}
@@ -196,7 +196,7 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
           </p>
         ) : null}
       </div>
-      <div className="grid gap-1">
+      <div className="grid gap-2">
         <Label htmlFor="extend-hours">Extend deadline (hours, optional)</Label>
         <Input
           aria-describedby={fieldErrors.extendHours ? 'extend-hours-error' : undefined}
@@ -213,13 +213,13 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
             {fieldErrors.extendHours}
           </p>
         ) : null}
-        <p className="text-xs text-muted-foreground">
+        <p className="text-xs leading-5 text-muted-foreground">
           Current expiry:{' '}
           {new Date(task.expiryTime).toLocaleString(undefined, { timeZoneName: 'short' })}
         </p>
       </div>
       {task.mode === 'pitch' ? (
-        <div className="grid gap-1">
+        <div className="grid gap-2">
           <Label htmlFor="pitch-extend-hours">Extend pitch deadline (hours, optional)</Label>
           <Input
             aria-describedby={fieldErrors.pitchExtendHours ? 'pitch-extend-hours-error' : undefined}
@@ -239,7 +239,7 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
         </div>
       ) : null}
       {task.mode === 'auction' ? (
-        <div className="grid gap-1">
+        <div className="grid gap-2">
           <Label htmlFor="bid-extend-hours">Extend bid deadline (hours, optional)</Label>
           <Input
             aria-describedby={fieldErrors.bidExtendHours ? 'bid-extend-hours-error' : undefined}
@@ -253,7 +253,7 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
             value={bidExtendHours}
           />
           {auctionLocked ? (
-            <p className="text-xs text-muted-foreground">
+            <p className="text-xs leading-5 text-muted-foreground">
               Auction has bids - bid deadline can no longer be changed.
             </p>
           ) : null}
@@ -264,16 +264,17 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
           ) : null}
         </div>
       ) : null}
-      <div className="grid gap-1">
+      <div className="grid gap-2">
         <Label htmlFor="update-description">Description</Label>
         <Textarea
+          className="min-h-32"
           id="update-description"
           onChange={(e) => setDescription(e.currentTarget.value)}
-          rows={3}
+          rows={4}
           value={description}
         />
       </div>
-      <div className="grid gap-1">
+      <div className="grid gap-2">
         <Label htmlFor="update-tags">Tags (comma-separated)</Label>
         <Input
           id="update-tags"
@@ -283,15 +284,17 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
           value={tagsCsv}
         />
       </div>
-      <Button
-        className="w-fit justify-self-start px-5"
-        disabled={disabled || busy}
-        onClick={handleUpdate}
-        size="sm"
-      >
-        {label}
-      </Button>
-      <p className="text-xs text-muted-foreground">Costs 0.001 USDC.</p>
+      <div className="flex flex-col items-start gap-3 pt-1 sm:flex-row sm:items-center">
+        <Button
+          className="w-fit justify-self-start px-5"
+          disabled={disabled || busy}
+          onClick={handleUpdate}
+          size="sm"
+        >
+          {label}
+        </Button>
+        <p className="text-xs leading-5 text-muted-foreground">Costs 0.001 USDC.</p>
+      </div>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );
