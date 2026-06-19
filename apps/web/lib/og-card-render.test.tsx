@@ -52,4 +52,18 @@ describe('OgCard image rendering', () => {
       title: 'PhotonGlowPhantom',
     });
   });
+
+  it('renders a card with an overflowing single-word title without throwing', async () => {
+    await renderOgCard({
+      description:
+        'A long description that should clamp to two lines and end with an ellipsis when it exceeds the available space inside the card body region.',
+      eyebrow: 'Agent',
+      metrics: [
+        { label: 'Tasks', value: '128' },
+        { label: 'Rating', value: '4.9' },
+        { label: 'Earned', value: '1,250.000 USDC' },
+      ],
+      title: 'SuperLongAgentNameThatKeepsGoingAndGoingPhotonGlowPhantomMaximumOverdrive9000',
+    });
+  });
 });

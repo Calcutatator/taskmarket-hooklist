@@ -5,6 +5,47 @@ type OgMetric = {
   value: string;
 };
 
+// Site theme tokens (see apps/web/app/globals.css :root)
+const theme = {
+  background: '#0f0f12',
+  surface: '#141316',
+  surface2: '#211f25',
+  card: '#18171a',
+  foreground: '#f7f2ef',
+  muted: '#c4bab8',
+  faint: '#8d8389',
+  primary: '#cc667f',
+  border: '#342f36',
+};
+
+// Brand mark from public/taskmarket-final-icon-transparent.svg, scaled down.
+function TaskmarketMark({ size = 56 }: { size?: number }): ReactNode {
+  const cells: Array<[number, number, string]> = [
+    [364, 112, '#FFC1D6'],
+    [196, 280, '#461526'],
+    [364, 280, '#FF94BE'],
+    [532, 280, '#FF2D6F'],
+    [196, 448, '#661631'],
+    [364, 448, '#FF5A95'],
+    [532, 448, '#FF2D6F'],
+    [700, 448, '#FF3B7D'],
+    [196, 616, '#FF2D6F'],
+    [364, 616, '#FF2D6F'],
+    [532, 616, '#FF2D6F'],
+    [700, 616, '#FF5A95'],
+    [364, 784, '#75183C'],
+    [532, 784, '#B81D58'],
+  ];
+
+  return (
+    <svg fill="none" height={size} viewBox="0 0 1024 1024" width={size}>
+      {cells.map(([x, y, fill]) => (
+        <rect fill={fill} height={128} key={`${x}:${y}`} rx={28} width={128} x={x} y={y} />
+      ))}
+    </svg>
+  );
+}
+
 export function OgCard({
   description,
   eyebrow,
@@ -22,11 +63,16 @@ export function OgCard({
     <div
       style={{
         alignItems: 'stretch',
-        background: '#080b0f',
-        color: '#f4f7fb',
+        backgroundColor: theme.background,
+        backgroundImage: [
+          `radial-gradient(900px circle at 86% 16%, rgba(204, 102, 127, 0.16), transparent 46%)`,
+          `radial-gradient(760px circle at 8% 8%, rgba(33, 31, 37, 0.9), transparent 52%)`,
+          `linear-gradient(180deg, ${theme.surface} 0%, ${theme.background} 58%)`,
+        ].join(', '),
+        color: theme.foreground,
         display: 'flex',
         flexDirection: 'column',
-        fontFamily: 'Arial, Helvetica, sans-serif',
+        fontFamily: '"Space Grotesk", Arial, Helvetica, sans-serif',
         height: '100%',
         justifyContent: 'space-between',
         padding: 64,
@@ -40,24 +86,29 @@ export function OgCard({
           justifyContent: 'space-between',
         }}
       >
-        <div
-          style={{
-            color: '#8df5c7',
-            fontSize: 28,
-            fontWeight: 800,
-            letterSpacing: 0,
-            textTransform: 'uppercase',
-          }}
-        >
-          Taskmarket
+        <div style={{ alignItems: 'center', display: 'flex', gap: 18 }}>
+          <TaskmarketMark size={58} />
+          <div
+            style={{
+              color: theme.foreground,
+              fontSize: 32,
+              fontWeight: 700,
+              letterSpacing: -0.5,
+            }}
+          >
+            Taskmarket
+          </div>
         </div>
         <div
           style={{
-            border: '1px solid rgba(141, 245, 199, 0.42)',
+            backgroundColor: 'rgba(204, 102, 127, 0.1)',
+            border: '1px solid rgba(204, 102, 127, 0.42)',
             borderRadius: 999,
-            color: '#c9d3df',
-            fontSize: 22,
-            padding: '10px 18px',
+            color: theme.primary,
+            fontSize: 20,
+            fontWeight: 600,
+            letterSpacing: 2,
+            padding: '10px 20px',
             textTransform: 'uppercase',
           }}
         >
@@ -65,40 +116,50 @@ export function OgCard({
         </div>
       </div>
 
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 28 }}>
-        <h1
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 26 }}>
+        <div
           style={{
-            color: '#ffffff',
-            fontSize: 72,
-            fontWeight: 900,
-            letterSpacing: 0,
-            lineHeight: 0.95,
+            color: theme.foreground,
+            display: '-webkit-box',
+            fontSize: 60,
+            fontWeight: 700,
+            letterSpacing: -1.5,
+            lineHeight: 1.05,
             margin: 0,
-            maxWidth: 980,
-            textTransform: 'uppercase',
+            maxWidth: 1000,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
+            wordBreak: 'break-word',
           }}
         >
           {title}
-        </h1>
-        <p
+        </div>
+        <div
           style={{
-            color: '#c9d3df',
-            fontSize: 30,
-            lineHeight: 1.35,
+            color: theme.muted,
+            display: '-webkit-box',
+            fontSize: 28,
+            lineHeight: 1.4,
             margin: 0,
-            maxWidth: 920,
+            maxWidth: 900,
+            overflow: 'hidden',
+            textOverflow: 'ellipsis',
+            WebkitBoxOrient: 'vertical',
+            WebkitLineClamp: 2,
           }}
         >
           {description}
-        </p>
+        </div>
       </div>
 
       <div
         style={{
           alignItems: 'flex-end',
           display: 'flex',
-          justifyContent: 'space-between',
           gap: 28,
+          justifyContent: 'space-between',
         }}
       >
         <div style={{ display: 'flex', gap: 16 }}>
@@ -108,9 +169,10 @@ export function OgCard({
         </div>
         <div
           style={{
-            color: '#7c8794',
-            fontSize: 24,
-            textTransform: 'uppercase',
+            color: theme.faint,
+            fontSize: 22,
+            fontWeight: 500,
+            letterSpacing: 0.5,
           }}
         >
           {footer}
@@ -124,20 +186,22 @@ function Metric({ label, value }: OgMetric): ReactNode {
   return (
     <div
       style={{
-        background: '#111821',
-        border: '1px solid rgba(201, 211, 223, 0.18)',
-        borderRadius: 18,
+        backgroundColor: theme.card,
+        border: `1px solid ${theme.border}`,
+        borderRadius: 14,
         display: 'flex',
         flexDirection: 'column',
-        gap: 6,
-        minWidth: 156,
-        padding: '16px 18px',
+        gap: 8,
+        minWidth: 160,
+        padding: '16px 20px',
       }}
     >
       <div
         style={{
-          color: '#7c8794',
-          fontSize: 18,
+          color: theme.primary,
+          fontSize: 16,
+          fontWeight: 600,
+          letterSpacing: 1.5,
           textTransform: 'uppercase',
         }}
       >
@@ -145,9 +209,9 @@ function Metric({ label, value }: OgMetric): ReactNode {
       </div>
       <div
         style={{
-          color: '#f4f7fb',
+          color: theme.foreground,
           fontSize: 28,
-          fontWeight: 800,
+          fontWeight: 600,
         }}
       >
         {value}
