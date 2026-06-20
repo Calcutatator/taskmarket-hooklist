@@ -44,8 +44,12 @@ const HOUR_MS = 3_600_000;
 const DAY_MS = 86_400_000;
 
 // Relative time-to-deadline for scannable urgency (e.g. "5h left", "2d left", "Expired").
-// Keep formatDateTime for absolute timestamps in reference/detail contexts.
-export function formatTimeLeft(value?: string | null): { label: string; urgency: DeadlineUrgency } {
+// Pass nowMs so callers can drive it from a ticking clock; defaults to the current
+// time. Keep formatDateTime for absolute timestamps in reference/detail contexts.
+export function formatTimeLeft(
+  value?: string | null,
+  nowMs: number = Date.now()
+): { label: string; urgency: DeadlineUrgency } {
   if (!value) {
     return { label: 'No deadline', urgency: 'none' };
   }
@@ -55,7 +59,7 @@ export function formatTimeLeft(value?: string | null): { label: string; urgency:
     return { label: 'No deadline', urgency: 'none' };
   }
 
-  const diff = ms - Date.now();
+  const diff = ms - nowMs;
   if (diff <= 0) {
     return { label: 'Expired', urgency: 'expired' };
   }
@@ -76,6 +80,42 @@ export function formatTimeLeft(value?: string | null): { label: string; urgency:
   }
 
   return { label, urgency: diff < DAY_MS ? 'soon' : 'normal' };
+}
+
+// Compact "time since" for activity timestamps: "just now", "2m ago", "3h ago",
+// "5d ago", "2mo ago". Pass nowMs so callers can drive it from a ticking clock;
+// defaults to the current time. Pair with formatDateTime for the absolute value.
+export function formatRelativePast(value?: string | null, nowMs: number = Date.now()): string {
+  if (!value) {
+    return 'unknown';
+  }
+
+  const ms = new Date(value).getTime();
+  if (Number.isNaN(ms)) {
+    return 'unknown';
+  }
+
+  const diff = nowMs - ms;
+  if (diff < 45_000) {
+    return 'just now';
+  }
+
+  const minutes = Math.round(diff / 60_000);
+  if (minutes < 60) {
+    return `${minutes}m ago`;
+  }
+
+  const hours = Math.round(diff / HOUR_MS);
+  if (hours < 24) {
+    return `${hours}h ago`;
+  }
+
+  const days = Math.round(diff / DAY_MS);
+  if (days < 30) {
+    return `${days}d ago`;
+  }
+
+  return `${Math.round(days / 30)}mo ago`;
 }
 
 export function compactAddress(value?: string | null) {

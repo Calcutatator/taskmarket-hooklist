@@ -23,6 +23,8 @@ import {
 } from '@/components/market/artifact-preview-button';
 import { InfoTooltip } from '@/components/market/info-tooltip';
 import { LiveActivityPanel } from '@/components/market/live-activity';
+import { CountdownTimer } from '@/components/market/motion/countdown-timer';
+import { RelativeTime } from '@/components/market/motion/relative-time';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
@@ -57,7 +59,7 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
-import { compactAddress, formatDateTime, formatTimeLeft, formatUsdcUnits } from '@/lib/format';
+import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import {
   TASK_TAG_BADGE_VARIANT,
   taskModeBadgeVariant,
@@ -213,6 +215,7 @@ function RewardAmount({
 }
 
 // Relative time-to-deadline coloured by urgency, with the absolute timestamp on hover.
+// CountdownTimer re-ticks live once mounted; under reduced motion it stays static.
 function DeadlineLabel({
   className,
   task,
@@ -226,18 +229,12 @@ function DeadlineLabel({
     return <span className={`font-mono text-muted-foreground ${className ?? ''}`}>--</span>;
   }
 
-  const { label, urgency } = formatTimeLeft(taskDeadlineSource(task));
-  const tone =
-    urgency === 'expired'
-      ? 'text-destructive'
-      : urgency === 'soon'
-        ? 'text-warning'
-        : 'text-muted-foreground';
-
   return (
-    <span className={`font-mono ${tone} ${className ?? ''}`} title={taskDeadlineLabel(task)}>
-      {label}
-    </span>
+    <CountdownTimer
+      className={`font-mono ${className ?? ''}`}
+      source={taskDeadlineSource(task)}
+      title={taskDeadlineLabel(task)}
+    />
   );
 }
 
@@ -1111,9 +1108,7 @@ export function SubmissionCard({
       <div className="grid min-w-0 gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
           <Badge variant="outline">{countLabel(mediaArtifacts.length, 'media artifact')}</Badge>
-          <time className="text-sm text-muted-foreground" dateTime={submission.submittedAt}>
-            {new Date(submission.submittedAt).toLocaleString()}
-          </time>
+          <RelativeTime className="text-sm text-muted-foreground" value={submission.submittedAt} />
         </div>
         <div className="grid min-w-0 gap-1">
           <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">

@@ -1,10 +1,11 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
-import { AnimatePresence, motion, useReducedMotion } from 'motion/react';
+import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import {
   BidRow,
   ClaimRow,
@@ -35,15 +36,6 @@ const TERMINAL_STATUSES = ['completed', 'cancelled', 'expired', 'disputed'];
 
 const POLL_INTERVAL_MS = 9_000;
 const TOAST_DEBOUNCE_MS = 1_500;
-
-// Mirror landing-motion.tsx: skip animation under reduced-motion, jsdom, and tests
-// so the static markup matches the server-rendered tree byte-for-byte.
-function useMotionDisabled() {
-  const isJsdom =
-    typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
-
-  return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
-}
 
 function isTerminalStatus(task: TaskDetailResponse | TaskResponse) {
   return TERMINAL_STATUSES.includes(task.status);
@@ -285,9 +277,14 @@ export function LiveActivityPanel({
 
   const isRequester = Boolean(address && address.toLowerCase() === task.requester.toLowerCase());
   const terminal = isTerminalStatus(task);
-  const isLive = isRequester && !terminal;
+  // Anyone viewing a non-terminal task polls the live feed and watches new work
+  // stream in. The per-mode lists and the SSR seed are already public, so this
+  // exposes no new data. Only the requester gets the new-activity toasts and the
+  // "reaching workers" anticipation panel.
+  const pollEnabled = !terminal;
+  const requesterAffordances = isRequester && !terminal;
 
-  const data = useLiveModeData(task, initialModeData, isLive);
+  const data = useLiveModeData(task, initialModeData, pollEnabled);
 
   const submissions = data.submissions ?? [];
   const pitches = data.pitches ?? [];
@@ -327,7 +324,7 @@ export function LiveActivityPanel({
   const noun = activityNoun(task);
 
   useEffect(() => {
-    if (!isLive) {
+    if (!requesterAffordances) {
       return;
     }
 
@@ -368,7 +365,7 @@ export function LiveActivityPanel({
     }, TOAST_DEBOUNCE_MS);
     // Keyed on the stable id signature so the effect only runs when membership
     // changes; itemsRef gives the effect the latest list without re-subscribing.
-  }, [isLive, itemSignature, noun.plural, noun.singular]);
+  }, [requesterAffordances, itemSignature, noun.plural, noun.singular]);
 
   useEffect(() => {
     return () => {
@@ -384,7 +381,7 @@ export function LiveActivityPanel({
     : 'Work, bids, proofs, and reviews tied to this task.';
 
   const showReaching = isRequester && task.status === 'open' && !hasActivity && !terminal;
-  const animateNew = isLive && !motionDisabled;
+  const animateNew = pollEnabled && !motionDisabled;
 
   return (
     <section className="grid gap-4 border-t border-border/58 pt-5" id="task-activity" tabIndex={-1}>
@@ -398,7 +395,7 @@ export function LiveActivityPanel({
               <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
                 {title}
               </h2>
-              {isLive ? <LiveIndicator motionDisabled={motionDisabled} /> : null}
+              {pollEnabled ? <LiveIndicator motionDisabled={motionDisabled} /> : null}
             </div>
             <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           </div>

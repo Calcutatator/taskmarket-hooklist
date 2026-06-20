@@ -1,24 +1,16 @@
 'use client';
 
 import { CircleCheckIcon } from 'lucide-react';
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 import type { Route } from 'next';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
+import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import { Button } from '@/components/ui/button';
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
-
-// Mirror landing-motion.tsx: treat reduced-motion, jsdom, and test as "no motion"
-// so the reveal degrades to an instant, scroll-free path.
-function useMotionDisabled() {
-  const isJsdom =
-    typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
-
-  return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
-}
 
 const itemVariants = {
   hidden: { opacity: 0, y: 18 },

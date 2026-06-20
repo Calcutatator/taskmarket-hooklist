@@ -156,15 +156,40 @@ describe('LiveActivityPanel', () => {
     expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
   });
 
-  it('renders a static list with no polling or Live indicator for a non-requester', () => {
+  it('shows the live feed and Live indicator for a non-requester on a live task', () => {
     mockAccount.address = '0x9999999999999999999999999999999999999999';
+    // A non-requester now polls too (pollEnabled = !terminal), so the feed
+    // reflects the polled value, not just the seed.
+    bidsState.value = [bid('bid-1', '0x2222222222222222222222222222222222222222')];
 
     renderPanel({ initialBids: [bid('bid-1', '0x2222222222222222222222222222222222222222')] });
 
-    // Non-requester: enabled=false so the query returns [] in the mock, but the
-    // seed still renders, and the Live indicator is absent.
-    expect(screen.queryByText(/^Live$/)).not.toBeInTheDocument();
+    expect(screen.getByText(/^Live$/)).toBeInTheDocument();
     expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
+  });
+
+  it('does not toast a non-requester when new activity arrives', () => {
+    mockAccount.address = '0x9999999999999999999999999999999999999999';
+    bidsState.value = [];
+
+    const { rerender } = renderPanel({ initialBids: [] });
+
+    bidsState.value = [bid('bid-1', '0x2222222222222222222222222222222222222222')];
+    rerender(
+      <LiveActivityPanel
+        initialModeData={{ bids: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        task={task}
+      />
+    );
+
+    act(() => {
+      vi.advanceTimersByTime(2_000);
+    });
+
+    // Toasts are a requester-only affordance; the public feed updates silently.
+    expect(toastSpy).not.toHaveBeenCalled();
   });
 
   it('does not toast for the initial seed items', () => {

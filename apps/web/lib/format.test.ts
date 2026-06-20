@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import * as format from './format';
-import { formatDateTime, formatUsdcUnits } from './format';
+import { formatDateTime, formatRelativePast, formatTimeLeft, formatUsdcUnits } from './format';
 
 describe('formatUsdcUnits', () => {
   it('groups thousands and keeps three fraction digits without a leading sign', () => {
@@ -37,5 +37,47 @@ describe('formatDateTime', () => {
   it('returns Not set for missing or invalid values', () => {
     expect(formatDateTime(null)).toBe('Not set');
     expect(formatDateTime('not-a-date')).toBe('Not set');
+  });
+});
+
+describe('formatTimeLeft', () => {
+  const now = Date.parse('2026-06-20T12:00:00Z');
+
+  it('uses the injected now so the label is stable and tickable', () => {
+    const future = new Date(now + 5 * 3_600_000).toISOString();
+    expect(formatTimeLeft(future, now)).toEqual({ label: '5h left', urgency: 'soon' });
+  });
+
+  it('marks a passed deadline as expired', () => {
+    const past = new Date(now - 1_000).toISOString();
+    expect(formatTimeLeft(past, now)).toEqual({ label: 'Expired', urgency: 'expired' });
+  });
+
+  it('marks a multi-day deadline as normal urgency', () => {
+    const future = new Date(now + 3 * 86_400_000).toISOString();
+    expect(formatTimeLeft(future, now)).toEqual({ label: '3d left', urgency: 'normal' });
+  });
+
+  it('returns No deadline for missing input', () => {
+    expect(formatTimeLeft(null, now).label).toBe('No deadline');
+  });
+});
+
+describe('formatRelativePast', () => {
+  const now = Date.parse('2026-06-20T12:00:00Z');
+
+  it('returns just now for very recent timestamps', () => {
+    expect(formatRelativePast(new Date(now - 10_000).toISOString(), now)).toBe('just now');
+  });
+
+  it('formats minutes, hours, and days ago', () => {
+    expect(formatRelativePast(new Date(now - 5 * 60_000).toISOString(), now)).toBe('5m ago');
+    expect(formatRelativePast(new Date(now - 3 * 3_600_000).toISOString(), now)).toBe('3h ago');
+    expect(formatRelativePast(new Date(now - 2 * 86_400_000).toISOString(), now)).toBe('2d ago');
+  });
+
+  it('returns unknown for missing or invalid input', () => {
+    expect(formatRelativePast(null, now)).toBe('unknown');
+    expect(formatRelativePast('not-a-date', now)).toBe('unknown');
   });
 });

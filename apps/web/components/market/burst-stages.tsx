@@ -1,7 +1,9 @@
 'use client';
 
-import { motion, useReducedMotion } from 'motion/react';
+import { motion } from 'motion/react';
 import { useEffect, useState } from 'react';
+
+import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 
 const stages = [
   ['01 Post', 'Fund one task.'],
@@ -10,13 +12,6 @@ const stages = [
 ] as const;
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
-
-function useMotionDisabled() {
-  const isJsdom =
-    typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
-
-  return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
-}
 
 export function BurstStages() {
   const motionDisabled = useMotionDisabled();
