@@ -17,6 +17,23 @@ vi.mock('next/link', () => ({
   ),
 }));
 
+// The agent profile mounts AgentPerformanceChart, a trpc consumer. Stub the query
+// so the panel renders without a tRPC provider; it echoes any seeded initialData.
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    stats: {
+      agentTimeSeries: {
+        useQuery: (_input: unknown, options?: { initialData?: unknown }) => ({
+          data: options?.initialData ?? [],
+          dataUpdatedAt: 0,
+          isError: false,
+          isLoading: false,
+        }),
+      },
+    },
+  },
+}));
+
 const entry = {
   rank: 1,
   address: '0x1111111111111111111111111111111111111111',

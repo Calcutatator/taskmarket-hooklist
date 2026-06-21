@@ -1,15 +1,19 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import type {
+  ActivityFeedResponse,
   AgentStats,
+  AgentTimeSeriesResponse,
   ArtifactMediaKindValue,
   ArtifactResponse,
   ArtifactRoleValue,
   BidResponse,
+  BreakdownsResponse,
   ClaimResponse,
   LeaderboardEntry,
   PendingAction,
   PitchResponse,
+  PlatformTimeSeriesResponse,
   ProofResponse,
   SubmissionResponse,
   TaskDetailResponse,
@@ -735,6 +739,177 @@ const agentStats = new Map<string, AgentStats>(
   ])
 );
 
+// ---------------------------------------------------------------------------
+// Stats fixtures (power the stats.* chart endpoints so the dashboard and agent
+// pages render populated charts rather than empty fallbacks).
+// ---------------------------------------------------------------------------
+
+const STATS_DAYS = 90;
+const statsAnchorMs = new Date('2026-05-13T00:00:00.000Z').getTime();
+
+function isoDayAgo(daysAgo: number) {
+  return new Date(statsAnchorMs - daysAgo * 24 * 60 * 60 * 1000).toISOString().slice(0, 10);
+}
+
+// Deterministic wavy upward trend (no randomness, stable across runs).
+const platformSeriesAll: PlatformTimeSeriesResponse = Array.from({ length: STATS_DAYS }, (_, i) => {
+  const tasksCreated = Math.max(0, 2 + Math.round(3 * Math.sin(i / 6) + i / 14));
+  const completedTasks = Math.max(0, tasksCreated - 1 - (i % 2));
+  const newAgents = i % 5 === 0 ? 1 + (i % 3) : 0;
+  const activeAgents = Math.max(1, Math.round(tasksCreated * 0.75));
+  return {
+    activeAgents,
+    bucket: isoDayAgo(STATS_DAYS - 1 - i),
+    completedTasks,
+    newAgents,
+    rewardVolume: (BigInt(tasksCreated) * 240000000n).toString(),
+    tasksCreated,
+  };
+});
+
+function platformSeriesForRange(range: string | null): PlatformTimeSeriesResponse {
+  const span = range === '7d' ? 7 : range === '30d' ? 30 : range === '90d' ? 90 : STATS_DAYS;
+  return platformSeriesAll.slice(Math.max(0, platformSeriesAll.length - span));
+}
+
+const breakdownsResponse: BreakdownsResponse = {
+  actorType: [
+    { actorType: 'human', count: 14 },
+    { actorType: 'agent', count: 32 },
+  ],
+  mode: [
+    { count: 18, mode: 'bounty' },
+    { count: 9, mode: 'claim' },
+    { count: 7, mode: 'pitch' },
+    { count: 4, mode: 'benchmark' },
+    { count: 8, mode: 'auction' },
+  ],
+  status: [
+    { count: 12, status: 'open' },
+    { count: 4, status: 'claimed' },
+    { count: 2, status: 'worker_selected' },
+    { count: 3, status: 'pending_approval' },
+    { count: 21, status: 'completed' },
+    { count: 1, status: 'disputed' },
+    { count: 2, status: 'expired' },
+    { count: 1, status: 'cancelled' },
+  ],
+};
+
+const activityFeedItems: ActivityFeedResponse['items'] = [
+  {
+    actor: requester,
+    actorType: 'human',
+    amount: '240000000',
+    rating: null,
+    taskId: 'mock-bounty-open',
+    taskTitle: 'Bounty - open submission pool for settlement receipt review.',
+    timestamp: hoursFromNow(-0.3),
+    type: 'task_created',
+  },
+  {
+    actor: workerOne,
+    actorType: 'agent',
+    amount: null,
+    rating: null,
+    taskId: 'e2e-pending-review',
+    taskTitle: 'Bounty - pending requester review with multiple submissions.',
+    timestamp: hoursFromNow(-1.2),
+    type: 'task_submitted',
+  },
+  {
+    actor: requester,
+    actorType: 'human',
+    amount: null,
+    rating: 94,
+    taskId: 'mock-bounty-completed-rated',
+    taskTitle: 'Bounty - completed and rated reference task.',
+    timestamp: hoursFromNow(-2.4),
+    type: 'task_rated',
+  },
+  {
+    actor: workerTwo,
+    actorType: 'agent',
+    amount: '600000000',
+    rating: null,
+    taskId: 'mock-auction-english-open',
+    taskTitle: 'Auction - English open undercutting with visible bids.',
+    timestamp: hoursFromNow(-3.1),
+    type: 'bid_placed',
+  },
+  {
+    actor: workerOne,
+    actorType: 'agent',
+    amount: '32000000',
+    rating: null,
+    taskId: 'mock-claim-claimed',
+    taskTitle: 'Claim - worker has reserved the task and can submit work.',
+    timestamp: hoursFromNow(-5.6),
+    type: 'task_claimed',
+  },
+  {
+    actor: workerTwo,
+    actorType: 'agent',
+    amount: null,
+    rating: null,
+    taskId: 'mock-pitch-open',
+    taskTitle: 'Pitch - requester compares proposals before selecting a worker.',
+    timestamp: hoursFromNow(-8),
+    type: 'task_pitched',
+  },
+  {
+    actor: requester,
+    actorType: 'human',
+    amount: '510000000',
+    rating: null,
+    taskId: 'mock-benchmark-open',
+    taskTitle: 'Benchmark - workers submit measurable proof against a target metric.',
+    timestamp: hoursFromNow(-11),
+    type: 'task_created',
+  },
+  {
+    actor: requester,
+    actorType: 'human',
+    amount: null,
+    rating: 88,
+    taskId: 'mock-bounty-accepted-unrated',
+    taskTitle: 'Bounty - accepted deliverable waiting for requester rating.',
+    timestamp: hoursFromNow(-15),
+    type: 'task_rated',
+  },
+];
+
+const activityFeedResponse: ActivityFeedResponse = {
+  items: activityFeedItems,
+  nextCursor: null,
+};
+
+// Per-agent weekly series: cumulative earnings climb, some empty/early weeks,
+// a couple of null-rating weeks so the rating line shows honest gaps.
+function agentSeries(): AgentTimeSeriesResponse {
+  let cumulative = 0n;
+  return Array.from({ length: 12 }, (_, i) => {
+    const earnedThisWeek = i % 4 === 0 ? 0 : 1 + (i % 3);
+    const earnings = BigInt(earnedThisWeek) * 120000000n;
+    cumulative += earnings;
+    const ratingsCount = i < 2 ? 0 : 1 + (i % 3);
+    return {
+      activityCount: earnedThisWeek + (i % 2),
+      avgRating: ratingsCount === 0 ? null : 72 + ((i * 9) % 26),
+      bucket: isoDayAgo((11 - i) * 7),
+      cumulativeEarnings: cumulative.toString(),
+      earnings: earnings.toString(),
+      ratingsCount,
+      tasksCompleted: earnedThisWeek,
+    };
+  });
+}
+
+const inboxResponse = {
+  asRequester: tasks.slice(0, 6).map(taskPreview),
+  asWorker: tasks.filter((taskItem) => taskItem.worker === workerOne).map(taskPreview),
+};
+
 export const taskListResponse = {
   hasMore: false,
   nextCursor: null,
@@ -920,6 +1095,17 @@ function dataForProcedure(procedure: string, input: unknown) {
       ? String((input as { taskId?: unknown }).taskId)
       : '';
 
+  const range =
+    typeof input === 'object' && input !== null && 'range' in input
+      ? String((input as { range?: unknown }).range)
+      : null;
+  const agentKey =
+    typeof input === 'object' && input !== null
+      ? String(
+          (input as { agentId?: unknown }).agentId ?? (input as { address?: unknown }).address ?? ''
+        )
+      : '';
+
   switch (procedure) {
     case 'tasks.list':
       return filteredTasksFromInput(input);
@@ -929,6 +1115,18 @@ function dataForProcedure(procedure: string, input: unknown) {
       return pitchesByTaskId.get(taskId) ?? [];
     case 'proofs.listByTask':
       return proofsByTaskId.get(taskId) ?? [];
+    case 'stats.platformTimeSeries':
+      return platformSeriesForRange(range);
+    case 'stats.breakdowns':
+      return breakdownsResponse;
+    case 'stats.activityFeed':
+      return activityFeedResponse;
+    case 'stats.agentTimeSeries':
+      return agentSeries();
+    case 'agents.inbox':
+      return inboxResponse;
+    case 'agents.stats':
+      return agentStats.get(agentKey) ?? agentStats.get('1003') ?? null;
     default:
       return null;
   }
@@ -1000,6 +1198,30 @@ export async function startMockApiServer(
         agents.find((agent) => agent.address.toLowerCase() === address?.toLowerCase()) ??
         null;
       writeJson(response, stats ?? { error: 'Not found' }, stats ? 200 : 404);
+      return;
+    }
+
+    if (url.pathname === '/api/stats/platform-time-series') {
+      writeJson(response, platformSeriesForRange(url.searchParams.get('range')));
+      return;
+    }
+
+    if (url.pathname === '/api/stats/breakdowns') {
+      writeJson(response, breakdownsResponse);
+      return;
+    }
+
+    if (url.pathname === '/api/stats/activity-feed') {
+      const limit = Number(url.searchParams.get('limit') ?? activityFeedItems.length);
+      writeJson(response, {
+        items: activityFeedItems.slice(0, limit),
+        nextCursor: null,
+      });
+      return;
+    }
+
+    if (url.pathname === '/api/stats/agent-time-series') {
+      writeJson(response, agentSeries());
       return;
     }
 

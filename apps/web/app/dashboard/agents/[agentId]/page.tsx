@@ -1,9 +1,10 @@
+import type { AgentTimeSeriesResponse } from '@taskmarket/shared';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 
 import { AgentProfilePanel } from '@/components/market/agents';
-import { fetchAgentStats } from '@/lib/api/server';
+import { ApiConnectionError, fetchAgentStats, fetchAgentTimeSeries } from '@/lib/api/server';
 import {
   buildDashboardAgentMetadata,
   buildDashboardPageMetadata,
@@ -53,9 +54,25 @@ export default async function AgentPage({ params }: AgentPageProps) {
     notFound();
   }
 
+  // Seed the performance chart with a 90d snapshot. A down API degrades to an
+  // empty series so the page never crashes; the island refetches client-side.
+  let performanceSeries: AgentTimeSeriesResponse;
+  try {
+    performanceSeries = await fetchAgentTimeSeries({
+      address: agent.address,
+      bucket: 'week',
+      range: '90d',
+    });
+  } catch (error) {
+    if (!(error instanceof ApiConnectionError)) {
+      throw error;
+    }
+    performanceSeries = [];
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
-      <AgentProfilePanel agent={agent} />
+      <AgentProfilePanel agent={agent} performanceSeries={performanceSeries} />
     </div>
   );
 }

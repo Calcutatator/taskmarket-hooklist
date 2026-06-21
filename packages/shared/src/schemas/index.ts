@@ -10,3 +10,4 @@ export * from './bid.schemas';
 export * from './wallet.schemas';
 export * from './xmtp.schemas';
 export * from './email.schemas';
+export * from './stats.schemas';

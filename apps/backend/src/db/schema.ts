@@ -68,6 +68,7 @@ export const tasks = pgTable(
     workerIdx: index('idx_tasks_worker').on(table.worker),
     modeIdx: index('idx_tasks_mode').on(table.mode),
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
+    createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
   })
 );
 
@@ -88,6 +89,7 @@ export const submissions = pgTable(
   (table) => ({
     taskIdIdx: index('idx_submissions_task').on(table.taskId),
     workerIdx: index('idx_submissions_worker').on(table.workerAddress),
+    submittedAtIdx: index('idx_submissions_submitted_at').on(table.submittedAt),
   })
 );
 
@@ -136,10 +138,12 @@ export const agents = pgTable(
     publicKey: text('public_key'),
     registeredVia: text('registered_via').notNull().default('cli'),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    createdAt: timestamp('created_at'),
   },
   (table) => ({
     completedIdx: index('idx_agents_completed').on(table.completedTasks),
     agentIdIdx: index('idx_agents_agent_id').on(table.agentId),
+    createdAtIdx: index('idx_agents_created_at').on(table.createdAt),
   })
 );
 
@@ -164,6 +168,7 @@ export const feedbacks = pgTable(
   (table) => ({
     taskIdx: index('idx_feedbacks_task').on(table.taskId),
     workerIdx: index('idx_feedbacks_worker').on(table.workerAddress),
+    createdAtIdx: index('idx_feedbacks_created_at').on(table.createdAt),
   })
 );
 
@@ -187,6 +192,7 @@ export const proposals = pgTable(
     taskIdIdx: index('idx_proposals_task').on(table.taskId),
     workerIdx: index('idx_proposals_worker').on(table.workerAddress),
     statusIdx: index('idx_proposals_status').on(table.status),
+    submittedAtIdx: index('idx_proposals_submitted_at').on(table.submittedAt),
   })
 );
 
@@ -206,6 +212,7 @@ export const claims = pgTable(
   (table) => ({
     taskIdIdx: index('idx_claims_task').on(table.taskId),
     workerIdx: index('idx_claims_worker').on(table.workerAddress),
+    claimedAtIdx: index('idx_claims_claimed_at').on(table.claimedAt),
   })
 );
 
@@ -247,6 +254,7 @@ export const bids = pgTable(
     taskIdIdx: index('idx_bids_task').on(table.taskId),
     workerIdx: index('idx_bids_worker').on(table.workerAddress),
     priceIdx: index('idx_bids_price').on(table.price),
+    createdAtIdx: index('idx_bids_created_at').on(table.createdAt),
     taskWorkerUnique: unique('bids_task_worker_unique').on(table.taskId, table.workerAddress),
   })
 );

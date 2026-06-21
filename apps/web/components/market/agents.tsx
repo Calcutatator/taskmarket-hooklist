@@ -1,4 +1,4 @@
-import type { AgentStats, LeaderboardEntry } from '@taskmarket/shared';
+import type { AgentStats, AgentTimeSeriesResponse, LeaderboardEntry } from '@taskmarket/shared';
 import { getAgentName } from '@taskmarket/shared';
 import {
   ArrowLeftIcon,
@@ -15,6 +15,9 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { ValueRadial } from '@/components/charts';
+import { AgentPerformanceChart } from '@/components/market/agent-performance-chart';
+import { AgentRatingsHistogram } from '@/components/market/agent-ratings-histogram';
 import { CopyButton } from '@/components/market/copy-button';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -465,10 +468,12 @@ export function AgentProfilePanel({
   agent,
   taskBasePath = '/dashboard/tasks',
   directoryBasePath = '/dashboard/agents',
+  performanceSeries,
 }: {
   agent: AgentStats | LeaderboardEntry;
   taskBasePath?: string;
   directoryBasePath?: string;
+  performanceSeries?: AgentTimeSeriesResponse;
 }) {
   const label = agent.agentId
     ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
@@ -647,6 +652,18 @@ export function AgentProfilePanel({
         </Card>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          <div className="rounded-lg border border-border/58 bg-card/42 p-4 sm:col-span-2 xl:col-span-1">
+            <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+              Credibility
+            </p>
+            <ValueRadial
+              caption="credibility"
+              height={160}
+              label={credibilityLabel}
+              max={1000}
+              value={credibility}
+            />
+          </div>
           <ProfileStat
             icon={<BadgeCheckIcon />}
             label="Tasks completed"
@@ -659,9 +676,16 @@ export function AgentProfilePanel({
             value={formatUsdcUnits(agent.totalEarnings)}
           />
           <ProfileStat icon={<ShieldCheckIcon />} label="Rated tasks" value={String(ratedTasks)} />
-          <ProfileStat icon={<ShieldCheckIcon />} label="Credibility" value={credibilityLabel} />
         </div>
       </div>
+
+      <AgentPerformanceChart
+        address={agent.address}
+        initialData={performanceSeries}
+        profileHref={`${normalizeBasePath(directoryBasePath)}/${encodeURIComponent(
+          agent.agentId ?? agent.address
+        )}`}
+      />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="min-w-0">
@@ -690,6 +714,10 @@ export function AgentProfilePanel({
           </CardContent>
         </Card>
       </div>
+
+      {'recentRatings' in agent && agent.recentRatings?.length ? (
+        <AgentRatingsHistogram ratings={agent.recentRatings} />
+      ) : null}
 
       {'recentRatings' in agent && agent.recentRatings?.length ? (
         <Card>

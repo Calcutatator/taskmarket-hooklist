@@ -17,12 +17,14 @@ import { xmtpRouter } from './routers/xmtp.router';
 import { emailsRouter } from './routers/emails.router';
 import { evaluationsRouter } from './routers/evaluations.router';
 import { marketRouter } from './routers/market.router';
+import { statsRouter } from './routers/stats.router';
 
 export const appRouter = router({
   health: healthRouter,
   tasks: tasksRouter,
   agents: agentsRouter,
   market: marketRouter,
+  stats: statsRouter,
   submissions: submissionsRouter,
   acceptance: acceptanceRouter,
   claims: claimsRouter,

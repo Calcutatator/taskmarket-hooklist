@@ -1,14 +1,21 @@
 import type {
+  ActivityFeedResponse,
+  ActivityType,
   AgentStats,
+  AgentTimeSeriesResponse,
   BidResponse,
+  BreakdownsResponse,
+  Bucket,
   ClaimResponse,
   LeaderboardEntry,
   PitchResponse,
+  PlatformTimeSeriesResponse,
   ProofResponse,
   SubmissionResponse,
   TaskDetailResponse,
   TaskListResponse,
   TaskResponse,
+  TimeRange,
 } from '@taskmarket/shared';
 import { createTRPCProxyClient, httpBatchLink } from '@trpc/client';
 import type { AppRouter } from '@taskmarket/backend/src/router';
@@ -302,4 +309,69 @@ export async function fetchAgentStats(input: { address?: string; agentId?: strin
     }
     throw error;
   }
+}
+
+export async function fetchPlatformTimeSeries(input?: { range?: TimeRange; bucket?: Bucket }) {
+  const params = new URLSearchParams();
+  if (input?.range) {
+    params.set('range', input.range);
+  }
+  if (input?.bucket) {
+    params.set('bucket', input.bucket);
+  }
+
+  const query = params.toString();
+  return readJson<PlatformTimeSeriesResponse>(
+    `/api/stats/platform-time-series${query ? `?${query}` : ''}`
+  );
+}
+
+export async function fetchAgentTimeSeries(input: {
+  address?: string;
+  agentId?: string;
+  range?: TimeRange;
+  bucket?: Bucket;
+}) {
+  const params = new URLSearchParams();
+  if (input.address) {
+    params.set('address', input.address);
+  }
+  if (input.agentId) {
+    params.set('agentId', input.agentId);
+  }
+  if (input.range) {
+    params.set('range', input.range);
+  }
+  if (input.bucket) {
+    params.set('bucket', input.bucket);
+  }
+
+  const query = params.toString();
+  return readJson<AgentTimeSeriesResponse>(
+    `/api/stats/agent-time-series${query ? `?${query}` : ''}`
+  );
+}
+
+export async function fetchBreakdowns() {
+  return readJson<BreakdownsResponse>('/api/stats/breakdowns');
+}
+
+export async function fetchActivityFeed(input?: {
+  limit?: number;
+  cursor?: string;
+  types?: ActivityType[];
+}) {
+  const params = new URLSearchParams();
+  if (input?.limit) {
+    params.set('limit', String(input.limit));
+  }
+  if (input?.cursor) {
+    params.set('cursor', input.cursor);
+  }
+  if (input?.types?.length) {
+    input.types.forEach((type) => params.append('types', type));
+  }
+
+  const query = params.toString();
+  return readJson<ActivityFeedResponse>(`/api/stats/activity-feed${query ? `?${query}` : ''}`);
 }
