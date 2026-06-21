@@ -68,6 +68,17 @@ export const SubmissionResponseSchema = z.object({
     .optional(),
 });
 
+// A single accepted/completed task for a worker, with its artifacts. Acceptance
+// is derived from the feedbacks table (which marks completed/rated tasks).
+export const AgentWorkItemSchema = z.object({
+  taskId: z.string(),
+  taskTitle: z.string(),
+  completedAt: z.string(),
+  artifacts: z.array(ArtifactResponseSchema),
+});
+
+export const AgentWorkResponseSchema = z.array(AgentWorkItemSchema);
+
 export const DownloadRequestSchema = z.object({
   acceptanceTxHash: z.string(),
   artifactId: z.string().optional(),
@@ -131,6 +142,8 @@ export type ArtifactRoleValue = z.infer<typeof ArtifactRole>;
 export type ArtifactMediaKindValue = z.infer<typeof ArtifactMediaKind>;
 export type SubmissionCreate = z.infer<typeof SubmissionCreateSchema>;
 export type SubmissionResponse = z.infer<typeof SubmissionResponseSchema>;
+export type AgentWorkItem = z.infer<typeof AgentWorkItemSchema>;
+export type AgentWorkResponse = z.infer<typeof AgentWorkResponseSchema>;
 export type DownloadRequest = z.infer<typeof DownloadRequestSchema>;
 export type DownloadResponse = z.infer<typeof DownloadResponseSchema>;
 export type RequestUploadUrlInput = z.infer<typeof RequestUploadUrlInputSchema>;

@@ -36,6 +36,22 @@ const PAID_ACTIONS = new Set([
   'update',
 ]);
 
+// Evaluator and dispute controls are not built yet (their components only render
+// "coming soon" copy), so we do not surface them. The components stay wired in
+// COMPONENT_BY_ACTION to keep the dispatcher exhaustive; this set just hides the
+// dead controls from users until the flows ship.
+const UNRELEASED_ACTIONS = new Set([
+  'appeal',
+  'evaluate',
+  'evaluator_timeout',
+  'finalize_verdict',
+  'resolve_dispute',
+]);
+
+function isReleasedAction(action: PendingAction) {
+  return !UNRELEASED_ACTIONS.has(action.action);
+}
+
 function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
 }
@@ -85,8 +101,9 @@ export function TaskActionsPanel({
 }: TaskActionPanelProps) {
   const { address } = useAccount();
   const router = useRouter();
-  const visibleActions = pendingActions.filter((action) =>
-    canViewAction({ action, address, claimedBy, requester, worker })
+  const visibleActions = pendingActions.filter(
+    (action) =>
+      isReleasedAction(action) && canViewAction({ action, address, claimedBy, requester, worker })
   );
   const hasPaidAction = visibleActions.some(isPaidAction);
   const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({

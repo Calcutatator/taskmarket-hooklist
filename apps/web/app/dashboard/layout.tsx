@@ -2,6 +2,7 @@ import type { Metadata } from 'next';
 import { cookies } from 'next/headers';
 
 import { AppSidebar } from '@/components/app-sidebar';
+import { DashboardBreadcrumb } from '@/components/dashboard-breadcrumb';
 import { SiteHeader } from '@/components/site-header';
 import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { buildNoIndexMetadata } from '@/lib/seo';
@@ -35,6 +36,9 @@ export default async function DashboardLayout({
       <AppSidebar variant="inset" />
       <SidebarInset id="dashboard-content" tabIndex={-1}>
         <SiteHeader />
+        <div className="border-b border-border/58 px-4 py-3 lg:px-6">
+          <DashboardBreadcrumb />
+        </div>
         {children}
       </SidebarInset>
     </SidebarProvider>

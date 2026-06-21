@@ -97,7 +97,11 @@ describe('CreateTaskWizard', () => {
 
     await gotoPublishFromCustom(user);
 
-    await user.click(screen.getByRole('button', { name: /connect wallet to post/i }));
+    // The publish button is disabled until the wizard mounts (a useEffect flips
+    // `ready`), so wait for it to enable before clicking to avoid a no-op click.
+    const connectButton = screen.getByRole('button', { name: /connect wallet to post/i });
+    await waitFor(() => expect(connectButton).toBeEnabled());
+    await user.click(connectButton);
 
     expect(connectOrCreateWallet).toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
@@ -335,15 +339,17 @@ describe('CreateTaskWizard', () => {
     const breakdownLabel = screen.getByText(/cost breakdown/i);
     const breakdown = breakdownLabel.closest('div') as HTMLElement;
     // Scope to the definition-list term rows so the trailing explanatory
-    // paragraph (which also says "You escrow") does not collide with these.
+    // paragraph does not collide with these.
     const labels = within(breakdown)
       .getAllByRole('term')
       .map((row) => row.textContent);
-    expect(labels).toContain('You escrow');
+    expect(labels).toContain('Reward');
     expect(labels).toContain('Platform fee (5%)');
+    expect(labels).toContain('You pay today');
     expect(labels).toContain('Worker receives');
-    // 100 reward -> 5 fee -> 95 to worker.
-    expect(within(breakdown).getByText('100.000 USDC')).toBeInTheDocument();
+    // 100 reward -> 5 fee -> 95 to worker, and the requester pays the full 100.
+    // The reward value appears twice (Reward row and the summed You-pay-today row).
+    expect(within(breakdown).getAllByText('100.000 USDC')).toHaveLength(2);
     expect(within(breakdown).getByText('5.000 USDC')).toBeInTheDocument();
     expect(within(breakdown).getByText('95.000 USDC')).toBeInTheDocument();
   });

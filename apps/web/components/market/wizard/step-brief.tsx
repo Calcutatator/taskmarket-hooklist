@@ -384,7 +384,7 @@ export function StepBrief({ fieldErrors, form, onChangeTemplate, templateId }: S
               {...register('pitchDeadline')}
             />
             <p className="text-xs leading-5 text-muted-foreground">
-              Requesters enter hours. The task API receives seconds.
+              How long workers have to submit a pitch before the window closes.
             </p>
           </div>
 

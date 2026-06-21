@@ -21,6 +21,7 @@ import {
   ArtifactMediaTile,
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
+import { CopyButton } from '@/components/market/copy-button';
 import { InfoTooltip } from '@/components/market/info-tooltip';
 import { LiveActivityPanel } from '@/components/market/live-activity';
 import { CountdownTimer } from '@/components/market/motion/countdown-timer';
@@ -48,6 +49,7 @@ import {
 } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { TaskListBoard, TaskThumbnail } from '@/components/market/task-thumbnail';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -60,11 +62,15 @@ import {
 import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import { MODE_TOOLTIPS, STATUS_CONFIG } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
+  taskStatusLabel,
+  taskStatusPhase,
 } from '@/lib/market/task-badges';
+import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
 import type { ActiveFilter, TaskSearchParams, TaskSortValue } from '@/lib/market/task-filters';
 
@@ -106,6 +112,103 @@ function taskBody(task: TaskResponse) {
   }
 
   return description === taskTitle(task).trim() ? '' : description;
+}
+
+// --- Brief legibility (TM-013) -------------------------------------------------------
+// Task descriptions are frequently authored as a SHOUTY, slab of ALL-CAPS sections
+// (ASK / DELIVERABLES / JUDGED / NOT THIS). We detect that structure and render it as
+// readable, collapsible sections with a short normal-case summary on top, while staying
+// robust to plain prose (which renders unchanged). No content is ever dropped.
+
+type BriefSection = { heading: string; body: string };
+
+// A header line is a short, mostly-uppercase line (optionally ending in ':' and with no
+// trailing sentence punctuation) such as "ASK", "DELIVERABLES:", or "NOT THIS". The
+// uppercase + brevity test keeps ordinary shouted sentences from being mistaken for headers.
+function isBriefHeading(line: string): boolean {
+  const trimmed = line.trim().replace(/:$/, '');
+  if (trimmed.length === 0 || trimmed.length > 32) {
+    return false;
+  }
+  const letters = trimmed.replace(/[^a-z]/gi, '');
+  if (letters.length < 2) {
+    return false;
+  }
+  // Reject lines that read as sentences (terminal punctuation) even if shouted.
+  if (/[.!?]$/.test(trimmed)) {
+    return false;
+  }
+  // All alphabetic characters present must be uppercase, and the word count must be small.
+  const isUpper = letters === letters.toUpperCase();
+  const wordCount = trimmed.split(/\s+/).length;
+  return isUpper && wordCount <= 4;
+}
+
+// "DELIVERABLES" -> "Deliverables", "NOT THIS" -> "Not this". Keeps the first word's
+// initial capital and lowercases the rest so a heading reads as a label, not a shout.
+function titleizeHeading(line: string): string {
+  const cleaned = line.trim().replace(/:$/, '').toLowerCase();
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1);
+}
+
+// Soften an all-caps content line to sentence case so the spec is readable. Only applied
+// when the whole line is uppercase (so deliberately-cased prose and acronyms-in-context are
+// left alone). Mixed-case lines pass through untouched.
+function softenShout(line: string): string {
+  const letters = line.replace(/[^a-z]/gi, '');
+  if (letters.length === 0 || letters !== letters.toUpperCase()) {
+    return line;
+  }
+  const lowered = line.toLowerCase();
+  return lowered.replace(
+    /^(\s*)([a-z])/,
+    (_match, lead: string, char: string) => lead + char.toUpperCase()
+  );
+}
+
+// Split a brief body into headed sections. Lines before the first header become an
+// untitled intro section. Returns a single untitled section when no headers are found.
+function parseBriefSections(body: string): BriefSection[] {
+  const lines = body.split('\n');
+  const sections: BriefSection[] = [];
+  let current: BriefSection | null = null;
+  const intro: string[] = [];
+
+  for (const line of lines) {
+    if (isBriefHeading(line)) {
+      if (current) {
+        sections.push(current);
+      }
+      current = { body: '', heading: titleizeHeading(line) };
+    } else if (current) {
+      current.body += (current.body ? '\n' : '') + line;
+    } else {
+      intro.push(line);
+    }
+  }
+  if (current) {
+    sections.push(current);
+  }
+
+  const introBody = intro.join('\n').trim();
+  if (introBody) {
+    sections.unshift({ body: introBody, heading: '' });
+  }
+
+  return sections.length > 0 ? sections : [{ body: body.trim(), heading: '' }];
+}
+
+// First readable line/sentence of the brief, softened to normal case, as a quick summary.
+function briefSummary(body: string): string {
+  const firstLine = body
+    .split('\n')
+    .map((line) => line.trim())
+    .find((line) => line.length > 0 && !isBriefHeading(line));
+  if (!firstLine) {
+    return '';
+  }
+  const sentence = firstLine.split(/(?<=[.!?])\s/)[0] ?? firstLine;
+  return softenShout(sentence);
 }
 
 function taskDetailTags(task: TaskResponse) {
@@ -256,6 +359,27 @@ function ActorTypeBadge({ actorType }: { actorType?: 'agent' | 'human' | null })
   );
 }
 
+// Lifecycle phase chip: separates work you can pick up (workable) from work that is
+// mid-flight or already settled (closed). Reads from STATUS_CONFIG via taskStatusPhase so
+// it stays in lockstep with the per-status colour and never re-derives the mapping.
+const PHASE_COPY: Record<ReturnType<typeof taskStatusPhase>, { label: string; title: string }> = {
+  workable: { label: 'Workable', title: 'Open for anyone matching the brief to take on.' },
+  'in-progress': { label: 'In progress', title: 'A worker or decision is mid-flight.' },
+  closed: { label: 'Closed', title: 'This task has settled and can no longer accept work.' },
+};
+
+function PhaseBadge({ status }: { status: TaskStatusType }) {
+  const phase = taskStatusPhase(status);
+  const copy = PHASE_COPY[phase];
+  // Workable reads as the actionable accent; in-progress/closed stay neutral so the chip
+  // reinforces the status colour without competing with it.
+  return (
+    <Badge title={copy.title} variant={phase === 'workable' ? 'success' : 'outline'}>
+      {copy.label}
+    </Badge>
+  );
+}
+
 function statusContext(task: TaskDetailResponse | TaskResponse) {
   const expiry = new Date(task.expiryTime);
   if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
@@ -385,7 +509,7 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
         </Link>
         <div className="flex flex-wrap gap-1.5">
           <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
-          <Badge variant={taskStatusBadgeVariant(task)}>{labelize(task.status)}</Badge>
+          <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
           {taskDetailTags(task)
             .slice(0, 2)
             .map((tag) => (
@@ -429,6 +553,73 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
   );
 }
 
+export type TaskListView = 'table' | 'gallery';
+
+// Whether a listing row carries any in-flight work, across every mode. Drives the
+// "show the work" thumbnail: only tasks that report submissions/bids/pitches/proofs mount a
+// TaskThumbnail, so a paginated feed makes a bounded number of preview requests rather than
+// one per row. (Only submissions carry media artifacts today, but counting all activity
+// keeps the gate honest and future-proof.)
+function taskHasActivity(task: TaskResponse): boolean {
+  return (
+    (task.submissionCount ?? 0) > 0 || (task.pitchCount ?? 0) > 0 || (task.auctionBidCount ?? 0) > 0
+  );
+}
+
+// Gallery card: a scannable, image-forward alternative to a table row for visual work.
+// The thumbnail only mounts when the task reports activity and hides itself when no media
+// artifact is available, so cards without previews degrade to a clean text card.
+function TaskGalleryCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
+  const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
+  const hasActivity = taskHasActivity(task);
+
+  return (
+    <li className="grid content-start gap-3 rounded-lg border border-border/58 bg-card/44 p-4 transition-[background-color,border-color] duration-300 ease-[var(--ease-premium)] hover:border-primary/36 hover:bg-surface/44">
+      {hasActivity ? (
+        <div className="overflow-hidden rounded-lg">
+          <TaskThumbnail taskId={task.id} />
+        </div>
+      ) : null}
+      <Link
+        className="block truncate font-sans text-sm font-semibold leading-6 text-foreground hover:text-primary"
+        href={detailHref as Route}
+        title={taskTitle(task)}
+      >
+        {taskTitle(task)}
+      </Link>
+      <div className="flex flex-wrap gap-1.5">
+        <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
+        <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
+      </div>
+      <div className="flex items-end justify-between gap-3 border-t border-border/58 pt-3">
+        <RewardAmount task={task} />
+        <span className="font-mono text-xs text-muted-foreground">{activityLabel(task)}</span>
+      </div>
+    </li>
+  );
+}
+
+function TaskGalleryGrid({
+  detailBasePath,
+  tasks,
+}: {
+  detailBasePath: string;
+  tasks: TaskResponse[];
+}) {
+  return (
+    <ul
+      aria-label="Task gallery"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      data-testid="task-gallery"
+      role="list"
+    >
+      {tasks.map((task) => (
+        <TaskGalleryCard detailBasePath={detailBasePath} key={task.id} task={task} />
+      ))}
+    </ul>
+  );
+}
+
 export function TaskTable({
   createHref = '/dashboard/tasks/new',
   detailBasePath = '/dashboard/tasks',
@@ -437,6 +628,7 @@ export function TaskTable({
   isLoading,
   listHref = '/dashboard/tasks',
   tasks,
+  view = 'table',
 }: {
   createHref?: string;
   detailBasePath?: string;
@@ -445,6 +637,7 @@ export function TaskTable({
   isLoading?: boolean;
   listHref?: string;
   tasks: TaskResponse[];
+  view?: TaskListView;
 }) {
   if (errorMessage) {
     return (
@@ -507,6 +700,13 @@ export function TaskTable({
     );
   }
 
+  // Gallery is an image-forward view for visual work: it surfaces submission previews so a
+  // browser can see what was produced before opening a task. The table stays the default,
+  // lightweight view (no per-row preview requests).
+  if (view === 'gallery') {
+    return <TaskGalleryGrid detailBasePath={detailBasePath} tasks={tasks} />;
+  }
+
   return (
     <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
       <ul aria-label="Task cards" className="grid gap-3 p-3 md:hidden" role="list">
@@ -553,7 +753,9 @@ export function TaskTable({
                   <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
                 </TableCell>
                 <TableCell>
-                  <Badge variant={taskStatusBadgeVariant(task)}>{labelize(task.status)}</Badge>
+                  <Badge variant={taskStatusBadgeVariant(task)}>
+                    {taskStatusLabel(task.status)}
+                  </Badge>
                 </TableCell>
                 <TableCell>
                   <span className="flex flex-wrap items-center gap-1.5">
@@ -854,7 +1056,7 @@ export function TaskListPageContent({
       : 'Open tasks';
 
   return (
-    <div className="@container/main grid w-full grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-4 md:gap-6 md:py-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-6 xl:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="@container/main mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-10 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
       <TaskFilterRail
         basePath={basePath}
         deadlineHours={filterParams.deadlineHours}
@@ -914,7 +1116,7 @@ export function TaskListPageContent({
           currentFilters={sortFilters}
           selectedSort={filterParams.selectedSort}
         />
-        <TaskTable
+        <TaskListBoard
           createHref={createHref}
           detailBasePath={detailBasePath}
           errorMessage={errorMessage}
@@ -1519,6 +1721,58 @@ function TaskSummaryRail({
   );
 }
 
+// Renders the task brief legibly: a normal-case one-line summary on top, then the full
+// spec broken into collapsible sections when the author used ALL-CAPS headers. For plain
+// prose (no detected headers and no shouting) it falls back to the original pre-wrapped
+// paragraph so nothing is restructured spuriously.
+function TaskBrief({ body }: { body: string }) {
+  const sections = parseBriefSections(body);
+  const hasHeadings = sections.some((section) => section.heading);
+  const summary = briefSummary(body);
+
+  // No structure detected: keep the original single-paragraph rendering verbatim.
+  if (!hasHeadings) {
+    return (
+      <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+        {softenShout(body)}
+      </p>
+    );
+  }
+
+  return (
+    <div className="grid gap-4">
+      {summary ? <p className="text-sm font-medium leading-6 text-foreground">{summary}</p> : null}
+      <div className="grid gap-2">
+        {sections.map((section, index) =>
+          section.heading ? (
+            // Sections open by default so the full spec is never hidden behind a click,
+            // but stay collapsible so a long brief can be folded once scanned.
+            <details
+              className="group rounded-lg border border-border/52 bg-muted/16 p-3"
+              key={`${section.heading}-${index}`}
+              open
+            >
+              <summary className="cursor-pointer select-none font-mono text-[0.68rem] uppercase tracking-wide text-muted-foreground hover:text-foreground">
+                {section.heading}
+              </summary>
+              <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-foreground">
+                {softenShout(section.body).trim()}
+              </p>
+            </details>
+          ) : section.body.trim() ? (
+            <p
+              className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground"
+              key={`intro-${index}`}
+            >
+              {softenShout(section.body).trim()}
+            </p>
+          ) : null
+        )}
+      </div>
+    </div>
+  );
+}
+
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
   marketStats,
@@ -1590,32 +1844,47 @@ export function TaskDetailPanel({
             footerValue={rated ? `${task.rating}/100` : activityLabel(task, modeData)}
             label="Status"
             value={
-              <Badge className="px-3.5 py-1.5 text-base" variant={taskStatusBadgeVariant(task)}>
-                {labelize(task.status)}
-              </Badge>
+              <InfoTooltip label={STATUS_CONFIG[task.status]?.description ?? statusContext(task)}>
+                <Badge className="px-3.5 py-1.5 text-base" variant={taskStatusBadgeVariant(task)}>
+                  {taskStatusLabel(task.status)}
+                </Badge>
+              </InfoTooltip>
             }
             valueCaption={statusContext(task)}
             valueClassName="mt-2 flex min-w-0 items-center"
           />
         </section>
         <section className="grid gap-3 border-t border-border/58 pt-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Link href={modeHref}>
-              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
-                {task.mode}
-              </Badge>
-            </Link>
-            {task.auctionType ? (
-              <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
-            ) : null}
-            {taskTypesHref ? (
-              <Link
-                className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
-                href={taskTypesHref}
-              >
-                How this works
-              </Link>
-            ) : null}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div className="flex flex-wrap items-center gap-2">
+              <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
+                <Link href={modeHref}>
+                  <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                    {task.mode}
+                  </Badge>
+                </Link>
+              </InfoTooltip>
+              {task.auctionType ? (
+                <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
+              ) : null}
+              <PhaseBadge status={task.status} />
+              {taskTypesHref ? (
+                <Link
+                  className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
+                  href={taskTypesHref}
+                >
+                  How this works
+                </Link>
+              ) : null}
+            </div>
+            {/* Copy-for-agent: hand the whole brief to an operator/LLM without scraping the page. */}
+            <div className="flex items-center gap-1.5">
+              <span className="font-mono text-[0.65rem] uppercase text-muted-foreground">
+                Copy for agent
+              </span>
+              <CopyButton label="Copy as JSON" text={taskToAgentJson(task, modeData)} />
+              <CopyButton label="Copy as markdown" text={taskToMarkdown(task)} />
+            </div>
           </div>
           <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
             {taskTitle(task)}
@@ -1658,11 +1927,7 @@ export function TaskDetailPanel({
             <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
               Details
             </h2>
-            {descriptionBody ? (
-              <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
-                {descriptionBody}
-              </p>
-            ) : null}
+            {descriptionBody ? <TaskBrief body={descriptionBody} /> : null}
             {detailTags.length > 0 ? (
               <div className="flex flex-wrap gap-2">
                 {detailTags.map((tag) => (

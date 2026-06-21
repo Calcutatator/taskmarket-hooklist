@@ -488,10 +488,10 @@ function FinalCallToActionSection() {
           </div>
           <div className="relative z-[1] grid grid-cols-[minmax(0,1fr)] gap-2">
             <p className="font-display text-4xl font-semibold leading-none tracking-tight sm:text-5xl">
-              Do a task now
+              Run an agent
             </p>
             <p className="max-w-md text-sm leading-6 text-muted-foreground">
-              Install the skill, claim funded work, and get paid per accepted result.
+              Install the skill, point your agent at funded work, and get paid per accepted result.
             </p>
           </div>
         </Link>
@@ -541,7 +541,7 @@ export function LandingPageContent({
               </h1>
             </LandingMotionItem>
             <LandingMotionItem className="min-w-0" motionId="landing-hero-subtitle">
-              <p className="max-w-full text-lg leading-8 text-muted-foreground sm:max-w-2xl">
+              <p className="max-w-full text-lg leading-8 text-foreground/85 sm:max-w-2xl">
                 Escrow USDC once, route the brief across autonomous workers, compare bids, pitches,
                 proofs, and submissions live, then pay only the accepted result.
               </p>
@@ -555,7 +555,7 @@ export function LandingPageContent({
             stagger={0.08}
           >
             <LandingMotionAction className="inline-flex" motionId="landing-hero-action-post">
-              <Button asChild>
+              <Button asChild size="lg">
                 <Link href="/dashboard/tasks/new">
                   Post a task
                   <span className="inline-flex size-6 items-center justify-center rounded-full border border-primary-foreground/20 bg-primary-foreground/10">

@@ -1,10 +1,15 @@
-import type { AgentTimeSeriesResponse } from '@taskmarket/shared';
+import type { AgentTimeSeriesResponse, AgentWorkResponse } from '@taskmarket/shared';
 import type { Metadata } from 'next';
 import { notFound } from 'next/navigation';
 import { cache } from 'react';
 
 import { AgentProfilePanel } from '@/components/market/agents';
-import { ApiConnectionError, fetchAgentStats, fetchAgentTimeSeries } from '@/lib/api/server';
+import {
+  ApiConnectionError,
+  fetchAgentStats,
+  fetchAgentTimeSeries,
+  fetchAgentWork,
+} from '@/lib/api/server';
 import {
   buildAgentMetadata,
   buildPageMetadata,
@@ -71,10 +76,23 @@ export default async function AgentPage({ params }: AgentPageProps) {
     performanceSeries = [];
   }
 
+  // Seed the portfolio gallery with accepted work + artifacts. A down API degrades
+  // to empty so the panel falls back to recent-rating task cards.
+  let agentWork: AgentWorkResponse;
+  try {
+    agentWork = await fetchAgentWork(agent.address);
+  } catch (error) {
+    if (!(error instanceof ApiConnectionError)) {
+      throw error;
+    }
+    agentWork = [];
+  }
+
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
       <AgentProfilePanel
         agent={agent}
+        agentWork={agentWork}
         directoryBasePath="/agents"
         performanceSeries={performanceSeries}
         taskBasePath="/tasks"

@@ -796,6 +796,41 @@ const breakdownsResponse: BreakdownsResponse = {
   ],
 };
 
+function buildHeatmap(dimension: string) {
+  if (dimension === 'hourOfWeek') {
+    const rowKeys = ['0', '1', '2', '3', '4', '5', '6'];
+    const colKeys = Array.from({ length: 24 }, (_, h) => String(h));
+    const cells: Array<{ row: string; col: string; count: number; volume: string }> = [];
+    let maxCount = 0;
+    for (const r of rowKeys) {
+      for (const c of colKeys) {
+        const count = (Number(r) * 7 + Number(c) * 3) % 11;
+        if (count === 0) continue;
+        maxCount = Math.max(maxCount, count);
+        cells.push({ col: c, count, row: r, volume: '0' });
+      }
+    }
+    return { cells, colKeys, maxCount, rowKeys };
+  }
+  const rowKeys = ['bounty', 'claim', 'pitch', 'benchmark', 'auction'];
+  const colKeys = Array.from({ length: 14 }, (_, i) => {
+    const d = new Date('2026-06-21T00:00:00Z');
+    d.setUTCDate(d.getUTCDate() - (13 - i));
+    return d.toISOString().slice(0, 10);
+  });
+  const cells: Array<{ row: string; col: string; count: number; volume: string }> = [];
+  let maxCount = 0;
+  rowKeys.forEach((row, ri) => {
+    colKeys.forEach((col, ci) => {
+      const count = (ri * 5 + ci * 2 + 1) % 9;
+      if (count === 0) return;
+      maxCount = Math.max(maxCount, count);
+      cells.push({ col, count, row, volume: String(count * 40_000_000) });
+    });
+  });
+  return { cells, colKeys, maxCount, rowKeys };
+}
+
 const activityFeedItems: ActivityFeedResponse['items'] = [
   {
     actor: requester,
@@ -879,10 +914,19 @@ const activityFeedItems: ActivityFeedResponse['items'] = [
   },
 ];
 
-const activityFeedResponse: ActivityFeedResponse = {
-  items: activityFeedItems,
-  nextCursor: null,
-};
+// Honour the `types` filter so the News segment chips work in mock-web.
+function activityFeedFor(input: unknown): ActivityFeedResponse {
+  const types =
+    typeof input === 'object' &&
+    input !== null &&
+    Array.isArray((input as { types?: unknown }).types)
+      ? ((input as { types: string[] }).types ?? [])
+      : [];
+  const items = types.length
+    ? activityFeedItems.filter((item) => types.includes(item.type))
+    : activityFeedItems;
+  return { items, nextCursor: null };
+}
 
 // Per-agent weekly series: cumulative earnings climb, some empty/early weeks,
 // a couple of null-rating weeks so the rating line shows honest gaps.
@@ -1068,8 +1112,13 @@ function trpcInput(url: URL, body: unknown, index: number) {
   const rawInput = requestInput(url, body);
   if (!rawInput) return {};
 
+  // Batched input is keyed by the call index. The value is either superjson-
+  // wrapped ({ json: <input> }) or the plain input object, depending on the
+  // client transformer. Unwrap both so procedures see the actual input.
   const indexed = rawInput[String(index)] as { json?: unknown } | undefined;
-  if (indexed?.json) return indexed.json;
+  if (indexed !== undefined && indexed !== null) {
+    return (indexed as { json?: unknown }).json ?? indexed;
+  }
 
   if (typeof rawInput === 'object' && rawInput !== null && 'json' in rawInput) {
     return (rawInput as { json: unknown }).json;
@@ -1120,9 +1169,11 @@ function dataForProcedure(procedure: string, input: unknown) {
     case 'stats.breakdowns':
       return breakdownsResponse;
     case 'stats.activityFeed':
-      return activityFeedResponse;
+      return activityFeedFor(input);
     case 'stats.agentTimeSeries':
       return agentSeries();
+    case 'stats.activityHeatmap':
+      return buildHeatmap('mode');
     case 'agents.inbox':
       return inboxResponse;
     case 'agents.stats':
@@ -1213,8 +1264,10 @@ export async function startMockApiServer(
 
     if (url.pathname === '/api/stats/activity-feed') {
       const limit = Number(url.searchParams.get('limit') ?? activityFeedItems.length);
+      const types = url.searchParams.getAll('types');
+      const filtered = activityFeedFor({ types });
       writeJson(response, {
-        items: activityFeedItems.slice(0, limit),
+        items: filtered.items.slice(0, limit),
         nextCursor: null,
       });
       return;
@@ -1222,6 +1275,11 @@ export async function startMockApiServer(
 
     if (url.pathname === '/api/stats/agent-time-series') {
       writeJson(response, agentSeries());
+      return;
+    }
+
+    if (url.pathname === '/api/stats/activity-heatmap') {
+      writeJson(response, buildHeatmap(url.searchParams.get('dimension') ?? 'mode'));
       return;
     }
 

@@ -10,6 +10,13 @@ const { reducedMotionState } = vi.hoisted(() => ({
 
 vi.mock('@/lib/api/client', () => ({
   trpc: {
+    submissions: {
+      // TaskThumbnail (mounted for tasks with submissions) calls this; return no
+      // submissions so the thumbnail hides itself and the pulse renders as before.
+      listByTask: {
+        useQuery: () => ({ data: [] }),
+      },
+    },
     tasks: {
       list: {
         useQuery: (_input: unknown, options?: { initialData?: unknown }) => ({

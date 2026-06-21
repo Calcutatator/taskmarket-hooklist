@@ -87,11 +87,43 @@ export function PrivyHeaderAccountControl() {
   return <PrivyHeaderAccountControlInner />;
 }
 
+// If Privy has not reported ready within this window we treat the SDK as unavailable
+// (e.g. a misconfigured app-id or a blocked network request) and surface an explicit
+// disabled affordance instead of spinning forever.
+const PRIVY_READY_TIMEOUT_MS = 8000;
+
 function PrivyHeaderAccountControlInner() {
   const { address, connectOrCreateWallet, connected, login, logout, ready } =
     usePrivyAccountState();
+  const [readyTimedOut, setReadyTimedOut] = useState(false);
+
+  useEffect(() => {
+    if (ready) {
+      setReadyTimedOut(false);
+      return;
+    }
+
+    const timer = setTimeout(() => setReadyTimedOut(true), PRIVY_READY_TIMEOUT_MS);
+    return () => clearTimeout(timer);
+  }, [ready]);
 
   if (!ready) {
+    if (readyTimedOut) {
+      return (
+        <Button
+          className="min-h-11 sm:min-h-9"
+          disabled
+          size="sm"
+          title="Sign in is temporarily unavailable. Refresh the page to try again."
+          type="button"
+          variant="outline"
+        >
+          <IconLogin className="size-4" />
+          Sign in unavailable
+        </Button>
+      );
+    }
+
     return (
       <Button className="min-h-11 sm:min-h-9" disabled size="sm" type="button" variant="outline">
         Loading

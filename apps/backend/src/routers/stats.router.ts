@@ -8,12 +8,15 @@ import {
   BreakdownsResponseSchema,
   ActivityFeedInputSchema,
   ActivityFeedResponseSchema,
+  ActivityHeatmapInputSchema,
+  ActivityHeatmapResponseSchema,
 } from '@taskmarket/shared';
 import {
   getPlatformTimeSeries,
   getAgentTimeSeries,
   getBreakdowns,
   getActivityFeed,
+  getActivityHeatmap,
 } from '../services/stats';
 
 export const statsRouter = router({
@@ -68,4 +71,17 @@ export const statsRouter = router({
     .input(ActivityFeedInputSchema)
     .output(ActivityFeedResponseSchema)
     .query(({ input, ctx }) => getActivityFeed(ctx.db, input)),
+
+  activityHeatmap: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/stats/activity-heatmap',
+        tags: ['Stats'],
+        summary: 'Market activity bucketed by two dimensions for a heat-map widget',
+      },
+    })
+    .input(ActivityHeatmapInputSchema)
+    .output(ActivityHeatmapResponseSchema)
+    .query(({ input, ctx }) => getActivityHeatmap(ctx.db, input)),
 });

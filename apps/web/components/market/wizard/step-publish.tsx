@@ -34,6 +34,10 @@ const apiUrl = getBrowserApiBaseUrl();
 // reward), so the x402 amount equals the reward and the breakdown is display-only.
 const PLATFORM_FEE_BPS = 500;
 
+// Human-readable platform fee percent derived from the bps source above so the
+// displayed label can never drift from the math used to compute the fee.
+const PLATFORM_FEE_PERCENT = PLATFORM_FEE_BPS / 100;
+
 type PublishPhase = 'form' | 'payment' | 'signing' | 'submitting';
 
 type WalletBalance = {
@@ -55,16 +59,16 @@ const stepCopy: Record<PublishPhase, { label: string; text: string }> = {
     text: 'Review the brief, mode, reward, and deadlines.',
   },
   payment: {
-    label: 'Payment challenge',
-    text: 'Requesting x402 terms from the backend.',
+    label: 'Preparing payment',
+    text: 'Getting the payment ready for your wallet.',
   },
   signing: {
     label: 'Wallet signature',
-    text: 'Sign the USDC authorization. No gas is required.',
+    text: 'Approve the USDC payment in your wallet. No gas fee is charged.',
   },
   submitting: {
     label: 'Publishing task',
-    text: 'Submitting the signed task and task terms.',
+    text: 'Posting your task to the marketplace.',
   },
 };
 
@@ -450,14 +454,22 @@ export function StepPublish({
               </p>
               <dl className="grid gap-1.5 text-sm">
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">You escrow</dt>
+                  <dt className="text-muted-foreground">Reward</dt>
                   <dd className="font-mono text-foreground">
                     {formatUsdcUnits(breakdown.escrowed)}
                   </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
-                  <dt className="text-muted-foreground">Platform fee (5%)</dt>
-                  <dd className="font-mono text-foreground">{formatUsdcUnits(breakdown.fee)}</dd>
+                  <dt className="text-muted-foreground">Platform fee ({PLATFORM_FEE_PERCENT}%)</dt>
+                  <dd className="font-mono text-muted-foreground">
+                    {formatUsdcUnits(breakdown.fee)}
+                  </dd>
+                </div>
+                <div className="flex items-center justify-between gap-3 border-t border-border/68 pt-1.5">
+                  <dt className="font-semibold text-foreground">You pay today</dt>
+                  <dd className="font-mono font-semibold text-foreground">
+                    {formatUsdcUnits(breakdown.escrowed)}
+                  </dd>
                 </div>
                 <div className="flex items-center justify-between gap-3">
                   <dt className="text-foreground">Worker receives</dt>
@@ -467,8 +479,8 @@ export function StepPublish({
                 </div>
               </dl>
               <p className="text-xs leading-5 text-muted-foreground">
-                You escrow the full reward. The worker receives the reward minus a 5% platform fee
-                on payout.
+                You fund the full reward up front. The worker is paid the reward minus a{' '}
+                {PLATFORM_FEE_PERCENT}% platform fee when you accept their work.
               </p>
             </div>
           </CardContent>
@@ -482,7 +494,7 @@ export function StepPublish({
           <CardHeader className="border-b border-border/75">
             <CardTitle>Publish status</CardTitle>
             <CardDescription className="mt-2">
-              Task creation waits for the signed USDC payment challenge.
+              Your task goes live once you approve the USDC payment in your wallet.
             </CardDescription>
           </CardHeader>
           <CardContent className="grid gap-5 pt-6">
@@ -558,11 +570,11 @@ export function StepPublish({
                 defaultAmount={fundingPrompt.defaultAmount}
                 message={`Wallet has ${fundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
                   fundingPrompt.shortfallBaseUnits
-                )} before signing the payment authorization.`}
+                )} before you can fund this task.`}
                 onStatus={handleFundingStatus}
               >
                 <p className="text-xs leading-5 text-muted-foreground">
-                  Required funding is {formatUsdcUnits(fundingPrompt.requiredBaseUnits)}.
+                  This task needs {formatUsdcUnits(fundingPrompt.requiredBaseUnits)} to publish.
                 </p>
               </FundingGuard>
             ) : null}

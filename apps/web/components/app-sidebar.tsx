@@ -7,10 +7,10 @@ import {
   IconCode,
   IconDashboard,
   IconExternalLink,
-  IconInbox,
   IconListCheck,
   IconListDetails,
   IconMoodSmile,
+  IconNews,
   IconSearch,
   IconSettings,
   IconUser,
@@ -43,9 +43,12 @@ const data = {
       icon: IconDashboard,
     },
     {
-      title: 'Inbox',
+      // The route path stays /dashboard/inbox to avoid breaking existing links;
+      // only the user-facing label changed to News. A /dashboard/news alias could
+      // be added later if a cleaner URL is wanted.
+      title: 'News',
       url: '/dashboard/inbox',
-      icon: IconInbox,
+      icon: IconNews,
     },
     {
       title: 'Tasks',
@@ -71,7 +74,7 @@ const data = {
   navSecondary: [
     {
       active: false,
-      title: 'Task search',
+      title: 'Browse tasks',
       url: '/dashboard/tasks',
       icon: IconSearch,
     },

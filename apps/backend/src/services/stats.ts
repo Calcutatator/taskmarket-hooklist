@@ -11,6 +11,8 @@ import type {
   ActivityFeedInput,
   ActivityFeedResponse,
   ActivityType,
+  ActivityHeatmapInput,
+  ActivityHeatmapResponse,
 } from '@taskmarket/shared';
 
 type DB = typeof Database;
@@ -481,4 +483,158 @@ export async function getActivityFeed(
   const nextCursor = hasMore ? items[items.length - 1]!.timestamp : null;
 
   return { items, nextCursor };
+}
+
+// ---------------------------------------------------------------------------
+// activityHeatmap
+// ---------------------------------------------------------------------------
+
+// The task modes that form the rows of the 'mode' heat map.
+const HEATMAP_MODES = ['bounty', 'claim', 'pitch', 'benchmark', 'auction'] as const;
+
+export async function getActivityHeatmap(
+  db: DB,
+  input: ActivityHeatmapInput
+): Promise<ActivityHeatmapResponse> {
+  const { range, dimension } = input;
+
+  if (dimension === 'hourOfWeek') {
+    // Union the engagement source tables and bucket each row by (day-of-week,
+    // hour-of-day) in UTC. count = activity count; volume is not meaningful for
+    // this dimension so it is returned as '0'. created_at is guarded null for the
+    // bids source (the only source whose timestamp column is nullable in spirit);
+    // all sources are filtered `ts is not null` for safety.
+    const rangeClause =
+      range === 'all'
+        ? ''
+        : ` where ts >= (now() at time zone 'UTC') - interval '${RANGE_INTERVAL[range]}'`;
+
+    const tsUnion = sql.raw(
+      ACTIVITY_SOURCES.map(
+        (s) => `select ${s.tsColumn} as ts from ${s.table} where ${s.tsColumn} is not null`
+      ).join(' union all ')
+    );
+
+    const query = sql`
+      with events as (${tsUnion})
+      select
+        extract(dow from ts at time zone 'UTC')::int as row,
+        extract(hour from ts at time zone 'UTC')::int as col,
+        count(*)::int as c
+      from events
+      ${sql.raw(rangeClause)}
+      group by 1, 2
+    `;
+
+    const rows = (await db.execute(query)) as unknown as Array<{
+      row: number;
+      col: number;
+      c: number;
+    }>;
+
+    const rowKeys = ['0', '1', '2', '3', '4', '5', '6'];
+    const colKeys = Array.from({ length: 24 }, (_, h) => String(h));
+
+    let maxCount = 0;
+    const cells = rows.map((r) => {
+      const count = Number(r.c);
+      if (count > maxCount) {
+        maxCount = count;
+      }
+      return {
+        row: String(r.row),
+        col: String(r.col),
+        count,
+        volume: '0',
+      };
+    });
+
+    return { rowKeys, colKeys, cells, maxCount };
+  }
+
+  // dimension === 'mode': group tasks by (mode, day bucket) over the range.
+  // count = task count, volume = sum(reward) as base-unit text. colKeys are the
+  // ordered day buckets generated from a spine so the range is fully covered.
+  const startExpr =
+    range === 'all'
+      ? sql`date_trunc('day', coalesce(
+          (select min(created_at) from tasks where created_at is not null),
+          date_trunc('day', now() at time zone 'UTC')
+        ) at time zone 'UTC')`
+      : sql`date_trunc('day', (now() at time zone 'UTC') - ${sql.raw(`interval '${RANGE_INTERVAL[range]}'`)})`;
+
+  const rangeClause =
+    range === 'all'
+      ? sql``
+      : sql`and created_at >= (now() at time zone 'UTC') - ${sql.raw(`interval '${RANGE_INTERVAL[range]}'`)}`;
+
+  const query = sql`
+    with spine as (
+      select generate_series(
+        ${startExpr},
+        date_trunc('day', now() at time zone 'UTC'),
+        interval '1 day'
+      ) as bucket
+    ),
+    cells as (
+      select
+        mode as row,
+        ${bucketTruncExpr('created_at', 'day')} as bucket,
+        count(*)::int as c,
+        coalesce(sum(reward), 0)::text as v
+      from tasks
+      where created_at is not null
+      ${rangeClause}
+      group by 1, 2
+    )
+    select
+      to_char(s.bucket, 'YYYY-MM-DD') as col,
+      c.row as row,
+      coalesce(c.c, 0) as c,
+      coalesce(c.v, '0') as v
+    from spine s
+    left join cells c on c.bucket = s.bucket
+    order by s.bucket asc
+  `;
+
+  const rows = (await db.execute(query)) as unknown as Array<{
+    col: string;
+    row: string | null;
+    c: number;
+    v: string;
+  }>;
+
+  // colKeys: the ordered, de-duplicated day buckets from the spine.
+  const colKeys: string[] = [];
+  const seenCols = new Set<string>();
+  for (const r of rows) {
+    if (!seenCols.has(r.col)) {
+      seenCols.add(r.col);
+      colKeys.push(r.col);
+    }
+  }
+
+  // Only emit non-empty cells (spine rows with no matching task have row = null).
+  let maxCount = 0;
+  const cells = rows
+    .filter((r) => r.row !== null && Number(r.c) > 0)
+    .map((r) => {
+      const count = Number(r.c);
+      if (count > maxCount) {
+        maxCount = count;
+      }
+      return {
+        row: String(r.row),
+        col: r.col,
+        count,
+        volume: String(r.v),
+      };
+    });
+
+  return {
+    rowKeys: [...HEATMAP_MODES],
+    colKeys,
+    cells,
+    maxCount,
+  };
 }

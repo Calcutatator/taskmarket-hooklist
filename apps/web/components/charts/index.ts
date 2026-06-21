@@ -29,6 +29,12 @@ export {
   type DistributionBarsProps,
   type DistributionDatum,
 } from '@/components/charts/status-breakdown';
+export {
+  HeatmapGrid,
+  type HeatmapCell,
+  type HeatmapData,
+  type HeatmapGridProps,
+} from '@/components/charts/heatmap-grid';
 export { ValueRadial, type ValueRadialProps } from '@/components/charts/value-radial';
 export { Sparkline, type SparklineProps } from '@/components/charts/sparkline';
 export {

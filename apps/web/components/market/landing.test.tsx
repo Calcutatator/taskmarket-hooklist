@@ -5,6 +5,13 @@ import { LandingPageContent } from './landing';
 
 vi.mock('@/lib/api/client', () => ({
   trpc: {
+    submissions: {
+      // TaskThumbnail (mounted for live-pulse tasks with submissions) calls this; return
+      // no submissions so the thumbnail hides itself and the landing renders as before.
+      listByTask: {
+        useQuery: () => ({ data: [] }),
+      },
+    },
     tasks: {
       list: {
         useQuery: (_input: unknown, options?: { initialData?: unknown }) => ({

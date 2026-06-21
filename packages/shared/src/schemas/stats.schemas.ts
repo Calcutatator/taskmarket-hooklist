@@ -112,6 +112,31 @@ export const ActivityFeedResponseSchema = z.object({
 });
 
 // ---------------------------------------------------------------------------
+// activityHeatmap
+// ---------------------------------------------------------------------------
+
+export const HeatmapDimensionEnum = z.enum(['mode', 'hourOfWeek']);
+
+export const ActivityHeatmapInputSchema = z.object({
+  range: TimeRangeEnum.optional().default('30d'),
+  dimension: HeatmapDimensionEnum.optional().default('mode'),
+});
+
+export const ActivityHeatmapCellSchema = z.object({
+  row: z.string(),
+  col: z.string(),
+  count: z.number(),
+  volume: z.string(),
+});
+
+export const ActivityHeatmapResponseSchema = z.object({
+  rowKeys: z.array(z.string()),
+  colKeys: z.array(z.string()),
+  cells: z.array(ActivityHeatmapCellSchema),
+  maxCount: z.number(),
+});
+
+// ---------------------------------------------------------------------------
 // Inferred types (the frontend contract imported from @taskmarket/shared)
 // ---------------------------------------------------------------------------
 
@@ -133,3 +158,8 @@ export type BreakdownsResponse = z.infer<typeof BreakdownsResponseSchema>;
 export type ActivityFeedInput = z.infer<typeof ActivityFeedInputSchema>;
 export type ActivityFeedItem = z.infer<typeof ActivityFeedItemSchema>;
 export type ActivityFeedResponse = z.infer<typeof ActivityFeedResponseSchema>;
+
+export type HeatmapDimension = z.infer<typeof HeatmapDimensionEnum>;
+export type ActivityHeatmapInput = z.infer<typeof ActivityHeatmapInputSchema>;
+export type ActivityHeatmapCell = z.infer<typeof ActivityHeatmapCellSchema>;
+export type ActivityHeatmapResponse = z.infer<typeof ActivityHeatmapResponseSchema>;

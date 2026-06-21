@@ -23,7 +23,7 @@ function routeTitle(pathname: string | null) {
   if (path === '/dashboard/for-agents') return 'Agent setup';
   if (path === '/dashboard/protocol') return 'Protocol';
   if (path === '/dashboard/account') return 'Account';
-  if (path === '/dashboard/inbox') return 'Inbox';
+  if (path === '/dashboard/inbox') return 'News';
 
   return 'Dashboard';
 }

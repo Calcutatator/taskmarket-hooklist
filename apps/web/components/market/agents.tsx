@@ -1,4 +1,9 @@
-import type { AgentStats, AgentTimeSeriesResponse, LeaderboardEntry } from '@taskmarket/shared';
+import type {
+  AgentStats,
+  AgentTimeSeriesResponse,
+  AgentWorkResponse,
+  LeaderboardEntry,
+} from '@taskmarket/shared';
 import { getAgentName } from '@taskmarket/shared';
 import {
   ArrowLeftIcon,
@@ -13,12 +18,16 @@ import {
 } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { HoverCard as HoverCardPrimitive } from 'radix-ui';
 import type { ReactNode } from 'react';
 
 import { ValueRadial } from '@/components/charts';
+import { AgentAvatar } from '@/components/market/agent-avatar';
 import { AgentPerformanceChart } from '@/components/market/agent-performance-chart';
 import { AgentRatingsHistogram } from '@/components/market/agent-ratings-histogram';
+import { ArtifactMediaTile } from '@/components/market/artifact-preview-button';
 import { CopyButton } from '@/components/market/copy-button';
+import { InfoTooltip } from '@/components/market/info-tooltip';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -34,7 +43,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Tooltip, TooltipContent, TooltipProvider, TooltipTrigger } from '@/components/ui/tooltip';
+import { METRIC_LEGENDS } from '@/lib/market/status-config';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
+import { cn } from '@/lib/utils';
 
 const pageSizeOptions = [10, 20, 50];
 const chainId = Number(process.env.NEXT_PUBLIC_CHAIN_ID ?? process.env.CHAIN_ID ?? 8453);
@@ -151,7 +162,9 @@ export function AgentTable({
               <TableHead>{identityLabel}</TableHead>
               <TableHead>Skills</TableHead>
               <TableHead>Tasks</TableHead>
-              <TableHead>Rating</TableHead>
+              <TableHead>
+                <InfoTooltip label={METRIC_LEGENDS.rating}>Rating</InfoTooltip>
+              </TableHead>
               <TableHead>
                 <TooltipProvider>
                   <Tooltip>
@@ -160,9 +173,8 @@ export function AgentTable({
                       <InfoIcon className="size-3 text-muted-foreground" />
                     </TooltipTrigger>
                     <TooltipContent className="max-w-64">
-                      Credibility reflects how much weight to give a worker's rating. Higher ratings
-                      from more tasks = higher credibility. Leaderboard is sorted by
-                      Bayesian-weighted reputation score.
+                      {METRIC_LEGENDS.credibility} Leaderboard is sorted by Bayesian-weighted
+                      reputation score.
                     </TooltipContent>
                   </Tooltip>
                 </TooltipProvider>
@@ -174,22 +186,30 @@ export function AgentTable({
             {agents.map((agent) => {
               const label = agent.agentId ?? compactAddress(agent.address);
               const profileId = agent.agentId ?? agent.address;
+              const profileHref =
+                `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route;
 
               return (
                 <TableRow key={`${agent.rank}-${agent.address}`}>
                   <TableCell className="font-mono">#{agent.rank}</TableCell>
                   <TableCell>
-                    <Link
-                      className="font-medium hover:text-primary"
-                      href={
-                        `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(profileId)}` as Route
-                      }
-                    >
-                      {label}
-                    </Link>
-                    <p className="mt-1 font-mono text-xs text-muted-foreground">
-                      {compactAddress(agent.address)}
-                    </p>
+                    <div className="flex items-center gap-2.5">
+                      <AgentAvatar
+                        address={agent.address}
+                        agentId={agent.agentId ?? undefined}
+                        size="sm"
+                      />
+                      <div className="min-w-0">
+                        <AgentHoverCard agent={agent} profileHref={profileHref}>
+                          <Link className="font-medium hover:text-primary" href={profileHref}>
+                            {label}
+                          </Link>
+                        </AgentHoverCard>
+                        <p className="mt-0.5 font-mono text-xs text-muted-foreground">
+                          {compactAddress(agent.address)}
+                        </p>
+                      </div>
+                    </div>
                   </TableCell>
                   <TableCell>
                     <div className="flex flex-wrap gap-1">
@@ -466,11 +486,13 @@ export function AgentLeaderboardPanel({
 
 export function AgentProfilePanel({
   agent,
+  agentWork = [],
   taskBasePath = '/dashboard/tasks',
   directoryBasePath = '/dashboard/agents',
   performanceSeries,
 }: {
   agent: AgentStats | LeaderboardEntry;
+  agentWork?: AgentWorkResponse;
   taskBasePath?: string;
   directoryBasePath?: string;
   performanceSeries?: AgentTimeSeriesResponse;
@@ -481,6 +503,11 @@ export function AgentProfilePanel({
   const rank = 'rank' in agent ? agent.rank : null;
   const ratedTasks = 'ratedTasks' in agent ? agent.ratedTasks : 0;
   const totalStars = 'totalStars' in agent ? agent.totalStars : null;
+  // Whether the Work section is showing the artifact gallery (vs. the recent-ratings
+  // fallback). When true, the standalone Recent ratings card renders below; when false
+  // the fallback already carries the rating/feedback so the card is suppressed to avoid
+  // duplicating the same tasks.
+  const hasPortfolioArtifacts = agentWork.some((item) => item.artifacts.length > 0);
   const skills = agent.skills ?? [];
   const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
   const credibility =
@@ -536,7 +563,11 @@ export function AgentProfilePanel({
           <CardContent className="grid gap-7 pt-0">
             <div className="-mx-6 -mt-6 border-b border-border/68 bg-surface/58 px-6 py-6 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.04)]">
               <div className="flex flex-col gap-5 sm:flex-row sm:items-center">
-                <AgentMark address={agent.address} label={label} />
+                <AgentAvatar
+                  address={agent.address}
+                  agentId={agent.agentId ?? undefined}
+                  size="lg"
+                />
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
                     {rank ? <Badge>Rank #{rank}</Badge> : null}
@@ -654,7 +685,7 @@ export function AgentProfilePanel({
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
           <div className="rounded-lg border border-border/58 bg-card/42 p-4 sm:col-span-2 xl:col-span-1">
             <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
-              Credibility
+              <InfoTooltip label={METRIC_LEGENDS.credibility}>Credibility</InfoTooltip>
             </p>
             <ValueRadial
               caption="credibility"
@@ -669,7 +700,12 @@ export function AgentProfilePanel({
             label="Tasks completed"
             value={String(agent.completedTasks)}
           />
-          <ProfileStat icon={<StarIcon />} label="Average rating" value={ratingLabel} />
+          <ProfileStat
+            icon={<StarIcon />}
+            label="Average rating"
+            tooltip={METRIC_LEGENDS.rating}
+            value={ratingLabel}
+          />
           <ProfileStat
             icon={<CoinsIcon />}
             label="Total earned"
@@ -685,6 +721,12 @@ export function AgentProfilePanel({
         profileHref={`${normalizeBasePath(directoryBasePath)}/${encodeURIComponent(
           agent.agentId ?? agent.address
         )}`}
+      />
+
+      <AgentPortfolio
+        agentWork={agentWork}
+        recentRatings={'recentRatings' in agent ? (agent.recentRatings ?? []) : []}
+        taskBasePath={taskBasePath}
       />
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
@@ -719,7 +761,7 @@ export function AgentProfilePanel({
         <AgentRatingsHistogram ratings={agent.recentRatings} />
       ) : null}
 
-      {'recentRatings' in agent && agent.recentRatings?.length ? (
+      {hasPortfolioArtifacts && 'recentRatings' in agent && agent.recentRatings?.length ? (
         <Card>
           <CardHeader>
             <CardTitle>Recent ratings</CardTitle>
@@ -786,31 +828,90 @@ export function AgentProfilePanel({
   );
 }
 
-function AgentMark({ address, label }: { address: string; label: string }) {
-  const hue = address
-    .slice(2, 8)
-    .split('')
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
-  const initials = label
-    .replace(/^Agent #/, '#')
-    .split(/[\s.-]+/)
-    .filter(Boolean)
-    .slice(0, 2)
-    .map((part) => part.charAt(0))
-    .join('')
-    .toUpperCase();
+// Lightweight hover preview for a directory/leaderboard row. Sourced entirely from the
+// LeaderboardEntry already in the row - no extra fetch. Uses the radix HoverCard primitive
+// directly (no shared ui wrapper exists) and degrades to plain children for touch / no-hover
+// inputs. Motion is opt-out via prefers-reduced-motion (motion-safe:* gates the animations).
+function AgentHoverCard({
+  agent,
+  children,
+  profileHref,
+}: {
+  agent: LeaderboardEntry;
+  children: ReactNode;
+  profileHref: Route;
+}) {
+  const name = agent.agentId
+    ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
+    : compactAddress(agent.address);
+  const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
+  const credibilityLabel = `${((agent.credibility ?? 0) / 10).toFixed(0)}%`;
+  const topSkills = agent.skills.slice(0, 4);
 
   return (
-    <div
-      aria-label={`Avatar for ${label}`}
-      className="flex size-24 shrink-0 items-center justify-center rounded-full border border-border/58 font-mono text-2xl font-semibold text-foreground shadow-[var(--shadow-control)]"
-      role="img"
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue % 360} 28% 24%), hsl(${(hue + 48) % 360} 42% 38%))`,
-      }}
-    >
-      {initials || address.slice(2, 4).toUpperCase()}
-    </div>
+    <HoverCardPrimitive.Root closeDelay={80} openDelay={140}>
+      <HoverCardPrimitive.Trigger asChild>{children}</HoverCardPrimitive.Trigger>
+      <HoverCardPrimitive.Portal>
+        <HoverCardPrimitive.Content
+          align="start"
+          className={cn(
+            'z-50 w-72 origin-(--radix-hover-card-content-transform-origin) rounded-lg border border-border/68 bg-popover p-4 text-popover-foreground shadow-[var(--shadow-control)] outline-none',
+            'motion-safe:animate-in motion-safe:fade-in-0 motion-safe:zoom-in-95 motion-safe:data-[state=closed]:animate-out motion-safe:data-[state=closed]:fade-out-0 motion-safe:data-[state=closed]:zoom-out-95'
+          )}
+          sideOffset={8}
+        >
+          <div className="grid gap-3">
+            <div className="flex items-center gap-3">
+              <AgentAvatar address={agent.address} agentId={agent.agentId ?? undefined} size="md" />
+              <div className="min-w-0">
+                <Link
+                  className="block truncate text-sm font-semibold hover:text-primary"
+                  href={profileHref}
+                >
+                  {name}
+                </Link>
+                <p className="truncate font-mono text-xs text-muted-foreground">
+                  {compactAddress(agent.address)}
+                </p>
+              </div>
+              <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
+                #{agent.rank}
+              </span>
+            </div>
+            <dl className="grid grid-cols-2 gap-2 text-xs">
+              <div>
+                <dt className="font-mono uppercase text-muted-foreground">Rating</dt>
+                <dd className="mt-0.5 font-mono text-foreground">{ratingLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-mono uppercase text-muted-foreground">Credibility</dt>
+                <dd className="mt-0.5 font-mono text-foreground">{credibilityLabel}</dd>
+              </div>
+              <div>
+                <dt className="font-mono uppercase text-muted-foreground">Completed</dt>
+                <dd className="mt-0.5 font-mono text-foreground">{agent.completedTasks}</dd>
+              </div>
+              <div>
+                <dt className="font-mono uppercase text-muted-foreground">Total earned</dt>
+                <dd className="mt-0.5 font-mono text-primary">
+                  {formatUsdcUnits(agent.totalEarnings)}
+                </dd>
+              </div>
+            </dl>
+            {topSkills.length ? (
+              <div className="flex flex-wrap gap-1">
+                {topSkills.map((skill) => (
+                  <Badge key={skill} variant="terminal">
+                    {skill}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
+          </div>
+          <HoverCardPrimitive.Arrow className="fill-popover" />
+        </HoverCardPrimitive.Content>
+      </HoverCardPrimitive.Portal>
+    </HoverCardPrimitive.Root>
   );
 }
 
@@ -844,11 +945,23 @@ function IdentityRow({
   );
 }
 
-function ProfileStat({ icon, label, value }: { icon: ReactNode; label: string; value: string }) {
+function ProfileStat({
+  icon,
+  label,
+  tooltip,
+  value,
+}: {
+  icon: ReactNode;
+  label: string;
+  tooltip?: string;
+  value: string;
+}) {
   return (
     <div className="rounded-lg border border-border/58 bg-card/42 p-4">
       <div className="flex items-center justify-between gap-4">
-        <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">{label}</p>
+        <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+          {tooltip ? <InfoTooltip label={tooltip}>{label}</InfoTooltip> : label}
+        </p>
         <span className="text-primary [&>svg]:size-4">{icon}</span>
       </div>
       <p className="mt-4 break-words font-mono text-2xl font-semibold leading-tight">{value}</p>
@@ -868,4 +981,132 @@ function CommandBlock({ command }: { command: string }) {
       </code>
     </div>
   );
+}
+
+type RecentRating = NonNullable<AgentStats['recentRatings']>[number];
+
+// Portfolio / "Work" section for the agent detail page. Prefers SSR-seeded accepted work
+// (AgentWorkResponse) and renders each task's artifacts inline via ArtifactMediaTile
+// (which handles its own presigned-URL refresh). When no portfolio work is available it
+// falls back to task cards built from the agent's recent ratings so the section never
+// renders an empty void.
+function AgentPortfolio({
+  agentWork,
+  recentRatings,
+  taskBasePath,
+}: {
+  agentWork: AgentWorkResponse;
+  recentRatings: RecentRating[];
+  taskBasePath: string;
+}) {
+  const workWithArtifacts = agentWork.filter((item) => item.artifacts.length > 0);
+
+  if (workWithArtifacts.length > 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Work</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <div className="grid gap-6">
+            {workWithArtifacts.map((item) => {
+              const taskHref =
+                `${normalizeBasePath(taskBasePath)}/${encodeURIComponent(item.taskId)}` as Route;
+              return (
+                <section className="grid gap-3" key={`${item.taskId}-${item.completedAt}`}>
+                  <div className="flex flex-wrap items-baseline justify-between gap-2">
+                    <Link
+                      className="min-w-0 truncate text-sm font-semibold tracking-tight text-foreground hover:text-primary"
+                      href={taskHref}
+                    >
+                      {item.taskTitle || `Task ${item.taskId}`}
+                    </Link>
+                    <span className="font-mono text-xs text-muted-foreground">
+                      {new Date(item.completedAt).toLocaleDateString('en-US', {
+                        day: '2-digit',
+                        month: 'short',
+                        year: 'numeric',
+                      })}
+                    </span>
+                  </div>
+                  <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                    {item.artifacts.map((artifact) => (
+                      <ArtifactMediaTile
+                        artifact={artifact}
+                        key={artifact.id}
+                        taskId={item.taskId}
+                      />
+                    ))}
+                  </div>
+                </section>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  if (recentRatings.length > 0) {
+    return (
+      <Card>
+        <CardHeader>
+          <CardTitle>Work</CardTitle>
+        </CardHeader>
+        <CardContent>
+          <p className="mb-4 text-sm text-muted-foreground">
+            No shared deliverables yet. Showing recently completed tasks.
+          </p>
+          <div className="grid gap-3">
+            {recentRatings.map((rating) => {
+              const taskHref =
+                `${normalizeBasePath(taskBasePath)}/${encodeURIComponent(rating.taskId)}` as Route;
+              return (
+                <article
+                  className="grid gap-3 rounded-lg border border-border/58 bg-background/36 p-3"
+                  key={`${rating.taskId}-${rating.createdAt}`}
+                >
+                  <div className="grid gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-start">
+                    <div className="grid min-w-0 gap-1">
+                      <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">
+                        Completed task
+                      </p>
+                      <h3 className="truncate text-sm font-semibold tracking-tight text-foreground">
+                        {rating.taskTitle || `Task ${rating.taskId}`}
+                      </h3>
+                      <p className="truncate font-mono text-xs text-muted-foreground">
+                        {rating.taskId}
+                      </p>
+                    </div>
+                    <div className="grid gap-1 text-left sm:text-right">
+                      <span className="font-mono text-sm font-semibold text-foreground">
+                        {rating.rating}/100
+                      </span>
+                      <span className="font-mono text-xs text-muted-foreground">
+                        {new Date(rating.createdAt).toLocaleDateString('en-US', {
+                          day: '2-digit',
+                          month: 'short',
+                          year: 'numeric',
+                        })}
+                      </span>
+                    </div>
+                  </div>
+                  {rating.feedbackText ? (
+                    <p className="text-sm leading-6 text-muted-foreground">{rating.feedbackText}</p>
+                  ) : null}
+                  <div>
+                    <Button asChild size="sm" variant="outline">
+                      <Link href={taskHref}>Open reviewed task</Link>
+                    </Button>
+                  </div>
+                </article>
+              );
+            })}
+          </div>
+        </CardContent>
+      </Card>
+    );
+  }
+
+  return null;
 }

@@ -5,6 +5,7 @@ import {
   RequestUploadUrlInputSchema,
   RequestUploadUrlOutputSchema,
   SubmissionResponseSchema,
+  AgentWorkResponseSchema,
   type ArtifactMediaKindValue,
   type ArtifactRoleValue,
 } from '@taskmarket/shared';
@@ -15,11 +16,12 @@ import {
   agents,
   devices,
   artifacts,
+  feedbacks,
   type Agent,
   type Artifact,
   type NewArtifact,
 } from '../db/schema';
-import { eq, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID, createHash } from 'crypto';
 import { recoverMessageAddress, keccak256 } from 'viem';
@@ -655,6 +657,121 @@ export const submissionsRouter = router({
       });
 
       return submissionsWithStats;
+    }),
+
+  listByWorker: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/agents/{address}/work',
+        tags: ['Agents'],
+        summary: 'List a worker accepted/completed work (derived via feedbacks), newest first',
+      },
+    })
+    .input(
+      z.object({
+        address: z.string(),
+        limit: z.number().int().min(1).max(50).optional().default(12),
+        includePreviewUrls: z.enum(['none', 'media']).optional().default('media'),
+      })
+    )
+    .output(AgentWorkResponseSchema)
+    .query(async ({ input, ctx }) => {
+      // Acceptance is derived: the feedbacks table marks completed/rated tasks
+      // for a worker. Join feedbacks -> tasks to get the task title and the
+      // completion timestamp, newest first.
+      const completed = await ctx.db
+        .select({
+          taskId: feedbacks.taskId,
+          completedAt: feedbacks.createdAt,
+          description: tasks.description,
+        })
+        .from(feedbacks)
+        .innerJoin(tasks, eq(tasks.id, feedbacks.taskId))
+        .where(eq(feedbacks.workerAddress, input.address))
+        .orderBy(desc(feedbacks.createdAt))
+        .limit(input.limit);
+
+      if (completed.length === 0) {
+        return [];
+      }
+
+      const taskIds = completed.map((row) => row.taskId);
+
+      // Fetch the worker submissions for these tasks (one worker may have a
+      // single submission per task; multiple are coalesced by task below).
+      const workerSubmissions = await ctx.db
+        .select()
+        .from(submissions)
+        .where(
+          and(inArray(submissions.taskId, taskIds), eq(submissions.workerAddress, input.address))
+        );
+
+      const submissionIds = workerSubmissions.map((sub) => sub.id);
+      const artifactResults =
+        submissionIds.length > 0
+          ? await ctx.db
+              .select()
+              .from(artifacts)
+              .where(inArray(artifacts.submissionId, submissionIds))
+          : [];
+
+      // Resolve the worker agentId once for artifact responses.
+      const agentResult = await ctx.db
+        .select()
+        .from(agents)
+        .where(eq(agents.address, input.address))
+        .limit(1);
+      const workerAgentId = agentResult[0]?.agentId ?? null;
+
+      // Presign media previews in one batch (same behavior as listByTask).
+      const previewByArtifactId = new Map<string, ArtifactPreview>();
+      if (input.includePreviewUrls === 'media') {
+        const expiresIn = 3600;
+        const previewExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
+        const mediaArtifacts = artifactResults.filter(canEmbedMediaPreview);
+        await Promise.all(
+          mediaArtifacts.map(async (artifact) => {
+            previewByArtifactId.set(artifact.id, {
+              previewExpiresAt,
+              previewUrl: await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn),
+            });
+          })
+        );
+      }
+
+      // Group artifacts by task (across the worker submissions for that task).
+      const submissionTaskById = new Map<string, string>();
+      for (const sub of workerSubmissions) {
+        submissionTaskById.set(sub.id, sub.taskId);
+      }
+      const artifactsByTask = new Map<string, Artifact[]>();
+      for (const artifact of artifactResults) {
+        const taskId = submissionTaskById.get(artifact.submissionId);
+        if (!taskId) {
+          continue;
+        }
+        const existing = artifactsByTask.get(taskId) ?? [];
+        existing.push(artifact);
+        artifactsByTask.set(taskId, existing);
+      }
+
+      return completed.map((row) => ({
+        taskId: row.taskId,
+        taskTitle: row.description.split('\n')[0]!.slice(0, 80),
+        completedAt: row.completedAt.toISOString(),
+        artifacts: (artifactsByTask.get(row.taskId) ?? [])
+          .slice()
+          .sort((a, b) => a.displayOrder - b.displayOrder)
+          .map((artifact) =>
+            toArtifactResponse(
+              artifact,
+              input.address,
+              workerAgentId,
+              previewByArtifactId.get(artifact.id)
+            )
+          ),
+      }));
     }),
 
   preview: publicProcedure

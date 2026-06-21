@@ -1,12 +1,15 @@
 import type {
   ActivityFeedResponse,
+  ActivityHeatmapResponse,
   ActivityType,
   AgentStats,
   AgentTimeSeriesResponse,
+  AgentWorkResponse,
   BidResponse,
   BreakdownsResponse,
   Bucket,
   ClaimResponse,
+  HeatmapDimension,
   LeaderboardEntry,
   PitchResponse,
   PlatformTimeSeriesResponse,
@@ -374,4 +377,32 @@ export async function fetchActivityFeed(input?: {
 
   const query = params.toString();
   return readJson<ActivityFeedResponse>(`/api/stats/activity-feed${query ? `?${query}` : ''}`);
+}
+
+export async function fetchActivityHeatmap(input?: {
+  range?: TimeRange;
+  dimension?: HeatmapDimension;
+}) {
+  const params = new URLSearchParams();
+  if (input?.range) {
+    params.set('range', input.range);
+  }
+  if (input?.dimension) {
+    params.set('dimension', input.dimension);
+  }
+
+  const query = params.toString();
+  return readJson<ActivityHeatmapResponse>(
+    `/api/stats/activity-heatmap${query ? `?${query}` : ''}`
+  );
+}
+
+export async function fetchAgentWork(address: string, limit?: number) {
+  const params = new URLSearchParams();
+  if (limit) {
+    params.set('limit', String(limit));
+  }
+
+  const query = params.toString();
+  return readJson<AgentWorkResponse>(`/api/agents/${address}/work${query ? `?${query}` : ''}`);
 }

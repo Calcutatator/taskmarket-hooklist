@@ -4,6 +4,7 @@ import type { TaskResponse } from '@taskmarket/shared';
 
 import { AnimatedNumber } from '@/components/market/motion/animated-number';
 import { LiveTetrisBackground } from '@/components/market/live-tetris-background';
+import { TaskThumbnail } from '@/components/market/task-thumbnail';
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/api/client';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
@@ -77,6 +78,17 @@ function TaskPulseCard({ detailBasePath, task }: { detailBasePath: string; task:
           </Badge>
         ))}
       </div>
+
+      {/* Show the work: tasks that already have submissions surface their first media
+          artifact. Only mount the thumbnail when subs > 0 so the four-card pulse makes at
+          most four bounded preview requests; the thumbnail hides itself when no media exists.
+          N+1 tradeoff: one submissions.listByTask request per such card (React Query dedupes
+          shared keys). A future backend "cover preview" field on the task would remove it. */}
+      {submissionCount > 0 ? (
+        <div className="overflow-hidden rounded-lg">
+          <TaskThumbnail taskId={task.id} />
+        </div>
+      ) : null}
 
       <a
         className="block truncate font-sans text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-primary"
