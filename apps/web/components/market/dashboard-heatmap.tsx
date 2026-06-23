@@ -5,7 +5,6 @@ import { useState } from 'react';
 
 import { ChartCard, RangeToggle } from '@/components/charts';
 import { HeatmapGrid } from '@/components/charts/heatmap-grid';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { trpc } from '@/lib/api/client';
 
 const RANGE_OPTIONS = [
@@ -62,23 +61,12 @@ export function DashboardHeatmap({
     <ChartCard
       action={
         <div className="flex flex-wrap items-center gap-2">
-          <ToggleGroup
-            type="single"
+          <RangeToggle
+            ariaLabel="Heat map dimension"
+            onValueChange={(next) => setDimension(next as HeatmapDimension)}
+            options={DIMENSION_OPTIONS}
             value={dimension}
-            onValueChange={(next) => {
-              if (next) {
-                setDimension(next as HeatmapDimension);
-              }
-            }}
-            variant="outline"
-            aria-label="Heat map dimension"
-          >
-            {DIMENSION_OPTIONS.map((option) => (
-              <ToggleGroupItem key={option.value} value={option.value} className="px-3">
-                {option.label}
-              </ToggleGroupItem>
-            ))}
-          </ToggleGroup>
+          />
           <RangeToggle
             onValueChange={(next) => setRange(next as TimeRange)}
             options={RANGE_OPTIONS}
@@ -86,7 +74,7 @@ export function DashboardHeatmap({
           />
         </div>
       }
-      description="Live market activity mapped across the marketplace, refreshed every 30 seconds."
+      description={`Live market activity by ${labels.row.toLowerCase()} and ${labels.col.toLowerCase()}, refreshed every 30 seconds.`}
       errorMessage={query.isError ? 'Could not load the activity heat map.' : undefined}
       isEmpty={!query.isLoading && !hasData}
       isLoading={query.isLoading && !hasData}

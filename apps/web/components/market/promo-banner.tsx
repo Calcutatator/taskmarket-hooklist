@@ -37,13 +37,17 @@ function BannerRow({ slot }: { slot: PromoSlot }) {
         </p>
         <p className="text-sm text-muted-foreground">{slot.body}</p>
       </div>
-      {isInternal(slot.href) ? (
-        <Button asChild size="sm" variant="outline" className="shrink-0">
+      {slot.href === '#' ? (
+        <Button className="shrink-0" disabled size="sm" variant="outline">
+          Coming soon
+        </Button>
+      ) : isInternal(slot.href) ? (
+        <Button asChild className="shrink-0" size="sm" variant="outline">
           <Link href={slot.href as Route}>{slot.ctaLabel}</Link>
         </Button>
       ) : (
-        <Button asChild size="sm" variant="outline" className="shrink-0">
-          <a href={slot.href} target="_blank" rel="noreferrer">
+        <Button asChild className="shrink-0" size="sm" variant="outline">
+          <a href={slot.href} rel="noreferrer" target="_blank">
             {slot.ctaLabel}
           </a>
         </Button>

@@ -71,8 +71,11 @@ export const CAROUSEL_SLOTS = [
     title: 'Guided task posting',
     body: 'Describe what you need in plain words and let the guided flow shape the brief.',
     href: '#',
+    // Hidden: the top PromoBanner already carries the guided-posting pitch, so
+    // repeating it at the bottom of the same page reads as filler. Re-enable
+    // only if it points somewhere the banner does not.
     ctaLabel: 'Get notified',
-    active: true,
+    active: false,
     accent: 'pink',
   },
 ] as const satisfies readonly PromoSlot[];
@@ -94,8 +97,10 @@ export const SIDE_CARD_SLOTS = [
     title: 'Never miss a drop',
     body: 'Join the Task Drops list and get notified the moment new batches go live.',
     href: '#',
+    // Hidden: duplicates the 'task-drops' carousel card in the same viewport.
+    // Keep Task Drops in one place until this slot points somewhere distinct.
     ctaLabel: 'Join the list',
-    active: true,
+    active: false,
     accent: 'default',
   },
 ] as const satisfies readonly PromoSlot[];

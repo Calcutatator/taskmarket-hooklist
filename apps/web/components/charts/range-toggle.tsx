@@ -30,11 +30,13 @@ export function RangeToggle({
   onValueChange,
   options = DEFAULT_OPTIONS,
   className,
+  ariaLabel,
 }: {
   value: string;
   onValueChange: (value: string) => void;
   options?: RangeOption[];
   className?: string;
+  ariaLabel?: string;
 }) {
   // ToggleGroup clears the value when the active item is toggled off; ignore the
   // empty string so a range is always selected.
@@ -53,6 +55,7 @@ export function RangeToggle({
         value={value}
         onValueChange={handleToggle}
         variant="outline"
+        aria-label={ariaLabel}
         className={cn('hidden *:data-[slot=toggle-group-item]:px-4! @[767px]/card:flex')}
       >
         {options.map((option) => (
@@ -65,7 +68,7 @@ export function RangeToggle({
         <SelectTrigger
           className="flex w-40 **:data-[slot=select-value]:block **:data-[slot=select-value]:truncate @[767px]/card:hidden"
           size="sm"
-          aria-label="Select a range"
+          aria-label={ariaLabel ?? 'Select a range'}
         >
           <SelectValue placeholder={activeLabel} />
         </SelectTrigger>

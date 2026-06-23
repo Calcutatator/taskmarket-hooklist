@@ -112,7 +112,7 @@ export default async function Page() {
           </div>
         </div>
       )}
-      <div className="grid gap-6 px-4 lg:px-6">
+      <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
         <section className="grid gap-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
             <div>
@@ -145,7 +145,7 @@ export default async function Page() {
           <div className="grid gap-4">
             <div>
               <p className="font-mono text-xs uppercase text-primary">Explore</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">
+              <h2 className="mt-2 font-display text-xl font-semibold tracking-tight">
                 More on Taskmarket
               </h2>
             </div>

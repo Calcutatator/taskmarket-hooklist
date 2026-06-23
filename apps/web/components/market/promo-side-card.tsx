@@ -1,46 +1,31 @@
 'use client';
 
-import Link from 'next/link';
-import type { Route } from 'next';
-
-import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardTitle } from '@/components/ui/card';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { PromoCta } from '@/components/market/promo-carousel';
 import { getActiveSlots, type PromoAccent, type PromoSlot } from '@/lib/market/promo-slots';
 import { cn } from '@/lib/utils';
 
-// Accent -> a left rule colour for the card, drawn from theme tokens.
+// Accent -> a left rule colour for the card, drawn from theme tokens. 'cream'
+// uses muted-foreground rather than the near-black surface-2 fill so the rule is
+// actually visible as a 2px edge in both themes.
 const ACCENT_RULE: Record<PromoAccent, string> = {
   pink: 'border-l-primary/70',
   green: 'border-l-accent/70',
-  cream: 'border-l-surface-2',
+  cream: 'border-l-muted-foreground/40',
   default: 'border-l-border',
 };
-
-function isInternal(href: string): boolean {
-  return href.startsWith('/');
-}
 
 function SideCard({ slot }: { slot: PromoSlot }) {
   const accent = slot.accent ?? 'default';
 
   return (
-    <Card className={cn('gap-3 border-l-2 py-4', ACCENT_RULE[accent])}>
-      <CardContent className="grid gap-3">
-        <div className="grid gap-1">
-          <CardTitle className="text-sm">{slot.title}</CardTitle>
-          <CardDescription>{slot.body}</CardDescription>
-        </div>
-        {isInternal(slot.href) ? (
-          <Button asChild size="sm" variant="outline" className="w-fit">
-            <Link href={slot.href as Route}>{slot.ctaLabel}</Link>
-          </Button>
-        ) : (
-          <Button asChild size="sm" variant="outline" className="w-fit">
-            <a href={slot.href} target="_blank" rel="noreferrer">
-              {slot.ctaLabel}
-            </a>
-          </Button>
-        )}
+    <Card className={cn('border-l-2', ACCENT_RULE[accent])}>
+      <CardHeader>
+        <CardTitle className="text-sm">{slot.title}</CardTitle>
+        <CardDescription>{slot.body}</CardDescription>
+      </CardHeader>
+      <CardContent>
+        <PromoCta slot={slot} />
       </CardContent>
     </Card>
   );
@@ -61,7 +46,7 @@ export function PromoSideCard({
   }
 
   return (
-    <aside aria-label="Cross-promotion" className={cn('grid gap-3', className)}>
+    <aside aria-label="More links" className={cn('grid gap-3', className)}>
       {active.map((slot) => (
         <SideCard key={slot.id} slot={slot} />
       ))}
