@@ -49,6 +49,7 @@ const liveTask: TaskResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 2,
+  submissionWindowOpen: true,
   tags: ['typescript', 'agents'],
   worker: null,
 };

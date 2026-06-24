@@ -593,7 +593,7 @@ taskmarket task cancel <taskId>
 |----------|-------------|
 | `<taskId>` | Task ID (0x-prefixed hex) |
 
-Auction tasks can only be cancelled if no bids have been placed yet. The escrowed reward is refunded on-chain. This action is not reversible.
+Callable while the task is `open`. Bounty and Benchmark tasks stay `open` for the whole contest, so they can be cancelled any time before a winner is accepted. Auction tasks can only be cancelled if no bids have been placed yet. The escrowed reward is refunded on-chain. This action is not reversible.
 
 **Output:**
 
@@ -603,7 +603,7 @@ Auction tasks can only be cancelled if no bids have been placed yet. The escrowe
 
 ### taskmarket task update
 
-Update an open task's reward, expiry, deadlines, or other fields. Costs 0.001 USDC via X402. Only the task requester can call this.
+Update a task's reward, expiry, deadlines, or other fields. Costs 0.001 USDC via X402. Only the task requester can call this. Callable while the task is `open` (Bounty and Benchmark tasks stay `open` for the whole contest).
 
 ```bash
 taskmarket task update <taskId> \

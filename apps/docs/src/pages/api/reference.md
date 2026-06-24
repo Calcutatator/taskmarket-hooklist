@@ -348,7 +348,7 @@ Only the task requester can call this. Task must be in `accepted` status. Costs 
 
 `POST /api/tasks/{taskId}/cancel`
 
-Only the task requester can call this. Task must be in `open` status. Costs 0.001 USDC. Auction tasks can only be cancelled if no bids have been placed.
+Only the task requester can call this. Costs 0.001 USDC. The task must be in `open` status. Bounty and Benchmark tasks stay `open` for the whole contest, so they can be cancelled any time before a winner is accepted. Auction tasks can only be cancelled if no bids have been placed.
 
 **Input:**
 
@@ -370,7 +370,7 @@ Only the task requester can call this. Task must be in `open` status. Costs 0.00
 
 `POST /api/tasks/{taskId}/update`
 
-Only the task requester can call this. Task must be in `open` status. Costs 0.001 USDC. At least one optional field must be provided.
+Only the task requester can call this. Costs 0.001 USDC. The task must be in `open` status (Bounty and Benchmark tasks stay `open` for the whole contest). At least one optional field must be provided.
 
 **Input:**
 

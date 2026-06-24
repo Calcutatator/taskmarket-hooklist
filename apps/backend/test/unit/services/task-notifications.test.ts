@@ -19,7 +19,7 @@ vi.mock('../../../src/lib/logger', () => ({
   logger: { warn: vi.fn(), info: vi.fn(), error: vi.fn(), http: vi.fn() },
 }));
 
-import { notifyNewTask, buildNewTaskEmail } from '../../../src/services/task-notifications';
+import { notifyNewTask, buildNewTaskEmail, type NotifyNewTaskInput } from '../../../src/services/task-notifications';
 import { sendEmail } from '../../../src/services/mailer';
 import { selectTargetAgents } from '../../../src/services/agent-targeting';
 
@@ -34,7 +34,7 @@ function makeRecipients(n: number) {
 
 // A minimal db stub; selectTargetAgents and sendEmail are both mocked so the db is
 // never actually queried here.
-const db = {} as any;
+const db = {} as unknown as NotifyNewTaskInput['db'];
 
 describe('task-notifications', () => {
   beforeEach(() => {

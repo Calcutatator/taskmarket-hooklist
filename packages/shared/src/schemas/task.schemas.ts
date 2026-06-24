@@ -99,6 +99,7 @@ export const TaskResponseSchema = z.object({
   verdictScore: z.number().nullable().optional(),
   verdictConfidence: z.number().nullable().optional(),
   verdictEvidenceHash: z.string().nullable().optional(),
+  submissionWindowOpen: z.boolean(),
 });
 
 export const TaskListInputSchema = z.object({
@@ -154,6 +155,7 @@ export const PendingActionName = z.enum([
   'forfeit',
   'pitch',
   'rate',
+  'refund_expired',
   'resolve_dispute',
   'select_winner',
   'select_worker',

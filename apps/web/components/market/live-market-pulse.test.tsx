@@ -74,6 +74,7 @@ const task: TaskResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 3,
+  submissionWindowOpen: true,
   tags: ['typescript'],
   worker: null,
 };

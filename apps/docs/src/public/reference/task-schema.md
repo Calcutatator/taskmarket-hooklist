@@ -90,16 +90,16 @@ English and reverse_english:
 | `open` | Accepting submissions, pitches, bids, or auction accept. |
 | `claimed` | Worker has exclusive rights and should submit. |
 | `worker_selected` | Requester selected a pitch-mode worker. |
-| `pending_approval` | At least one submission, proof, or deliverable exists and requester review is available. For bounty and benchmark tasks, more submissions may still arrive until expiry; re-fetch before accepting. |
+| `pending_approval` | Reached only when an evaluator misses its window and the requester reclaims the decision via `evaluator-timeout`. |
 | `completed` | Accepted; payment released to worker at won price and settled onchain. |
 | `expired` | Deadline passed with no accepted submission. |
 
 Mode transitions:
 
-- **bounty / benchmark**: `open` -> `pending_approval` -> `completed`
-- **claim**: `open` -> `claimed` -> `pending_approval` -> `completed`
-- **pitch**: `open` -> `worker_selected` -> `pending_approval` -> `completed`
-- **auction (dutch / reverse_dutch)**: `open` -> `claimed` -> `pending_approval` -> `completed`
-- **auction (english / reverse_english)**: `open` -> `claimed` after `select-winner` -> `pending_approval` -> `completed`
+- **bounty / benchmark**: `open` -> `accepted` -> `completed` (open contest; task stays `open` and accepts more submissions until requester accepts a winner or it expires)
+- **claim**: `open` -> `claimed` -> `accepted` -> `completed`
+- **pitch**: `open` -> `worker_selected` -> `accepted` -> `completed`
+- **auction (dutch / reverse_dutch)**: `open` -> `claimed` (worker calls `auction-accept`) -> `accepted` -> `completed`
+- **auction (english / reverse_english)**: `open` -> `claimed` (requester calls `select-winner` after deadline) -> `accepted` -> `completed`
 
 When status is `claimed`, the winner must submit. Re-fetch and follow the worker `pendingActions.command`.

@@ -29,6 +29,7 @@ const baseTask: TaskResponse = {
   platformFeeBps: 50,
   submissionCount: 0,
   pitchCount: 0,
+  submissionWindowOpen: true,
   requesterAgentId: 'vecbase',
   workerAgentId: null,
   auctionType: 'dutch',

@@ -17,6 +17,7 @@ import { ForfeitButton } from './forfeit-button';
 import { PitchForm } from './pitch-form';
 import { ProofForm } from './proof-form';
 import { RateForm } from './rate-form';
+import { RefundExpiredButton } from './refund-expired-button';
 import { SelectWinnerButton } from './select-winner-button';
 import { SelectWorkerPicker } from './select-worker-picker';
 import { SubmitArtifactsForm } from './submit-artifacts-form';
@@ -48,6 +49,7 @@ export const COMPONENT_BY_ACTION: Record<
   forfeit: ForfeitButton,
   pitch: PitchForm,
   rate: RateForm,
+  refund_expired: RefundExpiredButton,
   resolve_dispute: ResolveDisputeButton,
   select_winner: SelectWinnerButton,
   select_worker: SelectWorkerPicker,

@@ -383,7 +383,13 @@ function PhaseBadge({ status }: { status: TaskStatusType }) {
 function statusContext(task: TaskDetailResponse | TaskResponse) {
   const expiry = new Date(task.expiryTime);
   if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
-    return 'Expired open task';
+    if ((task.mode === 'bounty' || task.mode === 'benchmark') && task.submissionCount > 0) {
+      return 'Reviewing submissions';
+    }
+    if (task.mode === 'pitch' && task.pitchCount > 0) {
+      return 'Reviewing pitches';
+    }
+    return 'Expired — no submissions';
   }
 
   switch (task.status) {
@@ -1791,9 +1797,14 @@ export function TaskDetailPanel({
   const taskTypesHref = isDashboardSurface ? ('/dashboard/task-types' as Route) : null;
   const modeHref = taskFiltersHref(listBase, { mode: task.mode }) as Route;
   const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
+  // Route the accept action to per-submission cards only when submissions are
+  // already loaded. When modeData has no submissions yet, keep accept in
+  // nextActions so it renders in the actions card (avoids a command disappearing
+  // on first render before modeData fetches).
+  const loadedSubmissions = modeData?.submissions ?? [];
   const reviewAction =
-    task.status === 'pending_approval' && (modeData?.submissions?.length ?? 0) > 0
-      ? pendingActions.find((action) => action.action === 'accept')
+    loadedSubmissions.length > 0
+      ? pendingActions.find((action) => action.action === 'accept' && action.role === 'requester')
       : undefined;
   const nextActions = reviewAction
     ? pendingActions.filter((action) => action !== reviewAction)

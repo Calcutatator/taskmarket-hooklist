@@ -1,7 +1,8 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { isSQLWrapper, type SQL } from 'drizzle-orm';
 import { makeChain } from '../helpers';
+import { type Context } from '../../../src/context';
 
 import { statsRouter } from '../../../src/routers/stats.router';
 
@@ -19,20 +20,25 @@ function renderSql(query: SQL): { sql: string; params: unknown[] } {
 function createStatsCtx(executeResults: unknown[][]) {
   const executeCalls: SQL[] = [];
   let idx = 0;
-  const db: any = {
+  const execute: Mock<[SQL], Promise<unknown[]>> = vi.fn((q: SQL) => {
+    executeCalls.push(q);
+    const result = executeResults[idx] ?? [];
+    idx += 1;
+    return Promise.resolve(result);
+  });
+  const db = {
     select: vi.fn().mockReturnValue(makeChain([])),
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
     delete: vi.fn().mockReturnValue(makeChain()),
-    execute: vi.fn((q: SQL) => {
-      executeCalls.push(q);
-      const result = executeResults[idx] ?? [];
-      idx += 1;
-      return Promise.resolve(result);
-    }),
+    execute,
   };
   return {
-    ctx: { db, req: {} as any, res: { locals: {} } as any },
+    ctx: {
+      db,
+      req: {} as unknown as Context['req'],
+      res: { locals: {} as Record<string, unknown> } as unknown as Context['res'],
+    } as unknown as Context,
     executeCalls,
   };
 }
@@ -76,7 +82,7 @@ describe('stats router', () => {
       const { ctx } = createStatsCtx([spineRows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .platformTimeSeries({ range: '7d', bucket: 'day' });
 
       expect(result).toHaveLength(3);
@@ -108,7 +114,7 @@ describe('stats router', () => {
       ]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .platformTimeSeries({ range: '30d', bucket: 'day' });
 
       expect(result[0].rewardVolume).toBe(big);
@@ -119,7 +125,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .platformTimeSeries({ range: '30d', bucket: 'day' });
 
       expect(executeCalls).toHaveLength(1);
@@ -149,7 +155,7 @@ describe('stats router', () => {
     it("for range='all' derives the spine start from the earliest timestamp (no explosion)", async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .platformTimeSeries({ range: 'all', bucket: 'week' });
       const { sql: q } = renderSql(executeCalls[0]);
       const norm = q.toLowerCase();
@@ -192,7 +198,7 @@ describe('stats router', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .agentTimeSeries({ address: '0xabc', range: '90d', bucket: 'week' });
 
       expect(result.map((r) => r.cumulativeEarnings)).toEqual(['1000000', '1000000', '3500000']);
@@ -215,7 +221,7 @@ describe('stats router', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .agentTimeSeries({ address: '0xabc', range: '90d', bucket: 'week' });
 
       expect(result[0].avgRating).toBeNull();
@@ -228,7 +234,7 @@ describe('stats router', () => {
       ctx.db.select = vi.fn().mockReturnValue(makeChain([{ address: '0xresolved' }]));
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .agentTimeSeries({ agentId: '42', range: '90d', bucket: 'week' });
 
       expect(ctx.db.select).toHaveBeenCalled();
@@ -240,7 +246,7 @@ describe('stats router', () => {
       ctx.db.select = vi.fn().mockReturnValue(makeChain([])); // no agent found
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .agentTimeSeries({ agentId: 'nope', range: '90d', bucket: 'week' });
 
       expect(result).toEqual([]);
@@ -251,14 +257,20 @@ describe('stats router', () => {
     it('rejects input that provides neither address nor agentId', async () => {
       const { ctx } = createStatsCtx([[]]);
       await expect(
-        statsRouter.createCaller(ctx as any).agentTimeSeries({ range: '90d', bucket: 'week' } as any)
+        statsRouter
+          .createCaller(ctx)
+          .agentTimeSeries(
+            { range: '90d', bucket: 'week' } as unknown as Parameters<
+              ReturnType<typeof statsRouter.createCaller>['agentTimeSeries']
+            >[0]
+          )
       ).rejects.toThrow();
     });
 
     it('binds the worker address as a parameter (not raw interpolation)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .agentTimeSeries({ address: '0xWORKER', range: '90d', bucket: 'week' });
 
       const { sql: q, params } = renderSql(executeCalls[0]);
@@ -282,7 +294,7 @@ describe('stats router', () => {
       ];
       const { ctx } = createStatsCtx([rows]);
 
-      const result = await statsRouter.createCaller(ctx as any).breakdowns({});
+      const result = await statsRouter.createCaller(ctx).breakdowns({});
 
       expect(result.status).toEqual([
         { status: 'open', count: 5 },
@@ -300,7 +312,7 @@ describe('stats router', () => {
 
     it('classifies actor type via registered_via in the query', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
-      await statsRouter.createCaller(ctx as any).breakdowns({});
+      await statsRouter.createCaller(ctx).breakdowns({});
       const { sql: q } = renderSql(executeCalls[0]);
       const norm = q.toLowerCase();
       expect(norm).toContain('registered_via');
@@ -347,7 +359,7 @@ describe('stats router', () => {
       ];
       const { ctx } = createStatsCtx([rows]);
 
-      const result = await statsRouter.createCaller(ctx as any).activityFeed({ limit: 2 });
+      const result = await statsRouter.createCaller(ctx).activityFeed({ limit: 2 });
 
       expect(result.items).toHaveLength(2);
       // nextCursor is the timestamp of the last returned item.
@@ -372,7 +384,7 @@ describe('stats router', () => {
       ];
       const { ctx } = createStatsCtx([rows]);
 
-      const result = await statsRouter.createCaller(ctx as any).activityFeed({ limit: 20 });
+      const result = await statsRouter.createCaller(ctx).activityFeed({ limit: 20 });
 
       expect(result.items).toHaveLength(1);
       expect(result.nextCursor).toBeNull();
@@ -382,7 +394,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       const cursor = '2026-06-10T09:00:00.000Z';
 
-      await statsRouter.createCaller(ctx as any).activityFeed({ limit: 20, cursor });
+      await statsRouter.createCaller(ctx).activityFeed({ limit: 20, cursor });
 
       const { sql: q, params } = renderSql(executeCalls[0]);
       const norm = q.toLowerCase();
@@ -397,7 +409,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityFeed({ limit: 20, types: ['task_created', 'task_rated'] });
 
       const { sql: q } = renderSql(executeCalls[0]);
@@ -411,7 +423,7 @@ describe('stats router', () => {
 
     it('slices taskTitle to the first line, capped at 80 chars, in SQL', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
-      await statsRouter.createCaller(ctx as any).activityFeed({ limit: 20 });
+      await statsRouter.createCaller(ctx).activityFeed({ limit: 20 });
       const { sql: q } = renderSql(executeCalls[0]);
       const norm = q.toLowerCase();
       expect(norm).toContain('split_part');
@@ -421,7 +433,7 @@ describe('stats router', () => {
 
     it('produces a valid SQL wrapper for the default (all types) feed', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
-      await statsRouter.createCaller(ctx as any).activityFeed({ limit: 20 });
+      await statsRouter.createCaller(ctx).activityFeed({ limit: 20 });
       expect(isSQLWrapper(executeCalls[0])).toBe(true);
     });
   });

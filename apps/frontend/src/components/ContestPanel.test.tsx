@@ -53,6 +53,7 @@ const task: TaskResponse = {
   platformFeeBps: 500,
   submissionCount: 1,
   pitchCount: 0,
+  submissionWindowOpen: true,
 };
 
 const submission: SubmissionResponse = {

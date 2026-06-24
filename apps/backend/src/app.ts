@@ -289,6 +289,10 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
 );
 app.post(
+  '/api/tasks/:taskId/refund-expired',
+  x402Middleware({ getAmount: () => '1000', description: 'Refund expired task' })
+);
+app.post(
   '/api/identity/register',
   x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
 );

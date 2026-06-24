@@ -1,7 +1,9 @@
 /**
- * Pitch mode smoke test: create → pitch → select → submit → accept → rate → verify feedback
+ * Pitch mode smoke test: create → pitch → select → submit → [assert pending_approval] → accept → rate → verify feedback
  *
  * Pitch: worker pitches an approach, requester picks one, selected worker delivers.
+ * After the selected worker submits, the task flips to pending_approval (unlike bounty/benchmark
+ * which stay open). The intermediate state is asserted before the requester accepts.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -18,7 +20,7 @@ async function main() {
   console.log('api:      ', API_URL);
 
   // 1. Create task
-  log('1/7', 'Creating pitch task (X402)...');
+  log('1/8', 'Creating pitch task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -33,7 +35,7 @@ async function main() {
   ok('taskId', taskId);
 
   // 2. Worker submits pitch (X402-paid, anchors hash on-chain)
-  log('2/7', 'Worker submitting pitch (X402)...');
+  log('2/8', 'Worker submitting pitch (X402)...');
   const { pitchId } = (await x402Post(
     `/api/tasks/${taskId}/pitches`,
     {
@@ -49,7 +51,7 @@ async function main() {
   ok('pitchId', pitchId);
 
   // 3. Requester selects pitch
-  log('3/7', 'Requester selecting pitch...');
+  log('3/8', 'Requester selecting pitch...');
   await post(`/api/tasks/${taskId}/pitches/select`, {
     taskId,
     pitchId,
@@ -59,7 +61,7 @@ async function main() {
   ok('selected', pitchId);
 
   // 4. Worker submits deliverable
-  log('4/7', 'Worker submitting deliverable...');
+  log('4/8', 'Worker submitting deliverable...');
   const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
@@ -76,8 +78,46 @@ async function main() {
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
-  // 5. Requester accepts
-  log('5/7', 'Requester accepting submission (X402)...');
+  // 5. Assert pending_approval state and pendingActions after submission
+  log('5/8', 'Asserting pending_approval state and pendingActions after submission...');
+  const afterSubmit = (await get(`/api/tasks/${taskId}`)) as {
+    status: string;
+    submissionWindowOpen: boolean;
+    pendingActions: { role: string; action: string; command: string }[];
+  };
+  if (afterSubmit.status !== 'pending_approval') {
+    throw new Error(
+      `Expected status=pending_approval after pitch submission. Got: ${afterSubmit.status}`
+    );
+  }
+  if (afterSubmit.submissionWindowOpen !== false) {
+    throw new Error(
+      `Expected submissionWindowOpen=false in pending_approval. Got: ${afterSubmit.submissionWindowOpen}`
+    );
+  }
+  const acceptAction = afterSubmit.pendingActions.find(
+    (a) => a.action === 'accept' && a.role === 'requester'
+  );
+  if (!acceptAction) {
+    throw new Error(
+      `Expected accept action for requester in pending_approval. Got: ${JSON.stringify(afterSubmit.pendingActions)}`
+    );
+  }
+  if (
+    !acceptAction.command.includes(worker.address.toLowerCase()) &&
+    !acceptAction.command.includes(worker.address)
+  ) {
+    throw new Error(
+      `Expected accept command to include worker address. Got: ${acceptAction.command}`
+    );
+  }
+  ok('pending_approval: status', afterSubmit.status);
+  ok('pending_approval: submissionWindowOpen', afterSubmit.submissionWindowOpen);
+  ok('pending_approval: accept action present', true);
+  ok('pending_approval: accept command includes worker', true);
+
+  // 6. Requester accepts
+  log('6/8', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
@@ -88,8 +128,8 @@ async function main() {
     await new Promise((r) => setTimeout(r, 3000));
   }
 
-  // 6. Requester rates (0-100 scale per ERC-8004)
-  log('6/7', 'Requester rating 75/100 (X402)...');
+  // 7. Requester rates (0-100 scale per ERC-8004)
+  log('7/8', 'Requester rating 75/100 (X402)...');
   const { feedbackId } = (await x402Post(
     `/api/tasks/${taskId}/rate`,
     {
@@ -102,8 +142,8 @@ async function main() {
   )) as { feedbackId: string };
   ok('feedbackId', feedbackId);
 
-  // 7. Verify feedback file
-  log('7/7', 'Verifying feedback file endpoint...');
+  // 8. Verify feedback file
+  log('8/8', 'Verifying feedback file endpoint...');
   const feedbackFile = (await get(`/api/feedback/${feedbackId}`)) as Record<string, unknown>;
   if (typeof feedbackFile !== 'object' || feedbackFile.value !== 75) {
     throw new Error(`Feedback file invalid: ${JSON.stringify(feedbackFile)}`);
@@ -112,7 +152,7 @@ async function main() {
   ok('feedbackFile.tag1', feedbackFile.tag1);
   ok('feedbackFile.valueDecimals', feedbackFile.valueDecimals);
 
-  console.log('\n=== Pitch smoke test passed ===');
+  console.log('\n=== Pitch smoke test passed (8 steps) ===');
   console.log('taskId:', taskId);
 }
 

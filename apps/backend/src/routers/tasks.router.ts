@@ -1,3 +1,4 @@
+import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import {
   TaskCreateSchema,
@@ -18,6 +19,7 @@ import {
   contractCreateTask,
   contractAssignEvaluator,
   contractCancelTask,
+  contractRefundExpired,
   contractUpdateTask,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
@@ -26,30 +28,44 @@ import {
 import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
+import { computeSubmissionWindowOpen } from '../lib/task';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
 
-function computePendingActions(task: {
-  id: string;
-  status: string;
-  mode: string;
-  rating: number | null;
-  pitchCount: number;
-  bidCount: number;
-  expiryTime: Date;
-  bidDeadline: Date | null;
-  claimedBy: string | null;
-  worker: string | null;
-  auctionType: string | null;
-  currentClockPrice: bigint | null;
-  currentLowestBid: string | null;
-  latestSubmissionWorker?: string | null;
-  evaluator?: string | null;
-  evaluatorDeadline?: Date | null;
-  appealDeadline?: Date | null;
-}): PendingAction[] {
-  if (task.status === 'open' && task.expiryTime < new Date()) {
-    return [];
+function computePendingActions(
+  task: {
+    id: string;
+    status: string;
+    mode: string;
+    rating: number | null;
+    pitchCount: number;
+    bidCount: number;
+    submissionCount: number;
+    expiryTime: Date;
+    bidDeadline: Date | null;
+    claimedBy: string | null;
+    worker: string | null;
+    auctionType: string | null;
+    currentClockPrice: bigint | null;
+    currentLowestBid: string | null;
+    latestSubmissionWorker?: string | null;
+    evaluator?: string | null;
+    evaluatorDeadline?: Date | null;
+    appealDeadline?: Date | null;
+  },
+  submissionWindowOpen: boolean
+): PendingAction[] {
+  if (task.status === 'open' && !submissionWindowOpen) {
+    const hasEntries = task.submissionCount > 0 || task.pitchCount > 0 || task.bidCount > 0;
+    if (!hasEntries) {
+      return [
+        {
+          role: 'requester' as const,
+          action: 'refund_expired' as const,
+          command: `taskmarket task refund-expired ${task.id}`,
+        },
+      ];
+    }
   }
 
   const id = task.id;
@@ -70,30 +86,52 @@ function computePendingActions(task: {
           ]
         : [];
 
+      // Bounty/Benchmark stay open while collecting submissions. Once at least one
+      // submission exists the requester can accept a winner at any time, so surface
+      // the accept action alongside the live worker action and management actions.
+      const acceptActions: PendingAction[] =
+        (task.mode === 'bounty' || task.mode === 'benchmark') && task.submissionCount > 0
+          ? [
+              {
+                role: 'requester',
+                action: 'accept',
+                command: `taskmarket task accept ${id} --worker ${workerAddr ?? '<address>'}`,
+              },
+            ]
+          : [];
+
       switch (task.mode) {
         case 'bounty':
-          return [
-            ...managementActions,
-            {
-              role: 'worker',
-              action: 'submit',
-              command: `taskmarket task submit ${id} --file <path>`,
-            },
-          ];
+        case 'benchmark': {
+          const workerActions: PendingAction[] = submissionWindowOpen
+            ? [
+                {
+                  role: 'worker',
+                  action: task.mode === 'benchmark' ? 'submit_proof' : 'submit',
+                  command:
+                    task.mode === 'benchmark'
+                      ? `taskmarket task proof ${id} --data <data> --type <type>`
+                      : `taskmarket task submit ${id} --file <path>`,
+                },
+              ]
+            : [];
+          return [...managementActions, ...acceptActions, ...workerActions];
+        }
         case 'claim':
+          if (!submissionWindowOpen) return [...managementActions];
           return [
             ...managementActions,
             { role: 'worker', action: 'claim', command: `taskmarket task claim ${id}` },
           ];
         case 'pitch': {
-          const actions: PendingAction[] = [
-            ...managementActions,
-            {
+          const actions: PendingAction[] = [...managementActions];
+          if (submissionWindowOpen) {
+            actions.push({
               role: 'worker',
               action: 'pitch',
               command: `taskmarket task pitch ${id} --text "..."`,
-            },
-          ];
+            });
+          }
           if (task.pitchCount > 0) {
             actions.push({
               role: 'requester',
@@ -103,15 +141,6 @@ function computePendingActions(task: {
           }
           return actions;
         }
-        case 'benchmark':
-          return [
-            ...managementActions,
-            {
-              role: 'worker',
-              action: 'submit_proof',
-              command: `taskmarket task proof ${id} --data <data> --type <type>`,
-            },
-          ];
         case 'auction': {
           const deadlinePassed = task.bidDeadline && now >= task.bidDeadline;
 
@@ -192,6 +221,10 @@ function computePendingActions(task: {
         { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
       ];
     case 'pending_approval': {
+      // pending_approval is now reached only when an evaluator misses its window and
+      // the requester reclaims the decision via evaluator-timeout. Bounty/Benchmark
+      // never enter this state (they stay open until accepted), and claim/pitch/auction
+      // accept directly from claimed/worker_selected. Either way the requester accepts.
       const addr = workerAddr ?? '<address>';
       return [
         {
@@ -301,29 +334,40 @@ export const tasksRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       if (input.mode === 'auction') {
         if (!input.maxPrice) {
-          throw new Error('maxPrice is required for auction mode');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'maxPrice is required for auction mode',
+          });
         }
         if (!input.auctionType) {
-          throw new Error(
-            'auctionType is required for auction mode (dutch, english, reverse_dutch, reverse_english)'
-          );
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'auctionType is required for auction mode (dutch, english, reverse_dutch, reverse_english)',
+          });
         }
         if (input.auctionType === 'reverse_dutch' && !input.auctionStartPrice) {
-          throw new Error('auctionStartPrice is required for reverse_dutch auction type');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'auctionStartPrice is required for reverse_dutch auction type',
+          });
         }
         if (input.auctionType === 'dutch' && !input.auctionFloorPrice) {
-          throw new Error('auctionFloorPrice is required for dutch auction type');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'auctionFloorPrice is required for dutch auction type',
+          });
         }
       }
 
       const config = getServerConfig();
       const reward = BigInt(input.reward);
-      const durationSecs = BigInt(input.duration * 3600);
+      const durationSecs = BigInt(Math.round(input.duration * 3600));
       const mode = MODE_MAP[input.mode ?? 'bounty'] ?? MODE_MAP['bounty']!;
 
       const pitchDeadlineSecs =
@@ -490,10 +534,11 @@ export const tasksRouter = router({
         }
       }
       if (input.requester) {
-        conditions.push(eq(tasks.requester, input.requester));
+        conditions.push(eq(tasks.requester, input.requester.toLowerCase()));
       }
       if (input.worker) {
-        conditions.push(or(eq(tasks.worker, input.worker), eq(tasks.claimedBy, input.worker)));
+        const workerLower = input.worker.toLowerCase();
+        conditions.push(or(eq(tasks.worker, workerLower), eq(tasks.claimedBy, workerLower)));
       }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
@@ -649,6 +694,7 @@ export const tasksRouter = router({
           currentAuctionPrice,
           auctionBidCount,
           currentLowestBid,
+          submissionWindowOpen: computeSubmissionWindowOpen(task, now),
         };
       });
 
@@ -680,13 +726,37 @@ export const tasksRouter = router({
       const task = result[0];
       const now = new Date();
 
-      const submissionCount = await ctx.db
-        .select({ count: sql<number>`count(*)` })
-        .from(submissions)
-        .where(eq(submissions.taskId, task.id));
+      const workerAddress = task.worker ?? task.claimedBy;
+      const [submissionCount, pitchCount, workerAgent, requesterAgentRow] = await Promise.all([
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(submissions)
+          .where(eq(submissions.taskId, task.id)),
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(proposals)
+          .where(eq(proposals.taskId, task.id)),
+        workerAddress
+          ? ctx.db
+              .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
+              .from(agents)
+              .where(eq(agents.address, workerAddress))
+              .limit(1)
+          : Promise.resolve([]),
+        ctx.db
+          .select({ registeredVia: agents.registeredVia })
+          .from(agents)
+          .where(eq(agents.address, task.requester))
+          .limit(1),
+      ]);
 
+      // Resolve the most recent submitter so the requester's accept command can be
+      // pre-filled. Bounty/Benchmark stay `open` while collecting submissions, so
+      // fetch it there too (not just pending_approval) whenever submissions exist.
+      const hasSubmissions = Number(submissionCount[0]?.count ?? 0) > 0;
       const latestSubmission =
-        task.status === 'pending_approval'
+        hasSubmissions &&
+        (task.status === 'pending_approval' || task.mode === 'bounty' || task.mode === 'benchmark')
           ? await ctx.db
               .select({ workerAddress: submissions.workerAddress })
               .from(submissions)
@@ -694,25 +764,6 @@ export const tasksRouter = router({
               .orderBy(desc(submissions.submittedAt))
               .limit(1)
           : [];
-
-      const pitchCount = await ctx.db
-        .select({ count: sql<number>`count(*)` })
-        .from(proposals)
-        .where(eq(proposals.taskId, task.id));
-
-      const workerAddress = task.worker ?? task.claimedBy;
-      const workerAgent = workerAddress
-        ? await ctx.db
-            .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
-            .from(agents)
-            .where(eq(agents.address, workerAddress))
-            .limit(1)
-        : [];
-      const requesterAgentRow = await ctx.db
-        .select({ registeredVia: agents.registeredVia })
-        .from(agents)
-        .where(eq(agents.address, task.requester))
-        .limit(1);
       const requesterActorType: 'agent' | 'human' =
         requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
       const workerActorType: 'agent' | 'human' | undefined = workerAddress
@@ -764,6 +815,8 @@ export const tasksRouter = router({
             : null
           : null;
 
+      const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
+
       return {
         id: task.id,
         requester: task.requester,
@@ -773,11 +826,11 @@ export const tasksRouter = router({
         escrowTxHash: task.escrowTxHash,
         createdAt: task.createdAt.toISOString(),
         expiryTime: task.expiryTime.toISOString(),
-        status: task.status as any,
+        status: task.status as TaskStatusType,
         tags: task.tags,
         worker: task.worker,
         rating: task.rating,
-        mode: task.mode as any,
+        mode: task.mode as TaskModeType,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
         pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -794,7 +847,7 @@ export const tasksRouter = router({
         requesterActorType,
         workerAgentId: workerAgent[0]?.agentId ?? null,
         workerActorType,
-        auctionType: (task.auctionType as any) ?? null,
+        auctionType: (task.auctionType as AuctionTypeValue | null) ?? null,
         auctionStartPrice: task.auctionStartPrice ?? null,
         auctionFloorPrice: task.auctionFloorPrice ?? null,
         currentAuctionPrice,
@@ -815,25 +868,30 @@ export const tasksRouter = router({
         verdictScore: task.verdictScore ?? null,
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
-        pendingActions: computePendingActions({
-          id: task.id,
-          status: task.status,
-          mode: task.mode,
-          rating: task.rating,
-          pitchCount: pitchCountNum,
-          bidCount: auctionBidCount ?? 0,
-          expiryTime: task.expiryTime,
-          bidDeadline: task.bidDeadline,
-          claimedBy: task.claimedBy,
-          worker: task.worker,
-          auctionType: task.auctionType,
-          currentClockPrice: clockPrice,
-          currentLowestBid,
-          latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
-          evaluator: task.evaluator,
-          evaluatorDeadline: task.evaluatorDeadline,
-          appealDeadline: task.appealDeadline,
-        }),
+        submissionWindowOpen,
+        pendingActions: computePendingActions(
+          {
+            id: task.id,
+            status: task.status,
+            mode: task.mode,
+            rating: task.rating,
+            pitchCount: pitchCountNum,
+            bidCount: auctionBidCount ?? 0,
+            submissionCount: Number(submissionCount[0]?.count || 0),
+            expiryTime: task.expiryTime,
+            bidDeadline: task.bidDeadline,
+            claimedBy: task.claimedBy,
+            worker: task.worker,
+            auctionType: task.auctionType,
+            currentClockPrice: clockPrice,
+            currentLowestBid,
+            latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
+            evaluator: task.evaluator,
+            evaluatorDeadline: task.evaluatorDeadline,
+            appealDeadline: task.appealDeadline,
+          },
+          submissionWindowOpen
+        ),
       };
     }),
 
@@ -851,7 +909,7 @@ export const tasksRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       const taskResult = await ctx.db
@@ -861,17 +919,17 @@ export const tasksRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can cancel');
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the task requester can cancel' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open' });
       }
 
       if (task.mode === 'auction') {
@@ -880,7 +938,10 @@ export const tasksRouter = router({
           .from(bids)
           .where(eq(bids.taskId, input.taskId));
         if (Number(bidCount[0]?.count ?? 0) > 0) {
-          throw new Error('Bids exist — cannot cancel auction with bids');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Bids exist — cannot cancel auction with bids',
+          });
         }
       }
 
@@ -894,6 +955,81 @@ export const tasksRouter = router({
         .update(tasks)
         .set({ status: 'cancelled', cancelledAt: new Date() })
         .where(eq(tasks.id, input.taskId));
+
+      return { txHash };
+    }),
+
+  refundExpired: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/refund-expired',
+        tags: ['Tasks'],
+        summary: 'Refund an expired task with no submissions back to the requester (X402 required)',
+      },
+    })
+    .input(z.object({ taskId: z.string() }))
+    .output(z.object({ txHash: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      const task = taskResult[0];
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can call refundExpired',
+        });
+      }
+
+      if (task.status === 'expired') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is already expired' });
+      }
+      if (task.status === 'completed' || task.status === 'cancelled') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: `Task is already ${task.status}` });
+      }
+      if (new Date() < task.expiryTime) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has not yet expired' });
+      }
+
+      const subCount = await ctx.db
+        .select({ count: sql<string>`count(*)` })
+        .from(submissions)
+        .where(eq(submissions.taskId, input.taskId));
+
+      if (Number(subCount[0]?.count ?? 0) > 0) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Task has submissions — use accept instead of refund',
+        });
+      }
+
+      const txHash = await contractRefundExpired(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`
+      );
+
+      try {
+        await ctx.db.update(tasks).set({ status: 'expired' }).where(eq(tasks.id, input.taskId));
+      } catch {
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Refund sent on-chain (${txHash}) but DB sync failed — contact support with this tx hash`,
+        });
+      }
 
       return { txHash };
     }),
@@ -912,7 +1048,7 @@ export const tasksRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       const taskResult = await ctx.db
@@ -922,17 +1058,17 @@ export const tasksRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can update');
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the task requester can update' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open' });
       }
 
       if (task.mode === 'auction') {
@@ -941,16 +1077,25 @@ export const tasksRouter = router({
           .from(bids)
           .where(eq(bids.taskId, input.taskId));
         if (Number(bidCount[0]?.count ?? 0) > 0) {
-          throw new Error('Bids exist — cannot update auction with bids');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Bids exist — cannot update auction with bids',
+          });
         }
       }
 
       const effectiveReward = input.reward ?? task.reward;
       if (input.auctionFloorPrice && BigInt(input.auctionFloorPrice) > BigInt(effectiveReward)) {
-        throw new Error('auctionFloorPrice must be <= reward');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'auctionFloorPrice must be <= reward',
+        });
       }
       if (input.auctionStartPrice && BigInt(input.auctionStartPrice) > BigInt(effectiveReward)) {
-        throw new Error('auctionStartPrice must be <= reward');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'auctionStartPrice must be <= reward',
+        });
       }
 
       const newReward = input.reward ? BigInt(input.reward) : 0n;
@@ -1053,15 +1198,29 @@ export const tasksRouter = router({
         }
       }
 
-      const updatedSubmissionCount = await ctx.db
-        .select({ count: sql<number>`count(*)` })
-        .from(submissions)
-        .where(eq(submissions.taskId, t.id));
+      const [updatedSubmissionCount, updatedPitchCount] = await Promise.all([
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(submissions)
+          .where(eq(submissions.taskId, t.id)),
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(proposals)
+          .where(eq(proposals.taskId, t.id)),
+      ]);
 
-      const updatedPitchCount = await ctx.db
-        .select({ count: sql<number>`count(*)` })
-        .from(proposals)
-        .where(eq(proposals.taskId, t.id));
+      const updateSubmissionWindowOpen = computeSubmissionWindowOpen(t, updateNow);
+
+      const hasUpdatedSubmissions = Number(updatedSubmissionCount[0]?.count ?? 0) > 0;
+      const updatedLatestSubmission =
+        hasUpdatedSubmissions && (t.mode === 'bounty' || t.mode === 'benchmark')
+          ? await ctx.db
+              .select({ workerAddress: submissions.workerAddress })
+              .from(submissions)
+              .where(eq(submissions.taskId, t.id))
+              .orderBy(desc(submissions.submittedAt))
+              .limit(1)
+          : [];
 
       return {
         id: t.id,
@@ -1098,25 +1257,31 @@ export const tasksRouter = router({
         auctionPriceReachesFloorAt: updateAuctionPriceReachesFloorAt,
         auctionPriceReachesMaxAt: updateAuctionPriceReachesMaxAt,
         currentLowestBid: updateCurrentLowestBid,
-        pendingActions: computePendingActions({
-          id: t.id,
-          status: t.status,
-          mode: t.mode,
-          rating: t.rating,
-          pitchCount: Number(updatedPitchCount[0]?.count || 0),
-          bidCount: auctionBidCount ?? 0,
-          expiryTime: t.expiryTime,
-          bidDeadline: t.bidDeadline,
-          claimedBy: t.claimedBy,
-          worker: t.worker,
-          auctionType: t.auctionType,
-          currentClockPrice:
-            updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
-          currentLowestBid: updateCurrentLowestBid,
-          evaluator: t.evaluator,
-          evaluatorDeadline: t.evaluatorDeadline,
-          appealDeadline: t.appealDeadline,
-        }),
+        submissionWindowOpen: updateSubmissionWindowOpen,
+        pendingActions: computePendingActions(
+          {
+            id: t.id,
+            status: t.status,
+            mode: t.mode,
+            rating: t.rating,
+            pitchCount: Number(updatedPitchCount[0]?.count || 0),
+            bidCount: auctionBidCount ?? 0,
+            submissionCount: Number(updatedSubmissionCount[0]?.count || 0),
+            expiryTime: t.expiryTime,
+            bidDeadline: t.bidDeadline,
+            claimedBy: t.claimedBy,
+            worker: t.worker,
+            auctionType: t.auctionType,
+            currentClockPrice:
+              updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
+            currentLowestBid: updateCurrentLowestBid,
+            latestSubmissionWorker: updatedLatestSubmission[0]?.workerAddress ?? null,
+            evaluator: t.evaluator,
+            evaluatorDeadline: t.evaluatorDeadline,
+            appealDeadline: t.appealDeadline,
+          },
+          updateSubmissionWindowOpen
+        ),
       };
     }),
 });

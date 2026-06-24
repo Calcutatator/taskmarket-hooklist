@@ -49,6 +49,7 @@ const baseTask: TaskDetailResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 0,
+  submissionWindowOpen: true,
   tags: ['typescript', 'agents'],
   worker: null,
 };

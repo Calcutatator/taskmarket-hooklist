@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, type Mock } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { type SQL } from 'drizzle-orm';
 import { makeChain } from '../helpers';
@@ -16,10 +16,18 @@ function renderSql(query: SQL): { sql: string; params: unknown[] } {
  * Mock ctx whose db.execute() returns queued result sets in call order, and
  * records the SQL passed to each call so tests can assert query shape.
  */
+type MockDb = {
+  select: ReturnType<typeof vi.fn>;
+  insert: ReturnType<typeof vi.fn>;
+  update: ReturnType<typeof vi.fn>;
+  delete: ReturnType<typeof vi.fn>;
+  execute: Mock<[SQL], Promise<unknown[]>>;
+};
+
 function createStatsCtx(executeResults: unknown[][]) {
   const executeCalls: SQL[] = [];
   let idx = 0;
-  const db: any = {
+  const db: MockDb = {
     select: vi.fn().mockReturnValue(makeChain([])),
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
@@ -31,8 +39,9 @@ function createStatsCtx(executeResults: unknown[][]) {
       return Promise.resolve(result);
     }),
   };
+  type StatsCtx = Parameters<typeof statsRouter.createCaller>[0];
   return {
-    ctx: { db, req: {} as any, res: { locals: {} } as any },
+    ctx: { db, req: {} as Record<string, unknown>, res: { locals: {} as Record<string, unknown> } } as unknown as StatsCtx,
     executeCalls,
   };
 }
@@ -52,7 +61,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '7d', dimension: 'mode' });
 
       expect(result.rowKeys).toEqual(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
@@ -73,7 +82,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '30d', dimension: 'mode' });
 
       expect(result.cells[0].volume).toBe(big);
@@ -89,7 +98,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '7d', dimension: 'mode' });
 
       expect(result.cells).toEqual([]);
@@ -101,7 +110,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '30d', dimension: 'mode' });
 
       expect(executeCalls).toHaveLength(1);
@@ -128,7 +137,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx } = createStatsCtx([rows]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '30d', dimension: 'hourOfWeek' });
 
       expect(result.rowKeys).toEqual(['0', '1', '2', '3', '4', '5', '6']);
@@ -146,7 +155,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx } = createStatsCtx([[]]);
 
       const result = await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '7d', dimension: 'hourOfWeek' });
 
       expect(result.cells).toEqual([]);
@@ -159,7 +168,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: '30d', dimension: 'hourOfWeek' });
 
       const { sql: q } = renderSql(executeCalls[0]);
@@ -182,7 +191,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
       await statsRouter
-        .createCaller(ctx as any)
+        .createCaller(ctx)
         .activityHeatmap({ range: 'all', dimension: 'hourOfWeek' });
 
       const { sql: q } = renderSql(executeCalls[0]);
@@ -195,7 +204,7 @@ describe('stats router activityHeatmap', () => {
   it('defaults to dimension=mode and range=30d', async () => {
     const { ctx, executeCalls } = createStatsCtx([[]]);
 
-    const result = await statsRouter.createCaller(ctx as any).activityHeatmap({});
+    const result = await statsRouter.createCaller(ctx).activityHeatmap({});
 
     expect(result.rowKeys).toEqual(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
     const { sql: q } = renderSql(executeCalls[0]);

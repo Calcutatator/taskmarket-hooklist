@@ -85,6 +85,7 @@ const baseTask: TaskDetailResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 0,
+  submissionWindowOpen: true,
   tags: ['seo', 'images'],
   worker: null,
 };

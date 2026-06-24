@@ -234,8 +234,12 @@ export const submissionsRouter = router({
           });
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
-        if (task.status !== 'open' && task.status !== 'pending_approval') {
+        const now = new Date();
+        if (task.status !== 'open') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
+        }
+        if (task.expiryTime && task.expiryTime < now) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has expired' });
         }
       }
 
@@ -321,12 +325,13 @@ export const submissionsRouter = router({
 
         await tx.insert(artifacts).values(artifactRows);
 
-        // Mirror the on-chain status transition: submitWork moves the task to
-        // PendingApproval for all modes. For Bounty/Benchmark the deliverable is
-        // not written on-chain at submission time (deferred-write model), but the
-        // status does transition so that pendingActions shows an accept action.
-        // Subsequent submissions are still allowed at pending_approval status.
-        if (task.status === 'open') {
+        // Bounty/Benchmark are open contests: the task stays `open` and keeps
+        // accepting submissions until the requester accepts one or it expires. No
+        // status flip on submit -- "has submissions" is derived from the submissions
+        // table, and the requester keeps full cancel/update control while live.
+        // Claim/pitch/auction have a single designated worker, so flip to
+        // pending_approval on submission so the requester can accept.
+        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
           await tx
             .update(tasks)
             .set({ status: 'pending_approval' })
@@ -371,7 +376,7 @@ export const submissionsRouter = router({
       // actively accepting submissions. Full worker eligibility is enforced
       // at submitFromKeys time.
       const taskResult = await ctx.db
-        .select({ status: tasks.status, mode: tasks.mode })
+        .select({ status: tasks.status, mode: tasks.mode, expiryTime: tasks.expiryTime })
         .from(tasks)
         .where(eq(tasks.id, input.taskId))
         .limit(1);
@@ -383,8 +388,10 @@ export const submissionsRouter = router({
       const task = taskResult[0];
       const submittable =
         task.mode === 'bounty' || task.mode === 'benchmark'
-          ? task.status === 'open' || task.status === 'pending_approval'
-          : task.status === 'claimed' || task.status === 'worker_selected';
+          ? task.status === 'open' && !(task.expiryTime && task.expiryTime < new Date())
+          : task.mode === 'auction'
+            ? task.status === 'claimed'
+            : task.status === 'claimed' || task.status === 'worker_selected';
 
       if (!submittable) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not accepting submissions' });
@@ -451,8 +458,12 @@ export const submissionsRouter = router({
           });
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
-        if (task.status !== 'open' && task.status !== 'pending_approval') {
+        const now = new Date();
+        if (task.status !== 'open') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
+        }
+        if (task.expiryTime && task.expiryTime < now) {
+          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has expired' });
         }
       }
 
@@ -542,7 +553,10 @@ export const submissionsRouter = router({
 
         await tx.insert(artifacts).values(artifactRows);
 
-        if (task.status === 'open') {
+        // Bounty/Benchmark stay `open` while accepting submissions -- no status flip.
+        // Claim/pitch/auction have a single designated worker, so flip to
+        // pending_approval on submission so the requester can accept.
+        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
           await tx
             .update(tasks)
             .set({ status: 'pending_approval' })

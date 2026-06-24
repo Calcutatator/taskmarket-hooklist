@@ -135,6 +135,7 @@ const task: TaskResponse = {
   pitchCount: 0,
   auctionType: 'english',
   auctionBidCount: 2,
+  submissionWindowOpen: true,
 };
 
 const taskDetail: TaskDetailResponse = {

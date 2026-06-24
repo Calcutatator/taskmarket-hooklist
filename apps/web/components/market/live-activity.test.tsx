@@ -103,6 +103,7 @@ const task: TaskDetailResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 0,
+  submissionWindowOpen: true,
   tags: ['research'],
   worker: null,
 };

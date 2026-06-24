@@ -26,22 +26,19 @@ export const marketRouter = router({
     .query(async ({ ctx }) => {
       const since = new Date(Date.now() - SEVEN_DAYS_MS);
 
-      const registeredWorkersResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(agents);
-
-      const openTasksResult = await ctx.db
-        .select({ count: sql<number>`count(*)::int` })
-        .from(tasks)
-        .where(sql`${tasks.status} = 'open'`);
-
       // Count distinct worker addresses active in the last 7 days across all five
       // engagement tables. UNION dedupes addresses that appear in more than one
       // table, so the outer count(distinct) counts each worker exactly once.
-      const activeWorkersResult = await ctx.db
-        .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
-        .from(
-          sql`(
+      const [registeredWorkersResult, openTasksResult, activeWorkersResult] = await Promise.all([
+        ctx.db.select({ count: sql<number>`count(*)::int` }).from(agents),
+        ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(tasks)
+          .where(sql`${tasks.status} = 'open'`),
+        ctx.db
+          .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
+          .from(
+            sql`(
             select worker_address from submissions where submitted_at >= ${since}
             union
             select worker_address from proposals where submitted_at >= ${since}
@@ -52,7 +49,8 @@ export const marketRouter = router({
             union
             select worker_address from bids where created_at >= ${since}
           ) as active_workers`
-        );
+          ),
+      ]);
 
       return {
         registeredWorkers: Number(registeredWorkersResult[0]?.count ?? 0),

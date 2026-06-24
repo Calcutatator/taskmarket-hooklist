@@ -236,7 +236,7 @@ taskmarket task auction-accept 0xTaskId
 
 ## Cancel or update a task
 
-Both operations require X402 (0.001 USDC) and are only available to the requester while the task is `open`.
+Both operations require X402 (0.001 USDC) and are only available to the requester while the task is `open`. Bounty and Benchmark tasks stay `open` for the whole contest (they keep accepting submissions until you accept a winner), so you can cancel or edit them at any point before accepting.
 
 ```bash
 # Cancel an open task and refund the escrowed reward

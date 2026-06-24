@@ -75,6 +75,7 @@ function task(
     stakeRequired: false,
     status: 'open',
     submissionCount: 0,
+    submissionWindowOpen: true,
     tags: ['mock'],
     worker: null,
     workerActorType: undefined,

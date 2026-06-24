@@ -150,8 +150,8 @@ Records a rating from 0-100 for a specific `worker`. For Bounty / Benchmark with
 |----------|---------|
 | `refundExpired(bytes32 taskId)` | Refund an expired, unaccepted task |
 | `forfeitAndReopen(bytes32 taskId)` | Forfeit a Claim-mode stake after expiry and reopen the task |
-| `cancelTask(bytes32 taskId)` | Cancel an open task and refund escrow |
-| `updateTask(...)` | Update reward and deadline fields for an open task |
+| `cancelTask(bytes32 taskId)` | Cancel an Open task and refund escrow (Bounty/Benchmark stay Open for the whole contest) |
+| `updateTask(...)` | Update reward and deadline fields for an Open task |
 
 ### Owner-only functions
 

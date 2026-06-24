@@ -90,7 +90,7 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not found');
     });
 
-    it('submits to open bounty task and sets status to pending_approval', async () => {
+    it('submits to open bounty task and keeps it open', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -125,9 +125,9 @@ describe('submissions router', () => {
           displayOrder: 0,
         }),
       ]);
-      // Bounty submission transitions DB status to pending_approval so that
-      // pendingActions shows an accept action for the requester.
-      expect(ctx.db.update).toHaveBeenCalled();
+      // Bounty is an open contest: the task stays `open` and keeps accepting
+      // submissions, so submitting must NOT flip the task status.
+      expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
     it('submits multiple artifacts and anchors one manifest hash on chain', async () => {
@@ -196,7 +196,7 @@ describe('submissions router', () => {
       ]);
     });
 
-    it('persists submission rows inside one transaction (with status update to pending_approval for Bounty)', async () => {
+    it('persists submission rows inside one transaction without flipping task status', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
@@ -213,14 +213,13 @@ describe('submissions router', () => {
 
       expect(ctx.db.transaction).toHaveBeenCalledOnce();
       expect(tx.insert).toHaveBeenCalledTimes(2);
-      // Bounty submission sets status to pending_approval so pendingActions
-      // shows an accept action. The update happens inside the transaction.
-      expect(tx.update).toHaveBeenCalledOnce();
+      // Bounty stays `open` as an open contest, so submitting flips no status.
+      expect(tx.update).not.toHaveBeenCalled();
       expect(ctx.db.insert).not.toHaveBeenCalled();
       expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
-    it('submits to open benchmark task and sets status to pending_approval', async () => {
+    it('submits to open benchmark task and keeps it open', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
@@ -231,16 +230,14 @@ describe('submissions router', () => {
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
-      // Benchmark submission transitions DB status to pending_approval (same as Bounty).
-      expect(ctx.db.update).toHaveBeenCalled();
+      // Benchmark is an open contest like bounty: submitting must NOT flip status.
+      expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
-    it('submits to pending_approval bounty task (additional worker)', async () => {
+    it('accepts an additional submission to an open bounty without changing status', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'bounty', status: 'pending_approval' })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
       const result = await caller.submit(baseSubmitInput);
@@ -248,7 +245,7 @@ describe('submissions router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.submissionId).toBe('string');
       expect(ctx.db.insert).toHaveBeenCalledTimes(2);
-      // status already pending_approval, so no task status update
+      // Open contest stays open across submissions, so no task status update.
       expect(ctx.db.update).not.toHaveBeenCalled();
     });
 
@@ -263,8 +260,8 @@ describe('submissions router', () => {
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
-      // status is 'claimed' not 'open', so no task status update
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      // claim task flips to pending_approval after submission so requester can accept
+      expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
     it('throws when claim task is not claimed', async () => {
@@ -296,6 +293,8 @@ describe('submissions router', () => {
       const result = await caller.submit(baseSubmitInput);
 
       expect(result.success).toBe(true);
+      // pitch task flips to pending_approval after submission so requester can accept
+      expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
     it('throws when pitch task worker is different', async () => {

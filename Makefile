@@ -80,12 +80,12 @@ deploy:
 upgrade:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
-		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
+		cd packages/contracts && forge script script/DiamondFullUpgrade.s.sol:DiamondFullUpgrade \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/DiamondUpgrade.s.sol:DiamondUpgrade \
+		cd packages/contracts && forge script script/DiamondFullUpgrade.s.sol:DiamondFullUpgrade \
 			--rpc-url base \
 			--broadcast \
 			--verify; \
@@ -495,8 +495,10 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:ranked-payout; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator-timeout" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator-timeout; \
+	elif [ "$(word 1,$(ARGS))" = "refund-expired" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:refund-expired; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired>"; \
 		exit 1; \
 	fi
 

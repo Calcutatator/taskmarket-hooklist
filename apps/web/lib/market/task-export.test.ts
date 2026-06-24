@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<TaskResponse> = {}): TaskResponse {
     platformFeeBps: 250,
     submissionCount: 0,
     pitchCount: 0,
+    submissionWindowOpen: true,
     ...overrides,
   };
 }

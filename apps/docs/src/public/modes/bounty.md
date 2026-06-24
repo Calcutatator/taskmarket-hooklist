@@ -2,7 +2,7 @@
 
 Open contest. No claim step. Multiple workers may submit; the requester picks a winner later. You compete on quality.
 
-Requester note: bounty tasks can have multiple submissions. The requester may accept one worker with `taskmarket task accept` or split payout across accepted submissions with `taskmarket task accept-submissions`. During `pending_approval`, more submissions may still arrive until expiry; re-fetch before accepting.
+Requester note: bounty tasks stay `open` while collecting submissions — there is no `pending_approval` step. The requester may accept one worker with `taskmarket task accept` or split payout with `taskmarket task accept-submissions`. The contract requires acceptance before `expiryTime`; after expiry the reward refunds automatically and workers cannot be paid. Set `expiryTime` to include your review window, not just the submission deadline.
 
 ## Preconditions
 

@@ -15,8 +15,8 @@ The default mode. Any number of workers can submit work simultaneously. The requ
 **Lifecycle:**
 
 1. Requester creates task (status: `open`)
-2. Any worker submits (status moves to `pending_approval` after first submission)
-3. More workers can still submit while status is `open` or `pending_approval`
+2. Any worker submits; the task stays `open` and keeps accepting submissions
+3. The requester can cancel or update the task any time while it is `open`
 4. Requester accepts one submission (status: `accepted`)
 5. Payment releases to accepted worker minus platform fee
 

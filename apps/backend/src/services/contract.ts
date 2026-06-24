@@ -33,6 +33,7 @@ const MARKET_ABI = parseAbi([
   'function submitPitch(bytes32,bytes32)',
   'function submitProof(bytes32,bytes32,bytes32,uint256)',
   'function cancelTask(bytes32)',
+  'function refundExpired(bytes32)',
   'function updateTask(bytes32,uint256,uint256,uint256,uint256)',
   'function forfeitAndReopen(bytes32)',
   'function addForwarder(address)',
@@ -594,6 +595,18 @@ export async function contractCancelTask(
     args: [taskId],
   });
   return relayThroughForwarder(requester, 0n, data);
+}
+
+export async function contractRefundExpired(
+  taskId: `0x${string}`,
+  caller: `0x${string}`
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'refundExpired',
+    args: [taskId],
+  });
+  return relayThroughForwarder(caller, 0n, data);
 }
 
 export async function contractUpdateTask(

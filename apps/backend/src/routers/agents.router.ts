@@ -5,12 +5,15 @@ import {
   LeaderboardInputSchema,
   TaskInboxInputSchema,
   TaskInboxResponseSchema,
+  type TaskStatusType,
+  type TaskModeType,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents, feedbacks, tasks, submissions, proposals, devices } from '../db/schema';
-import { eq, desc, sql, and, or, ilike, gte } from 'drizzle-orm';
+import { eq, desc, sql, and, or, ilike, gte, inArray } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
+import { computeSubmissionWindowOpen } from '../lib/task';
 import { createHash } from 'crypto';
 
 function sha256Hex(data: string): string {
@@ -115,16 +118,50 @@ export const agentsRouter = router({
     .query(async ({ input, ctx }) => {
       const { address } = input;
 
-      const mapTask = async (task: typeof tasks.$inferSelect) => {
-        const submissionCount = await ctx.db
-          .select({ count: sql<number>`count(*)` })
-          .from(submissions)
-          .where(eq(submissions.taskId, task.id));
+      const [requesterRows, workerRows] = await Promise.all([
+        ctx.db
+          .select()
+          .from(tasks)
+          .where(eq(tasks.requester, address))
+          .orderBy(desc(tasks.createdAt))
+          .limit(50),
+        ctx.db
+          .select()
+          .from(tasks)
+          .where(or(eq(tasks.worker, address), eq(tasks.claimedBy, address)))
+          .orderBy(desc(tasks.createdAt))
+          .limit(50),
+      ]);
 
-        const pitchCount = await ctx.db
-          .select({ count: sql<number>`count(*)` })
+      const allRows = [...requesterRows, ...workerRows];
+      const allIds = [...new Set(allRows.map((t) => t.id))];
+
+      const now = new Date();
+
+      if (allIds.length === 0) {
+        return { asRequester: [], asWorker: [] };
+      }
+
+      const [submissionCounts, pitchCounts] = await Promise.all([
+        ctx.db
+          .select({ taskId: submissions.taskId, count: sql<number>`count(*)` })
+          .from(submissions)
+          .where(inArray(submissions.taskId, allIds))
+          .groupBy(submissions.taskId),
+        ctx.db
+          .select({ taskId: proposals.taskId, count: sql<number>`count(*)` })
           .from(proposals)
-          .where(eq(proposals.taskId, task.id));
+          .where(inArray(proposals.taskId, allIds))
+          .groupBy(proposals.taskId),
+      ]);
+
+      const submissionCountMap = new Map(submissionCounts.map((r) => [r.taskId, Number(r.count)]));
+      const pitchCountMap = new Map(pitchCounts.map((r) => [r.taskId, Number(r.count)]));
+
+      const mapTask = (task: typeof tasks.$inferSelect) => {
+        const sCount = submissionCountMap.get(task.id) ?? 0;
+        const pCount = pitchCountMap.get(task.id) ?? 0;
+        const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
 
         return {
           id: task.id,
@@ -135,11 +172,11 @@ export const agentsRouter = router({
           escrowTxHash: task.escrowTxHash,
           createdAt: task.createdAt.toISOString(),
           expiryTime: task.expiryTime.toISOString(),
-          status: task.status as any,
+          status: task.status as TaskStatusType,
           tags: task.tags,
           worker: task.worker,
           rating: task.rating,
-          mode: task.mode as any,
+          mode: task.mode as TaskModeType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -150,31 +187,16 @@ export const agentsRouter = router({
           claimedBy: task.claimedBy,
           claimedAt: task.claimedAt?.toISOString() || null,
           platformFeeBps: task.platformFeeBps,
-          submissionCount: Number(submissionCount[0]?.count || 0),
-          pitchCount: Number(pitchCount[0]?.count || 0),
+          submissionCount: sCount,
+          pitchCount: pCount,
+          submissionWindowOpen,
         };
       };
 
-      const requesterRows = await ctx.db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.requester, address))
-        .orderBy(desc(tasks.createdAt))
-        .limit(50);
-
-      const workerRows = await ctx.db
-        .select()
-        .from(tasks)
-        .where(or(eq(tasks.worker, address), eq(tasks.claimedBy, address)))
-        .orderBy(desc(tasks.createdAt))
-        .limit(50);
-
-      const [asRequester, asWorker] = await Promise.all([
-        Promise.all(requesterRows.map(mapTask)),
-        Promise.all(workerRows.map(mapTask)),
-      ]);
-
-      return { asRequester, asWorker };
+      return {
+        asRequester: requesterRows.map(mapTask),
+        asWorker: workerRows.map(mapTask),
+      };
     }),
 
   count: publicProcedure

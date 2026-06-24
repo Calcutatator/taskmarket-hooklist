@@ -380,7 +380,9 @@ export function LiveActivityPanel({
     ? 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
     : 'Work, bids, proofs, and reviews tied to this task.';
 
-  const showReaching = isRequester && task.status === 'open' && !hasActivity && !terminal;
+  const windowOpen = task.submissionWindowOpen === true;
+  const showReaching =
+    isRequester && task.status === 'open' && !hasActivity && !terminal && windowOpen;
   const animateNew = pollEnabled && !motionDisabled;
 
   return (
@@ -396,6 +398,11 @@ export function LiveActivityPanel({
                 {title}
               </h2>
               {pollEnabled ? <LiveIndicator motionDisabled={motionDisabled} /> : null}
+              {task.status === 'open' && !windowOpen ? (
+                <span className="font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted-foreground">
+                  Submission window closed
+                </span>
+              ) : null}
             </div>
             <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           </div>
@@ -462,7 +469,6 @@ export function LiveActivityPanel({
 
         {claim ? <ClaimRow claim={claim} profileBasePath={profileBasePath} /> : null}
 
-        {/* eslint-disable-next-line no-nested-ternary */}
         {!hasActivity ? (
           showReaching ? (
             <ReachingWorkersPanel
@@ -470,6 +476,19 @@ export function LiveActivityPanel({
               motionDisabled={motionDisabled}
               task={task}
             />
+          ) : task.status === 'open' &&
+            !windowOpen &&
+            (task.mode === 'bounty' || task.mode === 'benchmark') ? (
+            <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
+              <p className="text-sm font-semibold tracking-tight text-foreground">
+                Submission window closed
+              </p>
+              <p className="mt-1 text-sm leading-5 text-muted-foreground">
+                {task.mode === 'benchmark'
+                  ? 'Submission window closed — reviewing benchmark proofs'
+                  : 'Submission window closed — the requester is reviewing entries'}
+              </p>
+            </div>
           ) : (
             <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
               <p className="text-sm font-semibold tracking-tight text-foreground">

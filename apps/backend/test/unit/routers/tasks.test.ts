@@ -5,6 +5,8 @@ import { createMockCtx, makeChain } from '../helpers';
 // Mock contract service before importing router
 vi.mock('../../../src/services/contract', () => ({
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
+  contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
+  contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
@@ -44,7 +46,11 @@ vi.mock('../../../src/config/env', () => ({
 }));
 
 import { tasksRouter } from '../../../src/routers/tasks.router';
-import { contractCreateTask } from '../../../src/services/contract';
+import {
+  contractCreateTask,
+  contractUpdateTask,
+  contractCancelTask,
+} from '../../../src/services/contract';
 import { notifyNewTask } from '../../../src/services/task-notifications';
 
 // Allow microtask-queued fire-and-forget work (notifyNewTask) to settle.
@@ -117,7 +123,7 @@ describe('tasks router', () => {
 
       await caller.create({ ...baseTaskInput, mode: 'claim' });
 
-      const [, , , mode] = (contractCreateTask as any).mock.calls[0];
+      const [, , , mode] = vi.mocked(contractCreateTask).mock.calls[0];
       expect(mode).toBe('0x00000002'); // MODE_MAP.claim
     });
 
@@ -175,11 +181,12 @@ describe('tasks router', () => {
 
     it('returns task with counts when found', async () => {
       const ctx = createMockCtx();
-      // task lookup → submission count → pitch count
+      // task lookup → Promise.all(submissionCount, pitchCount, requesterAgentRow) → latestSubmission
       ctx.db.select
         .mockReturnValueOnce(makeChain([mockTaskRow]))
         .mockReturnValueOnce(makeChain([{ count: 3 }]))
-        .mockReturnValueOnce(makeChain([{ count: 1 }]));
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }]));
 
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.get({ taskId: '0xabc' });
@@ -212,9 +219,7 @@ describe('tasks router', () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(
-          makeChain([
-            { ...mockTaskRow, mode: 'bounty', status: 'claimed', claimedBy: '0xworker' },
-          ])
+          makeChain([{ ...mockTaskRow, mode: 'bounty', status: 'claimed', claimedBy: '0xworker' }])
         )
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
@@ -224,6 +229,276 @@ describe('tasks router', () => {
 
       expect(result).not.toBeNull();
       expect(result!.pendingActions.some((a) => a.action === 'forfeit')).toBe(false);
+    });
+  });
+
+  describe('submissionWindowOpen', () => {
+    it('is true for an active open bounty', async () => {
+      const ctx = createMockCtx();
+      const activeRow = { ...mockTaskRow, status: 'open', expiryTime: new Date(Date.now() + 72 * 3600 * 1000) };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(true);
+    });
+
+    it('is false for an expired open bounty', async () => {
+      const ctx = createMockCtx();
+      const expiredRow = { ...mockTaskRow, status: 'open', expiryTime: new Date(Date.now() - 3600 * 1000) };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([expiredRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(false);
+    });
+
+    it('is false for a claimed task', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'claimed', claimedBy: '0xworker' }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(false);
+    });
+
+    it('expired bounty with submissions: omits submit, keeps accept', async () => {
+      const ctx = createMockCtx();
+      const expiredRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() - 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([expiredRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 2 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(false);
+      expect(result!.pendingActions.some((a) => a.action === 'accept')).toBe(true);
+      expect(result!.pendingActions.some((a) => a.action === 'submit')).toBe(false);
+    });
+
+    it('active bounty with submissions: shows both submit and accept', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(true);
+      expect(result!.pendingActions.some((a) => a.action === 'accept')).toBe(true);
+      expect(result!.pendingActions.some((a) => a.action === 'submit')).toBe(true);
+    });
+
+    it('pitch task after pitchDeadline: no pitch action, select_worker still present', async () => {
+      const ctx = createMockCtx();
+      const pitchRow = {
+        ...mockTaskRow,
+        mode: 'pitch',
+        status: 'open',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+        pitchDeadline: new Date(Date.now() - 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([pitchRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 2 }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.submissionWindowOpen).toBe(false);
+      expect(result!.pendingActions.some((a) => a.action === 'pitch')).toBe(false);
+      expect(result!.pendingActions.some((a) => a.action === 'select_worker')).toBe(true);
+    });
+  });
+
+  describe('update', () => {
+    // A bounty stays `open` while collecting submissions, so the requester can keep
+    // editing it the whole time -- no pending_approval lock-out.
+    const openBountyRow = {
+      ...mockTaskRow,
+      status: 'open',
+      expiryTime: new Date(Date.now() + 72 * 60 * 60 * 1000),
+    };
+
+    it('allows off-chain metadata edits while a bounty has submissions and is open', async () => {
+      const ctx = createMockCtx(PAYER);
+      // task lookup -> updated task lookup -> submission count -> pitch count
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(makeChain([{ ...openBountyRow, description: 'fixed title' }]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc', description: 'fixed title' });
+
+      expect(ctx.db.update).toHaveBeenCalledOnce();
+      expect(result).not.toBeNull();
+      expect(result!.description).toBe('fixed title');
+    });
+
+    it('allows reward/expiry changes while a bounty is open', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(makeChain([{ ...openBountyRow, reward: '5000000' }]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc', reward: '5000000' });
+
+      expect(contractUpdateTask).toHaveBeenCalledOnce();
+      expect(result!.reward).toBe('5000000');
+    });
+
+    it('rejects update once a task has left open', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ ...mockTaskRow, status: 'pending_approval' }])
+      );
+
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(caller.update({ taskId: '0xabc', description: 'too late' })).rejects.toThrow(
+        'Task not open'
+      );
+    });
+
+    it('surfaces accept and submit actions for an open bounty with submissions', async () => {
+      const ctx = createMockCtx();
+      const openRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() + 72 * 60 * 60 * 1000),
+      };
+      // get order: task -> Promise.all(submissionCount, pitchCount, requesterAgentRow) -> latestSubmission
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const actions = result!.pendingActions;
+      expect(actions.some((a) => a.action === 'accept' && a.role === 'requester')).toBe(true);
+      expect(actions.some((a) => a.action === 'submit' && a.role === 'worker')).toBe(true);
+      expect(actions.some((a) => a.action === 'cancel' && a.role === 'requester')).toBe(true);
+    });
+
+    it('does not surface accept for an open bounty with no submissions', async () => {
+      const ctx = createMockCtx();
+      const openRowNoSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() + 72 * 60 * 60 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openRowNoSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.pendingActions.some((a) => a.action === 'accept')).toBe(false);
+    });
+
+    it('surfaces accept for an expired open bounty that still has submissions', async () => {
+      const ctx = createMockCtx();
+      const expiredRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() - 60 * 60 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([expiredRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 2 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.pendingActions.some((a) => a.action === 'accept' && a.role === 'requester')).toBe(true);
+    });
+
+    it('returns no actions for an expired open bounty with no submissions', async () => {
+      const ctx = createMockCtx();
+      const expiredRowNoSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() - 60 * 60 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([expiredRowNoSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.pendingActions).toHaveLength(1);
+      expect(result!.pendingActions[0].action).toBe('refund_expired');
+      expect(result!.pendingActions[0].role).toBe('requester');
+    });
+  });
+
+  describe('cancel', () => {
+    it('allows cancelling an open bounty with submissions', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'open' }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.cancel({ taskId: '0xabc' });
+
+      expect(contractCancelTask).toHaveBeenCalledOnce();
+      expect(result.txHash).toBe('0xcancelhash');
+    });
+
+    it('rejects cancelling a task that has left open', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ ...mockTaskRow, mode: 'claim', status: 'claimed' }])
+      );
+
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(caller.cancel({ taskId: '0xabc' })).rejects.toThrow('Task not open');
+      expect(contractCancelTask).not.toHaveBeenCalled();
     });
   });
 
@@ -364,7 +639,7 @@ describe('tasks router', () => {
 
     // Captures the SQL condition passed to the main list query's .where() so we
     // can assert the filter produces exact-match address conditions.
-    function captureListWhere(input: Record<string, unknown>) {
+    function captureListWhere(input: Parameters<ReturnType<typeof tasksRouter.createCaller>['list']>[0]) {
       const mainChain = makeChain([mockTaskRow]);
       const ctx = createMockCtx();
       ctx.db.select
@@ -373,7 +648,7 @@ describe('tasks router', () => {
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
 
       const caller = tasksRouter.createCaller(ctx);
-      return caller.list(input as any).then(() => {
+      return caller.list(input).then(() => {
         const whereArg = mainChain.where.mock.calls[0][0];
         return dialect.sqlToQuery(whereArg);
       });
@@ -385,14 +660,14 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."worker" = ');
       expect(query.sql).toContain('"tasks"."claimed_by" = ');
       expect(query.sql).toMatch(/"tasks"."worker" = \$\d+ or "tasks"."claimed_by" = \$\d+/);
-      expect(query.params).toEqual([WORKER, WORKER]);
+      expect(query.params).toEqual([WORKER.toLowerCase(), WORKER.toLowerCase()]);
     });
 
     it('filters by requester with an exact address match', async () => {
       const query = await captureListWhere({ requester: REQUESTER });
 
       expect(query.sql).toContain('"tasks"."requester" = ');
-      expect(query.params).toEqual([REQUESTER]);
+      expect(query.params).toEqual([REQUESTER.toLowerCase()]);
     });
 
     it('combines requester and worker filters', async () => {
@@ -401,7 +676,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."requester" = ');
       expect(query.sql).toContain('"tasks"."worker" = ');
       expect(query.sql).toContain('"tasks"."claimed_by" = ');
-      expect(query.params).toEqual([REQUESTER, WORKER, WORKER]);
+      expect(query.params).toEqual([REQUESTER.toLowerCase(), WORKER.toLowerCase(), WORKER.toLowerCase()]);
     });
   });
 });
