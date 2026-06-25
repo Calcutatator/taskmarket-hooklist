@@ -1,59 +1,28 @@
 'use client';
 
-import type { ArtifactResponse, TaskResponse } from '@taskmarket/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 import { LayoutGrid, Rows3 } from 'lucide-react';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 
-import { ArtifactMediaTile } from '@/components/market/artifact-preview-button';
 import { TaskTable, type TaskListView } from '@/components/market/tasks';
 import { Button } from '@/components/ui/button';
-import { trpc } from '@/lib/api/client';
 
-function isMediaArtifact(artifact: ArtifactResponse) {
-  return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
+// Persisted view preference. Gallery is the default first paint (SSR-safe), and a viewer who
+// previously chose the table is restored to it after mount. The key is namespaced so it does
+// not collide with other surfaces.
+const VIEW_STORAGE_KEY = 'taskmarket.task-list-view';
+
+function isTaskListView(value: string | null): value is TaskListView {
+  return value === 'table' || value === 'gallery';
 }
 
-// Lazily fetch the first media artifact submitted to a task and render it as a small tile.
-// Only mount this for tasks that already indicate submissions exist (subs > 0): a paginated
-// feed of ~12-20 rows then issues a bounded number of requests rather than one per row.
+// Client wrapper that lets a viewer flip the task list between an image-forward gallery and the
+// lightweight table. Kept here, in the client module, so TaskListPageContent (a server
+// component) can stay server-rendered and simply mount this island.
 //
-// N+1 tradeoff: this fires one submissions.listByTask request per visible task that has
-// submissions. React Query caches and dedupes by query key, so a task that also appears in
-// the live-activity feed reuses the same response. A future backend "cover preview" field
-// on TaskResponse (a single presigned thumbnail URL) would let the feed render covers with
-// zero extra requests and should replace this component when available.
-export function TaskThumbnail({ taskId }: { taskId: string }) {
-  const { data } = trpc.submissions.listByTask.useQuery(
-    // listByTask has no limit input; we fetch with media preview URLs and pick the first
-    // media artifact client-side. The payload is small (artifact metadata + presigned URLs).
-    { includePreviewUrls: 'media', taskId },
-    {
-      refetchOnWindowFocus: false,
-      staleTime: 30_000,
-    }
-  );
-
-  const cover = (data ?? [])
-    .flatMap((submission) => submission.artifacts ?? [])
-    .filter(isMediaArtifact)
-    .filter((artifact) => Boolean(artifact.previewUrl))[0];
-
-  // Hide entirely when the task has no embeddable media yet, so the cell stays clean.
-  if (!cover) {
-    return null;
-  }
-
-  return (
-    <div className="w-full max-w-40">
-      <ArtifactMediaTile artifact={cover} taskId={taskId} />
-    </div>
-  );
-}
-
-// Client wrapper that lets a viewer flip the task list between the lightweight table and an
-// image-forward gallery (which mounts TaskThumbnail per active task). Kept here, in the
-// client module, so TaskListPageContent (a server component) can stay server-rendered and
-// simply mount this island. The table remains the default so the first paint is light.
+// SSR safety: useState initialises to the SSR default ('gallery') so the server HTML and the
+// first client render agree (no hydration mismatch). A useEffect then reads localStorage on the
+// client and restores a previously stored choice only when it is a valid, different value.
 export function TaskListBoard({
   createHref,
   detailBasePath = '/dashboard/tasks',
@@ -69,7 +38,31 @@ export function TaskListBoard({
   listHref?: string;
   tasks: TaskResponse[];
 }) {
-  const [view, setView] = useState<TaskListView>('table');
+  const [view, setView] = useState<TaskListView>('gallery');
+
+  // Restore the persisted preference after mount. Guarded for storage being unavailable
+  // (private browsing / blocked storage) so the shell never breaks.
+  useEffect(() => {
+    try {
+      const stored = window.localStorage.getItem(VIEW_STORAGE_KEY);
+      if (isTaskListView(stored) && stored !== view) {
+        setView(stored);
+      }
+    } catch {
+      // Ignore storage failures and keep the gallery default.
+    }
+    // Run once on mount; the dependency on `view` is intentionally omitted so a later toggle
+    // does not re-read storage and clobber the user's in-session choice.
+  }, []);
+
+  function selectView(next: TaskListView) {
+    setView(next);
+    try {
+      window.localStorage.setItem(VIEW_STORAGE_KEY, next);
+    } catch {
+      // Ignore storage failures so the toggle still works in-session.
+    }
+  }
 
   return (
     <div className="grid gap-3">
@@ -81,7 +74,7 @@ export function TaskListBoard({
             aria-label="Table view"
             aria-pressed={view === 'table'}
             data-active={view === 'table'}
-            onClick={() => setView('table')}
+            onClick={() => selectView('table')}
             size="chip"
             type="button"
             variant="chip"
@@ -93,7 +86,7 @@ export function TaskListBoard({
             aria-label="Gallery view"
             aria-pressed={view === 'gallery'}
             data-active={view === 'gallery'}
-            onClick={() => setView('gallery')}
+            onClick={() => selectView('gallery')}
             size="chip"
             type="button"
             variant="chip"

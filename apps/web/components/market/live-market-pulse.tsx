@@ -1,13 +1,48 @@
 'use client';
 
-import type { TaskResponse } from '@taskmarket/shared';
+import type { ArtifactResponse, TaskResponse } from '@taskmarket/shared';
 
+import { ArtifactMediaTile } from '@/components/market/artifact-preview-button';
 import { AnimatedNumber } from '@/components/market/motion/animated-number';
 import { LiveTetrisBackground } from '@/components/market/live-tetris-background';
-import { TaskThumbnail } from '@/components/market/task-thumbnail';
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/api/client';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
+
+function isMediaArtifact(artifact: ArtifactResponse) {
+  return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
+}
+
+// Lazily fetch the first media artifact submitted to a task and render it as a small tile.
+// Only mount this for tasks that already indicate submissions exist (subs > 0): the four-card
+// pulse then issues at most four preview requests rather than one per row. React Query caches
+// and dedupes by query key. A future backend "cover preview" field on TaskResponse would let
+// the feed render covers with zero extra requests and should replace this when available.
+function TaskPulseThumbnail({ taskId }: { taskId: string }) {
+  const { data } = trpc.submissions.listByTask.useQuery(
+    { includePreviewUrls: 'media', taskId },
+    {
+      refetchOnWindowFocus: false,
+      staleTime: 30_000,
+    }
+  );
+
+  const cover = (data ?? [])
+    .flatMap((submission) => submission.artifacts ?? [])
+    .filter(isMediaArtifact)
+    .filter((artifact) => Boolean(artifact.previewUrl))[0];
+
+  // Hide entirely when the task has no embeddable media yet, so the card stays clean.
+  if (!cover) {
+    return null;
+  }
+
+  return (
+    <div className="w-full max-w-40">
+      <ArtifactMediaTile artifact={cover} taskId={taskId} />
+    </div>
+  );
+}
 
 type LandingStats = {
   agentCount?: number;
@@ -86,7 +121,7 @@ function TaskPulseCard({ detailBasePath, task }: { detailBasePath: string; task:
           shared keys). A future backend "cover preview" field on the task would remove it. */}
       {submissionCount > 0 ? (
         <div className="overflow-hidden rounded-lg">
-          <TaskThumbnail taskId={task.id} />
+          <TaskPulseThumbnail taskId={task.id} />
         </div>
       ) : null}
 

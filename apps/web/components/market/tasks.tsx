@@ -49,7 +49,8 @@ import {
 } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { TaskListBoard, TaskThumbnail } from '@/components/market/task-thumbnail';
+import { TaskCover } from '@/components/market/task-cover';
+import { TaskListBoard } from '@/components/market/task-thumbnail';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -99,7 +100,7 @@ export type TaskModeData = {
   submissions?: SubmissionResponse[];
 };
 
-function taskTitle(task: TaskResponse) {
+export function taskTitle(task: TaskResponse) {
   return task.description.split('\n')[0]?.slice(0, 80) || `Task ${task.id}`;
 }
 
@@ -289,7 +290,7 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
 
 // Reward as a scannable headline: larger/bolder than the surrounding cells, plus an
 // auction caption when the figure is a live clock/bid price rather than the static reward.
-function RewardAmount({
+export function RewardAmount({
   align = 'start',
   task,
 }: {
@@ -454,7 +455,7 @@ export function activityEmptyCopy(task: TaskDetailResponse | TaskResponse) {
   }
 }
 
-function activityCount(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
+export function activityCount(task: TaskDetailResponse | TaskResponse, modeData?: TaskModeData) {
   switch (task.mode) {
     case 'auction':
       return task.auctionBidCount ?? modeData?.bids?.length ?? 0;
@@ -566,41 +567,27 @@ export type TaskListView = 'table' | 'gallery';
 // TaskThumbnail, so a paginated feed makes a bounded number of preview requests rather than
 // one per row. (Only submissions carry media artifacts today, but counting all activity
 // keeps the gate honest and future-proof.)
-function taskHasActivity(task: TaskResponse): boolean {
+export function taskHasActivity(task: TaskResponse): boolean {
   return (
     (task.submissionCount ?? 0) > 0 || (task.pitchCount ?? 0) > 0 || (task.auctionBidCount ?? 0) > 0
   );
 }
 
-// Gallery card: a scannable, image-forward alternative to a table row for visual work.
-// The thumbnail only mounts when the task reports activity and hides itself when no media
-// artifact is available, so cards without previews degrade to a clean text card.
+// Gallery card: a scannable, image-forward alternative to a table row for visual work. The
+// whole card is a single link to the detail page, with the cover (media or deterministic
+// placeholder) carrying the title, badges, reward, and activity in its overlay. There are no
+// nested interactive elements so the card stays one focusable target.
 function TaskGalleryCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
-  const hasActivity = taskHasActivity(task);
 
   return (
-    <li className="grid content-start gap-3 rounded-lg border border-border/58 bg-card/44 p-4 transition-[background-color,border-color] duration-300 ease-[var(--ease-premium)] hover:border-primary/36 hover:bg-surface/44">
-      {hasActivity ? (
-        <div className="overflow-hidden rounded-lg">
-          <TaskThumbnail taskId={task.id} />
-        </div>
-      ) : null}
+    <li>
       <Link
-        className="block truncate font-sans text-sm font-semibold leading-6 text-foreground hover:text-primary"
+        className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         href={detailHref as Route}
-        title={taskTitle(task)}
       >
-        {taskTitle(task)}
+        <TaskCover task={task} />
       </Link>
-      <div className="flex flex-wrap gap-1.5">
-        <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
-        <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
-      </div>
-      <div className="flex items-end justify-between gap-3 border-t border-border/58 pt-3">
-        <RewardAmount task={task} />
-        <span className="font-mono text-xs text-muted-foreground">{activityLabel(task)}</span>
-      </div>
     </li>
   );
 }
@@ -615,12 +602,30 @@ function TaskGalleryGrid({
   return (
     <ul
       aria-label="Task gallery"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:grid-cols-3"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
       data-testid="task-gallery"
       role="list"
     >
       {tasks.map((task) => (
         <TaskGalleryCard detailBasePath={detailBasePath} key={task.id} task={task} />
+      ))}
+    </ul>
+  );
+}
+
+// Gallery loading state: a grid of aspect-[4/3] skeletons matching the cover shape, so a
+// switch to the gallery view does not collapse into the lightweight table-row bars.
+function TaskGallerySkeletonGrid() {
+  return (
+    <ul
+      aria-label="Loading task gallery"
+      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+      role="list"
+    >
+      {Array.from({ length: 6 }, (_, index) => (
+        <li key={index}>
+          <Skeleton className="aspect-[4/3] w-full rounded-lg" />
+        </li>
       ))}
     </ul>
   );
@@ -661,6 +666,12 @@ export function TaskTable({
   }
 
   if (isLoading) {
+    // In the gallery view the loading state mirrors the cover grid (aspect-[4/3] tiles) so
+    // switching views does not collapse into the table's row bars and back.
+    if (view === 'gallery') {
+      return <TaskGallerySkeletonGrid />;
+    }
+
     return (
       <Card>
         <CardHeader>

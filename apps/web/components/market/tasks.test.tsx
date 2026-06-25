@@ -264,6 +264,33 @@ describe('Task marketplace components', () => {
     expect(screen.getByRole('link', { name: /reload/i })).toHaveAttribute('href', '/tasks');
   });
 
+  it('renders the gallery view as uniform whole-card cover links to the detail page', () => {
+    render(<TaskTable tasks={[task]} view="gallery" />);
+
+    // The gallery grid keeps its testid and accessible name.
+    const gallery = screen.getByTestId('task-gallery');
+    expect(gallery).toHaveAttribute('aria-label', 'Task gallery');
+
+    // The whole card is a single link to the detail page (no separate title/footer links).
+    const cardLinks = within(gallery).getAllByRole('link');
+    expect(cardLinks).toHaveLength(1);
+    expect(cardLinks[0]).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
+
+    // The cover container is a uniform 4:3 tile and the title lives in its overlay.
+    expect(gallery.querySelector('.aspect-\\[4\\/3\\]')).not.toBeNull();
+    expect(within(gallery).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
+    expect(within(gallery).getAllByText('25.000').length).toBeGreaterThan(0);
+  });
+
+  it('renders aspect-ratio gallery skeletons while loading in the gallery view', () => {
+    render(<TaskTable isLoading tasks={[]} view="gallery" />);
+
+    const loading = screen.getByRole('list', { name: /loading task gallery/i });
+    expect(loading.querySelectorAll('.aspect-\\[4\\/3\\]').length).toBeGreaterThan(0);
+    // The gallery loading state does not fall back to the table "Loading tasks" card.
+    expect(screen.queryByText(/loading tasks/i)).not.toBeInTheDocument();
+  });
+
   it('renders due/activity columns, colour-coded status, and the requester actor signal', () => {
     render(<TaskTable tasks={[{ ...task, requesterActorType: 'human' }]} />);
 
