@@ -8,10 +8,65 @@ import {
   keccak256,
   encodeAbiParameters,
   encodeFunctionData,
+  ContractFunctionRevertedError,
+  BaseError,
 } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
+import { TRPCError } from '@trpc/server';
 import { createServerWallet } from '../lib/wallet';
 import { getServerConfig } from '../config/env';
+
+// Map known 4-byte selectors to human-readable error names
+const KNOWN_ERRORS: Record<string, string> = {
+  '0xfe894217': 'TaskNotOpen',
+  '0x1a3daf1f': 'TaskIsExpired',
+  '0x1b42f1bf': 'TaskIsCancelled',
+  '0xbb1ed08e': 'TaskAlreadyAccepted',
+  '0xda319dff': 'TaskDoesNotExist',
+  '0xe39da59e': 'NotRequester',
+  '0xfb55adaf': 'NotWorker',
+  '0x504e2b37': 'BidsExist',
+  '0x88f82d67': 'SubmissionsExist',
+  '0x5f86f09d': 'BidDeadlinePassed',
+  '0xa00cee25': 'BidDeadlineNotPassed',
+  '0x45db67c0': 'PitchDeadlinePassed',
+  '0xabbfac0d': 'TaskNotClaimed',
+  '0x86e9980a': 'TaskNotAccepted',
+  '0xaa41dc9f': 'NotTrustedForwarder',
+  '0x3ee5aeb5': 'ReentrancyGuardReentrantCall',
+  '0xc9051603': 'InvalidWorker',
+  '0xe4966367': 'InvalidRequester',
+  '0x7bc4e046': 'DeliverableRequired',
+  '0x0debe113': 'DeliverableAlreadySet',
+  '0x646cf558': 'AlreadyClaimed',
+  '0xef94626f': 'HookCheckSubmitRejected',
+  '0xca46673e': 'HookCheckClaimRejected',
+  '0xc6671ec1': 'HookCheckCompleteRejected',
+  '0x3f79f31d': 'NoBidsSubmitted',
+  '0x418108b9': 'WinnerNotSelected',
+  '0xc5c36f76': 'WorkerMismatch',
+  '0x579c5e17': 'DeliverableMismatch',
+  '0xb579719d': 'AwardsExceedEscrow',
+  '0x089087ea': 'SharesMustSumTo10000',
+  '0xff633a38': 'LengthMismatch',
+};
+
+function decodeRelayRevert(err: unknown): string {
+  if (err instanceof BaseError) {
+    const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (revertError instanceof ContractFunctionRevertedError) {
+      const name = revertError.data?.errorName ?? revertError.reason ?? revertError.message;
+      if (name) return name;
+    }
+    // fallback: try raw data selector
+    const raw = (err as BaseError & { data?: string }).data;
+    if (typeof raw === 'string' && raw.length >= 10) {
+      const sel = raw.slice(0, 10).toLowerCase();
+      if (KNOWN_ERRORS[sel]) return KNOWN_ERRORS[sel];
+    }
+  }
+  return 'unknown revert';
+}
 
 const ERC20_ABI = parseAbi([
   'function approve(address,uint256) returns (bool)',
@@ -94,7 +149,11 @@ const RELAY_RETRY_DELAY_MS = 2000;
 
 function resolveForwarderAddress(): `0x${string}` {
   const addr = getServerConfig().FORWARDER_ADDRESS;
-  if (!addr) throw new Error('FORWARDER_ADDRESS is not configured');
+  if (!addr)
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: 'FORWARDER_ADDRESS is not configured',
+    });
   return addr as `0x${string}`;
 }
 
@@ -114,7 +173,10 @@ async function getGasParams(publicClient: ReturnType<typeof getPublicClient>) {
 
 function assertSuccess(receipt: { status: string }, label: string) {
   if (receipt.status !== 'success') {
-    throw new Error(`Contract tx reverted: ${label}`);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `On-chain tx reverted: ${label}`,
+    });
   }
 }
 
@@ -187,7 +249,8 @@ async function relayThroughForwarder(
         ...gas,
       });
     } catch (err) {
-      // writeContract threw before sending — simulation failed. Retry.
+      // writeContract threw before sending — simulation failed. Retry on transient
+      // errors; on the final attempt, decode and surface the revert reason.
       lastError = err;
       continue;
     }
@@ -199,7 +262,10 @@ async function relayThroughForwarder(
     );
     return hash;
   }
-  throw lastError;
+  throw new TRPCError({
+    code: 'BAD_REQUEST',
+    message: `Contract call rejected: ${decodeRelayRevert(lastError)}`,
+  });
 }
 
 /**
@@ -688,5 +754,8 @@ export async function contractRegisterIdentity(): Promise<bigint> {
     if (found !== null) return found;
   }
 
-  throw new Error('Registered event not found in registerIdentity receipt');
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: 'Registered event not found in registerIdentity receipt',
+  });
 }

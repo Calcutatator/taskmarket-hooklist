@@ -44,7 +44,7 @@ export const acceptanceRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       const taskResult = await ctx.db
@@ -54,13 +54,16 @@ export const acceptanceRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can accept a submission');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can accept a submission',
+        });
       }
 
       // Resolve the deliverable hash to commit. Order:
@@ -118,12 +121,15 @@ export const acceptanceRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       const sumShares = input.winners.reduce((acc, w) => acc + w.share, 0);
       if (sumShares !== 10000) {
-        throw new Error(`Winner shares must sum to 10000 basis points (got ${sumShares})`);
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `Winner shares must sum to 10000 basis points (got ${sumShares})`,
+        });
       }
 
       const taskResult = await ctx.db
@@ -132,11 +138,14 @@ export const acceptanceRouter = router({
         .where(eq(tasks.id, input.taskId))
         .limit(1);
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
       const task = taskResult[0];
       if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can accept submissions');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can accept submissions',
+        });
       }
 
       // Resolve each winner's deliverable hash. Priority:
@@ -180,9 +189,10 @@ export const acceptanceRouter = router({
           deliverable = (row[0]?.deliverableHash as `0x${string}` | undefined) ?? null;
         }
         if (!deliverable) {
-          throw new Error(
-            `No deliverable found for worker ${w.worker}; pass deliverable or submissionId explicitly`
-          );
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `No deliverable found for worker ${w.worker}; pass deliverable or submissionId explicitly`,
+          });
         }
         deliverables.push(deliverable);
       }
@@ -213,7 +223,7 @@ export const acceptanceRouter = router({
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
-        throw new Error('Payment required: missing payer');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
       }
 
       const config = getServerConfig();
@@ -224,14 +234,21 @@ export const acceptanceRouter = router({
         .where(eq(tasks.id, input.taskId))
         .limit(1);
 
-      if (taskResult.length === 0 || taskResult[0].status !== 'completed') {
-        throw new Error('Task not completed');
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      if (taskResult[0].status !== 'completed') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not completed' });
       }
 
       const task = taskResult[0];
 
       if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can rate a task');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can rate a task',
+        });
       }
 
       const workerAgentResult = await ctx.db

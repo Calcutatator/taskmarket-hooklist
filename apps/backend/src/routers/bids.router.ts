@@ -34,7 +34,7 @@ export const bidsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const workerAddress: string = ctx.res.locals.payer;
       if (!workerAddress) {
-        throw new Error('Worker address required');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Worker address required' });
       }
 
       const taskResult = await ctx.db
@@ -44,32 +44,33 @@ export const bidsRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode !== 'auction') {
-        throw new Error('Not an Auction task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not an Auction task' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open for bids');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open for bids' });
       }
 
       if (task.bidDeadline && new Date() >= task.bidDeadline) {
-        throw new Error('Bid deadline has passed');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bid deadline has passed' });
       }
 
       if (task.maxPrice && BigInt(input.price) > BigInt(task.maxPrice)) {
-        throw new Error('Bid exceeds max price');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bid exceeds max price' });
       }
 
       // Dutch and reverse_dutch use auction-accept, not bid
       if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
-        throw new Error(
-          `This auction type (${task.auctionType}) uses auction-accept, not bid. Run: taskmarket task auction-accept ${task.id}`
-        );
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `This auction type (${task.auctionType}) uses auction-accept, not bid. Run: taskmarket task auction-accept ${task.id}`,
+        });
       }
 
       // English: new bid must undercut the current lowest bid
@@ -84,9 +85,10 @@ export const bidsRouter = router({
         if (lowestBid.length > 0) {
           const currentLowest = BigInt(lowestBid[0].price);
           if (BigInt(input.price) >= currentLowest) {
-            throw new Error(
-              `Bid must undercut the current lowest bid of ${lowestBid[0].price} base units`
-            );
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Bid must undercut the current lowest bid of ${lowestBid[0].price} base units`,
+            });
           }
         }
       }
@@ -101,9 +103,10 @@ export const bidsRouter = router({
 
         if (existingBid.length > 0) {
           if (BigInt(input.price) >= BigInt(existingBid[0].price)) {
-            throw new Error(
-              `Re-bid must be lower than your current bid of ${existingBid[0].price} base units`
-            );
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Re-bid must be lower than your current bid of ${existingBid[0].price} base units`,
+            });
           }
         }
       }
@@ -241,7 +244,7 @@ export const bidsRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
@@ -278,22 +281,23 @@ export const bidsRouter = router({
       }
 
       if (task.mode !== 'auction') {
-        throw new Error('Not an Auction task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not an Auction task' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open' });
       }
 
       if (task.bidDeadline && new Date() < task.bidDeadline) {
-        throw new Error('Bid deadline has not passed yet');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Bid deadline has not passed yet' });
       }
 
       // Dutch/Reverse Dutch use auction-accept for immediate selection
       if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
-        throw new Error(
-          `${task.auctionType} auctions use auction-accept for immediate selection, not select-winner`
-        );
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `${task.auctionType} auctions use auction-accept for immediate selection, not select-winner`,
+        });
       }
 
       await contractSelectLowestBidder(input.taskId as `0x${string}`, task.contractAddress);
@@ -306,7 +310,7 @@ export const bidsRouter = router({
         .limit(1);
 
       if (lowestBid.length === 0) {
-        throw new Error('No bids found');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'No bids found' });
       }
 
       const winner = lowestBid[0];
@@ -339,7 +343,7 @@ export const bidsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const workerAddress: string = ctx.res.locals.payer;
       if (!workerAddress) {
-        throw new Error('Worker address required');
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Worker address required' });
       }
 
       const taskResult = await ctx.db
@@ -349,42 +353,50 @@ export const bidsRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode !== 'auction') {
-        throw new Error('Not an auction task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not an auction task' });
       }
 
       if (task.auctionType !== 'dutch' && task.auctionType !== 'reverse_dutch') {
-        throw new Error(
-          `auction-accept is only for dutch and reverse_dutch auctions. This task is ${task.auctionType || 'untyped'}.`
-        );
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `auction-accept is only for dutch and reverse_dutch auctions. This task is ${task.auctionType || 'untyped'}.`,
+        });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task is not open');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open' });
       }
 
       if (task.bidDeadline && new Date() >= task.bidDeadline) {
-        throw new Error('Bid deadline has passed — auction clock has expired');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Bid deadline has passed — auction clock has expired',
+        });
       }
 
       const now = new Date();
       const clockPrice = computeClockPrice(task, now);
       if (clockPrice === null) {
-        throw new Error('Could not compute current clock price');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Could not compute current clock price',
+        });
       }
 
       // Optional minPrice guard
       if (input.minPrice) {
         const minPrice = BigInt(input.minPrice);
         if (clockPrice < minPrice) {
-          throw new Error(
-            `Clock price (${clockPrice} base units) is below your minimum (${minPrice} base units). Current price: ${clockPrice}`
-          );
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `Clock price (${clockPrice} base units) is below your minimum (${minPrice} base units). Current price: ${clockPrice}`,
+          });
         }
       }
 
@@ -409,7 +421,10 @@ export const bidsRouter = router({
         .returning();
 
       if (!updated || updated.length === 0) {
-        throw new Error('Auction already claimed by another worker');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Auction already claimed by another worker',
+        });
       }
 
       // Record the bid in DB

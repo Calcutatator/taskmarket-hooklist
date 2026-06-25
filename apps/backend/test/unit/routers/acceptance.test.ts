@@ -201,7 +201,7 @@ describe('acceptance router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = acceptanceRouter.createCaller(ctx);
-      await expect(caller.rate(rateInput)).rejects.toThrow('Task not completed');
+      await expect(caller.rate(rateInput)).rejects.toThrow('Task not found');
     });
 
     it('throws when payer is not the requester', async () => {

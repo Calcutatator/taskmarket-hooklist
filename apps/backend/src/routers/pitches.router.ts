@@ -28,21 +28,21 @@ export const pitchesRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode !== 'pitch') {
-        throw new Error('Not a Pitch task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not a Pitch task' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open for pitches');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open for pitches' });
       }
 
       if (task.pitchDeadline && new Date() > task.pitchDeadline) {
-        throw new Error('Pitch deadline has passed');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Pitch deadline has passed' });
       }
 
       const existingPitch = await ctx.db
@@ -54,7 +54,10 @@ export const pitchesRouter = router({
         .limit(1);
 
       if (existingPitch.length > 0) {
-        throw new Error('Worker has already submitted a pitch');
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Worker has already submitted a pitch',
+        });
       }
 
       // X402 payment guard: middleware in app.ts settles the USDC transfer and
@@ -160,7 +163,10 @@ export const pitchesRouter = router({
     .input(PitchSelectSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      const payer: string = ctx.res.locals.payer;
+      const payer: string | undefined = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
+      }
 
       const taskResult = await ctx.db
         .select()
@@ -169,21 +175,24 @@ export const pitchesRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode !== 'pitch') {
-        throw new Error('Not a Pitch task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not a Pitch task' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not open');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open' });
       }
 
-      if (payer && task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new Error('Only the task requester can select a worker');
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can select a worker',
+        });
       }
 
       await contractSelectWorker(

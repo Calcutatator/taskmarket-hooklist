@@ -235,6 +235,13 @@ export const submissionsRouter = router({
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         const now = new Date();
+        if (task.status === 'pending_approval') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'This task already has submissions awaiting requester review — new submissions are not accepted',
+          });
+        }
         if (task.status !== 'open') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
         }
@@ -459,6 +466,13 @@ export const submissionsRouter = router({
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         const now = new Date();
+        if (task.status === 'pending_approval') {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message:
+              'This task already has submissions awaiting requester review — new submissions are not accepted',
+          });
+        }
         if (task.status !== 'open') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is not open for submissions' });
         }
@@ -815,11 +829,16 @@ export const submissionsRouter = router({
         .where(eq(devices.id, input.deviceId))
         .limit(1);
 
-      if (!deviceResult.length) throw new Error('Invalid device credentials');
+      if (!deviceResult.length) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid device credentials' });
+      }
       const device = deviceResult[0];
-      if (device.apiTokenHash !== sha256Hex(input.apiToken))
-        throw new Error('Invalid device credentials');
-      if (device.revokedAt !== null) throw new Error('Device has been revoked');
+      if (device.apiTokenHash !== sha256Hex(input.apiToken)) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid device credentials' });
+      }
+      if (device.revokedAt !== null) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Device has been revoked' });
+      }
 
       const callerAddress = device.walletAddress.toLowerCase();
 
@@ -830,9 +849,13 @@ export const submissionsRouter = router({
         .where(eq(submissions.id, input.submissionId))
         .limit(1);
 
-      if (!subResult.length) throw new Error('Submission not found');
+      if (!subResult.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Submission not found' });
+      }
       const sub = subResult[0];
-      if (sub.taskId !== input.taskId) throw new Error('Task/submission mismatch');
+      if (sub.taskId !== input.taskId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Task/submission mismatch' });
+      }
 
       // Look up task
       const taskResult = await ctx.db
@@ -841,7 +864,9 @@ export const submissionsRouter = router({
         .where(eq(tasks.id, input.taskId))
         .limit(1);
 
-      if (!taskResult.length) throw new Error('Task not found');
+      if (!taskResult.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
       const task = taskResult[0];
 
       // Only the task requester or the submitting worker may preview
@@ -849,7 +874,10 @@ export const submissionsRouter = router({
         callerAddress !== task.requester.toLowerCase() &&
         callerAddress !== sub.workerAddress.toLowerCase()
       ) {
-        throw new Error('Not authorized to preview this submission');
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Not authorized to preview this submission',
+        });
       }
 
       let storageUri = sub.fileUrl;
@@ -859,10 +887,12 @@ export const submissionsRouter = router({
           .from(artifacts)
           .where(eq(artifacts.id, input.artifactId))
           .limit(1);
-        if (!artifactResult.length) throw new Error('Artifact not found');
+        if (!artifactResult.length) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Artifact not found' });
+        }
         const artifact = artifactResult[0];
         if (artifact.taskId !== input.taskId || artifact.submissionId !== input.submissionId) {
-          throw new Error('Task/submission/artifact mismatch');
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Task/submission/artifact mismatch' });
         }
         storageUri = artifact.storageUri;
       } else {
@@ -873,7 +903,10 @@ export const submissionsRouter = router({
         if (artifactResults.length === 1) {
           storageUri = artifactResults[0]!.storageUri;
         } else if (artifactResults.length > 1) {
-          throw new Error('--artifact is required for this submission');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: '--artifact is required for this submission',
+          });
         }
       }
 
@@ -900,9 +933,13 @@ export const submissionsRouter = router({
         .where(eq(artifacts.id, input.artifactId))
         .limit(1);
 
-      if (!artifactResult.length) throw new Error('Artifact not found');
+      if (!artifactResult.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Artifact not found' });
+      }
       const artifact = artifactResult[0];
-      if (artifact.taskId !== input.taskId) throw new Error('Task/artifact mismatch');
+      if (artifact.taskId !== input.taskId) {
+        throw new TRPCError({ code: 'FORBIDDEN', message: 'Task/artifact mismatch' });
+      }
 
       const expiresIn = 3600;
       const previewUrl = await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn);
@@ -929,7 +966,7 @@ export const submissionsRouter = router({
         .limit(1);
 
       if (result.length === 0) {
-        throw new Error('Submission not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Submission not found' });
       }
 
       const submission = result[0];
@@ -940,8 +977,12 @@ export const submissionsRouter = router({
         .where(eq(tasks.id, submission.taskId))
         .limit(1);
 
-      if (taskResult.length === 0 || taskResult[0].status !== 'completed') {
-        throw new Error('Task not completed');
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      if (taskResult[0].status !== 'completed') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not completed' });
       }
 
       let storageUri = submission.fileUrl;
@@ -951,10 +992,12 @@ export const submissionsRouter = router({
           .from(artifacts)
           .where(eq(artifacts.id, input.artifactId))
           .limit(1);
-        if (!artifactResult.length) throw new Error('Artifact not found');
+        if (!artifactResult.length) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Artifact not found' });
+        }
         const artifact = artifactResult[0];
         if (artifact.taskId !== submission.taskId || artifact.submissionId !== submission.id) {
-          throw new Error('Task/submission/artifact mismatch');
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Task/submission/artifact mismatch' });
         }
         storageUri = artifact.storageUri;
       } else {
@@ -965,7 +1008,10 @@ export const submissionsRouter = router({
         if (artifactResults.length === 1) {
           storageUri = artifactResults[0]!.storageUri;
         } else if (artifactResults.length > 1) {
-          throw new Error('--artifact is required for this submission');
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: '--artifact is required for this submission',
+          });
         }
       }
 

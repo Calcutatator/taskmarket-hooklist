@@ -28,17 +28,17 @@ export const claimsRouter = router({
         .limit(1);
 
       if (taskResult.length === 0) {
-        throw new Error('Task not found');
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
       const task = taskResult[0];
 
       if (task.mode !== 'claim') {
-        throw new Error('Not a Claim task');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not a Claim task' });
       }
 
       if (task.status !== 'open') {
-        throw new Error('Task not available for claiming');
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not available for claiming' });
       }
 
       const message = `taskmarket:claim:${input.taskId}`;
