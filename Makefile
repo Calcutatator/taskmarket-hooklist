@@ -14,7 +14,7 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all); 'contracts' also regenerates abi/TaskMarket.json"
 	@echo "  make dev                  - Start all dev servers in parallel"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil)"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
@@ -129,7 +129,14 @@ build:
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		forge build --root packages/contracts; \
+		forge build --root packages/contracts && \
+		cd packages/contracts && python3 -c "\
+import json, os; \
+facets = ['DiamondCutFacet.sol/DiamondCutFacet.json','DiamondLoupeFacet.sol/DiamondLoupeFacet.json','AdminFacet.sol/AdminFacet.json','CoreFacet.sol/CoreFacet.json','AuctionFacet.sol/AuctionFacet.json','AcceptanceFacet.sol/AcceptanceFacet.json','EvaluatorFacet.sol/EvaluatorFacet.json','RatingFacet.sol/RatingFacet.json','RegistryFacet.sol/RegistryFacet.json']; \
+merged=[]; seen=set(); \
+[merged.append(e) or seen.add(json.dumps(e,sort_keys=True)) for f in facets for e in json.load(open(os.path.join('out',f)))['abi'] if json.dumps(e,sort_keys=True) not in seen]; \
+open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
+print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
 		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|all>"; \

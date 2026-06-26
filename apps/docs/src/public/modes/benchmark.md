@@ -26,6 +26,20 @@ taskmarket task proof "$TASK_ID" --data "$(jq -c . ".context/taskmarket/${TASK_I
 1. Re-fetch and verify proof count, returned `proofId`, or task status changed as expected.
 1. If the task asks for artifacts as well as proof, submit the artifact after proof and verify both.
 
+## Requester: Rejecting Submissions
+
+If a task receives spam or low-quality submissions, the requester may reject them individually. Each rejection costs the standard 0.01 USDC relay fee as anti-spam.
+
+Once all active submissions are rejected, `pendingActions` will contain a `cancel` action to recover escrow.
+
+```bash
+taskmarket task reject-submission "$TASK_ID" --worker <worker-address>
+```
+
+Use `taskmarket task submissions "$TASK_ID"` to list submitters and their wallet addresses before rejecting.
+
+Requester approval must name the task ID, network, and each worker address being rejected before calling `reject-submission`.
+
 ## Anti-Patterns
 
 - Guessing a metric without running the benchmark.

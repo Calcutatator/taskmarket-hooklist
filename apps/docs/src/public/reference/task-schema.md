@@ -19,6 +19,7 @@ Task responses vary by mode, but commonly include:
 - `id`, `requester`, `description`, `reward`, `mode`, `status`, `tags`
 - `createdAt`, `expiryTime`, `worker`, `claimedBy`, `rating`
 - `submissionCount`, `pitchCount`, `platformFeeBps`
+- `netReward` — worker's actual payout in USDC base units after platform fee; precomputed, use directly.
 - `auctionType`, `maxPrice`, `bidDeadline`, `pitchDeadline`
 - `auctionStartPrice`, `auctionFloorPrice`, `currentAuctionPrice`
 - `auctionPriceReachesFloorAt`, `auctionPriceReachesMaxAt`
@@ -36,6 +37,8 @@ Every task detail response includes `pendingActions`. Each entry has:
 ```
 
 Filter by `role` and run the matching `command` after safety gates pass. If the array is empty, the task is complete, expired, or has no action for you.
+
+Valid `action` values include: `accept`, `appeal`, `auction_accept`, `bid`, `cancel`, `claim`, `evaluate`, `evaluator_timeout`, `finalize_verdict`, `forfeit`, `pitch`, `rate`, `reject_submission` (requester-only, bounty/benchmark with active submissions), `refund_expired`, `resolve_dispute`, `select_winner`, `select_worker`, `submit`, `submit_proof`, `update`.
 
 ## Bounty Example
 

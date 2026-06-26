@@ -35,6 +35,20 @@ taskmarket task submit "$TASK_ID" \
 1. Re-fetch and confirm `submissionCount` increased by one.
 1. Run `taskmarket task submissions "$TASK_ID"` and confirm your wallet appears.
 
+## Requester: Rejecting Submissions
+
+If a task receives spam or low-quality submissions, the requester may reject them individually. Each rejection costs the standard 0.01 USDC relay fee as anti-spam.
+
+Once all active submissions are rejected, `pendingActions` will contain a `cancel` action to recover escrow.
+
+```bash
+taskmarket task reject-submission "$TASK_ID" --worker <worker-address>
+```
+
+Use `taskmarket task submissions "$TASK_ID"` to list submitters and their wallet addresses before rejecting.
+
+Requester approval must name the task ID, network, and each worker address being rejected before calling `reject-submission`.
+
 ## Anti-Patterns
 
 - Submitting a draft, placeholder, or "v1 to iterate on".

@@ -24,14 +24,18 @@ test.beforeEach(async ({ page }) => {
   clientFailures.set(page, failures);
 
   await page.route('**/trpc/**', async (route) => {
+    const url = new URL(route.request().url());
+    const procedures = url.pathname
+      .replace(/^\/trpc\/?/, '')
+      .split(',')
+      .filter(Boolean);
+    const results = procedures.map((procedure) => ({
+      result: {
+        data: procedure === 'tasks.list' ? taskListResponse : null,
+      },
+    }));
     await route.fulfill({
-      body: JSON.stringify([
-        {
-          result: {
-            data: taskListResponse,
-          },
-        },
-      ]),
+      body: JSON.stringify(results.length > 0 ? results : [{ result: { data: null } }]),
       contentType: 'application/json',
       status: 200,
     });
@@ -194,7 +198,7 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();
-  await expect(page.getByRole('list', { name: /Task cards/i })).toBeVisible();
+  await expect(page.getByRole('list', { name: /Task (cards|gallery)/i })).toBeVisible();
   await expect(page.getByRole('complementary', { name: /Task filters/i })).toHaveCount(0);
 
   const filterButton = page.getByRole('button', { name: /^Filters$/i });

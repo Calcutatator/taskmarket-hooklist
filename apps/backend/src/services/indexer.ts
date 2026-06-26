@@ -115,6 +115,9 @@ const TASK_DISPUTED_EVENT = parseAbiItem(
 const EVALUATOR_TIMED_OUT_EVENT = parseAbiItem(
   'event EvaluatorTimedOut(bytes32 indexed taskId, address indexed evaluator, uint256 forfeitedStake)'
 );
+const SUBMISSION_REJECTED_EVENT = parseAbiItem(
+  'event SubmissionRejected(bytes32 indexed taskId, address indexed worker)'
+);
 const PAUSED_EVENT = parseAbiItem('event Paused(address account)');
 const UNPAUSED_EVENT = parseAbiItem('event Unpaused(address account)');
 const OWNERSHIP_TRANSFER_STARTED_EVENT = parseAbiItem(
@@ -385,6 +388,17 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
   }
 
   console.log(`TaskSubmitted event: ${taskId} by ${worker}, deliverable: ${deliverable}`);
+}
+
+async function processSubmissionRejectedEvent(log: EventLog): Promise<void> {
+  const { taskId, worker } = log.args;
+  await db
+    .update(submissions)
+    .set({ rejectedAt: new Date() })
+    .where(
+      and(eq(submissions.taskId, taskId as string), eq(submissions.workerAddress, worker as string))
+    );
+  console.log(`SubmissionRejected event: task=${taskId} worker=${worker}`);
 }
 
 async function processBidSubmittedEvent(log: EventLog): Promise<void> {
@@ -672,6 +686,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_APPEALED_EVENT,
       TASK_DISPUTED_EVENT,
       EVALUATOR_TIMED_OUT_EVENT,
+      SUBMISSION_REJECTED_EVENT,
       PAUSED_EVENT,
       UNPAUSED_EVENT,
       OWNERSHIP_TRANSFER_STARTED_EVENT,
@@ -754,6 +769,9 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
           break;
         case 'EvaluatorTimedOut':
           await processEvaluatorTimedOutEvent(log);
+          break;
+        case 'SubmissionRejected':
+          await processSubmissionRejectedEvent(log);
           break;
         case 'Paused':
         case 'Unpaused':

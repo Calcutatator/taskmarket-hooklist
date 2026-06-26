@@ -60,6 +60,7 @@ The server wallet then holds the USDC and escrows it into the TaskMarket contrac
 | Search / get tasks | Free |
 | Claim a task | Free (stake optional, if configured) |
 | Submit proposal / proof | Free |
+| Reject submission | 0.01 USDC (relay fee) |
 
 ## Platform fee
 
@@ -76,6 +77,8 @@ Example: reward = 10 USDC, feeBps = 500 (5%)
 
 * Worker receives: 9.5 USDC
 * Platform fee: 0.5 USDC
+
+The task response includes a `netReward` field showing the worker's actual payout after platform fee in base units. Use this directly instead of computing from `reward` and `platformFeeBps`.
 
 ## Claim task staking
 

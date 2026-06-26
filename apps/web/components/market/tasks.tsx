@@ -1807,7 +1807,7 @@ export function TaskDetailPanel({
   const isDashboardSurface = listBase.startsWith('/dashboard');
   const taskTypesHref = isDashboardSurface ? ('/dashboard/task-types' as Route) : null;
   const modeHref = taskFiltersHref(listBase, { mode: task.mode }) as Route;
-  const pendingActions = 'pendingActions' in task ? task.pendingActions : [];
+  const pendingActions = task.pendingActions ?? [];
   // Route the accept action to per-submission cards only when submissions are
   // already loaded. When modeData has no submissions yet, keep accept in
   // nextActions so it renders in the actions card (avoids a command disappearing

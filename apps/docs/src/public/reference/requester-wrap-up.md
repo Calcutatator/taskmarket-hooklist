@@ -21,6 +21,18 @@ Use `taskmarket task accept` for one accepted worker. Use `taskmarket task accep
 
 Before split acceptance, load `reference/split-acceptance.md`.
 
+## Spam Rejection
+
+If all submissions are spam or genuinely unusable, the requester may reject each worker individually using `reject-submission`. Each call costs 0.01 USDC relay fee. Once all workers are rejected, `pendingActions` gains a `cancel` action to recover escrow.
+
+Before rejecting any submission, get explicit requester approval naming:
+
+- task ID
+- network
+- each worker address to be rejected
+
+Do not reject valid work to avoid paying workers.
+
 ## Rating Choice
 
 After acceptance, rate promptly when a requester rating is available. Before choosing a score, load `reference/rating.md`.

@@ -70,3 +70,16 @@ Response:
 ## Sealed Bids Hide Prices
 
 For `reverse_english`, `currentLowestBid` is expected to be `null` before `bidDeadline`. Use `auctionBidCount` only as a signal that bids exist.
+
+## Cannot Cancel: Submissions Exist
+
+Symptom: `taskmarket task cancel` returns `Contract call rejected: SubmissionsExist`.
+
+Cause: A bounty or benchmark task has one or more active (non-rejected) submissions. Cancelling is blocked to protect workers who submitted in good faith.
+
+Response:
+
+1. List submitters: `taskmarket task submissions <taskId>`.
+1. For each spam submitter, call: `taskmarket task reject-submission <taskId> --worker <address>` (costs 0.01 USDC relay fee per rejection).
+1. Get explicit requester approval naming each worker address before rejecting.
+1. Once all active submissions are rejected, retry: `taskmarket task cancel <taskId>`.

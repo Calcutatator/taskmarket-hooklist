@@ -14,13 +14,27 @@ import {
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
-import { eq, or, sql, desc, and, gt, lt, lte, arrayOverlaps, asc, inArray } from 'drizzle-orm';
+import {
+  eq,
+  or,
+  sql,
+  desc,
+  and,
+  gt,
+  lt,
+  lte,
+  arrayOverlaps,
+  asc,
+  inArray,
+  isNull,
+} from 'drizzle-orm';
 import {
   contractCreateTask,
   contractAssignEvaluator,
   contractCancelTask,
   contractRefundExpired,
   contractUpdateTask,
+  contractRejectSubmission,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
@@ -96,6 +110,12 @@ function computePendingActions(
                 role: 'requester',
                 action: 'accept',
                 command: `taskmarket task accept ${id} --worker ${workerAddr ?? '<address>'}`,
+              },
+              // Note: a full list would need all submitter addresses; here we surface only the latest.
+              {
+                role: 'requester',
+                action: 'reject_submission',
+                command: `taskmarket task reject-submission ${id} --worker ${task.latestSubmissionWorker ?? workerAddr ?? '<address>'}`,
               },
             ]
           : [];
@@ -602,7 +622,7 @@ export const tasksRouter = router({
             ? ctx.db
                 .select({ taskId: submissions.taskId, count: sql<number>`count(*)::int` })
                 .from(submissions)
-                .where(inArray(submissions.taskId, listIds))
+                .where(and(inArray(submissions.taskId, listIds), isNull(submissions.rejectedAt)))
                 .groupBy(submissions.taskId)
             : Promise.resolve([]),
           listIds.length > 0
@@ -695,6 +715,9 @@ export const tasksRouter = router({
           auctionBidCount,
           currentLowestBid,
           submissionWindowOpen: computeSubmissionWindowOpen(task, now),
+          netReward: String(
+            Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
+          ),
         };
       });
 
@@ -731,7 +754,7 @@ export const tasksRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(submissions)
-          .where(eq(submissions.taskId, task.id)),
+          .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt))),
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(proposals)
@@ -760,7 +783,7 @@ export const tasksRouter = router({
           ? await ctx.db
               .select({ workerAddress: submissions.workerAddress })
               .from(submissions)
-              .where(eq(submissions.taskId, task.id))
+              .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt)))
               .orderBy(desc(submissions.submittedAt))
               .limit(1)
           : [];
@@ -869,6 +892,9 @@ export const tasksRouter = router({
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         submissionWindowOpen,
+        netReward: String(
+          Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
+        ),
         pendingActions: computePendingActions(
           {
             id: task.id,
@@ -1202,7 +1228,7 @@ export const tasksRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(submissions)
-          .where(eq(submissions.taskId, t.id)),
+          .where(and(eq(submissions.taskId, t.id), isNull(submissions.rejectedAt))),
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(proposals)
@@ -1217,7 +1243,7 @@ export const tasksRouter = router({
           ? await ctx.db
               .select({ workerAddress: submissions.workerAddress })
               .from(submissions)
-              .where(eq(submissions.taskId, t.id))
+              .where(and(eq(submissions.taskId, t.id), isNull(submissions.rejectedAt)))
               .orderBy(desc(submissions.submittedAt))
               .limit(1)
           : [];
@@ -1258,6 +1284,9 @@ export const tasksRouter = router({
         auctionPriceReachesMaxAt: updateAuctionPriceReachesMaxAt,
         currentLowestBid: updateCurrentLowestBid,
         submissionWindowOpen: updateSubmissionWindowOpen,
+        netReward: String(
+          Math.floor((Number(t.reward) * (10000 - (t.platformFeeBps ?? 0))) / 10000)
+        ),
         pendingActions: computePendingActions(
           {
             id: t.id,
@@ -1283,5 +1312,79 @@ export const tasksRouter = router({
           updateSubmissionWindowOpen
         ),
       };
+    }),
+
+  rejectSubmission: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/reject-submission',
+        tags: ['Tasks'],
+        summary: 'Reject a worker submission on a bounty or benchmark task (X402 required)',
+      },
+    })
+    .input(z.object({ taskId: z.string(), worker: z.string() }))
+    .output(z.object({ txHash: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
+      }
+
+      const taskResult = await ctx.db
+        .select()
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      if (taskResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+
+      const task = taskResult[0];
+
+      if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'rejectSubmission is only valid for bounty or benchmark tasks',
+        });
+      }
+
+      if (task.status !== 'open' && task.status !== 'pending_approval') {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Task must be open or pending_approval to reject a submission',
+        });
+      }
+
+      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+        throw new TRPCError({
+          code: 'FORBIDDEN',
+          message: 'Only the task requester can reject submissions',
+        });
+      }
+
+      const workerSubmission = await ctx.db
+        .select()
+        .from(submissions)
+        .where(
+          and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, input.worker))
+        )
+        .limit(1);
+
+      if (workerSubmission.length === 0) {
+        throw new TRPCError({
+          code: 'NOT_FOUND',
+          message: 'No submission found for this worker on this task',
+        });
+      }
+
+      const txHash = await contractRejectSubmission(
+        input.taskId as `0x${string}`,
+        input.worker as `0x${string}`,
+        payer as `0x${string}`
+      );
+
+      return { txHash };
     }),
 });

@@ -27,6 +27,8 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0xfb55adaf': 'NotWorker',
   '0x504e2b37': 'BidsExist',
   '0x88f82d67': 'SubmissionsExist',
+  '0xe6919d76': 'SubmissionAlreadyRejected',
+  '0x4188e885': 'NoActiveSubmissions',
   '0x5f86f09d': 'BidDeadlinePassed',
   '0xa00cee25': 'BidDeadlineNotPassed',
   '0x45db67c0': 'PitchDeadlinePassed',
@@ -87,6 +89,7 @@ const MARKET_ABI = parseAbi([
   'function acceptAuction(bytes32,uint256)',
   'function submitPitch(bytes32,bytes32)',
   'function submitProof(bytes32,bytes32,bytes32,uint256)',
+  'function rejectSubmission(bytes32,address)',
   'function cancelTask(bytes32)',
   'function refundExpired(bytes32)',
   'function updateTask(bytes32,uint256,uint256,uint256,uint256)',
@@ -648,6 +651,19 @@ export async function contractForfeitAndReopen(
     args: [taskId],
   });
   return relayThroughForwarder(requester, 0n, data);
+}
+
+export async function contractRejectSubmission(
+  taskId: `0x${string}`,
+  worker: `0x${string}`,
+  payer: `0x${string}`
+): Promise<`0x${string}`> {
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'rejectSubmission',
+    args: [taskId, worker],
+  });
+  return relayThroughForwarder(payer, 0n, data);
 }
 
 export async function contractCancelTask(

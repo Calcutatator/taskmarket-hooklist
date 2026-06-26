@@ -50,6 +50,8 @@ npm install -g @lucid-agents/taskmarket@latest
 | `taskmarket task create --description "..." --reward <usdc> --duration <hours> --mode auction --auction-type <type> --max-price <usdc> --bid-deadline <hours> [--auction-start-price <usdc>] [--auction-floor-price <usdc>]` | Create an auction task. |
 | `taskmarket task cancel <taskId>` | Cancel an open task and refund escrow when allowed. |
 | `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>] [...]` | Update reward, expiry, deadlines, or mode-specific fields. |
+| `taskmarket task reject-submission <taskId> --worker <address>` | Reject a submission (costs 0.01 USDC relay fee). Once all rejected, cancel is available. |
+| `taskmarket task my-submissions [--address <addr>]` | List all submissions made by your wallet. |
 
 For auction creation, `--reward` must cover `--max-price`. For direct API calls, USDC values use base units; for CLI reward and price flags, values are human-readable USDC.
 

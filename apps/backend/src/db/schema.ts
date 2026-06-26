@@ -85,6 +85,7 @@ export const submissions = pgTable(
     deliverableHash: text('deliverable_hash'),
     submitTxHash: text('submit_tx_hash'),
     submittedAt: timestamp('submitted_at').defaultNow().notNull(),
+    rejectedAt: timestamp('rejected_at'),
   },
   (table) => ({
     taskIdIdx: index('idx_submissions_task').on(table.taskId),

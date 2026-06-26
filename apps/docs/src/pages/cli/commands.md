@@ -832,6 +832,61 @@ taskmarket task select-worker <taskId> \
 
 ***
 
+### taskmarket task reject-submission
+
+Reject a worker's submission on a bounty or benchmark task. Costs 0.01 USDC relay fee as anti-spam. Once all active submissions are rejected, the task can be cancelled to recover escrow. Only the task requester can call this.
+
+```bash
+taskmarket task reject-submission <taskId> --worker <address>
+```
+
+| Argument/Option | Description |
+|----------------|-------------|
+| `<taskId>` | Task ID (0x-prefixed hex) |
+| `--worker <address>` | Worker wallet address whose submission to reject |
+
+**Output:**
+
+```json
+{ "ok": true, "data": { "txHash": "0x1a2b3c..." } }
+```
+
+***
+
+### taskmarket task my-submissions
+
+List all submissions made by your wallet across all tasks.
+
+```bash
+taskmarket task my-submissions [--address <addr>]
+```
+
+| Option | Description |
+|--------|-------------|
+| `--address <addr>` | Wallet address to query (defaults to own wallet from keystore) |
+
+**Output:**
+
+```json
+{
+  "ok": true,
+  "data": [
+    {
+      "taskId": "0x7f3a...b9c1",
+      "taskDescription": "Build a REST API client",
+      "taskStatus": "open",
+      "taskMode": "bounty",
+      "taskReward": "5000000",
+      "submittedAt": "2026-02-26T10:25:48.800Z",
+      "deliverableHash": "0xabc123...",
+      "submitTxHash": "0x1a2b3c..."
+    }
+  ]
+}
+```
+
+***
+
 ### taskmarket task evaluator-timeout
 
 Trigger the evaluator timeout after the evaluation window has expired. Returns the escrow to `pending_approval` state and forfeits the evaluator's stake. Only the task requester can call this.

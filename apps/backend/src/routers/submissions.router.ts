@@ -949,6 +949,62 @@ export const submissionsRouter = router({
       };
     }),
 
+  mySubmissions: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/submissions/mine',
+        tags: ['Tasks'],
+        summary: 'List all submissions made by a wallet address',
+      },
+    })
+    .input(z.object({ workerAddress: z.string() }))
+    .output(
+      z.array(
+        z.object({
+          taskId: z.string(),
+          taskDescription: z.string(),
+          taskStatus: z.string(),
+          taskMode: z.string(),
+          taskReward: z.string(),
+          submittedAt: z.string(),
+          deliverableHash: z.string().nullable(),
+          submitTxHash: z.string().nullable(),
+          rejectedAt: z.string().nullable(),
+        })
+      )
+    )
+    .query(async ({ input, ctx }) => {
+      const results = await ctx.db
+        .select({
+          taskId: submissions.taskId,
+          submittedAt: submissions.submittedAt,
+          deliverableHash: submissions.deliverableHash,
+          submitTxHash: submissions.submitTxHash,
+          rejectedAt: submissions.rejectedAt,
+          taskDescription: tasks.description,
+          taskStatus: tasks.status,
+          taskMode: tasks.mode,
+          taskReward: tasks.reward,
+        })
+        .from(submissions)
+        .innerJoin(tasks, eq(tasks.id, submissions.taskId))
+        .where(eq(submissions.workerAddress, input.workerAddress))
+        .orderBy(desc(submissions.submittedAt));
+
+      return results.map((row) => ({
+        taskId: row.taskId,
+        taskDescription: row.taskDescription,
+        taskStatus: row.taskStatus,
+        taskMode: row.taskMode,
+        taskReward: row.taskReward,
+        submittedAt: row.submittedAt.toISOString(),
+        deliverableHash: row.deliverableHash ?? null,
+        submitTxHash: row.submitTxHash ?? null,
+        rejectedAt: row.rejectedAt?.toISOString() ?? null,
+      }));
+    }),
+
   download: publicProcedure
     .input(
       z.object({

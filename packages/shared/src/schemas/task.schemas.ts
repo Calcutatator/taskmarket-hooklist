@@ -17,6 +17,35 @@ export const TaskStatus = z.enum([
 
 export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
 
+export const PendingActionName = z.enum([
+  'accept',
+  'appeal',
+  'auction_accept',
+  'bid',
+  'cancel',
+  'claim',
+  'evaluate',
+  'evaluator_timeout',
+  'finalize_verdict',
+  'forfeit',
+  'pitch',
+  'rate',
+  'reject_submission',
+  'refund_expired',
+  'resolve_dispute',
+  'select_winner',
+  'select_worker',
+  'submit',
+  'submit_proof',
+  'update',
+]);
+
+export const PendingActionSchema = z.object({
+  role: z.enum(['requester', 'worker', 'evaluator', 'dispute_resolver', 'anyone']),
+  action: PendingActionName,
+  command: z.string(),
+});
+
 export const TaskCreateSchema = z.object({
   description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
   reward: z.string().min(1, 'Reward is required'),
@@ -100,6 +129,8 @@ export const TaskResponseSchema = z.object({
   verdictConfidence: z.number().nullable().optional(),
   verdictEvidenceHash: z.string().nullable().optional(),
   submissionWindowOpen: z.boolean(),
+  netReward: z.string().optional(),
+  pendingActions: PendingActionSchema.array().optional(),
 });
 
 export const TaskListInputSchema = z.object({
@@ -140,34 +171,6 @@ export const TaskInboxInputSchema = z.object({
 export const TaskInboxResponseSchema = z.object({
   asRequester: z.array(TaskResponseSchema),
   asWorker: z.array(TaskResponseSchema),
-});
-
-export const PendingActionName = z.enum([
-  'accept',
-  'appeal',
-  'auction_accept',
-  'bid',
-  'cancel',
-  'claim',
-  'evaluate',
-  'evaluator_timeout',
-  'finalize_verdict',
-  'forfeit',
-  'pitch',
-  'rate',
-  'refund_expired',
-  'resolve_dispute',
-  'select_winner',
-  'select_worker',
-  'submit',
-  'submit_proof',
-  'update',
-]);
-
-export const PendingActionSchema = z.object({
-  role: z.enum(['requester', 'worker', 'evaluator', 'dispute_resolver', 'anyone']),
-  action: PendingActionName,
-  command: z.string(),
 });
 
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({
