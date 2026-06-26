@@ -95,6 +95,12 @@ upgrade:
 	fi
 
 release:
+	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
+	JOURNAL_COUNT=$$(python3 -c "import json; d=json.load(open('apps/backend/drizzle/migrations/meta/_journal.json')); print(len(d['entries']))" 2>/dev/null); \
+	if [ "$$SQL_COUNT" != "$$JOURNAL_COUNT" ]; then \
+		echo "ERROR: migration journal out of sync ($$SQL_COUNT .sql files, $$JOURNAL_COUNT journal entries). Add the missing entry to apps/backend/drizzle/migrations/meta/_journal.json before releasing."; \
+		exit 1; \
+	fi
 	@LAST=$$(git tag --sort=-version:refname | grep "^v[0-9]" | head -1); \
 	if [ -z "$$LAST" ]; then \
 		NEXT="v0.1.0"; \
