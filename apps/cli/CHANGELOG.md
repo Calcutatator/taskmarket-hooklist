@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 1.2.0
+
+### Minor Changes
+
+- c56366c: Add reject-submission anti-spam escape for bounty/benchmark requesters, netReward field on all task responses, pendingActions in search results, and my-submissions command.
+
 ## 1.1.1
 
 ### Patch Changes
