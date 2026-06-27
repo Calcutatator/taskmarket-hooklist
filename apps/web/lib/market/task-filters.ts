@@ -23,6 +23,8 @@ function parseSort(value?: string): TaskSortValue {
 
 export type TaskSearchParams = {
   actor?: string;
+  cursor?: string;
+  cursorStack?: string;
   deadlineHours?: string;
   maxReward?: string;
   minReward?: string;
@@ -175,6 +177,12 @@ export function taskFiltersHref(
   }
   if (next.worker) {
     params.set('worker', next.worker);
+  }
+  if (next.cursor) {
+    params.set('cursor', next.cursor);
+  }
+  if (next.cursorStack) {
+    params.set('cursorStack', next.cursorStack);
   }
 
   const normalized = normalizeBasePath(basePath);

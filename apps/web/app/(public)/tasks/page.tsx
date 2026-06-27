@@ -15,6 +15,8 @@ export const metadata: Metadata = buildPageMetadata({
 type TasksPageProps = {
   searchParams: Promise<{
     actor?: string;
+    cursor?: string;
+    cursorStack?: string;
     deadlineHours?: string;
     maxReward?: string;
     minReward?: string;
@@ -31,10 +33,15 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
   const params = await searchParams;
   const filters = parseTaskFilters(params);
 
-  let tasks: Awaited<ReturnType<typeof fetchTasks>>['tasks'] = [];
+  let taskList: Awaited<ReturnType<typeof fetchTasks>> = {
+    hasMore: false,
+    nextCursor: null,
+    tasks: [],
+  };
   let errorMessage: string | undefined;
   try {
-    const taskList = await fetchTasks({
+    taskList = await fetchTasks({
+      cursor: filters.selectedSort === 'newest' ? params.cursor : undefined,
       deadlineHours: filters.deadlineHours,
       limit: 40,
       maxReward: filters.maxReward,
@@ -47,7 +54,6 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
       tags: filters.tags,
       worker: filters.worker,
     });
-    tasks = taskList.tasks;
   } catch (error) {
     if (!(error instanceof ApiConnectionError)) {
       throw error;
@@ -73,7 +79,13 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         tags: params.tags,
       }}
       listHref="/tasks"
-      tasks={tasks}
+      pagination={{
+        currentCursor: params.cursor,
+        cursorStack: params.cursorStack,
+        hasMore: taskList.hasMore,
+        nextCursor: taskList.nextCursor,
+      }}
+      tasks={taskList.tasks}
     />
   );
 }

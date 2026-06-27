@@ -49,6 +49,15 @@ import {
 } from '@/components/ui/drawer';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Pagination,
+  PaginationContent,
+  PaginationEllipsis,
+  PaginationItem,
+  PaginationLink,
+  PaginationNext,
+  PaginationPrevious,
+} from '@/components/ui/pagination';
 import { TaskCover } from '@/components/market/task-cover';
 import { TaskListBoard } from '@/components/market/task-thumbnail';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -980,12 +989,12 @@ export function TaskFilterRail(props: Omit<TaskFilterControlsProps, 'idPrefix'>)
 function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
   return (
     <Drawer direction="bottom">
-      <DrawerTrigger asChild>
-        <Button className="min-h-11" type="button" variant="outline">
+      <Button asChild className="min-h-11" variant="outline">
+        <DrawerTrigger type="button">
           <SlidersHorizontal />
           Filters
-        </Button>
-      </DrawerTrigger>
+        </DrawerTrigger>
+      </Button>
       <DrawerContent aria-describedby="mobile-task-filter-description">
         <DrawerHeader>
           <DrawerTitle>Task filters</DrawerTitle>
@@ -1027,6 +1036,88 @@ function TaskSortControl({
   );
 }
 
+type TaskPaginationState = {
+  currentCursor?: string;
+  cursorStack?: string;
+  hasMore: boolean;
+  nextCursor?: string | null;
+};
+
+function parseCursorStack(value?: string) {
+  return value
+    ?.split(',')
+    .map((cursor) => cursor.trim())
+    .filter(Boolean);
+}
+
+function serializeCursorStack(cursors: string[]) {
+  return cursors.length > 0 ? cursors.join(',') : undefined;
+}
+
+function TaskPaginationControl({
+  basePath,
+  currentFilters,
+  pagination,
+}: {
+  basePath: string;
+  currentFilters: TaskSearchParams;
+  pagination?: TaskPaginationState;
+}) {
+  if (!pagination || (!pagination.currentCursor && !pagination.hasMore)) {
+    return null;
+  }
+
+  const cursorStack = parseCursorStack(pagination.cursorStack) ?? [];
+  const currentPage = cursorStack.length + (pagination.currentCursor ? 2 : 1);
+  const currentHref = taskFiltersHref(basePath, currentFilters, {
+    cursor: pagination.currentCursor,
+    cursorStack: serializeCursorStack(cursorStack),
+  });
+  const previousCursor = cursorStack.at(-1);
+  const previousHref = pagination.currentCursor
+    ? taskFiltersHref(basePath, currentFilters, {
+        cursor: previousCursor,
+        cursorStack: serializeCursorStack(cursorStack.slice(0, -1)),
+      })
+    : undefined;
+  const nextHref =
+    pagination.hasMore && pagination.nextCursor
+      ? taskFiltersHref(basePath, currentFilters, {
+          cursor: pagination.nextCursor,
+          cursorStack: serializeCursorStack(
+            pagination.currentCursor ? [...cursorStack, pagination.currentCursor] : cursorStack
+          ),
+        })
+      : undefined;
+
+  return (
+    <Pagination aria-label="Task pagination" className="justify-end">
+      <PaginationContent className="flex-wrap justify-center">
+        {previousHref ? (
+          <PaginationItem>
+            <PaginationPrevious href={previousHref} />
+          </PaginationItem>
+        ) : null}
+        <PaginationItem>
+          <PaginationLink href={currentHref} isActive size="default">
+            Page {currentPage}
+          </PaginationLink>
+        </PaginationItem>
+        {nextHref ? (
+          <PaginationItem className="hidden sm:block">
+            <PaginationEllipsis />
+          </PaginationItem>
+        ) : null}
+        {nextHref ? (
+          <PaginationItem>
+            <PaginationNext href={nextHref} />
+          </PaginationItem>
+        ) : null}
+      </PaginationContent>
+    </Pagination>
+  );
+}
+
 export function TaskListPageContent({
   activeFilters,
   basePath = '/dashboard/tasks',
@@ -1035,6 +1126,7 @@ export function TaskListPageContent({
   errorMessage,
   filterParams,
   listHref = '/dashboard/tasks',
+  pagination,
   tasks,
 }: {
   activeFilters: ActiveFilter[];
@@ -1053,6 +1145,7 @@ export function TaskListPageContent({
     tags?: string;
   };
   listHref?: string;
+  pagination?: TaskPaginationState;
   tasks: TaskResponse[];
 }) {
   const sortFilters: TaskSearchParams = {
@@ -1063,6 +1156,10 @@ export function TaskListPageContent({
     mode: filterParams.selectedMode,
     status: filterParams.selectedStatus,
     tags: filterParams.tags,
+  };
+  const paginationFilters: TaskSearchParams = {
+    ...sortFilters,
+    sort: filterParams.selectedSort,
   };
 
   // Reflect the active status filter so a completed/cancelled view is not mislabelled "Open tasks".
@@ -1141,6 +1238,13 @@ export function TaskListPageContent({
           listHref={listHref}
           tasks={tasks}
         />
+        {filterParams.selectedSort === 'newest' ? (
+          <TaskPaginationControl
+            basePath={basePath}
+            currentFilters={paginationFilters}
+            pagination={pagination}
+          />
+        ) : null}
       </section>
     </div>
   );

@@ -323,6 +323,64 @@ describe('Task marketplace components', () => {
     );
   });
 
+  it('renders cursor pagination that preserves filters and supports back links', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{
+          selectedMode: 'auction',
+          selectedSort: 'newest',
+          selectedStatus: 'open',
+        }}
+        pagination={{
+          currentCursor: '2026-06-10T09:00:00.000Z',
+          cursorStack: '2026-06-11T09:00:00.000Z',
+          hasMore: true,
+          nextCursor: '2026-06-09T09:00:00.000Z',
+        }}
+        tasks={[task]}
+      />
+    );
+
+    const pagination = screen.getByRole('navigation', { name: /task pagination/i });
+    expect(within(pagination).getByRole('link', { name: /page 3/i })).toHaveAttribute(
+      'aria-current',
+      'page'
+    );
+    expect(within(pagination).getByRole('link', { name: /go to previous page/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&status=open&cursor=2026-06-11T09%3A00%3A00.000Z'
+    );
+    expect(within(pagination).getByRole('link', { name: /go to next page/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&status=open&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
+    );
+    expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&status=open&sort=reward_desc'
+    );
+  });
+
+  it('does not render cursor pagination for non-newest sorts', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{
+          selectedMode: 'ALL',
+          selectedSort: 'reward_desc',
+          selectedStatus: 'ALL',
+        }}
+        pagination={{
+          hasMore: true,
+          nextCursor: '2026-06-09T09:00:00.000Z',
+        }}
+        tasks={[task]}
+      />
+    );
+
+    expect(screen.queryByRole('navigation', { name: /task pagination/i })).not.toBeInTheDocument();
+  });
+
   it('keeps filter links serializable and exposes a clear action', () => {
     render(
       <TaskFilterRail

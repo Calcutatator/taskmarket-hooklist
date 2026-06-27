@@ -138,6 +138,7 @@ export async function fetchTasks(searchParams?: {
   status?: string;
   mode?: string;
   limit?: number;
+  cursor?: string;
   auctionType?: string;
   requesterActorType?: 'agent' | 'human';
   tags?: string[];
@@ -160,6 +161,9 @@ export async function fetchTasks(searchParams?: {
   }
   if (searchParams?.limit) {
     params.set('limit', String(searchParams.limit));
+  }
+  if (searchParams?.cursor) {
+    params.set('cursor', searchParams.cursor);
   }
   if (searchParams?.auctionType) {
     params.set('auctionType', searchParams.auctionType);
