@@ -10,12 +10,37 @@ import SiteImage, {
   contentType as siteContentType,
   size as siteSize,
 } from './opengraph-image';
+import StaticAgentsImage, {
+  alt as staticAgentsAlt,
+  contentType as staticAgentsContentType,
+  size as staticAgentsSize,
+} from './(public)/agents/opengraph-image';
 import AgentImage, {
   alt as agentAlt,
   contentType as agentContentType,
   runtime as agentRuntime,
   size as agentSize,
 } from './(public)/agents/[agentId]/opengraph-image';
+import StaticHumansImage, {
+  alt as staticHumansAlt,
+  contentType as staticHumansContentType,
+  size as staticHumansSize,
+} from './(public)/humans/opengraph-image';
+import StaticLeaderboardImage, {
+  alt as staticLeaderboardAlt,
+  contentType as staticLeaderboardContentType,
+  size as staticLeaderboardSize,
+} from './(public)/leaderboard/opengraph-image';
+import StaticProtocolImage, {
+  alt as staticProtocolAlt,
+  contentType as staticProtocolContentType,
+  size as staticProtocolSize,
+} from './(public)/protocol/opengraph-image';
+import StaticTasksImage, {
+  alt as staticTasksAlt,
+  contentType as staticTasksContentType,
+  size as staticTasksSize,
+} from './(public)/tasks/opengraph-image';
 import DashboardAgentImage, {
   alt as dashboardAgentAlt,
   contentType as dashboardAgentContentType,
@@ -130,6 +155,26 @@ describe('opengraph image routes', () => {
     expect(siteContentType).toBe('image/png');
     expect(siteSize).toEqual({ height: 630, width: 1200 });
 
+    expect(staticTasksAlt).toBe('Taskmarket open tasks preview');
+    expect(staticTasksContentType).toBe('image/png');
+    expect(staticTasksSize).toEqual(siteSize);
+
+    expect(staticAgentsAlt).toBe('Taskmarket agent directory preview');
+    expect(staticAgentsContentType).toBe('image/png');
+    expect(staticAgentsSize).toEqual(siteSize);
+
+    expect(staticLeaderboardAlt).toBe('Taskmarket leaderboard preview');
+    expect(staticLeaderboardContentType).toBe('image/png');
+    expect(staticLeaderboardSize).toEqual(siteSize);
+
+    expect(staticProtocolAlt).toBe('Taskmarket protocol preview');
+    expect(staticProtocolContentType).toBe('image/png');
+    expect(staticProtocolSize).toEqual(siteSize);
+
+    expect(staticHumansAlt).toBe('Taskmarket humans directory preview');
+    expect(staticHumansContentType).toBe('image/png');
+    expect(staticHumansSize).toEqual(siteSize);
+
     expect(taskAlt).toBe('Taskmarket task preview');
     expect(taskContentType).toBe('image/png');
     expect(taskRuntime).toBe('nodejs');
@@ -164,6 +209,63 @@ describe('opengraph image routes', () => {
       { label: 'Modes', value: '5' },
       { label: 'Network', value: 'Base' },
     ]);
+  });
+
+  it('renders route-specific static public OG cards', () => {
+    const cases = [
+      {
+        image: StaticTasksImage,
+        metrics: [
+          { label: 'Modes', value: '5' },
+          { label: 'Escrow', value: 'USDC' },
+          { label: 'Status', value: 'Open' },
+        ],
+        title: 'Open tasks',
+      },
+      {
+        image: StaticAgentsImage,
+        metrics: [
+          { label: 'Profiles', value: 'Agents' },
+          { label: 'Signal', value: 'Ratings' },
+          { label: 'Proof', value: 'Work' },
+        ],
+        title: 'Agent directory',
+      },
+      {
+        image: StaticLeaderboardImage,
+        metrics: [
+          { label: 'Sort', value: 'Rep' },
+          { label: 'Signal', value: 'Tasks' },
+          { label: 'Market', value: 'Agents' },
+        ],
+        title: 'Leaderboard',
+      },
+      {
+        image: StaticProtocolImage,
+        metrics: [
+          { label: 'Pay', value: 'x402' },
+          { label: 'Escrow', value: 'USDC' },
+          { label: 'Network', value: 'Base' },
+        ],
+        title: 'Protocol',
+      },
+      {
+        image: StaticHumansImage,
+        metrics: [
+          { label: 'Profiles', value: 'Humans' },
+          { label: 'Identity', value: 'Wallets' },
+          { label: 'Market', value: 'Actors' },
+        ],
+        title: 'Humans directory',
+      },
+    ];
+
+    for (const testCase of cases) {
+      const props = expectOgCard(testCase.image());
+
+      expect(props.title).toBe(testCase.title);
+      expect(props.metrics).toEqual(testCase.metrics);
+    }
   });
 
   it('renders task-specific OG details from decoded route params', async () => {

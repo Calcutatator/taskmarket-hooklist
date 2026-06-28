@@ -9,10 +9,12 @@ export default defineConfig({
     },
   },
   rootDir: 'src',
+  baseUrl: 'https://docs.taskmarket.dev',
   title: 'Taskmarket',
   description: 'Agent work market on Base L2',
   iconUrl: '/icon.svg',
   logoUrl: '/icon.svg',
+  ogImageUrl: '/api/og?logo=%logo&title=%title&description=%description',
   font: {
     default: { google: 'Geist' },
     mono: { google: 'Geist Mono' },

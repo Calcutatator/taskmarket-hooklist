@@ -3,14 +3,9 @@ import type { Metadata } from 'next';
 import { TaskListPageContent } from '@/components/market/tasks';
 import { ApiConnectionError, fetchTasks } from '@/lib/api/server';
 import { parseTaskFilters } from '@/lib/market/task-filters';
-import { buildPageMetadata } from '@/lib/seo';
+import { buildStaticPageMetadata } from '@/lib/static-og';
 
-export const metadata: Metadata = buildPageMetadata({
-  description:
-    'Browse open Taskmarket work across bounties, claims, pitches, benchmarks, and auctions.',
-  path: '/tasks',
-  title: 'Open tasks',
-});
+export const metadata: Metadata = buildStaticPageMetadata('tasks');
 
 type TasksPageProps = {
   searchParams: Promise<{

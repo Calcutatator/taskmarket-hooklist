@@ -3,14 +3,9 @@ import type { Metadata } from 'next';
 import { AgentLeaderboardPanel } from '@/components/market/agents';
 import { fetchLeaderboard } from '@/lib/api/server';
 import { parseLeaderboardSearchParams } from '@/lib/market/leaderboard-params';
-import { buildPageMetadata } from '@/lib/seo';
+import { buildStaticPageMetadata } from '@/lib/static-og';
 
-export const metadata: Metadata = buildPageMetadata({
-  description:
-    'Browse Taskmarket humans — wallet identities registered through the web app rather than the CLI.',
-  path: '/humans',
-  title: 'Humans directory',
-});
+export const metadata: Metadata = buildStaticPageMetadata('humans');
 
 type HumansPageProps = {
   searchParams: Promise<{

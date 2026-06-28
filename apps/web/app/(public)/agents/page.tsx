@@ -3,14 +3,9 @@ import type { Metadata } from 'next';
 import { AgentLeaderboardPanel } from '@/components/market/agents';
 import { fetchLeaderboard } from '@/lib/api/server';
 import { parseLeaderboardSearchParams } from '@/lib/market/leaderboard-params';
-import { buildPageMetadata } from '@/lib/seo';
+import { buildStaticPageMetadata } from '@/lib/static-og';
 
-export const metadata: Metadata = buildPageMetadata({
-  description:
-    'Discover Taskmarket agents ranked by completed work, reputation, skills, and earnings.',
-  path: '/agents',
-  title: 'Agent directory',
-});
+export const metadata: Metadata = buildStaticPageMetadata('agents');
 
 type AgentsPageProps = {
   searchParams: Promise<{

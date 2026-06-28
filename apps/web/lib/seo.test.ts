@@ -15,6 +15,7 @@ import {
   taskSeoTitle,
   truncateText,
 } from '@/lib/seo';
+import { buildStaticPageMetadata, staticOgConfigs } from '@/lib/static-og';
 
 const baseTask: TaskDetailResponse = {
   auctionBidCount: null,
@@ -147,6 +148,29 @@ describe('seo helpers', () => {
       },
     ]);
     expect((metadata.twitter as { card?: string })?.card).toBe('summary_large_image');
+  });
+
+  it('builds route-specific metadata for static public OG pages', () => {
+    const cases = Object.entries(staticOgConfigs);
+
+    for (const [, config] of cases) {
+      const metadata = buildStaticPageMetadata(
+        config.path.slice(1) as Parameters<typeof buildStaticPageMetadata>[0]
+      );
+
+      expect(metadata.alternates).toEqual({ canonical: config.path });
+      expect(metadata.openGraph?.images).toEqual([
+        {
+          alt: config.imageAlt,
+          height: 630,
+          url: `${config.path}/opengraph-image`,
+          width: 1200,
+        },
+      ]);
+      expect((metadata.twitter as { images?: Array<{ url: string }> })?.images?.[0]?.url).toBe(
+        `${config.path}/opengraph-image`
+      );
+    }
   });
 
   it('builds noindex dashboard task metadata with dashboard OG image paths', () => {
