@@ -9,5 +9,5 @@ CREATE TABLE "requester_reputation_events" (
   "self_award" boolean NOT NULL DEFAULT false,
   "created_at" timestamptz NOT NULL DEFAULT now()
 );
+CREATE UNIQUE INDEX ON "requester_reputation_events" ("task_id");
 CREATE INDEX ON "requester_reputation_events" ("requester");
-CREATE INDEX ON "requester_reputation_events" ("task_id");

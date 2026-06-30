@@ -48,7 +48,7 @@ export const tasks = pgTable(
     chainId: integer('chain_id'),
     contractAddress: text('contract_address'),
     cancelledAt: timestamp('cancelled_at'),
-    selfAward: boolean('self_award'),
+    selfAward: boolean('self_award').notNull().default(false),
     hookContract: text('hook_contract'),
     evaluator: text('evaluator'),
     evaluatorStake: numeric('evaluator_stake', { precision: 78, scale: 0 }),
@@ -419,8 +419,8 @@ export const requesterReputationEvents = pgTable(
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
+    taskIdUnique: uniqueIndex('uidx_requester_rep_task').on(table.taskId),
     requesterIdx: index('idx_requester_rep_requester').on(table.requester),
-    taskIdIdx: index('idx_requester_rep_task').on(table.taskId),
   })
 );
 

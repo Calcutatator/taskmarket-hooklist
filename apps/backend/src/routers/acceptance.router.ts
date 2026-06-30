@@ -131,7 +131,11 @@ export const acceptanceRouter = router({
           requesterAgentRow[0].agentId === workerOnChainId);
 
       if (isSelfAward) {
-        await ctx.db.update(tasks).set({ selfAward: true }).where(eq(tasks.id, input.taskId));
+        try {
+          await ctx.db.update(tasks).set({ selfAward: true }).where(eq(tasks.id, input.taskId));
+        } catch {
+          // On-chain acceptance already succeeded; DB flag is best-effort.
+        }
       }
 
       return { success: true };
