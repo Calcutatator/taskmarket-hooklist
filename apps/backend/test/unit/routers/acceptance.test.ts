@@ -61,7 +61,7 @@ describe('acceptance router', () => {
 
   describe('accept', () => {
     const DELIVERABLE = `0x${'ab'.repeat(32)}` as const;
-    const acceptInput = { taskId: TASK_ID, worker: WORKER, deliverable: DELIVERABLE };
+    const acceptInput = { taskId: TASK_ID, worker: WORKER };
 
     it('throws when payer is missing', async () => {
       const ctx = createMockCtx(); // no payer
@@ -87,36 +87,46 @@ describe('acceptance router', () => {
       );
     });
 
-    it('calls contractAcceptSubmission and returns success — no DB writes', async () => {
+    it('throws BAD_REQUEST when no active submission found for bounty', async () => {
       const ctx = createMockCtx(REQUESTER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
+        .mockReturnValueOnce(makeChain([])); // submission lookup — none found
+
+      const caller = acceptanceRouter.createCaller(ctx);
+      await expect(caller.accept(acceptInput)).rejects.toThrow('No active submission found');
+    });
+
+    it('calls contractAcceptSubmission with DB-derived deliverable for bounty', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
+        .mockReturnValueOnce(makeChain([{ deliverableHash: DELIVERABLE }])) // submission lookup
+        .mockReturnValueOnce(makeChain([])) // requester agent lookup
+        .mockReturnValueOnce(makeChain([])); // worker agent lookup (self-award check)
 
       const caller = acceptanceRouter.createCaller(ctx);
       const result = await caller.accept(acceptInput);
 
       expect(result.success).toBe(true);
       expect(contractAcceptSubmission).toHaveBeenCalledOnce();
-      // indexer is the sole writer of task state — acceptance router makes no DB writes
-      expect(ctx.db.update).not.toHaveBeenCalled();
-      expect(ctx.db.insert).not.toHaveBeenCalled();
+      const args = (contractAcceptSubmission as ReturnType<typeof vi.fn>).mock.calls[0];
+      expect(args[3]).toBe(DELIVERABLE); // deliverable from DB, not caller
     });
   });
 
   describe('acceptSubmissions', () => {
-    const DELIVERABLE_A = `0x${'aa'.repeat(32)}` as const;
-    const DELIVERABLE_B = `0x${'bb'.repeat(32)}` as const;
     const WORKER_B = '0xWorker0000000000000000000000000000000002';
 
     it('rejects when shares do not sum to 10000', async () => {
       const ctx = createMockCtx(REQUESTER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       await expect(
         acceptanceRouter.createCaller(ctx).acceptSubmissions({
           taskId: TASK_ID,
           winners: [
-            { worker: WORKER, share: 5000, deliverable: DELIVERABLE_A },
-            { worker: WORKER_B, share: 3000, deliverable: DELIVERABLE_B },
+            { worker: WORKER, share: 5000 },
+            { worker: WORKER_B, share: 3000 },
           ],
         })
       ).rejects.toThrow('Winner shares must sum to 10000');
@@ -129,49 +139,23 @@ describe('acceptance router', () => {
       await expect(
         acceptanceRouter.createCaller(ctx).acceptSubmissions({
           taskId: TASK_ID,
-          winners: [{ worker: WORKER, share: 10000, deliverable: DELIVERABLE_A }],
+          winners: [{ worker: WORKER, share: 10000 }],
         })
       ).rejects.toThrow('Only the task requester can accept submissions');
     });
 
-    it('rejects when no deliverable can be resolved for a winner', async () => {
+    it('calls contractAcceptSubmissions and returns success', async () => {
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])); // no submission row found
-
-      await expect(
-        acceptanceRouter.createCaller(ctx).acceptSubmissions({
-          taskId: TASK_ID,
-          winners: [{ worker: WORKER, share: 10000 }],
-        })
-      ).rejects.toThrow('No deliverable found for worker');
-    });
-
-    it('calls contractAcceptSubmissions with explicit deliverable hashes', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
-
-      await acceptanceRouter.createCaller(ctx).acceptSubmissions({
-        taskId: TASK_ID,
-        winners: [
-          { worker: WORKER, share: 6000, deliverable: DELIVERABLE_A },
-          { worker: WORKER_B, share: 4000, deliverable: DELIVERABLE_B },
-        ],
-      });
-
-      expect(contractAcceptSubmissions).toHaveBeenCalledOnce();
-    });
-
-    it('resolves deliverable from latest submission row when not explicit', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([{ deliverableHash: DELIVERABLE_A }]));
+        .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
+        .mockReturnValueOnce(makeChain([])); // requester agent lookup
 
       const result = await acceptanceRouter.createCaller(ctx).acceptSubmissions({
         taskId: TASK_ID,
-        winners: [{ worker: WORKER, share: 10000 }],
+        winners: [
+          { worker: WORKER, share: 6000 },
+          { worker: WORKER_B, share: 4000 },
+        ],
       });
 
       expect(result.success).toBe(true);

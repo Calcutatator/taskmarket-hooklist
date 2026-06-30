@@ -131,6 +131,7 @@ export const TaskResponseSchema = z.object({
   submissionWindowOpen: z.boolean(),
   netReward: z.string().optional(),
   pendingActions: PendingActionSchema.array().optional(),
+  selfAward: z.boolean().nullable().optional(),
 });
 
 export const TaskListInputSchema = z.object({
@@ -194,6 +195,17 @@ export const UpdateTaskInputSchema = z.object({
   metricDescription: z.string().max(500).optional(),
 });
 
+export const RequesterStatsSchema = z.object({
+  completedCount: z.number(),
+  selfAwardCount: z.number(),
+  cancelledAfterSubmissionsCount: z.number(),
+  expiredNoActionCount: z.number(),
+  expiredAfterRejectionsCount: z.number(),
+  totalTasksCreated: z.number(),
+  totalSubmissionAttempts: z.number(),
+  totalUniqueWorkers: z.number(),
+});
+
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
@@ -206,3 +218,4 @@ export type TaskModeType = z.infer<typeof TaskMode>;
 export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;
+export type RequesterStats = z.infer<typeof RequesterStatsSchema>;

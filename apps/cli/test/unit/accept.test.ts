@@ -26,7 +26,6 @@ const mockTask = {
 describe('task accept command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
-    acceptCmd.setOptionValue('deliverable', undefined);
     vi.mocked(apiGet).mockResolvedValue(mockTask);
   });
 
@@ -44,37 +43,12 @@ describe('task accept command', () => {
     expect(printResult).toHaveBeenCalledWith({ accepted: true });
   });
 
-  it('includes deliverable when provided', async () => {
-    vi.mocked(x402Post).mockResolvedValue({});
-    const deliverable = '0x' + 'ab'.repeat(32);
-
-    await acceptCmd.parseAsync(
-      ['node', 'accept', '0xtask', '--worker', '0xworker', '--deliverable', deliverable],
-      { from: 'node' }
-    );
-
-    expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/accept', {
-      taskId: '0xtask',
-      worker: '0xworker',
-      deliverable,
-    });
-  });
-
   it('propagates errors from x402Post', async () => {
     vi.mocked(x402Post).mockRejectedValueOnce(new Error('network error'));
 
     await expect(
       acceptCmd.parseAsync(['node', 'accept', '0xtask', '--worker', '0xworker'], { from: 'node' })
     ).rejects.toThrow('network error');
-  });
-
-  it('rejects invalid deliverable hash', async () => {
-    await expect(
-      acceptCmd.parseAsync(
-        ['node', 'accept', '0xtask', '--worker', '0xworker', '--deliverable', '0xdeadbeef'],
-        { from: 'node' }
-      )
-    ).rejects.toThrow('--deliverable must be a 0x-prefixed 32-byte hex string');
   });
 
   it('exits without calling x402Post when accept is not in pendingActions', async () => {

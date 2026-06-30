@@ -111,20 +111,6 @@ describe('validateBody integration — routes block invalid bodies before x402',
   describe('POST /api/tasks/:taskId/accept', () => {
     const validBody = { taskId: '0xtask', worker: FAKE_ADDRESS };
 
-    it('returns 400 (not 402) when deliverable is malformed hex', async () => {
-      const res = await request(app)
-        .post('/api/tasks/0xtask/accept')
-        .send({ ...validBody, deliverable: '0xBADHEX' });
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 (not 402) when deliverable is wrong length', async () => {
-      const res = await request(app)
-        .post('/api/tasks/0xtask/accept')
-        .send({ ...validBody, deliverable: `0x${'ab'.repeat(16)}` });
-      expect(res.status).toBe(400);
-    });
-
     it('returns 402 when body is valid but no payment is provided', async () => {
       const res = await request(app).post('/api/tasks/0xtask/accept').send(validBody);
       expect(res.status).toBe(402);

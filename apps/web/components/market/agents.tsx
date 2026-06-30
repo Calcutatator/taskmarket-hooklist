@@ -3,6 +3,7 @@ import type {
   AgentTimeSeriesResponse,
   AgentWorkResponse,
   LeaderboardEntry,
+  RequesterStats,
 } from '@taskmarket/shared';
 import { getAgentName } from '@taskmarket/shared';
 import {
@@ -490,12 +491,14 @@ export function AgentProfilePanel({
   taskBasePath = '/dashboard/tasks',
   directoryBasePath = '/dashboard/agents',
   performanceSeries,
+  requesterStats,
 }: {
   agent: AgentStats | LeaderboardEntry;
   agentWork?: AgentWorkResponse;
   taskBasePath?: string;
   directoryBasePath?: string;
   performanceSeries?: AgentTimeSeriesResponse;
+  requesterStats?: RequesterStats | null;
 }) {
   const label = agent.agentId
     ? (getAgentName(agent.agentId) ?? `Agent #${agent.agentId}`)
@@ -728,6 +731,83 @@ export function AgentProfilePanel({
         recentRatings={'recentRatings' in agent ? (agent.recentRatings ?? []) : []}
         taskBasePath={taskBasePath}
       />
+
+      {requesterStats ? (
+        <Card>
+          <CardHeader>
+            <CardTitle>Requester activity</CardTitle>
+          </CardHeader>
+          <CardContent>
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              <div className="rounded-lg border border-border/58 bg-card/42 p-4">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Tasks created
+                </p>
+                <p className="mt-3 font-mono text-2xl font-semibold">
+                  {requesterStats.totalTasksCreated}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/58 bg-card/42 p-4">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Completed
+                </p>
+                <p className="mt-3 font-mono text-2xl font-semibold">
+                  {requesterStats.completedCount}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/58 bg-card/42 p-4">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Unique workers
+                </p>
+                <p className="mt-3 font-mono text-2xl font-semibold">
+                  {requesterStats.totalUniqueWorkers}
+                </p>
+              </div>
+              <div className="rounded-lg border border-border/58 bg-card/42 p-4">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Submission attempts
+                </p>
+                <p className="mt-3 font-mono text-2xl font-semibold">
+                  {requesterStats.totalSubmissionAttempts}
+                </p>
+              </div>
+            </div>
+            {requesterStats.selfAwardCount > 0 ||
+            requesterStats.cancelledAfterSubmissionsCount > 0 ||
+            requesterStats.expiredNoActionCount > 0 ||
+            requesterStats.expiredAfterRejectionsCount > 0 ? (
+              <div className="mt-4 grid gap-2 border-t border-border/58 pt-4">
+                <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                  Reputation signals
+                </p>
+                <div className="flex flex-wrap gap-2">
+                  {requesterStats.selfAwardCount > 0 ? (
+                    <Badge variant="destructive">
+                      {requesterStats.selfAwardCount} self-award
+                      {requesterStats.selfAwardCount !== 1 ? 's' : ''}
+                    </Badge>
+                  ) : null}
+                  {requesterStats.cancelledAfterSubmissionsCount > 0 ? (
+                    <Badge variant="warning">
+                      {requesterStats.cancelledAfterSubmissionsCount} cancelled after submissions
+                    </Badge>
+                  ) : null}
+                  {requesterStats.expiredAfterRejectionsCount > 0 ? (
+                    <Badge variant="warning">
+                      {requesterStats.expiredAfterRejectionsCount} expired after rejections
+                    </Badge>
+                  ) : null}
+                  {requesterStats.expiredNoActionCount > 0 ? (
+                    <Badge variant="secondary">
+                      {requesterStats.expiredNoActionCount} expired with no action
+                    </Badge>
+                  ) : null}
+                </div>
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      ) : null}
 
       <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_22rem]">
         <Card className="min-w-0">

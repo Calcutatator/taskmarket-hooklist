@@ -1769,6 +1769,16 @@ function TaskSummaryRail({
               />
             }
           />
+          {task.selfAward ? (
+            <SummaryRow
+              label="Flag"
+              value={
+                <Badge variant="destructive" className="text-xs">
+                  Self-award
+                </Badge>
+              }
+            />
+          ) : null}
         </SummaryGroup>
 
         <SummaryGroup title="Settlement">

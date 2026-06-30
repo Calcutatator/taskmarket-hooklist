@@ -155,6 +155,20 @@
       "when": 1772850000000,
       "tag": "0021_add_submission_rejected_at",
       "breakpoints": true
+    },
+    {
+      "idx": 22,
+      "version": "7",
+      "when": 1772900000000,
+      "tag": "0022_add_self_award",
+      "breakpoints": true
+    },
+    {
+      "idx": 23,
+      "version": "7",
+      "when": 1772950000000,
+      "tag": "0023_add_requester_reputation_events",
+      "breakpoints": true
     }
   ]
 }

@@ -120,7 +120,8 @@ and security guidelines.
 | `taskmarket task submit <taskId> --file <path> [--file <path> ...] [--role preview\|source\|final\|attachment]` | Submit work; files upload directly to S3 (500 MB each, up to 20 files) |
 | `taskmarket task submissions <taskId>`                                                         | List submissions for a task (requester)             |
 | `taskmarket task download <taskId> --submission <id> [--output <file>]`                        | Download a submission file (requester or worker)    |
-| `taskmarket task accept <taskId> --worker <addr>`                                              | Accept a submission (requester)                     |
+| `taskmarket task accept <taskId> --worker <addr>`                                              | Accept a submission (requester); backend derives the deliverable hash from the worker's submission record — no `--deliverable` flag required |
+| `taskmarket requester stats <address>`                                                         | View requester reputation stats: completion rate, self-award count, cancellation and expiry buckets |
 | `taskmarket task rate <taskId> --worker <addr> --rating <0-100> [--feedback "..."] [--rater-agent-id <id>]` | Rate a worker                    |
 | `taskmarket task claim <taskId>`                                                               | Claim a task (claim mode)                           |
 | `taskmarket task pitch <taskId> --text "..." [--duration <hours>]`                             | Submit a pitch (pitch mode)                         |

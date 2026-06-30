@@ -50,7 +50,8 @@
     "smoke:task-search": "tsx scripts/smoke-task-search.ts",
     "smoke:upgrade": "tsx scripts/smoke-upgrade.ts",
     "smoke:evaluator-timeout": "tsx scripts/smoke-evaluator-timeout.ts",
-    "smoke:refund-expired": "tsx scripts/smoke-refund-expired.ts"
+    "smoke:refund-expired": "tsx scripts/smoke-refund-expired.ts",
+    "smoke:submission-integrity": "tsx scripts/smoke-submission-integrity.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

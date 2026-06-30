@@ -14,6 +14,7 @@ import {
   proposals,
   protocolEvents,
   submissions,
+  requesterReputationEvents,
 } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
@@ -117,6 +118,12 @@ const EVALUATOR_TIMED_OUT_EVENT = parseAbiItem(
 );
 const SUBMISSION_REJECTED_EVENT = parseAbiItem(
   'event SubmissionRejected(bytes32 indexed taskId, address indexed worker)'
+);
+const SELF_AWARD_EVENT = parseAbiItem(
+  'event SelfAward(bytes32 indexed taskId, address indexed requester, address indexed worker)'
+);
+const REQUESTER_REPUTATION_EVENT = parseAbiItem(
+  'event RequesterReputation(bytes32 indexed taskId, address indexed requester, bytes32 event_, uint256 reward, uint32 submissionCount, bool selfAward)'
 );
 const PAUSED_EVENT = parseAbiItem('event Paused(address account)');
 const UNPAUSED_EVENT = parseAbiItem('event Unpaused(address account)');
@@ -636,6 +643,48 @@ async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
   console.log(`EvaluatorTimedOut event: task=${taskId}`);
 }
 
+async function processSelfAwardEvent(log: EventLog): Promise<void> {
+  const { taskId } = log.args;
+  await db
+    .update(tasks)
+    .set({ selfAward: true })
+    .where(eq(tasks.id, taskId as string));
+  console.log(`SelfAward event: task=${taskId}`);
+}
+
+// Map on-chain keccak256("event_type") hashes to readable strings for DB storage.
+const EVENT_TYPE_MAP: Record<string, string> = {
+  [keccak256(toBytes('completed'))]: 'completed',
+  [keccak256(toBytes('cancelled_after_submissions'))]: 'cancelled_after_submissions',
+  [keccak256(toBytes('expired_no_action'))]: 'expired_no_action',
+  [keccak256(toBytes('expired_after_rejections'))]: 'expired_after_rejections',
+};
+
+async function processRequesterReputationEvent(log: EventLog): Promise<void> {
+  const { taskId, requester, event_, reward, submissionCount, selfAward } = log.args;
+
+  const eventType = EVENT_TYPE_MAP[(event_ as string).toLowerCase()] ?? (event_ as string);
+
+  // Count unique workers who submitted to this task (excluding rejected-only submissions).
+  const uniqueWorkersResult = await db
+    .select({ count: sql<number>`count(distinct ${submissions.workerAddress})` })
+    .from(submissions)
+    .where(and(eq(submissions.taskId, taskId as string), sql`${submissions.rejectedAt} IS NULL`));
+  const uniqueWorkers = Number(uniqueWorkersResult[0]?.count ?? 0);
+
+  await db.insert(requesterReputationEvents).values({
+    taskId: taskId as string,
+    requester: (requester as string).toLowerCase(),
+    eventType,
+    reward: (reward as bigint).toString(),
+    submissionCount: Number(submissionCount),
+    uniqueWorkers,
+    selfAward: selfAward as boolean,
+  });
+
+  console.log(`RequesterReputation event: task=${taskId} requester=${requester} type=${eventType}`);
+}
+
 function processAdminAuditEvent(log: EventLog): void {
   switch (log.eventName) {
     case 'Paused':
@@ -687,6 +736,8 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
       TASK_DISPUTED_EVENT,
       EVALUATOR_TIMED_OUT_EVENT,
       SUBMISSION_REJECTED_EVENT,
+      SELF_AWARD_EVENT,
+      REQUESTER_REPUTATION_EVENT,
       PAUSED_EVENT,
       UNPAUSED_EVENT,
       OWNERSHIP_TRANSFER_STARTED_EVENT,
@@ -772,6 +823,12 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
           break;
         case 'SubmissionRejected':
           await processSubmissionRejectedEvent(log);
+          break;
+        case 'SelfAward':
+          await processSelfAwardEvent(log);
+          break;
+        case 'RequesterReputation':
+          await processRequesterReputationEvent(log);
           break;
         case 'Paused':
         case 'Unpaused':

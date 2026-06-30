@@ -51,6 +51,7 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0xb579719d': 'AwardsExceedEscrow',
   '0x089087ea': 'SharesMustSumTo10000',
   '0xff633a38': 'LengthMismatch',
+  '0x91edfffa': 'SubmissionNotFound',
 };
 
 function decodeRelayRevert(err: unknown): string {
@@ -80,8 +81,8 @@ const MARKET_ABI = parseAbi([
   'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4,address,bytes32[],bytes) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
-  'function acceptSubmission(bytes32,address,bytes32)',
-  'function acceptSubmissions(bytes32,address[],uint16[],bytes32[])',
+  'function acceptSubmission(bytes32,address,bytes32,uint256)',
+  'function acceptSubmissions(bytes32,address[],uint16[],uint256)',
   'function rateTask(bytes32,address,uint8,uint256,uint256,string,bytes32)',
   'function submitWork(bytes32,bytes32)',
   'function submitBid(bytes32,uint256)',
@@ -90,8 +91,8 @@ const MARKET_ABI = parseAbi([
   'function submitPitch(bytes32,bytes32)',
   'function submitProof(bytes32,bytes32,bytes32,uint256)',
   'function rejectSubmission(bytes32,address)',
-  'function cancelTask(bytes32)',
-  'function refundExpired(bytes32)',
+  'function cancelTask(bytes32,uint256)',
+  'function refundExpired(bytes32,uint256)',
   'function updateTask(bytes32,uint256,uint256,uint256,uint256)',
   'function forfeitAndReopen(bytes32)',
   'function addForwarder(address)',
@@ -541,12 +542,13 @@ export async function contractAcceptSubmission(
   requester: `0x${string}`,
   worker: `0x${string}`,
   deliverable: `0x${string}`,
+  requesterAgentId: bigint = 0n,
   _contractAddress?: string | null
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptSubmission',
-    args: [taskId, worker, deliverable],
+    args: [taskId, worker, deliverable, requesterAgentId],
   });
   return relayThroughForwarder(requester, 0n, data);
 }
@@ -556,13 +558,13 @@ export async function contractAcceptSubmissions(
   requester: `0x${string}`,
   workers: readonly `0x${string}`[],
   shares: readonly number[],
-  deliverables: readonly `0x${string}`[],
+  requesterAgentId: bigint = 0n,
   _contractAddress?: string | null
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptSubmissions',
-    args: [taskId, workers, shares, deliverables],
+    args: [taskId, workers, shares, requesterAgentId],
   });
   return relayThroughForwarder(requester, 0n, data);
 }
@@ -669,24 +671,26 @@ export async function contractRejectSubmission(
 export async function contractCancelTask(
   taskId: `0x${string}`,
   requester: `0x${string}`,
+  requesterAgentId: bigint = 0n,
   _contractAddress?: string | null
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'cancelTask',
-    args: [taskId],
+    args: [taskId, requesterAgentId],
   });
   return relayThroughForwarder(requester, 0n, data);
 }
 
 export async function contractRefundExpired(
   taskId: `0x${string}`,
-  caller: `0x${string}`
+  caller: `0x${string}`,
+  requesterAgentId: bigint = 0n
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'refundExpired',
-    args: [taskId],
+    args: [taskId, requesterAgentId],
   });
   return relayThroughForwarder(caller, 0n, data);
 }

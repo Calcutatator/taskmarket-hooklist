@@ -14,6 +14,7 @@ import type {
   PitchResponse,
   PlatformTimeSeriesResponse,
   ProofResponse,
+  RequesterStats,
   SubmissionResponse,
   TaskDetailResponse,
   TaskListResponse,
@@ -409,4 +410,11 @@ export async function fetchAgentWork(address: string, limit?: number) {
 
   const query = params.toString();
   return readJson<AgentWorkResponse>(`/api/agents/${address}/work${query ? `?${query}` : ''}`);
+}
+
+export async function fetchRequesterStats(address: string): Promise<RequesterStats> {
+  return trpcRead(
+    (client) => client.requester.stats.query({ address }),
+    `/trpc/requester.stats?address=${address}`
+  );
 }

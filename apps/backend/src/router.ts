@@ -18,6 +18,7 @@ import { emailsRouter } from './routers/emails.router';
 import { evaluationsRouter } from './routers/evaluations.router';
 import { marketRouter } from './routers/market.router';
 import { statsRouter } from './routers/stats.router';
+import { requesterRouter } from './routers/requester.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -39,6 +40,7 @@ export const appRouter = router({
   xmtp: xmtpRouter,
   emails: emailsRouter,
   evaluations: evaluationsRouter,
+  requester: requesterRouter,
 });
 
 export type AppRouter = typeof appRouter;

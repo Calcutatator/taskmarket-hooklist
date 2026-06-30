@@ -274,6 +274,10 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
 );
 app.post(
+  '/api/tasks/:taskId/reject-submission',
+  x402Middleware({ getAmount: () => '1000', description: 'Reject submission' })
+);
+app.post(
   '/api/tasks/:taskId/update',
   validateBody(UpdateTaskInputSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Update task' })

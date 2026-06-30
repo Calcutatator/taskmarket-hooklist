@@ -4,7 +4,6 @@ import type { Command } from 'commander';
 const TASK = '0xtask0000000000000000000000000000000001';
 const WORKER_A = '0x' + 'aa'.repeat(20);
 const WORKER_B = '0x' + 'bb'.repeat(20);
-const DELIVERABLE = '0x' + 'cd'.repeat(32);
 
 describe('task accept-submissions command', () => {
   let acceptSubmissionsCmd: Command;
@@ -62,22 +61,6 @@ describe('task accept-submissions command', () => {
 
     expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('must sum to 10000'));
     expect(mockX402Post).not.toHaveBeenCalled();
-  });
-
-  it('accepts winner with explicit deliverable hash', async () => {
-    mockX402Post.mockResolvedValue({ success: true });
-
-    await acceptSubmissionsCmd.parseAsync(
-      ['node', 'accept-submissions', TASK, '--winner', `${WORKER_A}:10000::${DELIVERABLE}`],
-      { from: 'node' }
-    );
-
-    expect(mockX402Post).toHaveBeenCalledWith(
-      `/api/tasks/${TASK}/accept-submissions`,
-      expect.objectContaining({
-        winners: [expect.objectContaining({ deliverable: DELIVERABLE })],
-      })
-    );
   });
 
   it('rejects invalid winner address', async () => {

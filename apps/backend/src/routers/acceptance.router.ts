@@ -66,44 +66,74 @@ export const acceptanceRouter = router({
         });
       }
 
-      // Resolve the deliverable hash to commit. Order:
-      // 1. Explicit input.deliverable (CLI / web pass it through)
-      // 2. The submissions row for (taskId, worker) (backend lookup)
-      let deliverable: `0x${string}` =
-        (input.deliverable as `0x${string}` | undefined) ?? `0x${'00'.repeat(32)}`;
-      if (!input.deliverable) {
+      // Resolve the deliverable hash. For bounty/benchmark the contract verifies
+      // the hash against its on-chain submission history, so we always derive it
+      // from the DB (never from the caller). For claim/pitch/auction the contract
+      // reads task.deliverable directly and ignores the value we pass.
+      let deliverable: `0x${string}` = `0x${'00'.repeat(32)}` as `0x${string}`;
+      if (task.mode === 'bounty' || task.mode === 'benchmark') {
         const submissionRow = await ctx.db
           .select({ deliverableHash: submissions.deliverableHash })
           .from(submissions)
           .where(
-            and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, input.worker))
+            and(
+              eq(submissions.taskId, input.taskId),
+              eq(submissions.workerAddress, input.worker),
+              sql`${submissions.rejectedAt} IS NULL`
+            )
           )
           .orderBy(sql`${submissions.submittedAt} DESC`)
           .limit(1);
-        if (submissionRow[0]?.deliverableHash) {
-          deliverable = submissionRow[0].deliverableHash as `0x${string}`;
+        const hash = submissionRow[0]?.deliverableHash;
+        if (!hash) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: `No active submission found for worker ${input.worker} on task ${input.taskId}`,
+          });
         }
+        deliverable = hash as `0x${string}`;
+      } else {
+        // Claim/pitch/auction: deliverable stored in task.deliverable on-chain at submitWork time.
+        // Contract ignores this param for these modes; pass zeros.
+        deliverable = `0x${'00'.repeat(32)}` as `0x${string}`;
       }
 
-      const ZERO_HASH = `0x${'00'.repeat(32)}` as `0x${string}`;
-      if (deliverable === ZERO_HASH && (task.mode === 'bounty' || task.mode === 'benchmark')) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: `No deliverable found for worker ${input.worker} on task ${input.taskId}. Bounty and benchmark tasks require a non-zero deliverable hash.`,
-        });
-      }
+      // Look up requester's ERC-8004 agentId for reputation tracking (0 if not found).
+      const requesterAgentRow = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(sql`lower(${agents.address}) = lower(${payer})`)
+        .limit(1);
+      const requesterOnChainId = requesterAgentRow[0]?.agentId
+        ? BigInt(requesterAgentRow[0].agentId)
+        : 0n;
 
       await contractAcceptSubmission(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         input.worker as `0x${string}`,
         deliverable,
+        requesterOnChainId,
         task.contractAddress
       );
 
-      // No DB writes here — the indexer is the sole writer of task state.
-      // It will set status to 'completed' and update agent stats when it
-      // processes the TaskCompleted on-chain event.
+      // Detect self-award: same address OR same ERC-8004 agentId (sybil case).
+      const workerAgentRow = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(sql`lower(${agents.address}) = lower(${input.worker})`)
+        .limit(1);
+      const workerOnChainId = workerAgentRow[0]?.agentId;
+      const isSelfAward =
+        payer.toLowerCase() === input.worker.toLowerCase() ||
+        (requesterAgentRow[0]?.agentId != null &&
+          workerOnChainId != null &&
+          requesterAgentRow[0].agentId === workerOnChainId);
+
+      if (isSelfAward) {
+        await ctx.db.update(tasks).set({ selfAward: true }).where(eq(tasks.id, input.taskId));
+      }
+
       return { success: true };
     }),
 
@@ -148,61 +178,25 @@ export const acceptanceRouter = router({
         });
       }
 
-      // Resolve each winner's deliverable hash. Priority:
-      // 1. Explicit input.winners[i].deliverable
-      // 2. submissions row by input.winners[i].submissionId
-      // 3. latest submissions row for (taskId, worker)
-      // 4. error — we can't accept without a deliverable
-      const workers: `0x${string}`[] = [];
-      const shares: number[] = [];
-      const deliverables: `0x${string}`[] = [];
+      const workers: `0x${string}`[] = input.winners.map((w) => w.worker as `0x${string}`);
+      const shares: number[] = input.winners.map((w) => w.share);
 
-      for (const w of input.winners) {
-        workers.push(w.worker as `0x${string}`);
-        shares.push(w.share);
-
-        let deliverable: `0x${string}` | null = null;
-        if (w.deliverable) {
-          deliverable = w.deliverable as `0x${string}`;
-        } else if (w.submissionId) {
-          const row = await ctx.db
-            .select({ deliverableHash: submissions.deliverableHash })
-            .from(submissions)
-            .where(
-              and(
-                eq(submissions.id, w.submissionId),
-                eq(submissions.taskId, input.taskId),
-                eq(submissions.workerAddress, w.worker)
-              )
-            )
-            .limit(1);
-          deliverable = (row[0]?.deliverableHash as `0x${string}` | undefined) ?? null;
-        } else {
-          const row = await ctx.db
-            .select({ deliverableHash: submissions.deliverableHash })
-            .from(submissions)
-            .where(
-              and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, w.worker))
-            )
-            .orderBy(sql`${submissions.submittedAt} DESC`)
-            .limit(1);
-          deliverable = (row[0]?.deliverableHash as `0x${string}` | undefined) ?? null;
-        }
-        if (!deliverable) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: `No deliverable found for worker ${w.worker}; pass deliverable or submissionId explicitly`,
-          });
-        }
-        deliverables.push(deliverable);
-      }
+      // Look up requester's ERC-8004 agentId for on-chain reputation tracking.
+      const requesterAgentRow = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(sql`lower(${agents.address}) = lower(${payer})`)
+        .limit(1);
+      const requesterAgentId = requesterAgentRow[0]?.agentId
+        ? BigInt(requesterAgentRow[0].agentId)
+        : 0n;
 
       await contractAcceptSubmissions(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         workers,
         shares,
-        deliverables,
+        requesterAgentId,
         task.contractAddress
       );
 

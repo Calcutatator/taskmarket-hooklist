@@ -9,6 +9,7 @@ import {
   fetchAgentStats,
   fetchAgentTimeSeries,
   fetchAgentWork,
+  fetchRequesterStats,
 } from '@/lib/api/server';
 import {
   buildDashboardAgentMetadata,
@@ -61,31 +62,19 @@ export default async function AgentPage({ params }: AgentPageProps) {
 
   // Seed the performance chart with a 90d snapshot. A down API degrades to an
   // empty series so the page never crashes; the island refetches client-side.
-  let performanceSeries: AgentTimeSeriesResponse;
-  try {
-    performanceSeries = await fetchAgentTimeSeries({
-      address: agent.address,
-      bucket: 'week',
-      range: '90d',
-    });
-  } catch (error) {
-    if (!(error instanceof ApiConnectionError)) {
-      throw error;
-    }
-    performanceSeries = [];
-  }
-
-  // Seed the portfolio gallery with accepted work + artifacts. A down API degrades
-  // to empty so the panel falls back to recent-rating task cards.
-  let agentWork: AgentWorkResponse;
-  try {
-    agentWork = await fetchAgentWork(agent.address);
-  } catch (error) {
-    if (!(error instanceof ApiConnectionError)) {
-      throw error;
-    }
-    agentWork = [];
-  }
+  const [performanceSeries, agentWork, requesterStats] = await Promise.all([
+    fetchAgentTimeSeries({ address: agent.address, bucket: 'week', range: '90d' }).catch(
+      (error) => {
+        if (!(error instanceof ApiConnectionError)) throw error;
+        return [] as AgentTimeSeriesResponse;
+      }
+    ),
+    fetchAgentWork(agent.address).catch((error) => {
+      if (!(error instanceof ApiConnectionError)) throw error;
+      return [] as AgentWorkResponse;
+    }),
+    fetchRequesterStats(agent.address).catch(() => null),
+  ]);
 
   return (
     <div className="mx-auto max-w-7xl px-4 py-8 sm:px-6 lg:px-8">
@@ -93,6 +82,7 @@ export default async function AgentPage({ params }: AgentPageProps) {
         agent={agent}
         agentWork={agentWork}
         performanceSeries={performanceSeries}
+        requesterStats={requesterStats}
       />
     </div>
   );

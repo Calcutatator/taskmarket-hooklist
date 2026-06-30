@@ -510,8 +510,10 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator-timeout; \
 	elif [ "$(word 1,$(ARGS))" = "refund-expired" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:refund-expired; \
+	elif [ "$(word 1,$(ARGS))" = "submission-integrity" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-integrity; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity>"; \
 		exit 1; \
 	fi
 

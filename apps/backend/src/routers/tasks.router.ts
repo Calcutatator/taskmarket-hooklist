@@ -891,6 +891,7 @@ export const tasksRouter = router({
         verdictScore: task.verdictScore ?? null,
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
+        selfAward: task.selfAward ?? null,
         submissionWindowOpen,
         netReward: String(
           Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
@@ -974,6 +975,7 @@ export const tasksRouter = router({
       const txHash = await contractCancelTask(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
+        task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
         task.contractAddress
       );
 
@@ -1045,7 +1047,8 @@ export const tasksRouter = router({
 
       const txHash = await contractRefundExpired(
         input.taskId as `0x${string}`,
-        payer as `0x${string}`
+        payer as `0x${string}`,
+        task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n
       );
 
       try {

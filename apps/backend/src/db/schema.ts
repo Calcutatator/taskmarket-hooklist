@@ -5,6 +5,7 @@ import {
   timestamp,
   bigint,
   smallint,
+  boolean,
   index,
   uniqueIndex,
   jsonb,
@@ -47,6 +48,7 @@ export const tasks = pgTable(
     chainId: integer('chain_id'),
     contractAddress: text('contract_address'),
     cancelledAt: timestamp('cancelled_at'),
+    selfAward: boolean('self_award'),
     hookContract: text('hook_contract'),
     evaluator: text('evaluator'),
     evaluatorStake: numeric('evaluator_stake', { precision: 78, scale: 0 }),
@@ -403,6 +405,25 @@ export const protocolEvents = pgTable(
   })
 );
 
+export const requesterReputationEvents = pgTable(
+  'requester_reputation_events',
+  {
+    id: serial('id').primaryKey(),
+    taskId: text('task_id').notNull(),
+    requester: text('requester').notNull(),
+    eventType: text('event_type').notNull(),
+    reward: text('reward').notNull(),
+    submissionCount: integer('submission_count').notNull().default(0),
+    uniqueWorkers: integer('unique_workers').notNull().default(0),
+    selfAward: boolean('self_award').notNull().default(false),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    requesterIdx: index('idx_requester_rep_requester').on(table.requester),
+    taskIdIdx: index('idx_requester_rep_task').on(table.taskId),
+  })
+);
+
 export const indexedEvents = pgTable(
   'indexed_events',
   {
@@ -432,6 +453,8 @@ export type Proposal = typeof proposals.$inferSelect;
 export type NewProposal = typeof proposals.$inferInsert;
 export type Claim = typeof claims.$inferSelect;
 export type NewClaim = typeof claims.$inferInsert;
+export type RequesterReputationEvent = typeof requesterReputationEvents.$inferSelect;
+export type NewRequesterReputationEvent = typeof requesterReputationEvents.$inferInsert;
 export type Proof = typeof proofs.$inferSelect;
 export type NewProof = typeof proofs.$inferInsert;
 export type PlatformFee = typeof platformFees.$inferSelect;

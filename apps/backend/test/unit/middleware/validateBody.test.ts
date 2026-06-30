@@ -147,39 +147,6 @@ describe('validateBody middleware', () => {
       expect(next).toHaveBeenCalledOnce();
     });
 
-    it('calls next() with a valid deliverable hash', () => {
-      const next = vi.fn();
-      middleware(
-        makeReq({ taskId: '0xabc', worker: '0xworker', deliverable: `0x${'ab'.repeat(32)}` }),
-        mockRes(),
-        next
-      );
-      expect(next).toHaveBeenCalledOnce();
-    });
-
-    it('returns 400 when deliverable is malformed hex', () => {
-      const next = vi.fn();
-      const res = mockRes();
-      middleware(
-        makeReq({ taskId: '0xabc', worker: '0xworker', deliverable: '0xBADHEX' }),
-        res,
-        next
-      );
-      expect(res.statusCode).toBe(400);
-      expect(next).not.toHaveBeenCalled();
-    });
-
-    it('returns 400 when deliverable is wrong length', () => {
-      const next = vi.fn();
-      const res = mockRes();
-      middleware(
-        makeReq({ taskId: '0xabc', worker: '0xworker', deliverable: `0x${'ab'.repeat(16)}` }),
-        res,
-        next
-      );
-      expect(res.statusCode).toBe(400);
-      expect(next).not.toHaveBeenCalled();
-    });
   });
 
   describe('AcceptSubmissionsInputSchema', () => {
