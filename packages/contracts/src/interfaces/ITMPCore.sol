@@ -272,7 +272,7 @@ interface ITMPCore is IERC165 {
         uint256 price;
     }
 
-    /// @notice Hook configuration passed to createTask (Rev007).
+    /// @notice Hook configuration passed to createTask (Rev008).
     ///         Packs hookContracts and hookData into one calldata pointer to stay
     ///         within the 16-slot Yul stack limit.
     struct HookConfig {
@@ -412,7 +412,7 @@ interface ITMPCore is IERC165 {
     /// @param pitchDeadline   Seconds from now for pitch acceptance (Pitch mode only, 0 otherwise)
     /// @param bidDeadline     Seconds from now for bid submission (Auction mode only, 0 otherwise)
     /// @param auctionSubtype  Auction subtype selector (see ITMPModes; bytes4(0) for non-auction tasks)
-    /// @param hookConfig      Hook contracts and per-task hookData (Rev007).
+    /// @param hookConfig      Hook contracts and per-task hookData (Rev008).
     /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
     /// @return taskId         Contract-generated canonical task identifier
     function createTask(

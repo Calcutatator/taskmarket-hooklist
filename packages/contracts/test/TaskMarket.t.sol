@@ -2606,7 +2606,7 @@ contract TaskMarketTest is DiamondTestHelper {
     }
 
     // -------------------------------------------------------------------------
-    // Multi-hook tests (Rev007)
+    // Multi-hook tests (Rev008)
     // -------------------------------------------------------------------------
 
     function test_MultiHook_BothFire() public {

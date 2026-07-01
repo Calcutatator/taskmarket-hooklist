@@ -85,7 +85,7 @@ library LibTaskMarket {
         });
     }
 
-    /// @notice Returns the hook list for a task (Rev007).
+    /// @notice Returns the hook list for a task (Rev008).
     ///         task.hookContract is deprecated dead storage; taskHooks is authoritative.
     function _resolveHooks(bytes32 taskId, AppStorage storage s) internal view returns (address[] memory) {
         return s.taskHooks[taskId];

@@ -146,7 +146,7 @@ contract AdminFacet is Initializable {
     }
 
     // -------------------------------------------------------------------------
-    // Default hooks (Rev007)
+    // Default hooks (Rev008)
     // -------------------------------------------------------------------------
 
     /// @notice Replace the protocol default hook list (owner only).
