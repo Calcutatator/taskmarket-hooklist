@@ -475,4 +475,44 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         vm.expectRevert();
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
     }
+
+    // ─── Additional branch-coverage tests ────────────────────────────────────
+
+    function test_setDriftBandBps_tooHigh_reverts() public {
+        vm.prank(owner);
+        vm.expectRevert(TaskTokenRewardHook.DriftBandBpsTooHigh.selector);
+        hook.setDriftBandBps(10_000);
+    }
+
+    // Calls checkComplete directly as the diamond on a bounty task where
+    // task.worker == address(0) → exercises the Path B else branch and NoWorkerFound.
+    function test_checkComplete_bounty_noWorkerFound() public {
+        bytes32 taskId = _createBountyTask();
+        // state.reserved=false (bounty); task.worker=address(0) (no submit/accept yet)
+
+        vm.prank(address(market)); // msg.sender == diamond → passes onlyDiamond
+        ITMPCore.TaskContext memory ctx;
+        ctx.requester = requester;
+        ITMPCore.Verdict memory verdict;
+        vm.expectRevert(abi.encodeWithSelector(TaskTokenRewardHook.NoWorkerFound.selector, taskId));
+        hook.checkComplete(taskId, ctx, verdict);
+    }
+
+    // Calls onComplete directly as the diamond while the task has reserved=true but
+    // paid=false (simulates a missed checkComplete). The hook releases the reserve.
+    function test_onComplete_defensive_releasesReserveWhenPaidMissed() public {
+        bytes32 taskId = _createClaimTask();
+        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+        // At this point: reserved=true, paid=false, reservedTokenAmount > 0
+
+        uint256 reservedBefore = vault.taskReserve(taskId);
+        assertGt(reservedBefore, 0);
+
+        vm.prank(address(market)); // msg.sender == diamond → passes onlyDiamond
+        ITMPCore.TaskContext memory ctx;
+        ITMPCore.Verdict memory verdict;
+        hook.onComplete(taskId, ctx, verdict);
+
+        assertEq(vault.taskReserve(taskId), 0);
+    }
 }

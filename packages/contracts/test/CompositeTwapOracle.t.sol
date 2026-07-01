@@ -323,4 +323,72 @@ contract CompositeTwapOracleTest is Test {
         PriceData memory data = oracle.getPrice();
         assertEq(data.liquidity, 500); // poolA is weaker
     }
+
+    // -------------------------------------------------------------------------
+    // Additional branch-coverage tests
+    // -------------------------------------------------------------------------
+
+    function test_setTwapWindow_zero_reverts() public {
+        vm.prank(OWNER);
+        vm.expectRevert(CompositeTwapOracle.TwapWindowZero.selector);
+        oracle.setTwapWindow(0);
+    }
+
+    // tick = 500_000 → sqrtPriceX96 > uint128.max → exercises the high-path in _twapPrice.
+    // tokenIsToken0InA = true (DREAMS=token0) so baseIsToken0=true in poolA.
+    function test_extremeTick_highSqrtPath_baseIsToken0() public {
+        _setTick(poolA, 500_000);
+        _setTick(poolB, 80_068);
+        PriceData memory data = oracle.getPrice();
+        assertTrue(data.valid);
+        assertGt(data.price, 0);
+    }
+
+    // Same extreme tick but with token as token1 in poolA (baseIsToken0=false).
+    function test_extremeTick_highSqrtPath_baseIsToken1() public {
+        // Build an oracle where DREAMS is token1 in poolA (tokenIsToken0InA=false).
+        MockCLPool poolAInverse = new MockCLPool(WETH, DREAMS, 1e18);
+        CompositeTwapOracle oracleInverse = new CompositeTwapOracle(
+            address(poolAInverse),
+            DREAMS,
+            DREAMS_DECIMALS,
+            address(poolB),
+            WETH,
+            WETH_DECIMALS,
+            TWAP_WINDOW,
+            0,
+            0,
+            3600,
+            OWNER
+        );
+        assertFalse(oracleInverse.tokenIsToken0InA());
+
+        // extreme positive tick: avgTick = 500_000 → sqrtPriceX96 > uint128.max
+        int56 delta = int56(500_000) * int56(uint56(TWAP_WINDOW));
+        poolAInverse.setTickCumulatives(0, delta);
+        _setTick(poolB, 80_068);
+
+        PriceData memory data = oracleInverse.getPrice();
+        // Price may be extremely small (inverted high ratio) but should not revert.
+        // valid depends on whether final price rounds to zero — just verify no revert.
+        assertTrue(data.price > 0 || !data.valid);
+    }
+
+    // tick = MIN_TICK for poolA → sqrtPriceX96 is minimal → priceA rounds to zero → valid=false.
+    function test_getPrice_zeroPriceA_returnsInvalid() public {
+        _setTick(poolA, -887_272);
+        _setTick(poolB, 80_068);
+        PriceData memory data = oracle.getPrice();
+        assertFalse(data.valid);
+        assertEq(data.price, 0);
+    }
+
+    // tick = 0 for poolA (priceA > 0), MIN_TICK for poolB → priceB rounds to zero → valid=false.
+    function test_getPrice_zeroPriceB_returnsInvalid() public {
+        _setTick(poolA, 0);
+        _setTick(poolB, -887_272);
+        PriceData memory data = oracle.getPrice();
+        assertFalse(data.valid);
+        assertEq(data.price, 0);
+    }
 }
