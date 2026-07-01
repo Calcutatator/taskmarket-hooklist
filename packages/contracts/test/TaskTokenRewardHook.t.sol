@@ -11,7 +11,7 @@ import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { DiamondTestHelper } from "./helpers/DiamondTestHelper.sol";
-import { ITaskMarketFull } from "./helpers/ITaskMarketFull.sol";
+import { ITMPDiamond } from "../src/interfaces/ITMPDiamond.sol";
 import "./mocks/MockUSDC.sol";
 
 // ─────────────────────────────────────────────────────────────────────────────
@@ -111,7 +111,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     uint256 constant MAX_PER_TASK = 10_000 * 1e18;
     uint16 constant DRIFT_BPS = 2000; // 20%
 
-    ITaskMarketFull market;
+    ITMPDiamond market;
     MockPGTRForwarder forwarder;
     MockUSDC usdc;
     MockUSDC dreamsToken;
