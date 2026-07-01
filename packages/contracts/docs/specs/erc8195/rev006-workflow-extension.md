@@ -222,9 +222,12 @@ make upgrade testnet   # deploys WorkflowFacet, adds selectors via diamondCut
 make upgrade mainnet
 ```
 
-`DiamondUpgrade.s.sol` is extended to deploy `WorkflowFacet` and issue a single `diamondCut`
-with action `Add` for all six selectors. No existing facet is replaced. No initializer is
-required — all new AppStorage fields zero-initialise by default.
+`DiamondUpgrade.s.sol` is extended to deploy `WorkflowFacet` and a new `DiamondLoupeFacet`.
+The `diamondCut` issues two operations: an `Add` for all six `WorkflowFacet` selectors and a
+`Replace` for `DiamondLoupeFacet.supportsInterface` so it advertises
+`type(ITMPWorkflow).interfaceId`. The upgrade is therefore not add-only: one existing facet
+function is replaced. No initializer is required — all new AppStorage fields zero-initialise by
+default.
 
 ## Changes from Rev005
 

@@ -9,6 +9,10 @@ import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 
+interface IDiamondAdmin {
+    function setDefaultHooks(address[] calldata hooks) external;
+}
+
 /// @dev Required env vars (set in packages/contracts/.env):
 ///
 ///   FORGE_DEV_PRIVATE_KEY            — deployer/owner key
@@ -45,6 +49,13 @@ contract DeployRewardHook is Script {
         vault.setHook(address(hook));
         budget.setHook(address(hook));
 
+        // Register hook as the protocol default so every new task on the Diamond triggers it.
+        // This replaces any existing default-hook list — preserve the old list by reading
+        // getDefaultHooks() first if other hooks must be retained alongside this one.
+        address[] memory defaultHooks = new address[](1);
+        defaultHooks[0] = address(hook);
+        IDiamondAdmin(vm.envAddress("FORGE_DIAMOND_ADDRESS")).setDefaultHooks(defaultHooks);
+
         uint256 initialVaultBalance = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(0));
         if (initialVaultBalance > 0) {
             IERC20(vm.envAddress("FORGE_PROTOCOL_TOKEN")).transfer(address(vault), initialVaultBalance);
@@ -58,6 +69,7 @@ contract DeployRewardHook is Script {
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
         console.log("Vault seeded (wei):   ", initialVaultBalance);
+        console.log("Diamond default hooks: set to [TaskTokenRewardHook]");
     }
 
     function _deployCore(address deployer)

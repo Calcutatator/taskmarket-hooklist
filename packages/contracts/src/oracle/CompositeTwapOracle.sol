@@ -14,6 +14,7 @@ interface ICLPool {
 
     function liquidity() external view returns (uint128);
     function token0() external view returns (address);
+    function token1() external view returns (address);
 }
 
 /// @title CompositeTwapOracle
@@ -26,6 +27,9 @@ interface ICLPool {
 ///   priceB = USDC per BRIDGE,  1e18  (from poolB)
 ///   result = mulDiv(priceA, priceB, 1e18) = USDC per TOKEN, 1e18
 contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
+    error InvalidPoolConfiguration();
+    error TwapWindowZero();
+
     ICLPool public immutable poolA; // TOKEN/BRIDGE (e.g. DREAMS/WETH)
     ICLPool public immutable poolB; // BRIDGE/USDC  (e.g. WETH/USDC)
 
@@ -72,12 +76,26 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         address _owner
     ) Ownable(_owner) {
         require(uint256(_tokenDecimals) + 18 >= uint256(_bridgeDecimals), "CompositeTwapOracle: decimal underflow");
+        if (_twapWindow == 0) revert TwapWindowZero();
+
+        // Validate that poolA contains both _token and _bridge.
+        address a0 = ICLPool(_poolA).token0();
+        address a1 = ICLPool(_poolA).token1();
+        if (!((a0 == _token || a1 == _token) && (a0 == _bridge || a1 == _bridge))) {
+            revert InvalidPoolConfiguration();
+        }
+        // Validate that poolB contains _bridge.
+        address b0 = ICLPool(_poolB).token0();
+        address b1 = ICLPool(_poolB).token1();
+        if (!(b0 == _bridge || b1 == _bridge)) {
+            revert InvalidPoolConfiguration();
+        }
 
         poolA = ICLPool(_poolA);
         poolB = ICLPool(_poolB);
 
-        tokenIsToken0InA = (ICLPool(_poolA).token0() == _token);
-        bridgeIsToken0InB = (ICLPool(_poolB).token0() == _bridge);
+        tokenIsToken0InA = (a0 == _token);
+        bridgeIsToken0InB = (b0 == _bridge);
 
         priceScalerA = 10 ** (uint256(_tokenDecimals) + 18 - uint256(_bridgeDecimals));
         priceScalerB = 10 ** (uint256(_bridgeDecimals) + 12);
@@ -161,19 +179,29 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         }
 
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(avgTick);
-        // ratioX192 = token1_raw / token0_raw * 2^192
-        uint256 ratioX192 = FullMath.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), 1);
-
-        if (baseIsToken0) {
-            // token0 = base, token1 = quote → ratioX192 = quote_raw/base_raw * 2^192 → direct
-            return FullMath.mulDiv(ratioX192, scaler, 1 << 192);
+        // Use the Uniswap OracleLibrary two-path approach to avoid uint256 overflow when
+        // sqrtPriceX96 > type(uint128).max (possible at extreme ticks).
+        // sqrtPriceX96 <= 2^128 → product fits in uint256 directly.
+        // sqrtPriceX96 > 2^128  → divide by 2^64 first, then shift back.
+        if (uint256(sqrtPriceX96) <= type(uint128).max) {
+            uint256 ratioX192 = uint256(sqrtPriceX96) * uint256(sqrtPriceX96);
+            if (baseIsToken0) {
+                return FullMath.mulDiv(ratioX192, scaler, 1 << 192);
+            } else {
+                return FullMath.mulDiv(scaler, 1 << 192, ratioX192);
+            }
         } else {
-            // token0 = quote, token1 = base → ratioX192 = base_raw/quote_raw * 2^192 → invert
-            return FullMath.mulDiv(scaler, 1 << 192, ratioX192);
+            uint256 ratioX128 = FullMath.mulDiv(uint256(sqrtPriceX96), uint256(sqrtPriceX96), 1 << 64);
+            if (baseIsToken0) {
+                return FullMath.mulDiv(ratioX128, scaler, 1 << 128);
+            } else {
+                return FullMath.mulDiv(scaler, 1 << 128, ratioX128);
+            }
         }
     }
 
     function setTwapWindow(uint32 _twapWindow) external onlyOwner {
+        if (_twapWindow == 0) revert TwapWindowZero();
         twapWindow = _twapWindow;
     }
 

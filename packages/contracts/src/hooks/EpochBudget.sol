@@ -37,6 +37,7 @@ contract EpochBudget is Ownable {
     event Released(address indexed requester, address indexed worker, uint256 amount);
 
     error OnlyHook();
+    error EpochDurationZero();
     error GlobalCapExceeded(uint256 requested, uint256 remaining);
     error WorkerCapExceeded(address worker, uint256 requested, uint256 remaining);
     error RequesterCapExceeded(address requester, uint256 requested, uint256 remaining);
@@ -55,6 +56,7 @@ contract EpochBudget is Ownable {
         uint256 _maxTokensPerTask,
         address _owner
     ) Ownable(_owner) {
+        if (_epochDuration == 0) revert EpochDurationZero();
         epochDuration = _epochDuration;
         globalCap = _globalCap;
         workerCap = _workerCap;
@@ -180,6 +182,7 @@ contract EpochBudget is Ownable {
     }
 
     function setEpochDuration(uint256 _epochDuration) external onlyOwner {
+        if (_epochDuration == 0) revert EpochDurationZero();
         epochDuration = _epochDuration;
     }
 

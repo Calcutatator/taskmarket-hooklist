@@ -500,7 +500,16 @@ contract CoreFacet {
             th.push(s.defaultHooks[i]);
         }
         for (uint256 i; i < reqLen; i++) {
-            th.push(hookConfig.contracts[i]);
+            address h = hookConfig.contracts[i];
+            if (h == address(0)) revert ITMPCore.InvalidHookAddress();
+            if (h.code.length == 0) revert ITMPCore.InvalidHookAddress();
+            for (uint256 j; j < defaultLen; j++) {
+                if (s.defaultHooks[j] == h) revert ITMPCore.DuplicateHookAddress();
+            }
+            for (uint256 j; j < i; j++) {
+                if (hookConfig.contracts[j] == h) revert ITMPCore.DuplicateHookAddress();
+            }
+            th.push(h);
         }
         LibTaskMarket._checkFundHooks(taskId, th, hookConfig.data, s);
     }

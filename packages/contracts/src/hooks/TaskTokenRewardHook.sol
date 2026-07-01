@@ -67,6 +67,13 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     error WorkerMismatch(bytes32 taskId, address expected, address got);
     error ZeroReward();
     error NoWorkerFound(bytes32 taskId);
+    error DriftBandBpsTooHigh();
+    error CallerNotDiamond();
+
+    modifier onlyDiamond() {
+        if (msg.sender != diamond) revert CallerNotDiamond();
+        _;
+    }
 
     constructor(
         address _oracle,
@@ -77,6 +84,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         uint16 _driftBandBps,
         address _owner
     ) Ownable(_owner) {
+        if (_driftBandBps >= 10000) revert DriftBandBpsTooHigh();
         oracle = ITokenUsdOracle(_oracle);
         vault = IRewardVault(_vault);
         epochBudget = EpochBudget(_epochBudget);
@@ -100,6 +108,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
         returns (bool)
     {
         PriceData memory price = oracle.getPrice();
@@ -125,6 +134,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     function checkClaim(bytes32 taskId, ITMPCore.TaskContext calldata ctx, address worker)
         external
         override
+        onlyDiamond
         returns (bool)
     {
         return _reserveForWorker(taskId, ctx.requester, worker);
@@ -134,6 +144,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     function checkSelectWorker(bytes32 taskId, ITMPCore.TaskContext calldata ctx, address worker)
         external
         override
+        onlyDiamond
         returns (bool)
     {
         return _reserveForWorker(taskId, ctx.requester, worker);
@@ -150,6 +161,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         external
         view
         override
+        onlyDiamond
         returns (bool)
     {
         RewardState storage state = rewardStates[taskId];
@@ -168,8 +180,9 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         address /* evaluator */
     )
         external
-        pure
+        view
         override
+        onlyDiamond
         returns (bool)
     {
         return true;
@@ -185,6 +198,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
         returns (bool)
     {
         RewardState storage state = rewardStates[taskId];
@@ -200,17 +214,20 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
         if (state.reserved) {
             // Path A — Claim / Pitch / Auction
+            // Budget was already consumed for state.reservedTokenAmount at lock time (_reserveForWorker).
+            // Do NOT call checkAndConsume again; instead pay the actual (smaller) amount and
+            // release the surplus back to the budget.
             uint256 effectivePrice = _clamp(settlePrice.price, state.minSettlePrice, state.maxSettlePrice);
             uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, effectivePrice);
+            uint256 tokenReward = rawReward < state.reservedTokenAmount ? rawReward : state.reservedTokenAmount;
 
-            uint256 budgetRemaining = epochBudget.remaining(state.requester, state.worker);
-            uint256 tokenReward = _min3(rawReward, state.reservedTokenAmount, budgetRemaining);
-
-            epochBudget.checkAndConsume(state.requester, state.worker, tokenReward);
             vault.pay(taskId, state.worker, tokenReward);
 
             uint256 unused = state.reservedTokenAmount - tokenReward;
-            if (unused > 0) vault.release(taskId, unused);
+            if (unused > 0) {
+                vault.release(taskId, unused);
+                epochBudget.release(state.requester, state.worker, unused);
+            }
 
             emit RewardPaid(taskId, state.worker, state.rewardUsd, settlePrice.price, effectivePrice, tokenReward);
         } else {
@@ -247,6 +264,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
     {
         // Payment was already handled in checkComplete. Defensive: if somehow
         // reserved but not paid, release the reserve.
@@ -266,6 +284,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
     {
         _releaseReserve(taskId);
     }
@@ -276,6 +295,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
     {
         _releaseReserve(taskId);
     }
@@ -286,6 +306,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     )
         external
         override
+        onlyDiamond
     {
         _releaseReserve(taskId);
     }
@@ -319,6 +340,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     }
 
     function setDriftBandBps(uint16 _driftBandBps) external onlyOwner {
+        if (_driftBandBps >= 10000) revert DriftBandBpsTooHigh();
         driftBandBps = _driftBandBps;
     }
 

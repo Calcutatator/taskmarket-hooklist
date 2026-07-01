@@ -370,11 +370,12 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
 
-        // Call checkComplete directly again — should revert with RewardAlreadyPaid
+        // Direct call to checkComplete is blocked by onlyDiamond — CallerNotDiamond fires first,
+        // which also prevents any double-payment path from being reached.
         ITMPCore.Verdict memory verdict;
         ITMPCore.TaskContext memory ctx;
         ctx.requester = requester;
-        vm.expectRevert(abi.encodeWithSelector(TaskTokenRewardHook.RewardAlreadyPaid.selector, taskId));
+        vm.expectRevert(abi.encodeWithSelector(TaskTokenRewardHook.CallerNotDiamond.selector));
         hook.checkComplete(taskId, ctx, verdict);
     }
 

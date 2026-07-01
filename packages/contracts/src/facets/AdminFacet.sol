@@ -157,6 +157,9 @@ contract AdminFacet is Initializable {
         delete s.defaultHooks;
         for (uint256 i; i < hooks.length; i++) {
             if (hooks[i] == address(0)) revert ITMPCore.InvalidHookAddress();
+            for (uint256 j; j < i; j++) {
+                if (hooks[j] == hooks[i]) revert ITMPCore.DuplicateHookAddress();
+            }
             s.defaultHooks.push(hooks[i]);
         }
         emit ITMPCore.DefaultHooksSet(hooks);

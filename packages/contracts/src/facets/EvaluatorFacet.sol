@@ -255,6 +255,14 @@ contract EvaluatorFacet {
     function _payAwards(bytes32 taskId, ITMPCore.Task storage task, ITMPCore.Verdict storage v, AppStorage storage s)
         private
     {
+        // Validate recipients before touching any state.
+        uint256 awardLen = v.awards.length;
+        for (uint256 i; i < awardLen; i++) {
+            if (v.awards[i].amount > 0 && v.awards[i].worker == address(0)) {
+                revert ITMPCore.InvalidAwardRecipient();
+            }
+        }
+
         uint256 remaining = task.reward - (task.reward * s.taskEvaluatorConfigs[taskId].evaluatorFeeBps) / 10000;
         ITMPCore.Verdict memory verdictMem = s.taskVerdicts[taskId];
 

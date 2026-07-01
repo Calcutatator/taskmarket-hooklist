@@ -138,6 +138,11 @@ interface ITMPCore is IERC165 {
     error HookCheckSubmitRejected();
     error HookCheckCompleteRejected();
     error HookCheckEvaluateRejected();
+    error DuplicateHookAddress();
+
+    // Awards
+    error InvalidAwardRecipient();
+    error DuplicateAwardWorker();
 
     // -------------------------------------------------------------------------
     // Types
