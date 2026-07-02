@@ -1036,7 +1036,7 @@ export const tasksRouter = router({
       const subCount = await ctx.db
         .select({ count: sql<string>`count(*)` })
         .from(submissions)
-        .where(eq(submissions.taskId, input.taskId));
+        .where(and(eq(submissions.taskId, input.taskId), isNull(submissions.rejectedAt)));
 
       if (Number(subCount[0]?.count ?? 0) > 0) {
         throw new TRPCError({
@@ -1387,6 +1387,13 @@ export const tasksRouter = router({
         input.worker as `0x${string}`,
         payer as `0x${string}`
       );
+
+      await ctx.db
+        .update(submissions)
+        .set({ rejectedAt: new Date() })
+        .where(
+          and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, input.worker))
+        );
 
       return { txHash };
     }),

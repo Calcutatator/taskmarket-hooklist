@@ -1,5 +1,6 @@
 /**
  * Bounty mode smoke test: create → submit → accept → rate → verify feedback
+ *                         + reject path: create → multi-submit → reject-all → cancel
  *
  * Bounty: task is open, any worker can submit, requester picks winner.
  *
@@ -108,6 +109,69 @@ async function main() {
 
   console.log('\n=== Bounty smoke test passed ===');
   console.log('taskId:', taskId);
+
+  // --- Reject path: multi-submit then reject then cancel ---
+  // Verifies the rev008 fix: rejectSubmission must drain the full per-worker
+  // submission count so cancelTask succeeds after all workers are rejected.
+  console.log('\n--- Reject path: multi-submit -> reject -> cancel ---');
+
+  log('R1/4', 'Creating second bounty task for reject path...');
+  const { taskId: taskId2 } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Write a limerick about smart contracts (reject path)',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('taskId2', taskId2);
+
+  log('R2/4', 'Worker submitting three times (multi-submission)...');
+  const submitSig2 = await worker.signMessage({ message: `taskmarket:submit:${taskId2}` });
+  for (const v of ['v1', 'v2', 'v3']) {
+    await post(`/api/tasks/${taskId2}/submissions`, {
+      taskId: taskId2,
+      workerAddress: worker.address,
+      signature: submitSig2,
+      artifacts: [
+        {
+          fileName: `submission-${v}.txt`,
+          mimeType: 'text/plain',
+          role: 'attachment',
+          file: Buffer.from(`smoke-reject-payload-${v}`).toString('base64'),
+        },
+      ],
+    });
+  }
+  ok('submitted 3x', true);
+
+  log('R3/4', 'Requester rejecting worker (single call must clear full count)...');
+  await x402Post(
+    `/api/tasks/${taskId2}/reject-submission`,
+    { taskId: taskId2, worker: worker.address },
+    requester
+  );
+  ok('rejected', true);
+
+  log('R4/4', 'Requester cancelling task (should succeed with count cleared)...');
+  await x402Post(`/api/tasks/${taskId2}/cancel`, { taskId: taskId2 }, requester);
+
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId2}`)) as { status: string };
+    if (t.status === 'cancelled') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
+  const finalTask = (await get(`/api/tasks/${taskId2}`)) as { status: string };
+  if (finalTask.status !== 'cancelled') {
+    throw new Error(`Expected cancelled, got: ${finalTask.status}`);
+  }
+  ok('taskId2 status', finalTask.status);
+
+  console.log('\n=== Reject path passed ===');
+  console.log('taskId2:', taskId2);
 }
 
 main().catch((err) => {
