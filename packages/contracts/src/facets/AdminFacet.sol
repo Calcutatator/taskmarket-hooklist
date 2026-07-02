@@ -152,11 +152,14 @@ contract AdminFacet is Initializable {
     /// @notice Replace the protocol default hook list (owner only).
     ///         These hooks are prepended to every new task's hook list at createTask().
     ///         Does not affect tasks already created.
+    ///         Maximum 8 default hooks to bound hook dispatch gas cost.
     function setDefaultHooks(address[] calldata hooks) external onlyOwner {
+        if (hooks.length > 8) revert ITMPCore.TooManyHooks();
         AppStorage storage s = LibAppStorage.appStorage();
         delete s.defaultHooks;
         for (uint256 i; i < hooks.length; i++) {
             if (hooks[i] == address(0)) revert ITMPCore.InvalidHookAddress();
+            if (hooks[i].code.length == 0) revert ITMPCore.InvalidHookAddress();
             for (uint256 j; j < i; j++) {
                 if (hooks[j] == hooks[i]) revert ITMPCore.DuplicateHookAddress();
             }

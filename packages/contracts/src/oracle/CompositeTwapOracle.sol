@@ -29,6 +29,7 @@ interface ICLPool {
 contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
     error InvalidPoolConfiguration();
     error TwapWindowZero();
+    error TwapWindowTooShort();
 
     ICLPool public immutable poolA; // TOKEN/BRIDGE (e.g. DREAMS/WETH)
     ICLPool public immutable poolB; // BRIDGE/USDC  (e.g. WETH/USDC)
@@ -46,21 +47,22 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
     // For 18-dec BRIDGE: 10^30
     uint256 public immutable priceScalerB;
 
+    uint32 public constant MIN_TWAP_WINDOW = 300; // 5 minutes — below this a flashloan can trivially manipulate
+
     uint32 public twapWindow;
     uint256 public minLiquidityA;
     uint256 public minLiquidityB;
-    uint256 public maxStaleness;
 
     /// @param _poolA           TOKEN/BRIDGE Aerodrome CL pool
     /// @param _token           TOKEN address (e.g. DREAMS)
     /// @param _tokenDecimals   TOKEN decimals
     /// @param _poolB           BRIDGE/USDC Aerodrome CL pool
     /// @param _bridge          BRIDGE address (e.g. WETH)
+    /// @param _usdc            USDC address — validated as the non-bridge token in poolB
     /// @param _bridgeDecimals  BRIDGE decimals (e.g. 18 for WETH)
-    /// @param _twapWindow      Seconds for both TWAP windows
+    /// @param _twapWindow      Seconds for both TWAP windows; must be >= MIN_TWAP_WINDOW (300s)
     /// @param _minLiquidityA   Minimum in-range liquidity for poolA validity
     /// @param _minLiquidityB   Minimum in-range liquidity for poolB validity
-    /// @param _maxStaleness    Stored for reference; TWAP is inherently fresh
     /// @param _owner           Owner for admin setters
     constructor(
         address _poolA,
@@ -68,15 +70,16 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         uint8 _tokenDecimals,
         address _poolB,
         address _bridge,
+        address _usdc,
         uint8 _bridgeDecimals,
         uint32 _twapWindow,
         uint256 _minLiquidityA,
         uint256 _minLiquidityB,
-        uint256 _maxStaleness,
         address _owner
     ) Ownable(_owner) {
         require(uint256(_tokenDecimals) + 18 >= uint256(_bridgeDecimals), "CompositeTwapOracle: decimal underflow");
         if (_twapWindow == 0) revert TwapWindowZero();
+        if (_twapWindow < MIN_TWAP_WINDOW) revert TwapWindowTooShort();
 
         // Validate that poolA contains both _token and _bridge.
         address a0 = ICLPool(_poolA).token0();
@@ -84,10 +87,10 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         if (!((a0 == _token || a1 == _token) && (a0 == _bridge || a1 == _bridge))) {
             revert InvalidPoolConfiguration();
         }
-        // Validate that poolB contains _bridge.
+        // Validate that poolB contains both _bridge and _usdc.
         address b0 = ICLPool(_poolB).token0();
         address b1 = ICLPool(_poolB).token1();
-        if (!(b0 == _bridge || b1 == _bridge)) {
+        if (!((b0 == _bridge || b1 == _bridge) && (b0 == _usdc || b1 == _usdc))) {
             revert InvalidPoolConfiguration();
         }
 
@@ -103,7 +106,6 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         twapWindow = _twapWindow;
         minLiquidityA = _minLiquidityA;
         minLiquidityB = _minLiquidityB;
-        maxStaleness = _maxStaleness;
     }
 
     function getTwapWindow() external view returns (uint32) {
@@ -172,9 +174,13 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
         returns (uint256)
     {
         int56 delta = tickCumulatives[1] - tickCumulatives[0];
-        int24 avgTick = int24(delta / int56(uint56(window)));
+        int56 rawAvg = delta / int56(uint56(window));
+        // Guard against a misbehaving pool producing a tick outside the valid TickMath range.
+        // Return 0 (treated as valid=false by callers) rather than reverting inside getSqrtRatioAtTick.
+        if (rawAvg < -887272 || rawAvg > 887272) return 0;
+        int24 avgTick = int24(rawAvg);
         // Round towards negative infinity
-        if (delta < 0 && delta != int56(int24(avgTick)) * int56(uint56(window))) {
+        if (delta < 0 && delta != int56(avgTick) * int56(uint56(window))) {
             avgTick--;
         }
 
@@ -202,6 +208,7 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
 
     function setTwapWindow(uint32 _twapWindow) external onlyOwner {
         if (_twapWindow == 0) revert TwapWindowZero();
+        if (_twapWindow < MIN_TWAP_WINDOW) revert TwapWindowTooShort();
         twapWindow = _twapWindow;
     }
 
@@ -211,9 +218,5 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
 
     function setMinLiquidityB(uint256 _minLiquidity) external onlyOwner {
         minLiquidityB = _minLiquidity;
-    }
-
-    function setMaxStaleness(uint256 _maxStaleness) external onlyOwner {
-        maxStaleness = _maxStaleness;
     }
 }

@@ -81,11 +81,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolB),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             0, // minLiquidityA
             0, // minLiquidityB
-            3600,
             OWNER
         );
     }
@@ -167,11 +167,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolB),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             1e10, // minLiquidityA = 1e10, pool has 0
             0,
-            3600,
             OWNER
         );
 
@@ -190,11 +190,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolB),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             0,
             1e10, // minLiquidityB = 1e10, pool has 0
-            3600,
             OWNER
         );
 
@@ -211,11 +211,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolBInv),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             0,
             0,
-            3600,
             OWNER
         );
         assertFalse(oracleInv.bridgeIsToken0InB());
@@ -253,11 +253,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolB),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             0,
             0,
-            3600,
             OWNER
         );
         assertFalse(oracleInv.tokenIsToken0InA());
@@ -308,10 +308,6 @@ contract CompositeTwapOracleTest is Test {
         vm.prank(OWNER);
         oracle.setMinLiquidityB(1000);
         assertEq(oracle.minLiquidityB(), 1000);
-
-        vm.prank(OWNER);
-        oracle.setMaxStaleness(7200);
-        assertEq(oracle.maxStaleness(), 7200);
     }
 
     function test_liquidityReportsWeakerLeg() public {
@@ -354,11 +350,11 @@ contract CompositeTwapOracleTest is Test {
             DREAMS_DECIMALS,
             address(poolB),
             WETH,
+            USDC,
             WETH_DECIMALS,
             TWAP_WINDOW,
             0,
             0,
-            3600,
             OWNER
         );
         assertFalse(oracleInverse.tokenIsToken0InA());

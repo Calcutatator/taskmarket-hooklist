@@ -10,10 +10,6 @@ import { IRewardVault } from "../interfaces/IRewardVault.sol";
 import { EpochBudget } from "./EpochBudget.sol";
 import { FullMath } from "../lib/FullMath.sol";
 
-interface ITaskMarketRegistry {
-    function getTask(bytes32 taskId) external view returns (ITMPCore.Task memory);
-}
-
 /// @title TaskTokenRewardHook
 /// @notice Hook that pays DREAMS tokens to workers on task completion.
 ///         Rewards are priced in USD (using the task's USDC reward value) and
@@ -65,10 +61,10 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     error RewardAlreadyPaid(bytes32 taskId);
     error RewardNotReserved(bytes32 taskId);
     error WorkerMismatch(bytes32 taskId, address expected, address got);
-    error ZeroReward();
     error NoWorkerFound(bytes32 taskId);
     error DriftBandBpsTooHigh();
     error CallerNotDiamond();
+    error OraclePriceTooLow();
 
     modifier onlyDiamond() {
         if (msg.sender != diamond) revert CallerNotDiamond();
@@ -85,6 +81,9 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         address _owner
     ) Ownable(_owner) {
         if (_driftBandBps >= 10000) revert DriftBandBpsTooHigh();
+        if (_oracle == address(0) || _vault == address(0) || _epochBudget == address(0) || _diamond == address(0)) {
+            revert OracleInvalid();
+        }
         oracle = ITokenUsdOracle(_oracle);
         vault = IRewardVault(_vault);
         epochBudget = EpochBudget(_epochBudget);
@@ -190,12 +189,11 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
     /// @notice Atomic token payout at task completion.
     ///         Path A (reserved): settle with clamped price, release unused reserve.
-    ///         Path B (Bounty): read worker from Diamond, pay at current TWAP directly.
-    function checkComplete(
-        bytes32 taskId,
-        ITMPCore.TaskContext calldata ctx,
-        ITMPCore.Verdict calldata /* verdict */
-    )
+    ///                            Falls back to startPrice if oracle is currently invalid.
+    ///         Path B (Bounty):   pay each winner proportionally using verdict.awards.
+    ///                            Skips token bonus gracefully if oracle is unavailable or
+    ///                            vault/budget is exhausted — USDC payout is never blocked.
+    function checkComplete(bytes32 taskId, ITMPCore.TaskContext calldata ctx, ITMPCore.Verdict calldata verdict)
         external
         override
         onlyDiamond
@@ -206,7 +204,6 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         if (state.paid) revert RewardAlreadyPaid(taskId);
 
         PriceData memory settlePrice = oracle.getPrice();
-        if (!settlePrice.valid) revert OracleInvalid();
 
         // Effects before interactions: mark paid up front so a token-transfer
         // callback cannot re-enter and double-pay.
@@ -217,11 +214,25 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
             // Budget was already consumed for state.reservedTokenAmount at lock time (_reserveForWorker).
             // Do NOT call checkAndConsume again; instead pay the actual (smaller) amount and
             // release the surplus back to the budget.
-            uint256 effectivePrice = _clamp(settlePrice.price, state.minSettlePrice, state.maxSettlePrice);
+            // Fall back to startPrice if oracle is currently invalid to avoid blocking settlement.
+            uint256 currentPrice = settlePrice.valid ? settlePrice.price : state.startPrice;
+            uint256 effectivePrice = _clamp(currentPrice, state.minSettlePrice, state.maxSettlePrice);
             uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, effectivePrice);
             uint256 tokenReward = rawReward < state.reservedTokenAmount ? rawReward : state.reservedTokenAmount;
 
-            vault.pay(taskId, state.worker, tokenReward);
+            // Wrap vault.pay: if the token transfer fails (e.g. token paused), release the
+            // reserve and let the USDC payout proceed rather than blocking settlement.
+            bool paid = false;
+            try vault.pay(taskId, state.worker, tokenReward) {
+                paid = true;
+            } catch { }
+
+            if (!paid) {
+                tokenReward = state.reservedTokenAmount;
+                try vault.release(taskId, tokenReward) { } catch { }
+                try epochBudget.release(state.requester, state.worker, tokenReward) { } catch { }
+                return true;
+            }
 
             uint256 unused = state.reservedTokenAmount - tokenReward;
             if (unused > 0) {
@@ -231,22 +242,27 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
             emit RewardPaid(taskId, state.worker, state.rewardUsd, settlePrice.price, effectivePrice, tokenReward);
         } else {
-            // Path B — Bounty (no pre-reservation)
-            address worker = ITaskMarketRegistry(diamond).getTask(taskId).worker;
-            if (worker == address(0)) revert NoWorkerFound(taskId);
+            // Path B — Bounty (no pre-reservation): pay each winner proportionally.
+            // If oracle is unavailable, skip the token bonus; USDC payout is not blocked.
+            if (!settlePrice.valid) return true;
+            if (verdict.awards.length == 0) revert NoWorkerFound(taskId);
 
-            uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, settlePrice.price);
-            uint256 budgetRemaining = epochBudget.remaining(ctx.requester, worker);
-            uint256 vaultAvail = vault.available();
-            uint256 taskCap = epochBudget.maxTokensPerTask();
+            for (uint256 i; i < verdict.awards.length; i++) {
+                address worker = verdict.awards[i].worker;
+                // Use per-winner pre-fee USDC amount as the USD basis for token reward.
+                uint256 workerUsd = verdict.awards[i].amount;
+                uint256 rawReward = FullMath.mulDiv(workerUsd, priceScaler, settlePrice.price);
+                uint256 budgetRemaining = epochBudget.remaining(ctx.requester, worker);
+                uint256 vaultAvail = vault.available();
+                uint256 taskCap = epochBudget.maxTokensPerTask();
 
-            uint256 tokenReward = _min4(rawReward, budgetRemaining, vaultAvail, taskCap);
-            if (tokenReward == 0) revert ZeroReward();
+                uint256 tokenReward = _min4(rawReward, budgetRemaining, vaultAvail, taskCap);
+                if (tokenReward == 0) continue; // vault empty or budget exhausted; skip for this worker
 
-            epochBudget.checkAndConsume(ctx.requester, worker, tokenReward);
-            vault.payDirect(worker, tokenReward);
-
-            emit RewardPaid(taskId, worker, state.rewardUsd, settlePrice.price, settlePrice.price, tokenReward);
+                epochBudget.checkAndConsume(ctx.requester, worker, tokenReward);
+                vault.payDirect(worker, tokenReward);
+                emit RewardPaid(taskId, worker, workerUsd, settlePrice.price, settlePrice.price, tokenReward);
+            }
         }
 
         return true;
@@ -356,6 +372,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
         uint256 startPrice = price.price;
         uint256 minSettle = (startPrice * (10000 - driftBandBps)) / 10000;
+        if (minSettle == 0) revert OraclePriceTooLow();
         uint256 maxSettle = (startPrice * (10000 + driftBandBps)) / 10000;
 
         // Worst case: price falls to minSettle — maximum token payout
@@ -378,9 +395,14 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     function _releaseReserve(bytes32 taskId) internal {
         RewardState storage state = rewardStates[taskId];
         if (!state.reserved || state.paid || state.reservedTokenAmount == 0) return;
-        try vault.release(taskId, state.reservedTokenAmount) { } catch { }
-        try epochBudget.release(state.requester, state.worker, state.reservedTokenAmount) { } catch { }
-        emit RewardReserveReleased(taskId, state.reservedTokenAmount);
+        uint256 amount = state.reservedTokenAmount;
+        // Clear state before external calls to prevent double-release on re-entry or
+        // a second terminal dispatch emitting a phantom RewardReserveReleased event.
+        state.reserved = false;
+        state.reservedTokenAmount = 0;
+        try vault.release(taskId, amount) { } catch { }
+        try epochBudget.release(state.requester, state.worker, amount) { } catch { }
+        emit RewardReserveReleased(taskId, amount);
     }
 
     function _clamp(uint256 value, uint256 lo, uint256 hi) internal pure returns (uint256) {
@@ -394,6 +416,8 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     }
 
     function _min4(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (uint256) {
-        return _min3(_min3(a, b, c), d, d);
+        uint256 ab = a < b ? a : b;
+        uint256 cd = c < d ? c : d;
+        return ab < cd ? ab : cd;
     }
 }

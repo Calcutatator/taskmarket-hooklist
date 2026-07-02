@@ -83,11 +83,11 @@ contract DeployRewardHook is Script {
             IERC20Metadata(protocolToken).decimals(),
             vm.envAddress("FORGE_WETH_USDC_POOL"),
             vm.envOr("FORGE_WETH_ADDRESS", BASE_WETH),
+            vm.envAddress("FORGE_USDC_ADDRESS"),
             WETH_DECIMALS,
             uint32(vm.envUint("FORGE_TWAP_WINDOW")),
             vm.envUint("FORGE_MIN_LIQUIDITY_A"),
             vm.envUint("FORGE_MIN_LIQUIDITY_B"),
-            vm.envUint("FORGE_MAX_STALENESS"),
             deployer
         );
         vault = new RewardVault(protocolToken, deployer);

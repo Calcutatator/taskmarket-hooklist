@@ -38,6 +38,7 @@ contract EpochBudget is Ownable {
 
     error OnlyHook();
     error EpochDurationZero();
+    error CapExceedsUint192();
     error GlobalCapExceeded(uint256 requested, uint256 remaining);
     error WorkerCapExceeded(address worker, uint256 requested, uint256 remaining);
     error RequesterCapExceeded(address requester, uint256 requested, uint256 remaining);
@@ -57,6 +58,9 @@ contract EpochBudget is Ownable {
         address _owner
     ) Ownable(_owner) {
         if (_epochDuration == 0) revert EpochDurationZero();
+        if (_globalCap > type(uint192).max) revert CapExceedsUint192();
+        if (_workerCap > type(uint192).max) revert CapExceedsUint192();
+        if (_requesterCap > type(uint192).max) revert CapExceedsUint192();
         epochDuration = _epochDuration;
         globalCap = _globalCap;
         workerCap = _workerCap;
@@ -166,14 +170,17 @@ contract EpochBudget is Ownable {
     // ─── Owner config ─────────────────────────────────────────────────────────
 
     function setGlobalCap(uint256 _globalCap) external onlyOwner {
+        if (_globalCap > type(uint192).max) revert CapExceedsUint192();
         globalCap = _globalCap;
     }
 
     function setWorkerCap(uint256 _workerCap) external onlyOwner {
+        if (_workerCap > type(uint192).max) revert CapExceedsUint192();
         workerCap = _workerCap;
     }
 
     function setRequesterCap(uint256 _requesterCap) external onlyOwner {
+        if (_requesterCap > type(uint192).max) revert CapExceedsUint192();
         requesterCap = _requesterCap;
     }
 

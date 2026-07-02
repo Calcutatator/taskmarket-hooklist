@@ -342,12 +342,13 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
     }
 
-    function test_oracleInvalid_blocksCheckComplete() public {
+    // Oracle invalid on a reserved (Claim) task: falls back to startPrice, settlement proceeds.
+    function test_oracleInvalid_claimTask_fallsBackToStartPrice() public {
         bytes32 taskId = _createClaimTask();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
         oracle.setValid(false);
-        vm.expectRevert();
+        // Should not revert — Path A falls back to startPrice so USDC payout proceeds.
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
     }
 
@@ -464,7 +465,8 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
     }
 
-    function test_vaultInsufficient_bounty_revertsAtComplete() public {
+    // Vault empty on Bounty task: token bonus is skipped but USDC payout proceeds.
+    function test_vaultInsufficient_bounty_skipsBonusNotUSDP() public {
         bytes32 taskId = _createBountyTask();
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
@@ -472,8 +474,11 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         vm.prank(owner);
         vault.withdraw(owner, avail);
 
-        vm.expectRevert();
+        uint256 workerUsdcBefore = usdc.balanceOf(worker);
+        // Should not revert — token bonus is silently skipped when vault is empty.
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+        // Worker still received USDC reward.
+        assertGt(usdc.balanceOf(worker), workerUsdcBefore);
     }
 
     // ─── Additional branch-coverage tests ────────────────────────────────────

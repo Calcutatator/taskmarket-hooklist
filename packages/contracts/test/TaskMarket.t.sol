@@ -2274,29 +2274,24 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(usdc.balanceOf(worker1) - w1Before, REWARD - fee);
     }
 
-    function test_AcceptSubmissions_AllowsDuplicateWorkers() public {
+    function test_AcceptSubmissions_RejectsDuplicateWorkers() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        // Submit work for each worker first (required by on-chain hash verification).
+        _submitWork(taskId, worker1, keccak256("A"));
+        _submitWork(taskId, worker1, keccak256("B"));
+        _submitWork(taskId, worker2, keccak256("C"));
+
         address[] memory workers = new address[](3);
         workers[0] = worker1;
-        workers[1] = worker1; // duplicate intentional
+        workers[1] = worker1; // duplicate — must be rejected
         workers[2] = worker2;
         uint16[] memory shares = new uint16[](3);
         shares[0] = 3000;
         shares[1] = 2000;
         shares[2] = 5000;
-        bytes32[] memory deliverables = new bytes32[](3);
-        deliverables[0] = keccak256("A");
-        deliverables[1] = keccak256("B");
-        deliverables[2] = keccak256("C");
 
-        uint256 w1Before = usdc.balanceOf(worker1);
-        _acceptSubmissions(taskId, requester, workers, shares, deliverables);
-
-        uint256 pay1 = (REWARD * 3000) / 10000;
-        uint256 pay2 = (REWARD * 2000) / 10000;
-        uint256 fee1 = (pay1 * defaultFeeBps) / 10000;
-        uint256 fee2 = (pay2 * defaultFeeBps) / 10000;
-        assertEq(usdc.balanceOf(worker1) - w1Before, (pay1 - fee1) + (pay2 - fee2), "duplicate worker accumulates");
+        vm.expectRevert(abi.encodeWithSelector(ITMPCore.DuplicateAwardWorker.selector));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, 0)));
     }
 
     function test_AcceptSubmissions_RevertsOnZeroPayoutPerPair() public {

@@ -341,6 +341,9 @@ contract AcceptanceFacet {
         uint256 sumShares = 0;
         for (uint256 i; i < n; ++i) {
             if (workers[i] == address(0)) revert ITMPCore.WorkerRequired();
+            for (uint256 j; j < i; ++j) {
+                if (workers[j] == workers[i]) revert ITMPCore.DuplicateAwardWorker();
+            }
             bytes32 pinned = (pinnedDeliverables.length > 0) ? pinnedDeliverables[i] : bytes32(0);
             if (pinned != bytes32(0)) {
                 if (!s.taskSubmissionHashExists[taskId][workers[i]][pinned]) revert ITMPCore.SubmissionNotFound();
