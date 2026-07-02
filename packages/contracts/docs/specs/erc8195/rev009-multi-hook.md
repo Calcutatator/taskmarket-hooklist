@@ -1,4 +1,4 @@
-# ERC-8195 Revision 008 — Multi-Hook and Protocol Default Hooks
+# ERC-8195 Revision 009 — Multi-Hook and Protocol Default Hooks
 
 ## Motivation
 
@@ -14,7 +14,7 @@ triggers the token reward system.
 This revision replaces the single `hookContract` field with an ordered hook list per task and adds
 a protocol-level `defaultHooks` array that is prepended to every new task's hook list at creation
 time. Requesters may append additional hooks; they may not remove default hooks. The existing
-single-hook fallback path is preserved for pre-Rev008 tasks so no migration is required.
+single-hook fallback path is preserved for pre-Rev009 tasks so no migration is required.
 
 ---
 
@@ -61,7 +61,7 @@ silently opting out of all protocol-level hook behavior.
 ### 1. `LibAppStorage.AppStorage` — two new fields (append-only)
 
 ```solidity
-// After: appended at end of AppStorage struct (after Rev007 submission-integrity fields)
+// After: appended at end of AppStorage struct (after Rev008 submission-integrity fields)
 address[] defaultHooks;
 mapping(bytes32 => address[]) taskHooks;
 ```
@@ -71,7 +71,7 @@ stores the per-task snapshot written once at `createTask` and never modified the
 
 The existing `Task.hookContract` field is deprecated but not removed. The dispatch path checks
 `taskHooks[taskId].length > 0` first; if empty and `task.hookContract != address(0)` it falls
-back to the legacy single-hook path. This ensures all pre-Rev008 tasks continue to work without
+back to the legacy single-hook path. This ensures all pre-Rev009 tasks continue to work without
 migration.
 
 ### 2. `CoreFacet.createTask` — `HookConfig` struct replaces `address hookContract`
@@ -90,7 +90,7 @@ function createTask(
     bytes calldata hookData
 ) external returns (bytes32 taskId);
 
-// After (Rev008): packed struct to reduce calldata slot pressure
+// After (Rev009): packed struct to reduce calldata slot pressure
 struct HookConfig {
     address[] contracts;
     bytes data;
@@ -140,7 +140,7 @@ and workers from post-funding hook changes.
 function _afterHook(address hook, bytes memory data) internal { ... }
 function _checkHook(address hook, bytes memory data) internal { ... }
 
-// After (Rev008): dispatch to ordered list
+// After (Rev009): dispatch to ordered list
 function _resolveHooks(bytes32 taskId, AppStorage storage s)
     internal view returns (address[] memory);
 function _dispatchAfterHooks(address[] memory hooks, bytes memory data) internal;
@@ -152,7 +152,7 @@ function _dispatchCheckHooks(
 ```
 
 `_resolveHooks` returns `taskHooks[taskId]` when populated, falling back to a single-element
-array wrapping `task.hookContract` for pre-Rev008 tasks. `_dispatchAfterHooks` wraps each call
+array wrapping `task.hookContract` for pre-Rev009 tasks. `_dispatchAfterHooks` wraps each call
 in try-catch so a failing `on*` hook cannot block state transitions. `_dispatchCheckHooks`
 propagates reverts from `check*` hooks — a check failure reverts the entire transition.
 
