@@ -169,4 +169,24 @@ contract EpochBudgetTest is Test {
         vm.expectRevert();
         budget.setGlobalCap(1);
     }
+
+    function test_constructor_zeroDuration_reverts() public {
+        vm.expectRevert(EpochBudget.EpochDurationZero.selector);
+        new EpochBudget(0, GLOBAL_CAP, WORKER_CAP, REQUESTER_CAP, MAX_PER_TASK, OWNER);
+    }
+
+    function test_constructor_globalCapOverflow_reverts() public {
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        new EpochBudget(EPOCH, uint256(type(uint192).max) + 1, WORKER_CAP, REQUESTER_CAP, MAX_PER_TASK, OWNER);
+    }
+
+    function test_constructor_workerCapOverflow_reverts() public {
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        new EpochBudget(EPOCH, GLOBAL_CAP, uint256(type(uint192).max) + 1, REQUESTER_CAP, MAX_PER_TASK, OWNER);
+    }
+
+    function test_constructor_requesterCapOverflow_reverts() public {
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        new EpochBudget(EPOCH, GLOBAL_CAP, WORKER_CAP, uint256(type(uint192).max) + 1, MAX_PER_TASK, OWNER);
+    }
 }

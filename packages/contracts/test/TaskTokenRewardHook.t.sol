@@ -481,6 +481,93 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertGt(usdc.balanceOf(worker), workerUsdcBefore);
     }
 
+    // ─── EpochBudget branch coverage ─────────────────────────────────────────
+
+    // _reserveForWorker clips amount to remaining() before calling checkAndConsume, so
+    // the cap-exceeded errors are only reachable by calling checkAndConsume directly.
+    function test_epochBudget_taskCapExceeded_direct() public {
+        vm.prank(address(hook));
+        vm.expectRevert(abi.encodeWithSelector(EpochBudget.TaskCapExceeded.selector, MAX_PER_TASK + 1, MAX_PER_TASK));
+        budget.checkAndConsume(requester, worker, MAX_PER_TASK + 1);
+    }
+
+    function test_epochBudget_workerCapExceeded_direct() public {
+        vm.prank(owner);
+        budget.setWorkerCap(100 * 1e18);
+        // 200e18 > workerRem(100e18), below global/task caps → WorkerCapExceeded
+        vm.prank(address(hook));
+        vm.expectRevert(abi.encodeWithSelector(EpochBudget.WorkerCapExceeded.selector, worker, 200 * 1e18, 100 * 1e18));
+        budget.checkAndConsume(requester, worker, 200 * 1e18);
+    }
+
+    function test_epochBudget_requesterCapExceeded_direct() public {
+        vm.prank(owner);
+        budget.setRequesterCap(100 * 1e18);
+        // 200e18 > reqRem(100e18), below global/worker caps → RequesterCapExceeded
+        vm.prank(address(hook));
+        vm.expectRevert(
+            abi.encodeWithSelector(EpochBudget.RequesterCapExceeded.selector, requester, 200 * 1e18, 100 * 1e18)
+        );
+        budget.checkAndConsume(requester, worker, 200 * 1e18);
+    }
+
+    function test_epochBudget_release_noOp_whenAmountExceedsUsed() public {
+        // release when usage is 0 — all three if-branches take the false path (no-op)
+        vm.prank(address(hook));
+        budget.release(requester, worker, 999 * 1e18);
+        assertEq(budget.workerUsed(worker), 0);
+    }
+
+    function test_epochBudget_setEpochDuration_zeroReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(EpochBudget.EpochDurationZero.selector);
+        budget.setEpochDuration(0);
+    }
+
+    function test_epochBudget_setGlobalCap_overflowReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        budget.setGlobalCap(uint256(type(uint192).max) + 1);
+    }
+
+    function test_epochBudget_setWorkerCap_overflowReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        budget.setWorkerCap(uint256(type(uint192).max) + 1);
+    }
+
+    function test_epochBudget_setRequesterCap_overflowReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        budget.setRequesterCap(uint256(type(uint192).max) + 1);
+    }
+
+    // onComplete false branch: state.reserved=false, nothing to release, no-op.
+    function test_onComplete_noOp_whenNotReserved() public {
+        bytes32 taskId = _createBountyTask();
+        vm.prank(address(market));
+        ITMPCore.TaskContext memory ctx;
+        ITMPCore.Verdict memory verdict;
+        hook.onComplete(taskId, ctx, verdict); // reserved=false → condition false, no-op
+        assertEq(vault.taskReserve(taskId), 0);
+    }
+
+    // ─── TaskTokenRewardHook Path B oracle-invalid branch ─────────────────────
+
+    // Oracle invalid at bounty complete: token bonus is skipped, USDC still paid.
+    function test_bountyTask_oracleInvalid_atComplete_skipsToken() public {
+        bytes32 taskId = _createBountyTask();
+        _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+        oracle.setValid(false);
+
+        uint256 workerUsdcBefore = usdc.balanceOf(worker);
+        uint256 workerDreamsBefore = dreamsToken.balanceOf(worker);
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+
+        assertGt(usdc.balanceOf(worker), workerUsdcBefore);
+        assertEq(dreamsToken.balanceOf(worker), workerDreamsBefore);
+    }
+
     // ─── Additional branch-coverage tests ────────────────────────────────────
 
     function test_setDriftBandBps_tooHigh_reverts() public {

@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook deploy-reward-hook-testnet release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -35,6 +35,7 @@ help:
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
 	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook system"
+	@echo "  make deploy-reward-hook-testnet - Deploy token reward hook with mock oracle/token for smoke testing"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
@@ -128,6 +129,13 @@ deploy-reward-hook:
 		echo "Usage: make deploy-reward-hook <testnet|mainnet>"; \
 		exit 1; \
 	fi
+
+deploy-reward-hook-testnet:
+	@$(ENV_LOADER) && \
+	cd packages/contracts && forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
+		--rpc-url base_sepolia \
+		--broadcast \
+		--verify
 
 release:
 	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
@@ -400,11 +408,11 @@ contract:
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
 		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
@@ -547,8 +555,10 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:refund-expired; \
 	elif [ "$(word 1,$(ARGS))" = "submission-integrity" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-integrity; \
+	elif [ "$(word 1,$(ARGS))" = "token-reward-hook" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:token-reward-hook; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook>"; \
 		exit 1; \
 	fi
 
