@@ -183,7 +183,8 @@ contract RegistryFacet {
     // Hook views
     // -------------------------------------------------------------------------
 
-    /// @notice Returns the effective hook list for a task (merged default + per-task).
+    /// @notice Returns the hook list stored for a task. Hooks are committed at creation
+    ///         time with protocol default hooks prepended before any requester-supplied hooks.
     function getTaskHooks(bytes32 taskId) external view returns (address[] memory) {
         return LibTaskMarket._resolveHooks(taskId, LibAppStorage.appStorage());
     }

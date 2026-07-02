@@ -260,8 +260,15 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 if (tokenReward == 0) continue; // vault empty or budget exhausted; skip for this worker
 
                 epochBudget.checkAndConsume(ctx.requester, worker, tokenReward);
-                vault.payDirect(worker, tokenReward);
-                emit RewardPaid(taskId, worker, workerUsd, settlePrice.price, settlePrice.price, tokenReward);
+                bool tokenPaid = false;
+                try vault.payDirect(worker, tokenReward) {
+                    tokenPaid = true;
+                } catch { }
+                if (tokenPaid) {
+                    emit RewardPaid(taskId, worker, workerUsd, settlePrice.price, settlePrice.price, tokenReward);
+                } else {
+                    try epochBudget.release(ctx.requester, worker, tokenReward) { } catch { }
+                }
             }
         }
 
