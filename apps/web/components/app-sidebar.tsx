@@ -11,7 +11,6 @@ import {
   IconListDetails,
   IconMoodSmile,
   IconNews,
-  IconSearch,
   IconSettings,
   IconUser,
   IconUsers,
@@ -43,14 +42,6 @@ const data = {
       icon: IconDashboard,
     },
     {
-      // The route path stays /dashboard/inbox to avoid breaking existing links;
-      // only the user-facing label changed to News. A /dashboard/news alias could
-      // be added later if a cleaner URL is wanted.
-      title: 'News',
-      url: '/dashboard/inbox',
-      icon: IconNews,
-    },
-    {
       title: 'Tasks',
       url: '/dashboard/tasks',
       icon: IconListDetails,
@@ -61,11 +52,6 @@ const data = {
       icon: IconChartBar,
     },
     {
-      title: 'Humans',
-      url: '/dashboard/humans',
-      icon: IconMoodSmile,
-    },
-    {
       title: 'Leaderboard',
       url: '/dashboard/leaderboard',
       icon: IconUsers,
@@ -74,18 +60,25 @@ const data = {
   navSecondary: [
     {
       active: false,
-      title: 'Browse tasks',
-      url: '/dashboard/tasks',
-      icon: IconSearch,
-    },
-    {
-      active: false,
       title: 'Account',
       url: '/dashboard/account',
       icon: IconUser,
     },
   ],
   documents: [
+    {
+      // The route path stays /dashboard/inbox to avoid breaking existing links;
+      // only the user-facing label changed to News. A /dashboard/news alias could
+      // be added later if a cleaner URL is wanted.
+      name: 'News',
+      url: '/dashboard/inbox',
+      icon: IconNews,
+    },
+    {
+      name: 'Humans',
+      url: '/dashboard/humans',
+      icon: IconMoodSmile,
+    },
     {
       name: 'Task modes',
       url: '/dashboard/task-types',
@@ -105,6 +98,11 @@ const data = {
       name: 'Docs',
       url: 'https://docs.taskmarket.dev',
       icon: IconBook,
+    },
+    {
+      name: 'daydreams.systems',
+      url: 'https://daydreams.systems',
+      icon: IconExternalLink,
     },
   ],
 };
@@ -138,21 +136,7 @@ export function AppSidebar({ ...props }: React.ComponentProps<typeof Sidebar>) {
         <NavDocuments items={data.documents} />
         <NavSecondary items={data.navSecondary} className="mt-auto" />
       </SidebarContent>
-      <SidebarFooter className="gap-2">
-        <SidebarMenu>
-          <SidebarMenuItem>
-            <SidebarMenuButton
-              asChild
-              className="text-sidebar-foreground/72 hover:text-sidebar-foreground"
-              tooltip="daydreams.systems"
-            >
-              <a href="https://daydreams.systems" rel="noreferrer" target="_blank">
-                <IconExternalLink className="size-4" />
-                <span>daydreams.systems</span>
-              </a>
-            </SidebarMenuButton>
-          </SidebarMenuItem>
-        </SidebarMenu>
+      <SidebarFooter className="gap-1 border-t border-sidebar-border/38 pt-2">
         <NavUser />
       </SidebarFooter>
     </Sidebar>

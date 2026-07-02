@@ -36,6 +36,7 @@ export function NavSecondary({
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton
                 asChild
+                className="h-8 text-sidebar-foreground/68 data-[active=true]:bg-sidebar-accent/54 data-[active=true]:text-sidebar-accent-foreground hover:bg-sidebar-accent/44 hover:text-sidebar-accent-foreground"
                 isActive={item.active === false ? false : isActivePath(pathname, item.url)}
                 tooltip={item.title}
               >

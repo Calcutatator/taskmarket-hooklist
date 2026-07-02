@@ -375,6 +375,68 @@ body {
   );
 }
 
+.task-market-dashboard-shell {
+  isolation: isolate;
+  background:
+    radial-gradient(
+      ellipse at 82% 0%,
+      color-mix(in oklab, var(--primary) 7%, transparent) 0%,
+      transparent 34%
+    ),
+    radial-gradient(
+      ellipse at 0% 18%,
+      color-mix(in oklab, var(--accent) 5%, transparent) 0%,
+      transparent 32%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--surface) 84%, var(--background)) 0%,
+      var(--background) 36%,
+      var(--background) 100%
+    );
+}
+
+.task-market-dashboard-dither {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+  background-image:
+    radial-gradient(
+      circle at 1px 1px,
+      color-mix(in oklab, var(--foreground) 12%, transparent) 0.55px,
+      transparent 0.95px
+    ),
+    radial-gradient(
+      circle at 3px 3px,
+      color-mix(in oklab, var(--primary) 10%, transparent) 0.5px,
+      transparent 0.95px
+    ),
+    linear-gradient(
+      140deg,
+      transparent 0%,
+      color-mix(in oklab, var(--surface-2) 16%, transparent) 48%,
+      transparent 100%
+    );
+  background-position:
+    0 0,
+    0 0,
+    center;
+  background-size:
+    4px 4px,
+    8px 8px,
+    100% 100%;
+  opacity: 0.54;
+  mask-image:
+    linear-gradient(180deg, rgb(0 0 0 / 0.72) 0%, #000 24%, rgb(0 0 0 / 0.58) 100%),
+    radial-gradient(ellipse at 52% 18%, #000 0%, rgb(0 0 0 / 0.62) 44%, transparent 84%);
+  mask-composite: intersect;
+}
+
+.light .task-market-dashboard-dither {
+  opacity: 0.42;
+}
+
 .task-market-glass-navbar {
   overflow: hidden;
 }

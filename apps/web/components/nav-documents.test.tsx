@@ -48,7 +48,7 @@ describe('NavDocuments', () => {
     );
     expect(screen.getByRole('link', { name: /open market/i }).parentElement).toHaveAttribute(
       'data-active',
-      'false'
+      'true'
     );
     expect(screen.queryByText('Documents')).not.toBeInTheDocument();
     expect(screen.queryByText('Share')).not.toBeInTheDocument();

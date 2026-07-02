@@ -34,7 +34,12 @@ export default async function DashboardLayout({
         Skip to dashboard content
       </a>
       <AppSidebar variant="inset" />
-      <SidebarInset id="dashboard-content" tabIndex={-1}>
+      <SidebarInset
+        className="task-market-dashboard-shell overflow-hidden"
+        id="dashboard-content"
+        tabIndex={-1}
+      >
+        <div aria-hidden="true" className="task-market-dashboard-dither" />
         <SiteHeader />
         <div className="border-b border-border/58 px-4 py-3 lg:px-6">
           <DashboardBreadcrumb />

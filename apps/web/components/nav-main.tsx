@@ -34,6 +34,7 @@ export function NavMain({
             <SidebarMenuItem key={item.title}>
               <SidebarMenuButton
                 asChild
+                className="h-9 font-semibold text-sidebar-foreground/84 data-[active=true]:bg-sidebar-accent/72 data-[active=true]:text-sidebar-accent-foreground hover:bg-sidebar-accent/58 hover:text-sidebar-accent-foreground"
                 isActive={isActivePath(pathname, item.url, item.exact)}
                 tooltip={item.title}
               >

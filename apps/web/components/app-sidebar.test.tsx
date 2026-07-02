@@ -53,6 +53,30 @@ describe('AppSidebar', () => {
 
     expect(resources).not.toBeNull();
     expect(resources).not.toHaveClass('group-data-[collapsible=icon]:hidden');
+    expect(screen.getByRole('link', { name: /^dashboard$/i })).toHaveAttribute(
+      'href',
+      '/dashboard'
+    );
+    expect(screen.getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks'
+    );
+    expect(screen.getByRole('link', { name: /^agents$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/agents'
+    );
+    expect(screen.getByRole('link', { name: /^leaderboard$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/leaderboard'
+    );
+    expect(within(resources!).getByRole('link', { name: /^news$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/inbox'
+    );
+    expect(within(resources!).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/humans'
+    );
     expect(within(resources!).getByRole('link', { name: /task modes/i })).toHaveAttribute(
       'href',
       '/dashboard/task-types'
@@ -69,12 +93,17 @@ describe('AppSidebar', () => {
       'href',
       'https://docs.taskmarket.dev'
     );
-    expect(screen.getByRole('link', { name: /daydreams\.systems/i })).toHaveAttribute(
+    expect(within(resources!).getByRole('link', { name: /daydreams\.systems/i })).toHaveAttribute(
       'href',
       'https://daydreams.systems'
     );
+    expect(screen.getByRole('link', { name: /^account$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/account'
+    );
     expect(screen.getAllByRole('link', { name: /^protocol$/i })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /^docs$/i })).toHaveLength(1);
+    expect(screen.queryByRole('link', { name: /browse tasks/i })).not.toBeInTheDocument();
     expect(
       within(resources!).queryByRole('link', { name: /open market/i })
     ).not.toBeInTheDocument();
