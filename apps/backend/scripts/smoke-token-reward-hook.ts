@@ -6,7 +6,7 @@
  *
  * Scenarios:
  *   A. Bounty task — create → two workers submit → accept winner →
- *      poll until completed �� verify RewardPaid event indexed and token
+ *      poll until completed -- verify RewardPaid event indexed and token
  *      balance of winner increased.
  *
  *   B. Claim task — create → worker claims → submit → accept →
