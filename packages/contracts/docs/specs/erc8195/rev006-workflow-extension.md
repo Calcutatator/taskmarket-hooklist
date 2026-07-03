@@ -192,7 +192,12 @@ Selectors added:
   settled.
 - Topological ordering of `workers`/`amounts`/`deliverables` is the caller's responsibility;
   the contract does not sort. Out-of-order arrays that cause an `acceptSubmission` revert
-  roll back the entire settlement.
+  roll back the entire settlement. When multiple valid topological sorts exist (i.e. sibling
+  tasks with no ordering constraint between them), the canonical tie-breaking rule is
+  ascending `taskId` — sort siblings lexicographically by their `bytes32` task ID. This
+  rule must be applied consistently when producing the signed manifest, because the EIP-712
+  `WorkflowSettlement` type hash commits to the exact array contents: a manifest signed with
+  one ordering is not valid for any other ordering of the same tasks.
 
 ## Capital Exposure
 
@@ -224,8 +229,12 @@ make upgrade mainnet
 
 `DiamondUpgrade.s.sol` is extended to deploy `WorkflowFacet` and a new `DiamondLoupeFacet`.
 The `diamondCut` issues two operations: an `Add` for all six `WorkflowFacet` selectors and a
-`Replace` for `DiamondLoupeFacet.supportsInterface` so it advertises
-`type(ITMPWorkflow).interfaceId`. The upgrade is therefore not add-only: one existing facet
+`Replace` for `DiamondLoupeFacet.supportsInterface`. The replacement implementation MUST
+preserve every interface ID already advertised by the prior `DiamondLoupeFacet` (e.g.
+`IERC165`, `IDiamondCut`, `IDiamondLoupe`, `ITMPCore`, and any other extensions registered
+before Rev006) and additionally return `true` for `type(ITMPWorkflow).interfaceId`. A
+`Replace` that only checks for `ITMPWorkflow` would silently break callers that probe for
+previously supported interfaces. The upgrade is therefore not add-only: one existing facet
 function is replaced. No initializer is required — all new AppStorage fields zero-initialise by
 default.
 

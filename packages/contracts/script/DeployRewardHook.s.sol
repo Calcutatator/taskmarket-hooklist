@@ -4,6 +4,7 @@ pragma solidity ^0.8.24;
 import { Script, console } from "forge-std/Script.sol";
 import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { CompositeTwapOracle } from "../src/oracle/CompositeTwapOracle.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
@@ -19,11 +20,11 @@ interface IDiamondAdmin {
 ///   FORGE_PROTOCOL_TOKEN             — DREAMS token address
 ///   FORGE_AERODROME_POOL             — TOKEN/WETH Aerodrome CL pool (leg A)
 ///   FORGE_WETH_USDC_POOL             — WETH/USDC Aerodrome CL pool (leg B)
+///   FORGE_USDC_ADDRESS               — USDC token address
 ///   FORGE_DIAMOND_ADDRESS            — TaskMarket Diamond proxy
 ///   FORGE_TWAP_WINDOW                — TWAP window in seconds (e.g. 3600)
 ///   FORGE_MIN_LIQUIDITY_A            — min in-range liquidity for poolA
 ///   FORGE_MIN_LIQUIDITY_B            — min in-range liquidity for poolB
-///   FORGE_MAX_STALENESS              — max seconds since last observation (e.g. 3600)
 ///   FORGE_EPOCH_DURATION             — epoch length in seconds (e.g. 604800 = 7 days)
 ///   FORGE_GLOBAL_EPOCH_CAP           — max tokens emitted per epoch (wei)
 ///   FORGE_WORKER_CAP                 — per-worker per-epoch cap (wei)
@@ -35,6 +36,7 @@ interface IDiamondAdmin {
 ///     FORGE_WETH_ADDRESS             — defaults to Base canonical WETH
 ///     FORGE_INITIAL_VAULT_BALANCE    — tokens to seed vault with (wei)
 contract DeployRewardHook is Script {
+    using SafeERC20 for IERC20;
     address constant BASE_WETH = 0x4200000000000000000000000000000000000006;
     uint8 constant WETH_DECIMALS = 18;
 
@@ -58,7 +60,7 @@ contract DeployRewardHook is Script {
 
         uint256 initialVaultBalance = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(0));
         if (initialVaultBalance > 0) {
-            IERC20(vm.envAddress("FORGE_PROTOCOL_TOKEN")).transfer(address(vault), initialVaultBalance);
+            IERC20(vm.envAddress("FORGE_PROTOCOL_TOKEN")).safeTransfer(address(vault), initialVaultBalance);
         }
 
         vm.stopBroadcast();

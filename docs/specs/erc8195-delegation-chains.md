@@ -120,6 +120,15 @@ A `TaskScheduler` facet monitors dependency state. When all dependencies for a b
 resolve, the scheduler calls `_unblock(taskId)` internally, transitioning it from `Blocked`
 to `Open` without requiring an external transaction.
 
+The contract MUST reject invalid `dependencyTaskIds` at task creation time:
+
+- **Self-links**: if `dependencyTaskIds` contains `taskId` itself, revert. A task cannot
+  depend on itself.
+- **Cycles**: before accepting the new task, the scheduler performs a depth-first reachability
+  check from each dependency back through its own dependencies. If any path reaches `taskId`,
+  revert with `DependencyCycle`. The depth bound (recommended: 8) caps the worst-case cost
+  of this check to a constant number of storage reads.
+
 Additional task workflow states:
 
 ```
@@ -262,7 +271,8 @@ CREATE TABLE workflow_tasks (
     depth           int NOT NULL DEFAULT 0,
     status          text NOT NULL DEFAULT 'blocked',  -- blocked | open | in_progress | completed | failed
     created_at      timestamptz NOT NULL DEFAULT now(),
-    PRIMARY KEY (workflow_id, task_id)
+    PRIMARY KEY (workflow_id, task_id),
+    FOREIGN KEY (workflow_id, parent_task_id) REFERENCES workflow_tasks (workflow_id, task_id)
 );
 ```
 
