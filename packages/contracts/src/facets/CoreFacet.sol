@@ -5,7 +5,6 @@ import { LibAppStorage, AppStorage } from "../libraries/LibAppStorage.sol";
 import { LibTaskMarket } from "../libraries/LibTaskMarket.sol";
 import { ITMPCore } from "../interfaces/ITMPCore.sol";
 import { ITMPEvaluator } from "../interfaces/ITMPEvaluator.sol";
-import { ITMPHook } from "../interfaces/ITMPHook.sol";
 import { IReputationRegistry } from "../interfaces/IReputationRegistry.sol";
 import {
     TMP_BOUNTY,
@@ -531,23 +530,18 @@ contract CoreFacet {
             if (!s.usdcToken.transfer(task.requester, refund)) revert ITMPCore.RequesterRefundFailed();
         }
         emit ITMPCore.TaskCompleted(taskId, task.requester, task.worker, workerPayment, fee);
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        if (hooks.length > 0) {
-            ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
-            awards[0] = ITMPCore.Award({ worker: task.worker, amount: task.stakeAmount, rank: 1 });
-            ITMPCore.Verdict memory verdict = ITMPCore.Verdict({
-                issued: true,
-                verdictType: ITMPCore.VerdictType.APPROVE,
-                score: 1000,
-                confidence: 1000,
-                criteriaFlags: new bytes32[](0),
-                evidenceHash: bytes32(0),
-                awards: awards
-            });
-            LibTaskMarket._dispatchAfterHooks(
-                hooks, abi.encodeCall(ITMPHook.onComplete, (taskId, LibTaskMarket._buildContext(taskId, s), verdict))
-            );
-        }
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: task.worker, amount: task.stakeAmount, rank: 1 });
+        ITMPCore.Verdict memory verdict = ITMPCore.Verdict({
+            issued: true,
+            verdictType: ITMPCore.VerdictType.APPROVE,
+            score: 1000,
+            confidence: 1000,
+            criteriaFlags: new bytes32[](0),
+            evidenceHash: bytes32(0),
+            awards: awards
+        });
+        LibTaskMarket._onCompleteHooks(taskId, s, verdict);
     }
 
     function _refundExpiredNormal(
@@ -597,10 +591,7 @@ contract CoreFacet {
         }
 
         // NORMATIVE: onExpire MUST NOT block fund recovery. Always try-catch (dispatchAfterHooks).
-        address[] memory hooks = LibTaskMarket._resolveHooks(taskId, s);
-        LibTaskMarket._dispatchAfterHooks(
-            hooks, abi.encodeCall(ITMPHook.onExpire, (taskId, LibTaskMarket._buildContext(taskId, s)))
-        );
+        LibTaskMarket._onExpireHooks(taskId, s);
     }
 
     function _modeName(bytes4 mode) private pure returns (string memory) {

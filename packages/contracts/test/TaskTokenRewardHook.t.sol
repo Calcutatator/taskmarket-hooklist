@@ -4,94 +4,15 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import { ITMPCore } from "../src/interfaces/ITMPCore.sol";
 import { ITMPHook } from "../src/interfaces/ITMPHook.sol";
-import { IPGTRForwarder } from "../src/interfaces/IPGTRForwarder.sol";
-import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
-import { ITokenUsdOracle, PriceData } from "../src/interfaces/ITokenUsdOracle.sol";
+import { PriceData } from "../src/interfaces/ITokenUsdOracle.sol";
+import "./mocks/MockOracle.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { DiamondTestHelper } from "./helpers/DiamondTestHelper.sol";
 import { ITMPDiamond } from "../src/interfaces/ITMPDiamond.sol";
+import "./mocks/MockPGTRForwarder.sol";
 import "./mocks/MockUSDC.sol";
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock oracle
-// ─────────────────────────────────────────────────────────────────────────────
-
-contract MockOracle is ITokenUsdOracle {
-    PriceData public mockPrice;
-
-    constructor(uint256 price) {
-        mockPrice =
-            PriceData({ price: price, twapWindow: 3600, liquidity: 1e18, updatedAt: block.timestamp, valid: true });
-    }
-
-    function getPrice() external view returns (PriceData memory) {
-        return mockPrice;
-    }
-
-    function getTwapWindow() external pure returns (uint32) {
-        return 3600;
-    }
-
-    function setPrice(uint256 price) external {
-        mockPrice.price = price;
-        mockPrice.updatedAt = block.timestamp;
-    }
-
-    function setValid(bool valid) external {
-        mockPrice.valid = valid;
-    }
-}
-
-// ─────────────────────────────────────────────────────────────────────────────
-// Mock relay forwarder matching the real IPGTRForwarder interface
-// ─────────────────────────────────────────────────────────────────────────────
-
-contract MockPGTRForwarder is IPGTRForwarder {
-    IERC20 public usdc;
-    address private _pgtrSenderValue;
-
-    constructor(address _usdc) {
-        usdc = IERC20(_usdc);
-    }
-
-    function isPGTRForwarder() external pure override returns (bool) {
-        return true;
-    }
-
-    function pgtrSender() external view override returns (address) {
-        return _pgtrSenderValue;
-    }
-
-    function isTrustedForwarder(address addr) external view override returns (bool) {
-        return addr == address(this);
-    }
-
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPGTRForwarder).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
-    function relay(address target, address pgtrSenderAddr, uint256 paymentAmount, bytes calldata data)
-        external
-        returns (bytes memory)
-    {
-        if (paymentAmount > 0) {
-            require(usdc.transfer(target, paymentAmount), "USDC transfer failed");
-        }
-        _pgtrSenderValue = pgtrSenderAddr;
-        (bool success, bytes memory result) = target.call(data);
-        _pgtrSenderValue = address(0);
-        if (!success) {
-            if (result.length > 0) {
-                assembly { revert(add(result, 32), mload(result)) }
-            }
-            revert("relay failed");
-        }
-        return result;
-    }
-}
-
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -421,14 +342,16 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
     // ─── Epoch budget exceeded ────────────────────────────────────────────────
 
-    function test_epochBudget_globalCapExceeded_revertsAtClaim() public {
-        // Set tiny global cap
+    function test_epochBudget_globalCapExceeded_claimSucceedsNoReservation() public {
+        // Budget exhaustion is best-effort: claim succeeds but with zero token reservation.
         vm.prank(owner);
-        budget.setGlobalCap(1); // 1 wei
+        budget.setGlobalCap(1); // 1 wei — too small for any reward
 
         bytes32 taskId = _createClaimTask();
-        vm.expectRevert();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+
+        // Task claimed successfully; token reserve is zero because checkAndConsume silently failed.
+        assertEq(vault.taskReserve(taskId), 0);
     }
 
     // ─── Epoch rollover resets per-account usage ──────────────────────────────

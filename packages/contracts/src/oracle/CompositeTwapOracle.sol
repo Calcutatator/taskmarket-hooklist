@@ -175,14 +175,14 @@ contract CompositeTwapOracle is ITokenUsdOracle, Ownable {
     {
         int56 delta = tickCumulatives[1] - tickCumulatives[0];
         int56 rawAvg = delta / int56(uint56(window));
-        // Guard against a misbehaving pool producing a tick outside the valid TickMath range.
-        // Return 0 (treated as valid=false by callers) rather than reverting inside getSqrtRatioAtTick.
-        if (rawAvg < -887272 || rawAvg > 887272) return 0;
         int24 avgTick = int24(rawAvg);
         // Round towards negative infinity
         if (delta < 0 && delta != int56(avgTick) * int56(uint56(window))) {
             avgTick--;
         }
+        // Guard after rounding — avgTick may have decremented one step below rawAvg.
+        // Return 0 (treated as valid=false by callers) rather than reverting inside getSqrtRatioAtTick.
+        if (avgTick < -887272 || avgTick > 887272) return 0;
 
         uint160 sqrtPriceX96 = TickMath.getSqrtRatioAtTick(avgTick);
         // Use the Uniswap OracleLibrary two-path approach to avoid uint256 overflow when

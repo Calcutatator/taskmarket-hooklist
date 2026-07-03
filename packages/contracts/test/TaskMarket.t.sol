@@ -9,8 +9,10 @@ import "../src/interfaces/ITMPHook.sol";
 import "../src/interfaces/IPGTRForwarder.sol";
 import "@openzeppelin/contracts/token/ERC20/ERC20.sol";
 import "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import "./mocks/MockPGTRForwarder.sol";
 import "./mocks/MockTaskHook.sol";
 import "./mocks/MockUSDC.sol";
+import "./mocks/MockReputationRegistry.sol";
 import "./helpers/DiamondTestHelper.sol";
 import "../src/interfaces/ITMPDiamond.sol";
 import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
@@ -29,75 +31,6 @@ contract MockERC20 is ERC20 {
 
     function decimals() public pure override returns (uint8) {
         return 6;
-    }
-}
-
-/// @dev Test double for a PGTR forwarder (ERC-8194).
-///      Holds USDC on behalf of payers and sets pgtrSender atomically
-///      during each relayed call to the destination contract.
-contract MockPGTRForwarder is IPGTRForwarder {
-    IERC20 public usdc;
-    address private _pgtrSenderValue;
-
-    constructor(address _usdc) {
-        usdc = IERC20(_usdc);
-    }
-
-    function isPGTRForwarder() external pure override returns (bool) {
-        return true;
-    }
-
-    function pgtrSender() external view override returns (address) {
-        return _pgtrSenderValue;
-    }
-
-    function isTrustedForwarder(address addr) external view override returns (bool) {
-        return addr == address(this);
-    }
-
-    function supportsInterface(bytes4 interfaceId) external pure override returns (bool) {
-        return interfaceId == type(IPGTRForwarder).interfaceId || interfaceId == type(IERC165).interfaceId;
-    }
-
-    /// @dev Transfer paymentAmount from this contract to target, then call
-    ///      target with pgtrSender set to pgtrSenderAddr for the duration.
-    ///      Reverts from the destination are propagated to the caller.
-    function relay(address target, address pgtrSenderAddr, uint256 paymentAmount, bytes calldata data)
-        external
-        returns (bytes memory)
-    {
-        if (paymentAmount > 0) {
-            require(usdc.transfer(target, paymentAmount), "USDC transfer failed");
-        }
-        _pgtrSenderValue = pgtrSenderAddr;
-        (bool success, bytes memory result) = target.call(data);
-        _pgtrSenderValue = address(0);
-        if (!success) {
-            if (result.length > 0) {
-                assembly { revert(add(result, 32), mload(result)) }
-            }
-            revert("relay failed");
-        }
-        return result;
-    }
-}
-
-contract MockReputationRegistry {
-    uint256 public calls;
-    string public lastTag2;
-
-    function giveFeedback(
-        uint256,
-        int128,
-        uint8,
-        string calldata,
-        string calldata tag2,
-        string calldata,
-        string calldata,
-        bytes32
-    ) external {
-        calls++;
-        lastTag2 = tag2;
     }
 }
 
@@ -2291,7 +2224,7 @@ contract TaskMarketTest is DiamondTestHelper {
         shares[2] = 5000;
 
         vm.expectRevert(abi.encodeWithSelector(ITMPCore.DuplicateAwardWorker.selector));
-        _relay(requester, 0, abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, 0)));
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, new bytes32[](0), 0)));
     }
 
     function test_AcceptSubmissions_RevertsOnZeroPayoutPerPair() public {

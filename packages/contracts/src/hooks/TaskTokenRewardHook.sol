@@ -240,7 +240,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 epochBudget.release(state.requester, state.worker, unused);
             }
 
-            emit RewardPaid(taskId, state.worker, state.rewardUsd, settlePrice.price, effectivePrice, tokenReward);
+            emit RewardPaid(taskId, state.worker, state.rewardUsd, currentPrice, effectivePrice, tokenReward);
         } else {
             // Path B — Bounty (no pre-reservation): pay each winner proportionally.
             // If oracle is unavailable, skip the token bonus; USDC payout is not blocked.
@@ -259,7 +259,17 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 uint256 tokenReward = _min4(rawReward, budgetRemaining, vaultAvail, taskCap);
                 if (tokenReward == 0) continue; // vault empty or budget exhausted; skip for this worker
 
-                epochBudget.checkAndConsume(ctx.requester, worker, tokenReward);
+                // TOCTOU guard: remaining() was read above but the budget may have been
+                // exhausted by a concurrent call before checkAndConsume runs. Wrap in
+                // try-catch so an unexpected revert silently skips the token reward
+                // instead of reverting checkComplete and blocking the USDC payout.
+                try epochBudget.checkAndConsume(ctx.requester, worker, tokenReward) {
+                // consume succeeded — vault payment follows below
+                }
+                catch {
+                    tokenReward = 0;
+                }
+                if (tokenReward == 0) continue;
                 bool tokenPaid = false;
                 try vault.payDirect(worker, tokenReward) {
                     tokenPaid = true;
@@ -388,12 +398,23 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         state.startPrice = startPrice;
         state.minSettlePrice = minSettle;
         state.maxSettlePrice = maxSettle;
-        state.reservedTokenAmount = maxTokenReward;
         state.worker = worker;
         state.reserved = true;
 
-        epochBudget.checkAndConsume(requester, worker, maxTokenReward);
-        vault.reserve(taskId, maxTokenReward);
+        // TOCTOU guard: clip to remaining() was done above, but the budget may be
+        // exhausted before checkAndConsume executes. Wrap in try-catch so a revert
+        // sets reserveAmt = 0 (no token reward) rather than blocking task progression.
+        uint256 reserveAmt = maxTokenReward;
+        try epochBudget.checkAndConsume(requester, worker, maxTokenReward) {
+        // consume succeeded — vault reservation follows below
+        }
+        catch {
+            reserveAmt = 0;
+        }
+        state.reservedTokenAmount = reserveAmt;
+        if (reserveAmt > 0) {
+            vault.reserve(taskId, reserveAmt);
+        }
 
         emit RewardReserved(taskId, worker, startPrice, maxTokenReward);
         return true;
