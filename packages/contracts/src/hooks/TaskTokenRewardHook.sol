@@ -401,20 +401,14 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         state.worker = worker;
         state.reserved = true;
 
-        // TOCTOU guard: clip to remaining() was done above, but the budget may be
-        // exhausted before checkAndConsume executes. Wrap in try-catch so a revert
-        // sets reserveAmt = 0 (no token reward) rather than blocking task progression.
-        uint256 reserveAmt = maxTokenReward;
+        // TOCTOU guard: budget may be exhausted between remaining() and checkAndConsume.
+        // CEI: write state before external vault call; reservedTokenAmount stays 0 on failure
+        // so no token reward is owed without blocking USDC payout.
+        state.reservedTokenAmount = 0;
         try epochBudget.checkAndConsume(requester, worker, maxTokenReward) {
-        // consume succeeded — vault reservation follows below
-        }
-        catch {
-            reserveAmt = 0;
-        }
-        state.reservedTokenAmount = reserveAmt;
-        if (reserveAmt > 0) {
-            vault.reserve(taskId, reserveAmt);
-        }
+            state.reservedTokenAmount = maxTokenReward;
+            vault.reserve(taskId, maxTokenReward);
+        } catch { }
 
         emit RewardReserved(taskId, worker, startPrice, maxTokenReward);
         return true;
