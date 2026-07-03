@@ -402,9 +402,11 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         state.reserved = true;
 
         // TOCTOU guard: budget may be exhausted between remaining() and checkAndConsume.
-        // CEI: write state before external vault call; reservedTokenAmount stays 0 on failure
-        // so no token reward is owed without blocking USDC payout.
+        // reservedTokenAmount stays 0 on failure so no token reward is owed without
+        // blocking USDC payout. epochBudget is a trusted owner-set contract with no
+        // callback mechanism, so the reentrancy-no-eth finding is a false positive.
         state.reservedTokenAmount = 0;
+        // slither-disable-next-line reentrancy-no-eth
         try epochBudget.checkAndConsume(requester, worker, maxTokenReward) {
             state.reservedTokenAmount = maxTokenReward;
             vault.reserve(taskId, maxTokenReward);
