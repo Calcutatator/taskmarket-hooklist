@@ -491,6 +491,25 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertEq(dreamsToken.balanceOf(worker), workerDreamsBefore);
     }
 
+    // ─── Constructor validation ───────────────────────────────────────────────
+
+    function test_constructor_driftBandTooHigh_reverts() public {
+        vm.expectRevert(TaskTokenRewardHook.DriftBandBpsTooHigh.selector);
+        new TaskTokenRewardHook(address(oracle), address(vault), address(budget), address(market), 18, 10_000, owner);
+    }
+
+    function test_constructor_zeroOracle_reverts() public {
+        vm.expectRevert(TaskTokenRewardHook.OracleInvalid.selector);
+        new TaskTokenRewardHook(address(0), address(vault), address(budget), address(market), 18, DRIFT_BPS, owner);
+    }
+
+    function test_onlyDiamond_nonDiamondCaller_reverts() public {
+        ITMPCore.TaskContext memory ctx;
+        ITMPCore.Verdict memory verdict;
+        vm.expectRevert(TaskTokenRewardHook.CallerNotDiamond.selector);
+        hook.checkComplete(bytes32(0), ctx, verdict);
+    }
+
     // ─── Additional branch-coverage tests ────────────────────────────────────
 
     function test_setDriftBandBps_tooHigh_reverts() public {
