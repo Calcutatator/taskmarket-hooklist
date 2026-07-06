@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 1.2.3
+
+### Patch Changes
+
+- 3ced1e1: Fix --extend-expiry sending past timestamps to the contract; add 3-part winner spec for accept-submissions so requesters can pin a specific submission version by ID.
+
 ## 1.2.2
 
 ### Patch Changes
