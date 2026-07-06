@@ -3,22 +3,29 @@ import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
 
 /**
- * Parse a --winner spec of the form <address>:<share>
+ * Parse a --winner spec of the form <address>:<share> or <address>:<share>:<submissionId>
  *
- * Example:
- *   0xAbCd...beef:5000
+ * The optional submissionId pins a specific submission version by DB id.
+ * Without it the contract auto-resolves the worker's latest on-chain submission.
+ *
+ * Examples:
+ *   0xAlice:5000
+ *   0xAlice:5000:sub_abc123
  */
 type Winner = {
   worker: string;
   share: number;
+  submissionId?: string;
 };
 
 function parseWinner(spec: string): Winner {
   const parts = spec.split(':');
-  if (parts.length !== 2) {
-    throw new Error(`Invalid --winner value "${spec}". Expected <addr>:<share>`);
+  if (parts.length < 2 || parts.length > 3) {
+    throw new Error(
+      `Invalid --winner value "${spec}". Expected <addr>:<share> or <addr>:<share>:<submissionId>`
+    );
   }
-  const [worker, shareStr] = parts;
+  const [worker, shareStr, submissionIdStr] = parts;
   if (!/^0x[0-9a-fA-F]{40}$/.test(worker)) {
     throw new Error(`Invalid worker address in "${spec}"`);
   }
@@ -26,7 +33,8 @@ function parseWinner(spec: string): Winner {
   if (Number.isNaN(share) || share < 1 || share > 10000) {
     throw new Error(`Invalid share in "${spec}" — must be integer 1..10000 (basis points)`);
   }
-  return { worker, share };
+  const submissionId = submissionIdStr ? submissionIdStr : undefined;
+  return { worker, share, ...(submissionId !== undefined && { submissionId }) };
 }
 
 export const acceptSubmissionsCmd = new Command('accept-submissions')
@@ -34,29 +42,29 @@ export const acceptSubmissionsCmd = new Command('accept-submissions')
     'Accept N submissions for a Bounty/Benchmark task with explicit share basis points (costs 0.001 USDC).\n' +
       'Shares must sum to 10000. The contract resolves each deliverable from on-chain submission history.\n\n' +
       'For ranked payouts, pass winners in rank order — workers[0] is the primary winner.\n\n' +
-      'Example:\n' +
-      '  task accept-submissions 0x… --winner 0xAlice:5000 --winner 0xBob:3000 --winner 0xCarol:2000'
+      'To pin a specific submission version, append the submission ID as a third field.\n\n' +
+      'Examples:\n' +
+      '  task accept-submissions 0x… --winner 0xAlice:5000 --winner 0xBob:3000 --winner 0xCarol:2000\n' +
+      '  task accept-submissions 0x… --winner 0xAlice:5000:sub_abc123 --winner 0xBob:5000:sub_def456'
   )
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
-  .requiredOption('--winner <spec...>', 'Winner spec <addr>:<share>. Pass multiple times.')
+  .requiredOption(
+    '--winner <spec...>',
+    'Winner spec <addr>:<share> or <addr>:<share>:<submissionId>. Pass multiple times.'
+  )
   .action(async (taskId: string, opts: { winner: string[] }) => {
-    let winners: Winner[];
     try {
-      winners = opts.winner.map(parseWinner);
+      const winners = opts.winner.map(parseWinner);
+      const sum = winners.reduce((a, w) => a + w.share, 0);
+      if (sum !== 10000) {
+        throw new Error(`Winner shares must sum to 10000 basis points (got ${sum})`);
+      }
+      const result = (await x402Post(`/api/tasks/${taskId}/accept-submissions`, {
+        taskId,
+        winners,
+      })) as { success: boolean };
+      printResult({ accepted: result.success, winners: winners.length });
     } catch (err) {
       printError(err instanceof Error ? err.message : String(err));
-      return;
     }
-    const sum = winners.reduce((a, w) => a + w.share, 0);
-    if (sum !== 10000) {
-      printError(`Winner shares must sum to 10000 basis points (got ${sum})`);
-      return;
-    }
-
-    const result = (await x402Post(`/api/tasks/${taskId}/accept-submissions`, {
-      taskId,
-      winners,
-    })) as { success: boolean };
-
-    printResult({ accepted: result.success, winners: winners.length });
   });

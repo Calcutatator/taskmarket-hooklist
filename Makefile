@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release upgrade lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -91,6 +91,23 @@ upgrade:
 			--verify; \
 	else \
 		echo "Usage: make upgrade <testnet|mainnet>"; \
+		exit 1; \
+	fi
+
+upgrade-accept-pinning:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && forge script script/DiamondUpgradeAcceptPinning.s.sol:DiamondUpgradeAcceptPinning \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && forge script script/DiamondUpgradeAcceptPinning.s.sol:DiamondUpgradeAcceptPinning \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make upgrade-accept-pinning <testnet|mainnet>"; \
 		exit 1; \
 	fi
 

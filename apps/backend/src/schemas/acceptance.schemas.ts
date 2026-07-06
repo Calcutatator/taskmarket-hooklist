@@ -13,6 +13,7 @@ export const AcceptSubmissionsInputSchema = z
         z.object({
           worker: z.string(),
           share: z.number().int().min(1).max(10000),
+          submissionId: z.string().optional(),
         })
       )
       .min(1, 'At least one winner required'),

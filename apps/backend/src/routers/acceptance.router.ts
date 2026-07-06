@@ -2,7 +2,7 @@ import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { tasks, agents, feedbacks, submissions } from '../db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   contractAcceptSubmission,
   contractAcceptSubmissions,
@@ -185,6 +185,41 @@ export const acceptanceRouter = router({
       const workers: `0x${string}`[] = input.winners.map((w) => w.worker as `0x${string}`);
       const shares: number[] = input.winners.map((w) => w.share);
 
+      // Resolve per-winner deliverable hashes. When a submissionId is provided, look up the
+      // on-chain hash from the DB and pass it to the contract for pinning. When absent, pass
+      // bytes32(0) so the contract auto-resolves the worker's latest submission.
+      const ZERO_HASH = `0x${'00'.repeat(32)}` as `0x${string}`;
+      const deliverables: `0x${string}`[] = await Promise.all(
+        input.winners.map(async (w) => {
+          if (!w.submissionId) return ZERO_HASH;
+          const row = await ctx.db
+            .select({ deliverableHash: submissions.deliverableHash })
+            .from(submissions)
+            .where(
+              and(
+                eq(submissions.id, w.submissionId),
+                eq(submissions.taskId, input.taskId),
+                sql`lower(${submissions.workerAddress}) = lower(${w.worker})`,
+                isNull(submissions.rejectedAt)
+              )
+            )
+            .limit(1);
+          if (!row[0]) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Submission ${w.submissionId} not found for worker ${w.worker} on task ${input.taskId}`,
+            });
+          }
+          if (!row[0].deliverableHash) {
+            throw new TRPCError({
+              code: 'BAD_REQUEST',
+              message: `Submission ${w.submissionId} predates on-chain hash tracking and cannot be pinned`,
+            });
+          }
+          return row[0].deliverableHash as `0x${string}`;
+        })
+      );
+
       // Look up requester's ERC-8004 agentId for on-chain reputation tracking.
       const requesterAgentRow = await ctx.db
         .select({ agentId: agents.agentId })
@@ -200,6 +235,7 @@ export const acceptanceRouter = router({
         payer as `0x${string}`,
         workers,
         shares,
+        deliverables,
         requesterAgentId,
         task.contractAddress
       );

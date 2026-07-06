@@ -82,7 +82,7 @@ const MARKET_ABI = parseAbi([
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
-  'function acceptSubmissions(bytes32,address[],uint16[],uint256)',
+  'function acceptSubmissions(bytes32,address[],uint16[],bytes32[],uint256)',
   'function rateTask(bytes32,address,uint8,uint256,uint256,string,bytes32)',
   'function submitWork(bytes32,bytes32)',
   'function submitBid(bytes32,uint256)',
@@ -558,13 +558,14 @@ export async function contractAcceptSubmissions(
   requester: `0x${string}`,
   workers: readonly `0x${string}`[],
   shares: readonly number[],
+  deliverables: readonly `0x${string}`[],
   requesterAgentId: bigint = 0n,
   _contractAddress?: string | null
 ): Promise<`0x${string}`> {
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'acceptSubmissions',
-    args: [taskId, workers, shares, requesterAgentId],
+    args: [taskId, workers, shares, deliverables, requesterAgentId],
   });
   return relayThroughForwarder(requester, 0n, data);
 }

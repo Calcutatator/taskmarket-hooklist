@@ -44,15 +44,26 @@ export const updateCmd = new Command('update')
 
       if (opts.extendExpiry !== undefined) {
         const delta = parseInt(opts.extendExpiry, 10);
-        if (!Number.isFinite(delta) || delta < 0) {
-          printError(`--extend-expiry must be a non-negative integer, got: ${opts.extendExpiry}`);
+        if (!Number.isFinite(delta) || delta < 1) {
+          printError(
+            `--extend-expiry must be a positive integer (seconds), got: ${opts.extendExpiry}`
+          );
         }
         const task = (await apiGet(`/api/tasks/${taskId}`)) as Record<string, unknown> | null;
         if (!task) {
           printError(`Task not found: ${taskId}`);
         }
         const currentExpiry = Math.floor(new Date(task.expiryTime as string).getTime() / 1000);
-        body.expiryTime = currentExpiry + delta;
+        const newExpiry = currentExpiry + delta;
+        const now = Math.floor(Date.now() / 1000);
+        if (newExpiry <= now) {
+          const expiredAgo = now - currentExpiry;
+          printError(
+            `--extend-expiry would set expiry in the past. Task expired ${expiredAgo}s ago; ` +
+              `pass at least ${expiredAgo + 1} seconds to extend beyond now.`
+          );
+        }
+        body.expiryTime = newExpiry;
       }
 
       if (opts.bidDeadline !== undefined) {
