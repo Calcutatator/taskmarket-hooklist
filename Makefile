@@ -132,7 +132,8 @@ deploy-reward-hook:
 
 deploy-reward-hook-testnet:
 	@$(ENV_LOADER) && \
-	cd packages/contracts && forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
+	cd packages/contracts && FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
+	forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
 		--rpc-url base_sepolia \
 		--broadcast \
 		--verify
