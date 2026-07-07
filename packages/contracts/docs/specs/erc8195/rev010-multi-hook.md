@@ -219,7 +219,19 @@ lookup.
 - `ITMPCore.HookCheckCompleteRejected` error added.
 - New hook contracts: `TaskTokenRewardHook`, `RewardVault`, `EpochBudget`,
   `CompositeTwapOracle` (see `src/hooks/` and `src/oracle/`).
+- `TaskTokenRewardHook` uses a claimable escrow model — tokens are held inside
+  the hook rather than pushed to worker wallets. Workers withdraw via
+  `withdrawFor(wallet, destination)` called by the trusted backend server wallet.
+- Wallet-age Sybil ramp: `firstSeen[wallet]` is set on first hook interaction;
+  reward multiplier scales 0% → 25% → 50% → 100% over configurable thresholds
+  (default 2 / 4 / 8 weeks). Thresholds and multipliers are configurable via
+  `setRamp()` by the owner.
+- Worker/requester split: `workerSplitBps` (default 8000 = 80% worker, 20%
+  requester) is configurable via `setWorkerSplitBps()`.
+- Admin functions: `banWallet`, `unbanWallet`, `setBackend`, `sweepUnclaimed`.
 - Deploy script: `script/DeployRewardHook.s.sol` — `make deploy-reward-hook testnet/mainnet`.
+- New backend procedures: `wallet.dreamsBalance` (GET) and `wallet.withdrawDreams` (POST).
+- New CLI command: `taskmarket wallet withdraw-dreams [--destination <addr>]`.
 
 ---
 

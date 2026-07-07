@@ -29,6 +29,8 @@ interface IDiamondAdmin {
 ///   FORGE_REQUESTER_CAP          — wei (default: 50_000e18)
 ///   FORGE_MAX_TOKENS_PER_TASK    — wei (default: 5_000e18)
 ///   FORGE_DRIFT_BAND_BPS         — bps (default: 2000 = 20%)
+///   FORGE_WORKER_SPLIT_BPS       — worker share in bps (default: 8000 = 80%)
+///   FORGE_BACKEND_ADDRESS        — backend server wallet (defaults to deployer for testnet)
 contract DeployRewardHookTestnet is Script {
     uint8 constant TOKEN_DECIMALS = 18;
 
@@ -55,6 +57,9 @@ contract DeployRewardHookTestnet is Script {
             vm.envAddress("FORGE_DIAMOND_ADDRESS"),
             TOKEN_DECIMALS,
             uint16(vm.envOr("FORGE_DRIFT_BAND_BPS", uint256(2000))),
+            address(token),
+            uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
+            vm.envOr("FORGE_BACKEND_ADDRESS", deployer),
             deployer
         );
 

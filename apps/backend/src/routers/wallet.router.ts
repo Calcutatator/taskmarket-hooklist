@@ -6,13 +6,20 @@ import { base, baseSepolia } from 'viem/chains';
 import { agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
-import { contractTransferWithAuthorization } from '../services/contract';
+import {
+  contractTransferWithAuthorization,
+  contractGetDreamsClaimable,
+  contractWithdrawDreamsRewards,
+} from '../services/contract';
 import {
   SetWithdrawalAddressInputSchema,
   SetWithdrawalAddressOutputSchema,
   GetWithdrawalAddressOutputSchema,
   WithdrawInputSchema,
   WithdrawOutputSchema,
+  DreamsBalanceOutputSchema,
+  WithdrawDreamsInputSchema,
+  WithdrawDreamsOutputSchema,
 } from '@taskmarket/shared';
 
 const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -210,6 +217,82 @@ export const walletRouter = router({
         txHash,
         amountBaseUnits: input.amountBaseUnits,
         to: agent.withdrawalAddress,
+      };
+    }),
+
+  dreamsBalance: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/wallet/dreams-balance',
+        tags: ['Wallet'],
+        summary: 'Get claimable DREAMS reward balance for an address',
+      },
+    })
+    .input(z.object({ address: z.string() }))
+    .output(DreamsBalanceOutputSchema)
+    .query(async ({ input }) => {
+      const config = getServerConfig();
+      if (!config.DREAMS_HOOK_ADDRESS) {
+        return { claimableBaseUnits: '0' };
+      }
+      const raw = await contractGetDreamsClaimable(input.address as `0x${string}`);
+      return { claimableBaseUnits: raw.toString() };
+    }),
+
+  withdrawDreams: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/wallet/withdraw-dreams',
+        tags: ['Wallet'],
+        summary: 'Withdraw claimable DREAMS rewards to destination address (signed message auth)',
+      },
+    })
+    .input(WithdrawDreamsInputSchema)
+    .output(WithdrawDreamsOutputSchema)
+    .mutation(async ({ input }) => {
+      const config = getServerConfig();
+      if (!config.DREAMS_HOOK_ADDRESS) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'DREAMS rewards are not configured on this server',
+        });
+      }
+
+      // Verify the signature: message must be signed by workerAddress
+      const message = `taskmarket:withdraw-dreams:${input.destination}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      }
+
+      // Pre-flight: check there is something to claim (saves a tx)
+      const claimable = await contractGetDreamsClaimable(input.workerAddress as `0x${string}`);
+      if (claimable === 0n) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No claimable DREAMS rewards for this address',
+        });
+      }
+
+      const txHash = await contractWithdrawDreamsRewards(
+        input.workerAddress as `0x${string}`,
+        input.destination as `0x${string}`
+      );
+
+      return {
+        txHash,
+        destination: input.destination,
+        claimedBaseUnits: claimable.toString(),
       };
     }),
 });

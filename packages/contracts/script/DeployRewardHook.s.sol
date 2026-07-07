@@ -32,6 +32,9 @@ interface IDiamondAdmin {
 ///   FORGE_MAX_TOKENS_PER_TASK        — per-task emission cap (wei)
 ///   FORGE_DRIFT_BAND_BPS             — price drift tolerance in bps (e.g. 2000 = 20%)
 ///
+///   FORGE_WORKER_SPLIT_BPS           — worker share in bps (e.g. 8000 = 80%; default 8000)
+///   FORGE_BACKEND_ADDRESS            — backend server wallet address (trusted for withdrawFor)
+///
 ///   Optional:
 ///     FORGE_WETH_ADDRESS             — defaults to Base canonical WETH
 ///     FORGE_INITIAL_VAULT_BALANCE    — tokens to seed vault with (wei)
@@ -115,6 +118,9 @@ contract DeployRewardHook is Script {
             vm.envAddress("FORGE_DIAMOND_ADDRESS"),
             IERC20Metadata(protocolToken).decimals(),
             uint16(vm.envUint("FORGE_DRIFT_BAND_BPS")),
+            protocolToken,
+            uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
+            vm.envAddress("FORGE_BACKEND_ADDRESS"),
             deployer
         );
     }

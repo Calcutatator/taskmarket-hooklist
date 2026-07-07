@@ -37,6 +37,10 @@ const balanceResponse = {
   balanceUsdc: '10.00',
 };
 
+const dreamsResponse = {
+  claimableBaseUnits: '0',
+};
+
 describe('stats command', () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -45,7 +49,8 @@ describe('stats command', () => {
   it('fetches stats by own wallet address and prints credibility', async () => {
     vi.mocked(apiGet)
       .mockResolvedValueOnce(statsResponse)
-      .mockResolvedValueOnce(balanceResponse);
+      .mockResolvedValueOnce(balanceResponse)
+      .mockResolvedValueOnce(dreamsResponse);
 
     await statsCommand.parseAsync(['node', 'stats'], { from: 'node' });
 
@@ -59,7 +64,8 @@ describe('stats command', () => {
     const OTHER = '0xother000000000000000000000000000000001';
     vi.mocked(apiGet)
       .mockResolvedValueOnce({ ...statsResponse, address: OTHER })
-      .mockResolvedValueOnce(balanceResponse);
+      .mockResolvedValueOnce(balanceResponse)
+      .mockResolvedValueOnce(dreamsResponse);
 
     await statsCommand.parseAsync(['node', 'stats', '--address', OTHER], { from: 'node' });
 
@@ -70,7 +76,8 @@ describe('stats command', () => {
   it('uses --agent flag to query by agentId', async () => {
     vi.mocked(apiGet)
       .mockResolvedValueOnce(statsResponse)
-      .mockResolvedValueOnce(balanceResponse);
+      .mockResolvedValueOnce(balanceResponse)
+      .mockResolvedValueOnce(dreamsResponse);
 
     await statsCommand.parseAsync(['node', 'stats', '--agent', 'agent-001'], { from: 'node' });
 
@@ -80,7 +87,8 @@ describe('stats command', () => {
   it('prints emailAddress in output', async () => {
     vi.mocked(apiGet)
       .mockResolvedValueOnce({ ...statsResponse, emailAddress: 'agent@market.example' })
-      .mockResolvedValueOnce(balanceResponse);
+      .mockResolvedValueOnce(balanceResponse)
+      .mockResolvedValueOnce(dreamsResponse);
 
     await statsCommand.parseAsync(['node', 'stats'], { from: 'node' });
 

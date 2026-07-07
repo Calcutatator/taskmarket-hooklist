@@ -2,6 +2,8 @@
 pragma solidity ^0.8.24;
 
 import { IERC165 } from "@openzeppelin/contracts/utils/introspection/IERC165.sol";
+import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
+import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 import { ITMPHook } from "../interfaces/ITMPHook.sol";
 import { ITMPCore } from "../interfaces/ITMPCore.sol";
@@ -11,16 +13,26 @@ import { EpochBudget } from "./EpochBudget.sol";
 import { FullMath } from "../lib/FullMath.sol";
 
 /// @title TaskTokenRewardHook
-/// @notice Hook that pays DREAMS tokens to workers on task completion.
+/// @notice Hook that credits DREAMS tokens to workers and requesters on task completion.
 ///         Rewards are priced in USD (using the task's USDC reward value) and
 ///         converted to tokens at the Aerodrome CL TWAP rate.
 ///
-///         For Claim / Pitch / Auction tasks: price locks when worker is selected,
-///         tokens are reserved from the vault, and paid atomically at completion.
+///         Tokens are held in the hook as claimable escrow rather than pushed to wallets
+///         immediately. Workers and requesters withdraw via `withdrawFor` called by the
+///         trusted backend server wallet.
 ///
-///         For Bounty tasks: price and payment happen atomically at completion,
-///         with no pre-reservation.
+///         A wallet-age ramp limits rewards for new wallets, reducing incentive for Sybil
+///         farming. Workers receive `workerSplitBps / 10000` of the reward; requesters
+///         receive the remainder.
+///
+///         For Claim / Pitch / Auction tasks: price locks when worker is selected, tokens
+///         are reserved from the vault, and credited atomically at completion.
+///
+///         For Bounty tasks: price and payment happen atomically at completion with no
+///         pre-reservation.
 contract TaskTokenRewardHook is ITMPHook, Ownable {
+    using SafeERC20 for IERC20;
+
     struct RewardState {
         uint256 rewardUsd; // USDC 6-decimal amount (= task reward)
         uint256 startPrice; // TOKEN per USDC at lock time, 1e18
@@ -43,6 +55,21 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     // 10^(tokenDecimals + 12) bridges 6-decimal USDC → 18-decimal price space
     uint256 public immutable priceScaler;
 
+    // Claimable escrow — tokens are pushed here from the vault, then claimed by wallets
+    // via withdrawFor() called by the trusted backend.
+    mapping(address => uint256) public claimable;
+    // firstSeen is set once on a wallet's first hook interaction and never updated.
+    // It is the basis for the wallet-age ramp.
+    mapping(address => uint40) public firstSeen;
+    mapping(address => bool) public banned;
+    // Running sum of all claimable[] values; guards sweepUnclaimed against over-sweeping.
+    uint256 public totalClaimable;
+    address public immutable token; // DREAMS token
+    uint16 public workerSplitBps; // worker's share in bps; default 8000 = 80%
+    address public backend; // trusted caller for withdrawFor
+    uint40[3] public rampThresholds; // age breakpoints: [2 weeks, 4 weeks, 8 weeks]
+    uint16[4] public rampMultipliers; // multipliers in bps: [0, 2500, 5000, 10000]
+
     mapping(bytes32 => RewardState) public rewardStates;
 
     event RewardConfigured(bytes32 indexed taskId, uint256 rewardUsd);
@@ -56,6 +83,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         uint256 tokenAmount
     );
     event RewardReserveReleased(bytes32 indexed taskId, uint256 releasedAmount);
+    event RewardsWithdrawn(address indexed wallet, address indexed destination, uint256 amount);
 
     error OracleInvalid();
     error RewardAlreadyPaid(bytes32 taskId);
@@ -65,6 +93,11 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     error DriftBandBpsTooHigh();
     error CallerNotDiamond();
     error OraclePriceTooLow();
+    error NotBackend();
+    error NothingToClaim();
+    error InvalidBps();
+    error InvalidRamp();
+    error InsufficientSweepable();
 
     modifier onlyDiamond() {
         if (msg.sender != diamond) revert CallerNotDiamond();
@@ -78,12 +111,18 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         address _diamond,
         uint8 _tokenDecimals,
         uint16 _driftBandBps,
+        address _token,
+        uint16 _workerSplitBps,
+        address _backend,
         address _owner
     ) Ownable(_owner) {
         if (_driftBandBps >= 10000) revert DriftBandBpsTooHigh();
-        if (_oracle == address(0) || _vault == address(0) || _epochBudget == address(0) || _diamond == address(0)) {
-            revert OracleInvalid();
-        }
+        if (
+            _oracle == address(0) || _vault == address(0) || _epochBudget == address(0) || _diamond == address(0)
+                || _token == address(0) || _backend == address(0)
+        ) revert OracleInvalid();
+        if (_workerSplitBps > 10000) revert InvalidBps();
+
         oracle = ITokenUsdOracle(_oracle);
         vault = IRewardVault(_vault);
         epochBudget = EpochBudget(_epochBudget);
@@ -92,6 +131,11 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         driftBandBps = _driftBandBps;
         // scaler: bridges 6-decimal USDC amount to tokenDecimals-precision reward
         priceScaler = 10 ** (uint256(_tokenDecimals) + 12);
+        token = _token;
+        workerSplitBps = _workerSplitBps;
+        backend = _backend;
+        rampThresholds = [uint40(2 weeks), uint40(4 weeks), uint40(8 weeks)];
+        rampMultipliers = [uint16(0), uint16(2500), uint16(5000), uint16(10000)];
     }
 
     // ─────────────────────────────────────────────────────────────────────────
@@ -110,6 +154,8 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         onlyDiamond
         returns (bool)
     {
+        _touchFirstSeen(ctx.requester);
+
         PriceData memory price = oracle.getPrice();
         if (!price.valid) revert OracleInvalid();
 
@@ -136,6 +182,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         onlyDiamond
         returns (bool)
     {
+        _touchFirstSeen(worker);
         return _reserveForWorker(taskId, ctx.requester, worker);
     }
 
@@ -146,6 +193,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         onlyDiamond
         returns (bool)
     {
+        _touchFirstSeen(worker);
         return _reserveForWorker(taskId, ctx.requester, worker);
     }
 
@@ -187,7 +235,12 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         return true;
     }
 
-    /// @notice Atomic token payout at task completion.
+    /// @notice Atomic token credit at task completion.
+    ///         Tokens are transferred from the vault to this hook, then credited to
+    ///         claimable balances for the worker and requester according to workerSplitBps
+    ///         and the wallet-age ramp. Ramp-discounted tokens remain in hook balance
+    ///         and are recoverable via sweepUnclaimed.
+    ///
     ///         Path A (reserved): settle with clamped price, release unused reserve.
     ///                            Falls back to startPrice if oracle is currently invalid.
     ///         Path B (Bounty):   pay each winner proportionally using verdict.awards.
@@ -220,10 +273,10 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
             uint256 rawReward = FullMath.mulDiv(state.rewardUsd, priceScaler, effectivePrice);
             uint256 tokenReward = rawReward < state.reservedTokenAmount ? rawReward : state.reservedTokenAmount;
 
-            // Wrap vault.pay: if the token transfer fails (e.g. token paused), release the
-            // reserve and let the USDC payout proceed rather than blocking settlement.
+            // Transfer tokens from vault to this hook; on failure release the reserve and
+            // let the USDC payout proceed rather than blocking settlement.
             bool paid = false;
-            try vault.pay(taskId, state.worker, tokenReward) {
+            try vault.pay(taskId, address(this), tokenReward) {
                 paid = true;
             } catch { }
 
@@ -233,6 +286,8 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 try epochBudget.release(state.requester, state.worker, tokenReward) { } catch { }
                 return true;
             }
+
+            _creditWithSplit(state.requester, state.worker, tokenReward);
 
             uint256 unused = state.reservedTokenAmount - tokenReward;
             if (unused > 0) {
@@ -249,6 +304,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
             for (uint256 i; i < verdict.awards.length; i++) {
                 address worker = verdict.awards[i].worker;
+                _touchFirstSeen(worker);
                 // Use per-winner pre-fee USDC amount as the USD basis for token reward.
                 uint256 workerUsd = verdict.awards[i].amount;
                 uint256 rawReward = FullMath.mulDiv(workerUsd, priceScaler, settlePrice.price);
@@ -271,10 +327,11 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 }
                 if (tokenReward == 0) continue;
                 bool tokenPaid = false;
-                try vault.payDirect(worker, tokenReward) {
+                try vault.payDirect(address(this), tokenReward) {
                     tokenPaid = true;
                 } catch { }
                 if (tokenPaid) {
+                    _creditWithSplit(ctx.requester, worker, tokenReward);
                     emit RewardPaid(taskId, worker, workerUsd, settlePrice.price, settlePrice.price, tokenReward);
                 } else {
                     try epochBudget.release(ctx.requester, worker, tokenReward) { } catch { }
@@ -353,8 +410,60 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     }
 
     // ─────────────────────────────────────────────────────────────────────────
+    // Claimable escrow
+    // ─────────────────────────────────────────────────────────────────────────
+
+    /// @notice Transfer a wallet's accumulated DREAMS rewards to `destination`.
+    ///         Only callable by the trusted backend address.
+    function withdrawFor(address wallet, address destination) external {
+        if (msg.sender != backend) revert NotBackend();
+        uint256 amount = claimable[wallet];
+        if (amount == 0) revert NothingToClaim();
+        claimable[wallet] = 0;
+        totalClaimable -= amount;
+        IERC20(token).safeTransfer(destination, amount);
+        emit RewardsWithdrawn(wallet, destination, amount);
+    }
+
+    // ─────────────────────────────────────────────────────────────────────────
     // Owner config
     // ─────────────────────────────────────────────────────────────────────────
+
+    function banWallet(address wallet) external onlyOwner {
+        banned[wallet] = true;
+    }
+
+    function unbanWallet(address wallet) external onlyOwner {
+        banned[wallet] = false;
+    }
+
+    function setBackend(address _backend) external onlyOwner {
+        if (_backend == address(0)) revert OracleInvalid();
+        backend = _backend;
+    }
+
+    function setWorkerSplitBps(uint16 bps) external onlyOwner {
+        if (bps > 10000) revert InvalidBps();
+        workerSplitBps = bps;
+    }
+
+    function setRamp(uint40[3] calldata thresholds, uint16[4] calldata multipliers) external onlyOwner {
+        if (thresholds[0] >= thresholds[1] || thresholds[1] >= thresholds[2]) revert InvalidRamp();
+        if (
+            multipliers[0] > multipliers[1] || multipliers[1] > multipliers[2] || multipliers[2] > multipliers[3]
+                || multipliers[3] > 10000
+        ) revert InvalidRamp();
+        rampThresholds = thresholds;
+        rampMultipliers = multipliers;
+    }
+
+    /// @notice Sweep ramp-discounted excess tokens (not owed to any wallet) to `destination`.
+    ///         Cannot sweep tokens that are credited in any wallet's claimable balance.
+    function sweepUnclaimed(address destination, uint256 amount) external onlyOwner {
+        uint256 balance = IERC20(token).balanceOf(address(this));
+        if (balance < totalClaimable + amount) revert InsufficientSweepable();
+        IERC20(token).safeTransfer(destination, amount);
+    }
 
     function setOracle(address _oracle) external onlyOwner {
         oracle = ITokenUsdOracle(_oracle);
@@ -380,6 +489,39 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     // ─────────────────────────────────────────────────────────────────────────
     // Internal helpers
     // ─────────────────────────────────────────────────────────────────────────
+
+    function _touchFirstSeen(address wallet) internal {
+        if (firstSeen[wallet] == 0) firstSeen[wallet] = uint40(block.timestamp);
+    }
+
+    function _ageMultiplierBps(address wallet) internal view returns (uint256) {
+        uint40 seen = firstSeen[wallet];
+        if (seen == 0) return 0;
+        uint256 age = block.timestamp - uint256(seen);
+        if (age < rampThresholds[0]) return rampMultipliers[0];
+        if (age < rampThresholds[1]) return rampMultipliers[1];
+        if (age < rampThresholds[2]) return rampMultipliers[2];
+        return rampMultipliers[3];
+    }
+
+    function _creditWithSplit(address requester, address worker, uint256 total) internal {
+        uint256 workerAmt = total * workerSplitBps / 10000;
+        uint256 requesterAmt = total - workerAmt;
+        uint256 credited;
+        if (!banned[worker]) {
+            uint256 w = workerAmt * _ageMultiplierBps(worker) / 10000;
+            claimable[worker] += w;
+            credited += w;
+        }
+        if (!banned[requester]) {
+            uint256 r = requesterAmt * _ageMultiplierBps(requester) / 10000;
+            claimable[requester] += r;
+            credited += r;
+        }
+        totalClaimable += credited;
+        // ramp-discounted remainder (total - credited) stays in hook balance;
+        // recoverable by owner via sweepUnclaimed.
+    }
 
     function _reserveForWorker(bytes32 taskId, address requester, address worker) internal returns (bool) {
         RewardState storage state = rewardStates[taskId];
@@ -433,10 +575,6 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         if (value < lo) return lo;
         if (value > hi) return hi;
         return value;
-    }
-
-    function _min3(uint256 a, uint256 b, uint256 c) internal pure returns (uint256) {
-        return a < b ? (a < c ? a : c) : (b < c ? b : c);
     }
 
     function _min4(uint256 a, uint256 b, uint256 c, uint256 d) internal pure returns (uint256) {

@@ -2,6 +2,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 vi.mock('../../../src/services/contract', () => ({
   contractTransferWithAuthorization: vi.fn().mockResolvedValue('0xdeadbeef'),
+  contractGetDreamsClaimable: vi.fn().mockResolvedValue(500n * BigInt(10 ** 18)),
+  contractWithdrawDreamsRewards: vi.fn().mockResolvedValue('0xcafebabe'),
 }));
 
 vi.mock('../../../src/config/env', () => ({
@@ -10,6 +12,7 @@ vi.mock('../../../src/config/env', () => ({
     USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
     USDC_DOMAIN_NAME: 'USDC',
     NODE_ENV: 'test',
+    DREAMS_HOOK_ADDRESS: '0x1234567890123456789012345678901234567890',
   }),
 }));
 
@@ -22,8 +25,13 @@ vi.mock('viem', async (importOriginal) => {
 });
 
 import { walletRouter } from '../../../src/routers/wallet.router';
-import { contractTransferWithAuthorization } from '../../../src/services/contract';
+import {
+  contractTransferWithAuthorization,
+  contractGetDreamsClaimable,
+  contractWithdrawDreamsRewards,
+} from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
+import { getServerConfig } from '../../../src/config/env';
 import { createMockCtx, makeChain } from '../helpers';
 
 const WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
@@ -276,6 +284,77 @@ describe('wallet router', () => {
       expect(result.txHash).toBe('0xdeadbeef');
       expect(result.amountBaseUnits).toBe('5000000');
       expect(result.to).toBe(WITHDRAWAL);
+    });
+  });
+
+  describe('dreamsBalance', () => {
+    it('returns claimableBaseUnits when hook is configured', async () => {
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      const result = await caller.dreamsBalance({ address: WALLET });
+      expect(contractGetDreamsClaimable).toHaveBeenCalledWith(WALLET);
+      expect(result.claimableBaseUnits).toBe((500n * BigInt(10 ** 18)).toString());
+    });
+
+    it('returns "0" when DREAMS_HOOK_ADDRESS is not configured', async () => {
+      const { getServerConfig } = await import('../../../src/config/env');
+      // Override config to omit DREAMS_HOOK_ADDRESS for this test
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        CHAIN_ID: 84532,
+        USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        USDC_DOMAIN_NAME: 'USDC',
+        NODE_ENV: 'test' as const,
+        DREAMS_HOOK_ADDRESS: undefined,
+      } as unknown as ReturnType<typeof getServerConfig>);
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      const result = await caller.dreamsBalance({ address: WALLET });
+      expect(result.claimableBaseUnits).toBe('0');
+    });
+  });
+
+  describe('withdrawDreams', () => {
+    it('executes withdrawal and returns txHash when signature is valid', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      const result = await caller.withdrawDreams({
+        workerAddress: WALLET,
+        destination: WITHDRAWAL,
+        signature: '0x' + 'aa'.repeat(65),
+      });
+      expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(WALLET, WITHDRAWAL);
+      expect(result.txHash).toBe('0xcafebabe');
+      expect(result.destination).toBe(WITHDRAWAL);
+    });
+
+    it('throws UNAUTHORIZED when signature is from different wallet', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0x0000000000000000000000000000000000000001' as `0x${string}`
+      );
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      await expect(
+        caller.withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          signature: '0x' + 'aa'.repeat(65),
+        })
+      ).rejects.toThrow('Signature verification failed');
+    });
+
+    it('throws BAD_REQUEST when claimable is zero', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+      vi.mocked(contractGetDreamsClaimable).mockResolvedValueOnce(0n);
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      await expect(
+        caller.withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          signature: '0x' + 'aa'.repeat(65),
+        })
+      ).rejects.toThrow('No claimable DREAMS rewards');
     });
   });
 });

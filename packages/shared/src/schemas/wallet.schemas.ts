@@ -45,3 +45,19 @@ export const WithdrawOutputSchema = z.object({
   amountBaseUnits: z.string(),
   to: z.string(),
 });
+
+export const DreamsBalanceOutputSchema = z.object({
+  claimableBaseUnits: z.string(),
+});
+
+export const WithdrawDreamsInputSchema = z.object({
+  workerAddress: EthAddress,
+  destination: EthAddress,
+  signature: z.string().min(1),
+});
+
+export const WithdrawDreamsOutputSchema = z.object({
+  txHash: z.string(),
+  destination: z.string(),
+  claimedBaseUnits: z.string(),
+});

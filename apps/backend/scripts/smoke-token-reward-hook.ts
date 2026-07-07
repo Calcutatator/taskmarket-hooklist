@@ -1,16 +1,17 @@
 /**
- * Token reward hook smoke test (Rev009).
+ * Token reward hook smoke test (Rev010).
  *
- * Verifies end-to-end behaviour of the TaskTokenRewardHook on testnet using
- * the mock oracle and mock DREAMS token deployed by DeployRewardHookTestnet.s.sol.
+ * Verifies end-to-end behaviour of the TaskTokenRewardHook (claimable escrow model)
+ * on testnet using the mock oracle and mock DREAMS token deployed by
+ * DeployRewardHookTestnet.s.sol.
  *
  * Scenarios:
- *   A. Bounty task — create → two workers submit → accept winner →
- *      poll until completed -- verify RewardPaid event indexed and token
- *      balance of winner increased.
+ *   A. Bounty task — create → worker submits → accept winner →
+ *      poll until completed → verify hook.claimable(worker) > 0 →
+ *      call POST /api/wallet/withdraw-dreams → verify token balance lands.
  *
  *   B. Claim task — create → worker claims → submit → accept →
- *      poll until completed → verify reserved token reward paid out.
+ *      poll until completed → verify hook.claimable(worker) > 0.
  *
  *   C. Hook wiring — verify getTaskHooks returns the reward hook address
  *      for newly created tasks (protocol default hook is set).
@@ -24,16 +25,22 @@
  *   This deploys MockERC20, MockOracle, RewardVault, EpochBudget, and
  *   TaskTokenRewardHook and registers it as the Diamond default hook.
  *
+ *   The hook must use bypass ramp (setRamp([1,2,3],[10000,10000,10000,10000]))
+ *   so that new wallets earn full rewards immediately on testnet.
+ *
  * Required env vars:
  *   REQUESTER_PRIVATE_KEY   — funded testnet account
  *   WORKER_PRIVATE_KEY      — second funded testnet account
  *   REWARD_HOOK_ADDRESS     — TaskTokenRewardHook contract address (from deploy)
  *   MOCK_TOKEN_ADDRESS      — MockERC20 (mDREAMS) address (from deploy)
  *   VAULT_ADDRESS           — RewardVault address (from deploy)
+ *   WORKER_WITHDRAWAL_ADDRESS — destination for DREAMS withdrawal (must be pre-set
+ *                               via `taskmarket wallet set-withdrawal-address`)
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *   REWARD_HOOK_ADDRESS=0x... MOCK_TOKEN_ADDRESS=0x... VAULT_ADDRESS=0x... \
+ *   WORKER_WITHDRAWAL_ADDRESS=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-token-reward-hook.ts
  */
 import { createPublicClient, http, parseAbi, getAddress } from 'viem';
@@ -43,6 +50,7 @@ import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
 const MOCK_TOKEN_ADDRESS = process.env.MOCK_TOKEN_ADDRESS;
 const VAULT_ADDRESS = process.env.VAULT_ADDRESS;
+const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS;
 const RPC_URL = process.env.EVM_RPC_URL_BASE_SEPOLIA || 'https://sepolia.base.org';
 
 if (!REWARD_HOOK_ADDRESS || !MOCK_TOKEN_ADDRESS || !VAULT_ADDRESS) {
@@ -58,6 +66,7 @@ if (!REWARD_HOOK_ADDRESS || !MOCK_TOKEN_ADDRESS || !VAULT_ADDRESS) {
 const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)']);
 const hookAbi = parseAbi([
   'function rewardStates(bytes32) view returns (uint256,uint256,uint256,uint256,uint256,address,address,bool,bool)',
+  'function claimable(address wallet) view returns (uint256)',
 ]);
 
 const client = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
@@ -73,6 +82,15 @@ async function tokenBalance(address: string): Promise<bigint> {
 
 async function vaultBalance(): Promise<bigint> {
   return tokenBalance(VAULT_ADDRESS!);
+}
+
+async function hookClaimable(wallet: string): Promise<bigint> {
+  return client.readContract({
+    address: getAddress(REWARD_HOOK_ADDRESS!),
+    abi: hookAbi,
+    functionName: 'claimable',
+    args: [getAddress(wallet)],
+  }) as Promise<bigint>;
 }
 
 async function hookRewardState(taskId: string) {
@@ -143,7 +161,7 @@ async function main() {
   // ─── Scenario A: Bounty — create → submit → accept → token reward ─────────
   console.log('\n--- A: Bounty task reward ---');
 
-  log('A1/6', 'Creating bounty task (X402)...');
+  log('A1/5', 'Creating bounty task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     { description: 'Write a haiku about Base L2 (hook smoke test)', reward: '5000', duration: 60, mode: 'bounty', tags: ['smoke-test'] },
@@ -151,14 +169,14 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  log('A2/6', 'Verifying RewardConfigured state on hook...');
+  log('A2/5', 'Verifying RewardConfigured state on hook...');
   const stateAfterCreate = await hookRewardState(taskId);
   if (stateAfterCreate.rewardUsd !== 5000n) {
     throw new Error(`Expected rewardUsd=5000, got: ${stateAfterCreate.rewardUsd}`);
   }
   ok('rewardUsd on hook', stateAfterCreate.rewardUsd);
 
-  log('A3/6', 'Worker A submitting...');
+  log('A3/5', 'Worker A submitting...');
   const submitSigA = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
@@ -168,31 +186,58 @@ async function main() {
   });
   ok('submitted', true);
 
-  log('A4/6', 'Recording worker token balance before acceptance...');
-  const workerBalBefore = await tokenBalance(worker.address);
-  ok('workerBalBefore', workerBalBefore.toString());
-
-  log('A5/6', 'Requester accepting (X402)...');
+  log('A4/5', 'Requester accepting (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
-  log('A6/6', 'Polling until completed and verifying token reward paid...');
+  log('A5/5', 'Polling until completed and verifying claimable reward...');
   await pollStatus(taskId, 'completed');
 
-  const workerBalAfter = await tokenBalance(worker.address);
-  ok('workerBalAfter', workerBalAfter.toString());
-  if (workerBalAfter <= workerBalBefore) {
-    throw new Error(
-      `Worker token balance did not increase after completion. before=${workerBalBefore} after=${workerBalAfter}`
-    );
+  const claimableAfter = await hookClaimable(worker.address);
+  ok('hook.claimable(worker)', claimableAfter.toString());
+  if (claimableAfter === 0n) {
+    throw new Error('Worker claimable balance is 0 after task completion');
   }
-  ok('token reward received', (workerBalAfter - workerBalBefore).toString());
+
+  const apiBalance = (await get(`/api/wallet/dreams-balance?address=${worker.address}`)) as {
+    claimableBaseUnits: string;
+  };
+  ok('GET /wallet/dreams-balance', apiBalance.claimableBaseUnits);
+  if (BigInt(apiBalance.claimableBaseUnits) === 0n) {
+    throw new Error('API returned 0 claimableBaseUnits after completion');
+  }
 
   const stateAfterComplete = await hookRewardState(taskId);
   if (!stateAfterComplete.paid) {
     throw new Error('RewardState.paid is false after task completion');
   }
   ok('RewardState.paid', stateAfterComplete.paid);
+
+  // If a withdrawal address is configured, exercise the withdraw-dreams flow
+  if (WORKER_WITHDRAWAL_ADDRESS) {
+    const destBalBefore = await tokenBalance(WORKER_WITHDRAWAL_ADDRESS);
+    const withdrawResult = (await post('/api/wallet/withdraw-dreams', {
+      workerAddress: worker.address,
+      destination: WORKER_WITHDRAWAL_ADDRESS,
+      signature: await worker.signMessage({
+        message: `taskmarket:withdraw-dreams:${WORKER_WITHDRAWAL_ADDRESS}`,
+      }),
+    })) as { txHash: string; claimedBaseUnits: string };
+    ok('withdrawDreams txHash', withdrawResult.txHash);
+    const destBalAfter = await tokenBalance(WORKER_WITHDRAWAL_ADDRESS);
+    if (destBalAfter <= destBalBefore) {
+      throw new Error(
+        `Destination balance did not increase after withdrawDreams. before=${destBalBefore} after=${destBalAfter}`
+      );
+    }
+    ok('destination received DREAMS', (destBalAfter - destBalBefore).toString());
+
+    const claimableAfterWithdraw = await hookClaimable(worker.address);
+    if (claimableAfterWithdraw !== 0n) {
+      throw new Error(`Claimable should be 0 after withdraw, got ${claimableAfterWithdraw}`);
+    }
+    ok('claimable cleared after withdraw', true);
+  }
 
   console.log('\n=== Scenario A passed ===');
 
@@ -239,7 +284,7 @@ async function main() {
   ok('deliverableHash', deliverableHash);
 
   log('B6/7', 'Requester accepting (X402)...');
-  const workerBalBeforeClaim = await tokenBalance(worker.address);
+  const claimableBeforeAccept = await hookClaimable(worker.address);
   await x402Post(
     `/api/tasks/${claimTaskId}/accept`,
     { taskId: claimTaskId, worker: worker.address },
@@ -247,14 +292,14 @@ async function main() {
   );
   await pollStatus(claimTaskId, 'completed');
 
-  log('B7/7', 'Verifying token reward settled and unused reserve returned to vault...');
-  const workerBalAfterClaim = await tokenBalance(worker.address);
-  if (workerBalAfterClaim <= workerBalBeforeClaim) {
+  log('B7/7', 'Verifying token reward credited to claimable balance...');
+  const claimableAfterClaim = await hookClaimable(worker.address);
+  if (claimableAfterClaim <= claimableBeforeAccept) {
     throw new Error(
-      `Claim worker balance did not increase. before=${workerBalBeforeClaim} after=${workerBalAfterClaim}`
+      `Worker claimable did not increase after claim completion. before=${claimableBeforeAccept} after=${claimableAfterClaim}`
     );
   }
-  ok('token reward (claim)', (workerBalAfterClaim - workerBalBeforeClaim).toString());
+  ok('claimable reward (claim)', (claimableAfterClaim - claimableBeforeAccept).toString());
 
   const stateAfterClaimComplete = await hookRewardState(claimTaskId);
   if (!stateAfterClaimComplete.paid) {

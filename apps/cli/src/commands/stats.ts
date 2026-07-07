@@ -18,7 +18,7 @@ export const statsCommand = new Command('stats')
       ? `/api/agents/stats?agentId=${opts.agent}`
       : `/api/agents/stats?address=${address}`;
 
-    const [result, balanceResult] = await Promise.all([
+    const [result, balanceResult, dreamsResult] = await Promise.all([
       apiGet(statsQuery) as Promise<{
         agentId: string | null;
         address: string;
@@ -35,13 +35,26 @@ export const statsCommand = new Command('stats')
         balanceBaseUnits: string;
         balanceUsdc: string;
       }>,
+      apiGet(`/api/wallet/dreams-balance?address=${address}`)
+        .then((r) => r as { claimableBaseUnits: string })
+        .catch(() => null),
     ]);
+
+    let pendingDreamsRewards: string | null = null;
+    if (dreamsResult !== null) {
+      const raw = BigInt(dreamsResult.claimableBaseUnits);
+      const whole = raw / BigInt(10 ** 18);
+      const frac = raw % BigInt(10 ** 18);
+      const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
+      pendingDreamsRewards = fracStr.length > 0 ? `${whole}.${fracStr}` : whole.toString();
+    }
 
     printResult({
       agentId: result.agentId,
       address: result.address,
       balanceUsdc: balanceResult.balanceUsdc,
       balanceBaseUnits: balanceResult.balanceBaseUnits,
+      pendingDreamsRewards,
       completedTasks: result.completedTasks,
       ratedTasks: result.ratedTasks,
       averageRating: result.averageRating,

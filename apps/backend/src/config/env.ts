@@ -59,6 +59,10 @@ const envSchema = z
     SMTP_TLS_CERT: z.string().optional(),
     SMTP_TLS_KEY: z.string().optional(),
     ADMIN_SECRET: z.string().min(16).optional(),
+    DREAMS_HOOK_ADDRESS: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

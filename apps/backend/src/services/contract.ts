@@ -112,6 +112,10 @@ const FORWARDER_ABI = parseAbi([
   'function relay(address pgtrSenderAddr, uint256 paymentAmount, uint256 validBefore, bytes32 receiptNonce, bytes calldata data)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
+const HOOK_ABI = parseAbi([
+  'function withdrawFor(address worker, address destination) external',
+  'function claimable(address wallet) external view returns (uint256)',
+]);
 const REGISTERED_EVENT = parseAbiItem(
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
 );
@@ -800,5 +804,46 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   throw new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',
     message: 'Registered event not found in registerIdentity receipt',
+  });
+}
+
+export async function contractWithdrawDreamsRewards(
+  worker: `0x${string}`,
+  destination: `0x${string}`
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'DREAMS_HOOK_ADDRESS is not configured',
+    });
+  }
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+
+  const hash = await client.writeContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'withdrawFor',
+    args: [worker, destination],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'withdrawFor'
+  );
+  return hash;
+}
+
+export async function contractGetDreamsClaimable(wallet: `0x${string}`): Promise<bigint> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0n;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'claimable',
+    args: [wallet],
   });
 }
