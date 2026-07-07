@@ -69,6 +69,12 @@ contract DeployRewardHookTestnet is Script {
         uint256 vaultSeed = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(1_000_000e18));
         token.mint(address(vault), vaultSeed);
 
+        // Bypass wallet-age ramp for testnet so new wallets earn full rewards immediately.
+        // Thresholds are 1/2/3 seconds; multipliers are all 10000 bps (100%).
+        uint40[3] memory rampThresholds = [uint40(1), uint40(2), uint40(3)];
+        uint16[4] memory rampMultipliers = [uint16(10000), uint16(10000), uint16(10000), uint16(10000)];
+        hook.setRamp(rampThresholds, rampMultipliers);
+
         address[] memory defaultHooks = new address[](1);
         defaultHooks[0] = address(hook);
         IDiamondAdmin(vm.envAddress("FORGE_DIAMOND_ADDRESS")).setDefaultHooks(defaultHooks);
