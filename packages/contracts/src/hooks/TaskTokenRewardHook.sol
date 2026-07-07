@@ -327,8 +327,8 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 }
                 if (tokenReward == 0) continue;
                 bool tokenPaid = false;
-                // slither-disable-next-line reentrancy-no-eth
                 // vault is a trusted internal contract; hook is called inside Diamond reentrancy guard
+                // slither-disable-next-line reentrancy-no-eth
                 try vault.payDirect(address(this), tokenReward) {
                     tokenPaid = true;
                 } catch { }
@@ -493,15 +493,15 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     // ─────────────────────────────────────────────────────────────────────────
 
     function _touchFirstSeen(address wallet) internal {
-        // slither-disable-next-line incorrect-equality
         // uint40 sentinel: 0 means "never seen"; equality is the only correct check
+        // slither-disable-next-line incorrect-equality
         if (firstSeen[wallet] == 0) firstSeen[wallet] = uint40(block.timestamp);
     }
 
     function _ageMultiplierBps(address wallet) internal view returns (uint256) {
         uint40 seen = firstSeen[wallet];
-        // slither-disable-next-line incorrect-equality
         // uint40 sentinel: 0 means "never seen"; equality is the only correct check
+        // slither-disable-next-line incorrect-equality
         if (seen == 0) return 0;
         uint256 age = block.timestamp - uint256(seen);
         if (age < rampThresholds[0]) return rampMultipliers[0];
@@ -513,17 +513,17 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     function _creditWithSplit(address requester, address worker, uint256 total) internal {
         uint256 workerAmt = total * workerSplitBps / 10000;
         uint256 requesterAmt = total - workerAmt;
-        uint256 credited;
+        uint256 credited = 0;
         if (!banned[worker]) {
-            // slither-disable-next-line divide-before-multiply
             // intentional two-step bps scaling: split first, then apply age multiplier
+            // slither-disable-next-line divide-before-multiply
             uint256 w = workerAmt * _ageMultiplierBps(worker) / 10000;
             claimable[worker] += w;
             credited += w;
         }
         if (!banned[requester]) {
-            // slither-disable-next-line divide-before-multiply
             // intentional two-step bps scaling: split first, then apply age multiplier
+            // slither-disable-next-line divide-before-multiply
             uint256 r = requesterAmt * _ageMultiplierBps(requester) / 10000;
             claimable[requester] += r;
             credited += r;
