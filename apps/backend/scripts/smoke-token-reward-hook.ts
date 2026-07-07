@@ -44,13 +44,18 @@
  *     npx tsx --env-file=../../.env scripts/smoke-token-reward-hook.ts
  */
 import { createPublicClient, http, parseAbi, getAddress } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
 const MOCK_TOKEN_ADDRESS = process.env.MOCK_TOKEN_ADDRESS;
 const VAULT_ADDRESS = process.env.VAULT_ADDRESS;
-const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS;
+// Derive withdrawal address from worker key if not explicitly set
+const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS
+  ?? (process.env.WORKER_PRIVATE_KEY
+    ? privateKeyToAccount(process.env.WORKER_PRIVATE_KEY as `0x${string}`).address
+    : undefined);
 const RPC_URL = process.env.EVM_RPC_URL_BASE_SEPOLIA || 'https://sepolia.base.org';
 
 if (!process.env.REQUESTER_PRIVATE_KEY || !process.env.WORKER_PRIVATE_KEY) {
