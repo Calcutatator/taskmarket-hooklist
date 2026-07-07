@@ -116,12 +116,14 @@ upgrade-accept-pinning:
 deploy-reward-hook:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
-		cd packages/contracts && forge script script/DeployRewardHook.s.sol:DeployRewardHook \
+		cd packages/contracts && FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
+		forge script script/DeployRewardHook.s.sol:DeployRewardHook \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/DeployRewardHook.s.sol:DeployRewardHook \
+		cd packages/contracts && FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_MAINNET} \
+		forge script script/DeployRewardHook.s.sol:DeployRewardHook \
 			--rpc-url base \
 			--broadcast \
 			--verify; \
