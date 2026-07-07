@@ -80,6 +80,48 @@ Then add the CVA variant in `apps/frontend/src/components/ui/badge.tsx`.
 - Prefer simple solutions over clever ones
 - Follow existing patterns in the guides above before inventing new ones
 
+## Smoke Tests
+
+Smoke tests live in `apps/backend/scripts/smoke-*.ts` and run against a live backend + deployed contract. Run with `make smoke <name>` (e.g. `make smoke bounty`, `make smoke evaluator`).
+
+### When to write a smoke test
+
+Write or update a smoke test whenever you:
+- Add a new on-chain function (every new facet function needs at least one path)
+- Add a new CLI command that triggers an on-chain action
+- Fix a bug caused by an untested state transition
+
+### What every smoke test must cover
+
+Cover every meaningful branch, not just the happy path:
+
+- **All terminal states**: accepted, rejected, cancelled, expired, disputed — each is a distinct code path
+- **All actor roles**: requester, worker, evaluator, dispute resolver — each has separate auth checks
+- **Error paths**: what should be rejected (wrong role, wrong status, wrong inputs) — assert the error, not just that the happy path works
+- **Status transitions**: poll for each expected status after each on-chain call — do not skip intermediate states
+- **Multi-party flows**: if a flow needs two workers (e.g. ranked payout, competitive auction), use two accounts — never use the same address twice as distinct parties
+
+### Accounts
+
+- `REQUESTER_PRIVATE_KEY` — task creator / requester
+- `WORKER_PRIVATE_KEY` — primary worker
+- `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction)
+- `EVALUATOR_PRIVATE_KEY` — external evaluator (optional; requester can act as evaluator if not set)
+- `DEV_PRIVATE_KEY` — fallback if specific keys not set
+
+### Verifying contract facts before writing
+
+Before writing assertions about contract behavior, read the relevant facet source in `packages/contracts/src/facets/`. Do not trust comments or descriptions in existing smoke tests — verify directly against the Solidity. In particular:
+- Check which status checks gate each function (`task.status != ...`)
+- Check which role checks gate each function (`msg.sender != task.requester` etc.)
+- Check whether an endpoint is permissionless (no X402 needed) or payer-gated
+
+### X402 vs plain POST
+
+- Use `x402Post(path, body, account)` for any endpoint that checks `ctx.res.locals.payer` — these require X402 payment
+- Use `post(path, body)` for permissionless endpoints (e.g. `finalizeVerdict`, public GETs)
+- When in doubt, check the router: if it throws on missing `payer`, it needs `x402Post`
+
 ## Smart Contract CI Requirements
 
 After any change to contract source files (`packages/contracts/src/`), always regenerate the gas snapshot before committing:

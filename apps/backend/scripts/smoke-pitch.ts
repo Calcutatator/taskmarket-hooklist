@@ -51,13 +51,12 @@ async function main() {
   ok('pitchId', pitchId);
 
   // 3. Requester selects pitch
-  log('3/8', 'Requester selecting pitch...');
-  await post(`/api/tasks/${taskId}/pitches/select`, {
-    taskId,
-    pitchId,
-    workerAddress: worker.address,
-    signature: '0x' + '00'.repeat(65),
-  });
+  log('3/8', 'Requester selecting pitch (X402)...');
+  await x402Post(
+    `/api/tasks/${taskId}/pitches/select`,
+    { taskId, pitchId, workerAddress: worker.address },
+    requester
+  );
   ok('selected', pitchId);
 
   // 4. Worker submits deliverable
