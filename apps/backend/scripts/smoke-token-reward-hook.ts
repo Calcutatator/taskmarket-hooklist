@@ -53,6 +53,15 @@ const VAULT_ADDRESS = process.env.VAULT_ADDRESS;
 const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS;
 const RPC_URL = process.env.EVM_RPC_URL_BASE_SEPOLIA || 'https://sepolia.base.org';
 
+if (!process.env.REQUESTER_PRIVATE_KEY || !process.env.WORKER_PRIVATE_KEY) {
+  console.error(
+    'Missing required env vars:\n' +
+      '  REQUESTER_PRIVATE_KEY=0x...\n' +
+      '  WORKER_PRIVATE_KEY=0x...'
+  );
+  process.exit(1);
+}
+
 if (!REWARD_HOOK_ADDRESS || !MOCK_TOKEN_ADDRESS || !VAULT_ADDRESS) {
   console.error(
     'Missing env vars. Run `make deploy-reward-hook-testnet` first and set:\n' +

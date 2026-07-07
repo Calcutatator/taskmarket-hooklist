@@ -157,12 +157,16 @@ contract EpochBudget is Ownable {
         bool anyDecremented = false;
 
         uint256 gUsed = _usedIn(globalUsage, epoch);
-        if (gUsed >= amount) globalUsage = Usage(epoch, uint192(gUsed - amount));
-        anyDecremented = true;
+        if (gUsed >= amount) {
+            globalUsage = Usage(epoch, uint192(gUsed - amount));
+            anyDecremented = true;
+        }
 
         uint256 wUsed = _usedIn(workerUsage[worker], epoch);
-        if (wUsed >= amount) workerUsage[worker] = Usage(epoch, uint192(wUsed - amount));
-        anyDecremented = true;
+        if (wUsed >= amount) {
+            workerUsage[worker] = Usage(epoch, uint192(wUsed - amount));
+            anyDecremented = true;
+        }
 
         uint256 rUsed = _usedIn(requesterUsage[requester], epoch);
         if (rUsed >= amount) {

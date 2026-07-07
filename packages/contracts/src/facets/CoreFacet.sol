@@ -494,6 +494,7 @@ contract CoreFacet {
         uint256 defaultLen = s.defaultHooks.length;
         uint256 reqLen = hookConfig.contracts.length;
         if (defaultLen == 0 && reqLen == 0) return;
+        if (defaultLen + reqLen > 8) revert ITMPCore.TooManyHooks();
         address[] storage th = s.taskHooks[taskId];
         for (uint256 i; i < defaultLen; i++) {
             th.push(s.defaultHooks[i]);
