@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook deploy-reward-hook-testnet release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -34,8 +34,7 @@ help:
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
-	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook system"
-	@echo "  make deploy-reward-hook-testnet - Deploy token reward hook with mock oracle/token for smoke testing"
+	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses mocks, mainnet uses real pools)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
@@ -117,7 +116,7 @@ deploy-reward-hook:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		cd packages/contracts && FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
-		forge script script/DeployRewardHook.s.sol:DeployRewardHook \
+		forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify; \
@@ -131,14 +130,6 @@ deploy-reward-hook:
 		echo "Usage: make deploy-reward-hook <testnet|mainnet>"; \
 		exit 1; \
 	fi
-
-deploy-reward-hook-testnet:
-	@$(ENV_LOADER) && \
-	cd packages/contracts && FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
-	forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
-		--rpc-url base_sepolia \
-		--broadcast \
-		--verify
 
 release:
 	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
