@@ -361,7 +361,7 @@ describe('CreateTaskWizard', () => {
     confirmSpy.mockRestore();
   });
 
-  it('shows the cost breakdown on the Publish review (reward, 5% fee, worker receives)', async () => {
+  it('shows the cost breakdown on the Publish review (reward, 7.5% fee, worker receives)', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
@@ -375,14 +375,14 @@ describe('CreateTaskWizard', () => {
       .getAllByRole('term')
       .map((row) => row.textContent);
     expect(labels).toContain('Reward');
-    expect(labels).toContain('Platform fee (5%)');
+    expect(labels).toContain('Platform fee (7.5%)');
     expect(labels).toContain('You pay today');
     expect(labels).toContain('Worker receives');
-    // 100 reward -> 5 fee -> 95 to worker, and the requester pays the full 100.
+    // 100 reward -> 7.5 fee -> 92.5 to worker, and the requester pays the full 100.
     // The reward value appears twice (Reward row and the summed You-pay-today row).
     expect(within(breakdown).getAllByText('100.000 USDC')).toHaveLength(2);
-    expect(within(breakdown).getByText('5.000 USDC')).toBeInTheDocument();
-    expect(within(breakdown).getByText('95.000 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getByText('7.500 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getByText('92.500 USDC')).toBeInTheDocument();
   });
 
   it('renders fully when initialMarketStats is null without a market strip', async () => {
