@@ -132,6 +132,7 @@ export const TaskResponseSchema = z.object({
   netReward: z.string().optional(),
   pendingActions: PendingActionSchema.array().optional(),
   selfAward: z.boolean().nullable().optional(),
+  hooks: z.array(z.string()).optional(),
 });
 
 export const TaskListInputSchema = z.object({

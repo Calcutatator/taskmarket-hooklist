@@ -78,7 +78,7 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4,address,bytes32[],bytes) returns (bytes32)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -115,6 +115,9 @@ const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (u
 const HOOK_ABI = parseAbi([
   'function withdrawFor(address worker, address destination) external',
   'function claimable(address wallet) external view returns (uint256)',
+]);
+const REGISTRY_READ_ABI = parseAbi([
+  'function getTaskHooks(bytes32 taskId) view returns (address[])',
 ]);
 const REGISTERED_EVENT = parseAbiItem(
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
@@ -348,6 +351,9 @@ export async function contractCreateTask(
     });
   }
 
+  const hookContracts: `0x${string}`[] =
+    hookContract === '0x0000000000000000000000000000000000000000' ? [] : [hookContract];
+
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'createTask',
@@ -357,12 +363,13 @@ export async function contractCreateTask(
       mode as `0x${string}`,
       pitchDeadlineSecs,
       bidDeadlineSecs,
-      '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
-      '',
       auctionSubtype,
-      hookContract,
-      tags,
-      hookData,
+      [hookContracts, hookData] as const,
+      [
+        '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+        '',
+        tags,
+      ] as const,
     ],
   });
   return relayThroughForwarder(requester, reward, data);
@@ -834,6 +841,21 @@ export async function contractWithdrawDreamsRewards(
     'withdrawFor'
   );
   return hash;
+}
+
+export async function contractGetTaskHooks(
+  taskId: `0x${string}`,
+  contractAddress?: string | null
+): Promise<readonly `0x${string}`[]> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const addr = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+  return publicClient.readContract({
+    address: addr,
+    abi: REGISTRY_READ_ABI,
+    functionName: 'getTaskHooks',
+    args: [taskId],
+  });
 }
 
 export async function contractGetDreamsClaimable(wallet: `0x${string}`): Promise<bigint> {

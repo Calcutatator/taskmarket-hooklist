@@ -550,7 +550,11 @@ smoke:
 	elif [ "$(word 1,$(ARGS))" = "submission-integrity" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-integrity; \
 	elif [ "$(word 1,$(ARGS))" = "token-reward-hook" ]; then \
-		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:token-reward-hook; \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" \
+		REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET" \
+		MOCK_TOKEN_ADDRESS="$$FORGE_MOCK_TOKEN_ADDRESS_TESTNET" \
+		VAULT_ADDRESS="$$FORGE_VAULT_ADDRESS_TESTNET" \
+		pnpm smoke:token-reward-hook; \
 	else \
 		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook>"; \
 		exit 1; \

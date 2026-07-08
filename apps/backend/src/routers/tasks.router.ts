@@ -35,6 +35,7 @@ import {
   contractRefundExpired,
   contractUpdateTask,
   contractRejectSubmission,
+  contractGetTaskHooks,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
@@ -750,28 +751,30 @@ export const tasksRouter = router({
       const now = new Date();
 
       const workerAddress = task.worker ?? task.claimedBy;
-      const [submissionCount, pitchCount, workerAgent, requesterAgentRow] = await Promise.all([
-        ctx.db
-          .select({ count: sql<number>`count(*)` })
-          .from(submissions)
-          .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt))),
-        ctx.db
-          .select({ count: sql<number>`count(*)` })
-          .from(proposals)
-          .where(eq(proposals.taskId, task.id)),
-        workerAddress
-          ? ctx.db
-              .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
-              .from(agents)
-              .where(eq(agents.address, workerAddress))
-              .limit(1)
-          : Promise.resolve([]),
-        ctx.db
-          .select({ registeredVia: agents.registeredVia })
-          .from(agents)
-          .where(eq(agents.address, task.requester))
-          .limit(1),
-      ]);
+      const [submissionCount, pitchCount, workerAgent, requesterAgentRow, taskHooks] =
+        await Promise.all([
+          ctx.db
+            .select({ count: sql<number>`count(*)` })
+            .from(submissions)
+            .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt))),
+          ctx.db
+            .select({ count: sql<number>`count(*)` })
+            .from(proposals)
+            .where(eq(proposals.taskId, task.id)),
+          workerAddress
+            ? ctx.db
+                .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
+                .from(agents)
+                .where(eq(agents.address, workerAddress))
+                .limit(1)
+            : Promise.resolve([]),
+          ctx.db
+            .select({ registeredVia: agents.registeredVia })
+            .from(agents)
+            .where(eq(agents.address, task.requester))
+            .limit(1),
+          contractGetTaskHooks(task.id as `0x${string}`, task.contractAddress).catch(() => []),
+        ]);
 
       // Resolve the most recent submitter so the requester's accept command can be
       // pre-filled. Bounty/Benchmark stay `open` while collecting submissions, so
@@ -892,6 +895,7 @@ export const tasksRouter = router({
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         selfAward: task.selfAward ?? null,
+        hooks: taskHooks.length > 0 ? [...taskHooks] : task.hookContract ? [task.hookContract] : [],
         submissionWindowOpen,
         netReward: String(
           Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
