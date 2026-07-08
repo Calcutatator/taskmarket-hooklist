@@ -1,7 +1,0 @@
-{
-  "tokens": "./tokens",
-  "output": "./build",
-  "generators": {
-    "tailwind": true
-  }
-}

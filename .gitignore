@@ -51,6 +51,7 @@ next-env.d.ts
 cache/
 out/
 broadcast/
+/.gas-snapshot
 
 # OS
 .DS_Store
@@ -59,9 +60,21 @@ Thumbs.db
 #Uploads
 apps/backend/uploads/
 
-# Claude tooling cache
+# Claude tooling local state
+.claude/settings.json
+.claude/settings.local.json
 .claude/tsc-cache/
 
+# Agent/workspace local state
+.context/
+.entire/
+
 # Playwright
+.playwright-cli/
+output/playwright/
 apps/web/playwright-report/
 apps/web/test-results/
+
+# Tool-generated config snapshots
+*.timestamp-*.mjs
+*.bundled_*.mjs
