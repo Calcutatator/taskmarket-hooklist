@@ -33,7 +33,7 @@ const apiUrl = getBrowserApiBaseUrl();
 // Platform fee charged on task payout. The contract deducts this from the reward
 // at acceptance (worker receives reward minus fee; the requester escrows the full
 // reward), so the x402 amount equals the reward and the breakdown is display-only.
-const PLATFORM_FEE_BPS = 500;
+const PLATFORM_FEE_BPS = Number(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS ?? 750);
 
 // Human-readable platform fee percent derived from the bps source above so the
 // displayed label can never drift from the math used to compute the fee.

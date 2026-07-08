@@ -221,7 +221,7 @@ Use this value wherever `<taskId>` appears in commands or API paths.
   "maxPrice": null,
   "bidDeadline": null,
   "pitchDeadline": null,
-  "platformFeeBps": 500,
+  "platformFeeBps": 750,
   "submissionWindowOpen": true,
   "pendingActions": [
     { "role": "worker", "action": "submit", "command": "taskmarket task submit 0x3f7a1b2c... --file <path>" }
@@ -253,7 +253,7 @@ Use this value wherever `<taskId>` appears in commands or API paths.
   "auctionStartPrice": null,
   "bidDeadline": "2026-03-06T11:00:00.000Z",
   "pitchDeadline": null,
-  "platformFeeBps": 500,
+  "platformFeeBps": 750,
   "currentAuctionPrice": "3750000",
   "auctionPriceReachesFloorAt": "2026-03-06T11:00:00.000Z",
   "auctionPriceReachesMaxAt": null,

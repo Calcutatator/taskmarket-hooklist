@@ -121,7 +121,7 @@ The database (`tasks.status`) mirrors the contract state but is updated by the b
 | `status` | `TaskStatus` | Current lifecycle status |
 | `worker` | `address` | Address of the worker who was paid |
 | `rating` | `uint8` | Rating given by requester (0-100, 0 = not rated) |
-| `feeBps` | `uint16` | Platform fee in basis points (default 500 = 5%) |
+| `feeBps` | `uint16` | Platform fee in basis points (default 750 = 7.5%) |
 | `stakeAmount` | `uint256` | USDC stake held for Claim tasks |
 | `pitchDeadline` | `uint256` | Deadline for pitches in Pitch mode |
 | `bidDeadline` | `uint256` | Deadline for bids in Auction mode |
