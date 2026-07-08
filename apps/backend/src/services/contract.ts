@@ -259,11 +259,33 @@ async function relayThroughForwarder(
       continue;
     }
 
-    // Transaction was sent — wait for receipt. On-chain reverts are real errors.
-    assertSuccess(
-      await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-      'relay'
-    );
+    // Transaction was sent — wait for receipt.
+    const receipt = await publicClient.waitForTransactionReceipt({
+      hash,
+      timeout: TX_RECEIPT_TIMEOUT,
+    });
+    if (receipt.status !== 'success') {
+      // Replay via eth_call to decode the actual revert reason (e.g. SubmissionNotFound),
+      // so callers that catch specific revert names see the same message format as pre-send failures.
+      let revertReason = 'unknown revert';
+      try {
+        const freshValidBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
+        const freshNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+        await publicClient.simulateContract({
+          address: forwarderAddr,
+          abi: FORWARDER_ABI,
+          functionName: 'relay',
+          args: [pgtrSenderAddr, paymentAmount, freshValidBefore, freshNonce, data],
+          account: account.address,
+        });
+      } catch (simErr) {
+        revertReason = decodeRelayRevert(simErr);
+      }
+      throw new TRPCError({
+        code: 'BAD_REQUEST',
+        message: `Contract call rejected: ${revertReason}`,
+      });
+    }
     return hash;
   }
   throw new TRPCError({
