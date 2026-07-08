@@ -7,6 +7,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
   contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
   contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
+  contractGetTaskHooks: vi.fn().mockResolvedValue([]),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
