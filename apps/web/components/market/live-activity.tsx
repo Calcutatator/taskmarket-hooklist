@@ -28,7 +28,7 @@ const easeOut = [0.16, 1, 0.3, 1] as const;
 // Below this active-worker count we avoid implying a busy market and instead
 // frame the registered pool with a "be among the first" message. Mirrors
 // market-liquidity.tsx so the two surfaces tell the same story.
-const ACTIVE_THRESHOLD = 3;
+export const ACTIVE_THRESHOLD = 3;
 
 // Tasks past these statuses can no longer accept work, so live polling and the
 // Live/anticipation indicators are meaningless and would only add load.
@@ -37,7 +37,7 @@ const TERMINAL_STATUSES = ['completed', 'cancelled', 'expired', 'disputed'];
 const POLL_INTERVAL_MS = 9_000;
 const TOAST_DEBOUNCE_MS = 1_500;
 
-function isTerminalStatus(task: TaskDetailResponse | TaskResponse) {
+export function isTerminalStatus(task: TaskDetailResponse | TaskResponse) {
   return TERMINAL_STATUSES.includes(task.status);
 }
 
@@ -46,7 +46,7 @@ type ActivityNoun = {
   plural: string;
 };
 
-function activityNoun(task: TaskDetailResponse | TaskResponse): ActivityNoun {
+export function activityNoun(task: TaskDetailResponse | TaskResponse): ActivityNoun {
   switch (task.mode) {
     case 'auction':
       return { plural: 'bids', singular: 'bid' };
@@ -90,7 +90,7 @@ type LiveModeData = {
 // mode's query is enabled (and only for the requester on a live task), so a page
 // runs at most one polling query. Each query seeds from the SSR mode data so the
 // first paint never flashes.
-function useLiveModeData(
+export function useLiveModeData(
   task: TaskDetailResponse | TaskResponse,
   initialModeData: TaskModeData | undefined,
   enabled: boolean
@@ -151,6 +151,35 @@ function useLiveModeData(
     proofs: proofsQuery.data ?? seedProofs,
     submissions: submissionsQuery.data ?? seedSubmissions,
   };
+}
+
+type TaskActivitySummary = {
+  count: number;
+  hasActivity: boolean;
+  latestActor: string | null;
+};
+
+// A thin read-only summary over the same live mode data the panel polls. It reuses
+// the same OR-chain the panel uses to decide "has activity" so both surfaces stay
+// in lockstep. count is the flattened item length; claim-only tasks report
+// hasActivity via the OR-chain even though liveItems does not include the claim.
+export function useTaskActivitySummary(
+  task: TaskDetailResponse | TaskResponse,
+  initialModeData: TaskModeData | undefined,
+  enabled: boolean
+): TaskActivitySummary {
+  const data = useLiveModeData(task, initialModeData, enabled);
+  const items = liveItems(task, data);
+  const hasActivity =
+    (data.submissions?.length ?? 0) > 0 ||
+    (data.pitches?.length ?? 0) > 0 ||
+    (data.proofs?.length ?? 0) > 0 ||
+    (data.bids?.length ?? 0) > 0 ||
+    data.claim != null;
+  const count = items.length;
+  const latestActor = items[items.length - 1]?.actor ?? null;
+
+  return { count, hasActivity, latestActor };
 }
 
 type LiveItem = {

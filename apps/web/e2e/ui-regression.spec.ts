@@ -143,6 +143,27 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
 });
 
+test('surfaces the live status banner on an open task and stays hydration-clean', async ({
+  page,
+}) => {
+  await page.goto('/dashboard/tasks/mock-bounty-open');
+
+  const banner = page.getByRole('status', { name: /Task status/i });
+  await expect(banner).toBeVisible();
+  await expect(banner).toContainText(/Live and broadcasting to the network/i);
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test('hides the live status banner on a terminal task', async ({ page }) => {
+  await page.goto('/dashboard/tasks/mock-cancelled');
+
+  await expect(page.getByRole('status', { name: /Task status/i })).toHaveCount(0);
+});
+
 test('collapses the desktop sidebar to an icon rail', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only sidebar rail behavior.');
 

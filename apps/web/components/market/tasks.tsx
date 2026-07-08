@@ -26,6 +26,7 @@ import { InfoTooltip } from '@/components/market/info-tooltip';
 import { LiveActivityPanel } from '@/components/market/live-activity';
 import { CountdownTimer } from '@/components/market/motion/countdown-timer';
 import { RelativeTime } from '@/components/market/motion/relative-time';
+import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { Badge } from '@/components/ui/badge';
@@ -247,7 +248,7 @@ export function countLabel(count: number, singular: string, plural = `${singular
   return `${count} ${count === 1 ? singular : plural}`;
 }
 
-function taskDeadlineSource(task: TaskDetailResponse | TaskResponse) {
+export function taskDeadlineSource(task: TaskDetailResponse | TaskResponse) {
   if (task.mode === 'auction' && task.bidDeadline) {
     return task.bidDeadline;
   }
@@ -1964,6 +1965,7 @@ export function TaskDetailPanel({
             </BreadcrumbItem>
           </BreadcrumbList>
         </Breadcrumb>
+        <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <section
           aria-label="Task metrics"
           className="grid overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-2"
