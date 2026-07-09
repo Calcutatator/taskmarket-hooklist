@@ -299,17 +299,22 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
   return null;
 }
 
-// Estimated DREAMS bonus caption for the task detail reward metric. Only present when
-// the DREAMS reward hook is attached to this task and an exchange rate is configured
-// (estimatedDreamsBonus only exists on the detail response, not list rows). This is a
-// display estimate — actual payouts also apply the wallet-age ramp and epoch budget
-// caps, and bounty-mode payouts settle at completion-time rate, not this one.
+// Estimated worker DREAMS bonus caption for the task detail reward metric. Only present
+// when the DREAMS reward hook is attached to this task and an exchange rate + bonus rate
+// are configured (estimatedWorkerDreamsBonus only exists on the detail response, not list
+// rows). Shows both the USD bonus value and the DREAMS-token equivalent so the two rates
+// (bonusBps and dreamsPerUsdc) are never conflated -- see docs/reference/rewards.md. This
+// is a display estimate -- actual payouts also apply the wallet-age ramp and epoch budget
+// caps, and bounty-mode payouts settle at completion-time rates, not these.
 function dreamsBonusCaption(task: TaskDetailResponse | TaskResponse): string | null {
-  const bonus = 'estimatedDreamsBonus' in task ? task.estimatedDreamsBonus : undefined;
-  if (!bonus || bonus === '0') {
+  const usdBonus =
+    'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
+  const dreamsBonus =
+    'estimatedWorkerDreamsBonus' in task ? task.estimatedWorkerDreamsBonus : undefined;
+  if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
     return null;
   }
-  return `~${formatDreams(bonus)} DREAMS bonus (est.)`;
+  return `~${formatUsdcUnits(usdBonus)} · ~${formatDreams(dreamsBonus)} DREAMS worker bonus (est.)`;
 }
 
 // Reward as a scannable headline: larger/bolder than the surrounding cells, plus an

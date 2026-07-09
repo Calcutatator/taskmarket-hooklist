@@ -6,6 +6,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractWithdrawDreamsRewards: vi.fn().mockResolvedValue('0xcafebabe'),
   contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(10n * BigInt(10 ** 18)),
   contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(8000),
+  contractGetDreamsBonusBps: vi.fn().mockResolvedValue(750),
 }));
 
 vi.mock('../../../src/config/env', () => ({
@@ -372,6 +373,7 @@ describe('wallet router', () => {
       const result = await caller.exchangeRate();
       expect(result.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
       expect(result.workerSplitBps).toBe(8000);
+      expect(result.bonusBps).toBe(750);
     });
 
     it('returns "0" when DREAMS_HOOK_ADDRESS is not configured', async () => {

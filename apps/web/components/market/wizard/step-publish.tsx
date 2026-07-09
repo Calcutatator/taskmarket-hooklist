@@ -26,7 +26,13 @@ import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-conf
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
-import { estimateDreamsBonus, formatDreams } from '@taskmarket/shared';
+import {
+  estimateWorkerDreamsBonus,
+  estimateRequesterDreamsBonus,
+  estimateWorkerUsdBonusValue,
+  estimateRequesterUsdBonusValue,
+  formatDreams,
+} from '@taskmarket/shared';
 
 import type { WizardFormValues, WizardFunnelEvent, WizardVariant } from '../create-task-wizard';
 
@@ -202,17 +208,25 @@ export function StepPublish({
 
   const exchangeRateQuery = trpc.wallet.exchangeRate.useQuery();
   const dreamsPerUsdc = exchangeRateQuery.data?.dreamsPerUsdc;
-  // DREAMS are computed from the full escrowed reward (pre platform-fee), then split
-  // between worker/requester by the hook's own workerSplitBps — a separate ratio from
-  // the USDC platform fee above.
-  const estimatedDreamsBonus =
-    dreamsPerUsdc && dreamsPerUsdc !== '0'
-      ? estimateDreamsBonus(
-          breakdown.escrowed,
-          dreamsPerUsdc,
-          exchangeRateQuery.data?.workerSplitBps ?? 10_000
-        )
-      : null;
+  const bonusBps = exchangeRateQuery.data?.bonusBps ?? 0;
+  const workerSplitBps = exchangeRateQuery.data?.workerSplitBps ?? 10_000;
+  // The bonus % (bonusBps) sets how much of the task's USD value becomes a DREAMS
+  // bonus; dreamsPerUsdc is the separate exchange rate used to convert that USD
+  // amount into DREAMS tokens. Both are then split between worker/requester by
+  // workerSplitBps -- three independent knobs, applied in that order.
+  const hasDreamsEstimate = Boolean(dreamsPerUsdc && dreamsPerUsdc !== '0' && bonusBps > 0);
+  const estimatedWorkerUsdBonus = hasDreamsEstimate
+    ? estimateWorkerUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
+    : null;
+  const estimatedWorkerDreamsBonus = hasDreamsEstimate
+    ? estimateWorkerDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
+    : null;
+  const estimatedRequesterUsdBonus = hasDreamsEstimate
+    ? estimateRequesterUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
+    : null;
+  const estimatedRequesterDreamsBonus = hasDreamsEstimate
+    ? estimateRequesterDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
+    : null;
 
   async function handlePublish() {
     const submitValues = { ...form.getValues() };
@@ -618,11 +632,21 @@ export function StepPublish({
                     {formatUsdcUnits(breakdown.workerNet)}
                   </dd>
                 </div>
-                {estimatedDreamsBonus && estimatedDreamsBonus !== '0' ? (
+                {estimatedWorkerDreamsBonus && estimatedWorkerDreamsBonus !== '0' ? (
                   <div className="flex items-center justify-between gap-3">
                     <dt className="text-muted-foreground">Estimated worker DREAMS bonus</dt>
                     <dd className="font-mono text-muted-foreground">
-                      ~{formatDreams(estimatedDreamsBonus)} DREAMS
+                      ~{formatUsdcUnits(estimatedWorkerUsdBonus!)} · ~
+                      {formatDreams(estimatedWorkerDreamsBonus)} DREAMS
+                    </dd>
+                  </div>
+                ) : null}
+                {estimatedRequesterDreamsBonus && estimatedRequesterDreamsBonus !== '0' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Estimated requester DREAMS bonus</dt>
+                    <dd className="font-mono text-muted-foreground">
+                      ~{formatUsdcUnits(estimatedRequesterUsdBonus!)} · ~
+                      {formatDreams(estimatedRequesterDreamsBonus)} DREAMS
                     </dd>
                   </div>
                 ) : null}

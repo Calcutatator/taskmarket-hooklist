@@ -90,6 +90,20 @@ cd packages/contracts && forge snapshot
 
 CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
 
+## Changesets
+
+Changesets are public, user-facing release notes -- write them for someone learning about the change for the first time, not someone who watched the PR get built.
+
+- **One changeset per PR.** If a PR accumulates multiple changeset files across its commits, consolidate them into a single file before merging.
+- **Never describe implementation history.** Words like "replaced X with Y", "switched to", "we changed this because" describe the PR's internal development, not the shipped result -- delete that framing entirely.
+- **For a feature that has never shipped to main, describe it as new, not as a change.** If the feature doesn't exist on `main` yet, there is no prior public behavior to compare against. Write "Introduce X" / "Add X", not "X now does Y instead of Z" -- the "instead of Z" reads as if Z was ever live for users, when it never was.
+- Reserve before/after framing ("X now supports Y", "Y replaces X") for changes to something that is already live on `main` and that users have actually experienced.
+
+**Semver bump:**
+- `minor` -- any new feature (new command, new endpoint, new capability that didn't exist before)
+- `patch` -- a change to an existing, already-shipped feature (bug fix, tweak, behavior adjustment)
+- `major` -- never use unless the developer explicitly says to. Do not infer a breaking change on your own.
+
 ## Smart Contract Storage Layout
 
 The contracts use the Diamond proxy pattern (EIP-2535). All state lives in `AppStorage`, a struct

@@ -19,6 +19,8 @@ interface IDiamondAdmin {
 ///   FORGE_PROTOCOL_TOKEN             — DREAMS token address
 ///   FORGE_DIAMOND_ADDRESS            — TaskMarket Diamond proxy
 ///   FORGE_DREAMS_PER_USDC            — whole DREAMS per $1 (e.g. 347); scaled by 1e18 in this script
+///   FORGE_BONUS_BPS                  — USD bonus % of task value in bps (e.g. 750 = 7.5%,
+///                                       matching the platform fee)
 ///   FORGE_EPOCH_DURATION             — epoch length in seconds (e.g. 604800 = 7 days)
 ///   FORGE_GLOBAL_EPOCH_CAP_USD       — max USD-value emitted per epoch (USDC base units)
 ///   FORGE_WORKER_CAP_USD             — per-worker per-epoch cap (USDC base units)
@@ -91,6 +93,7 @@ contract DeployRewardHook is Script {
             vm.envAddress("FORGE_DIAMOND_ADDRESS"),
             IERC20Metadata(protocolToken).decimals(),
             dreamsPerUsdc,
+            uint16(vm.envUint("FORGE_BONUS_BPS")),
             protocolToken,
             uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
             vm.envAddress("FORGE_BACKEND_ADDRESS"),

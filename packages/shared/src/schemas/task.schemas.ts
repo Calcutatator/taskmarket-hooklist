@@ -178,7 +178,12 @@ export const TaskInboxResponseSchema = z.object({
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
   dreamsPerUsdc: z.string().optional(),
-  estimatedDreamsBonus: z.string().optional(),
+  bonusBps: z.number().optional(),
+  estimatedUsdBonusValue: z.string().optional(),
+  estimatedWorkerUsdBonusValue: z.string().optional(),
+  estimatedRequesterUsdBonusValue: z.string().optional(),
+  estimatedWorkerDreamsBonus: z.string().optional(),
+  estimatedRequesterDreamsBonus: z.string().optional(),
 });
 
 export const CancelTaskInputSchema = z.object({

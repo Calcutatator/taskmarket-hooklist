@@ -1,17 +1,79 @@
 # DREAMS Token Rewards
 
 Workers and requesters earn DREAMS tokens for completing tasks on Taskmarket.
-Rewards are priced in USD (the task's USDC reward value) and converted to
-tokens at an admin-set `dreamsPerUsdc` exchange rate on the reward hook
-contract. The rate is not derived from an on-chain oracle — the protocol owner
-updates it as the market price of DREAMS moves (typically on a >20% price
-move or weekly, whichever comes first). It is transparent everywhere DREAMS
-amounts are shown: task detail, `taskmarket stats`, and withdraw output.
+This is the single source of truth for all reward tokenomics -- rates, splits,
+caps, and where each value is surfaced. If you're looking for a protocol
+constant (bonus %, exchange rate, split, caps), it's on this page.
 
-For Claim / Pitch / Auction tasks, the rate is locked at claim/select-worker
-time and used for that task's payout regardless of later rate changes. For
-Bounty tasks (no pre-reservation), the rate in effect at task completion is
-used.
+## The two independent knobs
+
+The DREAMS bonus a task pays out is computed from two deliberately separate
+admin-set contract variables. Conflating them was an earlier design mistake --
+they answer different questions and change for different reasons:
+
+- **`bonusBps`** -- the tokenomics intensity knob. What fraction of a task's
+  USD value becomes a DREAMS bonus, e.g. `750` = 7.5%. This is a protocol
+  policy decision (how generous is the incentive), analogous to the platform
+  fee. Default: `750` (7.5%), matching the platform fee.
+- **`dreamsPerUsdc`** -- the pure market exchange rate. DREAMS wei (18
+  decimals) per 1 USDC. This tracks the market price of DREAMS and has
+  nothing to do with how generous the bonus is -- it only answers "how many
+  tokens is $1 worth right now." The protocol owner updates it as the market
+  price moves (typically on a >20% price move or weekly, whichever comes
+  first). It is not derived from an on-chain oracle.
+
+Changing one never silently changes the other's effective meaning. If DREAMS
+doubles in price, `dreamsPerUsdc` halves and the USD value of every bonus stays
+the same. If the protocol wants to be more or less generous with incentives,
+`bonusBps` changes and the exchange rate is untouched.
+
+## Reward formula
+
+Applied in this order, mirrored exactly on-chain and in every off-chain
+estimate:
+
+```
+usdBonusValue = rewardUsd * bonusBps / 10000
+tokenReward   = usdBonusValue * dreamsPerUsdc / 1e6
+workerShare   = tokenReward * workerSplitBps / 10000
+requesterShare = tokenReward - workerShare
+```
+
+Example: a $100 task, `bonusBps = 750` (7.5%), `dreamsPerUsdc = 10 DREAMS/USD`,
+`workerSplitBps = 8000` (80% worker / 20% requester):
+
+- `usdBonusValue` = $100 * 7.5% = $7.50
+- `tokenReward` = $7.50 * 10 = 75 DREAMS
+- Worker gets $6.00 worth = 60 DREAMS
+- Requester gets $1.50 worth = 15 DREAMS
+
+For Claim / Pitch / Auction tasks, both `dreamsPerUsdc` and the derived
+`usdBonusValue` are locked at claim/select-worker time and used for that
+task's payout regardless of later rate or bonus-rate changes. For Bounty
+tasks (no pre-reservation), the current `dreamsPerUsdc` and `bonusBps` in
+effect at task completion are used.
+
+## Where this shows up
+
+Both the USD value and the DREAMS-token amount are shown together everywhere
+a bonus estimate appears, so the two rates are never conflated:
+
+- **Publish wizard** -- cost breakdown shows "Estimated worker
+  DREAMS bonus" and "Estimated requester DREAMS bonus" rows, each with USD
+  and DREAMS.
+- **Task detail** -- reward metric caption shows the worker's estimated bonus
+  in both units.
+- **Submitting work** -- a reminder line above the submit button shows the
+  worker's estimated bonus in both units.
+- **`task get` / `GET /api/tasks/:id`** -- returns `dreamsPerUsdc`, `bonusBps`,
+  `estimatedUsdBonusValue`, `estimatedWorkerUsdBonusValue`,
+  `estimatedRequesterUsdBonusValue`, `estimatedWorkerDreamsBonus`,
+  `estimatedRequesterDreamsBonus`. Field names are explicit about which side
+  (worker vs requester) they apply to -- never a bare, ambiguous name.
+
+All of these are display estimates: computed before the wallet-age ramp and
+epoch budget caps are applied, and for Bounty tasks the rate/bonus % can
+still move between when you view the estimate and when the task completes.
 
 ## Claimable escrow model
 
@@ -39,7 +101,7 @@ with wallet age measured from the wallet's first hook interaction:
 | 4 – 8 weeks      | 50%               |
 | 8 weeks or more  | 100%              |
 
-The ramp thresholds and multipliers are configurable by the contract owner.
+The ramp thresholds and multipliers are configurable by the protocol owner.
 
 ## Worker / requester split
 
@@ -48,22 +110,35 @@ Each task completion credits both the worker and the task requester:
 - Worker: 80% of the token reward (default)
 - Requester: 20% of the token reward (default)
 
-The split ratio is configurable via `setWorkerSplitBps()`.
+The split ratio is configurable by the protocol owner.
+
+Splitting is integer division and can leave a remainder: `workerShare = total
+* workerSplitBps / 10000` (floors down), and `requesterShare = total -
+workerShare` (gets whatever is left, including the rounding remainder). The
+two shares always sum exactly to the total token reward -- nothing is lost or
+stuck, any fractional dust goes to the requester. At DREAMS' 18 decimals this
+is at most a fraction of a wei-equivalent unit and is not economically
+meaningful.
 
 ## Checking the exchange rate
 
 ```
 GET /api/wallet/exchange-rate
-# -> { dreamsPerUsdc: "347000000000000000000", workerSplitBps: 8000 }
+# -> { dreamsPerUsdc: "347000000000000000000", workerSplitBps: 8000, bonusBps: 750 }
 ```
 
 `dreamsPerUsdc` is DREAMS wei (18 decimals) per 1 USDC. A value of `"0"` means
-the rewards system is not configured on this server. This is the same rate
-used to compute the `estimatedDreamsBonus` field on `task.get` and the
-publish-wizard's estimated DREAMS bonus row on the web app — treat all of
-these as estimates: they are computed before the wallet-age ramp and epoch
-budget caps are applied, and for Bounty tasks the rate can still move between
-when you view the estimate and when the task completes.
+the rewards system is not configured on this server.
+
+## Emission caps
+
+To prevent runaway token emission, DREAMS bonuses are also subject to rolling
+per-epoch USD caps: a global cap across all tasks, a per-worker cap, a
+per-requester cap, and a per-task cap. If a cap is reached, the bonus for a
+task may be reduced or skipped entirely -- the underlying USDC task payment is
+never affected, only the DREAMS bonus on top of it. Caps reset on a rolling
+epoch (currently weekly). This is why the estimates shown before completion
+are estimates, not guarantees.
 
 ## Viewing your pending balance
 

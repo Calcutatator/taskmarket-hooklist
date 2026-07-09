@@ -494,20 +494,24 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(`taskmarket task bid ${task.id} --price <n>`)).toBeInTheDocument();
   });
 
-  it('shows an estimated DREAMS bonus caption when the hook is attached', () => {
+  it('shows an estimated worker DREAMS bonus caption when the hook is attached', () => {
     render(
       <TaskDetailPanel
         modeData={{}}
         task={{
           ...taskDetail,
           dreamsPerUsdc: (10n * 10n ** 18n).toString(),
-          estimatedDreamsBonus: (200n * 10n ** 18n).toString(),
+          bonusBps: 750,
+          estimatedWorkerUsdBonusValue: '60000',
+          estimatedWorkerDreamsBonus: (200n * 10n ** 18n).toString(),
         }}
       />
     );
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
-    expect(within(rewardSummary).getByText(/~200 dreams bonus \(est\.\)/i)).toBeInTheDocument();
+    expect(
+      within(rewardSummary).getByText(/~0\.060 usdc.*~200 dreams worker bonus \(est\.\)/i)
+    ).toBeInTheDocument();
   });
 
   it('omits the DREAMS bonus caption when no estimate is present', () => {

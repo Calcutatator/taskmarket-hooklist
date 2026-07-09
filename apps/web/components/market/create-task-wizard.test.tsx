@@ -16,7 +16,9 @@ const {
 } = vi.hoisted(() => ({
   connectOrCreateWallet: vi.fn(),
   exchangeRateData: {
-    current: undefined as { dreamsPerUsdc: string; workerSplitBps: number } | undefined,
+    current: undefined as
+      | { dreamsPerUsdc: string; workerSplitBps: number; bonusBps: number }
+      | undefined,
   },
   fund: vi.fn(),
   router: {
@@ -404,10 +406,11 @@ describe('CreateTaskWizard', () => {
     expect(within(breakdown).getByText('92.500 USDC')).toBeInTheDocument();
   });
 
-  it('shows an estimated DREAMS bonus row when the exchange rate is configured', async () => {
+  it('shows estimated worker and requester DREAMS bonus rows when the exchange rate is configured', async () => {
     exchangeRateData.current = {
       dreamsPerUsdc: (10n * 10n ** 18n).toString(),
       workerSplitBps: 8000,
+      bonusBps: 750,
     };
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
@@ -420,8 +423,11 @@ describe('CreateTaskWizard', () => {
       .getAllByRole('term')
       .map((row) => row.textContent);
     expect(labels).toContain('Estimated worker DREAMS bonus');
-    // 100 reward * 10 DREAMS/USDC * 80% worker split = 800 DREAMS
-    expect(within(breakdown).getByText('~800 DREAMS')).toBeInTheDocument();
+    expect(labels).toContain('Estimated requester DREAMS bonus');
+    // 100 reward * 7.5% bonus = $7.50 bonus value; 10 DREAMS/USDC = 75 DREAMS total;
+    // split 80/20: worker 6.00 USDC / 60 DREAMS, requester 1.50 USDC / 15 DREAMS.
+    expect(within(breakdown).getByText(/~6\.000 usdc.*~60 dreams/i)).toBeInTheDocument();
+    expect(within(breakdown).getByText(/~1\.500 usdc.*~15 dreams/i)).toBeInTheDocument();
   });
 
   it('omits the DREAMS bonus row when no exchange rate is configured', async () => {

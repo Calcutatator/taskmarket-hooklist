@@ -11,7 +11,11 @@ import {
   type TaskStatusType,
   type TaskModeType,
   type AuctionTypeValue,
-  estimateDreamsBonus,
+  estimateUsdBonusValue,
+  estimateWorkerUsdBonusValue,
+  estimateRequesterUsdBonusValue,
+  estimateWorkerDreamsBonus,
+  estimateRequesterDreamsBonus,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
@@ -39,6 +43,7 @@ import {
   contractGetTaskHooks,
   contractGetDreamsPerUsdc,
   contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
@@ -764,6 +769,7 @@ export const tasksRouter = router({
         taskHooks,
         dreamsPerUsdc,
         dreamsWorkerSplitBps,
+        dreamsBonusBps,
       ] = await Promise.all([
         ctx.db
           .select({ count: sql<number>`count(*)` })
@@ -790,6 +796,7 @@ export const tasksRouter = router({
         dreamsHookConfigured
           ? contractGetDreamsWorkerSplitBps().catch(() => 0)
           : Promise.resolve(0),
+        dreamsHookConfigured ? contractGetDreamsBonusBps().catch(() => 0) : Promise.resolve(0),
       ]);
 
       // Resolve the most recent submitter so the requester's accept command can be
@@ -865,10 +872,39 @@ export const tasksRouter = router({
         dreamsHookAddress !== undefined &&
         hooksList.some((h) => h.toLowerCase() === dreamsHookAddress.toLowerCase());
       const dreamsPerUsdcField =
-        hasDreamsHook && dreamsPerUsdc > 0n ? dreamsPerUsdc.toString() : undefined;
-      const estimatedDreamsBonusField =
+        hasDreamsHook && dreamsPerUsdc > 0n && dreamsBonusBps > 0
+          ? dreamsPerUsdc.toString()
+          : undefined;
+      const bonusBpsField = dreamsPerUsdcField !== undefined ? dreamsBonusBps : undefined;
+      const estimatedUsdBonusValueField =
         dreamsPerUsdcField !== undefined
-          ? estimateDreamsBonus(task.reward, dreamsPerUsdcField, dreamsWorkerSplitBps)
+          ? estimateUsdBonusValue(task.reward, dreamsBonusBps)
+          : undefined;
+      const estimatedWorkerUsdBonusValueField =
+        dreamsPerUsdcField !== undefined
+          ? estimateWorkerUsdBonusValue(task.reward, dreamsBonusBps, dreamsWorkerSplitBps)
+          : undefined;
+      const estimatedRequesterUsdBonusValueField =
+        dreamsPerUsdcField !== undefined
+          ? estimateRequesterUsdBonusValue(task.reward, dreamsBonusBps, dreamsWorkerSplitBps)
+          : undefined;
+      const estimatedWorkerDreamsBonusField =
+        dreamsPerUsdcField !== undefined
+          ? estimateWorkerDreamsBonus(
+              task.reward,
+              dreamsPerUsdcField,
+              dreamsBonusBps,
+              dreamsWorkerSplitBps
+            )
+          : undefined;
+      const estimatedRequesterDreamsBonusField =
+        dreamsPerUsdcField !== undefined
+          ? estimateRequesterDreamsBonus(
+              task.reward,
+              dreamsPerUsdcField,
+              dreamsBonusBps,
+              dreamsWorkerSplitBps
+            )
           : undefined;
 
       return {
@@ -925,7 +961,12 @@ export const tasksRouter = router({
         selfAward: task.selfAward ?? null,
         hooks: hooksList,
         dreamsPerUsdc: dreamsPerUsdcField,
-        estimatedDreamsBonus: estimatedDreamsBonusField,
+        bonusBps: bonusBpsField,
+        estimatedUsdBonusValue: estimatedUsdBonusValueField,
+        estimatedWorkerUsdBonusValue: estimatedWorkerUsdBonusValueField,
+        estimatedRequesterUsdBonusValue: estimatedRequesterUsdBonusValueField,
+        estimatedWorkerDreamsBonus: estimatedWorkerDreamsBonusField,
+        estimatedRequesterDreamsBonus: estimatedRequesterDreamsBonusField,
         submissionWindowOpen,
         netReward: String(
           Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)

@@ -63,6 +63,7 @@ const envSchema = z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
+    DREAMS_HOOK_SEED_BLOCK: z.coerce.number().default(0),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

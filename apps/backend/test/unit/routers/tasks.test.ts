@@ -10,6 +10,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractGetTaskHooks: vi.fn().mockResolvedValue([]),
   contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(0n),
   contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(0),
+  contractGetDreamsBonusBps: vi.fn().mockResolvedValue(0),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
@@ -56,6 +57,7 @@ import {
   contractGetTaskHooks,
   contractGetDreamsPerUsdc,
   contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
 } from '../../../src/services/contract';
 import { getServerConfig } from '../../../src/config/env';
 import { notifyNewTask } from '../../../src/services/task-notifications';
@@ -238,7 +240,7 @@ describe('tasks router', () => {
       expect(result!.pendingActions.some((a) => a.action === 'forfeit')).toBe(false);
     });
 
-    it('omits dreamsPerUsdc and estimatedDreamsBonus when the hook is not configured', async () => {
+    it('omits all DREAMS estimate fields when the hook is not configured', async () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([mockTaskRow]))
@@ -249,11 +251,16 @@ describe('tasks router', () => {
       const result = await caller.get({ taskId: '0xabc' });
 
       expect(result!.dreamsPerUsdc).toBeUndefined();
-      expect(result!.estimatedDreamsBonus).toBeUndefined();
+      expect(result!.bonusBps).toBeUndefined();
+      expect(result!.estimatedUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedWorkerUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedRequesterUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedWorkerDreamsBonus).toBeUndefined();
+      expect(result!.estimatedRequesterDreamsBonus).toBeUndefined();
       expect(contractGetDreamsPerUsdc).not.toHaveBeenCalled();
     });
 
-    it('includes dreamsPerUsdc and estimatedDreamsBonus when the DREAMS hook is attached', async () => {
+    it('includes worker and requester DREAMS estimates when the hook is attached', async () => {
       const DREAMS_HOOK = '0x1234567890123456789012345678901234567890';
       vi.mocked(getServerConfig).mockReturnValueOnce({
         DEFAULT_PLATFORM_FEE_BPS: 500,
@@ -272,6 +279,7 @@ describe('tasks router', () => {
       vi.mocked(contractGetTaskHooks).mockResolvedValueOnce([DREAMS_HOOK as `0x${string}`]);
       vi.mocked(contractGetDreamsPerUsdc).mockResolvedValueOnce(10n * BigInt(10 ** 18));
       vi.mocked(contractGetDreamsWorkerSplitBps).mockResolvedValueOnce(8000);
+      vi.mocked(contractGetDreamsBonusBps).mockResolvedValueOnce(750);
 
       const ctx = createMockCtx();
       ctx.db.select
@@ -283,8 +291,15 @@ describe('tasks router', () => {
       const result = await caller.get({ taskId: '0xabc' });
 
       expect(result!.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
-      // reward 1_000_000 (1 USDC) * 10 DREAMS/USDC * 80% worker split = 8 DREAMS
-      expect(result!.estimatedDreamsBonus).toBe((8n * BigInt(10 ** 18)).toString());
+      expect(result!.bonusBps).toBe(750);
+      // reward 1_000_000 (1 USDC) * 7.5% bonus = $0.075 USD bonus value (75000 base units)
+      expect(result!.estimatedUsdBonusValue).toBe('75000');
+      // 80% worker / 20% requester split of the $0.075 bonus
+      expect(result!.estimatedWorkerUsdBonusValue).toBe('60000');
+      expect(result!.estimatedRequesterUsdBonusValue).toBe('15000');
+      // $0.075 * 10 DREAMS/USDC = 0.75 DREAMS total, split 80/20 = 0.6 / 0.15 DREAMS
+      expect(result!.estimatedWorkerDreamsBonus).toBe((6n * BigInt(10 ** 17)).toString());
+      expect(result!.estimatedRequesterDreamsBonus).toBe((15n * BigInt(10 ** 16)).toString());
     });
   });
 

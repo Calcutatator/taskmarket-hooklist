@@ -6,12 +6,16 @@
  * DeployRewardHookTestnet.s.sol.
  *
  * Scenarios:
- *   A. Bounty task — create → worker submits → accept winner →
- *      poll until completed → verify hook.claimable(worker) > 0 →
+ *   A. Bounty task — create → verify task.get DREAMS estimate fields match the
+ *      two-step bonusBps/dreamsPerUsdc formula → worker submits → accept winner →
+ *      poll until completed → verify hook.claimable(worker) matches
+ *      usdBonusValue * rate * workerSplitBps →
  *      call POST /api/wallet/withdraw-dreams → verify token balance lands.
  *
- *   B. Claim task — create → worker claims → submit → accept →
- *      poll until completed → verify hook.claimable(worker) > 0.
+ *   B. Claim task — create → worker claims → verify usdBonusValue and
+ *      reservedTokenAmount lock at claim time (bonusBps applied before rate
+ *      conversion) → submit → accept → poll until completed →
+ *      verify hook.claimable(worker) > 0.
  *
  *   C. Hook wiring — verify getTaskHooks returns the reward hook address
  *      for newly created tasks (protocol default hook is set).
@@ -79,9 +83,10 @@ if (!REWARD_HOOK_ADDRESS || !MOCK_TOKEN_ADDRESS || !VAULT_ADDRESS) {
 
 const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)']);
 const hookAbi = parseAbi([
-  'function rewardStates(bytes32) view returns (uint256,uint256,uint256,address,address,bool,bool)',
+  'function rewardStates(bytes32) view returns (uint256,uint256,uint256,uint256,address,address,bool,bool)',
   'function claimable(address wallet) view returns (uint256)',
   'function dreamsPerUsdc() view returns (uint256)',
+  'function bonusBps() view returns (uint16)',
   'function workerSplitBps() view returns (uint16)',
 ]);
 
@@ -115,15 +120,16 @@ async function hookRewardState(taskId: string) {
     abi: hookAbi,
     functionName: 'rewardStates',
     args: [taskId as `0x${string}`],
-  })) as [bigint, bigint, bigint, string, string, boolean, boolean];
+  })) as [bigint, bigint, bigint, bigint, string, string, boolean, boolean];
   return {
     rewardUsd: result[0],
-    startPrice: result[1],
-    reservedTokenAmount: result[2],
-    requester: result[3],
-    worker: result[4],
-    reserved: result[5],
-    paid: result[6],
+    usdBonusValue: result[1],
+    startPrice: result[2],
+    reservedTokenAmount: result[3],
+    requester: result[4],
+    worker: result[5],
+    reserved: result[6],
+    paid: result[7],
   };
 }
 
@@ -133,6 +139,14 @@ async function hookDreamsPerUsdc(): Promise<bigint> {
     abi: hookAbi,
     functionName: 'dreamsPerUsdc',
   }) as Promise<bigint>;
+}
+
+async function hookBonusBps(): Promise<number> {
+  return client.readContract({
+    address: getAddress(REWARD_HOOK_ADDRESS!),
+    abi: hookAbi,
+    functionName: 'bonusBps',
+  }) as Promise<number>;
 }
 
 async function hookWorkerSplitBps(): Promise<number> {
@@ -202,6 +216,7 @@ async function main() {
   const apiRate = (await get('/api/wallet/exchange-rate')) as {
     dreamsPerUsdc: string;
     workerSplitBps: number;
+    bonusBps: number;
   };
   ok('GET /wallet/exchange-rate', apiRate.dreamsPerUsdc);
   if (BigInt(apiRate.dreamsPerUsdc) !== onChainRate) {
@@ -211,7 +226,7 @@ async function main() {
   }
   ok('API rate matches on-chain rate', true);
 
-  log('ER2/2', 'Reading workerSplitBps on-chain and via API...');
+  log('ER2/3', 'Reading workerSplitBps on-chain and via API...');
   const workerSplitBps = await hookWorkerSplitBps();
   if (apiRate.workerSplitBps !== workerSplitBps) {
     throw new Error(
@@ -220,10 +235,22 @@ async function main() {
   }
   ok('workerSplitBps', workerSplitBps);
 
+  log('ER3/3', 'Reading bonusBps on-chain and via API...');
+  const onChainBonusBps = await hookBonusBps();
+  if (onChainBonusBps === 0) {
+    throw new Error('hook.bonusBps() is 0 — deploy did not set a bonus rate');
+  }
+  if (apiRate.bonusBps !== onChainBonusBps) {
+    throw new Error(
+      `API bonusBps (${apiRate.bonusBps}) does not match on-chain bonusBps (${onChainBonusBps})`
+    );
+  }
+  ok('bonusBps', onChainBonusBps);
+
   // ─── Scenario A: Bounty — create → submit → accept → token reward ─────────
   console.log('\n--- A: Bounty task reward ---');
 
-  log('A1/5', 'Creating bounty task (X402)...');
+  log('A1/6', 'Creating bounty task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     { description: 'Write a haiku about Base L2 (hook smoke test)', reward: '5000', duration: 60, mode: 'bounty', tags: ['smoke-test'] },
@@ -231,7 +258,7 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  log('A2/5', 'Verifying RewardConfigured state on hook (polling until set)...');
+  log('A2/6', 'Verifying RewardConfigured state on hook (polling until set)...');
   let stateAfterCreate = await hookRewardState(taskId);
   for (let i = 0; i < 10 && stateAfterCreate.rewardUsd === 0n; i++) {
     await new Promise((r) => setTimeout(r, 2000));
@@ -242,7 +269,49 @@ async function main() {
   }
   ok('rewardUsd on hook', stateAfterCreate.rewardUsd);
 
-  log('A3/5', 'Worker A submitting...');
+  log('A3/6', 'Verifying GET /api/tasks/:id estimate fields match the two-step formula...');
+  const taskDetail = (await get(`/api/tasks/${taskId}`)) as {
+    dreamsPerUsdc?: string;
+    bonusBps?: number;
+    estimatedUsdBonusValue?: string;
+    estimatedWorkerUsdBonusValue?: string;
+    estimatedRequesterUsdBonusValue?: string;
+    estimatedWorkerDreamsBonus?: string;
+    estimatedRequesterDreamsBonus?: string;
+  };
+  if (taskDetail.dreamsPerUsdc !== onChainRate.toString()) {
+    throw new Error(
+      `task.get dreamsPerUsdc (${taskDetail.dreamsPerUsdc}) does not match on-chain rate (${onChainRate})`
+    );
+  }
+  if (taskDetail.bonusBps !== onChainBonusBps) {
+    throw new Error(
+      `task.get bonusBps (${taskDetail.bonusBps}) does not match on-chain bonusBps (${onChainBonusBps})`
+    );
+  }
+  const expectedEstimateUsdBonusValue = (5000n * BigInt(onChainBonusBps)) / 10_000n;
+  if (taskDetail.estimatedUsdBonusValue !== expectedEstimateUsdBonusValue.toString()) {
+    throw new Error(
+      `task.get estimatedUsdBonusValue (${taskDetail.estimatedUsdBonusValue}) does not match expected ${expectedEstimateUsdBonusValue}`
+    );
+  }
+  const expectedEstimateTotalDreams = (expectedEstimateUsdBonusValue * onChainRate) / 1_000_000n;
+  const expectedEstimateWorkerDreams =
+    (expectedEstimateTotalDreams * BigInt(workerSplitBps)) / 10_000n;
+  const expectedEstimateRequesterDreams = expectedEstimateTotalDreams - expectedEstimateWorkerDreams;
+  if (taskDetail.estimatedWorkerDreamsBonus !== expectedEstimateWorkerDreams.toString()) {
+    throw new Error(
+      `task.get estimatedWorkerDreamsBonus (${taskDetail.estimatedWorkerDreamsBonus}) does not match expected ${expectedEstimateWorkerDreams}`
+    );
+  }
+  if (taskDetail.estimatedRequesterDreamsBonus !== expectedEstimateRequesterDreams.toString()) {
+    throw new Error(
+      `task.get estimatedRequesterDreamsBonus (${taskDetail.estimatedRequesterDreamsBonus}) does not match expected ${expectedEstimateRequesterDreams}`
+    );
+  }
+  ok('task.get DREAMS estimate fields match bonusBps * rate * split', true);
+
+  log('A4/6', 'Worker A submitting...');
   const submitSigA = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
@@ -254,11 +323,11 @@ async function main() {
 
   const claimableBeforeAcceptA = await hookClaimable(worker.address);
 
-  log('A4/5', 'Requester accepting (X402)...');
+  log('A5/6', 'Requester accepting (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
-  log('A5/5', 'Polling until completed and verifying claimable reward...');
+  log('A6/6', 'Polling until completed and verifying claimable reward...');
   await pollStatus(taskId, 'completed');
 
   const claimableAfter = await hookClaimable(worker.address);
@@ -268,17 +337,21 @@ async function main() {
   }
 
   // Ramp is bypassed on testnet (100% multiplier), so the bounty payout should
-  // exactly equal rewardUsd * rate / 1e6 * workerSplitBps / 10000, assuming
-  // epoch/task caps do not clamp a reward this small.
+  // exactly equal usdBonusValue * rate / 1e6 * workerSplitBps / 10000, where
+  // usdBonusValue = rewardUsd * bonusBps / 10000 — the two-step math: bonusBps
+  // sets how much of the task's USD value becomes a bonus, dreamsPerUsdc then
+  // converts that USD amount to tokens. Bounty-mode reads both fresh at
+  // completion time (no lock), so this uses the current bonusBps/rate.
+  const expectedBountyUsdBonusValue = (stateAfterCreate.rewardUsd * BigInt(onChainBonusBps)) / 10_000n;
   const expectedBountyTokenReward =
-    ((stateAfterCreate.rewardUsd * onChainRate) / 1_000_000n * BigInt(workerSplitBps)) / 10_000n;
+    (((expectedBountyUsdBonusValue * onChainRate) / 1_000_000n) * BigInt(workerSplitBps)) / 10_000n;
   const bountyDelta = claimableAfter - claimableBeforeAcceptA;
   if (bountyDelta !== expectedBountyTokenReward) {
     throw new Error(
       `Bounty token reward mismatch: expected ${expectedBountyTokenReward}, got ${bountyDelta}`
     );
   }
-  ok('bounty token reward matches rate * split', bountyDelta.toString());
+  ok('bounty token reward matches bonusBps * rate * split', bountyDelta.toString());
 
   const apiBalance = (await get(`/api/wallet/dreams-balance?address=${worker.address}`)) as {
     claimableBaseUnits: string;
@@ -384,15 +457,25 @@ async function main() {
     );
   }
   ok('startPrice matches locked dreamsPerUsdc', stateAfterClaim.startPrice.toString());
-  // reservedTokenAmount should be the deterministic reward for the locked rate —
-  // no drift band anymore, so it must equal rewardUsd * rate / 1e6 exactly.
-  const expectedReservedAmount = (3000n * onChainRate) / 1_000_000n;
+  // usdBonusValue is derived from bonusBps and locked at claim time alongside
+  // startPrice — must equal rewardUsd * bonusBps / 10000 exactly.
+  const expectedUsdBonusValue = (3000n * BigInt(onChainBonusBps)) / 10_000n;
+  if (stateAfterClaim.usdBonusValue !== expectedUsdBonusValue) {
+    throw new Error(
+      `usdBonusValue (${stateAfterClaim.usdBonusValue}) does not match expected ${expectedUsdBonusValue}`
+    );
+  }
+  ok('usdBonusValue matches rewardUsd * bonusBps / 10000', true);
+  // reservedTokenAmount should be the deterministic reward for the locked
+  // usdBonusValue/rate — no drift band, so it must equal
+  // usdBonusValue * rate / 1e6 exactly.
+  const expectedReservedAmount = (expectedUsdBonusValue * onChainRate) / 1_000_000n;
   if (stateAfterClaim.reservedTokenAmount !== expectedReservedAmount) {
     throw new Error(
       `reservedTokenAmount (${stateAfterClaim.reservedTokenAmount}) does not match expected ${expectedReservedAmount}`
     );
   }
-  ok('reservedTokenAmount matches rewardUsd * rate / 1e6', true);
+  ok('reservedTokenAmount matches usdBonusValue * rate / 1e6', true);
 
   log('B4/7', 'Recording vault balance after reserve...');
   const vaultAfterReserve = await vaultBalance();

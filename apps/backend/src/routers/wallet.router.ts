@@ -12,6 +12,7 @@ import {
   contractWithdrawDreamsRewards,
   contractGetDreamsPerUsdc,
   contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
 } from '../services/contract';
 import {
   SetWithdrawalAddressInputSchema,
@@ -317,10 +318,11 @@ export const walletRouter = router({
     .input(z.void())
     .output(ExchangeRateOutputSchema)
     .query(async () => {
-      const [dreamsPerUsdc, workerSplitBps] = await Promise.all([
+      const [dreamsPerUsdc, workerSplitBps, bonusBps] = await Promise.all([
         contractGetDreamsPerUsdc(),
         contractGetDreamsWorkerSplitBps(),
+        contractGetDreamsBonusBps(),
       ]);
-      return { dreamsPerUsdc: dreamsPerUsdc.toString(), workerSplitBps };
+      return { dreamsPerUsdc: dreamsPerUsdc.toString(), workerSplitBps, bonusBps };
     }),
 });

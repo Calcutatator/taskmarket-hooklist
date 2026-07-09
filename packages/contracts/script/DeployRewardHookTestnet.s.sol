@@ -20,6 +20,8 @@ interface IDiamondAdmin {
 ///
 /// Optional:
 ///   FORGE_DREAMS_PER_USDC        — whole DREAMS per $1 (default: 347); scaled by 1e18 in this script
+///   FORGE_BONUS_BPS              — USD bonus % of task value in bps (default: 750 = 7.5%,
+///                                  matching the platform fee)
 ///   FORGE_INITIAL_VAULT_BALANCE  — mock DREAMS tokens to mint into vault (default: 1_000_000e18)
 ///   FORGE_EPOCH_DURATION         — seconds (default: 604800 = 7 days)
 ///   FORGE_GLOBAL_EPOCH_CAP_USD   — USDC base units (default: 100_000e6)
@@ -53,6 +55,7 @@ contract DeployRewardHookTestnet is Script {
             vm.envAddress("FORGE_DIAMOND_ADDRESS"),
             TOKEN_DECIMALS,
             dreamsPerUsdc,
+            uint16(vm.envOr("FORGE_BONUS_BPS", uint256(750))),
             address(token),
             uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
             vm.envOr("FORGE_BACKEND_ADDRESS", deployer),

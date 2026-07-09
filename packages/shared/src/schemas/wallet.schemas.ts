@@ -67,4 +67,5 @@ export const WithdrawDreamsOutputSchema = z.object({
 export const ExchangeRateOutputSchema = z.object({
   dreamsPerUsdc: z.string(),
   workerSplitBps: z.number(),
+  bonusBps: z.number(),
 });

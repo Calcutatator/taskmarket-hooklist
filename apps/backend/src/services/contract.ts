@@ -117,6 +117,7 @@ const HOOK_ABI = parseAbi([
   'function claimable(address wallet) external view returns (uint256)',
   'function dreamsPerUsdc() external view returns (uint256)',
   'function workerSplitBps() external view returns (uint16)',
+  'function bonusBps() external view returns (uint16)',
 ]);
 const REGISTRY_READ_ABI = parseAbi([
   'function getTaskHooks(bytes32 taskId) view returns (address[])',
@@ -891,5 +892,16 @@ export async function contractGetDreamsWorkerSplitBps(): Promise<number> {
     address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
     abi: HOOK_ABI,
     functionName: 'workerSplitBps',
+  });
+}
+
+export async function contractGetDreamsBonusBps(): Promise<number> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'bonusBps',
   });
 }

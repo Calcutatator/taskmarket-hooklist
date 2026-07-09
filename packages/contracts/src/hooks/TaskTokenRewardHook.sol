@@ -12,8 +12,17 @@ import { EpochBudget } from "./EpochBudget.sol";
 
 /// @title TaskTokenRewardHook
 /// @notice Hook that credits DREAMS tokens to workers and requesters on task completion.
-///         Rewards are priced in USD (using the task's USDC reward value) and
-///         converted to tokens at an admin-settable `dreamsPerUsdc` rate.
+///         Two independent admin-set knobs determine the payout:
+///           1. `bonusBps`     — the reward INTENSITY, expressed as a % of a task's USD
+///                               value (e.g. 500 = 5%). This is the tokenomics decision
+///                               (how generous the incentive is) and should stay stable.
+///           2. `dreamsPerUsdc` — the pure DREAMS/USDC EXCHANGE RATE, tracking market
+///                               price. Updating this to stay accurate as DREAMS' price
+///                               moves does NOT change the effective bonus %, because the
+///                               two are applied as separate steps:
+///
+///                                 usdBonusValue = rewardUsd * bonusBps / 10000
+///                                 tokenReward   = usdBonusValue * dreamsPerUsdc / 1e6
 ///
 ///         Tokens are held in the hook as claimable escrow rather than pushed to wallets
 ///         immediately. Workers and requesters withdraw via `withdrawFor` called by the
@@ -23,16 +32,19 @@ import { EpochBudget } from "./EpochBudget.sol";
 ///         farming. Workers receive `workerSplitBps / 10000` of the reward; requesters
 ///         receive the remainder.
 ///
-///         For Claim / Pitch / Auction tasks: rate locks when worker is selected, tokens
-///         are reserved from the vault, and credited atomically at completion.
+///         For Claim / Pitch / Auction tasks: bonusBps and rate both lock when the worker
+///         is selected, tokens are reserved from the vault, and credited atomically at
+///         completion.
 ///
-///         For Bounty tasks: rate and payment happen atomically at completion with no
-///         pre-reservation.
+///         For Bounty tasks: bonusBps, rate, and payment all happen atomically at
+///         completion with no pre-reservation.
 contract TaskTokenRewardHook is ITMPHook, Ownable {
     using SafeERC20 for IERC20;
 
     struct RewardState {
         uint256 rewardUsd; // USDC 6-decimal amount (= task reward)
+        uint256 usdBonusValue; // rewardUsd * bonusBps/10000 at lock time; the USD basis
+        // actually converted to tokens and consumed against EpochBudget caps
         uint256 startPrice; // dreamsPerUsdc snapshot at lock time (DREAMS wei per 1 USDC); 0 for bounty/unreserved
         uint256 reservedTokenAmount; // tokens reserved from vault (Path A only)
         address requester;
@@ -47,7 +59,12 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     uint8 public immutable tokenDecimals;
 
     // DREAMS wei per 1 USDC (1e6 base units), admin-settable. e.g. 347e18 = 347 DREAMS per $1.
+    // Pure exchange rate — tracks market price, independent of the bonus % below.
     uint256 public dreamsPerUsdc;
+
+    // USD bonus intensity in bps of task value; e.g. 500 = 5%. This is the tokenomics
+    // knob (how generous the DREAMS incentive is) — independent of dreamsPerUsdc.
+    uint16 public bonusBps;
 
     // Claimable escrow — tokens are pushed here from the vault, then claimed by wallets
     // via withdrawFor() called by the trusted backend.
@@ -69,11 +86,17 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     event RewardConfigured(bytes32 indexed taskId, uint256 rewardUsd);
     event RewardReserved(bytes32 indexed taskId, address indexed worker, uint256 startPrice, uint256 reservedAmount);
     event RewardPaid(
-        bytes32 indexed taskId, address indexed worker, uint256 rewardUsd, uint256 price, uint256 tokenAmount
+        bytes32 indexed taskId,
+        address indexed worker,
+        uint256 rewardUsd,
+        uint256 usdBonusValue,
+        uint256 price,
+        uint256 tokenAmount
     );
     event RewardReserveReleased(bytes32 indexed taskId, uint256 releasedAmount);
     event RewardsWithdrawn(address indexed wallet, address indexed destination, uint256 amount);
     event PriceUpdated(uint256 dreamsPerUsdc);
+    event BonusBpsUpdated(uint16 bonusBps);
 
     error ZeroAddress();
     error ZeroRate();
@@ -99,6 +122,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         address _diamond,
         uint8 _tokenDecimals,
         uint256 _dreamsPerUsdc,
+        uint16 _bonusBps,
         address _token,
         uint16 _workerSplitBps,
         address _backend,
@@ -109,6 +133,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 || _backend == address(0)
         ) revert ZeroAddress();
         if (_dreamsPerUsdc == 0) revert ZeroRate();
+        if (_bonusBps > 10000) revert InvalidBps();
         if (_workerSplitBps > 10000) revert InvalidBps();
 
         vault = IRewardVault(_vault);
@@ -116,6 +141,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         diamond = _diamond;
         tokenDecimals = _tokenDecimals;
         dreamsPerUsdc = _dreamsPerUsdc;
+        bonusBps = _bonusBps;
         token = _token;
         workerSplitBps = _workerSplitBps;
         backend = _backend;
@@ -143,6 +169,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
         rewardStates[taskId] = RewardState({
             rewardUsd: ctx.reward,
+            usdBonusValue: 0,
             startPrice: 0,
             reservedTokenAmount: 0,
             requester: ctx.requester,
@@ -221,12 +248,13 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
     ///         and the wallet-age ramp. Ramp-discounted tokens remain in hook balance
     ///         and are recoverable via sweepUnclaimed.
     ///
-    ///         Path A (reserved): the rate was locked at reserve time, so the token amount
-    ///                            is deterministic — pay exactly state.reservedTokenAmount.
+    ///         Path A (reserved): the rate and bonus % were locked at reserve time, so the
+    ///                            token amount is deterministic — pay exactly
+    ///                            state.reservedTokenAmount.
     ///         Path B (Bounty):   pay each winner proportionally using verdict.awards, at the
-    ///                            current dreamsPerUsdc rate. Skips the token bonus gracefully
-    ///                            if no rate is configured or vault/budget is exhausted —
-    ///                            the USDC payout is never blocked.
+    ///                            current dreamsPerUsdc rate and bonusBps. Skips the token
+    ///                            bonus gracefully if no rate/bonus is configured or
+    ///                            vault/budget is exhausted — the USDC payout is never blocked.
     function checkComplete(bytes32 taskId, ITMPCore.TaskContext calldata ctx, ITMPCore.Verdict calldata verdict)
         external
         override
@@ -257,27 +285,30 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
             if (!paid) {
                 try vault.release(taskId, tokenReward) { } catch { }
-                try epochBudget.release(state.requester, state.worker, state.rewardUsd) { } catch { }
+                try epochBudget.release(state.requester, state.worker, state.usdBonusValue) { } catch { }
                 return true;
             }
 
             _creditWithSplit(state.requester, state.worker, tokenReward);
-            emit RewardPaid(taskId, state.worker, state.rewardUsd, state.startPrice, tokenReward);
+            emit RewardPaid(taskId, state.worker, state.rewardUsd, state.usdBonusValue, state.startPrice, tokenReward);
         } else {
             // Path B — Bounty (no pre-reservation): pay each winner proportionally.
-            // If no rate is configured, skip the token bonus; USDC payout is not blocked.
+            // If no rate or bonus is configured, skip the token bonus; USDC payout is not blocked.
             uint256 rate = dreamsPerUsdc;
-            if (rate == 0) return true;
+            uint256 bonus = bonusBps;
+            if (rate == 0 || bonus == 0) return true;
             if (verdict.awards.length == 0) revert NoWorkerFound(taskId);
 
             for (uint256 i; i < verdict.awards.length; i++) {
                 address worker = verdict.awards[i].worker;
                 _touchFirstSeen(worker);
-                // Use per-winner pre-fee USDC amount as the USD basis for token reward.
+                // Use per-winner pre-fee USDC amount as the task-value basis, then apply
+                // the USD bonus % to get the actual USD value converted to tokens.
                 uint256 workerUsd = verdict.awards[i].amount;
+                uint256 workerBonusUsd = workerUsd * bonus / 10000;
                 uint256 budgetRemaining = epochBudget.remaining(ctx.requester, worker);
                 uint256 taskCapUsd = epochBudget.maxUsdPerTask();
-                uint256 cappedUsd = _min3(workerUsd, budgetRemaining, taskCapUsd);
+                uint256 cappedUsd = _min3(workerBonusUsd, budgetRemaining, taskCapUsd);
                 if (cappedUsd == 0) continue; // budget exhausted; skip for this worker
 
                 uint256 tokenReward = cappedUsd * rate / 1e6;
@@ -314,7 +345,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 } catch { }
                 if (tokenPaid) {
                     _creditWithSplit(ctx.requester, worker, tokenReward);
-                    emit RewardPaid(taskId, worker, workerUsd, rate, tokenReward);
+                    emit RewardPaid(taskId, worker, workerUsd, cappedUsd, rate, tokenReward);
                 } else {
                     try epochBudget.release(ctx.requester, worker, cappedUsd) { } catch { }
                 }
@@ -343,7 +374,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         RewardState storage state = rewardStates[taskId];
         if (state.reserved && !state.paid && state.reservedTokenAmount > 0) {
             try vault.release(taskId, state.reservedTokenAmount) { } catch { }
-            try epochBudget.release(state.requester, state.worker, state.rewardUsd) { } catch { }
+            try epochBudget.release(state.requester, state.worker, state.usdBonusValue) { } catch { }
             emit RewardReserveReleased(taskId, state.reservedTokenAmount);
         }
     }
@@ -453,6 +484,15 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         emit PriceUpdated(_rate);
     }
 
+    /// @notice Set the USD bonus intensity in bps of task value (e.g. 500 = 5%). This is
+    ///         the tokenomics decision — independent of dreamsPerUsdc, which only tracks
+    ///         market price. Set to 0 to pause the DREAMS bonus without touching the rate.
+    function setBonusBps(uint16 _bonusBps) external onlyOwner {
+        if (_bonusBps > 10000) revert InvalidBps();
+        bonusBps = _bonusBps;
+        emit BonusBpsUpdated(_bonusBps);
+    }
+
     function setVault(address _vault) external onlyOwner {
         vault = IRewardVault(_vault);
     }
@@ -514,18 +554,24 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         RewardState storage state = rewardStates[taskId];
 
         uint256 rate = dreamsPerUsdc;
+        // intentional two-step bps scaling: bonusUsd is a real checkpoint value (stored
+        // in state.usdBonusValue and consumed against EpochBudget independently of the
+        // token conversion below), not an algebraic simplification opportunity.
+        // slither-disable-next-line divide-before-multiply
+        uint256 bonusUsd = state.rewardUsd * bonusBps / 10000;
         state.startPrice = rate;
+        state.usdBonusValue = bonusUsd;
         state.worker = worker;
         state.reserved = true;
         state.reservedTokenAmount = 0;
 
-        if (rate == 0) {
-            // No rate configured — no token reward owed, but USDC flow is never blocked.
+        if (rate == 0 || bonusUsd == 0) {
+            // No rate/bonus configured — no token reward owed, but USDC flow is never blocked.
             emit RewardReserved(taskId, worker, rate, 0);
             return true;
         }
 
-        uint256 tokenAmount = state.rewardUsd * rate / 1e6;
+        uint256 tokenAmount = bonusUsd * rate / 1e6;
 
         // TOCTOU guard: budget may be exhausted between remaining() and checkAndConsume.
         // reservedTokenAmount stays 0 on failure so no token reward is owed without
@@ -535,7 +581,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         // is a trusted owner-set contract with no callback mechanism, so the
         // reentrancy-no-eth finding is a false positive.
         // slither-disable-next-line reentrancy-no-eth
-        try epochBudget.checkAndConsume(requester, worker, state.rewardUsd) {
+        try epochBudget.checkAndConsume(requester, worker, bonusUsd) {
             state.reservedTokenAmount = tokenAmount;
             vault.reserve(taskId, tokenAmount);
         } catch { }
@@ -548,7 +594,7 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
         RewardState storage state = rewardStates[taskId];
         if (!state.reserved || state.paid || state.reservedTokenAmount == 0) return;
         uint256 tokenAmount = state.reservedTokenAmount;
-        uint256 usdAmount = state.rewardUsd;
+        uint256 usdAmount = state.usdBonusValue;
         // Clear state before external calls to prevent double-release on re-entry or
         // a second terminal dispatch emitting a phantom RewardReserveReleased event.
         state.reserved = false;

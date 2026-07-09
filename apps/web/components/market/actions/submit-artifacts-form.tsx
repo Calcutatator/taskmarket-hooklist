@@ -1,5 +1,6 @@
 'use client';
 
+import { formatDreams } from '@taskmarket/shared';
 import { CircleCheckIcon } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -16,9 +17,26 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { formatUsdcUnits } from '@/lib/format';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
+
+// Estimated worker DREAMS bonus reminder shown above the submit button. Only present
+// when the DREAMS reward hook is attached and configured (estimatedWorkerDreamsBonus
+// only exists on the detail response, not list rows). Same estimate caveats as
+// tasks.tsx's dreamsBonusCaption -- pre-ramp, pre-cap, and bounty-mode settles at
+// completion-time rates, not this one. See docs/reference/rewards.md.
+function workerDreamsBonusReminder(task: TaskActionComponentProps['task']): string | null {
+  const usdBonus =
+    'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
+  const dreamsBonus =
+    'estimatedWorkerDreamsBonus' in task ? task.estimatedWorkerDreamsBonus : undefined;
+  if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
+    return null;
+  }
+  return `Completing this task also earns an estimated ${formatUsdcUnits(usdBonus)} (~${formatDreams(dreamsBonus)} DREAMS) bonus.`;
+}
 
 const ARTIFACT_ROLES = ['preview', 'source', 'final', 'attachment'] as const;
 type ArtifactRole = (typeof ARTIFACT_ROLES)[number];
@@ -266,9 +284,11 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
   }
 
   const isUploading = pending && Object.keys(uploadProgress).length > 0;
+  const bonusReminder = workerDreamsBonusReminder(task);
 
   return (
     <div className="grid gap-3">
+      {bonusReminder ? <p className="text-xs text-muted-foreground">{bonusReminder}</p> : null}
       <div
         className={`rounded-md border border-dashed p-4 text-center transition-colors ${
           dragging ? 'border-primary bg-primary/5' : 'border-border/70 bg-surface/40'
