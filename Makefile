@@ -34,7 +34,7 @@ help:
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
-	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses mocks, mainnet uses real pools)"
+	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:

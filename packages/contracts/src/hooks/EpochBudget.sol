@@ -4,8 +4,12 @@ pragma solidity ^0.8.24;
 import { Ownable } from "@openzeppelin/contracts/access/Ownable.sol";
 
 /// @title EpochBudget
-/// @notice Tracks per-epoch token emission caps: global, per-worker, and per-requester.
+/// @notice Tracks per-epoch USD emission caps: global, per-worker, and per-requester.
 ///         Only the authorised hook contract may call mutating functions.
+///
+///         All caps and usage are denominated in USDC base units (6 decimals) — the
+///         USD value of the reward, not the DREAMS token amount. This keeps caps
+///         meaningful regardless of the DREAMS/USDC exchange rate.
 ///
 ///         Usage is tracked against a monotonic epoch index. When the epoch rolls,
 ///         all usage is considered reset without O(n) clears: each account's stored
@@ -19,10 +23,10 @@ contract EpochBudget is Ownable {
     address public hook;
 
     uint256 public epochDuration;
-    uint256 public globalCap;
-    uint256 public workerCap;
-    uint256 public requesterCap;
-    uint256 public maxTokensPerTask;
+    uint256 public globalCapUsd;
+    uint256 public workerCapUsd;
+    uint256 public requesterCapUsd;
+    uint256 public maxUsdPerTask;
 
     uint64 public currentEpoch;
     uint256 public epochStart;
@@ -51,21 +55,22 @@ contract EpochBudget is Ownable {
 
     constructor(
         uint256 _epochDuration,
-        uint256 _globalCap,
-        uint256 _workerCap,
-        uint256 _requesterCap,
-        uint256 _maxTokensPerTask,
+        uint256 _globalCapUsd,
+        uint256 _workerCapUsd,
+        uint256 _requesterCapUsd,
+        uint256 _maxUsdPerTask,
         address _owner
     ) Ownable(_owner) {
         if (_epochDuration == 0) revert EpochDurationZero();
-        if (_globalCap > type(uint192).max) revert CapExceedsUint192();
-        if (_workerCap > type(uint192).max) revert CapExceedsUint192();
-        if (_requesterCap > type(uint192).max) revert CapExceedsUint192();
+        if (_globalCapUsd > type(uint192).max) revert CapExceedsUint192();
+        if (_workerCapUsd > type(uint192).max) revert CapExceedsUint192();
+        if (_requesterCapUsd > type(uint192).max) revert CapExceedsUint192();
+        if (_maxUsdPerTask > type(uint192).max) revert CapExceedsUint192();
         epochDuration = _epochDuration;
-        globalCap = _globalCap;
-        workerCap = _workerCap;
-        requesterCap = _requesterCap;
-        maxTokensPerTask = _maxTokensPerTask;
+        globalCapUsd = _globalCapUsd;
+        workerCapUsd = _workerCapUsd;
+        requesterCapUsd = _requesterCapUsd;
+        maxUsdPerTask = _maxUsdPerTask;
         epochStart = block.timestamp;
         currentEpoch = 1;
     }
@@ -104,13 +109,13 @@ contract EpochBudget is Ownable {
         return _usedIn(requesterUsage[requester], _effectiveEpoch());
     }
 
-    /// @notice Remaining capacity for a requester/worker pair in the effective epoch.
+    /// @notice Remaining USD capacity for a requester/worker pair in the effective epoch.
     function remaining(address requester, address worker) external view returns (uint256) {
         uint64 epoch = _effectiveEpoch();
-        uint256 globalRem = globalCap - _min(globalCap, _usedIn(globalUsage, epoch));
-        uint256 workerRem = workerCap - _min(workerCap, _usedIn(workerUsage[worker], epoch));
-        uint256 reqRem = requesterCap - _min(requesterCap, _usedIn(requesterUsage[requester], epoch));
-        return _min(_min3(globalRem, workerRem, reqRem), maxTokensPerTask);
+        uint256 globalRem = globalCapUsd - _min(globalCapUsd, _usedIn(globalUsage, epoch));
+        uint256 workerRem = workerCapUsd - _min(workerCapUsd, _usedIn(workerUsage[worker], epoch));
+        uint256 reqRem = requesterCapUsd - _min(requesterCapUsd, _usedIn(requesterUsage[requester], epoch));
+        return _min(_min3(globalRem, workerRem, reqRem), maxUsdPerTask);
     }
 
     // ─── Mutations ────────────────────────────────────────────────────────────
@@ -126,22 +131,22 @@ contract EpochBudget is Ownable {
         return currentEpoch;
     }
 
-    /// @notice Check capacity and consume budget. Reverts if any cap is exceeded.
+    /// @notice Check USD capacity and consume budget. Reverts if any cap is exceeded.
     function checkAndConsume(address requester, address worker, uint256 amount) external onlyHook {
         uint64 epoch = _rollEpochIfStale();
 
-        if (amount > maxTokensPerTask) revert TaskCapExceeded(amount, maxTokensPerTask);
+        if (amount > maxUsdPerTask) revert TaskCapExceeded(amount, maxUsdPerTask);
 
         uint256 gUsed = _usedIn(globalUsage, epoch);
-        uint256 globalRem = globalCap - _min(globalCap, gUsed);
+        uint256 globalRem = globalCapUsd - _min(globalCapUsd, gUsed);
         if (amount > globalRem) revert GlobalCapExceeded(amount, globalRem);
 
         uint256 wUsed = _usedIn(workerUsage[worker], epoch);
-        uint256 workerRem = workerCap - _min(workerCap, wUsed);
+        uint256 workerRem = workerCapUsd - _min(workerCapUsd, wUsed);
         if (amount > workerRem) revert WorkerCapExceeded(worker, amount, workerRem);
 
         uint256 rUsed = _usedIn(requesterUsage[requester], epoch);
-        uint256 reqRem = requesterCap - _min(requesterCap, rUsed);
+        uint256 reqRem = requesterCapUsd - _min(requesterCapUsd, rUsed);
         if (amount > reqRem) revert RequesterCapExceeded(requester, amount, reqRem);
 
         globalUsage = Usage(epoch, uint192(gUsed + amount));
@@ -179,23 +184,24 @@ contract EpochBudget is Ownable {
 
     // ─── Owner config ─────────────────────────────────────────────────────────
 
-    function setGlobalCap(uint256 _globalCap) external onlyOwner {
-        if (_globalCap > type(uint192).max) revert CapExceedsUint192();
-        globalCap = _globalCap;
+    function setGlobalCapUsd(uint256 _globalCapUsd) external onlyOwner {
+        if (_globalCapUsd > type(uint192).max) revert CapExceedsUint192();
+        globalCapUsd = _globalCapUsd;
     }
 
-    function setWorkerCap(uint256 _workerCap) external onlyOwner {
-        if (_workerCap > type(uint192).max) revert CapExceedsUint192();
-        workerCap = _workerCap;
+    function setWorkerCapUsd(uint256 _workerCapUsd) external onlyOwner {
+        if (_workerCapUsd > type(uint192).max) revert CapExceedsUint192();
+        workerCapUsd = _workerCapUsd;
     }
 
-    function setRequesterCap(uint256 _requesterCap) external onlyOwner {
-        if (_requesterCap > type(uint192).max) revert CapExceedsUint192();
-        requesterCap = _requesterCap;
+    function setRequesterCapUsd(uint256 _requesterCapUsd) external onlyOwner {
+        if (_requesterCapUsd > type(uint192).max) revert CapExceedsUint192();
+        requesterCapUsd = _requesterCapUsd;
     }
 
-    function setMaxTokensPerTask(uint256 _maxTokensPerTask) external onlyOwner {
-        maxTokensPerTask = _maxTokensPerTask;
+    function setMaxUsdPerTask(uint256 _maxUsdPerTask) external onlyOwner {
+        if (_maxUsdPerTask > type(uint192).max) revert CapExceedsUint192();
+        maxUsdPerTask = _maxUsdPerTask;
     }
 
     function setEpochDuration(uint256 _epochDuration) external onlyOwner {

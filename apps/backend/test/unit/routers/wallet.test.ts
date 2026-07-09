@@ -4,6 +4,8 @@ vi.mock('../../../src/services/contract', () => ({
   contractTransferWithAuthorization: vi.fn().mockResolvedValue('0xdeadbeef'),
   contractGetDreamsClaimable: vi.fn().mockResolvedValue(500n * BigInt(10 ** 18)),
   contractWithdrawDreamsRewards: vi.fn().mockResolvedValue('0xcafebabe'),
+  contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(10n * BigInt(10 ** 18)),
+  contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(8000),
 }));
 
 vi.mock('../../../src/config/env', () => ({
@@ -29,6 +31,7 @@ import {
   contractTransferWithAuthorization,
   contractGetDreamsClaimable,
   contractWithdrawDreamsRewards,
+  contractGetDreamsPerUsdc,
 } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
 import { getServerConfig } from '../../../src/config/env';
@@ -326,6 +329,10 @@ describe('wallet router', () => {
       expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(WALLET, WITHDRAWAL);
       expect(result.txHash).toBe('0xcafebabe');
       expect(result.destination).toBe(WITHDRAWAL);
+      expect(result.claimedBaseUnits).toBe((500n * BigInt(10 ** 18)).toString());
+      expect(result.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
+      // 500 DREAMS / 10 DREAMS-per-USDC = 50 USDC = 50e6 base units
+      expect(result.usdEquivalent).toBe((50n * BigInt(10 ** 6)).toString());
     });
 
     it('throws UNAUTHORIZED when signature is from different wallet', async () => {
@@ -355,6 +362,32 @@ describe('wallet router', () => {
           signature: '0x' + 'aa'.repeat(65),
         })
       ).rejects.toThrow('No claimable DREAMS rewards');
+    });
+  });
+
+  describe('exchangeRate', () => {
+    it('returns dreamsPerUsdc when hook is configured', async () => {
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      const result = await caller.exchangeRate();
+      expect(result.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
+      expect(result.workerSplitBps).toBe(8000);
+    });
+
+    it('returns "0" when DREAMS_HOOK_ADDRESS is not configured', async () => {
+      const { getServerConfig } = await import('../../../src/config/env');
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        CHAIN_ID: 84532,
+        USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        USDC_DOMAIN_NAME: 'USDC',
+        NODE_ENV: 'test' as const,
+        DREAMS_HOOK_ADDRESS: undefined,
+      } as unknown as ReturnType<typeof getServerConfig>);
+      vi.mocked(contractGetDreamsPerUsdc).mockResolvedValueOnce(0n);
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      const result = await caller.exchangeRate();
+      expect(result.dreamsPerUsdc).toBe('0');
     });
   });
 });

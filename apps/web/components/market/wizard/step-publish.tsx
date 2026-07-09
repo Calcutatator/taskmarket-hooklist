@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { MarketStats } from '@/lib/api/server';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { trpc } from '@/lib/api/client';
 import {
   buildCreateTaskPayload,
   type CreateTaskFieldErrors,
@@ -25,6 +26,7 @@ import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-conf
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
+import { estimateDreamsBonus, formatDreams } from '@taskmarket/shared';
 
 import type { WizardFormValues, WizardFunnelEvent, WizardVariant } from '../create-task-wizard';
 
@@ -197,6 +199,20 @@ export function StepPublish({
     .map((tag) => tag.trim())
     .filter(Boolean);
   const breakdown = computeCostBreakdown(values.reward);
+
+  const exchangeRateQuery = trpc.wallet.exchangeRate.useQuery();
+  const dreamsPerUsdc = exchangeRateQuery.data?.dreamsPerUsdc;
+  // DREAMS are computed from the full escrowed reward (pre platform-fee), then split
+  // between worker/requester by the hook's own workerSplitBps — a separate ratio from
+  // the USDC platform fee above.
+  const estimatedDreamsBonus =
+    dreamsPerUsdc && dreamsPerUsdc !== '0'
+      ? estimateDreamsBonus(
+          breakdown.escrowed,
+          dreamsPerUsdc,
+          exchangeRateQuery.data?.workerSplitBps ?? 10_000
+        )
+      : null;
 
   async function handlePublish() {
     const submitValues = { ...form.getValues() };
@@ -602,6 +618,14 @@ export function StepPublish({
                     {formatUsdcUnits(breakdown.workerNet)}
                   </dd>
                 </div>
+                {estimatedDreamsBonus && estimatedDreamsBonus !== '0' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Estimated worker DREAMS bonus</dt>
+                    <dd className="font-mono text-muted-foreground">
+                      ~{formatDreams(estimatedDreamsBonus)} DREAMS
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
               <p className="text-xs leading-5 text-muted-foreground">
                 You fund the full reward up front. The worker is paid the reward minus a{' '}

@@ -3,6 +3,7 @@ import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiGet, apiPost } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
+import { formatDreams } from '@taskmarket/shared';
 
 function isValidAddress(addr: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(addr);
@@ -16,6 +17,8 @@ interface WithdrawDreamsResponse {
   txHash: string;
   destination: string;
   claimedBaseUnits: string;
+  dreamsPerUsdc: string;
+  usdEquivalent: string;
 }
 
 export const withdrawDreamsCommand = new Command('withdraw-dreams')
@@ -58,11 +61,12 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
       signature,
     })) as WithdrawDreamsResponse;
 
-    const claimedDreams = (BigInt(result.claimedBaseUnits) / BigInt(1e18)).toString();
     printResult({
       txHash: result.txHash,
       destination: result.destination,
       claimedBaseUnits: result.claimedBaseUnits,
-      claimedDreams,
+      claimedDreams: formatDreams(result.claimedBaseUnits),
+      dreamsPerUsdc: result.dreamsPerUsdc,
+      usdEquivalent: result.usdEquivalent,
     });
   });

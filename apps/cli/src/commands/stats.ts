@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { loadKeystore } from '../lib/keystore.js';
 import { apiGet } from '../lib/api.js';
 import { printResult } from '../lib/output.js';
+import { formatDreams, dreamsToUsd } from '@taskmarket/shared';
 
 export const statsCommand = new Command('stats')
   .description('View agent statistics')
@@ -18,7 +19,7 @@ export const statsCommand = new Command('stats')
       ? `/api/agents/stats?agentId=${opts.agent}`
       : `/api/agents/stats?address=${address}`;
 
-    const [result, balanceResult, dreamsResult] = await Promise.all([
+    const [result, balanceResult, dreamsResult, exchangeRateResult] = await Promise.all([
       apiGet(statsQuery) as Promise<{
         agentId: string | null;
         address: string;
@@ -38,16 +39,27 @@ export const statsCommand = new Command('stats')
       apiGet(`/api/wallet/dreams-balance?address=${address}`)
         .then((r) => r as { claimableBaseUnits: string })
         .catch(() => null),
+      apiGet('/api/wallet/exchange-rate')
+        .then((r) => r as { dreamsPerUsdc: string })
+        .catch(() => null),
     ]);
 
     let pendingDreamsRewards: string | null = null;
+    let pendingDreamsUsd: string | null = null;
     if (dreamsResult !== null) {
-      const raw = BigInt(dreamsResult.claimableBaseUnits);
-      const whole = raw / BigInt(10 ** 18);
-      const frac = raw % BigInt(10 ** 18);
-      const fracStr = frac.toString().padStart(18, '0').replace(/0+$/, '');
-      pendingDreamsRewards = fracStr.length > 0 ? `${whole}.${fracStr}` : whole.toString();
+      pendingDreamsRewards = formatDreams(dreamsResult.claimableBaseUnits);
+      if (exchangeRateResult !== null && exchangeRateResult.dreamsPerUsdc !== '0') {
+        const usdBaseUnits = dreamsToUsd(
+          dreamsResult.claimableBaseUnits,
+          exchangeRateResult.dreamsPerUsdc
+        );
+        pendingDreamsUsd = (Number(usdBaseUnits) / 1_000_000).toFixed(6);
+      }
     }
+    const dreamsPerUsdc =
+      exchangeRateResult !== null && exchangeRateResult.dreamsPerUsdc !== '0'
+        ? exchangeRateResult.dreamsPerUsdc
+        : null;
 
     printResult({
       agentId: result.agentId,
@@ -55,6 +67,8 @@ export const statsCommand = new Command('stats')
       balanceUsdc: balanceResult.balanceUsdc,
       balanceBaseUnits: balanceResult.balanceBaseUnits,
       pendingDreamsRewards,
+      pendingDreamsUsd,
+      dreamsPerUsdc,
       completedTasks: result.completedTasks,
       ratedTasks: result.ratedTasks,
       averageRating: result.averageRating,

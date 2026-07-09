@@ -11,6 +11,7 @@ import {
   type TaskStatusType,
   type TaskModeType,
   type AuctionTypeValue,
+  estimateDreamsBonus,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
@@ -36,6 +37,8 @@ import {
   contractUpdateTask,
   contractRejectSubmission,
   contractGetTaskHooks,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
@@ -751,30 +754,43 @@ export const tasksRouter = router({
       const now = new Date();
 
       const workerAddress = task.worker ?? task.claimedBy;
-      const [submissionCount, pitchCount, workerAgent, requesterAgentRow, taskHooks] =
-        await Promise.all([
-          ctx.db
-            .select({ count: sql<number>`count(*)` })
-            .from(submissions)
-            .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt))),
-          ctx.db
-            .select({ count: sql<number>`count(*)` })
-            .from(proposals)
-            .where(eq(proposals.taskId, task.id)),
-          workerAddress
-            ? ctx.db
-                .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
-                .from(agents)
-                .where(eq(agents.address, workerAddress))
-                .limit(1)
-            : Promise.resolve([]),
-          ctx.db
-            .select({ registeredVia: agents.registeredVia })
-            .from(agents)
-            .where(eq(agents.address, task.requester))
-            .limit(1),
-          contractGetTaskHooks(task.id as `0x${string}`, task.contractAddress).catch(() => []),
-        ]);
+      const dreamsHookAddress = getServerConfig().DREAMS_HOOK_ADDRESS;
+      const dreamsHookConfigured = Boolean(dreamsHookAddress);
+      const [
+        submissionCount,
+        pitchCount,
+        workerAgent,
+        requesterAgentRow,
+        taskHooks,
+        dreamsPerUsdc,
+        dreamsWorkerSplitBps,
+      ] = await Promise.all([
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(submissions)
+          .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt))),
+        ctx.db
+          .select({ count: sql<number>`count(*)` })
+          .from(proposals)
+          .where(eq(proposals.taskId, task.id)),
+        workerAddress
+          ? ctx.db
+              .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
+              .from(agents)
+              .where(eq(agents.address, workerAddress))
+              .limit(1)
+          : Promise.resolve([]),
+        ctx.db
+          .select({ registeredVia: agents.registeredVia })
+          .from(agents)
+          .where(eq(agents.address, task.requester))
+          .limit(1),
+        contractGetTaskHooks(task.id as `0x${string}`, task.contractAddress).catch(() => []),
+        dreamsHookConfigured ? contractGetDreamsPerUsdc().catch(() => 0n) : Promise.resolve(0n),
+        dreamsHookConfigured
+          ? contractGetDreamsWorkerSplitBps().catch(() => 0)
+          : Promise.resolve(0),
+      ]);
 
       // Resolve the most recent submitter so the requester's accept command can be
       // pre-filled. Bounty/Benchmark stay `open` while collecting submissions, so
@@ -843,6 +859,18 @@ export const tasksRouter = router({
 
       const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
 
+      const hooksList: string[] =
+        taskHooks.length > 0 ? [...taskHooks] : task.hookContract ? [task.hookContract] : [];
+      const hasDreamsHook =
+        dreamsHookAddress !== undefined &&
+        hooksList.some((h) => h.toLowerCase() === dreamsHookAddress.toLowerCase());
+      const dreamsPerUsdcField =
+        hasDreamsHook && dreamsPerUsdc > 0n ? dreamsPerUsdc.toString() : undefined;
+      const estimatedDreamsBonusField =
+        dreamsPerUsdcField !== undefined
+          ? estimateDreamsBonus(task.reward, dreamsPerUsdcField, dreamsWorkerSplitBps)
+          : undefined;
+
       return {
         id: task.id,
         requester: task.requester,
@@ -895,7 +923,9 @@ export const tasksRouter = router({
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         selfAward: task.selfAward ?? null,
-        hooks: taskHooks.length > 0 ? [...taskHooks] : task.hookContract ? [task.hookContract] : [],
+        hooks: hooksList,
+        dreamsPerUsdc: dreamsPerUsdcField,
+        estimatedDreamsBonus: estimatedDreamsBonusField,
         submissionWindowOpen,
         netReward: String(
           Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)

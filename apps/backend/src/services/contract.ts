@@ -115,6 +115,8 @@ const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (u
 const HOOK_ABI = parseAbi([
   'function withdrawFor(address worker, address destination) external',
   'function claimable(address wallet) external view returns (uint256)',
+  'function dreamsPerUsdc() external view returns (uint256)',
+  'function workerSplitBps() external view returns (uint16)',
 ]);
 const REGISTRY_READ_ABI = parseAbi([
   'function getTaskHooks(bytes32 taskId) view returns (address[])',
@@ -867,5 +869,27 @@ export async function contractGetDreamsClaimable(wallet: `0x${string}`): Promise
     abi: HOOK_ABI,
     functionName: 'claimable',
     args: [wallet],
+  });
+}
+
+export async function contractGetDreamsPerUsdc(): Promise<bigint> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0n;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'dreamsPerUsdc',
+  });
+}
+
+export async function contractGetDreamsWorkerSplitBps(): Promise<number> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'workerSplitBps',
   });
 }

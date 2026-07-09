@@ -4,8 +4,6 @@ pragma solidity ^0.8.24;
 import "forge-std/Test.sol";
 import { ITMPCore } from "../src/interfaces/ITMPCore.sol";
 import { ITMPHook } from "../src/interfaces/ITMPHook.sol";
-import { PriceData } from "../src/interfaces/ITokenUsdOracle.sol";
-import "./mocks/MockOracle.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
@@ -18,19 +16,20 @@ import "./mocks/MockUSDC.sol";
 // ─────────────────────────────────────────────────────────────────────────────
 
 contract TaskTokenRewardHookTest is DiamondTestHelper {
-    // price = USDC per 1 DREAMS, 1e18 scaled. $0.10 per DREAMS => 1e17.
-    uint256 constant PRICE_DREAMS_USD = 1e17;
+    using stdStorage for StdStorage;
+
+    // DREAMS wei per 1 USDC. 10 DREAMS per $1 => 10e18.
+    uint256 constant DREAMS_PER_USDC = 10e18;
     // $100 USDC reward = 100 * 1e6 (6 decimals)
     uint256 constant REWARD_100_USDC = 100 * 1e6;
-    // expected token reward at full rate: rewardUsd * 10^(18+12) / price = 100e6 * 1e30 / 1e17 = 1000 DREAMS
+    // expected token reward at full rate: rewardUsd * rate / 1e6 = 100e6 * 10e18 / 1e6 = 1000 DREAMS
     uint256 constant EXPECTED_REWARD_1000_DREAMS = 1000 * 1e18;
 
     uint256 constant EPOCH_DURATION = 7 days;
-    uint256 constant GLOBAL_CAP = 1_000_000 * 1e18;
-    uint256 constant WORKER_CAP = 100_000 * 1e18;
-    uint256 constant REQUESTER_CAP = 500_000 * 1e18;
-    uint256 constant MAX_PER_TASK = 10_000 * 1e18;
-    uint16 constant DRIFT_BPS = 2000; // 20%
+    uint256 constant GLOBAL_CAP_USD = 1_000_000 * 1e6;
+    uint256 constant WORKER_CAP_USD = 100_000 * 1e6;
+    uint256 constant REQUESTER_CAP_USD = 500_000 * 1e6;
+    uint256 constant MAX_PER_TASK_USD = 10_000 * 1e6;
     uint16 constant WORKER_SPLIT_BPS = 10_000; // setUp uses 100% worker for backward compat
 
     ITMPDiamond market;
@@ -38,7 +37,6 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     MockUSDC usdc;
     MockUSDC dreamsToken;
 
-    MockOracle oracle;
     RewardVault vault;
     EpochBudget budget;
     TaskTokenRewardHook hook;
@@ -60,16 +58,15 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         forwarder = new MockPGTRForwarder(address(usdc));
         market.addForwarder(address(forwarder));
 
-        oracle = new MockOracle(PRICE_DREAMS_USD);
         vault = new RewardVault(address(dreamsToken), owner);
-        budget = new EpochBudget(EPOCH_DURATION, GLOBAL_CAP, WORKER_CAP, REQUESTER_CAP, MAX_PER_TASK, owner);
+        budget =
+            new EpochBudget(EPOCH_DURATION, GLOBAL_CAP_USD, WORKER_CAP_USD, REQUESTER_CAP_USD, MAX_PER_TASK_USD, owner);
         hook = new TaskTokenRewardHook(
-            address(oracle),
             address(vault),
             address(budget),
             address(market),
             18,
-            DRIFT_BPS,
+            DREAMS_PER_USDC,
             address(dreamsToken),
             WORKER_SPLIT_BPS,
             backend,
@@ -179,31 +176,14 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
     // ─── Constructor validation ───────────────────────────────────────────────
 
-    function test_constructor_driftBandTooHigh_reverts() public {
-        vm.expectRevert(TaskTokenRewardHook.DriftBandBpsTooHigh.selector);
-        new TaskTokenRewardHook(
-            address(oracle),
-            address(vault),
-            address(budget),
-            address(market),
-            18,
-            10_000,
-            address(dreamsToken),
-            WORKER_SPLIT_BPS,
-            backend,
-            owner
-        );
-    }
-
-    function test_constructor_zeroOracle_reverts() public {
-        vm.expectRevert(TaskTokenRewardHook.OracleInvalid.selector);
+    function test_constructor_zeroVault_reverts() public {
+        vm.expectRevert(TaskTokenRewardHook.ZeroAddress.selector);
         new TaskTokenRewardHook(
             address(0),
-            address(vault),
             address(budget),
             address(market),
             18,
-            DRIFT_BPS,
+            DREAMS_PER_USDC,
             address(dreamsToken),
             WORKER_SPLIT_BPS,
             backend,
@@ -212,14 +192,13 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     }
 
     function test_constructor_revertsIfTokenZero() public {
-        vm.expectRevert(TaskTokenRewardHook.OracleInvalid.selector);
+        vm.expectRevert(TaskTokenRewardHook.ZeroAddress.selector);
         new TaskTokenRewardHook(
-            address(oracle),
             address(vault),
             address(budget),
             address(market),
             18,
-            DRIFT_BPS,
+            DREAMS_PER_USDC,
             address(0),
             WORKER_SPLIT_BPS,
             backend,
@@ -230,12 +209,11 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     function test_constructor_revertsIfBpsOver10000() public {
         vm.expectRevert(TaskTokenRewardHook.InvalidBps.selector);
         new TaskTokenRewardHook(
-            address(oracle),
             address(vault),
             address(budget),
             address(market),
             18,
-            DRIFT_BPS,
+            DREAMS_PER_USDC,
             address(dreamsToken),
             10_001,
             backend,
@@ -244,19 +222,54 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     }
 
     function test_constructor_revertsIfBackendZero() public {
-        vm.expectRevert(TaskTokenRewardHook.OracleInvalid.selector);
+        vm.expectRevert(TaskTokenRewardHook.ZeroAddress.selector);
         new TaskTokenRewardHook(
-            address(oracle),
             address(vault),
             address(budget),
             address(market),
             18,
-            DRIFT_BPS,
+            DREAMS_PER_USDC,
             address(dreamsToken),
             WORKER_SPLIT_BPS,
             address(0),
             owner
         );
+    }
+
+    function test_constructor_revertsIfRateZero() public {
+        vm.expectRevert(TaskTokenRewardHook.ZeroRate.selector);
+        new TaskTokenRewardHook(
+            address(vault),
+            address(budget),
+            address(market),
+            18,
+            0,
+            address(dreamsToken),
+            WORKER_SPLIT_BPS,
+            backend,
+            owner
+        );
+    }
+
+    // ─── setDreamsPerUsdc ─────────────────────────────────────────────────────
+
+    function test_setDreamsPerUsdc_updatesRate() public {
+        vm.expectEmit(true, true, true, true);
+        emit TaskTokenRewardHook.PriceUpdated(20e18);
+        vm.prank(owner);
+        hook.setDreamsPerUsdc(20e18);
+        assertEq(hook.dreamsPerUsdc(), 20e18);
+    }
+
+    function test_setDreamsPerUsdc_revertsOnZero() public {
+        vm.prank(owner);
+        vm.expectRevert(TaskTokenRewardHook.ZeroRate.selector);
+        hook.setDreamsPerUsdc(0);
+    }
+
+    function test_setDreamsPerUsdc_onlyOwner() public {
+        vm.expectRevert();
+        hook.setDreamsPerUsdc(20e18);
     }
 
     // ─── Claim mode happy path ─────────────────────────────────────────────────
@@ -265,22 +278,22 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         bytes32 taskId = _createClaimTask();
 
         // Verify state stored
-        (uint256 rewardUsd,,,,, address req,, bool reserved, bool paid) = hook.rewardStates(taskId);
+        (uint256 rewardUsd,,, address req,, bool reserved, bool paid) = hook.rewardStates(taskId);
         assertEq(rewardUsd, REWARD_100_USDC);
         assertEq(req, requester);
         assertFalse(reserved);
         assertFalse(paid);
 
-        // Worker claims — price locks, tokens reserved
+        // Worker claims — rate locks, tokens reserved
         uint256 vaultBefore = vault.available();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
 
-        (, uint256 startPrice,,, uint256 reservedAmt,, address lockedWorker, bool res,) = hook.rewardStates(taskId);
-        assertEq(startPrice, PRICE_DREAMS_USD);
+        (, uint256 startPrice, uint256 reservedAmt,, address lockedWorker, bool res,) = hook.rewardStates(taskId);
+        assertEq(startPrice, DREAMS_PER_USDC);
         assertEq(lockedWorker, worker);
         assertTrue(res);
-        // max reserved = rewardUsd * 1e30 / minSettlePrice = 100e6 * 1e30 / (1e17 * 0.8) = 1250 DREAMS
-        assertEq(reservedAmt, 1250 * 1e18);
+        // reserved = rewardUsd * rate / 1e6 = 100e6 * 10e18 / 1e6 = 1000 DREAMS, deterministic (no drift)
+        assertEq(reservedAmt, EXPECTED_REWARD_1000_DREAMS);
         assertLt(vault.available(), vaultBefore);
 
         // Worker submits
@@ -291,15 +304,14 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
 
         uint256 workerClaimableAfter = hook.claimable(worker);
-        // 100e6 * 1e30 / 1e17 = 1000 DREAMS (full rate from bypass ramp, 100% split)
         assertEq(workerClaimableAfter - workerClaimableBefore, EXPECTED_REWARD_1000_DREAMS);
         // Worker wallet balance unchanged — tokens are in hook escrow
         assertEq(dreamsToken.balanceOf(worker), 0);
-        // Unused reserve (1250 - 1000 = 250) released back to available pool
+        // Locked rate means the full reservation is paid out exactly — nothing left reserved.
         assertEq(vault.taskReserve(taskId), 0);
 
         // Verify paid flag
-        (,,,,,,,, bool paid2) = hook.rewardStates(taskId);
+        (,,,,,, bool paid2) = hook.rewardStates(taskId);
         assertTrue(paid2);
     }
 
@@ -679,14 +691,15 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertEq(dreamsToken.balanceOf(owner) - ownerBefore, excess);
     }
 
-    // ─── Price drift clamping ─────────────────────────────────────────────────
+    // ─── Locked-rate vs current-rate settlement ──────────────────────────────
 
-    function test_priceDrift_clampedToFloor() public {
+    function test_checkComplete_usesLockedPriceForClaim() public {
         bytes32 taskId = _createClaimTask();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
 
-        // Price drops 50% — should be clamped to floor (startPrice * 0.8)
-        oracle.setPrice(PRICE_DREAMS_USD / 2);
+        // Rate changes after the worker has claimed (locked at claim time).
+        vm.prank(owner);
+        hook.setDreamsPerUsdc(DREAMS_PER_USDC * 5);
 
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
 
@@ -694,65 +707,60 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
         uint256 credited = hook.claimable(worker) - before;
 
-        // At floor price (10e18 * 0.8 = 8e18): reward = 100e6 * 1e30 / 8e18 = 1250 DREAMS
-        // (rather than 2000 DREAMS at the dropped price)
-        assertLt(credited, 1300 * 1e18); // clamped
+        // Payout uses the rate locked at claim time, not the updated rate.
+        assertEq(credited, EXPECTED_REWARD_1000_DREAMS);
     }
 
-    function test_priceDrift_clampedToCeiling() public {
-        bytes32 taskId = _createClaimTask();
-        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
-
-        // Price rises 3x — should be clamped to ceiling (startPrice * 1.2)
-        oracle.setPrice(PRICE_DREAMS_USD * 3);
-
+    function test_checkComplete_usesCurrentPriceForBounty() public {
+        bytes32 taskId = _createBountyTask();
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+
+        // Bounty has no lock — rate change before completion affects payout.
+        vm.prank(owner);
+        hook.setDreamsPerUsdc(DREAMS_PER_USDC * 2);
 
         uint256 before = hook.claimable(worker);
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
         uint256 credited = hook.claimable(worker) - before;
 
-        // At ceiling price (10e18 * 1.2 = 12e18): reward = 100e6 * 1e30 / 12e18 ≈ 833 DREAMS
-        assertLt(credited, 900 * 1e18);
-        assertGt(credited, 800 * 1e18);
+        assertEq(credited, EXPECTED_REWARD_1000_DREAMS * 2);
     }
 
-    // ─── Oracle invalid ───────────────────────────────────────────────────────
+    // Neither the constructor nor setDreamsPerUsdc allow a zero rate, so the defensive
+    // "no rate configured" branches are only reachable via a direct storage write —
+    // exercised here with stdstore to simulate an unset/misconfigured rate.
 
-    function test_oracleInvalid_blocksCheckFund() public {
-        bytes memory data = abi.encodeCall(
-            market.createTask,
-            (
-                REWARD_100_USDC,
-                1 days,
-                market.CLAIM(),
-                0,
-                0,
-                bytes4(0),
-                ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
-            )
-        );
-        oracle.setValid(false);
-        vm.expectRevert();
-        forwarder.relay(address(market), requester, REWARD_100_USDC, data);
-    }
-
-    function test_oracleInvalid_blocksCheckClaim() public {
-        bytes32 taskId = _createClaimTask();
-        oracle.setValid(false);
-        vm.expectRevert();
-        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
-    }
-
-    // Oracle invalid on a reserved (Claim) task: falls back to startPrice, settlement proceeds.
-    function test_oracleInvalid_claimTask_fallsBackToStartPrice() public {
-        bytes32 taskId = _createClaimTask();
-        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+    function test_checkComplete_bounty_zeroRate_skipsTokenReward() public {
+        bytes32 taskId = _createBountyTask();
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
-        oracle.setValid(false);
-        // Should not revert — Path A falls back to startPrice so USDC payout proceeds.
+
+        stdstore.target(address(hook)).sig("dreamsPerUsdc()").checked_write(uint256(0));
+
+        uint256 workerUsdcBefore = usdc.balanceOf(worker);
+        uint256 workerClaimBefore = hook.claimable(worker);
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+
+        assertGt(usdc.balanceOf(worker), workerUsdcBefore);
+        assertEq(hook.claimable(worker), workerClaimBefore);
+    }
+
+    function test_claimTask_zeroRate_reservesNothing() public {
+        stdstore.target(address(hook)).sig("dreamsPerUsdc()").checked_write(uint256(0));
+
+        bytes32 taskId = _createClaimTask();
+        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+
+        (, uint256 startPrice, uint256 reservedAmt,,, bool reserved,) = hook.rewardStates(taskId);
+        assertEq(startPrice, 0);
+        assertEq(reservedAmt, 0);
+        assertTrue(reserved);
+        assertEq(vault.taskReserve(taskId), 0);
+
+        _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+        uint256 workerUsdcBefore = usdc.balanceOf(worker);
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+        assertGt(usdc.balanceOf(worker), workerUsdcBefore);
+        assertEq(hook.claimable(worker), 0);
     }
 
     // ─── Worker mismatch ─────────────────────────────────────────────────────
@@ -817,16 +825,42 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertEq(vault.taskReserve(taskId), 0);
     }
 
+    // ─── Reserve release uses USD budget accounting ──────────────────────────
+
+    function test_forfeit_releasesUsdBudgetNotTokenAmount() public {
+        bytes32 taskId = _createClaimTask();
+        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+
+        assertEq(budget.workerUsed(worker), REWARD_100_USDC);
+
+        vm.warp(block.timestamp + 2 days);
+        _relay(requester, 0, abi.encodeCall(market.forfeitAndReopen, (taskId)));
+
+        // Budget usage (USD) released back to zero, distinct from the token reserve.
+        assertEq(budget.workerUsed(worker), 0);
+    }
+
     // ─── Epoch budget exceeded ────────────────────────────────────────────────
 
     function test_epochBudget_globalCapExceeded_claimSucceedsNoReservation() public {
         vm.prank(owner);
-        budget.setGlobalCap(1); // 1 wei — too small for any reward
+        budget.setGlobalCapUsd(1); // 1 unit USD — too small for any reward
 
         bytes32 taskId = _createClaimTask();
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
 
         assertEq(vault.taskReserve(taskId), 0);
+    }
+
+    function test_epochBudget_capsInUsd() public {
+        // Caps are denominated in USDC base units — a $100 reward consumes 100e6, not
+        // a DREAMS-wei amount.
+        bytes32 taskId = _createClaimTask();
+        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+
+        assertEq(budget.workerUsed(worker), REWARD_100_USDC);
+        assertEq(budget.requesterUsed(requester), REWARD_100_USDC);
+        assertEq(budget.globalUsed(), REWARD_100_USDC);
     }
 
     // ─── Epoch rollover resets per-account usage ──────────────────────────────
@@ -844,7 +878,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertEq(budget.workerUsed(worker), 0);
         assertEq(budget.requesterUsed(requester), 0);
         assertEq(budget.globalUsed(), 0);
-        assertEq(budget.remaining(requester, worker), MAX_PER_TASK);
+        assertEq(budget.remaining(requester, worker), MAX_PER_TASK_USD);
     }
 
     // ─── Vault insufficient ───────────────────────────────────────────────────
@@ -876,31 +910,33 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
     function test_epochBudget_taskCapExceeded_direct() public {
         vm.prank(address(hook));
-        vm.expectRevert(abi.encodeWithSelector(EpochBudget.TaskCapExceeded.selector, MAX_PER_TASK + 1, MAX_PER_TASK));
-        budget.checkAndConsume(requester, worker, MAX_PER_TASK + 1);
+        vm.expectRevert(
+            abi.encodeWithSelector(EpochBudget.TaskCapExceeded.selector, MAX_PER_TASK_USD + 1, MAX_PER_TASK_USD)
+        );
+        budget.checkAndConsume(requester, worker, MAX_PER_TASK_USD + 1);
     }
 
     function test_epochBudget_workerCapExceeded_direct() public {
         vm.prank(owner);
-        budget.setWorkerCap(100 * 1e18);
+        budget.setWorkerCapUsd(100 * 1e6);
         vm.prank(address(hook));
-        vm.expectRevert(abi.encodeWithSelector(EpochBudget.WorkerCapExceeded.selector, worker, 200 * 1e18, 100 * 1e18));
-        budget.checkAndConsume(requester, worker, 200 * 1e18);
+        vm.expectRevert(abi.encodeWithSelector(EpochBudget.WorkerCapExceeded.selector, worker, 200 * 1e6, 100 * 1e6));
+        budget.checkAndConsume(requester, worker, 200 * 1e6);
     }
 
     function test_epochBudget_requesterCapExceeded_direct() public {
         vm.prank(owner);
-        budget.setRequesterCap(100 * 1e18);
+        budget.setRequesterCapUsd(100 * 1e6);
         vm.prank(address(hook));
         vm.expectRevert(
-            abi.encodeWithSelector(EpochBudget.RequesterCapExceeded.selector, requester, 200 * 1e18, 100 * 1e18)
+            abi.encodeWithSelector(EpochBudget.RequesterCapExceeded.selector, requester, 200 * 1e6, 100 * 1e6)
         );
-        budget.checkAndConsume(requester, worker, 200 * 1e18);
+        budget.checkAndConsume(requester, worker, 200 * 1e6);
     }
 
     function test_epochBudget_release_noOp_whenAmountExceedsUsed() public {
         vm.prank(address(hook));
-        budget.release(requester, worker, 999 * 1e18);
+        budget.release(requester, worker, 999 * 1e6);
         assertEq(budget.workerUsed(worker), 0);
     }
 
@@ -913,19 +949,25 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     function test_epochBudget_setGlobalCap_overflowReverts() public {
         vm.prank(owner);
         vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
-        budget.setGlobalCap(uint256(type(uint192).max) + 1);
+        budget.setGlobalCapUsd(uint256(type(uint192).max) + 1);
     }
 
     function test_epochBudget_setWorkerCap_overflowReverts() public {
         vm.prank(owner);
         vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
-        budget.setWorkerCap(uint256(type(uint192).max) + 1);
+        budget.setWorkerCapUsd(uint256(type(uint192).max) + 1);
     }
 
     function test_epochBudget_setRequesterCap_overflowReverts() public {
         vm.prank(owner);
         vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
-        budget.setRequesterCap(uint256(type(uint192).max) + 1);
+        budget.setRequesterCapUsd(uint256(type(uint192).max) + 1);
+    }
+
+    function test_epochBudget_setMaxUsdPerTask_overflowReverts() public {
+        vm.prank(owner);
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        budget.setMaxUsdPerTask(uint256(type(uint192).max) + 1);
     }
 
     function test_onComplete_noOp_whenNotReserved() public {
@@ -937,28 +979,26 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertEq(vault.taskReserve(taskId), 0);
     }
 
-    // ─── TaskTokenRewardHook Path B oracle-invalid branch ─────────────────────
+    // ─── Bounty budget/vault clamp units ──────────────────────────────────────
 
-    function test_bountyTask_oracleInvalid_atComplete_skipsToken() public {
+    function test_bounty_budgetCapClampsBeforeConversion() public {
+        // Cap the per-task USD budget below the task reward so the payout is scaled
+        // down in USD terms, then converted to tokens — not clamped in token units.
+        vm.prank(owner);
+        budget.setMaxUsdPerTask(REWARD_100_USDC / 2); // cap at $50
+
         bytes32 taskId = _createBountyTask();
         _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
-        oracle.setValid(false);
 
-        uint256 workerUsdcBefore = usdc.balanceOf(worker);
-        uint256 workerClaimBefore = hook.claimable(worker);
+        uint256 before = hook.claimable(worker);
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+        uint256 credited = hook.claimable(worker) - before;
 
-        assertGt(usdc.balanceOf(worker), workerUsdcBefore);
-        assertEq(hook.claimable(worker), workerClaimBefore);
+        // $50 * 10 DREAMS/USDC = 500 DREAMS
+        assertEq(credited, 500 * 1e18);
     }
 
     // ─── Additional branch-coverage tests ────────────────────────────────────
-
-    function test_setDriftBandBps_tooHigh_reverts() public {
-        vm.prank(owner);
-        vm.expectRevert(TaskTokenRewardHook.DriftBandBpsTooHigh.selector);
-        hook.setDriftBandBps(10_000);
-    }
 
     function test_checkComplete_bounty_noWorkerFound() public {
         bytes32 taskId = _createBountyTask();

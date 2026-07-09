@@ -2,18 +2,16 @@
 pragma solidity ^0.8.24;
 
 import { Script, console } from "forge-std/Script.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
-import { MockOracle } from "../src/mocks/MockOracle.sol";
 import { MockERC20 } from "../src/mocks/MockERC20.sol";
 
 interface IDiamondAdmin {
     function setDefaultHooks(address[] calldata hooks) external;
 }
 
-/// @notice Testnet deployment of the token reward hook stack using mock oracle and mock token.
+/// @notice Testnet deployment of the token reward hook stack using a mock token.
 ///         Use for smoke-testing only. Not suitable for mainnet.
 ///
 /// Required env vars:
@@ -21,14 +19,13 @@ interface IDiamondAdmin {
 ///   FORGE_DIAMOND_ADDRESS        — TaskMarket Diamond proxy on testnet
 ///
 /// Optional:
-///   FORGE_MOCK_TOKEN_PRICE       — DREAMS/USD price in 1e18 (default: 0.09e18 = $0.09)
+///   FORGE_DREAMS_PER_USDC        — whole DREAMS per $1 (default: 347); scaled by 1e18 in this script
 ///   FORGE_INITIAL_VAULT_BALANCE  — mock DREAMS tokens to mint into vault (default: 1_000_000e18)
 ///   FORGE_EPOCH_DURATION         — seconds (default: 604800 = 7 days)
-///   FORGE_GLOBAL_EPOCH_CAP       — wei (default: 100_000e18)
-///   FORGE_WORKER_CAP             — wei (default: 10_000e18)
-///   FORGE_REQUESTER_CAP          — wei (default: 50_000e18)
-///   FORGE_MAX_TOKENS_PER_TASK    — wei (default: 5_000e18)
-///   FORGE_DRIFT_BAND_BPS         — bps (default: 2000 = 20%)
+///   FORGE_GLOBAL_EPOCH_CAP_USD   — USDC base units (default: 100_000e6)
+///   FORGE_WORKER_CAP_USD         — USDC base units (default: 10_000e6)
+///   FORGE_REQUESTER_CAP_USD      — USDC base units (default: 50_000e6)
+///   FORGE_MAX_USD_PER_TASK       — USDC base units (default: 5_000e6)
 ///   FORGE_WORKER_SPLIT_BPS       — worker share in bps (default: 8000 = 80%)
 ///   FORGE_BACKEND_ADDRESS        — backend server wallet (defaults to deployer for testnet)
 contract DeployRewardHookTestnet is Script {
@@ -40,23 +37,22 @@ contract DeployRewardHookTestnet is Script {
         vm.startBroadcast(deployerKey);
 
         MockERC20 token = new MockERC20("Mock DREAMS", "mDREAMS", TOKEN_DECIMALS, deployer);
-        MockOracle oracle = new MockOracle(vm.envOr("FORGE_MOCK_TOKEN_PRICE", uint256(0.09e18)), deployer);
         RewardVault vault = new RewardVault(address(token), deployer);
         EpochBudget budget = new EpochBudget(
             vm.envOr("FORGE_EPOCH_DURATION", uint256(604_800)),
-            vm.envOr("FORGE_GLOBAL_EPOCH_CAP", uint256(100_000e18)),
-            vm.envOr("FORGE_WORKER_CAP", uint256(10_000e18)),
-            vm.envOr("FORGE_REQUESTER_CAP", uint256(50_000e18)),
-            vm.envOr("FORGE_MAX_TOKENS_PER_TASK", uint256(5_000e18)),
+            vm.envOr("FORGE_GLOBAL_EPOCH_CAP_USD", uint256(100_000e6)),
+            vm.envOr("FORGE_WORKER_CAP_USD", uint256(10_000e6)),
+            vm.envOr("FORGE_REQUESTER_CAP_USD", uint256(50_000e6)),
+            vm.envOr("FORGE_MAX_USD_PER_TASK", uint256(5_000e6)),
             deployer
         );
+        uint256 dreamsPerUsdc = vm.envOr("FORGE_DREAMS_PER_USDC", uint256(347)) * 1e18;
         TaskTokenRewardHook hook = new TaskTokenRewardHook(
-            address(oracle),
             address(vault),
             address(budget),
             vm.envAddress("FORGE_DIAMOND_ADDRESS"),
             TOKEN_DECIMALS,
-            uint16(vm.envOr("FORGE_DRIFT_BAND_BPS", uint256(2000))),
+            dreamsPerUsdc,
             address(token),
             uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
             vm.envOr("FORGE_BACKEND_ADDRESS", deployer),
@@ -83,7 +79,6 @@ contract DeployRewardHookTestnet is Script {
 
         console.log("=== TokenRewardHook testnet deployment (mock) ===");
         console.log("MockERC20 (mDREAMS):  ", address(token));
-        console.log("MockOracle:           ", address(oracle));
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));

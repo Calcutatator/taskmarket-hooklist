@@ -547,6 +547,7 @@ See x402.org for client libraries (JS/TS, Python, Rust).
 | POST   | /api/wallet/withdraw            | no   | Withdraw USDC via EIP-3009 authorization |
 | GET    | /api/wallet/dreams-balance?address=0x | no   | Get claimable DREAMS reward balance for address |
 | POST   | /api/wallet/withdraw-dreams     | no   | Withdraw DREAMS rewards (signed message auth) |
+| GET    | /api/wallet/exchange-rate       | no   | Get the current DREAMS/USDC exchange rate |
 | POST   | /trpc/xmtp.bootstrap            | no   | Register XMTP installation (deviceId + inboxId + installationId) |
 | POST   | /trpc/xmtp.heartbeat            | no   | Heartbeat to keep installation active (call every ~30 min) |
 | GET    | /trpc/xmtp.status               | no   | Get XMTP inboxId, policyMode, and active installations |

@@ -8,6 +8,8 @@ vi.mock('../../../src/services/contract', () => ({
   contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
   contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
   contractGetTaskHooks: vi.fn().mockResolvedValue([]),
+  contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(0n),
+  contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(0),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
@@ -51,7 +53,11 @@ import {
   contractCreateTask,
   contractUpdateTask,
   contractCancelTask,
+  contractGetTaskHooks,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
 } from '../../../src/services/contract';
+import { getServerConfig } from '../../../src/config/env';
 import { notifyNewTask } from '../../../src/services/task-notifications';
 
 // Allow microtask-queued fire-and-forget work (notifyNewTask) to settle.
@@ -230,6 +236,55 @@ describe('tasks router', () => {
 
       expect(result).not.toBeNull();
       expect(result!.pendingActions.some((a) => a.action === 'forfeit')).toBe(false);
+    });
+
+    it('omits dreamsPerUsdc and estimatedDreamsBonus when the hook is not configured', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.dreamsPerUsdc).toBeUndefined();
+      expect(result!.estimatedDreamsBonus).toBeUndefined();
+      expect(contractGetDreamsPerUsdc).not.toHaveBeenCalled();
+    });
+
+    it('includes dreamsPerUsdc and estimatedDreamsBonus when the DREAMS hook is attached', async () => {
+      const DREAMS_HOOK = '0x1234567890123456789012345678901234567890';
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        DEFAULT_PLATFORM_FEE_BPS: 500,
+        NODE_ENV: 'test',
+        CHAIN_ID: 84532,
+        BASE_RPC_URL: 'http://localhost:8545',
+        CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000001',
+        USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        FEE_RECIPIENT_ADDRESS: '0x0000000000000000000000000000000000000002',
+        DATABASE_URL: 'postgres://localhost/test',
+        SERVER_PRIVATE_KEY: '0x' + 'a'.repeat(64),
+        X402_FACILITATOR_URL: 'https://facilitator.daydreams.systems',
+        PORT: 3000,
+        DREAMS_HOOK_ADDRESS: DREAMS_HOOK,
+      } as unknown as ReturnType<typeof getServerConfig>);
+      vi.mocked(contractGetTaskHooks).mockResolvedValueOnce([DREAMS_HOOK as `0x${string}`]);
+      vi.mocked(contractGetDreamsPerUsdc).mockResolvedValueOnce(10n * BigInt(10 ** 18));
+      vi.mocked(contractGetDreamsWorkerSplitBps).mockResolvedValueOnce(8000);
+
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
+      // reward 1_000_000 (1 USDC) * 10 DREAMS/USDC * 80% worker split = 8 DREAMS
+      expect(result!.estimatedDreamsBonus).toBe((8n * BigInt(10 ** 18)).toString());
     });
   });
 

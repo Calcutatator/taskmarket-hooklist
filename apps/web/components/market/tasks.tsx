@@ -11,6 +11,7 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
+import { formatDreams } from '@taskmarket/shared';
 import { SlidersHorizontal } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -296,6 +297,19 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
     return task.currentLowestBid ? 'lowest bid' : null;
   }
   return null;
+}
+
+// Estimated DREAMS bonus caption for the task detail reward metric. Only present when
+// the DREAMS reward hook is attached to this task and an exchange rate is configured
+// (estimatedDreamsBonus only exists on the detail response, not list rows). This is a
+// display estimate — actual payouts also apply the wallet-age ramp and epoch budget
+// caps, and bounty-mode payouts settle at completion-time rate, not this one.
+function dreamsBonusCaption(task: TaskDetailResponse | TaskResponse): string | null {
+  const bonus = 'estimatedDreamsBonus' in task ? task.estimatedDreamsBonus : undefined;
+  if (!bonus || bonus === '0') {
+    return null;
+  }
+  return `~${formatDreams(bonus)} DREAMS bonus (est.)`;
 }
 
 // Reward as a scannable headline: larger/bolder than the surrounding cells, plus an
@@ -1975,7 +1989,10 @@ export function TaskDetailPanel({
             footerValue={<DeadlineLabel task={task} />}
             label="Reward"
             value={<span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>}
-            valueCaption={auctionPriceCaption(task)}
+            valueCaption={
+              [auctionPriceCaption(task), dreamsBonusCaption(task)].filter(Boolean).join(' · ') ||
+              null
+            }
           />
           <DetailMetric
             footerLabel={rated ? 'Rating' : taskActivityTitle}

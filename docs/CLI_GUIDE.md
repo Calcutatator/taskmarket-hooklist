@@ -28,6 +28,7 @@ apps/cli/
 │   │   │   ├── import.ts         # taskmarket wallet import
 │   │   │   ├── balance.ts        # taskmarket wallet balance
 │   │   │   ├── set-withdrawal-address.ts  # taskmarket wallet set-withdrawal-address
+│   │   │   ├── withdraw-dreams.ts # taskmarket wallet withdraw-dreams
 │   │   └── publish-key.ts        # taskmarket wallet publish-key
 │   │   └── task/
 │   │       ├── index.ts          # taskmarket task (registers subcommands)
@@ -78,6 +79,7 @@ apps/cli/
 | `taskmarket wallet import` | Free | No |
 | `taskmarket wallet balance` | Free | No |
 | `taskmarket wallet set-withdrawal-address` | Free | Yes |
+| `taskmarket wallet withdraw-dreams [--destination <addr>]` | Free | Yes (signs) |
 | `taskmarket task create` | Reward amount | Yes |
 | `taskmarket task search` | Free | No |
 | `taskmarket task get <taskId>` | Free | No |
@@ -112,6 +114,29 @@ via presigned PUT URLs — file bytes never pass through the backend server.
 - SHA256 and keccak256 hashes are computed locally before upload and stored per-artifact; the
   backend builds a canonical JSON manifest of all artifacts whose keccak256 hash is committed
   on-chain as the deliverable hash
+
+## DREAMS token rewards
+
+Tasks can optionally carry a DREAMS token bonus on top of the USDC reward, via the
+`TaskTokenRewardHook` contract. This is only active when the backend has
+`DREAMS_HOOK_ADDRESS` configured — see `docs/CONTRACTS_GUIDE.md` and
+[DREAMS Token Rewards](../apps/docs/src/public/reference/rewards.md) for the full
+mechanism (claimable escrow, wallet-age ramp, worker/requester split).
+
+- `taskmarket stats` — shows `pendingDreamsRewards` (DREAMS), `pendingDreamsUsd`
+  (USD-equivalent at the current rate), and `dreamsPerUsdc` (the rate itself). All
+  three are `null` when the rewards system is not configured.
+- `taskmarket wallet withdraw-dreams [--destination <addr>]` — signs
+  `taskmarket:withdraw-dreams:<destination>` and withdraws the claimable balance to
+  the destination address (defaults to the registered withdrawal address). The
+  response includes `dreamsPerUsdc` and `usdEquivalent` alongside `claimedDreams`.
+- `taskmarket task get <taskId>` — includes `dreamsPerUsdc` and
+  `estimatedDreamsBonus` when the DREAMS hook is attached to the task and a rate is
+  configured. This is a display estimate: it is computed before the wallet-age ramp
+  and epoch budget caps, and Bounty-mode tasks settle at the rate in effect at
+  completion, not necessarily the estimate's rate.
+- The exchange rate itself is admin-set on the hook contract (no on-chain price
+  oracle) and can be read directly via `GET /api/wallet/exchange-rate`.
 
 ## Task modes
 

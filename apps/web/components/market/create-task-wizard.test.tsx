@@ -5,20 +5,38 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreateTaskWizard } from './create-task-wizard';
 
-const { connectOrCreateWallet, fund, router, signTypedDataAsync, switchChainAsync, walletState } =
-  vi.hoisted(() => ({
-    connectOrCreateWallet: vi.fn(),
-    fund: vi.fn(),
-    router: {
-      push: vi.fn(),
+const {
+  connectOrCreateWallet,
+  exchangeRateData,
+  fund,
+  router,
+  signTypedDataAsync,
+  switchChainAsync,
+  walletState,
+} = vi.hoisted(() => ({
+  connectOrCreateWallet: vi.fn(),
+  exchangeRateData: {
+    current: undefined as { dreamsPerUsdc: string; workerSplitBps: number } | undefined,
+  },
+  fund: vi.fn(),
+  router: {
+    push: vi.fn(),
+  },
+  signTypedDataAsync: vi.fn(),
+  switchChainAsync: vi.fn(),
+  walletState: {
+    address: undefined as `0x${string}` | undefined,
+    isConnected: false,
+  },
+}));
+
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    wallet: {
+      exchangeRate: { useQuery: () => ({ data: exchangeRateData.current, isLoading: false }) },
     },
-    signTypedDataAsync: vi.fn(),
-    switchChainAsync: vi.fn(),
-    walletState: {
-      address: undefined as `0x${string}` | undefined,
-      isConnected: false,
-    },
-  }));
+  },
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
@@ -119,6 +137,7 @@ describe('CreateTaskWizard', () => {
     switchChainAsync.mockResolvedValue(undefined);
     walletState.address = undefined;
     walletState.isConnected = false;
+    exchangeRateData.current = undefined;
     vi.stubGlobal('fetch', vi.fn());
   });
 
@@ -383,6 +402,41 @@ describe('CreateTaskWizard', () => {
     expect(within(breakdown).getAllByText('100.000 USDC')).toHaveLength(2);
     expect(within(breakdown).getByText('7.500 USDC')).toBeInTheDocument();
     expect(within(breakdown).getByText('92.500 USDC')).toBeInTheDocument();
+  });
+
+  it('shows an estimated DREAMS bonus row when the exchange rate is configured', async () => {
+    exchangeRateData.current = {
+      dreamsPerUsdc: (10n * 10n ** 18n).toString(),
+      workerSplitBps: 8000,
+    };
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoPublishFromCustom(user, { reward: '100' });
+
+    const breakdownLabel = screen.getByText(/cost breakdown/i);
+    const breakdown = breakdownLabel.closest('div') as HTMLElement;
+    const labels = within(breakdown)
+      .getAllByRole('term')
+      .map((row) => row.textContent);
+    expect(labels).toContain('Estimated worker DREAMS bonus');
+    // 100 reward * 10 DREAMS/USDC * 80% worker split = 800 DREAMS
+    expect(within(breakdown).getByText('~800 DREAMS')).toBeInTheDocument();
+  });
+
+  it('omits the DREAMS bonus row when no exchange rate is configured', async () => {
+    exchangeRateData.current = undefined;
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoPublishFromCustom(user, { reward: '100' });
+
+    const breakdownLabel = screen.getByText(/cost breakdown/i);
+    const breakdown = breakdownLabel.closest('div') as HTMLElement;
+    const labels = within(breakdown)
+      .getAllByRole('term')
+      .map((row) => row.textContent);
+    expect(labels).not.toContain('Estimated worker DREAMS bonus');
   });
 
   it('renders fully when initialMarketStats is null without a market strip', async () => {

@@ -10,6 +10,8 @@ import {
   contractTransferWithAuthorization,
   contractGetDreamsClaimable,
   contractWithdrawDreamsRewards,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
 } from '../services/contract';
 import {
   SetWithdrawalAddressInputSchema,
@@ -20,6 +22,8 @@ import {
   DreamsBalanceOutputSchema,
   WithdrawDreamsInputSchema,
   WithdrawDreamsOutputSchema,
+  ExchangeRateOutputSchema,
+  dreamsToUsd,
 } from '@taskmarket/shared';
 
 const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -289,10 +293,34 @@ export const walletRouter = router({
         input.destination as `0x${string}`
       );
 
+      const dreamsPerUsdc = await contractGetDreamsPerUsdc();
+      const claimedBaseUnits = claimable.toString();
+
       return {
         txHash,
         destination: input.destination,
-        claimedBaseUnits: claimable.toString(),
+        claimedBaseUnits,
+        dreamsPerUsdc: dreamsPerUsdc.toString(),
+        usdEquivalent: dreamsToUsd(claimedBaseUnits, dreamsPerUsdc.toString()),
       };
+    }),
+
+  exchangeRate: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/wallet/exchange-rate',
+        tags: ['Wallet'],
+        summary: 'Get the current DREAMS/USDC exchange rate',
+      },
+    })
+    .input(z.void())
+    .output(ExchangeRateOutputSchema)
+    .query(async () => {
+      const [dreamsPerUsdc, workerSplitBps] = await Promise.all([
+        contractGetDreamsPerUsdc(),
+        contractGetDreamsWorkerSplitBps(),
+      ]);
+      return { dreamsPerUsdc: dreamsPerUsdc.toString(), workerSplitBps };
     }),
 });

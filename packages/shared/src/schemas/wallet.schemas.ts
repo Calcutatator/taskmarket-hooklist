@@ -60,4 +60,11 @@ export const WithdrawDreamsOutputSchema = z.object({
   txHash: z.string(),
   destination: z.string(),
   claimedBaseUnits: z.string(),
+  dreamsPerUsdc: z.string(),
+  usdEquivalent: z.string(),
+});
+
+export const ExchangeRateOutputSchema = z.object({
+  dreamsPerUsdc: z.string(),
+  workerSplitBps: z.number(),
 });

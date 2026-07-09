@@ -217,8 +217,9 @@ lookup.
 - `RegistryFacet` gains `getTaskHooks(bytes32)`.
 - `ITMPCore.HookConfig` and `ITMPCore.TaskContent` structs added to the interface.
 - `ITMPCore.HookCheckCompleteRejected` error added.
-- New hook contracts: `TaskTokenRewardHook`, `RewardVault`, `EpochBudget`,
-  `CompositeTwapOracle` (see `src/hooks/` and `src/oracle/`).
+- New hook contracts: `TaskTokenRewardHook`, `RewardVault`, `EpochBudget`
+  (see `src/hooks/`). DREAMS/USDC pricing is an admin-settable `dreamsPerUsdc`
+  rate on the hook — no on-chain price oracle.
 - `TaskTokenRewardHook` uses a claimable escrow model — tokens are held inside
   the hook rather than pushed to worker wallets. Workers withdraw via
   `withdrawFor(wallet, destination)` called by the trusted backend server wallet.
@@ -228,10 +229,18 @@ lookup.
   `setRamp()` by the owner.
 - Worker/requester split: `workerSplitBps` (default 8000 = 80% worker, 20%
   requester) is configurable via `setWorkerSplitBps()`.
-- Admin functions: `banWallet`, `unbanWallet`, `setBackend`, `sweepUnclaimed`.
+- `EpochBudget` caps (`globalCapUsd`, `workerCapUsd`, `requesterCapUsd`,
+  `maxUsdPerTask`) are denominated in USDC base units, not DREAMS token
+  amounts, so they stay meaningful as the DREAMS/USDC rate moves.
+- Admin functions: `banWallet`, `unbanWallet`, `setBackend`, `sweepUnclaimed`,
+  `setDreamsPerUsdc`.
 - Deploy script: `script/DeployRewardHook.s.sol` — `make deploy-reward-hook testnet/mainnet`.
-- New backend procedures: `wallet.dreamsBalance` (GET) and `wallet.withdrawDreams` (POST).
+- New backend procedures: `wallet.dreamsBalance` (GET), `wallet.withdrawDreams`
+  (POST), `wallet.exchangeRate` (GET). `task.get` returns `dreamsPerUsdc` and
+  `estimatedDreamsBonus` when the reward hook is attached to the task.
 - New CLI command: `taskmarket wallet withdraw-dreams [--destination <addr>]`.
+  `taskmarket stats` shows `pendingDreamsRewards`, `pendingDreamsUsd`, and
+  `dreamsPerUsdc`.
 
 ---
 
@@ -248,17 +257,12 @@ lookup.
 | `packages/contracts/src/facets/AdminFacet.sol` | Add `setDefaultHooks`, `getDefaultHooks` |
 | `packages/contracts/src/facets/RegistryFacet.sol` | Add `getTaskHooks` getter |
 | `packages/contracts/src/interfaces/ITMPCore.sol` | Add `HookConfig`, `TaskContent` structs; add `HookCheckCompleteRejected` error |
-| `packages/contracts/src/hooks/TaskTokenRewardHook.sol` | New: USD-denominated DREAMS token reward hook implementing `ITMPHook` |
+| `packages/contracts/src/hooks/TaskTokenRewardHook.sol` | New: USD-denominated DREAMS token reward hook implementing `ITMPHook`; admin-settable `dreamsPerUsdc` rate, no on-chain oracle |
 | `packages/contracts/src/hooks/RewardVault.sol` | New: holds DREAMS tokens; only the hook can reserve/release/pay |
-| `packages/contracts/src/hooks/EpochBudget.sol` | New: per-epoch emission caps with epoch-indexed rollover |
-| `packages/contracts/src/oracle/CompositeTwapOracle.sol` | New: chains DREAMS/WETH and WETH/USDC Aerodrome CL pools to price DREAMS in USD |
-| `packages/contracts/src/interfaces/ITokenUsdOracle.sol` | New: oracle interface used by the reward hook |
+| `packages/contracts/src/hooks/EpochBudget.sol` | New: per-epoch USD emission caps (USDC base units) with epoch-indexed rollover |
 | `packages/contracts/src/interfaces/IRewardVault.sol` | New: vault interface used by the reward hook |
-| `packages/contracts/src/lib/FullMath.sol` | New: Uniswap V3 FullMath (MIT) |
-| `packages/contracts/src/lib/TickMath.sol` | New: Uniswap V3 TickMath (MIT) |
-| `packages/contracts/script/DeployRewardHook.s.sol` | New: deploy script for hook + vault + budget + oracle |
+| `packages/contracts/script/DeployRewardHook.s.sol` | New: deploy script for hook + vault + budget |
 | `packages/contracts/test/TaskTokenRewardHook.t.sol` | New: reward hook test suite |
-| `packages/contracts/test/CompositeTwapOracle.t.sol` | New: oracle unit tests |
 | `packages/contracts/test/EpochBudget.t.sol` | New: epoch budget unit tests |
 | `packages/contracts/test/RewardVault.t.sol` | New: vault unit tests |
 | `packages/contracts/test/TaskMarket.t.sol` | Update all `createTask` and acceptance calls to new signatures |

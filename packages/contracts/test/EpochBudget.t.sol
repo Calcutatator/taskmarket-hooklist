@@ -67,9 +67,9 @@ contract EpochBudgetTest is Test {
     function test_checkAndConsume_globalCapExceeded() public {
         // Raise per-actor caps so the global cap is the binding constraint.
         vm.startPrank(OWNER);
-        budget.setWorkerCap(5000e18);
-        budget.setRequesterCap(5000e18);
-        budget.setMaxTokensPerTask(5000e18);
+        budget.setWorkerCapUsd(5000e18);
+        budget.setRequesterCapUsd(5000e18);
+        budget.setMaxUsdPerTask(5000e18);
         vm.stopPrank();
 
         vm.prank(HOOK);
@@ -151,23 +151,29 @@ contract EpochBudgetTest is Test {
 
     function test_ownerSetters() public {
         vm.startPrank(OWNER);
-        budget.setGlobalCap(1);
-        budget.setWorkerCap(2);
-        budget.setRequesterCap(3);
-        budget.setMaxTokensPerTask(4);
+        budget.setGlobalCapUsd(1);
+        budget.setWorkerCapUsd(2);
+        budget.setRequesterCapUsd(3);
+        budget.setMaxUsdPerTask(4);
         budget.setEpochDuration(5);
         vm.stopPrank();
-        assertEq(budget.globalCap(), 1);
-        assertEq(budget.workerCap(), 2);
-        assertEq(budget.requesterCap(), 3);
-        assertEq(budget.maxTokensPerTask(), 4);
+        assertEq(budget.globalCapUsd(), 1);
+        assertEq(budget.workerCapUsd(), 2);
+        assertEq(budget.requesterCapUsd(), 3);
+        assertEq(budget.maxUsdPerTask(), 4);
         assertEq(budget.epochDuration(), 5);
     }
 
     function test_setters_onlyOwner() public {
         vm.prank(STRANGER);
         vm.expectRevert();
-        budget.setGlobalCap(1);
+        budget.setGlobalCapUsd(1);
+    }
+
+    function test_setMaxUsdPerTask_overflowReverts() public {
+        vm.prank(OWNER);
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        budget.setMaxUsdPerTask(uint256(type(uint192).max) + 1);
     }
 
     function test_constructor_zeroDuration_reverts() public {
@@ -188,5 +194,10 @@ contract EpochBudgetTest is Test {
     function test_constructor_requesterCapOverflow_reverts() public {
         vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
         new EpochBudget(EPOCH, GLOBAL_CAP, WORKER_CAP, uint256(type(uint192).max) + 1, MAX_PER_TASK, OWNER);
+    }
+
+    function test_constructor_maxUsdPerTaskOverflow_reverts() public {
+        vm.expectRevert(EpochBudget.CapExceedsUint192.selector);
+        new EpochBudget(EPOCH, GLOBAL_CAP, WORKER_CAP, REQUESTER_CAP, uint256(type(uint192).max) + 1, OWNER);
     }
 }
