@@ -56,7 +56,7 @@ const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS
   ?? (process.env.WORKER_PRIVATE_KEY
     ? privateKeyToAccount(process.env.WORKER_PRIVATE_KEY as `0x${string}`).address
     : undefined);
-const RPC_URL = process.env.EVM_RPC_URL_BASE_SEPOLIA || 'https://sepolia.base.org';
+const RPC_URL = process.env.FORGE_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
 
 if (!process.env.REQUESTER_PRIVATE_KEY || !process.env.WORKER_PRIVATE_KEY) {
   console.error(
