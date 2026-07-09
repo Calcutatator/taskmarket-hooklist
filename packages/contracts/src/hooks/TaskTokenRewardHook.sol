@@ -330,6 +330,21 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
                 // exhausted by a concurrent call before checkAndConsume runs. Wrap in
                 // try-catch so an unexpected revert silently skips the token reward
                 // instead of reverting checkComplete and blocking the USDC payout.
+                //
+                // Ordering note: EpochBudget state is committed here BEFORE the token
+                // transfer in vault.payDirect below. This is intentionally NOT
+                // checks-effects-interactions-safe against the paid token itself — if
+                // `token` were ever an ERC777-style callback token, a malicious worker
+                // contract's receive-hook could reenter between this consume and the
+                // credit below with budget already spent but tokens not yet accounted
+                // for locally. This is safe today only because: (1) `token` is
+                // immutable and assumed to be a plain, non-callback ERC20 for the
+                // lifetime of this contract, (2) `vault`/`epochBudget` are onlyHook-
+                // gated so a reentrant call can't touch them directly, and (3) this
+                // whole call executes inside the Diamond's own reentrancy guard, so a
+                // reentrant call back into any Diamond-facing function reverts. If
+                // `token` is ever changed to a callback-capable token, this ordering
+                // must be revisited.
                 try epochBudget.checkAndConsume(ctx.requester, worker, cappedUsd) {
                 // consume succeeded — vault payment follows below
                 }
@@ -552,6 +567,21 @@ contract TaskTokenRewardHook is ITMPHook, Ownable {
 
     function _reserveForWorker(bytes32 taskId, address requester, address worker) internal returns (bool) {
         RewardState storage state = rewardStates[taskId];
+
+        // Guard against double-reservation: a task can return to Open after already
+        // being reserved once (e.g. EvaluatorFacet.finalizeVerdict's REJECT branch
+        // reopens a claimed task without calling any reward-hook release path), and
+        // then be claimed/selected again. Release any stale reservation first so the
+        // vault and EpochBudget accounting for the old worker never gets orphaned or
+        // double-consumed when this function reserves fresh for the new worker below.
+        // vault.release/epochBudget.release are pure internal-accounting calls on
+        // trusted owner-set contracts (no token transfer, no calls to attacker-
+        // controlled addresses), so the state writes further below in this function
+        // being "after" this external call is not an exploitable reentrancy path.
+        if (state.reserved && !state.paid) {
+            // slither-disable-next-line reentrancy-no-eth
+            _releaseReserve(taskId);
+        }
 
         uint256 rate = dreamsPerUsdc;
         // intentional two-step bps scaling: bonusUsd is a real checkpoint value (stored

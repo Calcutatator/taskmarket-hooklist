@@ -53,6 +53,8 @@ export const DreamsBalanceOutputSchema = z.object({
 export const WithdrawDreamsInputSchema = z.object({
   workerAddress: EthAddress,
   destination: EthAddress,
+  nonce: z.string().min(1),
+  validBefore: z.string().min(1),
   signature: z.string().min(1),
 });
 

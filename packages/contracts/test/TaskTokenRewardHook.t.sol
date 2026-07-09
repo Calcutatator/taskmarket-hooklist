@@ -397,6 +397,77 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         assertTrue(paid2);
     }
 
+    // ─── Double-reservation guard (evaluator-reject reopen) ────────────────────
+    // Regression test for a bug where EvaluatorFacet.finalizeVerdict's REJECT branch
+    // reopens a claimed task (status -> Open, worker -> address(0)) without calling
+    // any reward-hook release path. A second claim then re-entered _reserveForWorker
+    // for the same taskId, and because RewardVault.reserve() is additive, the vault
+    // ended up holding two reservations while the hook only tracked the latest one —
+    // permanently orphaning the first reservation's tokens.
+    function test_reserveForWorker_evaluatorRejectReopen_doesNotDoubleReserve() public {
+        address evaluator = makeAddr("evaluator");
+        address worker2 = makeAddr("worker2");
+
+        bytes32 taskId = _createClaimTask();
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(2 days), uint32(1 days), address(0))
+            )
+        );
+
+        uint256 vaultBefore = vault.available();
+
+        // First worker claims — reserves 1000 DREAMS.
+        _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+        assertEq(vault.taskReserve(taskId), EXPECTED_REWARD_1000_DREAMS);
+        assertEq(vault.available(), vaultBefore - EXPECTED_REWARD_1000_DREAMS);
+
+        _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+
+        // Evaluator rejects — no awards.
+        ITMPCore.Award[] memory noAwards = new ITMPCore.Award[](0);
+        _relay(
+            evaluator,
+            0,
+            abi.encodeCall(market.evaluate, (taskId, ITMPCore.VerdictType.REJECT, 0, 1000, bytes32(0), noAwards))
+        );
+
+        // Finalize after the appeal window — task reopens.
+        vm.warp(block.timestamp + 1 days + 1);
+        market.finalizeVerdict(taskId);
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Open));
+
+        // A second worker claims the reopened task. Before the fix, this would add a
+        // second reservation on top of the first (vault.taskReserve doubling to 2000
+        // DREAMS) instead of releasing the stale one first.
+        _relay(worker2, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
+
+        assertEq(
+            vault.taskReserve(taskId),
+            EXPECTED_REWARD_1000_DREAMS,
+            "stale reservation must be released before the new one is made, not stacked"
+        );
+        assertEq(
+            vault.available(),
+            vaultBefore - EXPECTED_REWARD_1000_DREAMS,
+            "first reservation's tokens must not be orphaned in the vault"
+        );
+
+        (,,,, address lockedRequester, address lockedWorker, bool reserved,) = hook.rewardStates(taskId);
+        assertEq(lockedWorker, worker2, "reward state must track the new worker, not the stale one");
+        assertEq(lockedRequester, requester);
+        assertTrue(reserved);
+
+        // Note: this deliberately stops here rather than completing worker2's task.
+        // EvaluatorFacet.finalizeVerdict's REJECT branch already refunded the full
+        // USDC escrow to the requester above, so a second claim on the reopened task
+        // can never actually be paid out (acceptSubmission would revert on the USDC
+        // transfer with an empty Diamond balance) -- a separate, pre-existing bug in
+        // the evaluator-reject flow, out of scope for this reward-hook regression test.
+    }
+
     // ─── Bounty mode (Path B) ─────────────────────────────────────────────────
 
     function test_bountyMode_paysAtComplete() public {
@@ -1089,6 +1160,80 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
         uint256 workerUsdcBefore = usdc.balanceOf(worker);
         _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
         assertGt(usdc.balanceOf(worker), workerUsdcBefore);
+    }
+
+    // Partial-fill round-trip: vault has SOME tokens available, but fewer than the
+    // full USD-capped tokenReward. checkComplete must scale tokenReward down to
+    // vaultAvail and recompute cappedUsd = tokenReward * 1e6 / rate so EpochBudget is
+    // only consumed for what was actually paid out, not what was originally capped.
+    function test_vaultInsufficient_bounty_partialFill_recomputesUsdRoundTrip() public {
+        bytes32 taskId = _createBountyTask();
+        _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("work"))));
+
+        // Full payout would be rewardUsd(100e6) * bonusBps(100%) -> usdBonusValue=100e6,
+        // then * rate(10e18) / 1e6 = 1000e18 DREAMS. Drain the vault down to 400e18
+        // available (a partial fill), leaving enough that cappedUsd doesn't round to 0.
+        uint256 avail = vault.available();
+        uint256 partialAvail = 400 * 1e18;
+        vm.prank(owner);
+        vault.withdraw(owner, avail - partialAvail);
+        assertEq(vault.available(), partialAvail);
+
+        // Expected recomputed USD basis: 400e18 * 1e6 / 10e18 = 40e6 (40 USDC), not the
+        // original 100e6 the budget check would otherwise have consumed.
+        uint256 expectedRecomputedUsd = 40 * 1e6;
+
+        vm.expectEmit(true, true, false, true);
+        emit TaskTokenRewardHook.RewardPaid(
+            taskId, worker, REWARD_100_USDC, expectedRecomputedUsd, DREAMS_PER_USDC, partialAvail
+        );
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker, keccak256("work"), 0)));
+
+        assertEq(hook.claimable(worker), partialAvail, "worker must be credited exactly the vault-limited amount");
+        assertEq(vault.available(), 0, "vault must be fully drained by the partial-fill payment");
+    }
+
+    // Multi-winner Bounty: one winner's per-worker EpochBudget is already exhausted
+    // (cappedUsd resolves to 0 for them), the other winner has full budget headroom.
+    // The exhausted winner's shortfall must `continue` past them without reverting
+    // the loop or blocking payment to the other winner.
+    function test_bounty_multiWinner_oneWorkerShortfall_doesNotBlockOthers() public {
+        address worker2 = makeAddr("worker2");
+
+        // Exhaust worker (worker1)'s entire per-worker epoch budget ahead of time, so
+        // their cappedUsd for this task resolves to 0 via _min3(..., 0, ...). Lower the
+        // worker cap first so a single checkAndConsume call (bounded by maxUsdPerTask)
+        // can exhaust it without needing many chunked calls.
+        vm.prank(owner);
+        budget.setWorkerCapUsd(1 * 1e6);
+        vm.prank(address(hook));
+        budget.checkAndConsume(requester, worker, 1 * 1e6);
+        assertEq(budget.remaining(requester, worker), 0);
+
+        bytes32 taskId = _createBountyTask();
+        _relay(worker, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("A"))));
+        _relay(worker2, 0, abi.encodeCall(market.submitWork, (taskId, keccak256("B"))));
+
+        address[] memory workers = new address[](2);
+        workers[0] = worker;
+        workers[1] = worker2;
+        uint16[] memory shares = new uint16[](2);
+        shares[0] = 5000; // 50 USDC
+        shares[1] = 5000; // 50 USDC
+        bytes32[] memory deliverables = new bytes32[](2);
+        deliverables[0] = keccak256("A");
+        deliverables[1] = keccak256("B");
+
+        uint256 worker2ClaimableBefore = hook.claimable(worker2);
+        uint256 worker2UsdcBefore = usdc.balanceOf(worker2);
+
+        // Must not revert despite worker's shortfall, and both workers' USDC payout
+        // must still land regardless of the DREAMS-bonus outcome.
+        _relay(requester, 0, abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, deliverables, 0)));
+
+        assertEq(hook.claimable(worker), 0, "shortfall worker must receive no DREAMS bonus");
+        assertGt(hook.claimable(worker2), worker2ClaimableBefore, "other worker's DREAMS bonus must not be blocked");
+        assertGt(usdc.balanceOf(worker2), worker2UsdcBefore, "USDC payout must land for the unaffected worker");
     }
 
     // ─── EpochBudget branch coverage ─────────────────────────────────────────

@@ -370,11 +370,17 @@ async function main() {
   // If a withdrawal address is configured, exercise the withdraw-dreams flow
   if (WORKER_WITHDRAWAL_ADDRESS) {
     const destBalBefore = await tokenBalance(WORKER_WITHDRAWAL_ADDRESS);
+    const withdrawNonce = `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+      .map((b) => b.toString(16).padStart(2, '0'))
+      .join('')}`;
+    const withdrawValidBefore = String(Math.floor(Date.now() / 1000) + 300);
     const withdrawResult = (await post('/api/wallet/withdraw-dreams', {
       workerAddress: worker.address,
       destination: WORKER_WITHDRAWAL_ADDRESS,
+      nonce: withdrawNonce,
+      validBefore: withdrawValidBefore,
       signature: await worker.signMessage({
-        message: `taskmarket:withdraw-dreams:${WORKER_WITHDRAWAL_ADDRESS}`,
+        message: `taskmarket:withdraw-dreams:${WORKER_WITHDRAWAL_ADDRESS}:${withdrawNonce}:${withdrawValidBefore}`,
       }),
     })) as {
       txHash: string;

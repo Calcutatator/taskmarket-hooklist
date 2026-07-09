@@ -1,9 +1,15 @@
 import { Command } from 'commander';
+import { toHex } from 'viem';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiGet, apiPost } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
 import { formatDreams } from '@taskmarket/shared';
+
+// Authorization window: long enough to cover signing latency, short enough to bound
+// the replay risk of a captured signature (the nonce itself prevents reuse even
+// within this window, but a short window limits the exposure of a leaked signature).
+const AUTHORIZATION_VALIDITY_SECONDS = 300;
 
 function isValidAddress(addr: string): boolean {
   return /^0x[a-fA-F0-9]{40}$/.test(addr);
@@ -52,12 +58,16 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
       destination = addressResponse.withdrawalAddress!;
     }
 
-    const message = `taskmarket:withdraw-dreams:${destination}`;
+    const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
+    const validBefore = String(Math.floor(Date.now() / 1000) + AUTHORIZATION_VALIDITY_SECONDS);
+    const message = `taskmarket:withdraw-dreams:${destination}:${nonce}:${validBefore}`;
     const signature = await signMessage(message, keystore);
 
     const result = (await apiPost('/api/wallet/withdraw-dreams', {
       workerAddress,
       destination,
+      nonce,
+      validBefore,
       signature,
     })) as WithdrawDreamsResponse;
 

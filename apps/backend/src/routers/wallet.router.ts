@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { createPublicClient, http, parseAbi, recoverMessageAddress } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
-import { agents } from '../db/schema';
+import { agents, dreamsWithdrawNonces } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import {
@@ -256,7 +256,7 @@ export const walletRouter = router({
     })
     .input(WithdrawDreamsInputSchema)
     .output(WithdrawDreamsOutputSchema)
-    .mutation(async ({ input }) => {
+    .mutation(async ({ input, ctx }) => {
       const config = getServerConfig();
       if (!config.DREAMS_HOOK_ADDRESS) {
         throw new TRPCError({
@@ -265,8 +265,17 @@ export const walletRouter = router({
         });
       }
 
-      // Verify the signature: message must be signed by workerAddress
-      const message = `taskmarket:withdraw-dreams:${input.destination}`;
+      // withdrawFor is executed by the trusted backend wallet, not a user transaction,
+      // so replay protection can't live on-chain — a captured signature must be
+      // rejected here on both expiry and reuse. Message binds signer, destination,
+      // nonce, and expiry together so none of them can be swapped independently.
+      const validBefore = BigInt(input.validBefore);
+      const nowSecs = BigInt(Math.floor(Date.now() / 1000));
+      if (validBefore <= nowSecs) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Authorization has expired' });
+      }
+
+      const message = `taskmarket:withdraw-dreams:${input.destination}:${input.nonce}:${input.validBefore}`;
       let signer: string;
       try {
         signer = await recoverMessageAddress({
@@ -278,6 +287,18 @@ export const walletRouter = router({
       }
       if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      }
+
+      // Atomically claim the nonce — onConflictDoNothing means a replayed nonce
+      // inserts zero rows, which we detect and reject rather than racing a
+      // select-then-insert check.
+      const inserted = await ctx.db
+        .insert(dreamsWithdrawNonces)
+        .values({ nonce: input.nonce })
+        .onConflictDoNothing()
+        .returning({ nonce: dreamsWithdrawNonces.nonce });
+      if (inserted.length === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Authorization nonce already used' });
       }
 
       // Pre-flight: check there is something to claim (saves a tx)

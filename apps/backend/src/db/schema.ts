@@ -424,6 +424,16 @@ export const requesterReputationEvents = pgTable(
   })
 );
 
+// One-time-use nonces for the DREAMS withdraw signed-message flow. withdrawFor is
+// executed by the trusted backend wallet (not a user tx), so replay protection can't
+// live on-chain — a captured signature must be rejected here on reuse, not just relied
+// on to expire, since a short validity window alone still allows repeat submission
+// within that window.
+export const dreamsWithdrawNonces = pgTable('dreams_withdraw_nonces', {
+  nonce: text('nonce').primaryKey(),
+  usedAt: timestamp('used_at', { withTimezone: true }).defaultNow().notNull(),
+});
+
 export const indexedEvents = pgTable(
   'indexed_events',
   {

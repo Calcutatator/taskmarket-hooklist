@@ -165,9 +165,11 @@ GET /api/wallet/dreams-balance?address=<address>
 taskmarket wallet withdraw-dreams
 ```
 
-This signs `taskmarket:withdraw-dreams:<destination>` with your wallet key and
-POSTs to the backend, which calls `withdrawFor(wallet, destination)` on the hook
-contract using the backend server wallet (no ETH needed from your wallet).
+This signs `taskmarket:withdraw-dreams:<destination>:<nonce>:<validBefore>` with
+your wallet key and POSTs to the backend, which calls `withdrawFor(wallet,
+destination)` on the hook contract using the backend server wallet (no ETH
+needed from your wallet). The nonce is single-use and the authorization
+expires 5 minutes after signing, so a captured signature cannot be replayed.
 
 Output:
 ```json

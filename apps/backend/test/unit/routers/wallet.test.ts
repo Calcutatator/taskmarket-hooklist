@@ -318,13 +318,18 @@ describe('wallet router', () => {
   });
 
   describe('withdrawDreams', () => {
-    it('executes withdrawal and returns txHash when signature is valid', async () => {
+    const dreamsNonce = '0x' + 'cd'.repeat(32);
+
+    it('executes withdrawal and returns txHash when signature and nonce are valid', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
       const ctx = createMockCtx();
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.withdrawDreams({
         workerAddress: WALLET,
         destination: WITHDRAWAL,
+        nonce: dreamsNonce,
+        validBefore,
         signature: '0x' + 'aa'.repeat(65),
       });
       expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(WALLET, WITHDRAWAL);
@@ -346,6 +351,8 @@ describe('wallet router', () => {
         caller.withdrawDreams({
           workerAddress: WALLET,
           destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore,
           signature: '0x' + 'aa'.repeat(65),
         })
       ).rejects.toThrow('Signature verification failed');
@@ -355,14 +362,51 @@ describe('wallet router', () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
       vi.mocked(contractGetDreamsClaimable).mockResolvedValueOnce(0n);
       const ctx = createMockCtx();
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
       const caller = walletRouter.createCaller(ctx);
       await expect(
         caller.withdrawDreams({
           workerAddress: WALLET,
           destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore,
           signature: '0x' + 'aa'.repeat(65),
         })
       ).rejects.toThrow('No claimable DREAMS rewards');
+    });
+
+    it('throws BAD_REQUEST when the authorization has expired', async () => {
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      await expect(
+        caller.withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore: String(nowSecs - 1),
+          signature: '0x' + 'aa'.repeat(65),
+        })
+      ).rejects.toThrow('Authorization has expired');
+      // Expiry is checked before signature recovery, so it should never be reached.
+      expect(recoverMessageAddress).not.toHaveBeenCalled();
+    });
+
+    it('throws CONFLICT when the nonce has already been used (replay)', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+      const ctx = createMockCtx();
+      // onConflictDoNothing inserts zero rows when the nonce already exists.
+      ctx.db.insert.mockReturnValueOnce(makeChain([]));
+      const caller = walletRouter.createCaller(ctx);
+      await expect(
+        caller.withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore,
+          signature: '0x' + 'aa'.repeat(65),
+        })
+      ).rejects.toThrow('Authorization nonce already used');
+      expect(contractWithdrawDreamsRewards).not.toHaveBeenCalled();
     });
   });
 
