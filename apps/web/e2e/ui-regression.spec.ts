@@ -58,6 +58,7 @@ test.afterEach(async ({ page }) => {
 
 const publicRoutes = [
   { heading: /Fund one task\. Unleash a market of agents\./i, path: '/' },
+  { heading: /A custom infographic for \$1\./i, path: '/try' },
   { heading: /Open tasks/i, path: '/tasks' },
   { heading: /^Agents$/i, path: '/agents' },
   { heading: /^Humans$/i, path: '/humans' },
@@ -256,4 +257,145 @@ test('keeps primary mobile chrome controls at touch size', async ({ page }, test
     const box = await control.boundingBox();
     expect(box?.height ?? 0).toBeGreaterThanOrEqual(44);
   }
+});
+
+test('runs the /try prompt-to-brief path with loaded proof images and keyboard order', async ({
+  page,
+}) => {
+  await page.goto('/try');
+
+  const heroHeading = page.getByRole('heading', { name: /A custom infographic for \$1\./i });
+  const topic = page.getByLabel('What should yours explain?', { exact: true }).first();
+  const buildButton = page.getByRole('button', { name: /Build my brief/i }).first();
+  await expect(heroHeading).toBeVisible();
+  await expect(topic).toBeVisible();
+  await page.keyboard.press('Tab');
+  await expect(page.getByRole('link', { name: /Skip to content/i })).toBeFocused();
+  const builderTop = await page
+    .locator('#try-builder')
+    .evaluate((node) => Math.round(node.getBoundingClientRect().top));
+  const viewportHeight = await page.evaluate(() => window.innerHeight);
+  expect(viewportHeight - builderTop).toBeGreaterThanOrEqual(48);
+
+  await topic.focus();
+  await page.keyboard.press('Tab');
+  await expect(buildButton).toBeFocused();
+
+  await topic.fill('Why battery storage keeps getting cheaper');
+  await buildButton.click();
+
+  await expect(page.getByLabel(/Infographic topic/i)).toHaveValue(
+    'Why battery storage keeps getting cheaper'
+  );
+  await expect(page.getByLabel(/Target audience/i)).toBeFocused();
+
+  const gallery = page.getByRole('heading', {
+    name: /Real briefs\. Real agents\. Finished infographics\./i,
+  });
+  await gallery.scrollIntoViewIfNeeded();
+  const proofImages = page.locator('article img[alt]');
+  await expect(proofImages).toHaveCount(6);
+  for (const image of await proofImages.all()) {
+    await image.scrollIntoViewIfNeeded();
+    await expect
+      .poll(() => image.evaluate((node) => (node as HTMLImageElement).naturalWidth))
+      .toBeGreaterThan(0);
+  }
+  await expect(page.locator('.try-drop-collage')).toHaveAttribute('data-running', 'false');
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test('explains when /try publication is unavailable without Privy', async ({ page }) => {
+  test.skip(
+    Boolean(process.env.NEXT_PUBLIC_PRIVY_APP_ID),
+    'This fallback is only rendered when Privy is not configured.'
+  );
+
+  await page.goto('/try');
+  await page
+    .getByLabel('What should yours explain?', { exact: true })
+    .first()
+    .fill('How heat pumps move more energy than they consume');
+  await page
+    .getByRole('button', { name: /Build my brief/i })
+    .first()
+    .click();
+  await page.getByLabel(/Target audience/i).fill('Homeowners comparing heating systems');
+  await page.getByRole('button', { name: /Review and fund/i }).click();
+
+  await expect(page.getByRole('heading', { name: /Fund and publish/i })).toBeVisible();
+  await expect(page.getByText('Publication is unavailable')).toBeVisible();
+  await expect(page.getByRole('button', { name: 'Publishing unavailable' })).toBeDisabled();
+});
+
+test('keeps /try static and legible with reduced motion and long input', async ({ page }) => {
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/try');
+
+  const collageAnimation = await page
+    .locator('.try-drop-strip')
+    .first()
+    .evaluate((node) => getComputedStyle(node).animationName);
+  expect(collageAnimation).toBe('none');
+  const duplicateDisplay = await page
+    .locator('.try-drop-track-group[data-duplicate="true"]')
+    .first()
+    .evaluate((node) => getComputedStyle(node).display);
+  expect(duplicateDisplay).toBe('none');
+
+  const topic = page.getByLabel('What should yours explain?', { exact: true }).first();
+  await topic.fill('A'.repeat(180));
+  await expect(topic).toHaveValue('A'.repeat(180));
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
+test('captures /try at the campaign regression viewports', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Captured once from the desktop project.');
+
+  const viewports = [
+    { height: 844, label: '390x844', width: 390 },
+    { height: 1024, label: '768x1024', width: 768 },
+    { height: 900, label: '1440x900', width: 1440 },
+    { height: 1000, label: '1728x1000', width: 1728 },
+  ] as const;
+
+  for (const viewport of viewports) {
+    await page.setViewportSize({ height: viewport.height, width: viewport.width });
+    await page.goto('/try');
+    await expect(
+      page.getByRole('heading', { name: /A custom infographic for \$1\./i })
+    ).toBeVisible();
+    await testInfo.attach(`try-${viewport.label}`, {
+      body: await page.screenshot({ animations: 'disabled', fullPage: true }),
+      contentType: 'image/png',
+    });
+  }
+
+  await page.setViewportSize({ height: 844, width: 390 });
+  await page.emulateMedia({ reducedMotion: 'reduce' });
+  await page.goto('/try');
+  await testInfo.attach('try-390x844-reduced-motion', {
+    body: await page.screenshot({ animations: 'disabled', fullPage: true }),
+    contentType: 'image/png',
+  });
+
+  await page.setViewportSize({ height: 1000, width: 1728 });
+  await page.emulateMedia({ reducedMotion: 'no-preference' });
+  await page.goto('/try');
+  await page
+    .getByLabel('What should yours explain?', { exact: true })
+    .first()
+    .fill('A detailed comparison of grid-scale batteries across cost, lifespan, and safety');
+  await testInfo.attach('try-1728x1000-long-input', {
+    body: await page.screenshot({ animations: 'disabled', fullPage: true }),
+    contentType: 'image/png',
+  });
 });

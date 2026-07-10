@@ -4,6 +4,7 @@ import { useRouter } from 'next/navigation';
 import { useState } from 'react';
 import type { UseFormReturn } from 'react-hook-form';
 import { IconBolt, IconCoin, IconFileText } from '@tabler/icons-react';
+import { CircleAlertIcon, LockKeyholeIcon } from 'lucide-react';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
@@ -25,7 +26,7 @@ import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
 
-import type { WizardFormValues } from '../create-task-wizard';
+import type { WizardFormValues, WizardFunnelEvent, WizardVariant } from '../create-task-wizard';
 
 const apiUrl = getBrowserApiBaseUrl();
 
@@ -153,7 +154,10 @@ type StepPublishProps = {
   ready: boolean;
   connectOrCreateWallet: () => void | Promise<void>;
   onEditBrief: () => void;
+  onFunnelEvent?: (event: WizardFunnelEvent) => void;
   onValidationError: (errors: CreateTaskFieldErrors) => void;
+  variant?: WizardVariant;
+  walletConfigurationAvailable?: boolean;
 };
 
 export function StepPublish({
@@ -161,8 +165,11 @@ export function StepPublish({
   form,
   marketStats,
   onEditBrief,
+  onFunnelEvent,
   onValidationError,
   ready,
+  variant = 'default',
+  walletConfigurationAvailable = true,
 }: StepPublishProps) {
   const router = useRouter();
   const { address, isConnected } = useAccount();
@@ -218,9 +225,11 @@ export function StepPublish({
       const nextFundingPrompt = buildFundingPrompt(balance, rewardBaseUnits);
       if (nextFundingPrompt) {
         setFundingPrompt(nextFundingPrompt);
+        onFunnelEvent?.({ name: 'funding_required' });
         return;
       }
 
+      onFunnelEvent?.({ name: 'payment_started' });
       setPhase('payment');
       const probeRes = await fetch(`${apiUrl}/api/tasks`, {
         body: JSON.stringify(body),
@@ -317,6 +326,7 @@ export function StepPublish({
       }
 
       const result = (await createRes.json()) as { taskId?: string };
+      onFunnelEvent?.({ name: 'task_published' });
       router.push(
         result.taskId ? `/dashboard/tasks/${result.taskId}?published=1` : '/dashboard/tasks'
       );
@@ -354,19 +364,134 @@ export function StepPublish({
 
   function handleConnectWallet() {
     setError(null);
+    onFunnelEvent?.({ name: 'connect_started' });
     connectOrCreateWallet();
   }
 
   const buttonLabel =
-    phase === 'payment'
-      ? 'Fetching payment terms'
-      : phase === 'signing'
-        ? 'Sign payment'
-        : phase === 'submitting'
-          ? 'Creating task'
-          : walletReady
-            ? 'Fund and publish'
-            : 'Connect wallet to post';
+    variant === 'campaign' && !walletConfigurationAvailable
+      ? 'Publishing unavailable'
+      : phase === 'payment'
+        ? 'Fetching payment terms'
+        : phase === 'signing'
+          ? 'Sign payment'
+          : phase === 'submitting'
+            ? 'Creating task'
+            : walletReady
+              ? variant === 'campaign'
+                ? 'Fund $1 and publish'
+                : 'Fund and publish'
+              : variant === 'campaign'
+                ? 'Connect to fund $1'
+                : 'Connect wallet to post';
+
+  if (variant === 'campaign') {
+    return (
+      <div className="grid gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,22rem)] lg:items-start">
+        <section className="grid min-w-0 gap-6" aria-labelledby="campaign-review-title">
+          <div className="flex items-start justify-between gap-4 border-b border-border/58 pb-5">
+            <div className="grid gap-2">
+              <h3 className="text-xl font-semibold text-foreground" id="campaign-review-title">
+                Your brief is ready.
+              </h3>
+              <p className="text-sm leading-6 text-muted-foreground">
+                Read it once, then connect and fund only when you are satisfied.
+              </p>
+            </div>
+            <Button onClick={onEditBrief} size="sm" type="button" variant="outline">
+              Edit brief
+            </Button>
+          </div>
+
+          <div className="grid gap-3">
+            <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">Brief</p>
+            <p className="whitespace-pre-line text-sm leading-7 text-foreground">
+              {values.description || 'No brief written yet.'}
+            </p>
+          </div>
+        </section>
+
+        <aside className="grid gap-5 border border-border/68 bg-surface/32 p-5 shadow-[var(--shadow-soft)] lg:sticky lg:top-6">
+          <div className="grid gap-2">
+            <div className="flex items-center gap-2">
+              <LockKeyholeIcon aria-hidden="true" className="size-4 text-primary" />
+              <h3 className="text-base font-semibold text-foreground">Publish this brief</h3>
+            </div>
+            <p className="text-sm leading-6 text-muted-foreground">
+              Your brief goes live after the $1 payment is approved.
+            </p>
+          </div>
+
+          {phase !== 'form' ? (
+            <div aria-live="polite" className="grid gap-2 border-l-2 border-primary pl-3">
+              <p className="text-sm font-semibold text-foreground">{stepCopy[phase].label}</p>
+              <p className="text-xs leading-5 text-muted-foreground">{stepCopy[phase].text}</p>
+            </div>
+          ) : null}
+
+          {!walletConfigurationAvailable ? (
+            <div
+              className="grid gap-2 border border-destructive/65 bg-destructive/10 p-3"
+              role="alert"
+            >
+              <div className="flex items-center gap-2 text-sm font-semibold text-destructive">
+                <CircleAlertIcon aria-hidden="true" className="size-4" />
+                Publication is unavailable
+              </div>
+              <p className="text-xs leading-5 text-muted-foreground">
+                Wallet connection is not configured for this deployment. Your brief remains editable
+                while publication is restored.
+              </p>
+            </div>
+          ) : null}
+
+          {error ? (
+            <p
+              className="border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
+              role="alert"
+            >
+              {error}
+            </p>
+          ) : null}
+
+          {fundingPrompt ? (
+            <FundingGuard
+              address={address}
+              defaultAmount={fundingPrompt.defaultAmount}
+              message={`Wallet has ${fundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+                fundingPrompt.shortfallBaseUnits
+              )} before you can publish.`}
+              onStatus={handleFundingStatus}
+            >
+              <p className="text-xs leading-5 text-muted-foreground">
+                This brief needs {formatUsdcUnits(fundingPrompt.requiredBaseUnits)} to publish.
+              </p>
+            </FundingGuard>
+          ) : null}
+
+          {fundingNotice ? (
+            <p className="border border-border/68 bg-background/48 p-3 text-xs leading-5 text-muted-foreground">
+              {fundingNotice}
+            </p>
+          ) : null}
+
+          <Button
+            className="h-11 w-full"
+            disabled={!walletConfigurationAvailable || isSubmitting || (!walletReady && !ready)}
+            onClick={walletReady ? handlePublish : handleConnectWallet}
+            type="button"
+          >
+            {buttonLabel}
+          </Button>
+          {walletConfigurationAvailable && !walletReady ? (
+            <p className="text-xs leading-5 text-muted-foreground">
+              No account was needed to build the brief. Connect only for this final step.
+            </p>
+          ) : null}
+        </aside>
+      </div>
+    );
+  }
 
   return (
     <div className="grid gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">

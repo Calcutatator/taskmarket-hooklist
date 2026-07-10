@@ -209,6 +209,54 @@ export function findTemplate(id: string): TaskTemplate | undefined {
   return taskTemplates.find((template) => template.id === id);
 }
 
+// Visual-direction presets surfaced as chips in the locked /try brief step. Each
+// maps to a single "Visual direction" line appended to the composed brief so
+// choosing one reads as picking a look, not writing more prose. Data-driven so
+// new directions are one entry here. The id is stable; the line is human copy.
+export type VisualPreset = {
+  id: string;
+  label: string;
+  line: string;
+};
+
+export const VISUAL_PRESETS: readonly VisualPreset[] = [
+  {
+    id: 'data-dense',
+    label: 'Data-dense',
+    line: 'Visual direction: data-dense, with charts, stats, and labelled callouts doing the heavy lifting.',
+  },
+  {
+    id: 'bold-minimal',
+    label: 'Bold & minimal',
+    line: 'Visual direction: bold and minimal, with a few big numbers, strong hierarchy, and generous whitespace.',
+  },
+  {
+    id: 'editorial',
+    label: 'Editorial',
+    line: 'Visual direction: editorial, with a magazine-style layout, refined type, and a clear narrative flow.',
+  },
+] as const;
+
+export function findVisualPreset(id: string): VisualPreset | undefined {
+  return VISUAL_PRESETS.find((preset) => preset.id === id);
+}
+
+// Compose a brief and append the chosen visual-direction line (when any). Keeps
+// composeBrief pure by layering the preset on top: the token-driven body still
+// composes live, and the preset line is clamped in with the same brief limit.
+export function composeBriefWithPreset(
+  template: TaskTemplate,
+  tokenValues: Record<string, string>,
+  presetId?: string
+): string {
+  const base = composeBrief(template, tokenValues);
+  const preset = presetId ? findVisualPreset(presetId) : undefined;
+  if (!preset) {
+    return base;
+  }
+  return `${base}\n\n${preset.line}`.slice(0, BRIEF_MAX_LENGTH);
+}
+
 // Interpolate {{token}} placeholders (user value -> token defaultValue -> empty),
 // render each section as "heading\nbody", drop empties, normalize blank gaps,
 // trim, and clamp to the server brief limit. Pure, unit-tested.

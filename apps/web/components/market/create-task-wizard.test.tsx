@@ -1,20 +1,24 @@
 import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
+import { StrictMode } from 'react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreateTaskWizard } from './create-task-wizard';
 
-const { connectOrCreateWallet, fund, router, walletState } = vi.hoisted(() => ({
-  connectOrCreateWallet: vi.fn(),
-  fund: vi.fn(),
-  router: {
-    push: vi.fn(),
-  },
-  walletState: {
-    address: undefined as `0x${string}` | undefined,
-    isConnected: false,
-  },
-}));
+const { connectOrCreateWallet, fund, router, signTypedDataAsync, switchChainAsync, walletState } =
+  vi.hoisted(() => ({
+    connectOrCreateWallet: vi.fn(),
+    fund: vi.fn(),
+    router: {
+      push: vi.fn(),
+    },
+    signTypedDataAsync: vi.fn(),
+    switchChainAsync: vi.fn(),
+    walletState: {
+      address: undefined as `0x${string}` | undefined,
+      isConnected: false,
+    },
+  }));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
@@ -25,8 +29,8 @@ vi.mock('wagmi', () => ({
     address: walletState.address,
     isConnected: walletState.isConnected,
   }),
-  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
-  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
+  useSignTypedData: () => ({ signTypedDataAsync }),
+  useSwitchChain: () => ({ switchChainAsync }),
 }));
 
 vi.mock('@privy-io/react-auth', () => ({
@@ -45,6 +49,29 @@ class ResizeObserverStub {
 }
 
 const VALID_BRIEF = 'Build a Privy funding flow with clear acceptance criteria.';
+const PAYMENT_TERMS = {
+  accepts: [
+    {
+      amount: '1000000',
+      asset: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+      extra: {
+        eip712: {
+          domain: {
+            chainId: 8453,
+            name: 'USD Coin',
+            verifyingContract: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
+            version: '2',
+          },
+          types: { TransferWithAuthorization: [] },
+        },
+      },
+      maxTimeoutSeconds: 300,
+      network: 'eip155:8453',
+      payTo: '0x1111111111111111111111111111111111111111',
+      scheme: 'exact',
+    },
+  ],
+};
 
 // Step 1 (Template) -> select Custom and open the Brief step.
 async function gotoBriefFromCustom(user: ReturnType<typeof userEvent.setup>) {
@@ -86,6 +113,10 @@ describe('CreateTaskWizard', () => {
     connectOrCreateWallet.mockClear();
     fund.mockClear();
     router.push.mockClear();
+    signTypedDataAsync.mockReset();
+    signTypedDataAsync.mockResolvedValue('0xsigned');
+    switchChainAsync.mockReset();
+    switchChainAsync.mockResolvedValue(undefined);
     walletState.address = undefined;
     walletState.isConnected = false;
     vi.stubGlobal('fetch', vi.fn());
@@ -365,5 +396,311 @@ describe('CreateTaskWizard', () => {
     // The flow still works end to end through to Publish.
     await gotoPublishFromCustom(user);
     expect(await screen.findByRole('heading', { name: /review and publish/i })).toBeInTheDocument();
+  });
+
+  it('renders the focused two-step campaign without changing dashboard defaults', async () => {
+    const user = userEvent.setup();
+    const onDirtyChange = vi.fn();
+    const onFunnelEvent = vi.fn();
+
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'the falling cost of solar power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        onDirtyChange={onDirtyChange}
+        onFunnelEvent={onFunnelEvent}
+        variant="campaign"
+      />
+    );
+
+    expect(screen.queryByText('Template')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Brief').length).toBeGreaterThan(0);
+    expect(screen.getByText('Fund & publish')).toBeInTheDocument();
+    expect(screen.getByLabelText(/infographic topic/i)).toHaveValue(
+      'the falling cost of solar power'
+    );
+
+    await user.type(screen.getByLabelText(/target audience/i), 'energy policy teams');
+    await waitFor(() => expect(onDirtyChange).toHaveBeenLastCalledWith(true));
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+
+    expect(await screen.findByRole('heading', { name: /fund and publish/i })).toBeInTheDocument();
+    expect(screen.getByText('Your brief is ready.')).toBeInTheDocument();
+    expect(screen.queryByText(/cost breakdown/i)).not.toBeInTheDocument();
+    expect(screen.queryByText(/^bounty$/i)).not.toBeInTheDocument();
+    expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'brief_completed' });
+    expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'publish_viewed' });
+
+    render(<CreateTaskWizard initialMarketStats={null} />);
+    expect(screen.getAllByText('Template').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('Publish').length).toBeGreaterThan(0);
+  });
+
+  it('preserves campaign answers and visual direction after editing from publish', async () => {
+    const user = userEvent.setup();
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'why home batteries are getting cheaper',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        variant="campaign"
+      />
+    );
+
+    await user.type(screen.getByLabelText(/target audience/i), 'first-time homeowners');
+    await user.click(screen.getByRole('button', { name: 'Editorial' }));
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+    await user.click(await screen.findByRole('button', { name: /edit brief/i }));
+
+    expect(await screen.findByLabelText(/infographic topic/i)).toHaveValue(
+      'why home batteries are getting cheaper'
+    );
+    expect(screen.getByLabelText(/target audience/i)).toHaveValue('first-time homeowners');
+    expect(screen.getByRole('button', { name: 'Editorial' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+  });
+
+  it('asks before a guided answer replaces manual campaign brief edits', async () => {
+    const user = userEvent.setup();
+    const confirmSpy = vi.spyOn(window, 'confirm').mockReturnValue(false);
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how heat pumps move energy',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        variant="campaign"
+      />
+    );
+
+    const details = screen
+      .getByText('Your brief', { selector: 'summary span' })
+      .closest('details') as HTMLDetailsElement;
+    details.open = true;
+    const description = within(details).getByLabelText(/description/i);
+    await user.clear(description);
+    await user.type(description, 'Keep this manually edited brief.');
+    await user.click(screen.getByRole('button', { name: 'Editorial' }));
+
+    expect(confirmSpy).toHaveBeenCalledWith(
+      'Changing a guided answer will replace your manual brief edits. Continue?'
+    );
+    expect(screen.getByRole('button', { name: 'Editorial' })).toHaveAttribute(
+      'aria-pressed',
+      'false'
+    );
+    expect(description).toHaveValue('Keep this manually edited brief.');
+
+    confirmSpy.mockReturnValue(true);
+    await user.click(screen.getByRole('button', { name: 'Editorial' }));
+    expect(screen.getByRole('button', { name: 'Editorial' })).toHaveAttribute(
+      'aria-pressed',
+      'true'
+    );
+    expect(description).not.toHaveValue('Keep this manually edited brief.');
+    confirmSpy.mockRestore();
+  });
+
+  it('keeps a locked topic visible through the Strict Mode effect replay', () => {
+    render(
+      <StrictMode>
+        <CreateTaskWizard
+          initialMarketStats={null}
+          lock={{
+            prefillFirstToken: 'the economics of grid batteries',
+            reward: '1',
+            templateId: 'infographic',
+          }}
+          variant="campaign"
+        />
+      </StrictMode>
+    );
+
+    expect(screen.getByLabelText(/infographic topic/i)).toHaveValue(
+      'the economics of grid batteries'
+    );
+  });
+
+  it('requires a real campaign topic before review and funding', async () => {
+    const user = userEvent.setup();
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{ reward: '1', templateId: 'infographic' }}
+        variant="campaign"
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+
+    expect(screen.getByText('Enter a topic before reviewing and funding.')).toBeInTheDocument();
+    await waitFor(() => expect(screen.getByLabelText(/infographic topic/i)).toHaveFocus());
+    expect(screen.queryByText('Your brief is ready.')).not.toBeInTheDocument();
+  });
+
+  it('shows an actionable campaign state when wallet publication is unavailable', async () => {
+    const user = userEvent.setup();
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '');
+
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how solar panels turn light into power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        variant="campaign"
+      />
+    );
+
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+
+    expect(await screen.findByText(/publication is unavailable/i)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /publishing unavailable/i })).toBeDisabled();
+  });
+
+  it('emits connect and funding funnel events from the real campaign boundaries', async () => {
+    const user = userEvent.setup();
+    const onFunnelEvent = vi.fn();
+
+    const { unmount } = render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how solar panels turn light into power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        onFunnelEvent={onFunnelEvent}
+        variant="campaign"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+    const connectButton = screen.getByRole('button', { name: /connect to fund \$1/i });
+    await waitFor(() => expect(connectButton).toBeEnabled());
+    await user.click(connectButton);
+    expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'connect_started' });
+
+    unmount();
+    onFunnelEvent.mockClear();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({ balanceBaseUnits: '0', balanceUsdc: '0.000000' }),
+      })
+    );
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how solar panels turn light into power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        onFunnelEvent={onFunnelEvent}
+        variant="campaign"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+    await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
+    await waitFor(() => expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'funding_required' }));
+  });
+
+  it('emits payment and published events around a successful campaign checkout', async () => {
+    const user = userEvent.setup();
+    const onFunnelEvent = vi.fn();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ balanceBaseUnits: '1000000', balanceUsdc: '1.000000' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => PAYMENT_TERMS,
+        ok: false,
+        status: 402,
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ taskId: '0xpublished' }),
+        ok: true,
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how solar panels turn light into power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        onFunnelEvent={onFunnelEvent}
+        variant="campaign"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+    await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
+
+    await waitFor(() =>
+      expect(router.push).toHaveBeenCalledWith('/dashboard/tasks/0xpublished?published=1')
+    );
+    expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'payment_started' });
+    expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'task_published' });
+  });
+
+  it('surfaces a campaign signature error and restores the retry action', async () => {
+    const user = userEvent.setup();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    signTypedDataAsync.mockRejectedValueOnce(new Error('Signature request was rejected.'));
+    vi.stubGlobal(
+      'fetch',
+      vi
+        .fn()
+        .mockResolvedValueOnce({
+          ok: true,
+          json: async () => ({ balanceBaseUnits: '1000000', balanceUsdc: '1.000000' }),
+        })
+        .mockResolvedValueOnce({
+          json: async () => PAYMENT_TERMS,
+          ok: false,
+          status: 402,
+        })
+    );
+
+    render(
+      <CreateTaskWizard
+        initialMarketStats={null}
+        lock={{
+          prefillFirstToken: 'how solar panels turn light into power',
+          reward: '1',
+          templateId: 'infographic',
+        }}
+        variant="campaign"
+      />
+    );
+    await user.click(screen.getByRole('button', { name: /review and fund/i }));
+    await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
+
+    expect(await screen.findByRole('alert')).toHaveTextContent('Signature request was rejected.');
+    expect(screen.getByRole('button', { name: /fund \$1 and publish/i })).toBeEnabled();
   });
 });

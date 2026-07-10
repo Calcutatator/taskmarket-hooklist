@@ -457,6 +457,182 @@ body {
   z-index: 1;
 }
 
+.try-drop-collage {
+  position: absolute;
+  inset: -14% -18% -12% 32%;
+  z-index: 0;
+  overflow: hidden;
+  pointer-events: none;
+  opacity: 0.82;
+  transform: rotate(-7deg);
+  transform-origin: center;
+  mask-image: linear-gradient(90deg, transparent 0%, rgb(0 0 0 / 0.28) 14%, #000 34%, #000 100%);
+}
+
+.try-drop-track {
+  position: absolute;
+  left: -18%;
+  width: 146%;
+  overflow: hidden;
+}
+
+.try-drop-track[data-track='1'] {
+  top: 0;
+}
+
+.try-drop-track[data-track='2'] {
+  top: 34%;
+}
+
+.try-drop-track[data-track='3'] {
+  top: 68%;
+}
+
+.try-drop-strip {
+  display: flex;
+  width: max-content;
+  transform: translate3d(0, 0, 0);
+  animation: try-drop-flow 36s linear infinite;
+  will-change: transform;
+}
+
+.try-drop-track[data-track='2'] .try-drop-strip {
+  animation-direction: reverse;
+  animation-duration: 44s;
+}
+
+.try-drop-track[data-track='3'] .try-drop-strip {
+  animation-duration: 52s;
+}
+
+.try-drop-collage[data-running='false'] .try-drop-strip {
+  animation-play-state: paused;
+}
+
+.try-drop-track-group {
+  display: flex;
+  flex: none;
+  gap: 1rem;
+  padding-right: 1rem;
+}
+
+.try-drop-tile {
+  width: clamp(9rem, 13vw, 13.5rem);
+  height: clamp(11.5rem, 16.5vw, 17rem);
+  flex: none;
+  overflow: hidden;
+  background: var(--card);
+  box-shadow: 0 18px 56px rgb(0 0 0 / 0.48);
+}
+
+.try-hero-contrast {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  pointer-events: none;
+  background:
+    linear-gradient(
+      90deg,
+      var(--background) 0%,
+      color-mix(in oklab, var(--background) 98%, transparent) 31%,
+      color-mix(in oklab, var(--background) 82%, transparent) 48%,
+      color-mix(in oklab, var(--background) 18%, transparent) 70%,
+      transparent 100%
+    ),
+    linear-gradient(
+      180deg,
+      color-mix(in oklab, var(--background) 70%, transparent) 0%,
+      transparent 24%,
+      transparent 72%,
+      var(--background) 100%
+    );
+}
+
+@keyframes try-drop-flow {
+  to {
+    transform: translate3d(-50%, 0, 0);
+  }
+}
+
+@media (max-width: 1023px) {
+  .try-drop-collage {
+    inset: -8% -36% -10% 34%;
+    opacity: 0.72;
+  }
+
+  .try-drop-track[data-track='3'] {
+    display: none;
+  }
+
+  .try-drop-track[data-track='2'] {
+    top: 52%;
+  }
+}
+
+@media (max-width: 767px) {
+  .try-drop-collage {
+    inset: 48% -72% -15% 22%;
+    opacity: 0.58;
+    mask-image: linear-gradient(180deg, transparent 0%, rgb(0 0 0 / 0.62) 18%, #000 42%);
+  }
+
+  .try-drop-track {
+    left: -28%;
+    width: 164%;
+  }
+
+  .try-drop-track[data-track='2'] {
+    top: 51%;
+  }
+
+  .try-drop-track-group {
+    gap: 0.75rem;
+    padding-right: 0.75rem;
+  }
+
+  .try-drop-tile {
+    width: 7.75rem;
+    height: 9.75rem;
+  }
+
+  .try-drop-strip {
+    animation-duration: 50s;
+  }
+
+  .try-drop-track[data-track='2'] .try-drop-strip {
+    animation-duration: 60s;
+  }
+
+  .try-hero-contrast {
+    background: linear-gradient(
+      180deg,
+      var(--background) 0%,
+      var(--background) 57%,
+      color-mix(in oklab, var(--background) 92%, transparent) 70%,
+      color-mix(in oklab, var(--background) 52%, transparent) 100%
+    );
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .try-drop-strip {
+    animation: none;
+    will-change: auto;
+  }
+
+  .try-drop-track-group[data-duplicate='true'] {
+    display: none;
+  }
+
+  .try-drop-track[data-track='2'] .try-drop-strip {
+    transform: translate3d(-18%, 0, 0);
+  }
+
+  .try-drop-track[data-track='3'] .try-drop-strip {
+    transform: translate3d(-8%, 0, 0);
+  }
+}
+
 .task-market-flow::before {
   position: absolute;
   inset: 0;

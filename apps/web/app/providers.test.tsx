@@ -74,6 +74,8 @@ describe('Providers', () => {
   });
 
   it('does not initialize Privy in local builds without an app id', () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '');
+
     const { container } = render(
       <Providers>
         <span>child</span>

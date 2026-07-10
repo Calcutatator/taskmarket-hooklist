@@ -2,7 +2,7 @@ import { defineConfig, devices } from '@playwright/test';
 
 const webPort = Number(process.env.PORT ?? 3001);
 const mockApiPort = Number(process.env.E2E_MOCK_API_PORT ?? 3101);
-const baseURL = `http://127.0.0.1:${webPort}`;
+const baseURL = `http://localhost:${webPort}`;
 const mockApiUrl = `http://127.0.0.1:${mockApiPort}`;
 const healthURL = `${baseURL}/dashboard/protocol`;
 

@@ -16,7 +16,10 @@ export function WizardStepper({ current, onStepClick, steps }: WizardStepperProp
 
   return (
     <nav aria-label="Task creation steps">
-      <ol className="hidden grid-cols-3 gap-3 sm:grid">
+      <ol
+        className="hidden gap-3 sm:grid"
+        style={{ gridTemplateColumns: `repeat(${total}, minmax(0, 1fr))` }}
+      >
         {steps.map((step, index) => {
           const completed = index < current;
           const isCurrent = index === current;
@@ -84,7 +87,11 @@ export function WizardStepper({ current, onStepClick, steps }: WizardStepperProp
           <span className="text-foreground">{currentLabel}</span>
         </li>
         <li>
-          <span aria-hidden="true" className="grid grid-cols-3 gap-2">
+          <span
+            aria-hidden="true"
+            className="grid gap-2"
+            style={{ gridTemplateColumns: `repeat(${total}, minmax(0, 1fr))` }}
+          >
             {steps.map((step, index) => (
               <span
                 className={cn('h-1 rounded-full bg-border', index <= current && 'bg-primary')}
