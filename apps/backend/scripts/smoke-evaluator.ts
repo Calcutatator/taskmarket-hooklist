@@ -76,7 +76,12 @@ async function setupReviewTask(opts: {
   ok('taskId', taskId);
 
   log('2/5', `[${label}] Worker claiming task...`);
-  await x402Post(`/api/tasks/${taskId}/claim`, { taskId }, worker);
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
   const claimed = (await get(`/api/tasks/${taskId}`)) as { status: string };
   if (claimed.status !== 'claimed') {
     throw new Error(`Expected claimed, got ${claimed.status}`);
@@ -84,18 +89,31 @@ async function setupReviewTask(opts: {
   ok('status', claimed.status);
 
   log('3/5', `[${label}] Worker submitting work...`);
-  await x402Post(
-    `/api/tasks/${taskId}/submit`,
-    { taskId, deliverable: `0x${'ab'.repeat(32)}` },
-    worker
-  );
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('smoke-evaluator-payload').toString('base64'),
+      },
+    ],
+  });
   ok('submitted', true);
 
-  log('4/5', `[${label}] Requester accepting submission (→ review)...`);
-  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
-  await sleep(3000);
-  const reviewTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  ok('status after accept', reviewTask.status);
+  // CoreFacet.submitWork auto-transitions CLAIM/PITCH/AUCTION tasks with an
+  // evaluator assigned straight to Review -- no separate accept call exists
+  // or is needed on this path (acceptSubmission is for the non-evaluator flow).
+  // The backend's DB status lags the on-chain transition until the indexer
+  // processes the TaskSubmitted event (polls every ~12s), so poll rather than
+  // sleep-once.
+  log('4/5', `[${label}] Waiting for auto-transition to review (indexer poll)...`);
+  const reviewStatus = await pollStatus(taskId, ['review']);
+  ok('status after submit', reviewStatus);
 
   return taskId;
 }
@@ -126,12 +144,8 @@ async function scenarioA(
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
-  await sleep(2000);
-  const afterEval = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (afterEval.status !== 'appealing') {
-    throw new Error(`Expected appealing after evaluate, got ${afterEval.status}`);
-  }
-  ok('status after evaluate', afterEval.status);
+  const afterEval = await pollStatus(taskId, ['appealing']);
+  ok('status after evaluate', afterEval);
 
   log('6/8', '[A] Waiting 8s for appeal window to expire...');
   await sleep(8000);
@@ -173,12 +187,8 @@ async function scenarioB(
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
-  await sleep(2000);
-  const afterEval = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (afterEval.status !== 'appealing') {
-    throw new Error(`Expected appealing after evaluate, got ${afterEval.status}`);
-  }
-  ok('status after evaluate', afterEval.status);
+  const afterEval = await pollStatus(taskId, ['appealing']);
+  ok('status after evaluate', afterEval);
 
   log('6/8', '[B] Waiting 8s for appeal window to expire...');
   await sleep(8000);
@@ -220,12 +230,8 @@ async function scenarioC(
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
-  await sleep(2000);
-  const afterEval = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (afterEval.status !== 'appealing') {
-    throw new Error(`Expected appealing after evaluate, got ${afterEval.status}`);
-  }
-  ok('status after evaluate', afterEval.status);
+  const afterEval = await pollStatus(taskId, ['appealing']);
+  ok('status after evaluate', afterEval);
 
   log('6/9', '[C] Waiting 7s for evaluation window to expire (appeal window still open)...');
   await sleep(7000);
@@ -238,12 +244,8 @@ async function scenarioC(
   )) as { txHash: string };
   ok('appeal txHash', appealTx);
 
-  await sleep(2000);
-  const afterAppeal = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  if (afterAppeal.status !== 'disputed') {
-    throw new Error(`Expected disputed after appeal, got ${afterAppeal.status}`);
-  }
-  ok('status after appeal', afterAppeal.status);
+  const afterAppeal = await pollStatus(taskId, ['disputed']);
+  ok('status after appeal', afterAppeal);
 
   log('8/9', '[C] Dispute resolver settling dispute (APPROVE, partial award)...');
   const { txHash: resolveTx } = (await x402Post(

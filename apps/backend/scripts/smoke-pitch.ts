@@ -54,7 +54,7 @@ async function main() {
   log('3/8', 'Requester selecting pitch (X402)...');
   await x402Post(
     `/api/tasks/${taskId}/pitches/select`,
-    { taskId, pitchId, workerAddress: worker.address },
+    { taskId, pitchId, workerAddress: worker.address, signature: '0x' },
     requester
   );
   ok('selected', pitchId);

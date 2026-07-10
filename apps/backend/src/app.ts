@@ -17,6 +17,7 @@ import {
   TaskCreateSchema,
   ProofSubmitSchema,
   PitchCreateSchema,
+  PitchSelectSchema,
   UpdateTaskInputSchema,
   CancelTaskInputSchema,
   BidCreateSchema,
@@ -288,6 +289,11 @@ app.post(
   x402Middleware({ getAmount: () => '1000', description: 'Submit pitch' })
 );
 app.post(
+  '/api/tasks/:taskId/pitches/select',
+  validateBody(PitchSelectSchema),
+  x402Middleware({ getAmount: () => '1000', description: 'Select pitch' })
+);
+app.post(
   '/api/tasks/:taskId/proofs',
   validateBody(ProofSubmitSchema),
   x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
@@ -295,6 +301,22 @@ app.post(
 app.post(
   '/api/tasks/:taskId/refund-expired',
   x402Middleware({ getAmount: () => '1000', description: 'Refund expired task' })
+);
+app.post(
+  '/api/tasks/:taskId/evaluate',
+  x402Middleware({ getAmount: () => '1000', description: 'Submit evaluation verdict' })
+);
+app.post(
+  '/api/tasks/:taskId/appeal',
+  x402Middleware({ getAmount: () => '1000', description: 'Appeal an evaluator verdict' })
+);
+app.post(
+  '/api/tasks/:taskId/resolve-dispute',
+  x402Middleware({ getAmount: () => '1000', description: 'Resolve a disputed task' })
+);
+app.post(
+  '/api/tasks/:taskId/evaluator-timeout',
+  x402Middleware({ getAmount: () => '1000', description: 'Trigger evaluator timeout' })
 );
 app.post(
   '/api/identity/register',

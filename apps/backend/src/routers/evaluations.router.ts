@@ -123,7 +123,11 @@ export const evaluationsRouter = router({
       if (taskResult.length === 0) throw new Error('Task not found');
       const task = taskResult[0];
 
-      if (!task.worker || task.worker.toLowerCase() !== payer.toLowerCase()) {
+      // task.worker is only backfilled by the indexer on final acceptance (or
+      // auction-accept/worker-selected events) -- a claim-mode task sitting in
+      // Review/Appealing has its worker recorded in claimedBy instead.
+      const workerAddress = task.worker ?? task.claimedBy;
+      if (!workerAddress || workerAddress.toLowerCase() !== payer.toLowerCase()) {
         throw new Error('Only the task worker can appeal');
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
