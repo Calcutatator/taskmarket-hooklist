@@ -2734,7 +2734,7 @@ contract TaskMarketTest is DiamondTestHelper {
         assertGt(usdc.balanceOf(worker1), before);
     }
 
-    function test_EvaluatorFlow_Reject_ReopensTask() public {
+    function test_EvaluatorFlow_Reject_CancelsTask() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
         _claimTask(taskId, worker1, 0);
@@ -2746,10 +2746,15 @@ contract TaskMarketTest is DiamondTestHelper {
 
         vm.warp(block.timestamp + 1 days + 1);
         market.finalizeVerdict(taskId);
-        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Open));
+        // REJECT refunds the full remainder to the requester, so the task terminates
+        // (Cancelled) rather than falsely reopening with no escrow left behind it.
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Cancelled));
         assertGt(usdc.balanceOf(requester), reqBefore);
-        // Evaluator must be cleared so reopened task uses direct acceptance flow.
         assertEq(market.getTaskEvaluatorConfig(taskId).evaluator, address(0));
+
+        // A rejected-and-cancelled task can never be reclaimed.
+        vm.expectRevert(ITMPCore.TaskNotOpen.selector);
+        _claimTask(taskId, worker2, 0);
     }
 
     function test_EvaluatorFlow_Appeal_ThenResolve() public {
@@ -3234,7 +3239,7 @@ contract TaskMarketTest is DiamondTestHelper {
     // Evaluator: BOUNTY REJECT reopens task; non-zero stake transfer
     // -------------------------------------------------------------------------
 
-    function test_EvaluatorFlow_Reject_BountyMode_ReopensTask() public {
+    function test_EvaluatorFlow_Reject_BountyMode_CancelsTask() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
         _submitWork(taskId, worker1, keccak256("work"));
@@ -3245,7 +3250,7 @@ contract TaskMarketTest is DiamondTestHelper {
 
         vm.warp(block.timestamp + 1 days + 1);
         market.finalizeVerdict(taskId);
-        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Open));
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Cancelled));
         assertGt(usdc.balanceOf(requester), reqBefore);
         assertEq(market.getTaskEvaluatorConfig(taskId).evaluator, address(0));
         assertEq(market.getTaskEvaluatorConfig(taskId).evaluationWindow, 0);

@@ -54,6 +54,38 @@ function createTask(
 Tasks created via raw contract calls (bypassing the frontend) would have no hook attached,
 silently opting out of all protocol-level hook behavior.
 
+## Problem 3 — Evaluator REJECT reopens a task it just drained
+
+`EvaluatorFacet.finalizeVerdict`'s `REJECT` branch refunds the reward remainder to the requester
+in full, then sets `task.status` back to `Open` so the task appears re-claimable:
+
+```solidity
+// Before
+if (v.verdictType == ITMPCore.VerdictType.REJECT) {
+    uint256 evalFee = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
+    uint256 refund = task.reward - evalFee;
+    task.status = ITMPCore.TaskStatus.Open;
+    // ...
+    if (refund > 0) {
+        if (!s.usdcToken.transfer(task.requester, refund)) revert ITMPCore.RefundFailed();
+    }
+}
+```
+
+`refund` is the entire remaining reward (no awards were paid on a `REJECT` verdict), so this
+transfers the task's full escrow back to the requester and marks the task `Open` as if a new
+worker could still be paid. Nothing is left in the Diamond's balance for this task once the
+transfer completes. A worker who claims the reopened task can submit and be accepted right up
+until `AcceptanceFacet.acceptSubmission` attempts the USDC payout, which reverts on insufficient
+balance.
+
+The branch also dispatches no hook (`onCancel`, `onExpire`, or `onForfeit`). For a task with
+`TaskTokenRewardHook` attached (this revision), if the original worker had already claimed
+(locking a DREAMS reservation via `checkClaim` -> `_reserveForWorker`), that reservation is never
+released. A second claim on the reopened task then stacks a second reservation on top of the
+first — `RewardVault.reserve` is additive — permanently orphaning the first reservation's tokens
+and double-consuming `EpochBudget` caps with no corresponding release.
+
 ---
 
 ## Changes
@@ -177,6 +209,48 @@ function getTaskHooks(bytes32 taskId) external view returns (address[] memory);
 Returns the effective hook list for a task using the same `_resolveHooks` resolution logic as
 dispatch. Callers can determine which hooks will fire for a given task before submitting.
 
+### 7. `EvaluatorFacet.finalizeVerdict` — REJECT terminates the task instead of reopening it
+
+```solidity
+// After
+if (v.verdictType == ITMPCore.VerdictType.REJECT) {
+    uint256 evalFee = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
+    uint256 refund = task.reward - evalFee;
+    address requesterAddr = task.requester;
+    task.status = ITMPCore.TaskStatus.Cancelled;
+    task.worker = address(0);
+    task.deliverable = bytes32(0);
+    evalCfg.evaluator = address(0);
+    evalCfg.evaluationWindow = 0;
+    evalCfg.appealWindow = 0;
+    if (refund > 0) {
+        if (!s.usdcToken.transfer(requesterAddr, refund)) revert ITMPCore.RefundFailed();
+    }
+    emit ITMPCore.TaskCancelled(taskId, requesterAddr, refund);
+    LibTaskMarket._onCancelHooks(taskId, s);
+}
+```
+
+`task.status` now becomes `Cancelled` — the same terminal status `CoreFacet.cancelTask` uses for
+a refund-and-end operation — instead of `Open`. The event and hook dispatch mirror
+`cancelTask`'s pattern exactly: `TaskCancelled` is emitted (off-chain indexers already handle it,
+no new event handler needed), and `LibTaskMarket._onCancelHooks` releases any attached hook's
+reservation before the reentrancy guard closes.
+
+`TaskTokenRewardHook._reserveForWorker` also gained a defensive guard as belt-and-suspenders:
+
+```solidity
+// Added at the top of _reserveForWorker
+if (state.reserved && !state.paid) {
+    // slither-disable-next-line reentrancy-no-eth
+    _releaseReserve(taskId);
+}
+```
+
+This closes the same class of bug for any future code path that might reopen a task without a
+proper hook release, even though the `finalizeVerdict` fix above eliminates the only reachable
+path to it today.
+
 ---
 
 ## Rationale
@@ -206,6 +280,20 @@ type.
 in `taskHooks` is simpler and allows callers to enumerate hooks without a separate registry
 lookup.
 
+**Why `Cancelled` instead of a new `Rejected` status for a rejected task?** `Cancelled` already
+means exactly this: refund issued, task over, no further action possible. A distinct `Rejected`
+value would fragment "task ended with a refund" across two statuses for no behavioral
+difference, and would require new indexer/backend handling for a status that means the same
+thing as one that already exists.
+
+**Why not keep the rejected task reopened and just fix the refund amount?** An alternative fix
+would skip the refund and leave the escrow in place so the reopened task really is claimable.
+This was rejected: `finalizeVerdict`'s REJECT branch already runs after an evaluator was paid to
+review the work and judged it unacceptable — the escrow having a home (the requester, refunded)
+matches every other terminal outcome in the protocol (`cancelTask`, `refundExpired`). Silently
+keeping funds locked for an indefinite re-claim, with no requester action to re-authorize it,
+does not match any other flow in the codebase.
+
 ---
 
 ## API Changes
@@ -218,8 +306,12 @@ lookup.
 - `ITMPCore.HookConfig` and `ITMPCore.TaskContent` structs added to the interface.
 - `ITMPCore.HookCheckCompleteRejected` error added.
 - New hook contracts: `TaskTokenRewardHook`, `RewardVault`, `EpochBudget`
-  (see `src/hooks/`). DREAMS/USDC pricing is an admin-settable `dreamsPerUsdc`
-  rate on the hook — no on-chain price oracle.
+  (see `src/hooks/`). Reward size is set by two independent admin-settable knobs:
+  `bonusBps` (USD bonus intensity, e.g. 750 = 7.5% of task value — the tokenomics
+  decision) and `dreamsPerUsdc` (the pure DREAMS/USDC exchange rate — tracks market
+  price). Neither has an on-chain price feed. Formula:
+  `usdBonusValue = rewardUsd * bonusBps / 10000`, then
+  `tokenReward = usdBonusValue * dreamsPerUsdc / 1e6`.
 - `TaskTokenRewardHook` uses a claimable escrow model — tokens are held inside
   the hook rather than pushed to worker wallets. Workers withdraw via
   `withdrawFor(wallet, destination)` called by the trusted backend server wallet.
@@ -231,16 +323,33 @@ lookup.
   requester) is configurable via `setWorkerSplitBps()`.
 - `EpochBudget` caps (`globalCapUsd`, `workerCapUsd`, `requesterCapUsd`,
   `maxUsdPerTask`) are denominated in USDC base units, not DREAMS token
-  amounts, so they stay meaningful as the DREAMS/USDC rate moves.
+  amounts, so they stay meaningful as the DREAMS/USDC rate moves, and are
+  consumed against `usdBonusValue` (the bonus-adjusted amount), not the raw
+  task reward.
 - Admin functions: `banWallet`, `unbanWallet`, `setBackend`, `sweepUnclaimed`,
-  `setDreamsPerUsdc`.
+  `setDreamsPerUsdc`, `setBonusBps`.
 - Deploy script: `script/DeployRewardHook.s.sol` — `make deploy-reward-hook testnet/mainnet`.
 - New backend procedures: `wallet.dreamsBalance` (GET), `wallet.withdrawDreams`
-  (POST), `wallet.exchangeRate` (GET). `task.get` returns `dreamsPerUsdc` and
-  `estimatedDreamsBonus` when the reward hook is attached to the task.
+  (POST), `wallet.exchangeRate` (GET, returns `dreamsPerUsdc`, `workerSplitBps`,
+  `bonusBps`). `task.get` returns `dreamsPerUsdc`, `bonusBps`, and explicit
+  `estimatedWorkerUsdBonusValue` / `estimatedWorkerDreamsBonus` /
+  `estimatedRequesterUsdBonusValue` / `estimatedRequesterDreamsBonus` fields when
+  the reward hook is attached to the task.
+- `wallet.withdrawDreams`'s signed authorization message now includes a nonce and
+  expiry (`taskmarket:withdraw-dreams:<destination>:<nonce>:<validBefore>`),
+  tracked in a new `dreams_withdraw_nonces` table, so a captured signature cannot
+  be replayed.
+- Reward hook events (`RewardConfigured`, `RewardReserved`, `RewardPaid`,
+  `RewardReserveReleased`, `RewardsWithdrawn`, `PriceUpdated`, `BonusBpsUpdated`)
+  are indexed into `protocol_events` when `DREAMS_HOOK_ADDRESS` is configured.
 - New CLI command: `taskmarket wallet withdraw-dreams [--destination <addr>]`.
   `taskmarket stats` shows `pendingDreamsRewards`, `pendingDreamsUsd`, and
   `dreamsPerUsdc`.
+- A task rejected by an evaluator now emits `TaskCancelled(taskId, requester,
+  refundAmount)` and reports `status: "cancelled"` instead of reopening as
+  `status: "open"` — see Problem 3 / Change 7 above. Clients that previously
+  expected a rejected task to reappear as claimable will no longer see it in
+  open task listings; this is the intended fix, not a regression.
 
 ---
 
@@ -253,20 +362,36 @@ lookup.
 | `packages/contracts/src/facets/CoreFacet.sol` | Replace `address hookContract` with `HookConfig`; call `_buildAndCheckHooks` at task creation |
 | `packages/contracts/src/facets/AcceptanceFacet.sol` | Replace single-hook dispatch with `_resolveHooks` + `_dispatchCheckHooks` / `_dispatchAfterHooks` |
 | `packages/contracts/src/facets/AuctionFacet.sol` | Replace single-hook dispatch with multi-hook helpers |
-| `packages/contracts/src/facets/EvaluatorFacet.sol` | Replace single-hook dispatch with multi-hook helpers |
+| `packages/contracts/src/facets/EvaluatorFacet.sol` | Replace single-hook dispatch with multi-hook helpers; `finalizeVerdict` REJECT branch now sets `Cancelled` (not `Open`), emits `TaskCancelled`, dispatches `_onCancelHooks` |
 | `packages/contracts/src/facets/AdminFacet.sol` | Add `setDefaultHooks`, `getDefaultHooks` |
 | `packages/contracts/src/facets/RegistryFacet.sol` | Add `getTaskHooks` getter |
 | `packages/contracts/src/interfaces/ITMPCore.sol` | Add `HookConfig`, `TaskContent` structs; add `HookCheckCompleteRejected` error |
-| `packages/contracts/src/hooks/TaskTokenRewardHook.sol` | New: USD-denominated DREAMS token reward hook implementing `ITMPHook`; admin-settable `dreamsPerUsdc` rate, no on-chain oracle |
+| `packages/contracts/src/hooks/TaskTokenRewardHook.sol` | New: USD-denominated DREAMS token reward hook implementing `ITMPHook`; independent `bonusBps` (USD bonus intensity) and `dreamsPerUsdc` (exchange rate) knobs, no on-chain oracle; `_reserveForWorker` releases any stale reservation before reserving fresh |
 | `packages/contracts/src/hooks/RewardVault.sol` | New: holds DREAMS tokens; only the hook can reserve/release/pay |
-| `packages/contracts/src/hooks/EpochBudget.sol` | New: per-epoch USD emission caps (USDC base units) with epoch-indexed rollover |
+| `packages/contracts/src/hooks/EpochBudget.sol` | New: per-epoch USD emission caps (USDC base units) with epoch-indexed rollover; consumed against `usdBonusValue`, not raw task reward |
 | `packages/contracts/src/interfaces/IRewardVault.sol` | New: vault interface used by the reward hook |
-| `packages/contracts/script/DeployRewardHook.s.sol` | New: deploy script for hook + vault + budget |
-| `packages/contracts/test/TaskTokenRewardHook.t.sol` | New: reward hook test suite |
+| `packages/contracts/script/DeployRewardHook.s.sol` | New: deploy script for hook + vault + budget; `FORGE_BONUS_BPS` env var |
+| `packages/contracts/script/DeployRewardHookTestnet.s.sol` | New: testnet deploy script with mock DREAMS token; `FORGE_BONUS_BPS` defaults to 750 |
+| `packages/contracts/test/TaskTokenRewardHook.t.sol` | New: reward hook test suite, incl. `bonusBps` two-step math, vault-exhaustion partial-fill round-trip, bounty multi-winner shortfall isolation, evaluator-reject reservation release |
 | `packages/contracts/test/EpochBudget.t.sol` | New: epoch budget unit tests |
 | `packages/contracts/test/RewardVault.t.sol` | New: vault unit tests |
-| `packages/contracts/test/TaskMarket.t.sol` | Update all `createTask` and acceptance calls to new signatures |
+| `packages/contracts/test/TaskMarket.t.sol` | Update all `createTask` and acceptance calls to new signatures; evaluator-reject tests updated for `Cancelled` terminal status |
 | `packages/contracts/test/TaskMarketForwarder.t.sol` | Update `createTask` calls to new signatures |
 | `packages/contracts/test/ITMP.t.sol` | Update interface compliance tests |
 | `packages/contracts/test/helpers/DiamondTestHelper.sol` | Add `setDefaultHooks` helper |
 | `packages/contracts/test/helpers/ITaskMarketFull.sol` | Add `setDefaultHooks`, `getDefaultHooks`, `getTaskHooks` to interface |
+| `apps/backend/src/services/contract.ts` | Add `contractGetDreamsBonusBps` |
+| `apps/backend/src/routers/wallet.router.ts` | `exchangeRate` returns `bonusBps`; `withdrawDreams` requires nonce + expiry, checked against `dreams_withdraw_nonces` |
+| `apps/backend/src/routers/tasks.router.ts` | Explicit `estimatedWorker*`/`estimatedRequester*` DREAMS estimate fields (replacing ambiguous `estimatedDreamsBonus`) |
+| `apps/backend/src/services/indexer.ts` | `processRewardHookEvents` — polls and indexes reward hook events into `protocol_events` when `DREAMS_HOOK_ADDRESS` is set |
+| `apps/backend/src/config/env.ts` | Add `DREAMS_HOOK_SEED_BLOCK` |
+| `apps/backend/src/db/schema.ts` | Add `dreamsWithdrawNonces` table |
+| `apps/backend/drizzle/migrations/0024_add_dreams_withdraw_nonces.sql` | New migration for the nonce table |
+| `packages/shared/src/lib/dreams.ts` | `estimateUsdBonusValue`, `estimateWorker*`/`estimateRequester*` USD and DREAMS bonus helpers |
+| `packages/shared/src/schemas/task.schemas.ts` | New explicit DREAMS estimate fields on `TaskDetailResponseSchema` |
+| `packages/shared/src/schemas/wallet.schemas.ts` | `bonusBps` on `ExchangeRateOutputSchema`; `nonce`/`validBefore` on `WithdrawDreamsInputSchema` |
+| `apps/web/components/market/tasks.tsx`, `wizard/step-publish.tsx`, `actions/submit-artifacts-form.tsx`, `dreams-rewards-card.tsx` | Show USD value and DREAMS amount together in task detail, publish wizard, submit-work flow, account card |
+| `apps/cli/src/commands/wallet/withdraw-dreams.ts` | Generate nonce + expiry, sign the extended authorization message |
+| `apps/backend/scripts/smoke-token-reward-hook.ts` | `bonusBps` assertions; nonce + expiry in the withdraw-dreams signed message |
+| `apps/docs/src/public/reference/rewards.md` | Single consolidated user-facing DREAMS rewards reference doc |
+| `packages/contracts/docs/extensions/ext-001-token-reward-hook.md` | Internal technical reference for the reward hook (setters, env vars, event indexing) |

@@ -404,7 +404,14 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
     // for the same taskId, and because RewardVault.reserve() is additive, the vault
     // ended up holding two reservations while the hook only tracked the latest one —
     // permanently orphaning the first reservation's tokens.
-    function test_reserveForWorker_evaluatorRejectReopen_doesNotDoubleReserve() public {
+    // Regression test for a fixed bug where EvaluatorFacet.finalizeVerdict's REJECT
+    // branch reopened a claimed task (status -> Open) after refunding the full escrow
+    // to the requester, without releasing the reward hook's reservation. A second
+    // claim would then stack a second reservation on top of the orphaned first one
+    // (RewardVault.reserve is additive). The fix makes REJECT terminate the task
+    // (Cancelled, matching cancelTask) and dispatch onCancel so the reservation is
+    // released through the normal path -- this test verifies both halves of that fix.
+    function test_evaluatorReject_releasesReservationAndTerminatesTask() public {
         address evaluator = makeAddr("evaluator");
         address worker2 = makeAddr("worker2");
 
@@ -419,7 +426,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
 
         uint256 vaultBefore = vault.available();
 
-        // First worker claims — reserves 1000 DREAMS.
+        // Worker claims — reserves 1000 DREAMS.
         _relay(worker, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
         assertEq(vault.taskReserve(taskId), EXPECTED_REWARD_1000_DREAMS);
         assertEq(vault.available(), vaultBefore - EXPECTED_REWARD_1000_DREAMS);
@@ -434,38 +441,20 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
             abi.encodeCall(market.evaluate, (taskId, ITMPCore.VerdictType.REJECT, 0, 1000, bytes32(0), noAwards))
         );
 
-        // Finalize after the appeal window — task reopens.
+        // Finalize after the appeal window — task terminates, reservation releases.
         vm.warp(block.timestamp + 1 days + 1);
         market.finalizeVerdict(taskId);
-        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Open));
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Cancelled));
 
-        // A second worker claims the reopened task. Before the fix, this would add a
-        // second reservation on top of the first (vault.taskReserve doubling to 2000
-        // DREAMS) instead of releasing the stale one first.
+        assertEq(vault.taskReserve(taskId), 0, "reservation must be released via onCancel, not left dangling");
+        assertEq(vault.available(), vaultBefore, "vault tokens must not be orphaned");
+
+        (,,,,,, bool reserved,) = hook.rewardStates(taskId);
+        assertFalse(reserved, "reward state must reflect the released reservation");
+
+        // A cancelled task can never be reclaimed, so no double-reservation is possible.
+        vm.expectRevert(ITMPCore.TaskNotOpen.selector);
         _relay(worker2, 0, abi.encodeCall(market.claimTask, (taskId, 0)));
-
-        assertEq(
-            vault.taskReserve(taskId),
-            EXPECTED_REWARD_1000_DREAMS,
-            "stale reservation must be released before the new one is made, not stacked"
-        );
-        assertEq(
-            vault.available(),
-            vaultBefore - EXPECTED_REWARD_1000_DREAMS,
-            "first reservation's tokens must not be orphaned in the vault"
-        );
-
-        (,,,, address lockedRequester, address lockedWorker, bool reserved,) = hook.rewardStates(taskId);
-        assertEq(lockedWorker, worker2, "reward state must track the new worker, not the stale one");
-        assertEq(lockedRequester, requester);
-        assertTrue(reserved);
-
-        // Note: this deliberately stops here rather than completing worker2's task.
-        // EvaluatorFacet.finalizeVerdict's REJECT branch already refunded the full
-        // USDC escrow to the requester above, so a second claim on the reopened task
-        // can never actually be paid out (acceptSubmission would revert on the USDC
-        // transfer with an empty Diamond balance) -- a separate, pre-existing bug in
-        // the evaluator-reject flow, out of scope for this reward-hook regression test.
     }
 
     // ─── Bounty mode (Path B) ─────────────────────────────────────────────────

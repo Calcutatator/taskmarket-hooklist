@@ -172,17 +172,28 @@ contract EvaluatorFacet {
 
         ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
         if (v.verdictType == ITMPCore.VerdictType.REJECT) {
+            // REJECT refunds the (post-evaluator-fee) remainder to the requester in full,
+            // so the task is done -- not reopened. Terminal status here mirrors
+            // cancelTask's pattern (refund + Cancelled), and dispatches the same
+            // _onCancelHooks release so any reward-hook reservation is cleaned up
+            // rather than left dangling. Previously this set status back to Open,
+            // which falsely advertised the task as re-claimable despite having no
+            // escrow left behind it -- a worker who claimed it would find
+            // acceptSubmission reverting on the empty balance at completion time.
             uint256 evalFee = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
             uint256 refund = task.reward - evalFee;
-            task.status = ITMPCore.TaskStatus.Open;
+            address requesterAddr = task.requester;
+            task.status = ITMPCore.TaskStatus.Cancelled;
             task.worker = address(0);
             task.deliverable = bytes32(0);
             evalCfg.evaluator = address(0);
             evalCfg.evaluationWindow = 0;
             evalCfg.appealWindow = 0;
             if (refund > 0) {
-                if (!s.usdcToken.transfer(task.requester, refund)) revert ITMPCore.RefundFailed();
+                if (!s.usdcToken.transfer(requesterAddr, refund)) revert ITMPCore.RefundFailed();
             }
+            emit ITMPCore.TaskCancelled(taskId, requesterAddr, refund);
+            LibTaskMarket._onCancelHooks(taskId, s);
         } else {
             _payAwards(taskId, task, v, s);
         }
