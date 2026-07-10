@@ -169,6 +169,13 @@
       "when": 1772950000000,
       "tag": "0023_add_requester_reputation_events",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1783690068000,
+      "tag": "0024_add_dreams_withdraw_nonces",
+      "breakpoints": true
     }
   ]
 }
