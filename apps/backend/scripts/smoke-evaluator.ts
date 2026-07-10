@@ -1,7 +1,8 @@
 /**
  * Evaluator flow smoke test — three scenarios:
  *   A. APPROVE verdict, no appeal, finalize → completed
- *   B. REJECT verdict, no appeal, finalize → open (task reset)
+ *   B. REJECT verdict, no appeal, finalize → cancelled (refund + terminate,
+ *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
  *   C. APPROVE verdict, worker appeals, dispute resolver settles → completed
  *
  * Usage:
@@ -146,7 +147,7 @@ async function scenarioA(
   ok('final status', finalStatus);
 }
 
-// --- Scenario B: REJECT verdict, no appeal, finalize → open ---
+// --- Scenario B: REJECT verdict, no appeal, finalize → cancelled ---
 async function scenarioB(
   requester: ReturnType<typeof getAccounts>['requester'],
   worker: ReturnType<typeof getAccounts>['worker']
@@ -188,8 +189,8 @@ async function scenarioB(
   })) as { txHash: string };
   ok('finalize txHash', finalizeTx);
 
-  log('8/8', '[B] Polling for open status (task reset after REJECT)...');
-  const finalStatus = await pollStatus(taskId, ['open']);
+  log('8/8', '[B] Polling for cancelled status (task terminates after REJECT)...');
+  const finalStatus = await pollStatus(taskId, ['cancelled']);
   ok('final status', finalStatus);
 }
 
@@ -278,7 +279,7 @@ async function main() {
   );
 
   results.push(
-    await runScenario('B — REJECT verdict, no appeal, finalize → open', () =>
+    await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
       scenarioB(requester, worker)
     )
   );
