@@ -90,6 +90,26 @@ cd packages/contracts && forge snapshot
 
 CI runs `forge snapshot --check` and fails if the snapshot is stale. This is a frequent source of CI failures — do not skip it.
 
+## Database Migrations
+
+Every new migration file (`apps/backend/drizzle/migrations/NNNN_*.sql`) must have a matching entry appended to `apps/backend/drizzle/migrations/meta/_journal.json`. A `.sql` file with no journal entry is invisible to the runtime migrator (`drizzle-orm`'s `migrate()`, called on every backend boot in `apps/backend/src/server.ts`) — it will never be applied, and it fails silently with no error at startup or in most tests. The first sign of trouble is usually a "relation does not exist" error much later, e.g. in a smoke test.
+
+When adding a migration by hand (rather than via `pnpm db:generate`, which updates the journal automatically but requires an interactive prompt this repo's history makes awkward — see below), add a new entry to the `entries` array in `meta/_journal.json`:
+
+```json
+{
+  "idx": <next sequential integer>,
+  "version": "7",
+  "when": <a timestamp STRICTLY GREATER than every existing entry's "when" AND greater than whatever the target database's last-applied migration timestamp actually is>,
+  "tag": "NNNN_your_migration_name",
+  "breakpoints": true
+}
+```
+
+The `"when"` value is not cosmetic — the migrator's only gating logic is `lastAppliedMigration.created_at < migration.when`, compared against whatever is actually already recorded in the target database, not against the other entries in this file. Local dev databases in this repo often have migrations from other branches applied to them, so their latest recorded timestamp can be newer than you'd expect from this file's own sequence. Use current wall-clock epoch millis (`date +%s000`) rather than incrementing the previous entry's value — it's guaranteed to be greater than any database's history.
+
+`make release` has a guard that checks `.sql` file count against journal entry count and refuses to release if they're out of sync — but nothing else in this repo (tests, CI, `make db:migrate`) catches a missing journal entry before that point, so don't rely on it as your only check.
+
 ## Changesets
 
 Changesets are public, user-facing release notes -- write them for someone learning about the change for the first time, not someone who watched the PR get built.
