@@ -105,7 +105,7 @@ Cover every meaningful branch, not just the happy path:
 
 - `REQUESTER_PRIVATE_KEY` — task creator / requester
 - `WORKER_PRIVATE_KEY` — primary worker
-- `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction)
+- `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction). Any freshly generated key works — the backend's `SERVER_PRIVATE_KEY` relays and pays gas for every on-chain call via the forwarder, so worker/requester keys only ever sign off-chain EIP-712 messages and never need ETH or USDC of their own.
 - `EVALUATOR_PRIVATE_KEY` — external evaluator (optional; requester can act as evaluator if not set)
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
 

@@ -10,7 +10,9 @@
  *
  * Two distinct worker keys are required because AcceptanceFacet._resolveDeliverables
  * has an explicit DuplicateAwardWorker guard — the same address cannot appear twice
- * in the winners array. WORKER_B_PRIVATE_KEY must be set.
+ * in the winners array. WORKER_B_PRIVATE_KEY must be set; any freshly generated key
+ * works and needs no funding — the backend server key relays and pays gas for every
+ * on-chain call, worker keys only ever sign off-chain EIP-712 messages.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
@@ -27,7 +29,8 @@ async function main() {
     console.error(
       'WORKER_B_PRIVATE_KEY is required for the ranked-payout smoke test.\n' +
         'The contract rejects duplicate worker addresses in acceptSubmissions (DuplicateAwardWorker).\n' +
-        'Set WORKER_B_PRIVATE_KEY to a second funded worker private key.'
+        'Set WORKER_B_PRIVATE_KEY to a second worker private key -- any freshly generated key works,\n' +
+        'no funding needed (the backend server key relays and pays gas for all on-chain calls).'
     );
     process.exit(1);
   }
