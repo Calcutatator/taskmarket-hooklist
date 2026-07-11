@@ -65,7 +65,7 @@ a bonus estimate appears, so the two rates are never conflated:
   in both units.
 - **Submitting work** -- a reminder line above the submit button shows the
   worker's estimated bonus in both units.
-- **`task get` / `GET /api/tasks/:id`** -- returns `dreamsPerUsdc`, `bonusBps`,
+- **`task get` / `GET /api/tasks/{taskId}`** -- returns `dreamsPerUsdc`, `bonusBps`,
   `estimatedUsdBonusValue`, `estimatedWorkerUsdBonusValue`,
   `estimatedRequesterUsdBonusValue`, `estimatedWorkerDreamsBonus`,
   `estimatedRequesterDreamsBonus`. Field names are explicit about which side
