@@ -1,5 +1,11 @@
-import { describe, expect, it } from 'vitest';
-import { generateOpenAPI } from '../../../src/lib/openapi';
+import { afterAll, describe, expect, it } from 'vitest';
+import { stubServerEnvironment } from '../../helpers/server-environment';
+
+const restoreServerEnvironment = stubServerEnvironment();
+
+const { generateOpenAPI } = await import('../../../src/lib/openapi');
+
+afterAll(restoreServerEnvironment);
 
 describe('generated OpenAPI task workflows', () => {
   it.each([

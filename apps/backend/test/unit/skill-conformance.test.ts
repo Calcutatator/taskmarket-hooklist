@@ -10,7 +10,8 @@ import {
   USDC_DECIMALS,
   buildSelectWorkerMessage,
 } from '@taskmarket/shared';
-import { afterAll, describe, expect, it, vi } from 'vitest';
+import { afterAll, describe, expect, it } from 'vitest';
+import { stubServerEnvironment } from '../helpers/server-environment';
 import {
   IDENTITY_REGISTER_ROUTE,
   PAID_TASK_ACTION_ROUTES,
@@ -23,25 +24,11 @@ import {
   type PendingActionTask,
 } from '../../src/lib/task';
 
-const conformanceEnvironment = {
-  NODE_ENV: 'test',
-  DATABASE_URL: 'postgresql://taskmarket:taskmarket@127.0.0.1:5432/taskmarket_test',
-  BASE_RPC_URL: 'http://127.0.0.1:8545',
-  CONTRACT_ADDRESS: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266',
-  FORWARDER_ADDRESS: '0x0000000000000000000000000000000000000001',
-  USDC_TOKEN_ADDRESS: '0x0000000000000000000000000000000000000002',
-  SERVER_PRIVATE_KEY: `0x${'1'.repeat(64)}`,
-} as const;
-
-for (const [name, value] of Object.entries(conformanceEnvironment)) {
-  vi.stubEnv(name, value);
-}
+const restoreServerEnvironment = stubServerEnvironment();
 
 const { generateOpenAPI } = await import('../../src/lib/openapi');
 
-afterAll(() => {
-  vi.unstubAllEnvs();
-});
+afterAll(restoreServerEnvironment);
 
 const repositoryRoot = path.resolve(process.cwd(), '../..');
 const skillRoot = path.join(repositoryRoot, 'apps/docs/src/public');
