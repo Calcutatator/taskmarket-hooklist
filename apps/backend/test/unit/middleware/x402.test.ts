@@ -108,6 +108,21 @@ describe('x402 middleware settlement safety', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
+  it('answers the unpaid challenge with an error response when getAmount fails', async () => {
+    const res = response();
+    const next = vi.fn();
+    const middleware = x402Middleware({
+      getAmount: () => Promise.reject(new Error('database unavailable')),
+    });
+    const req = request();
+    (req as { headers: Record<string, string> }).headers = {};
+
+    await expect(middleware(req, res, next)).resolves.not.toThrow();
+
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(500);
+    expect(next).not.toHaveBeenCalled();
+  });
+
   it('settles an exact valid payload and then continues', async () => {
     const res = response();
     const next = vi.fn();

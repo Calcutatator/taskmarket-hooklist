@@ -272,6 +272,42 @@ describe('paid task action preflight', () => {
     ).rejects.toThrow('Task has expired');
   });
 
+  it('allows accepting the claimer of a claim task when only claimedBy is set', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(
+        makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
+      )
+      .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'accept',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask', worker: WORKER } } as never,
+        REQUESTER,
+        NOW
+      )
+    ).resolves.toBeUndefined();
+  });
+
+  it('rejects accepting an address that is not the claimed worker', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
+    );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'accept',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask', worker: REQUESTER } } as never,
+        REQUESTER,
+        NOW
+      )
+    ).rejects.toThrow('Selected worker does not match the task worker');
+  });
+
   it('rejects an auction reward decrease below a stored clock boundary', async () => {
     const ctx = createMockCtx();
     ctx.db.select

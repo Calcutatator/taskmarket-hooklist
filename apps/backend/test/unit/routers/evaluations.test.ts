@@ -127,10 +127,25 @@ describe('evaluations router', () => {
       expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ worker: WORKER }));
     });
 
+    it('keeps the assigned worker when a locked-worker mode verdict names another address', async () => {
+      const ctx = createMockCtx(EVALUATOR);
+      const other = '0xOther0000000000000000000000000000000001';
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ worker: WORKER })]));
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      await evaluationsRouter.createCaller(ctx).evaluate({
+        ...evalInput,
+        awards: [{ worker: other, amount: '1000000', rank: 1 }],
+      });
+
+      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ worker: WORKER }));
+    });
+
     it('mirrors the onchain expiry extension through the appeal deadline', async () => {
       const ctx = createMockCtx(EVALUATOR);
       const updateChain = makeChain();
-      const originalExpiry = new Date(Date.now() + 1000);
+      const originalExpiry = new Date((EVALUATED_AT - 3600) * 1000);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ expiryTime: originalExpiry })]));
       ctx.db.update.mockReturnValueOnce(updateChain);
 

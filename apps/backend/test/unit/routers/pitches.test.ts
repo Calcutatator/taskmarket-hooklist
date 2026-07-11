@@ -283,6 +283,17 @@ describe('pitches router', () => {
       );
     });
 
+    it('throws when the pitch already left the pending state', async () => {
+      const selectInput = await signedSelectInput();
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([makePitch({ status: 'selected' })]));
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.select(selectInput)).rejects.toThrow('Pitch is no longer selectable');
+    });
+
     it('calls contractSelectWorker and updates 3 DB rows on happy path', async () => {
       const selectInput = await signedSelectInput();
       const ctx = createMockCtx();

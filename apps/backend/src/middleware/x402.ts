@@ -37,7 +37,16 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       (req.headers['PAYMENT-SIGNATURE'] as string | undefined);
 
     if (!paymentSignature) {
-      const amount = await opts.getAmount(req);
+      // getAmount can be async and DB-backed; a rejection here must not
+      // escape the middleware as an unhandled rejection (Express 4 does not
+      // forward rejected middleware promises).
+      let amount: string;
+      try {
+        amount = await opts.getAmount(req);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unable to compute payment amount';
+        return res.status(500).json({ error: msg });
+      }
       const requirements = {
         x402Version: 2,
         error: 'Payment required',

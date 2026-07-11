@@ -9,7 +9,9 @@ export function SplitAcceptanceGuide({ disabled }: TaskActionComponentProps) {
         Shares must total 10000 basis points. This paid decision cannot be undone.
       </p>
       {disabled ? (
-        <p className="text-xs text-destructive">Connect the requester wallet before proceeding.</p>
+        <p className="text-xs text-destructive">
+          Fund the connected wallet with USDC before running this paid action.
+        </p>
       ) : null}
     </div>
   );

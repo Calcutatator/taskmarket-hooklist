@@ -105,13 +105,24 @@ export const TaskCreateSchema = z
   .superRefine((input, ctx) => {
     if (input.mode !== 'auction') return;
 
+    // The superRefine still runs when a field-level regex check has already
+    // failed; skip the BigInt cross-field comparisons then so safeParse
+    // reports issues instead of throwing.
+    const toBaseUnits = (value: string | undefined) =>
+      value !== undefined && /^[0-9]+$/.test(value) ? BigInt(value) : null;
+    const reward = toBaseUnits(input.reward);
+
     if (!input.maxPrice) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['maxPrice'],
         message: 'maxPrice is required for auction mode',
       });
-    } else if (BigInt(input.maxPrice) !== BigInt(input.reward)) {
+    } else if (
+      reward !== null &&
+      toBaseUnits(input.maxPrice) !== null &&
+      toBaseUnits(input.maxPrice) !== reward
+    ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
         path: ['maxPrice'],
@@ -148,7 +159,8 @@ export const TaskCreateSchema = z
       ['auctionFloorPrice', input.auctionFloorPrice],
       ['auctionStartPrice', input.auctionStartPrice],
     ] as const) {
-      if (value !== undefined && BigInt(value) > BigInt(input.reward)) {
+      const parsed = toBaseUnits(value);
+      if (parsed !== null && reward !== null && parsed > reward) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           path: [field],

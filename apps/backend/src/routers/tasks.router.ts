@@ -489,7 +489,7 @@ export const tasksRouter = router({
         summary: 'Get task by ID',
       },
     })
-    .input(RefundExpiredInputSchema)
+    .input(z.object({ taskId: z.string() }))
     .output(TaskDetailResponseSchema.nullable())
     .query(async ({ input, ctx }) => {
       const result = await ctx.db.select().from(tasks).where(eq(tasks.id, input.taskId)).limit(1);
@@ -783,7 +783,7 @@ export const tasksRouter = router({
         summary: 'Refund an expired task with no submissions back to the requester (X402 required)',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(RefundExpiredInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;

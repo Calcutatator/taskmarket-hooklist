@@ -235,10 +235,13 @@ describe('shipped skill platform conformance', () => {
     ].map((route) => `POST ${expressPathToDocumentedApiPath(route)}`);
     expect(documentedPaidRoutes.sort()).toEqual(runtimePaidRoutes.sort());
 
+    // Anchor the fee to a non-digit boundary so drifted amounts that merely
+    // end in the standard fee text (e.g. "10.001 USDC") are still flagged.
+    const standardFeePattern = new RegExp(`(?:^|[^0-9.])${standardFeeText.replace(/\./g, '\\.')}`);
     const divergentFeeClaims = allSkillMarkdown()
       .split('\n')
       .filter((line) => /(?:cost|fee|charge)[^\n]*\b\d+(?:\.\d+)? USDC/i.test(line))
-      .filter((line) => !line.includes(standardFeeText));
+      .filter((line) => !standardFeePattern.test(line));
     expect(divergentFeeClaims).toEqual([]);
   });
 

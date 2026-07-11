@@ -86,7 +86,13 @@ export const evaluationsRouter = router({
           evaluatorStake: '0',
           appealDeadline,
           expiryTime,
-          worker: input.awards[0]?.worker ?? task.worker,
+          // The contract only reassigns the worker for contest modes
+          // (EvaluatorFacet.evaluate); mirror that so locked-worker modes keep
+          // the on-chain worker and the appeal window stays usable.
+          worker:
+            task.mode === 'bounty' || task.mode === 'benchmark'
+              ? (input.awards[0]?.worker ?? task.worker)
+              : task.worker,
         })
         .where(eq(tasks.id, input.taskId));
 

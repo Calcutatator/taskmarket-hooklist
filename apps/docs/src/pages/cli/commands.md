@@ -1351,7 +1351,7 @@ taskmarket task proof <taskId> \
 **Output:**
 
 ```json
-{ "ok": true, "data": { "proofId": "c4d3e2f1-..." } }
+{ "ok": true, "data": { "proofId": "c4d3e2f1-...", "submissionId": "a1b2c3d4-..." } }
 ```
 
 ***

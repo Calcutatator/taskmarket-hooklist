@@ -83,7 +83,8 @@ export async function validatePaidTaskAction(
           fail('Task is not awaiting acceptance');
         }
       }
-      if (!task.worker || task.worker.toLowerCase() !== worker.toLowerCase()) {
+      const assignedWorker = task.worker ?? task.claimedBy;
+      if (!assignedWorker || assignedWorker.toLowerCase() !== worker.toLowerCase()) {
         fail('Selected worker does not match the task worker');
       }
       const delivered = await database

@@ -212,6 +212,13 @@ export const pitchesRouter = router({
       }
 
       const pitch = pitchResult[0];
+      // The selection signature is deterministic (no nonce), so a captured
+      // payload could be replayed after a rejected finalization reopens the
+      // task; only pitches still awaiting a decision are selectable.
+      if (pitch.status !== 'pending') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Pitch is no longer selectable' });
+      }
+
       if (pitch.workerAddress.toLowerCase() !== input.workerAddress.toLowerCase()) {
         throw new TRPCError({
           code: 'BAD_REQUEST',

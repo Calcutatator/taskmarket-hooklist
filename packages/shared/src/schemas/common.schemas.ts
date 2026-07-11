@@ -5,7 +5,9 @@ export const UsdcBaseUnitsSchema = z
   .regex(/^[0-9]+$/, 'Amount must be a non-negative integer in USDC base units');
 
 export const PositiveUsdcBaseUnitsSchema = UsdcBaseUnitsSchema.refine(
-  (value) => BigInt(value) > 0n,
+  // The refine still runs when the regex check has already failed; skip the
+  // BigInt conversion then so safeParse reports issues instead of throwing.
+  (value) => !/^[0-9]+$/.test(value) || BigInt(value) > 0n,
   'Amount must be greater than zero'
 );
 
