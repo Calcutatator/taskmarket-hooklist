@@ -67,10 +67,7 @@ apps/backend/uploads/
 
 # Agent/workspace local state
 .context/
-.entire/tmp/
-.entire/metadata/
-.entire/logs/
-.entire/settings.local.json
+.entire/
 
 # Playwright
 .playwright-cli/
