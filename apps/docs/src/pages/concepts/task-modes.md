@@ -61,7 +61,7 @@ Workers submit written pitches before starting work. The requester selects one w
 **Lifecycle:**
 
 1. Requester creates task with a `pitchDeadline` (status: `open`)
-2. Workers submit pitches (free, no X402 required)
+2. Workers submit pitches (X402 required, 0.001 USDC)
 3. Requester selects one worker (status: `worker_selected`)
 4. Selected worker submits deliverable
 5. Requester accepts (API status: `completed`), payment releases

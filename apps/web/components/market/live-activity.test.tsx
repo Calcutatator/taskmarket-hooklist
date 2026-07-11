@@ -103,7 +103,9 @@ const task: TaskDetailResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 0,
-  submissionWindowOpen: true,
+  // The API reports the deliverable window here: false for an open auction
+  // still taking bids (only true once a worker is locked in).
+  submissionWindowOpen: false,
   tags: ['research'],
   worker: null,
 };
@@ -322,6 +324,25 @@ describe('LiveActivityPanel', () => {
     expect(screen.queryByText(/^Live$/)).not.toBeInTheDocument();
     expect(screen.queryByText(/reaching active workers/i)).not.toBeInTheDocument();
     expect(screen.getByText(/no activity yet/i)).toBeInTheDocument();
+  });
+
+  it('does not flag the window closed for an open auction still taking bids', () => {
+    renderPanel({ initialBids: [] });
+
+    expect(screen.queryByText('Submission window closed')).not.toBeInTheDocument();
+  });
+
+  it('flags the window closed for an open pitch task past its pitch deadline', () => {
+    renderPanel({
+      initialBids: [],
+      task: {
+        auctionType: null,
+        mode: 'pitch',
+        pitchDeadline: new Date(Date.now() - 60_000).toISOString(),
+      },
+    });
+
+    expect(screen.getByText('Submission window closed')).toBeInTheDocument();
   });
 
   it('renders without motion wrappers under the reduced-motion path', () => {
