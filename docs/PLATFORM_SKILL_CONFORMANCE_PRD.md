@@ -277,8 +277,24 @@ Task submissions and their preview URLs are public product surfaces. Sensitive c
 - Test evaluator award-worker persistence, exact block-derived appeal deadlines, appeal expiry extension, rejected-finalization cleanup, and dispute award-worker persistence.
 - Test auction creation invariants and bigint payout calculation.
 - Test bulk rejection active-worker extraction.
-- Test the installer manifest contains every relative link referenced by `SKILL.md`.
-- Test critical skill facts against the exported status, mode, and payment constants where practical.
+- Test the package manifest exactly equals the canonical root, mode, reference, and example files.
+- Recursively resolve local Markdown links, reject paths outside the package, and require every packaged file to be reachable from `SKILL.md`.
+- Smoke-test clean and upgrade installs over HTTP, remove files deleted from the manifest, and compare every installed byte with the canonical package.
+- Test the live CLI task command tree exactly matches the canonical CLI reference.
+- Test every raw REST route named by the skill exists in generated OpenAPI and every generated task or evaluation operation is named by the skill.
+- Test critical skill facts against exported status, mode, pending-action, payment, and signature contracts.
+- Reject known stale user-facing claims about statuses, fees, rating identity, and one-file installation.
+- Run the suite through one stable `make skill-conformance` interface and a dedicated GitHub Actions job.
+
+### FR-10: Continuous drift prevention
+
+- `apps/docs/src/public` is the only authored skill package; backend and web publication paths remain symlinks to it.
+- `reference/skill-manifest.txt` is the install contract. The installer consumes it, and CI rejects missing, extra, or reordered entries.
+- Standard X402 fee and paid pending-action classification are shared runtime exports consumed by backend and web code as well as conformance tests.
+- Canonical preimage and paid-action route registries are consumed by route registration, OpenAPI generation, and conformance tests so route checks do not copy application paths.
+- A platform change that alters modes, statuses, action names, submission windows, CLI commands, REST routes, fees, or the pitch-selection signature must update the canonical skill in the same pull request.
+- Contributors run `make skill-conformance` locally. CI exposes the same command as an independent `skill-conformance` status on every pull request and push to `main`.
+- A failing conformance check is resolved by reconciling implementation and guidance. Do not add route allow-lists, copied publication files, or assertions that merely duplicate the current documentation.
 
 ## Safety and Approval Requirements
 
@@ -317,6 +333,7 @@ Approval text must identify the task, network, acting wallet, action, amount pai
 - No action returned by task detail is known to violate a router or contract precondition at response time.
 - A fresh package install contains all referenced files.
 - Searches for stale public status `accepted`, 0.01 USDC standard action fees, ignored `raterAgentId`, and one-file install commands return no user-facing claims.
+- The dedicated `skill-conformance` CI status passes and remains independently visible from the general quality job.
 - The full repository test, type, lint, format, and skill conformance suites pass.
 
 ## Acceptance Scenarios
@@ -350,3 +367,7 @@ Given a requester with a published compressed public key, task detail returns th
 ### Package install
 
 Given a clean repository, running the displayed install command creates the root skill, all mode references, all supporting references, and examples in the configured directory. Every relative Markdown link in the root resolves locally.
+
+### Drift prevention
+
+Given a pull request that adds or removes a task command, public status, pending action, paid-action classification, raw API route, or package file without updating the canonical skill contract, `make skill-conformance` fails with the mismatched value or path. Given a package upgrade after a file is removed from the manifest, the installer removes the stale owned file. Given the implementation and canonical package are reconciled, the local command and dedicated GitHub Actions job both pass.

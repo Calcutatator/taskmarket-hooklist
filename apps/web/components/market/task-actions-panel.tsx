@@ -1,6 +1,11 @@
 'use client';
 
-import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+import {
+  PAID_PENDING_ACTION_NAMES,
+  type PendingAction,
+  type TaskDetailResponse,
+  type TaskResponse,
+} from '@taskmarket/shared';
 import { Terminal } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
@@ -25,23 +30,7 @@ type TaskActionPanelProps = {
   worker?: string | null;
 };
 
-const PAID_ACTIONS = new Set([
-  'accept',
-  'accept_submissions',
-  'appeal',
-  'auction_accept',
-  'bid',
-  'cancel',
-  'evaluate',
-  'evaluator_timeout',
-  'pitch',
-  'rate',
-  'refund_expired',
-  'reject_submission',
-  'resolve_dispute',
-  'submit_proof',
-  'update',
-]);
+const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
 
 // Evaluator and dispute controls are not built yet (their components only render
 // "coming soon" copy), so we do not surface them. The components stay wired in

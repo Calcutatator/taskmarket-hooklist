@@ -142,7 +142,7 @@ describe('paid task action preflight', () => {
       followupRows: [[]],
     },
     {
-      action: 'proof',
+      action: 'submit_proof',
       task: task({ mode: 'benchmark' }),
       body: { workerAddress: WORKER },
       payer: WORKER,
@@ -261,7 +261,7 @@ describe('paid task action preflight', () => {
     await expect(
       validatePaidTaskAction(
         ctx.db,
-        'proof',
+        'submit_proof',
         {
           params: { taskId: '0xtask' },
           body: { taskId: '0xtask', workerAddress: WORKER },

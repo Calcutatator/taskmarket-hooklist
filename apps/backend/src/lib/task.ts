@@ -1,27 +1,12 @@
 import {
+  PAID_PENDING_ACTION_NAMES,
   Secp256k1PublicKeySchema,
   type PendingAction,
   type PendingActionNameValue,
 } from '@taskmarket/shared';
 import { STANDARD_X402_ACTION_AMOUNT } from '../config/payments';
 
-const PAID_ACTIONS = new Set<PendingActionNameValue>([
-  'accept',
-  'accept_submissions',
-  'appeal',
-  'auction_accept',
-  'bid',
-  'cancel',
-  'evaluate',
-  'evaluator_timeout',
-  'pitch',
-  'rate',
-  'refund_expired',
-  'reject_submission',
-  'resolve_dispute',
-  'submit_proof',
-  'update',
-]);
+const PAID_ACTIONS = new Set<PendingActionNameValue>(PAID_PENDING_ACTION_NAMES);
 
 export type SubmissionWindowTask = {
   status: string;

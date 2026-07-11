@@ -1,24 +1,10 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
+import type { PaidPendingActionNameValue } from '@taskmarket/shared';
 import { bids, proposals, submissions, tasks } from '../db/schema';
 import type { db } from '../db/client';
 import { computeClockPrice } from '../lib/auction';
 
-export type PaidTaskAction =
-  | 'accept'
-  | 'accept_submissions'
-  | 'appeal'
-  | 'auction_accept'
-  | 'bid'
-  | 'cancel'
-  | 'evaluate'
-  | 'evaluator_timeout'
-  | 'pitch'
-  | 'proof'
-  | 'rate'
-  | 'refund_expired'
-  | 'reject_submission'
-  | 'resolve_dispute'
-  | 'update';
+export type PaidTaskAction = PaidPendingActionNameValue;
 
 type Database = typeof db;
 type PaidTaskActionRequest = {
@@ -245,7 +231,7 @@ export async function validatePaidTaskAction(
       if (existing.length > 0) fail('Worker has already submitted a pitch');
       return;
     }
-    case 'proof': {
+    case 'submit_proof': {
       const worker = bodyString(req, 'workerAddress');
       requirePayer(payer, worker, 'proof worker');
       if (task.mode !== 'benchmark') fail('Task is not a benchmark task');
@@ -353,4 +339,7 @@ export async function validatePaidTaskAction(
       }
       return;
   }
+
+  const unhandledAction: never = action;
+  throw new Error(`Unhandled paid task action: ${unhandledAction}`);
 }

@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import { createServer } from 'node:http';
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 
 // All heavy modules must be mocked before app is imported — vitest hoists vi.mock() calls.
@@ -68,7 +69,27 @@ vi.mock('trpc-to-openapi', () => ({
 }));
 
 // Import after all mocks are registered
-const { app } = await import('../../../src/app');
+const { app: expressApp } = await import('../../../src/app');
+const app = createServer(expressApp);
+
+beforeAll(
+  () =>
+    new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      app.once('error', onError);
+      app.listen(0, '127.0.0.1', () => {
+        app.off('error', onError);
+        resolve();
+      });
+    })
+);
+
+afterAll(
+  () =>
+    new Promise<void>((resolve, reject) => {
+      app.close((error) => (error ? reject(error) : resolve()));
+    })
+);
 
 describe('validateBody integration — routes block invalid bodies before x402', () => {
   // For 400 tests: invalid body → validateBody short-circuits, x402 never runs

@@ -51,6 +51,7 @@ Changing the withdrawal address requires a separate explicit approval naming the
 | `taskmarket task create --description "..." --reward <usdc> --duration <hours> --mode benchmark` | Create a benchmark task. |
 | `taskmarket task create --description "..." --reward <usdc> --duration <hours> --mode auction --auction-type <type> --max-price <usdc> --bid-deadline <hours> [--auction-start-price <usdc>] [--auction-floor-price <usdc>]` | Create an auction task. |
 | `taskmarket task cancel <taskId>` | Cancel an open task and refund escrow when allowed. |
+| `taskmarket task refund-expired <taskId>` | Resolve eligible expired escrow (costs 0.001 USDC). |
 | `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>] [...]` | Update reward, expiry, deadlines, or mode-specific fields. |
 | `taskmarket task reject-submission <taskId> --worker <address>` | Reject one worker's active submissions (costs 0.001 USDC). |
 | `taskmarket task reject-all-submissions <taskId> [--no-cancel]` | Reject every unique active worker, then cancel unless disabled. Each rejection and cancellation is separately paid. |

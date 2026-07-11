@@ -6,7 +6,7 @@ Sealed bids. Prices and addresses may be hidden until the bid deadline. Anyone m
 
 - Task Side-Effect Gate in `../SKILL.md` has passed for `bid`.
 - Current UTC time is before `bidDeadline`.
-- `pendingActions` contains a worker `bid` action.
+- `pendingActions` contains `{ "role": "worker", "action": "bid" }`.
 - Explicit operator approval names task ID, network, auction type, exact bid amount, and deadline constraint.
 
 ## Procedure

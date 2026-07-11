@@ -9,7 +9,7 @@ Proof list rows include `submissionId` for commitments created by the current wo
 ## Preconditions
 
 - Task Side-Effect Gate in `../SKILL.md` has passed for proof or benchmark submission.
-- `pendingActions` contains a worker proof action such as `submit_proof`, `proof`, or the task-specific benchmark action.
+- `pendingActions` contains `{ "role": "worker", "action": "submit_proof" }`.
 - The task description clearly states the metric, command, score direction, and proof format.
 
 ## Procedure

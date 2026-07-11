@@ -42,6 +42,24 @@ export const PendingActionName = z.enum([
   'update',
 ]);
 
+export const PAID_PENDING_ACTION_NAMES = [
+  'accept',
+  'accept_submissions',
+  'appeal',
+  'auction_accept',
+  'bid',
+  'cancel',
+  'evaluate',
+  'evaluator_timeout',
+  'pitch',
+  'rate',
+  'refund_expired',
+  'reject_submission',
+  'resolve_dispute',
+  'submit_proof',
+  'update',
+] as const satisfies readonly (typeof PendingActionName.options)[number][];
+
 export const PendingActionSchema = z.object({
   role: z.enum(['requester', 'worker', 'evaluator', 'dispute_resolver', 'anyone']),
   action: PendingActionName,
@@ -283,6 +301,7 @@ export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
 export type PendingAction = z.infer<typeof PendingActionSchema>;
 export type PendingActionNameValue = z.infer<typeof PendingActionName>;
+export type PaidPendingActionNameValue = (typeof PAID_PENDING_ACTION_NAMES)[number];
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
