@@ -20,6 +20,14 @@ vi.mock('next/navigation', () => ({
   useRouter: () => router,
 }));
 
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    wallet: {
+      exchangeRate: { useQuery: () => ({ data: undefined, isLoading: false }) },
+    },
+  },
+}));
+
 vi.mock('wagmi', () => ({
   useAccount: () => walletState,
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
