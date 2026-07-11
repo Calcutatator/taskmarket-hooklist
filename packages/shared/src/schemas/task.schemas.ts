@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { PositiveUsdcBaseUnitsSchema, UsdcBaseUnitsSchema } from './common.schemas';
 
 export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
 
@@ -19,6 +20,7 @@ export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse
 
 export const PendingActionName = z.enum([
   'accept',
+  'accept_submissions',
   'appeal',
   'auction_accept',
   'bid',
@@ -40,47 +42,138 @@ export const PendingActionName = z.enum([
   'update',
 ]);
 
+export const PAID_PENDING_ACTION_NAMES = [
+  'accept',
+  'accept_submissions',
+  'appeal',
+  'auction_accept',
+  'bid',
+  'cancel',
+  'evaluate',
+  'evaluator_timeout',
+  'pitch',
+  'rate',
+  'refund_expired',
+  'reject_submission',
+  'resolve_dispute',
+  'submit_proof',
+  'update',
+] as const satisfies readonly (typeof PendingActionName.options)[number][];
+
 export const PendingActionSchema = z.object({
   role: z.enum(['requester', 'worker', 'evaluator', 'dispute_resolver', 'anyone']),
   action: PendingActionName,
   command: z.string(),
+  eligibleAddress: z.string().nullable().optional(),
+  requiresPayment: z.boolean().optional(),
+  paymentAmount: z.string().nullable().optional(),
+  availableAfter: z.string().nullable().optional(),
+  availableUntil: z.string().nullable().optional(),
 });
 
-export const TaskCreateSchema = z.object({
-  description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
-  reward: z.string().min(1, 'Reward is required'),
-  duration: z.number().positive('Duration must be positive'),
-  tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
-  mode: TaskMode.optional().default('bounty'),
-  stakeRequired: z.boolean().optional().default(false),
-  stakeBps: z.number().min(0).max(10000).optional().default(0),
-  pitchDeadline: z.number().positive().optional(),
-  bidDeadline: z.number().positive().optional(),
-  maxPrice: z.string().optional(),
-  metricDescription: z.string().max(500).optional(),
-  metricTarget: z.string().max(200).optional(),
-  auctionType: AuctionType.optional(),
-  auctionStartPrice: z.string().optional(),
-  auctionFloorPrice: z.string().optional(),
-  hookContract: z.string().optional(),
-  hookData: z
-    .string()
-    .regex(
-      /^0x(?:[0-9a-fA-F]{2})*$/,
-      'hookData must be hex-encoded bytes (0x followed by pairs of hex digits)'
-    )
-    .optional(),
-  evaluator: z.string().optional(),
-  evaluatorFeeBps: z.number().min(0).max(10000).optional(),
-  evaluationWindowHours: z.number().positive().optional(),
-  appealWindowHours: z.number().positive().optional(),
-  disputeResolver: z.string().optional(),
-});
+export const TaskCreateSchema = z
+  .object({
+    description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
+    reward: PositiveUsdcBaseUnitsSchema,
+    duration: z.number().positive('Duration must be positive'),
+    tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
+    mode: TaskMode.optional().default('bounty'),
+    stakeRequired: z.boolean().optional().default(false),
+    stakeBps: z.number().min(0).max(10000).optional().default(0),
+    pitchDeadline: z.number().positive().optional(),
+    bidDeadline: z.number().positive().optional(),
+    maxPrice: PositiveUsdcBaseUnitsSchema.optional(),
+    metricDescription: z.string().max(500).optional(),
+    metricTarget: z.string().max(200).optional(),
+    auctionType: AuctionType.optional(),
+    auctionStartPrice: UsdcBaseUnitsSchema.optional(),
+    auctionFloorPrice: UsdcBaseUnitsSchema.optional(),
+    hookContract: z.string().optional(),
+    hookData: z
+      .string()
+      .regex(
+        /^0x(?:[0-9a-fA-F]{2})*$/,
+        'hookData must be hex-encoded bytes (0x followed by pairs of hex digits)'
+      )
+      .optional(),
+    evaluator: z.string().optional(),
+    evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+    evaluationWindowHours: z.number().positive().optional(),
+    appealWindowHours: z.number().positive().optional(),
+    disputeResolver: z.string().optional(),
+  })
+  .superRefine((input, ctx) => {
+    if (input.mode !== 'auction') return;
+
+    // The superRefine still runs when a field-level regex check has already
+    // failed; skip the BigInt cross-field comparisons then so safeParse
+    // reports issues instead of throwing.
+    const toBaseUnits = (value: string | undefined) =>
+      value !== undefined && /^[0-9]+$/.test(value) ? BigInt(value) : null;
+    const reward = toBaseUnits(input.reward);
+
+    if (!input.maxPrice) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maxPrice'],
+        message: 'maxPrice is required for auction mode',
+      });
+    } else if (
+      reward !== null &&
+      toBaseUnits(input.maxPrice) !== null &&
+      toBaseUnits(input.maxPrice) !== reward
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['maxPrice'],
+        message: 'maxPrice must equal reward for auction mode',
+      });
+    }
+
+    if (!input.auctionType) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['auctionType'],
+        message:
+          'auctionType is required for auction mode (dutch, english, reverse_dutch, reverse_english)',
+      });
+      return;
+    }
+
+    if (input.auctionType === 'dutch' && input.auctionFloorPrice === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['auctionFloorPrice'],
+        message: 'auctionFloorPrice is required for dutch auction type',
+      });
+    }
+    if (input.auctionType === 'reverse_dutch' && input.auctionStartPrice === undefined) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['auctionStartPrice'],
+        message: 'auctionStartPrice is required for reverse_dutch auction type',
+      });
+    }
+
+    for (const [field, value] of [
+      ['auctionFloorPrice', input.auctionFloorPrice],
+      ['auctionStartPrice', input.auctionStartPrice],
+    ] as const) {
+      const parsed = toBaseUnits(value);
+      if (parsed !== null && reward !== null && parsed > reward) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: [field],
+          message: `${field} must be less than or equal to reward`,
+        });
+      }
+    }
+  });
 
 export const TaskResponseSchema = z.object({
   id: z.string(),
   requester: z.string(),
-  requesterPubkey: z.string(),
+  requesterPubkey: z.string().nullable(),
   description: z.string(),
   reward: z.string(),
   escrowTxHash: z.string(),
@@ -129,7 +222,7 @@ export const TaskResponseSchema = z.object({
   verdictConfidence: z.number().nullable().optional(),
   verdictEvidenceHash: z.string().nullable().optional(),
   submissionWindowOpen: z.boolean(),
-  netReward: z.string().optional(),
+  netReward: z.string().nullable().optional(),
   pendingActions: PendingActionSchema.array().optional(),
   selfAward: z.boolean().nullable().optional(),
   hooks: z.array(z.string()).optional(),
@@ -190,14 +283,23 @@ export const CancelTaskInputSchema = z.object({
   taskId: z.string(),
 });
 
+export const RejectSubmissionInputSchema = z.object({
+  taskId: z.string(),
+  worker: z.string(),
+});
+
+export const RefundExpiredInputSchema = z.object({
+  taskId: z.string(),
+});
+
 export const UpdateTaskInputSchema = z.object({
   taskId: z.string(),
-  reward: z.string().optional(),
-  expiryTime: z.number().optional(),
-  bidDeadline: z.number().optional(),
-  pitchDeadline: z.number().optional(),
-  auctionFloorPrice: z.string().optional(),
-  auctionStartPrice: z.string().optional(),
+  reward: PositiveUsdcBaseUnitsSchema.optional(),
+  expiryTime: z.number().int().positive().optional(),
+  bidDeadline: z.number().int().positive().optional(),
+  pitchDeadline: z.number().int().positive().optional(),
+  auctionFloorPrice: UsdcBaseUnitsSchema.optional(),
+  auctionStartPrice: UsdcBaseUnitsSchema.optional(),
   description: z.string().max(2000, 'Description is too long').optional(),
   tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed').optional(),
   metricDescription: z.string().max(500).optional(),
@@ -219,6 +321,7 @@ export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
 export type PendingAction = z.infer<typeof PendingActionSchema>;
 export type PendingActionNameValue = z.infer<typeof PendingActionName>;
+export type PaidPendingActionNameValue = (typeof PAID_PENDING_ACTION_NAMES)[number];
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;

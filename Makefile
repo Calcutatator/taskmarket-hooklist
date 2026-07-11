@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -25,6 +25,7 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
+	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
@@ -413,6 +414,13 @@ fix:
 
 test:
 	$(ENV_LOADER) && pnpm turbo test
+
+skill-conformance:
+	$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/backend exec vitest run test/unit/skill-conformance.test.ts test/integration/middleware/validateBody.test.ts && \
+	pnpm --filter @lucid-agents/taskmarket exec vitest run test/unit/skill-conformance.test.ts && \
+	pnpm --filter @taskmarket/web exec vitest run lib/skill-package.test.ts lib/skill.test.ts
 
 contract:
 	@$(ENV_LOADER) && \

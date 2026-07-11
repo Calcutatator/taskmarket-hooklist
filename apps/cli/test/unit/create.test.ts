@@ -206,4 +206,38 @@ describe('task create command', () => {
       expect.stringContaining('--auction-start-price is required')
     );
   });
+
+  it('requires --auction-floor-price for dutch', async () => {
+    await createCmd.parseAsync(
+      [...BASE_ARGS, '--mode', 'auction', '--max-price', '5', '--auction-type', 'dutch'],
+      { from: 'node' }
+    );
+
+    expect(mockPrintError).toHaveBeenCalledWith(
+      expect.stringContaining('--auction-floor-price is required')
+    );
+    expect(mockX402Post).not.toHaveBeenCalled();
+  });
+
+  it('requires max price to equal escrow reward', async () => {
+    await createCmd.parseAsync(
+      [...BASE_ARGS, '--mode', 'auction', '--max-price', '4', '--auction-type', 'english'],
+      { from: 'node' }
+    );
+
+    expect(mockPrintError).toHaveBeenCalledWith(
+      expect.stringContaining('--max-price must equal --reward')
+    );
+    expect(mockX402Post).not.toHaveBeenCalled();
+  });
+
+  it('rejects invalid reward decimals before payment', async () => {
+    await createCmd.parseAsync(
+      ['node', 'create', '--description', 'test', '--reward', '1.0000001', '--duration', '1'],
+      { from: 'node' }
+    );
+
+    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid --reward'));
+    expect(mockX402Post).not.toHaveBeenCalled();
+  });
 });

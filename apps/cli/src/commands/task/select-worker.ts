@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { keccak256, toBytes } from 'viem';
+import { buildSelectWorkerMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -12,8 +12,8 @@ export const selectWorkerCmd = new Command('select-worker')
   .requiredOption('--worker <address>', 'Worker wallet address to assign')
   .action(async (taskId: string, opts: { pitch: string; worker: string }) => {
     const keystore = await loadKeystore();
-    const hash = keccak256(toBytes(taskId + opts.pitch + opts.worker));
-    const signature = await signMessage(hash, keystore);
+    const message = buildSelectWorkerMessage(taskId, opts.pitch, opts.worker);
+    const signature = await signMessage(message, keystore);
 
     await apiPost(`/api/tasks/${taskId}/pitches/select`, {
       taskId,

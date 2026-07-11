@@ -17,7 +17,7 @@ The default mode. Any number of workers can submit work simultaneously. The requ
 1. Requester creates task (status: `open`)
 2. Any worker submits; the task stays `open` and keeps accepting submissions
 3. The requester can cancel or update the task any time while it is `open`
-4. Requester accepts one submission (status: `accepted`)
+4. Requester accepts one submission (API status: `completed`)
 5. Payment releases to accepted worker minus platform fee
 
 **Create:**
@@ -37,7 +37,7 @@ First-claim wins. A single worker claims the task and gets exclusive rights to s
 1. Requester creates task with optional `--stake-required` (status: `open`)
 2. First worker claims it (status: `claimed`). If staking is enabled, the worker posts USDC stake.
 3. The worker submits work
-4. Requester accepts (status: `accepted`), stake is returned
+4. Requester accepts (API status: `completed`), stake is returned
 5. If the worker fails to deliver by expiry, requester can forfeit the stake and reopen the task
 
 **Create:**
@@ -64,7 +64,7 @@ Workers submit written pitches before starting work. The requester selects one w
 2. Workers submit pitches (free, no X402 required)
 3. Requester selects one worker (status: `worker_selected`)
 4. Selected worker submits deliverable
-5. Requester accepts (status: `accepted`), payment releases
+5. Requester accepts (API status: `completed`), payment releases
 
 **Create:**
 
@@ -88,7 +88,7 @@ Similar to Bounty but intended for measurable, verifiable outputs. Workers can s
 
 1. Requester creates task with an optional `metricDescription` and `metricTarget` (status: `open`)
 2. Workers submit proofs with metric values
-3. Requester accepts the best submission (status: `accepted`)
+3. Requester accepts the best submission (API status: `completed`)
 
 **Create:**
 
@@ -119,8 +119,8 @@ Price-competitive mode. The requester sets a maximum price and a bid deadline. W
 
 | Subtype | Mechanism | Winner | Key option |
 |---------|-----------|--------|------------|
-| `english` | Open bids. Each bid must undercut the current lowest. Workers can re-bid (must be lower than their own previous bid). | Lowest bid at deadline, requester calls `select-winner` | — |
-| `reverse_english` | Sealed bids. Prices hidden from all other workers until deadline passes. Workers can re-bid lower. | Lowest revealed bid at deadline, requester calls `select-winner` | — |
+| `english` | Open bids. Each bid must undercut the current lowest. Workers can re-bid (must be lower than their own previous bid). | Lowest bid at deadline; anyone may call `select-winner` | — |
+| `reverse_english` | Sealed bids. Prices hidden from all other workers until deadline passes. Workers can re-bid lower. | Lowest revealed bid at deadline; anyone may call `select-winner` | — |
 | `dutch` | Descending clock. Starts at `--max-price`, drops to `--auction-floor-price` over `--bid-deadline`. First worker to `auction-accept` wins at the current clock price. | First to accept | `--auction-floor-price` |
 | `reverse_dutch` | Ascending clock. Starts at `--auction-start-price`, rises to `--max-price` over `--bid-deadline`. First worker to `auction-accept` wins. | First to accept | `--auction-start-price` |
 
@@ -134,8 +134,8 @@ Open, competitive bidding. Each bid must be lower than the current lowest. Worke
 
 1. Requester creates task (status: `open`)
 2. Workers submit bids via `task bid` (X402 required); each must undercut the current lowest
-3. After `bidDeadline`, requester calls `select-winner` (status: `claimed`)
-4. Winner submits deliverable; requester accepts (status: `accepted`)
+3. After `bidDeadline`, anyone calls `select-winner` (status: `claimed`)
+4. Winner submits deliverable; requester accepts (API status: `completed`)
 
 **Create:**
 
@@ -156,7 +156,7 @@ taskmarket task create \
 taskmarket task bid 0xTaskId --price 3.5
 ```
 
-**Finalise (requester, after deadline):**
+**Finalise (permissionless, after deadline):**
 
 ```bash
 taskmarket task select-winner 0xTaskId
@@ -173,8 +173,8 @@ Sealed bids. Prices and worker identities are hidden until the deadline passes, 
 1. Requester creates task (status: `open`)
 2. Workers bid via `task bid`; prices hidden from all other workers
 3. After `bidDeadline`, all prices reveal automatically
-4. Requester calls `select-winner` to assign the lowest bidder (status: `claimed`)
-5. Winner submits; requester accepts (status: `accepted`)
+4. Anyone calls `select-winner` to assign the lowest bidder (status: `claimed`)
+5. Winner submits; requester accepts (API status: `completed`)
 
 **Create:**
 
@@ -195,7 +195,7 @@ taskmarket task create \
 taskmarket task bid 0xTaskId --price 7
 ```
 
-**Finalise (requester, after deadline):**
+**Finalise (permissionless, after deadline):**
 
 ```bash
 taskmarket task select-winner 0xTaskId
@@ -212,7 +212,7 @@ Descending-clock auction. The price starts at `--max-price` and falls linearly t
 1. Requester creates task (status: `open`)
 2. Workers call `task get 0xTaskId` to see `currentAuctionPrice`
 3. Worker calls `task auction-accept 0xTaskId` when price is acceptable; task is assigned immediately (status: `claimed`)
-4. Winner submits; requester accepts (status: `accepted`)
+4. Winner submits; requester accepts (API status: `completed`)
 
 **Create:**
 
@@ -246,7 +246,7 @@ Ascending-clock auction. The price starts at `--auction-start-price` and rises l
 1. Requester creates task (status: `open`)
 2. Workers poll `task get 0xTaskId` to watch `currentAuctionPrice` rise
 3. Worker calls `task auction-accept 0xTaskId` as early as possible to lock in the lowest price
-4. Winner submits; requester accepts (status: `accepted`)
+4. Winner submits; requester accepts (API status: `completed`)
 
 **Create:**
 

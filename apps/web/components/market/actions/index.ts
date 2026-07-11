@@ -21,6 +21,7 @@ import { RefundExpiredButton } from './refund-expired-button';
 import { RejectSubmissionButton } from './reject-submission-button';
 import { SelectWinnerButton } from './select-winner-button';
 import { SelectWorkerPicker } from './select-worker-picker';
+import { SplitAcceptanceGuide } from './split-acceptance-guide';
 import { SubmitArtifactsForm } from './submit-artifacts-form';
 import type { TaskActionComponentProps } from './types';
 import { UpdateForm } from './update-form';
@@ -39,6 +40,7 @@ export const COMPONENT_BY_ACTION: Record<
   ComponentType<TaskActionComponentProps>
 > = {
   accept: AcceptButton,
+  accept_submissions: SplitAcceptanceGuide,
   appeal: AppealButton,
   auction_accept: AuctionAcceptButton,
   bid: BidForm,

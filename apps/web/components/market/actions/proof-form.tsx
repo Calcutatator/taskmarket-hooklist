@@ -68,7 +68,7 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
     };
     if (metricValue.trim().length > 0) body.metricValue = metricValue.trim();
 
-    const result = await payX402Post<{ proofId: string; txHash?: string }>(
+    const result = await payX402Post<{ proofId: string; submissionId: string; txHash?: string }>(
       `/api/tasks/${task.id}/proofs`,
       body,
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },

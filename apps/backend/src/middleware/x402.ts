@@ -5,8 +5,19 @@ import { createServerWallet } from '../lib/wallet';
 const FACILITATOR_TIMEOUT_MS = 60_000;
 
 export interface X402Options {
-  getAmount: (req: Request) => string; // base units (6 decimals)
+  getAmount: (req: Request) => string | Promise<string>; // base units (6 decimals)
   description?: string;
+  preflight?: (req: Request, payer: string) => Promise<void>;
+}
+
+export class X402PreflightError extends Error {
+  constructor(
+    message: string,
+    readonly status: 400 | 403 | 404 = 400
+  ) {
+    super(message);
+    this.name = 'X402PreflightError';
+  }
 }
 
 export function x402Middleware(opts: X402Options): RequestHandler {
@@ -26,7 +37,16 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       (req.headers['PAYMENT-SIGNATURE'] as string | undefined);
 
     if (!paymentSignature) {
-      const amount = opts.getAmount(req);
+      // getAmount can be async and DB-backed; a rejection here must not
+      // escape the middleware as an unhandled rejection (Express 4 does not
+      // forward rejected middleware promises).
+      let amount: string;
+      try {
+        amount = await opts.getAmount(req);
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : 'Unable to compute payment amount';
+        return res.status(500).json({ error: msg });
+      }
       const requirements = {
         x402Version: 2,
         error: 'Payment required',
@@ -76,6 +96,26 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       const payer: string = paymentPayload?.payload?.authorization?.from;
       if (!payer) throw new Error('Missing payer address in payment payload');
 
+      const expectedAmount = await opts.getAmount(req);
+      const accepted = paymentPayload?.accepted;
+      const authorization = paymentPayload?.payload?.authorization;
+      if (
+        accepted?.scheme !== 'exact' ||
+        accepted?.network !== network ||
+        accepted?.amount !== expectedAmount ||
+        accepted?.asset?.toLowerCase() !== usdcAddress.toLowerCase() ||
+        accepted?.payTo?.toLowerCase() !== payTo.toLowerCase() ||
+        String(authorization?.value) !== expectedAmount ||
+        authorization?.to?.toLowerCase() !== payTo.toLowerCase()
+      ) {
+        throw new Error('Payment payload does not match server requirements');
+      }
+
+      // Validate current task state and declared payer before settlement. The
+      // router repeats authorization after settlement; this pass prevents a
+      // known-invalid request from charging the caller first.
+      await opts.preflight?.(req, payer);
+
       // Validate payment hasn't expired
       const validBefore = Number(paymentPayload.payload.authorization.validBefore);
       if (validBefore < Math.floor(Date.now() / 1000) + 6) {
@@ -85,7 +125,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       const paymentRequirements = {
         scheme: 'exact',
         network,
-        amount: paymentPayload.accepted.amount,
+        amount: expectedAmount,
         resource: resourceUrl,
         description,
         mimeType: 'application/json',
@@ -138,6 +178,9 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       next();
     } catch (err) {
       const msg = err instanceof Error ? err.message : 'Payment verification failed';
+      if (err instanceof X402PreflightError) {
+        return res.status(err.status).json({ error: msg });
+      }
       res.status(402).json({
         x402Version: 2,
         error: msg,

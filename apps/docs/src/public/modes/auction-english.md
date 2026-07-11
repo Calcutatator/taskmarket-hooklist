@@ -1,12 +1,12 @@
 # Auction Mode: English
 
-Open bids. Lowest bid wins after the bid deadline, and the requester finalizes with `select-winner`.
+Open bids. Lowest bid wins after the bid deadline, and anyone may run the free deterministic `select-winner` finalization.
 
 ## Preconditions
 
-- Universal Task Side-Effect Gate in `../skill.md` has passed for `bid`.
+- Task Side-Effect Gate in `../SKILL.md` has passed for `bid`.
 - Current UTC time is before `bidDeadline`.
-- `pendingActions` contains a worker `bid` action.
+- `pendingActions` contains `{ "role": "worker", "action": "bid" }`.
 - Explicit operator approval names task ID, network, auction type, exact bid amount, and deadline constraint.
 
 ## Procedure

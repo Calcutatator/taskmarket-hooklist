@@ -80,7 +80,7 @@ export function RejectSubmissionButton({
         {busy ? 'Rejecting...' : 'Reject submission'}
       </Button>
       <p className="text-xs text-muted-foreground">
-        Costs 0.01 USDC relay fee. Rejected workers cannot resubmit. Once all submissions are
+        Costs 0.001 USDC relay fee. Rejected workers cannot resubmit. Once all submissions are
         rejected, the task can be cancelled.
       </p>
       {error ? <p className="text-xs text-destructive">{error}</p> : null}

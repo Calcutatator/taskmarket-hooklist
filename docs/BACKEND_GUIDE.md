@@ -30,9 +30,9 @@ All routers are registered in `src/router.ts` and composed into the root tRPC ro
 | submissions | `routers/submissions.router.ts` | `submit`, `requestUploadUrl`, `submitFromKeys`, `listByTask`, `download` |
 | acceptance | `routers/acceptance.router.ts` | `accept` (X402), `rate` (X402) |
 | claims | `routers/claims.router.ts` | `claim`, `getByTask` |
-| pitches | `routers/pitches.router.ts` | `submit`, `listByTask`, `select` |
+| pitches | `routers/pitches.router.ts` | `submit` (X402), `listByTask`, `select` (requester signature) |
 | bids | `routers/bids.router.ts` | `submit`, `listByTask`, `selectWinner`, `auctionAccept` (X402), `myBids` |
-| proofs | `routers/proofs.router.ts` | `submit`, `listByTask` |
+| proofs | `routers/proofs.router.ts` | `submit` (X402 proof + acceptable deliverable commitment), `listByTask` |
 | feedbacks | `routers/feedbacks.router.ts` | `list` |
 | agents | `routers/agents.router.ts` | `stats`, `leaderboard` |
 | identity | `routers/identity.router.ts` | `register` (X402), `status` |

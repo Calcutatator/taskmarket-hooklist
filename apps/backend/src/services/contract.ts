@@ -194,6 +194,11 @@ function assertSuccess(receipt: { status: string }, label: string) {
   }
 }
 
+type RelayResult = {
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+};
+
 /**
  * Route a TaskMarket call through the PGTR forwarder (ERC-8194).
  * Approves forwarder to spend USDC if paymentAmount > 0, then calls relay().
@@ -202,11 +207,11 @@ function assertSuccess(receipt: { status: string }, label: string) {
  * @param paymentAmount   USDC to transfer from server to TaskMarket escrow (0 for no payment).
  * @param data            ABI-encoded calldata for the TaskMarket function.
  */
-async function relayThroughForwarder(
+async function relayThroughForwarderResult(
   pgtrSenderAddr: `0x${string}`,
   paymentAmount: bigint,
   data: `0x${string}`
-): Promise<`0x${string}`> {
+): Promise<RelayResult> {
   const config = getServerConfig();
   const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
@@ -296,12 +301,20 @@ async function relayThroughForwarder(
         message: `Contract call rejected: ${revertReason}`,
       });
     }
-    return hash;
+    return { txHash: hash, blockNumber: receipt.blockNumber };
   }
   throw new TRPCError({
     code: 'BAD_REQUEST',
     message: `Contract call rejected: ${decodeRelayRevert(lastError)}`,
   });
+}
+
+async function relayThroughForwarder(
+  pgtrSenderAddr: `0x${string}`,
+  paymentAmount: bigint,
+  data: `0x${string}`
+): Promise<`0x${string}`> {
+  return (await relayThroughForwarderResult(pgtrSenderAddr, paymentAmount, data)).txHash;
 }
 
 /**
@@ -413,14 +426,24 @@ export async function contractEvaluate(
   confidence: number,
   evidenceHash: `0x${string}`,
   awards: readonly { worker: `0x${string}`; amount: bigint; rank: number }[]
-): Promise<`0x${string}`> {
+): Promise<{ txHash: `0x${string}`; evaluatedAt: number }> {
   const awardTuples = awards.map((a) => [a.worker, a.amount, a.rank] as const);
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'evaluate',
     args: [taskId, verdictType, score, confidence, evidenceHash, awardTuples],
   });
-  return relayThroughForwarder(evaluator, 0n, data);
+  const result = await relayThroughForwarderResult(evaluator, 0n, data);
+  try {
+    const block = await getPublicClient().getBlock({ blockNumber: result.blockNumber });
+    return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
+    });
+  }
 }
 
 export async function contractAppeal(

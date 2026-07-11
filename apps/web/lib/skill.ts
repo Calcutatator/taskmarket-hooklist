@@ -1,5 +1,6 @@
 import { getSiteUrl } from '@/lib/seo';
 
 export function skillInstallCommand() {
-  return `curl -fsSL ${getSiteUrl()}/skill.md -o skill.md`;
+  const siteUrl = getSiteUrl();
+  return `curl -fsSL ${siteUrl}/install-skill.sh | sh -s -- ${siteUrl}`;
 }

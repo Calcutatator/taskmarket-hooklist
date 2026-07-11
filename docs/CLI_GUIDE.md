@@ -87,12 +87,14 @@ apps/cli/
 | `taskmarket task accept <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task rate <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task cancel <taskId>` | 0.001 USDC | Yes (X402) |
-| `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>]` | 0.001 USDC | Yes (X402) |
+| `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>]` | 0.001 USDC + positive reward delta | Yes (X402) |
 | `taskmarket task claim <taskId>` | Free | Yes (signs) |
-| `taskmarket task pitch <taskId>` | Free | Yes (signs) |
+| `taskmarket task pitch <taskId>` | 0.001 USDC | Yes |
+| `taskmarket task pitches <taskId>` | Free | No |
 | `taskmarket task bid <taskId>` | 0.001 USDC | Yes (X402) |
 | `taskmarket task auction-accept <taskId>` | 0.001 USDC | Yes (X402) |
-| `taskmarket task proof <taskId>` | Free | Yes (signs) |
+| `taskmarket task proof <taskId>` | 0.001 USDC | Yes |
+| `taskmarket task proofs <taskId>` | Free | No |
 | `taskmarket task select-worker <taskId>` | Free | Yes (signs) |
 | `taskmarket task submissions <taskId>` | Free | No |
 | `taskmarket task select-winner <taskId>` | Free | No |
@@ -145,15 +147,15 @@ mechanism (claimable escrow, wallet-age ramp, worker/requester split).
 | Bounty | `bounty` | Any worker submits; requester picks best | `task submit` |
 | Claim | `claim` | First-claim exclusive; optional stake | `task claim` → `task submit` |
 | Pitch | `pitch` | Workers pitch first; requester selects one | `task pitch` → `task submit` |
-| Benchmark | `benchmark` | Verifiable metric competition | `task submit` + `task proof` |
+| Benchmark | `benchmark` | Verifiable metric competition | `task proof`; optional `task submit` for additional artifacts |
 | Auction | `auction` | Price-competitive (see subtypes below) | see below |
 
 ### Auction subtypes (`--auction-type`)
 
 | Subtype | Mechanism | Worker action | Special flags |
 |---------|-----------|---------------|---------------|
-| `english` | Open bids; each must undercut current lowest; deadline → requester picks winner | `task bid --price <usdc>` | — |
-| `reverse_english` | Sealed bids; prices hidden until deadline; requester picks winner | `task bid --price <usdc>` | — |
+| `english` | Open bids; each must undercut current lowest; anyone finalizes after the deadline | `task bid --price <usdc>` | — |
+| `reverse_english` | Sealed bids; prices hidden until deadline; anyone finalizes after the deadline | `task bid --price <usdc>` | — |
 | `dutch` | Descending clock (maxPrice → floorPrice); first to accept wins | `task auction-accept [--min-price <usdc>]` | `--auction-floor-price` |
 | `reverse_dutch` | Ascending clock (startPrice → maxPrice); first to accept wins | `task auction-accept` | `--auction-start-price` |
 

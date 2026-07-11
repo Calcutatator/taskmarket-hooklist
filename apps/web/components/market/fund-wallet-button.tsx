@@ -3,6 +3,7 @@
 import { useEffect, useState } from 'react';
 import { IconCoin } from '@tabler/icons-react';
 import { useFiatOnramp } from '@privy-io/react-auth';
+import { STANDARD_X402_ACTION_AMOUNT } from '@taskmarket/shared';
 import { useAccount } from 'wagmi';
 
 import { CopyButton } from '@/components/market/copy-button';
@@ -13,7 +14,7 @@ import { cn } from '@/lib/utils';
 
 export type FundingStatus = 'submitted' | 'confirmed';
 
-export const PAID_ACTION_COST_BASE_UNITS = 1_000n;
+export const PAID_ACTION_COST_BASE_UNITS = BigInt(STANDARD_X402_ACTION_AMOUNT);
 
 export type ActionFundingPrompt = {
   balanceUsdc: string;

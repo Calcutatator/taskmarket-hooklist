@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
+import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 /**
  * Parse an --award spec of the form
@@ -26,17 +27,14 @@ function parseAward(spec: string): Award {
   if (!/^0x[0-9a-fA-F]{40}$/.test(worker)) {
     throw new Error(`Invalid worker address in "${spec}"`);
   }
-  const amount = parseFloat(amountStr);
-  if (Number.isNaN(amount) || amount <= 0) {
-    throw new Error(`Invalid amount in "${spec}" — must be a positive number`);
-  }
+  const amount = usdcToBaseUnits(amountStr);
   const rank = parseInt(rankStr, 10);
   if (!Number.isInteger(rank) || rank < 1) {
     throw new Error(`Invalid rank in "${spec}" — must be an integer >= 1`);
   }
   return {
     worker,
-    amount: String(Math.round(amount * 1e6)),
+    amount,
     rank,
   };
 }

@@ -3,7 +3,7 @@ import { apiPost } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
 
 export const selectWinnerCmd = new Command('select-winner')
-  .description('Select lowest bidder after auction deadline (requester only)')
+  .description('Permissionlessly finalize the lowest bidder after the auction deadline')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
     let result: { success: boolean; workerAddress: string };

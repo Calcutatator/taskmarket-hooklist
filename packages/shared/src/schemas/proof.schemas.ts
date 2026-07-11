@@ -30,6 +30,7 @@ export const ProofResponseSchema = z.object({
   proofType: ProofType,
   metricValue: z.string().nullable(),
   status: ProofStatus,
+  submissionId: z.string().nullable(),
   submittedAt: z.string(),
   workerAgentId: z.string().nullable().optional(),
 });

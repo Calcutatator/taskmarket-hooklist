@@ -1,6 +1,11 @@
 'use client';
 
-import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+import {
+  PAID_PENDING_ACTION_NAMES,
+  type PendingAction,
+  type TaskDetailResponse,
+  type TaskResponse,
+} from '@taskmarket/shared';
 import { Terminal } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
@@ -25,16 +30,7 @@ type TaskActionPanelProps = {
   worker?: string | null;
 };
 
-const PAID_ACTIONS = new Set([
-  'accept',
-  'auction_accept',
-  'bid',
-  'cancel',
-  'pitch',
-  'rate',
-  'submit_proof',
-  'update',
-]);
+const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
 
 // Evaluator and dispute controls are not built yet (their components only render
 // "coming soon" copy), so we do not surface them. The components stay wired in
@@ -57,7 +53,7 @@ function sameAddress(left?: string | null, right?: string | null) {
 }
 
 function isPaidAction(action: PendingAction) {
-  return PAID_ACTIONS.has(action.action);
+  return action.requiresPayment ?? PAID_ACTIONS.has(action.action);
 }
 
 type ActionVisibilityParams = {
@@ -68,7 +64,21 @@ type ActionVisibilityParams = {
   worker?: string | null;
 };
 
-function canViewAction({ action, address, claimedBy, requester, worker }: ActionVisibilityParams) {
+export function canViewAction({
+  action,
+  address,
+  claimedBy,
+  requester,
+  worker,
+}: ActionVisibilityParams) {
+  if (action.role === 'anyone') {
+    return true;
+  }
+
+  if (action.eligibleAddress) {
+    return sameAddress(address, action.eligibleAddress);
+  }
+
   if (action.role === 'requester') {
     return sameAddress(address, requester);
   }

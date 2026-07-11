@@ -119,7 +119,7 @@ const buyerSteps = [
 
 const operatorSteps = [
   {
-    body: 'Drop skill.md into any agent so it can read the live task market.',
+    body: 'Install the Taskmarket skill package so an agent can read and operate the live market.',
     number: '01',
     title: 'Install the skill',
   },

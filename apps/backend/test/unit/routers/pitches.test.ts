@@ -1,5 +1,7 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
+import { buildSelectWorkerMessage } from '@taskmarket/shared';
+import { privateKeyToAccount } from 'viem/accounts';
 
 vi.mock('../../../src/services/contract', () => ({
   contractSelectWorker: vi.fn().mockResolvedValue('0xselecttx'),
@@ -9,10 +11,39 @@ vi.mock('../../../src/services/contract', () => ({
 import { pitchesRouter } from '../../../src/routers/pitches.router';
 import { contractSelectWorker } from '../../../src/services/contract';
 
-const REQUESTER = '0xRe9ue57e10000000000000000000000000000001';
+const REQUESTER_ACCOUNT = privateKeyToAccount(`0x${'11'.repeat(32)}`);
+const REQUESTER = REQUESTER_ACCOUNT.address;
 const WORKER = '0x0000000000000000000000000000000000000001';
 const TASK_ID = '0x7461736b00000000000000000000000000000000000000000000000000000001';
 const PITCH_ID = '00000000-0000-0000-0000-000000000001';
+
+function makePitch(overrides: Record<string, unknown> = {}) {
+  return {
+    id: PITCH_ID,
+    taskId: TASK_ID,
+    workerAddress: WORKER,
+    proposalText: 'My pitch',
+    estimatedDuration: null,
+    status: 'pending',
+    submittedAt: new Date(),
+    ...overrides,
+  };
+}
+
+async function signedSelectInput(
+  account = REQUESTER_ACCOUNT,
+  overrides: Partial<{ taskId: string; workerAddress: string; pitchId: string }> = {}
+) {
+  const input = {
+    taskId: overrides.taskId ?? TASK_ID,
+    workerAddress: overrides.workerAddress ?? WORKER,
+    pitchId: overrides.pitchId ?? PITCH_ID,
+  };
+  const signature = await account.signMessage({
+    message: buildSelectWorkerMessage(input.taskId, input.pitchId, input.workerAddress),
+  });
+  return { ...input, signature };
+}
 
 function makeTask(overrides: Record<string, any> = {}) {
   return {
@@ -196,24 +227,22 @@ describe('pitches router', () => {
   });
 
   describe('select', () => {
-    const selectInput = {
-      taskId: TASK_ID,
-      workerAddress: WORKER,
-      pitchId: PITCH_ID,
-      signature: '0xsig',
-    };
-
-    it('throws when payer does not match requester', async () => {
-      const ctx = createMockCtx('0xDifferentPayer000000000000000000000001');
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+    it('throws when the selection signature is not from the requester', async () => {
+      const other = privateKeyToAccount(`0x${'22'.repeat(32)}`);
+      const selectInput = await signedSelectInput(other);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([makePitch()]));
 
       const caller = pitchesRouter.createCaller(ctx);
       await expect(caller.select(selectInput)).rejects.toThrow(
-        'Only the task requester can select a worker'
+        'Selection signature must be from the task requester'
       );
     });
 
     it('throws when task is not found', async () => {
+      const selectInput = await signedSelectInput();
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
@@ -222,6 +251,7 @@ describe('pitches router', () => {
     });
 
     it('throws when task mode is not pitch', async () => {
+      const selectInput = await signedSelectInput();
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
@@ -230,6 +260,7 @@ describe('pitches router', () => {
     });
 
     it('throws when task is not open', async () => {
+      const selectInput = await signedSelectInput();
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'worker_selected' })]));
 
@@ -237,9 +268,38 @@ describe('pitches router', () => {
       await expect(caller.select(selectInput)).rejects.toThrow('Task not open');
     });
 
+    it('throws when the selected worker does not own the pitch', async () => {
+      const selectInput = await signedSelectInput();
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(
+          makeChain([makePitch({ workerAddress: '0x9999999999999999999999999999999999999999' })])
+        );
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.select(selectInput)).rejects.toThrow(
+        'Selected worker does not match the pitch worker'
+      );
+    });
+
+    it('throws when the pitch already left the pending state', async () => {
+      const selectInput = await signedSelectInput();
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([makePitch({ status: 'selected' })]));
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.select(selectInput)).rejects.toThrow('Pitch is no longer selectable');
+    });
+
     it('calls contractSelectWorker and updates 3 DB rows on happy path', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+      const selectInput = await signedSelectInput();
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([makePitch()]));
 
       const caller = pitchesRouter.createCaller(ctx);
       const result = await caller.select(selectInput);

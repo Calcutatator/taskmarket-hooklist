@@ -1,5 +1,10 @@
 import { router, publicProcedure } from '../trpc';
-import { PitchCreateSchema, PitchResponseSchema, PitchSelectSchema } from '@taskmarket/shared';
+import {
+  buildSelectWorkerMessage,
+  PitchCreateSchema,
+  PitchResponseSchema,
+  PitchSelectSchema,
+} from '@taskmarket/shared';
 import { z } from 'zod';
 import { proposals, tasks, agents } from '../db/schema';
 import { eq, and, ne } from 'drizzle-orm';
@@ -7,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
+import { recoverMessageAddress } from 'viem';
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -43,6 +49,10 @@ export const pitchesRouter = router({
 
       if (task.pitchDeadline && new Date() > task.pitchDeadline) {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Pitch deadline has passed' });
+      }
+
+      if (new Date() > task.expiryTime) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has expired' });
       }
 
       const existingPitch = await ctx.db
@@ -110,6 +120,14 @@ export const pitchesRouter = router({
     }),
 
   listByTask: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/tasks/{taskId}/pitches',
+        tags: ['Tasks'],
+        summary: 'List pitches for a pitch task',
+      },
+    })
     .input(z.object({ taskId: z.string() }))
     .output(z.array(PitchResponseSchema))
     .query(async ({ input, ctx }) => {
@@ -163,11 +181,6 @@ export const pitchesRouter = router({
     .input(PitchSelectSchema)
     .output(z.object({ success: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      const payer: string | undefined = ctx.res.locals.payer;
-      if (!payer) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
-      }
-
       const taskResult = await ctx.db
         .select()
         .from(tasks)
@@ -188,10 +201,46 @@ export const pitchesRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not open' });
       }
 
-      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
+      const pitchResult = await ctx.db
+        .select()
+        .from(proposals)
+        .where(and(eq(proposals.id, input.pitchId), eq(proposals.taskId, input.taskId)))
+        .limit(1);
+
+      if (pitchResult.length === 0) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Pitch not found for this task' });
+      }
+
+      const pitch = pitchResult[0];
+      // The selection signature is deterministic (no nonce), so a captured
+      // payload could be replayed after a rejected finalization reopens the
+      // task; only pitches still awaiting a decision are selectable.
+      if (pitch.status !== 'pending') {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Pitch is no longer selectable' });
+      }
+
+      if (pitch.workerAddress.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Selected worker does not match the pitch worker',
+        });
+      }
+
+      const message = buildSelectWorkerMessage(input.taskId, input.pitchId, input.workerAddress);
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid selection signature' });
+      }
+
+      if (task.requester.toLowerCase() !== signer.toLowerCase()) {
         throw new TRPCError({
           code: 'FORBIDDEN',
-          message: 'Only the task requester can select a worker',
+          message: 'Selection signature must be from the task requester',
         });
       }
 

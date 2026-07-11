@@ -1,10 +1,16 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
 
+const EVALUATED_AT = 1_800_000_000;
+
 vi.mock('../../../src/services/contract', () => ({
-  contractEvaluate: vi.fn().mockResolvedValue('0xevaluatetx'),
+  contractEvaluate: vi.fn().mockResolvedValue({
+    txHash: '0xevaluatetx',
+    evaluatedAt: 1_800_000_000,
+  }),
   contractEvaluatorTimeout: vi.fn().mockResolvedValue('0xevaluatortimeout'),
   contractFinalizeVerdict: vi.fn().mockResolvedValue('0xfinalizetx'),
+  contractResolveDispute: vi.fn().mockResolvedValue('0xresolvetx'),
 }));
 
 import { evaluationsRouter } from '../../../src/routers/evaluations.router';
@@ -12,11 +18,13 @@ import {
   contractEvaluate,
   contractEvaluatorTimeout,
   contractFinalizeVerdict,
+  contractResolveDispute,
 } from '../../../src/services/contract';
 
 const REQUESTER = '0xRequester0000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const EVALUATOR = '0xEvaluator000000000000000000000000000001';
+const WORKER = '0xWorker000000000000000000000000000000001';
 
 function makeTask(overrides: Record<string, unknown> = {}) {
   return {
@@ -26,6 +34,7 @@ function makeTask(overrides: Record<string, unknown> = {}) {
     evaluator: EVALUATOR,
     evaluatorStake: '1000000',
     appealWindow: 86400,
+    expiryTime: new Date(Date.now() + 1000),
     mode: 'claim',
     ...overrides,
   };
@@ -102,6 +111,61 @@ describe('evaluations router', () => {
       expect(result).toEqual({ txHash: '0xevaluatetx' });
     });
 
+    it('persists the lead award worker so a contest verdict can be appealed', async () => {
+      const ctx = createMockCtx(EVALUATOR);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ status: 'open', mode: 'bounty', worker: null })])
+      );
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      await evaluationsRouter.createCaller(ctx).evaluate({
+        ...evalInput,
+        awards: [{ worker: WORKER, amount: '1000000', rank: 1 }],
+      });
+
+      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ worker: WORKER }));
+    });
+
+    it('keeps the assigned worker when a locked-worker mode verdict names another address', async () => {
+      const ctx = createMockCtx(EVALUATOR);
+      const other = '0xOther0000000000000000000000000000000001';
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ worker: WORKER })]));
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      await evaluationsRouter.createCaller(ctx).evaluate({
+        ...evalInput,
+        awards: [{ worker: other, amount: '1000000', rank: 1 }],
+      });
+
+      expect(updateChain.set).toHaveBeenCalledWith(expect.objectContaining({ worker: WORKER }));
+    });
+
+    it('mirrors the onchain expiry extension through the appeal deadline', async () => {
+      const ctx = createMockCtx(EVALUATOR);
+      const updateChain = makeChain();
+      const originalExpiry = new Date((EVALUATED_AT - 3600) * 1000);
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ expiryTime: originalExpiry })]));
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      await evaluationsRouter.createCaller(ctx).evaluate(evalInput);
+
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({
+          expiryTime: expect.any(Date),
+          appealDeadline: expect.any(Date),
+        })
+      );
+      const update = updateChain.set.mock.calls[0][0] as {
+        expiryTime: Date;
+        appealDeadline: Date;
+      };
+      expect(update.expiryTime).toEqual(update.appealDeadline);
+      expect(update.expiryTime.getTime()).toBeGreaterThan(originalExpiry.getTime());
+      expect(update.appealDeadline).toEqual(new Date((EVALUATED_AT + 86400) * 1000));
+    });
+
     it('rejects when task is not found', async () => {
       const ctx = createMockCtx(EVALUATOR);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
@@ -135,6 +199,58 @@ describe('evaluations router', () => {
       expect(contractFinalizeVerdict).toHaveBeenCalledWith(TASK_ID);
       expect(result).toEqual({ txHash: '0xfinalizetx' });
     });
+
+    it('mirrors evaluator cleanup when a rejected verdict terminates the task', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      const updateChain = makeChain();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          makeTask({
+            status: 'appealing',
+            verdictType: 'REJECT',
+            appealDeadline: new Date(Date.now() - 1000),
+            worker: WORKER,
+          }),
+        ])
+      );
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
+
+      expect(updateChain.set).toHaveBeenCalledWith({
+        status: 'cancelled',
+        worker: null,
+        evaluator: null,
+        evaluatorStake: '0',
+        evaluationWindow: null,
+        appealWindow: null,
+        evaluatorDeadline: null,
+        appealDeadline: null,
+      });
+    });
+  });
+
+  describe('resolveDispute', () => {
+    it('persists the lead award worker selected onchain', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      const updateChain = makeChain();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          makeTask({ status: 'disputed', disputeResolver: REQUESTER, worker: EVALUATOR }),
+        ])
+      );
+      ctx.db.update.mockReturnValueOnce(updateChain);
+
+      const result = await evaluationsRouter.createCaller(ctx).resolveDispute({
+        taskId: TASK_ID,
+        verdict: 'approve',
+        awards: [{ worker: WORKER, amount: '1000000', rank: 1 }],
+      });
+
+      expect(contractResolveDispute).toHaveBeenCalledOnce();
+      expect(updateChain.set).toHaveBeenCalledWith({ status: 'completed', worker: WORKER });
+      expect(result).toEqual({ txHash: '0xresolvetx' });
+    });
   });
 
   describe('evaluatorTimeout', () => {
@@ -142,16 +258,20 @@ describe('evaluations router', () => {
 
     it('calls contractEvaluatorTimeout and returns txHash', async () => {
       const ctx = createMockCtx(REQUESTER);
+      const updateChain = makeChain();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ evaluatorDeadline: expiredDeadline })])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain());
+      ctx.db.update.mockReturnValueOnce(updateChain);
 
       const result = await evaluationsRouter.createCaller(ctx).evaluatorTimeout({
         taskId: TASK_ID,
       });
 
       expect(contractEvaluatorTimeout).toHaveBeenCalledWith(TASK_ID, REQUESTER);
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ evaluator: null, evaluatorDeadline: null })
+      );
       expect(result).toEqual({ txHash: '0xevaluatortimeout' });
     });
 

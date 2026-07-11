@@ -18,6 +18,7 @@ import {
 } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
+import { shouldStartEvaluatorReview } from './task-evaluator';
 
 type EventLog = {
   args: Record<string, unknown>;
@@ -398,12 +399,16 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
   // and starts the evaluation clock. Set review status and deadline from the DB-stored
   // evaluationWindow (set at task creation or assignEvaluator time).
   const taskRow = await db
-    .select({ evaluator: tasks.evaluator, evaluationWindow: tasks.evaluationWindow })
+    .select({
+      evaluator: tasks.evaluator,
+      evaluationWindow: tasks.evaluationWindow,
+      mode: tasks.mode,
+    })
     .from(tasks)
     .where(eq(tasks.id, taskId as string))
     .limit(1);
   const task = taskRow[0];
-  if (task?.evaluator && task.evaluationWindow && log.blockNumber != null) {
+  if (shouldStartEvaluatorReview(task) && log.blockNumber != null) {
     const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
     const submittedAt = Number(block.timestamp);
     await db
@@ -659,7 +664,12 @@ async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
   const { taskId } = log.args;
   await db
     .update(tasks)
-    .set({ status: 'pending_approval', evaluatorStake: '0', evaluatorDeadline: null })
+    .set({
+      status: 'pending_approval',
+      evaluator: null,
+      evaluatorStake: '0',
+      evaluatorDeadline: null,
+    })
     .where(eq(tasks.id, taskId as string));
   console.log(`EvaluatorTimedOut event: task=${taskId}`);
 }
