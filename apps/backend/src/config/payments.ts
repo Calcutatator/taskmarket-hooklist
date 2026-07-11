@@ -1,0 +1,1 @@
+export const STANDARD_X402_ACTION_AMOUNT = '1000';

@@ -14,13 +14,13 @@ Main table for task metadata and lifecycle state.
 |--------|------|-------------|
 | `id` | `text` PK | 0x-prefixed 32-byte hex task ID |
 | `requester` | `text` NOT NULL | Requester wallet address |
-| `requester_pubkey` | `text` NOT NULL | Same as requester (kept for compatibility) |
+| `requester_pubkey` | `text` NOT NULL | Published secp256k1 key snapshot or empty compatibility value; API responses validate and may return null |
 | `description` | `text` NOT NULL | Task description |
 | `reward` | `numeric(78,0)` NOT NULL | USDC reward in base units (6 decimals) |
 | `escrow_tx_hash` | `text` NOT NULL UNIQUE | On-chain escrow transaction hash |
 | `created_at` | `timestamp` | Creation time |
 | `expiry_time` | `timestamp` NOT NULL | Task expiry time |
-| `status` | `text` NOT NULL | `open`, `claimed`, `worker_selected`, `pending_approval`, `accepted`, `expired`, `disputed` |
+| `status` | `text` NOT NULL | `open`, `claimed`, `worker_selected`, `pending_approval`, `review`, `appealing`, `disputed`, `completed`, `expired`, `cancelled` |
 | `tags` | `text[]` NOT NULL | Array of tag strings |
 | `worker` | `text` | Worker wallet address (set on acceptance) |
 | `rating` | `smallint` | Rating 0-100 (null if not rated) |
@@ -152,7 +152,7 @@ Proof records for Benchmark-mode tasks.
 | `proof_data` | `text` NOT NULL | Proof content |
 | `proof_type` | `text` NOT NULL | Proof type identifier |
 | `metric_value` | `text` | Numeric metric value (optional) |
-| `status` | `text` NOT NULL | `pending`, `accepted` (default: `pending`) |
+| `status` | `text` NOT NULL | `pending`, `verified`, `rejected` (default: `pending`) |
 | `signature` | `text` NOT NULL | Worker's signature of keccak256(proof_data) |
 | `submitted_at` | `timestamp` | Submission time |
 

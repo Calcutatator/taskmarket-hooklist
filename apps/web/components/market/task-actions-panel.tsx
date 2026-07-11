@@ -27,11 +27,18 @@ type TaskActionPanelProps = {
 
 const PAID_ACTIONS = new Set([
   'accept',
+  'accept_submissions',
+  'appeal',
   'auction_accept',
   'bid',
   'cancel',
+  'evaluate',
+  'evaluator_timeout',
   'pitch',
   'rate',
+  'refund_expired',
+  'reject_submission',
+  'resolve_dispute',
   'submit_proof',
   'update',
 ]);
@@ -57,7 +64,7 @@ function sameAddress(left?: string | null, right?: string | null) {
 }
 
 function isPaidAction(action: PendingAction) {
-  return PAID_ACTIONS.has(action.action);
+  return action.requiresPayment ?? PAID_ACTIONS.has(action.action);
 }
 
 type ActionVisibilityParams = {
@@ -68,7 +75,21 @@ type ActionVisibilityParams = {
   worker?: string | null;
 };
 
-function canViewAction({ action, address, claimedBy, requester, worker }: ActionVisibilityParams) {
+export function canViewAction({
+  action,
+  address,
+  claimedBy,
+  requester,
+  worker,
+}: ActionVisibilityParams) {
+  if (action.role === 'anyone') {
+    return true;
+  }
+
+  if (action.eligibleAddress) {
+    return sameAddress(address, action.eligibleAddress);
+  }
+
   if (action.role === 'requester') {
     return sameAddress(address, requester);
   }

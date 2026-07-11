@@ -1,12 +1,12 @@
 import { router, publicProcedure } from '../trpc';
 import { ProofSubmitSchema, ProofResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
-import { proofs, tasks, agents } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { proofs, submissions, tasks, agents } from '../db/schema';
+import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
 import { TRPCError } from '@trpc/server';
-import { contractSubmitProof } from '../services/contract';
+import { contractSubmitProof, contractSubmitWork } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
 
 export const proofsRouter = router({
@@ -20,7 +20,7 @@ export const proofsRouter = router({
       },
     })
     .input(ProofSubmitSchema)
-    .output(z.object({ success: z.boolean(), proofId: z.string() }))
+    .output(z.object({ success: z.boolean(), proofId: z.string(), submissionId: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const taskResult = await ctx.db
         .select()
@@ -40,6 +40,10 @@ export const proofsRouter = router({
 
       if (task.status !== 'open') {
         throw new Error('Task not open for proof submission');
+      }
+
+      if (new Date() > task.expiryTime) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has expired' });
       }
 
       // X402 payment guard: same pattern as pitches — middleware sets payer,
@@ -76,8 +80,9 @@ export const proofsRouter = router({
       const proofTypeBytes32 = keccak256(toBytes(input.proofType));
 
       const proofId = randomUUID();
+      const submissionId = randomUUID();
 
-      const submitTxHash = await contractSubmitProof(
+      const proofTxHash = await contractSubmitProof(
         input.taskId as `0x${string}`,
         input.workerAddress as `0x${string}`,
         proofHash,
@@ -86,23 +91,70 @@ export const proofsRouter = router({
         task.contractAddress
       );
 
-      await ctx.db.insert(proofs).values({
-        id: proofId,
-        taskId: input.taskId,
-        workerAddress: input.workerAddress,
-        proofData: input.proofData,
-        proofType: input.proofType,
-        metricValue: input.metricValue || null,
-        signature: input.signature,
-        status: 'pending',
-        proofHash,
-        submitTxHash,
-      });
+      // Benchmark acceptance is based on submitWork commitments. Register the
+      // canonical proof hash as the deliverable so a proof-only entry can be
+      // accepted without a separate artifact upload.
+      let submissionTxHash: `0x${string}`;
+      try {
+        submissionTxHash = await contractSubmitWork(
+          input.taskId as `0x${string}`,
+          input.workerAddress as `0x${string}`,
+          proofHash,
+          task.contractAddress
+        );
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Proof anchored onchain (${proofTxHash}) but deliverable commitment failed: ${reason}`,
+        });
+      }
 
-      return { success: true, proofId };
+      try {
+        await ctx.db.transaction(async (tx) => {
+          await tx.insert(proofs).values({
+            id: proofId,
+            taskId: input.taskId,
+            workerAddress: input.workerAddress,
+            proofData: input.proofData,
+            proofType: input.proofType,
+            metricValue: input.metricValue || null,
+            signature: input.signature,
+            status: 'pending',
+            proofHash,
+            submitTxHash: proofTxHash,
+          });
+
+          await tx.insert(submissions).values({
+            id: submissionId,
+            taskId: input.taskId,
+            workerAddress: input.workerAddress,
+            fileUrl: `taskmarket-proof:${proofId}`,
+            signature: input.signature,
+            deliverableHash: proofHash,
+            submitTxHash: submissionTxHash,
+          });
+        });
+      } catch (error) {
+        const reason = error instanceof Error ? error.message : String(error);
+        throw new TRPCError({
+          code: 'INTERNAL_SERVER_ERROR',
+          message: `Proof and deliverable anchored onchain (${proofTxHash}, ${submissionTxHash}) but database sync failed: ${reason}`,
+        });
+      }
+
+      return { success: true, proofId, submissionId };
     }),
 
   listByTask: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/tasks/{taskId}/proofs',
+        tags: ['Tasks'],
+        summary: 'List proofs for a benchmark task',
+      },
+    })
     .input(z.object({ taskId: z.string() }))
     .output(z.array(ProofResponseSchema))
     .query(async ({ input, ctx }) => {
@@ -110,11 +162,20 @@ export const proofsRouter = router({
 
       return Promise.all(
         results.map(async (proof) => {
-          const agentResult = await ctx.db
-            .select()
-            .from(agents)
-            .where(eq(agents.address, proof.workerAddress))
-            .limit(1);
+          const [agentResult, submissionResult] = await Promise.all([
+            ctx.db.select().from(agents).where(eq(agents.address, proof.workerAddress)).limit(1),
+            ctx.db
+              .select({ id: submissions.id })
+              .from(submissions)
+              .where(
+                and(
+                  eq(submissions.taskId, proof.taskId),
+                  eq(submissions.workerAddress, proof.workerAddress),
+                  eq(submissions.fileUrl, `taskmarket-proof:${proof.id}`)
+                )
+              )
+              .limit(1),
+          ]);
 
           return {
             id: proof.id,
@@ -124,27 +185,11 @@ export const proofsRouter = router({
             proofType: proof.proofType as any,
             metricValue: proof.metricValue,
             status: proof.status as any,
+            submissionId: submissionResult[0]?.id ?? null,
             submittedAt: proof.submittedAt.toISOString(),
             workerAgentId: agentResult[0]?.agentId ?? null,
           };
         })
       );
-    }),
-
-  verify: publicProcedure
-    .input(
-      z.object({
-        proofId: z.string(),
-        taskId: z.string(),
-        txHash: z.string(),
-      })
-    )
-    .output(z.object({ success: z.boolean() }))
-    .mutation(async ({ input, ctx }) => {
-      await ctx.db.update(proofs).set({ status: 'verified' }).where(eq(proofs.id, input.proofId));
-
-      await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
-
-      return { success: true };
     }),
 });

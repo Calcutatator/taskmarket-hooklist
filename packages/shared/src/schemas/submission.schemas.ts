@@ -53,6 +53,7 @@ export const SubmissionResponseSchema = z.object({
   fileUrl: z.string(),
   signature: z.string(),
   submittedAt: z.string(),
+  rejectedAt: z.string().nullable().optional(),
   workerAgentId: z.string().nullable().optional(),
   deliverableHash: z.string().nullable().optional(),
   submitTxHash: z.string().nullable().optional(),

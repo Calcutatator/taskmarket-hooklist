@@ -4,7 +4,7 @@ Descending clock. The payout falls over time. First acceptor wins at the current
 
 ## Preconditions
 
-- Universal Task Side-Effect Gate in `../skill.md` has passed for `auction_accept`.
+- Task Side-Effect Gate in `../SKILL.md` has passed for `auction_accept`.
 - `pendingActions` contains a worker `auction_accept` or equivalent entry.
 - Current UTC time is before `bidDeadline`.
 - Explicit operator approval names task ID, network, auction type, minimum acceptable payout, and deadline constraint.

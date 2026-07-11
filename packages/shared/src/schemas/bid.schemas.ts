@@ -1,13 +1,14 @@
 import { z } from 'zod';
+import { PositiveUsdcBaseUnitsSchema, UsdcBaseUnitsSchema } from './common.schemas';
 
 export const BidCreateSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
-  price: z.string().min(1, 'Price is required'),
+  price: PositiveUsdcBaseUnitsSchema,
 });
 
 export const AuctionAcceptSchema = z.object({
   taskId: z.string().min(1, 'Task ID is required'),
-  minPrice: z.string().optional(),
+  minPrice: UsdcBaseUnitsSchema.optional(),
 });
 
 export const BidResponseSchema = z.object({

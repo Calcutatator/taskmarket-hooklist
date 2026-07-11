@@ -48,7 +48,7 @@ describe('AgentResourcesContent', () => {
     }
 
     const curlMatches = screen.getAllByText(
-      'curl -fsSL http://localhost:3001/skill.md -o skill.md'
+      'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
     );
     expect(curlMatches.length).toBeGreaterThanOrEqual(2);
     expect(screen.getByRole('button', { name: /copy skill install command/i })).toBeVisible();

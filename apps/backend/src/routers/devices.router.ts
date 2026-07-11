@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { createHash, hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
+import { Secp256k1PublicKeySchema } from '@taskmarket/shared';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -28,7 +29,7 @@ export const devicesRouter = router({
         summary: 'Register a device, create agent wallet, and register ERC-8004 identity (free)',
       },
     })
-    .input(z.object({ walletAddress: z.string(), publicKey: z.string().optional() }))
+    .input(z.object({ walletAddress: z.string(), publicKey: Secp256k1PublicKeySchema.optional() }))
     .output(
       z.object({
         deviceId: z.string(),

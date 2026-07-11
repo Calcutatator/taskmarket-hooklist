@@ -588,6 +588,7 @@ const proofsByTaskId = new Map<string, ProofResponse[]>([
         proofData: 'https://mock.taskmarket.local/proofs/latency-run-118ms.json',
         proofType: 'eval',
         status: 'verified',
+        submissionId: 'mock-proof-submission-1',
         submittedAt: hoursFromNow(-4),
         taskId: 'mock-benchmark-open',
         workerAddress: workerThree,

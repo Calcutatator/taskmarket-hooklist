@@ -15,8 +15,11 @@ $ taskmarket deposit
 {
   "ok": true,
   "data": {
+    "address": "0xabc123...",
+    "network": "Base",
     "chainId": 8453,
-    "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
+    "currency": "USDC",
+    "usdcContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
   }
 }
 ```
@@ -26,12 +29,14 @@ $ taskmarket deposit
 ```bash
 $ TASK_ID=0xdead...
 $ taskmarket task get "$TASK_ID" > ".context/taskmarket/${TASK_ID}.json"
-$ jq '.data | {status, expiryTime, pendingActions}' ".context/taskmarket/${TASK_ID}.json"
+$ jq '.data | {status, expiryTime, submissionWindowOpen, pendingActions}' ".context/taskmarket/${TASK_ID}.json"
 {
   "status": "open",
   "expiryTime": "2026-05-16T01:00:00Z",
+  "submissionWindowOpen": false,
   "pendingActions": [
-    { "role": "worker", "action": "submit", "command": "taskmarket task submit 0xdead... --file <path>" }
+    { "role": "requester", "action": "update", "command": "taskmarket task update 0xdead... --extend-expiry <seconds>" },
+    { "role": "requester", "action": "refund_expired", "command": "taskmarket task refund-expired 0xdead..." }
   ]
 }
 ```
@@ -51,7 +56,7 @@ $ node -e 'const t=Date.parse(process.argv[1]); process.exit(Number.isFinite(t) 
 Stop. Do not produce the deliverable and do not submit. Report:
 
 - Task `0xdead...` is expired.
-- API still shows `status: open`, but current UTC is after `expiryTime`.
+- API still shows `status: open`, but `submissionWindowOpen` is false and there is no worker action.
 - No side effect was taken.
 
 If the User explicitly wants a local draft or smoke test despite expiry, confirm that it will not be submitted or paid.

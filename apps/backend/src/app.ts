@@ -13,14 +13,21 @@ import { createContext } from './context';
 import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
+import { STANDARD_X402_ACTION_AMOUNT } from './config/payments';
 import {
   TaskCreateSchema,
   ProofSubmitSchema,
   PitchCreateSchema,
   UpdateTaskInputSchema,
   CancelTaskInputSchema,
+  RefundExpiredInputSchema,
+  RejectSubmissionInputSchema,
   BidCreateSchema,
   AuctionAcceptSchema,
+  AppealInputSchema,
+  EvaluateInputSchema,
+  EvaluatorTimeoutInputSchema,
+  ResolveDisputeInputSchema,
 } from '@taskmarket/shared';
 import {
   AcceptInputSchema,
@@ -29,6 +36,8 @@ import {
 } from './schemas/acceptance.schemas';
 import { validateBody } from './middleware/validateBody';
 import { x402Middleware } from './middleware/x402';
+import { taskActionPreflight } from './middleware/taskActionPreflight';
+import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
@@ -100,7 +109,10 @@ if (process.env.SERVE_FRONTEND === 'true') {
 // tRPC X402 guards
 app.post(
   '/trpc/identity.register',
-  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'ERC-8004 agent identity registration',
+  })
 );
 
 // tRPC middleware (for frontend / existing clients)
@@ -246,59 +258,145 @@ app.post(
 app.post(
   '/api/tasks/:taskId/accept',
   validateBody(AcceptInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Accept submission' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Accept submission',
+    preflight: taskActionPreflight('accept'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/accept-submissions',
   validateBody(AcceptSubmissionsInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Accept submissions' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Accept submissions',
+    preflight: taskActionPreflight('accept_submissions'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/rate',
   validateBody(RateInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Rate task' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Rate task',
+    preflight: taskActionPreflight('rate'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/bids',
   validateBody(BidCreateSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit bid' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Submit bid',
+    preflight: taskActionPreflight('bid'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/bids/accept',
   validateBody(AuctionAcceptSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Auction accept',
+    preflight: taskActionPreflight('auction_accept'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/cancel',
   validateBody(CancelTaskInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Cancel task',
+    preflight: taskActionPreflight('cancel'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/reject-submission',
-  x402Middleware({ getAmount: () => '1000', description: 'Reject submission' })
+  validateBody(RejectSubmissionInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Reject submission',
+    preflight: taskActionPreflight('reject_submission'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/update',
   validateBody(UpdateTaskInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Update task' })
+  x402Middleware({
+    getAmount: (req) =>
+      getUpdatePaymentAmount(db, req.params.taskId, req.body.reward as string | undefined),
+    description: 'Update task',
+    preflight: taskActionPreflight('update'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/pitches',
   validateBody(PitchCreateSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit pitch' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Submit pitch',
+    preflight: taskActionPreflight('pitch'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/proofs',
   validateBody(ProofSubmitSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Submit proof',
+    preflight: taskActionPreflight('proof'),
+  })
 );
 app.post(
   '/api/tasks/:taskId/refund-expired',
-  x402Middleware({ getAmount: () => '1000', description: 'Refund expired task' })
+  validateBody(RefundExpiredInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Refund expired task',
+    preflight: taskActionPreflight('refund_expired'),
+  })
+);
+app.post(
+  '/api/tasks/:taskId/evaluate',
+  validateBody(EvaluateInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Submit evaluator verdict',
+    preflight: taskActionPreflight('evaluate'),
+  })
+);
+app.post(
+  '/api/tasks/:taskId/appeal',
+  validateBody(AppealInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Appeal evaluator verdict',
+    preflight: taskActionPreflight('appeal'),
+  })
+);
+app.post(
+  '/api/tasks/:taskId/resolve-dispute',
+  validateBody(ResolveDisputeInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Resolve task dispute',
+    preflight: taskActionPreflight('resolve_dispute'),
+  })
+);
+app.post(
+  '/api/tasks/:taskId/evaluator-timeout',
+  validateBody(EvaluatorTimeoutInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Trigger evaluator timeout',
+    preflight: taskActionPreflight('evaluator_timeout'),
+  })
 );
 app.post(
   '/api/identity/register',
-  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'ERC-8004 agent identity registration',
+  })
 );
 
 // OpenAPI REST (handles all /api routes, including the ones above after X402 next())

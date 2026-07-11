@@ -3,45 +3,48 @@ import { apiGet } from '../../lib/api.js';
 import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
 
-type PendingAction = {
-  action: string;
-  worker?: string;
+type Submission = {
+  workerAddress: string;
+  rejectedAt?: string | null;
 };
 
-type TaskDetail = {
-  pendingActions?: PendingAction[];
-};
+export function activeSubmissionWorkers(submissions: Submission[]): string[] {
+  const workers = new Map<string, string>();
+  for (const submission of submissions) {
+    if (submission.rejectedAt !== null && submission.rejectedAt !== undefined) continue;
+    const normalized = submission.workerAddress.toLowerCase();
+    if (!workers.has(normalized)) workers.set(normalized, submission.workerAddress);
+  }
+  return [...workers.values()];
+}
 
 export const rejectAllSubmissionsCmd = new Command('reject-all-submissions')
   .description(
     'Reject every active submission on a bounty or benchmark task in one go. ' +
-      'Reads pending reject_submission actions from the task, rejects each worker ' +
+      'Lists active submissions, rejects each unique worker ' +
       'in sequence, then cancels the task. Use this to recover escrow when all ' +
       'submitted work is unsuitable.'
   )
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .option('--no-cancel', 'Reject all submissions but do not cancel the task afterward')
   .action(async (taskId: string, opts: { cancel: boolean }) => {
-    let task: TaskDetail;
+    let submissions: Submission[];
     try {
-      task = (await apiGet(`/api/tasks/${taskId}`)) as TaskDetail;
+      submissions = (await apiGet(`/api/tasks/${taskId}/submissions`)) as Submission[];
     } catch (err) {
       return printError(err instanceof Error ? err.message : String(err));
     }
 
-    const rejectActions = (task.pendingActions ?? []).filter(
-      (a) => a.action === 'reject_submission' && a.worker
-    );
+    const workers = activeSubmissionWorkers(submissions);
 
-    if (rejectActions.length === 0) {
+    if (workers.length === 0) {
       printResult({ rejected: 0, message: 'no active submissions to reject' });
       return;
     }
 
     const results: Array<{ worker: string; txHash?: string; error?: string }> = [];
 
-    for (const action of rejectActions) {
-      const worker = action.worker as string;
+    for (const worker of workers) {
       try {
         const res = (await x402Post(`/api/tasks/${taskId}/reject-submission`, {
           taskId,

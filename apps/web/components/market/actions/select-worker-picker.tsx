@@ -1,6 +1,7 @@
 'use client';
 
 import { CircleCheckIcon } from 'lucide-react';
+import { buildSelectWorkerMessage } from '@taskmarket/shared';
 import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
@@ -86,7 +87,7 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
     setPending(true);
     setError(null);
 
-    const message = `taskmarket:select-worker:${task.id}:${selected.workerAddress}`;
+    const message = buildSelectWorkerMessage(task.id, selected.id, selected.workerAddress);
     let signature: string;
     try {
       signature = await signMessageAsync({ message });

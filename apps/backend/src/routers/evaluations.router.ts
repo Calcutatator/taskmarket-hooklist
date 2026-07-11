@@ -1,5 +1,12 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
+import {
+  AppealInputSchema,
+  EvaluateInputSchema,
+  EvaluatorTimeoutInputSchema,
+  FinalizeVerdictInputSchema,
+  ResolveDisputeInputSchema,
+} from '@taskmarket/shared';
 import { tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import {
@@ -12,12 +19,6 @@ import {
 
 const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
-const AwardInputSchema = z.object({
-  worker: z.string(),
-  amount: z.string(),
-  rank: z.number().int().min(1),
-});
-
 export const evaluationsRouter = router({
   evaluate: publicProcedure
     .meta({
@@ -28,20 +29,7 @@ export const evaluationsRouter = router({
         summary: 'Submit evaluation verdict (X402 required)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        verdict: z.enum(['approve', 'reject', 'partial']),
-        score: z.number().int().min(0).max(1000).optional().default(1000),
-        confidence: z.number().int().min(0).max(1000).optional().default(1000),
-        evidenceHash: z
-          .string()
-          .regex(/^0x[0-9a-fA-F]{64}$/)
-          .optional()
-          .default('0x0000000000000000000000000000000000000000000000000000000000000000'),
-        awards: z.array(AwardInputSchema).optional().default([]),
-      })
-    )
+    .input(EvaluateInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -56,7 +44,8 @@ export const evaluationsRouter = router({
       const task = taskResult[0];
 
       const isOpenModeEval =
-        (task.mode === 'bounty' || task.mode === 'benchmark') && task.status === 'open';
+        (task.mode === 'bounty' || task.mode === 'benchmark') &&
+        (task.status === 'open' || task.status === 'pending_approval');
       const isReviewModeEval = task.status === 'review';
       if (!isOpenModeEval && !isReviewModeEval) {
         throw new Error('Task is not in an evaluatable state');
@@ -72,7 +61,7 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      const txHash = await contractEvaluate(
+      const { txHash, evaluatedAt } = await contractEvaluate(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         VERDICT_MAP[input.verdict] ?? 0,
@@ -83,7 +72,9 @@ export const evaluationsRouter = router({
       );
 
       const appealDeadline =
-        task.appealWindow != null ? new Date(Date.now() + task.appealWindow * 1000) : null;
+        task.appealWindow != null ? new Date((evaluatedAt + task.appealWindow) * 1000) : null;
+      const expiryTime =
+        appealDeadline && appealDeadline > task.expiryTime ? appealDeadline : task.expiryTime;
       await ctx.db
         .update(tasks)
         .set({
@@ -94,6 +85,8 @@ export const evaluationsRouter = router({
           verdictEvidenceHash: input.evidenceHash,
           evaluatorStake: '0',
           appealDeadline,
+          expiryTime,
+          worker: input.awards[0]?.worker ?? task.worker,
         })
         .where(eq(tasks.id, input.taskId));
 
@@ -109,7 +102,7 @@ export const evaluationsRouter = router({
         summary: 'Appeal an evaluator verdict (X402 required)',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(AppealInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -142,7 +135,7 @@ export const evaluationsRouter = router({
         summary: 'Finalize verdict after appeal window expires',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(FinalizeVerdictInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const taskResult = await ctx.db
@@ -160,8 +153,24 @@ export const evaluationsRouter = router({
 
       const txHash = await contractFinalizeVerdict(input.taskId as `0x${string}`);
 
-      const newStatus = task.verdictType === 'REJECT' ? 'open' : 'completed';
-      await ctx.db.update(tasks).set({ status: newStatus }).where(eq(tasks.id, input.taskId));
+      const rejected = task.verdictType === 'REJECT';
+      await ctx.db
+        .update(tasks)
+        .set(
+          rejected
+            ? {
+                status: 'open',
+                worker: null,
+                evaluator: null,
+                evaluatorStake: '0',
+                evaluationWindow: null,
+                appealWindow: null,
+                evaluatorDeadline: null,
+                appealDeadline: null,
+              }
+            : { status: 'completed' }
+        )
+        .where(eq(tasks.id, input.taskId));
 
       return { txHash };
     }),
@@ -175,13 +184,7 @@ export const evaluationsRouter = router({
         summary: 'Resolve a disputed task (X402 required)',
       },
     })
-    .input(
-      z.object({
-        taskId: z.string(),
-        verdict: z.enum(['approve', 'partial']),
-        awards: z.array(AwardInputSchema).min(1),
-      })
-    )
+    .input(ResolveDisputeInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -213,7 +216,10 @@ export const evaluationsRouter = router({
         awards
       );
 
-      await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
+      await ctx.db
+        .update(tasks)
+        .set({ status: 'completed', worker: input.awards[0].worker })
+        .where(eq(tasks.id, input.taskId));
       return { txHash };
     }),
 
@@ -226,7 +232,7 @@ export const evaluationsRouter = router({
         summary: 'Trigger evaluator timeout (X402 required)',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(EvaluatorTimeoutInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -244,7 +250,7 @@ export const evaluationsRouter = router({
         throw new Error('Only the requester can trigger evaluator timeout');
       }
       if (task.status !== 'review') throw new Error('Task is not in Review state');
-      if (!task.evaluatorDeadline || task.evaluatorDeadline > new Date()) {
+      if (!task.evaluatorDeadline || task.evaluatorDeadline >= new Date()) {
         throw new Error('Evaluator deadline has not yet passed');
       }
 
@@ -255,7 +261,12 @@ export const evaluationsRouter = router({
 
       await ctx.db
         .update(tasks)
-        .set({ status: 'pending_approval', evaluatorStake: '0', evaluatorDeadline: null })
+        .set({
+          status: 'pending_approval',
+          evaluator: null,
+          evaluatorStake: '0',
+          evaluatorDeadline: null,
+        })
         .where(eq(tasks.id, input.taskId));
 
       return { txHash };

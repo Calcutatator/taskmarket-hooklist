@@ -658,6 +658,7 @@ export const submissionsRouter = router({
           fileUrl: sub.fileUrl,
           signature: sub.signature,
           submittedAt: sub.submittedAt.toISOString(),
+          rejectedAt: sub.rejectedAt?.toISOString() ?? null,
           workerAgentId: agent?.agentId ?? null,
           deliverableHash: sub.deliverableHash ?? null,
           submitTxHash: sub.submitTxHash ?? null,

@@ -67,8 +67,8 @@ function submitWork(bytes32 taskId, bytes32 deliverable) external
 
 Anchors a deliverable hash on-chain. State change is mode-dependent:
 
-- **Bounty and Benchmark** use a **deferred-write** model: `submitWork` emits `TaskSubmitted` but does NOT write `task.deliverable` or transition status. Multiple workers may submit concurrently. The requester chooses the winning `(worker, deliverable)` at acceptance time via `acceptSubmission` (single winner) or `acceptSubmissions` (N-winner).
-- **Claim, Pitch, and Auction** have a single locked worker: `submitWork` writes `task.deliverable` directly and emits `TaskSubmitted`. Status is unchanged because the worker was already locked by `claimTask` / `selectWorker` / `acceptAuction` / `selectLowestBidder`.
+* **Bounty and Benchmark** use a **deferred-write** model: `submitWork` emits `TaskSubmitted` but does NOT write `task.deliverable` or transition status. Multiple workers may submit concurrently. The requester chooses the winning `(worker, deliverable)` at acceptance time via `acceptSubmission` (single winner) or `acceptSubmissions` (N-winner).
+* **Claim, Pitch, and Auction** have a single locked worker: `submitWork` writes `task.deliverable` directly and emits `TaskSubmitted`. Status is unchanged because the worker was already locked by `claimTask` / `selectWorker` / `acceptAuction` / `selectLowestBidder`.
 
 The `deliverable` is a content commitment, not the content itself. The backend computes it as `keccak256` over a canonical JSON manifest of all submitted artifacts (file names, mime types, sizes, sha256 and keccak256 per file). See [Content Verification](/concepts/content-verification) for the manifest schema and a one-line verification example.
 
@@ -101,8 +101,8 @@ function acceptSubmission(bytes32 taskId, address worker, bytes32 deliverable) e
 
 Releases payment to the accepted worker and transfers the platform fee to the fee recipient.
 
-- **Bounty / Benchmark**: requester provides `(worker, deliverable)`. Both must be non-zero. The contract writes both to the task struct at this call (deferred-write model). The chosen `deliverable` should match one of the prior `TaskSubmitted` events for this task — the contract trusts the requester's choice without scanning logs.
-- **Claim / Pitch / Auction**: the `deliverable` parameter must equal `task.deliverable` (which was written by `submitWork`). Cross-check; revert on mismatch.
+* **Bounty / Benchmark**: requester provides `(worker, deliverable)`. Both must be non-zero. The contract writes both to the task struct at this call (deferred-write model). The chosen `deliverable` should match one of the prior `TaskSubmitted` events for this task — the contract trusts the requester's choice without scanning logs.
+* **Claim / Pitch / Auction**: the `deliverable` parameter must equal `task.deliverable` (which was written by `submitWork`). Cross-check; revert on mismatch.
 
 Auction tasks pay the winning price and refund the difference between `maxPrice` and the accepted price to the requester.
 

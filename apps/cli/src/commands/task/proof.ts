@@ -22,7 +22,7 @@ export const proofCmd = new Command('proof')
       proofType: opts.type,
       ...(opts.metric ? { metricValue: opts.metric } : {}),
       signature,
-    })) as { proofId: string };
+    })) as { proofId: string; submissionId: string };
 
-    printResult({ proofId: result.proofId });
+    printResult({ proofId: result.proofId, submissionId: result.submissionId });
   });

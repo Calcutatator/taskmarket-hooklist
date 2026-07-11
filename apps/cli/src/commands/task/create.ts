@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
+import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const createCmd = new Command('create')
   .description('Create a new task (costs reward amount in USDC)')
@@ -22,7 +23,7 @@ export const createCmd = new Command('create')
   )
   .option(
     '--auction-floor-price <usdc>',
-    'Floor price in USDC for dutch clock (optional, defaults to 0)'
+    'Floor price in USDC for dutch clock (required for dutch)'
   )
   .option('--hook <address>', 'ITaskHook contract address (optional)')
   .option(
@@ -55,6 +56,20 @@ export const createCmd = new Command('create')
       appealWindow?: string;
       disputeResolver?: string;
     }) => {
+      let rewardBaseUnits: string;
+      try {
+        rewardBaseUnits = usdcToBaseUnits(opts.reward);
+      } catch (err) {
+        return void printError(
+          `Invalid --reward: ${err instanceof Error ? err.message : String(err)}`
+        );
+      }
+
+      const duration = Number(opts.duration);
+      if (!Number.isFinite(duration) || duration <= 0) {
+        return void printError('--duration must be a positive number of hours');
+      }
+
       if (opts.mode === 'auction') {
         if (!opts.maxPrice) {
           return void printError('--max-price is required for auction mode');
@@ -75,15 +90,31 @@ export const createCmd = new Command('create')
             '--auction-start-price is required for reverse_dutch auction type'
           );
         }
+        if (opts.auctionType === 'dutch' && !opts.auctionFloorPrice) {
+          return void printError('--auction-floor-price is required for dutch auction type');
+        }
+
+        let maxPriceBaseUnits: string;
+        try {
+          maxPriceBaseUnits = usdcToBaseUnits(opts.maxPrice);
+        } catch (err) {
+          return void printError(
+            `Invalid --max-price: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+        if (maxPriceBaseUnits !== rewardBaseUnits) {
+          return void printError(
+            '--max-price must equal --reward because the reward is auction escrow'
+          );
+        }
       }
 
-      const rewardBaseUnits = String(Math.round(parseFloat(opts.reward) * 1e6));
       const tags = opts.tags ? opts.tags.split(',').map((t) => t.trim()) : [];
 
       const body: Record<string, unknown> = {
         description: opts.description,
         reward: rewardBaseUnits,
-        duration: parseInt(opts.duration, 10),
+        duration,
         mode: opts.mode,
         tags,
         stakeRequired: false,
@@ -99,7 +130,7 @@ export const createCmd = new Command('create')
       }
 
       if (opts.maxPrice) {
-        body.maxPrice = String(Math.round(parseFloat(opts.maxPrice) * 1e6));
+        body.maxPrice = usdcToBaseUnits(opts.maxPrice);
       }
 
       if (opts.auctionType) {
@@ -107,11 +138,32 @@ export const createCmd = new Command('create')
       }
 
       if (opts.auctionStartPrice) {
-        body.auctionStartPrice = String(Math.round(parseFloat(opts.auctionStartPrice) * 1e6));
+        try {
+          body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
+        } catch (err) {
+          return void printError(
+            `Invalid --auction-start-price: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
 
       if (opts.auctionFloorPrice) {
-        body.auctionFloorPrice = String(Math.round(parseFloat(opts.auctionFloorPrice) * 1e6));
+        try {
+          body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
+        } catch (err) {
+          return void printError(
+            `Invalid --auction-floor-price: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
+      }
+
+      for (const [flag, value] of [
+        ['--auction-start-price', body.auctionStartPrice],
+        ['--auction-floor-price', body.auctionFloorPrice],
+      ] as const) {
+        if (typeof value === 'string' && BigInt(value) > BigInt(rewardBaseUnits)) {
+          return void printError(`${flag} must be less than or equal to --reward`);
+        }
       }
 
       const ethAddrRe = /^0x[0-9a-fA-F]{40}$/;
