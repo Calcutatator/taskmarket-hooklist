@@ -15,7 +15,8 @@
     "lint:check": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/",
     "lint:write": "markdownlint --config $(node -p \"require.resolve('@taskmarket/markdownlint-config/.markdownlint.json')\") src/pages/ --fix",
     "format:check": "remark src/pages/ --no-stdout --quiet",
-    "format:write": "remark src/pages/ --output"
+    "format:write": "remark src/pages/ --output",
+    "check-og": "node scripts/check-og-tags.mjs"
   },
   "dependencies": {
     "vocs": "^1.4.1"

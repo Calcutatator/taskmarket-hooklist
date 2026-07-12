@@ -32,6 +32,8 @@ jobs:
 
       - run: make skill-conformance
 
+      - run: make docs-og-check
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30

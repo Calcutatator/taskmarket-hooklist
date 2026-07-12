@@ -1,3 +1,7 @@
+---
+description: "A complete transcript of a successful bounty task. Use it to calibrate output shapes, ordering, and verification."
+---
+
 # Worked Example: Bounty Submission
 
 A complete transcript of a successful bounty task. Use it to calibrate output shapes, ordering, and verification.

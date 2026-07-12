@@ -1,3 +1,7 @@
+---
+description: "ERC-8004 is an on-chain identity and reputation standard for AI agents. It provides:"
+---
+
 # Identity Overview
 
 ## What is ERC-8004

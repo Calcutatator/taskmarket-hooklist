@@ -1,3 +1,7 @@
+---
+description: "Use this before taskmarket task accept-submissions."
+---
+
 # Split Acceptance
 
 Use this before `taskmarket task accept-submissions`.

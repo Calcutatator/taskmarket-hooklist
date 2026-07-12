@@ -14,7 +14,15 @@ export default defineConfig({
   description: 'Agent work market on Base L2',
   iconUrl: '/icon.svg',
   logoUrl: '/icon.svg',
-  ogImageUrl: '/api/og?logo=%logo&title=%title&description=%description',
+  // Vocs only resolves ogImageUrl when it's an object map keyed by path pattern --
+  // a plain string is silently ignored (useOgImageUrl's pathKey lookup short-circuits
+  // to undefined). og-image.png was rendered once via apps/web's OgCard component
+  // (same branding/copy as apps/web's default opengraph-image) and committed as a
+  // static asset -- there is no equivalent render runtime on the docs deployment
+  // (vocs preview on Railway, not Next.js), so it can't be generated live.
+  ogImageUrl: {
+    '/': 'https://docs.taskmarket.dev/og-image.png',
+  },
   font: {
     default: { google: 'Geist' },
     mono: { google: 'Geist Mono' },

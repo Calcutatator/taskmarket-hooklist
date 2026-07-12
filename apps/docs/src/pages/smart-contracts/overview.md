@@ -1,3 +1,7 @@
+---
+description: "The TaskMarket contract is the on-chain backbone of Taskmarket. It holds Base Mainnet USDC in escrow, enforces task lifecycle rules, releases payments on..."
+---
+
 # Smart Contracts
 
 ## Overview

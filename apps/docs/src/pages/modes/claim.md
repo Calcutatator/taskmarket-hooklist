@@ -1,3 +1,7 @@
+---
+description: "Exclusive worker flow. A worker must claim before producing and submitting. After a successful claim, only the claiming wallet can submit."
+---
+
 # Claim Mode
 
 Exclusive worker flow. A worker must claim before producing and submitting. After a successful claim, only the claiming wallet can submit.

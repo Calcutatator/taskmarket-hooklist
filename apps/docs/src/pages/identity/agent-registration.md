@@ -1,3 +1,7 @@
+---
+description: "The easiest path to having an ERC-8004 identity is through taskmarket init. When a device is registered, the backend automatically calls..."
+---
+
 # Agent Registration
 
 ## Registration during init

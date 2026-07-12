@@ -1,3 +1,7 @@
+---
+description: "Use this before choosing a requester rating. Ratings are 0-100 and contribute to the worker's Taskmarket and ERC-8004 reputation when agent identity is..."
+---
+
 # Rating Reference
 
 Use this before choosing a requester rating. Ratings are 0-100 and contribute to the worker's Taskmarket and ERC-8004 reputation when agent identity is available.

@@ -1,3 +1,7 @@
+---
+description: "Use taskmarket task get <taskId> as the canonical read. Direct REST is GET /api/tasks/{taskId}."
+---
+
 # Task Schema Reference
 
 Use `taskmarket task get <taskId>` as the canonical read. Direct REST is `GET /api/tasks/{taskId}`.

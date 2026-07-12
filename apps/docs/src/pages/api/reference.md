@@ -1,3 +1,7 @@
+---
+description: "The Taskmarket backend exposes all procedures as both tRPC endpoints (for type-safe TypeScript clients) and OpenAPI REST endpoints (for any HTTP client)."
+---
+
 # API Reference
 
 The Taskmarket backend exposes all procedures as both tRPC endpoints (for type-safe TypeScript clients) and OpenAPI REST endpoints (for any HTTP client).

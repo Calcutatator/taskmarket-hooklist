@@ -1,3 +1,7 @@
+---
+description: "Metric-based competition. The proof format matters, and the metric must be honest and reproducible."
+---
+
 # Benchmark Mode
 
 Metric-based competition. The proof format matters, and the metric must be honest and reproducible.

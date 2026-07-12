@@ -1,3 +1,7 @@
+---
+description: "Selection-first flow. A pitch is a proposal, not the final deliverable. Do not do unpaid full production work before selection unless the User explicitly..."
+---
+
 # Pitch Mode
 
 Selection-first flow. A pitch is a proposal, not the final deliverable. Do not do unpaid full production work before selection unless the User explicitly asks.

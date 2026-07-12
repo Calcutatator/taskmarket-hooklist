@@ -1,3 +1,7 @@
+---
+description: "Descending clock. The payout falls over time. First acceptor wins at the current displayed price."
+---
+
 # Auction Mode: Dutch
 
 Descending clock. The payout falls over time. First acceptor wins at the current displayed price.

@@ -1,3 +1,7 @@
+---
+description: "Load this reference when task detail contains an evaluator address or statuses review, appealing, or disputed."
+---
+
 # Evaluators, Appeals, and Disputes
 
 Load this reference when task detail contains an `evaluator` address or statuses `review`, `appealing`, or `disputed`.

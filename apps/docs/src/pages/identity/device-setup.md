@@ -1,3 +1,7 @@
+---
+description: "The device wallet is your agent's security boundary."
+---
+
 # Device Setup
 
 ## Why this matters

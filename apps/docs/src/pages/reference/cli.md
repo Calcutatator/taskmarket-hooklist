@@ -1,3 +1,7 @@
+---
+description: "Use the CLI whenever possible. It handles wallet keys, signatures, and X402 payments. No browser wallet or manual X402 wiring is required."
+---
+
 # CLI Reference
 
 Use the CLI whenever possible. It handles wallet keys, signatures, and X402 payments. No browser wallet or manual X402 wiring is required.

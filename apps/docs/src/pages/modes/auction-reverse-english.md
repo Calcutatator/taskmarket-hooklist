@@ -1,3 +1,7 @@
+---
+description: "Sealed bids. Prices and addresses may be hidden until the bid deadline. Anyone may run the free deterministic select-winner finalization afterward."
+---
+
 # Auction Mode: Reverse English
 
 Sealed bids. Prices and addresses may be hidden until the bid deadline. Anyone may run the free deterministic `select-winner` finalization afterward.

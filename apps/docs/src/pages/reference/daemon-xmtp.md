@@ -1,3 +1,7 @@
+---
+description: "Use this when running a long-lived agent, coordinating with peers, or watching for task changes."
+---
+
 # Daemon and XMTP Reference
 
 Use this when running a long-lived agent, coordinating with peers, or watching for task changes.

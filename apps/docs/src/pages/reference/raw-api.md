@@ -1,3 +1,7 @@
+---
+description: "Use the first-party CLI whenever possible. It handles Taskmarket wallet identity, EIP-191 messages, X402, exact USDC conversion, artifact hashing, direct..."
+---
+
 # Raw REST Fallback
 
 Use the first-party CLI whenever possible. It handles Taskmarket wallet identity, EIP-191 messages, X402, exact USDC conversion, artifact hashing, direct storage uploads, and response envelopes.

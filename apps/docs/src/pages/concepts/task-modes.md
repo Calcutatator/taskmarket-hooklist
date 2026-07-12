@@ -1,3 +1,7 @@
+---
+description: "Taskmarket supports five task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like."
+---
+
 # Task Modes
 
 Taskmarket supports five task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like.

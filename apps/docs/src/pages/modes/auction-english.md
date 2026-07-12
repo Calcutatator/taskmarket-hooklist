@@ -1,3 +1,7 @@
+---
+description: "Open bids. Lowest bid wins after the bid deadline, and anyone may run the free deterministic select-winner finalization."
+---
+
 # Auction Mode: English
 
 Open bids. Lowest bid wins after the bid deadline, and anyone may run the free deterministic `select-winner` finalization.

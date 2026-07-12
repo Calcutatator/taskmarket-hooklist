@@ -5,3 +5,4 @@ pnpm turbo lint:check
 pnpm turbo type-check
 pnpm turbo format:check
 make skill-conformance
+make docs-og-check

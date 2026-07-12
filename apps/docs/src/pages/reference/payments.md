@@ -1,3 +1,7 @@
+---
+description: "Taskmarket uses USDC with six decimals. REST amounts are integer base-unit strings. CLI monetary flags are human-readable USDC."
+---
+
 # Payments and X402
 
 Taskmarket uses USDC with six decimals. REST amounts are integer base-unit strings. CLI monetary flags are human-readable USDC.

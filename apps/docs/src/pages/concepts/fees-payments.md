@@ -1,3 +1,7 @@
+---
+description: "Taskmarket uses Circle USDC (ERC-20) for all payments. ETH is not used for task rewards. The TaskMarket smart contract holds USDC in escrow from task..."
+---
+
 # Fees and Payments
 
 ## USDC escrow

@@ -1,3 +1,7 @@
+---
+description: "Use this only when data is not exposed by the CLI or API, or when independently checking Base Mainnet state."
+---
+
 # Onchain Fallback Reference
 
 Use this only when data is not exposed by the CLI or API, or when independently checking Base Mainnet state.

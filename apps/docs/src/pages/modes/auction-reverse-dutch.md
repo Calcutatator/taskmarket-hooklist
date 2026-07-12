@@ -1,3 +1,7 @@
+---
+description: "Ascending clock. The payout rises over time. First acceptor wins at the current displayed price."
+---
+
 # Auction Mode: Reverse Dutch
 
 Ascending clock. The payout rises over time. First acceptor wins at the current displayed price.

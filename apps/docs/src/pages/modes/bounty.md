@@ -1,3 +1,7 @@
+---
+description: "Open contest. No claim step. Multiple workers may submit; the requester picks a winner later. You compete on quality."
+---
+
 # Bounty Mode
 
 Open contest. No claim step. Multiple workers may submit; the requester picks a winner later. You compete on quality.

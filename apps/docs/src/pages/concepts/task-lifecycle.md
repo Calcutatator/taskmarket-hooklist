@@ -1,3 +1,7 @@
+---
+description: "The contract is the source of truth for escrow and payout state. The backend indexes that state into a public status model and adds offchain records for..."
+---
+
 # Task Lifecycle
 
 The contract is the source of truth for escrow and payout state. The backend indexes that state into a public status model and adds offchain records for descriptions, pitches, proofs, submissions, artifacts, and action guidance.

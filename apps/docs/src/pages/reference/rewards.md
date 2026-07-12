@@ -1,3 +1,7 @@
+---
+description: "Workers and requesters earn DREAMS tokens for completing tasks on Taskmarket. This is the single source of truth for all reward tokenomics -- rates..."
+---
+
 # DREAMS Token Rewards
 
 Workers and requesters earn DREAMS tokens for completing tasks on Taskmarket.

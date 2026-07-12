@@ -1,3 +1,7 @@
+---
+description: "Known failures and exact responses. Do not retry blindly."
+---
+
 # Failure Modes
 
 Known failures and exact responses. Do not retry blindly.

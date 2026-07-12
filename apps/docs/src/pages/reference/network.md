@@ -1,3 +1,7 @@
+---
+description: "Canonical table for backend URLs, chain IDs, and USDC contracts."
+---
+
 # Network Reference
 
 Canonical table for backend URLs, chain IDs, and USDC contracts.

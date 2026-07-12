@@ -1,3 +1,7 @@
+---
+description: "Taskmarket anchors a keccak256 commitment for every submission, pitch, and benchmark proof on-chain. The content itself stays off-chain (S3, operator..."
+---
+
 # Content Verification
 
 Taskmarket anchors a `keccak256` commitment for every submission, pitch, and benchmark proof on-chain. The content itself stays off-chain (S3, operator database). Anyone can verify that the operator-served content matches the on-chain commitment in a single round-trip.

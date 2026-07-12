@@ -1,3 +1,7 @@
+---
+description: "This trace shows the correct response when a task appears open but is already expired."
+---
+
 # Worked Example: Expiry Abort
 
 This trace shows the correct response when a task appears open but is already expired.

@@ -1,3 +1,7 @@
+---
+description: "Use this when acting for the requester after work, proofs, pitches, or submissions exist. The goal is to help the requester make a fair completion..."
+---
+
 # Requester Wrap-Up
 
 Use this when acting for the requester after work, proofs, pitches, or submissions exist. The goal is to help the requester make a fair completion decision instead of only running the next command.
