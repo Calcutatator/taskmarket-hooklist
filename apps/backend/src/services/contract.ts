@@ -434,16 +434,25 @@ export async function contractEvaluate(
     args: [taskId, verdictType, score, confidence, evidenceHash, awardTuples],
   });
   const result = await relayThroughForwarderResult(evaluator, 0n, data);
-  try {
-    const block = await getPublicClient().getBlock({ blockNumber: result.blockNumber });
-    return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
-  } catch (error) {
-    const reason = error instanceof Error ? error.message : String(error);
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
-      message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
-    });
+  // A load-balanced RPC provider can serve this getBlock call from a node that
+  // hasn't yet indexed the block the receipt just confirmed on a different node.
+  // The transaction already succeeded on-chain, so retry the read rather than
+  // fail the whole mutation over a transient consistency lag.
+  let lastError: unknown;
+  for (let attempt = 0; attempt < 5; attempt++) {
+    try {
+      const block = await getPublicClient().getBlock({ blockNumber: result.blockNumber });
+      return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
+    } catch (error) {
+      lastError = error;
+      await new Promise((resolve) => setTimeout(resolve, 1000));
+    }
   }
+  const reason = lastError instanceof Error ? lastError.message : String(lastError);
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
+  });
 }
 
 export async function contractAppeal(

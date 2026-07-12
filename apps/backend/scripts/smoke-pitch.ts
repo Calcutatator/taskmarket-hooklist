@@ -9,6 +9,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-pitch.ts
  */
+import { buildSelectWorkerMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
@@ -52,9 +53,11 @@ async function main() {
 
   // 3. Requester selects pitch
   log('3/8', 'Requester selecting pitch (X402)...');
+  const selectMessage = buildSelectWorkerMessage(taskId, pitchId, worker.address);
+  const selectSignature = await requester.signMessage({ message: selectMessage });
   await x402Post(
     `/api/tasks/${taskId}/pitches/select`,
-    { taskId, pitchId, workerAddress: worker.address, signature: '0x' },
+    { taskId, pitchId, workerAddress: worker.address, signature: selectSignature },
     requester
   );
   ok('selected', pitchId);

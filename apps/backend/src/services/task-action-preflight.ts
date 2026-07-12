@@ -315,7 +315,10 @@ export async function validatePaidTaskAction(
       }
       return;
     case 'appeal':
-      requirePayer(payer, task.worker, 'task worker');
+      // task.worker is only backfilled by the indexer on final acceptance; a
+      // claim-mode task sitting in Review/Appealing has its worker recorded in
+      // claimedBy instead (see evaluations.router.ts's appeal handler).
+      requirePayer(payer, task.worker ?? task.claimedBy, 'task worker');
       if (task.status !== 'appealing') fail('Task is not appealable');
       if (task.appealDeadline && now >= task.appealDeadline) fail('Appeal deadline has passed');
       return;

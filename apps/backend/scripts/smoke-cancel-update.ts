@@ -181,8 +181,11 @@ async function main() {
     await x402Post(`/api/tasks/${task6}/cancel`, { taskId: task6 }, requester);
     throw new Error('Expected cancel to fail but it succeeded');
   } catch (err) {
-    if (err instanceof Error && err.message.includes('Task not open')) {
-      ok('error caught', 'Task not open');
+    // taskActionPreflight (services/task-action-preflight.ts) intercepts before
+    // the router mutation now, with "Task is not open" -- not the router's own
+    // "Task not open" duplicate check, which this path no longer reaches.
+    if (err instanceof Error && err.message.includes('Task is not open')) {
+      ok('error caught', 'Task is not open');
     } else {
       throw err;
     }
