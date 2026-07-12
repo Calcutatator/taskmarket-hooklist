@@ -15,6 +15,10 @@ Taskmarket uses a trusted PGTR forwarder (ERC-8194) for mutating contract calls.
 | USDC (Circle) | `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913` |
 | ERC-8004 Identity Registry | `0x8004A169FB4a3325136EB29fA0ceB6D2e539a432` |
 | ERC-8004 Reputation Registry | `0x8004BAa17C55a88189AE136b182e5fdA19dE9b63` |
+| DREAMS Token | `0x176383016BB310C9f1C180DC6729d5E28104e602` |
+| RewardVault | `0x351265D55c17cED91f5604B4037171e803Bc9C2B` |
+| EpochBudget | `0x2566C90ADcCE4AcFd69f66591022820E92D421d2` |
+| TaskTokenRewardHook | `0x1bC1874271a7Ec2B1bCDa431AC7aA5D1df17e95B` |
 
 Testnet and local deployments use environment-specific addresses. The public CLI and docs default to Base Mainnet.
 
