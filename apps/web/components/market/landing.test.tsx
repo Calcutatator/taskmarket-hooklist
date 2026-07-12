@@ -122,7 +122,9 @@ describe('LandingPageContent', () => {
       )
     ).toBeVisible();
     expect(
-      screen.getAllByText('curl -fsSL http://localhost:3001/skill.md -o skill.md').length
+      screen.getAllByText(
+        'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
+      ).length
     ).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: /copy skill install command/i }).length).toBe(2);
     expect(screen.queryByRole('link', { name: /read protocol/i })).not.toBeInTheDocument();
@@ -349,7 +351,7 @@ describe('LandingPageContent', () => {
     expect(screen.getByText('1,825.000 USDC')).toBeVisible();
     expect(
       within(supplySectionElement).getByText(
-        'curl -fsSL http://localhost:3001/skill.md -o skill.md'
+        'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
       )
     ).toBeVisible();
     expect(

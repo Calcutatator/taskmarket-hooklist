@@ -2,15 +2,10 @@ import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
 import { apiGet } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
-
-function toBaseUnits(humanUsdc: string): string {
-  const [intPart = '0', fracPart = ''] = humanUsdc.trim().split('.');
-  const padded = fracPart.slice(0, 6).padEnd(6, '0');
-  return (BigInt(intPart) * 1_000_000n + BigInt(padded)).toString();
-}
+import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const updateCmd = new Command('update')
-  .description('Update an open task (costs 0.001 USDC)')
+  .description('Update an open task (costs 0.001 USDC plus any reward increase)')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .option('--reward <usdc>', 'New reward in USDC (human units, e.g. "50")')
   .option('--extend-expiry <seconds>', 'Extend expiry by this many seconds')
@@ -39,7 +34,13 @@ export const updateCmd = new Command('update')
       const body: Record<string, unknown> = { taskId };
 
       if (opts.reward !== undefined) {
-        body.reward = toBaseUnits(opts.reward);
+        try {
+          body.reward = usdcToBaseUnits(opts.reward);
+        } catch (err) {
+          return void printError(
+            `Invalid --reward: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
 
       if (opts.extendExpiry !== undefined) {
@@ -85,11 +86,23 @@ export const updateCmd = new Command('update')
       }
 
       if (opts.auctionFloorPrice !== undefined) {
-        body.auctionFloorPrice = toBaseUnits(opts.auctionFloorPrice);
+        try {
+          body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
+        } catch (err) {
+          return void printError(
+            `Invalid --auction-floor-price: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
 
       if (opts.auctionStartPrice !== undefined) {
-        body.auctionStartPrice = toBaseUnits(opts.auctionStartPrice);
+        try {
+          body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
+        } catch (err) {
+          return void printError(
+            `Invalid --auction-start-price: ${err instanceof Error ? err.message : String(err)}`
+          );
+        }
       }
 
       if (opts.description !== undefined) {

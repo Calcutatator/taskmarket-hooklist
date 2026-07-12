@@ -82,6 +82,7 @@ export const claimsRouter = router({
           status: 'claimed',
           claimedBy: input.workerAddress,
           claimedAt: new Date(),
+          worker: input.workerAddress,
         })
         .where(eq(tasks.id, input.taskId));
 
@@ -157,7 +158,7 @@ export const claimsRouter = router({
         await tx.update(claims).set({ status: 'forfeited' }).where(eq(claims.taskId, input.taskId));
         await tx
           .update(tasks)
-          .set({ status: 'open', claimedBy: null, claimedAt: null })
+          .set({ status: 'open', claimedBy: null, claimedAt: null, worker: null })
           .where(eq(tasks.id, input.taskId));
       });
 

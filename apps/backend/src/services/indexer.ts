@@ -18,6 +18,7 @@ import {
 } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
+import { shouldStartEvaluatorReview } from './task-evaluator';
 
 type EventLog = {
   args: Record<string, unknown>;
@@ -39,6 +40,9 @@ const MAX_BLOCK_RANGE = 10_000n;
 
 const IDENTITY_REGISTRY_ADDRESS = config.ERC8004_IDENTITY_REGISTRY as `0x${string}`;
 const ERC8004_SEED_BLOCK = config.ERC8004_SEED_BLOCK;
+
+const DREAMS_HOOK_ADDRESS = config.DREAMS_HOOK_ADDRESS as `0x${string}` | undefined;
+const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
 
 const TASK_CREATED_EVENT = parseAbiItem(
   'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
@@ -94,6 +98,24 @@ const FORWARDER_UPDATED_EVENT = parseAbiItem(
 const REPUTATION_REGISTRY_UPDATED_EVENT = parseAbiItem(
   'event ReputationRegistryUpdated(address indexed newRegistry)'
 );
+
+const REWARD_CONFIGURED_EVENT = parseAbiItem(
+  'event RewardConfigured(bytes32 indexed taskId, uint256 rewardUsd)'
+);
+const REWARD_RESERVED_EVENT = parseAbiItem(
+  'event RewardReserved(bytes32 indexed taskId, address indexed worker, uint256 startPrice, uint256 reservedAmount)'
+);
+const REWARD_PAID_EVENT = parseAbiItem(
+  'event RewardPaid(bytes32 indexed taskId, address indexed worker, uint256 rewardUsd, uint256 usdBonusValue, uint256 price, uint256 tokenAmount)'
+);
+const REWARD_RESERVE_RELEASED_EVENT = parseAbiItem(
+  'event RewardReserveReleased(bytes32 indexed taskId, uint256 releasedAmount)'
+);
+const REWARDS_WITHDRAWN_EVENT = parseAbiItem(
+  'event RewardsWithdrawn(address indexed wallet, address indexed destination, uint256 amount)'
+);
+const PRICE_UPDATED_EVENT = parseAbiItem('event PriceUpdated(uint256 dreamsPerUsdc)');
+const BONUS_BPS_UPDATED_EVENT = parseAbiItem('event BonusBpsUpdated(uint16 bonusBps)');
 
 const METADATA_SET_EVENT = parseAbiItem(
   'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
@@ -246,6 +268,7 @@ async function processTaskClaimedEvent(log: EventLog): Promise<void> {
       status: 'claimed',
       claimedBy: worker as string,
       claimedAt: new Date(),
+      worker: worker as string,
     })
     .where(eq(tasks.id, taskId as string));
 
@@ -377,12 +400,16 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
   // and starts the evaluation clock. Set review status and deadline from the DB-stored
   // evaluationWindow (set at task creation or assignEvaluator time).
   const taskRow = await db
-    .select({ evaluator: tasks.evaluator, evaluationWindow: tasks.evaluationWindow })
+    .select({
+      evaluator: tasks.evaluator,
+      evaluationWindow: tasks.evaluationWindow,
+      mode: tasks.mode,
+    })
     .from(tasks)
     .where(eq(tasks.id, taskId as string))
     .limit(1);
   const task = taskRow[0];
-  if (task?.evaluator && task.evaluationWindow && log.blockNumber != null) {
+  if (shouldStartEvaluatorReview(task) && log.blockNumber != null) {
     const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
     const submittedAt = Number(block.timestamp);
     await db
@@ -638,7 +665,12 @@ async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
   const { taskId } = log.args;
   await db
     .update(tasks)
-    .set({ status: 'pending_approval', evaluatorStake: '0', evaluatorDeadline: null })
+    .set({
+      status: 'pending_approval',
+      evaluator: null,
+      evaluatorStake: '0',
+      evaluatorDeadline: null,
+    })
     .where(eq(tasks.id, taskId as string));
   console.log(`EvaluatorTimedOut event: task=${taskId}`);
 }
@@ -883,6 +915,44 @@ async function processIdentityEvents(fromBlock: bigint, toBlock: bigint): Promis
   }
 }
 
+/**
+ * DREAMS reward hook events (RewardConfigured, RewardReserved, RewardPaid,
+ * RewardReserveReleased, RewardsWithdrawn, PriceUpdated, BonusBpsUpdated) are
+ * all polled from a separate contract address (DREAMS_HOOK_ADDRESS) and routed
+ * through the generic protocol_events audit log — same pattern as the main
+ * contract's admin/config events (FeesUpdated, FeeRecipientUpdated, etc). All
+ * reward-hook data is otherwise read on-demand via readContract, so this is
+ * the only historical record of past payouts and rate/bonus changes.
+ */
+async function processRewardHookEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
+  if (!DREAMS_HOOK_ADDRESS) return;
+
+  const logs = (await publicClient.getLogs({
+    address: DREAMS_HOOK_ADDRESS,
+    fromBlock,
+    toBlock,
+    events: [
+      REWARD_CONFIGURED_EVENT,
+      REWARD_RESERVED_EVENT,
+      REWARD_PAID_EVENT,
+      REWARD_RESERVE_RELEASED_EVENT,
+      REWARDS_WITHDRAWN_EVENT,
+      PRICE_UPDATED_EVENT,
+      BONUS_BPS_UPDATED_EVENT,
+    ] as any,
+  })) as unknown as EventLog[];
+
+  for (const log of logs) {
+    try {
+      if (await isAlreadyProcessed(log)) continue;
+      await processProtocolEvent(log);
+      await markProcessed(log);
+    } catch (error) {
+      console.error(`Error processing reward hook event ${log.eventName}:`, error);
+    }
+  }
+}
+
 async function processInChunks(
   fromBlock: bigint,
   toBlock: bigint,
@@ -914,6 +984,14 @@ export async function startIndexer(): Promise<void> {
       if (latestBlock > erc8004LastBlock) {
         await processInChunks(erc8004LastBlock + 1n, latestBlock, processIdentityEvents);
         await setLastBlock('erc8004', latestBlock);
+      }
+
+      if (DREAMS_HOOK_ADDRESS) {
+        const rewardHookLastBlock = await getLastBlock('dreams_hook', DREAMS_HOOK_SEED_BLOCK);
+        if (latestBlock > rewardHookLastBlock) {
+          await processInChunks(rewardHookLastBlock + 1n, latestBlock, processRewardHookEvents);
+          await setLastBlock('dreams_hook', latestBlock);
+        }
       }
     } catch (error) {
       console.error('Indexer error:', error);

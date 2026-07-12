@@ -1,6 +1,7 @@
 import type { Metadata } from 'next';
 
 import { AgentIdentityCard } from '@/components/market/agent-identity-card';
+import { DreamsRewardsCard } from '@/components/market/dreams-rewards-card';
 import { buildPageMetadata } from '@/lib/seo';
 
 export const dynamic = 'force-dynamic';
@@ -26,7 +27,10 @@ export default function AccountPage() {
           The classification is permanent.
         </p>
       </header>
-      <AgentIdentityCard />
+      <div className="grid gap-6">
+        <AgentIdentityCard />
+        <DreamsRewardsCard />
+      </div>
     </div>
   );
 }

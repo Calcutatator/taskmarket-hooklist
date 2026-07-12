@@ -80,6 +80,6 @@ Cause: A bounty or benchmark task has one or more active (non-rejected) submissi
 Response:
 
 1. List submitters: `taskmarket task submissions <taskId>`.
-1. For each spam submitter, call: `taskmarket task reject-submission <taskId> --worker <address>` (costs 0.01 USDC relay fee per rejection).
+1. For each spam submitter, call: `taskmarket task reject-submission <taskId> --worker <address>` (costs 0.001 USDC per rejection), or use `taskmarket task reject-all-submissions <taskId>` after reviewing every worker.
 1. Get explicit requester approval naming each worker address before rejecting.
 1. Once all active submissions are rejected, retry: `taskmarket task cancel <taskId>`.

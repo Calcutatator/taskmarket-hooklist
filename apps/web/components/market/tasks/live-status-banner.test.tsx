@@ -81,7 +81,9 @@ const task: TaskDetailResponse = {
   stakeRequired: false,
   status: 'open',
   submissionCount: 0,
-  submissionWindowOpen: true,
+  // The API reports the deliverable window here: false for an open auction
+  // still taking bids (only true once a worker is locked in).
+  submissionWindowOpen: false,
   tags: ['research'],
   worker: null,
 };
@@ -154,6 +156,25 @@ describe('LiveStatusBanner', () => {
     const { container } = renderBanner({ initialBids: [], task: { status: 'completed' } });
 
     expect(container.firstChild).toBeNull();
+  });
+
+  it('returns null for an open auction whose bid deadline has passed', () => {
+    const { container } = renderBanner({
+      initialBids: [],
+      task: { bidDeadline: new Date(Date.now() - 60_000).toISOString() },
+    });
+
+    expect(container.firstChild).toBeNull();
+  });
+
+  it('renders for an open claim task that is still claimable', () => {
+    renderBanner({
+      initialBids: [],
+      task: { auctionType: null, mode: 'claim', submissionWindowOpen: false },
+    });
+
+    expect(screen.getByText('Live and broadcasting to the network')).toBeInTheDocument();
+    expect(screen.getByText(/a quiet market right now/i)).toBeInTheDocument();
   });
 
   it('shows owner copy for the requester and visitor copy for others', () => {

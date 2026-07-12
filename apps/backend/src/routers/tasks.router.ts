@@ -6,11 +6,17 @@ import {
   TaskListResponseSchema,
   TaskDetailResponseSchema,
   CancelTaskInputSchema,
+  RefundExpiredInputSchema,
+  RejectSubmissionInputSchema,
   UpdateTaskInputSchema,
-  type PendingAction,
   type TaskStatusType,
   type TaskModeType,
   type AuctionTypeValue,
+  estimateUsdBonusValue,
+  estimateWorkerUsdBonusValue,
+  estimateRequesterUsdBonusValue,
+  estimateWorkerDreamsBonus,
+  estimateRequesterDreamsBonus,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { tasks, submissions, proposals, agents, bids } from '../db/schema';
@@ -35,6 +41,10 @@ import {
   contractRefundExpired,
   contractUpdateTask,
   contractRejectSubmission,
+  contractGetTaskHooks,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
   MODE_MAP,
   AUCTION_SUBTYPE_MAP,
   precomputeTaskId,
@@ -42,278 +52,14 @@ import {
 import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
-import { computeSubmissionWindowOpen } from '../lib/task';
+import {
+  computeNetReward,
+  computePendingActions,
+  computeSubmissionWindowOpen,
+  normalizeRequesterPublicKey,
+} from '../lib/task';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
-
-function computePendingActions(
-  task: {
-    id: string;
-    status: string;
-    mode: string;
-    rating: number | null;
-    pitchCount: number;
-    bidCount: number;
-    submissionCount: number;
-    expiryTime: Date;
-    bidDeadline: Date | null;
-    claimedBy: string | null;
-    worker: string | null;
-    auctionType: string | null;
-    currentClockPrice: bigint | null;
-    currentLowestBid: string | null;
-    latestSubmissionWorker?: string | null;
-    evaluator?: string | null;
-    evaluatorDeadline?: Date | null;
-    appealDeadline?: Date | null;
-  },
-  submissionWindowOpen: boolean
-): PendingAction[] {
-  if (task.status === 'open' && !submissionWindowOpen) {
-    const hasEntries = task.submissionCount > 0 || task.pitchCount > 0 || task.bidCount > 0;
-    if (!hasEntries) {
-      return [
-        {
-          role: 'requester' as const,
-          action: 'refund_expired' as const,
-          command: `taskmarket task refund-expired ${task.id}`,
-        },
-      ];
-    }
-  }
-
-  const id = task.id;
-  const workerAddr = task.worker ?? task.claimedBy ?? task.latestSubmissionWorker;
-  const now = new Date();
-
-  switch (task.status) {
-    case 'open': {
-      const canCancel = task.mode !== 'auction' || task.bidCount === 0;
-      const managementActions: PendingAction[] = canCancel
-        ? [
-            { role: 'requester', action: 'cancel', command: `taskmarket task cancel ${id}` },
-            {
-              role: 'requester',
-              action: 'update',
-              command: `taskmarket task update ${id} [--reward <usdc>] [--extend-expiry <seconds>]`,
-            },
-          ]
-        : [];
-
-      // Bounty/Benchmark stay open while collecting submissions. Once at least one
-      // submission exists the requester can accept a winner at any time, so surface
-      // the accept action alongside the live worker action and management actions.
-      const acceptActions: PendingAction[] =
-        (task.mode === 'bounty' || task.mode === 'benchmark') && task.submissionCount > 0
-          ? [
-              {
-                role: 'requester',
-                action: 'accept',
-                command: `taskmarket task accept ${id} --worker ${workerAddr ?? '<address>'}`,
-              },
-              // Note: a full list would need all submitter addresses; here we surface only the latest.
-              {
-                role: 'requester',
-                action: 'reject_submission',
-                command: `taskmarket task reject-submission ${id} --worker ${task.latestSubmissionWorker ?? workerAddr ?? '<address>'}`,
-              },
-            ]
-          : [];
-
-      switch (task.mode) {
-        case 'bounty':
-        case 'benchmark': {
-          const workerActions: PendingAction[] = submissionWindowOpen
-            ? [
-                {
-                  role: 'worker',
-                  action: task.mode === 'benchmark' ? 'submit_proof' : 'submit',
-                  command:
-                    task.mode === 'benchmark'
-                      ? `taskmarket task proof ${id} --data <data> --type <type>`
-                      : `taskmarket task submit ${id} --file <path>`,
-                },
-              ]
-            : [];
-          return [...managementActions, ...acceptActions, ...workerActions];
-        }
-        case 'claim':
-          if (!submissionWindowOpen) return [...managementActions];
-          return [
-            ...managementActions,
-            { role: 'worker', action: 'claim', command: `taskmarket task claim ${id}` },
-          ];
-        case 'pitch': {
-          const actions: PendingAction[] = [...managementActions];
-          if (submissionWindowOpen) {
-            actions.push({
-              role: 'worker',
-              action: 'pitch',
-              command: `taskmarket task pitch ${id} --text "..."`,
-            });
-          }
-          if (task.pitchCount > 0) {
-            actions.push({
-              role: 'requester',
-              action: 'select_worker',
-              command: `taskmarket task select-worker ${id} --pitch <pitchId> --worker <address>`,
-            });
-          }
-          return actions;
-        }
-        case 'auction': {
-          const deadlinePassed = task.bidDeadline && now >= task.bidDeadline;
-
-          if (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') {
-            if (deadlinePassed) {
-              // No more actions — clock window closed with no taker
-              return [];
-            }
-            const priceStr =
-              task.currentClockPrice !== null
-                ? (Number(task.currentClockPrice) / 1_000_000).toFixed(6)
-                : '?';
-            return [
-              {
-                role: 'worker',
-                action: 'auction_accept',
-                command: `taskmarket task auction-accept ${id} # current price: $${priceStr}`,
-              },
-            ];
-          }
-
-          // English / Reverse English
-          if (deadlinePassed) {
-            if (task.bidCount > 0) {
-              return [
-                {
-                  role: 'requester',
-                  action: 'select_winner',
-                  command: `taskmarket task select-winner ${id}`,
-                },
-              ];
-            }
-            return [];
-          }
-
-          if (task.auctionType === 'english') {
-            const lowestComment =
-              task.currentLowestBid !== null
-                ? ` # current lowest: $${(Number(task.currentLowestBid) / 1_000_000).toFixed(6)}`
-                : '';
-            return [
-              {
-                role: 'worker',
-                action: 'bid',
-                command: `taskmarket task bid ${id} --price <n>${lowestComment}`,
-              },
-            ];
-          }
-
-          // reverse_english
-          return [
-            {
-              role: 'worker',
-              action: 'bid',
-              command: `taskmarket task bid ${id} --price <n> # ${task.bidCount} sealed bid(s) placed`,
-            },
-          ];
-        }
-        default:
-          return [];
-      }
-    }
-    case 'claimed': {
-      const actions: PendingAction[] = [
-        { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
-      ];
-      if (task.mode === 'claim') {
-        actions.push({
-          role: 'requester',
-          action: 'forfeit',
-          command: `taskmarket task forfeit ${id}`,
-        });
-      }
-      return actions;
-    }
-    case 'worker_selected':
-      return [
-        { role: 'worker', action: 'submit', command: `taskmarket task submit ${id} --file <path>` },
-      ];
-    case 'pending_approval': {
-      // pending_approval is now reached only when an evaluator misses its window and
-      // the requester reclaims the decision via evaluator-timeout. Bounty/Benchmark
-      // never enter this state (they stay open until accepted), and claim/pitch/auction
-      // accept directly from claimed/worker_selected. Either way the requester accepts.
-      const addr = workerAddr ?? '<address>';
-      return [
-        {
-          role: 'requester',
-          action: 'accept',
-          command: `taskmarket task accept ${id} --worker ${addr}`,
-        },
-      ];
-    }
-    case 'review': {
-      const actions: PendingAction[] = [];
-      if (task.evaluator) {
-        actions.push({
-          role: 'evaluator',
-          action: 'evaluate',
-          command: `taskmarket task evaluate ${id} --verdict approve --score 100`,
-        });
-      }
-      if (task.evaluatorDeadline && now >= task.evaluatorDeadline) {
-        actions.push({
-          role: 'requester',
-          action: 'evaluator_timeout',
-          command: `taskmarket task evaluator-timeout ${id}`,
-        });
-      }
-      return actions;
-    }
-    case 'appealing': {
-      const actions: PendingAction[] = [];
-      if (task.appealDeadline && now < task.appealDeadline) {
-        actions.push({
-          role: 'worker',
-          action: 'appeal',
-          command: `taskmarket task appeal ${id}`,
-        });
-      } else {
-        actions.push({
-          role: 'anyone',
-          action: 'finalize_verdict',
-          command: `taskmarket task finalize-verdict ${id}`,
-        });
-      }
-      return actions;
-    }
-    case 'disputed': {
-      return [
-        {
-          role: 'dispute_resolver',
-          action: 'resolve_dispute',
-          command: `taskmarket task resolve-dispute ${id} --verdict approve`,
-        },
-      ];
-    }
-    case 'completed':
-      if (task.rating === null) {
-        const addr = workerAddr ?? '<address>';
-        return [
-          {
-            role: 'requester',
-            action: 'rate',
-            command: `taskmarket task rate ${id} --worker ${addr} --rating <0-100>`,
-          },
-        ];
-      }
-      return [];
-    default:
-      return [];
-  }
-}
 
 export const tasksRouter = router({
   stats: publicProcedure
@@ -440,7 +186,7 @@ export const tasksRouter = router({
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
 
       const requesterAgent = await ctx.db
-        .select({ agentId: agents.agentId })
+        .select({ agentId: agents.agentId, publicKey: agents.publicKey })
         .from(agents)
         .where(eq(agents.address, payer))
         .limit(1);
@@ -448,7 +194,7 @@ export const tasksRouter = router({
       await ctx.db.insert(tasks).values({
         id: taskId,
         requester: payer,
-        requesterPubkey: payer,
+        requesterPubkey: normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '',
         description: input.description,
         reward: input.reward,
         escrowTxHash,
@@ -645,7 +391,11 @@ export const tasksRouter = router({
             : Promise.resolve([]),
           requesterAddresses.length > 0
             ? ctx.db
-                .select({ address: agents.address, registeredVia: agents.registeredVia })
+                .select({
+                  address: agents.address,
+                  registeredVia: agents.registeredVia,
+                  publicKey: agents.publicKey,
+                })
                 .from(agents)
                 .where(inArray(agents.address, requesterAddresses))
             : Promise.resolve([]),
@@ -659,6 +409,9 @@ export const tasksRouter = router({
           r.address,
           r.registeredVia === 'web' ? ('human' as const) : ('agent' as const),
         ])
+      );
+      const requesterPublicKeyByAddress = new Map(
+        requesterAgentRows.map((row) => [row.address, row.publicKey])
       );
 
       const tasksWithCounts = tasksList.map((task) => {
@@ -680,10 +433,20 @@ export const tasksRouter = router({
           }
         }
 
+        const grossPayout =
+          task.mode === 'auction'
+            ? task.worker
+              ? (bidAggMap.get(task.id)?.minPrice ?? null)
+              : null
+            : task.reward;
+
         return {
           id: task.id,
           requester: task.requester,
-          requesterPubkey: task.requesterPubkey,
+          requesterPubkey: normalizeRequesterPublicKey(
+            requesterPublicKeyByAddress.get(task.requester),
+            task.requesterPubkey
+          ),
           description: task.description,
           reward: task.reward,
           escrowTxHash: task.escrowTxHash,
@@ -715,9 +478,7 @@ export const tasksRouter = router({
           auctionBidCount,
           currentLowestBid,
           submissionWindowOpen: computeSubmissionWindowOpen(task, now),
-          netReward: String(
-            Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
-          ),
+          netReward: computeNetReward(grossPayout, task.platformFeeBps ?? 0),
         };
       });
 
@@ -750,7 +511,18 @@ export const tasksRouter = router({
       const now = new Date();
 
       const workerAddress = task.worker ?? task.claimedBy;
-      const [submissionCount, pitchCount, workerAgent, requesterAgentRow] = await Promise.all([
+      const dreamsHookAddress = getServerConfig().DREAMS_HOOK_ADDRESS;
+      const dreamsHookConfigured = Boolean(dreamsHookAddress);
+      const [
+        submissionCount,
+        pitchCount,
+        workerAgent,
+        requesterAgentRow,
+        taskHooks,
+        dreamsPerUsdc,
+        dreamsWorkerSplitBps,
+        dreamsBonusBps,
+      ] = await Promise.all([
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(submissions)
@@ -767,10 +539,16 @@ export const tasksRouter = router({
               .limit(1)
           : Promise.resolve([]),
         ctx.db
-          .select({ registeredVia: agents.registeredVia })
+          .select({ registeredVia: agents.registeredVia, publicKey: agents.publicKey })
           .from(agents)
           .where(eq(agents.address, task.requester))
           .limit(1),
+        contractGetTaskHooks(task.id as `0x${string}`, task.contractAddress).catch(() => []),
+        dreamsHookConfigured ? contractGetDreamsPerUsdc().catch(() => 0n) : Promise.resolve(0n),
+        dreamsHookConfigured
+          ? contractGetDreamsWorkerSplitBps().catch(() => 0)
+          : Promise.resolve(0),
+        dreamsHookConfigured ? contractGetDreamsBonusBps().catch(() => 0) : Promise.resolve(0),
       ]);
 
       // Resolve the most recent submitter so the requester's accept command can be
@@ -801,6 +579,7 @@ export const tasksRouter = router({
       let auctionPriceReachesFloorAt: string | null = null;
       let auctionPriceReachesMaxAt: string | null = null;
       let currentLowestBid: string | null = null;
+      let auctionWinningPrice: string | null = null;
 
       if (task.mode === 'auction') {
         const bidCountResult = await ctx.db
@@ -808,6 +587,16 @@ export const tasksRouter = router({
           .from(bids)
           .where(eq(bids.taskId, task.id));
         auctionBidCount = Number(bidCountResult[0]?.count ?? 0);
+
+        if (task.worker) {
+          const winningBid = await ctx.db
+            .select({ price: bids.price })
+            .from(bids)
+            .where(and(eq(bids.taskId, task.id), eq(bids.workerAddress, task.worker)))
+            .orderBy(desc(bids.createdAt))
+            .limit(1);
+          auctionWinningPrice = winningBid[0]?.price ?? null;
+        }
 
         if (task.auctionType === 'dutch') {
           const price = computeClockPrice(task, now);
@@ -840,10 +629,54 @@ export const tasksRouter = router({
 
       const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
 
+      const hooksList: string[] =
+        taskHooks.length > 0 ? [...taskHooks] : task.hookContract ? [task.hookContract] : [];
+      const hasDreamsHook =
+        dreamsHookAddress !== undefined &&
+        hooksList.some((h) => h.toLowerCase() === dreamsHookAddress.toLowerCase());
+      const dreamsPerUsdcField =
+        hasDreamsHook && dreamsPerUsdc > 0n && dreamsBonusBps > 0
+          ? dreamsPerUsdc.toString()
+          : undefined;
+      const bonusBpsField = dreamsPerUsdcField !== undefined ? dreamsBonusBps : undefined;
+      const estimatedUsdBonusValueField =
+        dreamsPerUsdcField !== undefined
+          ? estimateUsdBonusValue(task.reward, dreamsBonusBps)
+          : undefined;
+      const estimatedWorkerUsdBonusValueField =
+        dreamsPerUsdcField !== undefined
+          ? estimateWorkerUsdBonusValue(task.reward, dreamsBonusBps, dreamsWorkerSplitBps)
+          : undefined;
+      const estimatedRequesterUsdBonusValueField =
+        dreamsPerUsdcField !== undefined
+          ? estimateRequesterUsdBonusValue(task.reward, dreamsBonusBps, dreamsWorkerSplitBps)
+          : undefined;
+      const estimatedWorkerDreamsBonusField =
+        dreamsPerUsdcField !== undefined
+          ? estimateWorkerDreamsBonus(
+              task.reward,
+              dreamsPerUsdcField,
+              dreamsBonusBps,
+              dreamsWorkerSplitBps
+            )
+          : undefined;
+      const estimatedRequesterDreamsBonusField =
+        dreamsPerUsdcField !== undefined
+          ? estimateRequesterDreamsBonus(
+              task.reward,
+              dreamsPerUsdcField,
+              dreamsBonusBps,
+              dreamsWorkerSplitBps
+            )
+          : undefined;
+
       return {
         id: task.id,
         requester: task.requester,
-        requesterPubkey: task.requesterPubkey,
+        requesterPubkey: normalizeRequesterPublicKey(
+          requesterAgentRow[0]?.publicKey,
+          task.requesterPubkey
+        ),
         description: task.description,
         reward: task.reward,
         escrowTxHash: task.escrowTxHash,
@@ -892,13 +725,27 @@ export const tasksRouter = router({
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         selfAward: task.selfAward ?? null,
+        hooks: hooksList,
+        dreamsPerUsdc: dreamsPerUsdcField,
+        bonusBps: bonusBpsField,
+        estimatedUsdBonusValue: estimatedUsdBonusValueField,
+        estimatedWorkerUsdBonusValue: estimatedWorkerUsdBonusValueField,
+        estimatedRequesterUsdBonusValue: estimatedRequesterUsdBonusValueField,
+        estimatedWorkerDreamsBonus: estimatedWorkerDreamsBonusField,
+        estimatedRequesterDreamsBonus: estimatedRequesterDreamsBonusField,
         submissionWindowOpen,
-        netReward: String(
-          Math.floor((Number(task.reward) * (10000 - (task.platformFeeBps ?? 0))) / 10000)
+        netReward: computeNetReward(
+          task.mode === 'auction'
+            ? task.status === 'open'
+              ? null
+              : auctionWinningPrice
+            : task.reward,
+          task.platformFeeBps ?? 0
         ),
         pendingActions: computePendingActions(
           {
             id: task.id,
+            requester: task.requester,
             status: task.status,
             mode: task.mode,
             rating: task.rating,
@@ -906,6 +753,7 @@ export const tasksRouter = router({
             bidCount: auctionBidCount ?? 0,
             submissionCount: Number(submissionCount[0]?.count || 0),
             expiryTime: task.expiryTime,
+            pitchDeadline: task.pitchDeadline,
             bidDeadline: task.bidDeadline,
             claimedBy: task.claimedBy,
             worker: task.worker,
@@ -914,10 +762,11 @@ export const tasksRouter = router({
             currentLowestBid,
             latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
             evaluator: task.evaluator,
+            disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
             appealDeadline: task.appealDeadline,
           },
-          submissionWindowOpen
+          now
         ),
       };
     }),
@@ -972,6 +821,19 @@ export const tasksRouter = router({
         }
       }
 
+      if (task.mode === 'bounty' || task.mode === 'benchmark') {
+        const submissionCount = await ctx.db
+          .select({ count: sql<number>`count(*)::int` })
+          .from(submissions)
+          .where(and(eq(submissions.taskId, input.taskId), isNull(submissions.rejectedAt)));
+        if (Number(submissionCount[0]?.count ?? 0) > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Active submissions exist — reject them or accept a winner before cancelling',
+          });
+        }
+      }
+
       const txHash = await contractCancelTask(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
@@ -996,7 +858,7 @@ export const tasksRouter = router({
         summary: 'Refund an expired task with no submissions back to the requester (X402 required)',
       },
     })
-    .input(z.object({ taskId: z.string() }))
+    .input(RefundExpiredInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -1033,16 +895,18 @@ export const tasksRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task has not yet expired' });
       }
 
-      const subCount = await ctx.db
-        .select({ count: sql<string>`count(*)` })
-        .from(submissions)
-        .where(and(eq(submissions.taskId, input.taskId), isNull(submissions.rejectedAt)));
+      if (task.mode === 'bounty' || task.mode === 'benchmark') {
+        const subCount = await ctx.db
+          .select({ count: sql<string>`count(*)` })
+          .from(submissions)
+          .where(and(eq(submissions.taskId, input.taskId), isNull(submissions.rejectedAt)));
 
-      if (Number(subCount[0]?.count ?? 0) > 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Task has submissions — use accept instead of refund',
-        });
+        if (Number(subCount[0]?.count ?? 0) > 0) {
+          throw new TRPCError({
+            code: 'BAD_REQUEST',
+            message: 'Task has active submissions — use accept or reject before refund',
+          });
+        }
       }
 
       const txHash = await contractRefundExpired(
@@ -1114,13 +978,15 @@ export const tasksRouter = router({
       }
 
       const effectiveReward = input.reward ?? task.reward;
-      if (input.auctionFloorPrice && BigInt(input.auctionFloorPrice) > BigInt(effectiveReward)) {
+      const effectiveFloorPrice = input.auctionFloorPrice ?? task.auctionFloorPrice;
+      const effectiveStartPrice = input.auctionStartPrice ?? task.auctionStartPrice;
+      if (effectiveFloorPrice != null && BigInt(effectiveFloorPrice) > BigInt(effectiveReward)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'auctionFloorPrice must be <= reward',
         });
       }
-      if (input.auctionStartPrice && BigInt(input.auctionStartPrice) > BigInt(effectiveReward)) {
+      if (effectiveStartPrice != null && BigInt(effectiveStartPrice) > BigInt(effectiveReward)) {
         throw new TRPCError({
           code: 'BAD_REQUEST',
           message: 'auctionStartPrice must be <= reward',
@@ -1154,6 +1020,9 @@ export const tasksRouter = router({
       const dbUpdate: Record<string, unknown> = {};
       if (input.reward && input.reward !== task.reward) {
         dbUpdate.reward = input.reward;
+        if (task.mode === 'auction') {
+          dbUpdate.maxPrice = input.reward;
+        }
       }
       if (input.expiryTime) {
         dbUpdate.expiryTime = new Date(input.expiryTime * 1000);
@@ -1227,7 +1096,7 @@ export const tasksRouter = router({
         }
       }
 
-      const [updatedSubmissionCount, updatedPitchCount] = await Promise.all([
+      const [updatedSubmissionCount, updatedPitchCount, updatedRequesterAgent] = await Promise.all([
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(submissions)
@@ -1236,6 +1105,11 @@ export const tasksRouter = router({
           .select({ count: sql<number>`count(*)` })
           .from(proposals)
           .where(eq(proposals.taskId, t.id)),
+        ctx.db
+          .select({ publicKey: agents.publicKey })
+          .from(agents)
+          .where(eq(agents.address, t.requester))
+          .limit(1),
       ]);
 
       const updateSubmissionWindowOpen = computeSubmissionWindowOpen(t, updateNow);
@@ -1254,7 +1128,10 @@ export const tasksRouter = router({
       return {
         id: t.id,
         requester: t.requester,
-        requesterPubkey: t.requesterPubkey,
+        requesterPubkey: normalizeRequesterPublicKey(
+          updatedRequesterAgent[0]?.publicKey,
+          t.requesterPubkey
+        ),
         description: t.description,
         reward: t.reward,
         escrowTxHash: t.escrowTxHash,
@@ -1287,12 +1164,11 @@ export const tasksRouter = router({
         auctionPriceReachesMaxAt: updateAuctionPriceReachesMaxAt,
         currentLowestBid: updateCurrentLowestBid,
         submissionWindowOpen: updateSubmissionWindowOpen,
-        netReward: String(
-          Math.floor((Number(t.reward) * (10000 - (t.platformFeeBps ?? 0))) / 10000)
-        ),
+        netReward: computeNetReward(t.mode === 'auction' ? null : t.reward, t.platformFeeBps ?? 0),
         pendingActions: computePendingActions(
           {
             id: t.id,
+            requester: t.requester,
             status: t.status,
             mode: t.mode,
             rating: t.rating,
@@ -1300,6 +1176,7 @@ export const tasksRouter = router({
             bidCount: auctionBidCount ?? 0,
             submissionCount: Number(updatedSubmissionCount[0]?.count || 0),
             expiryTime: t.expiryTime,
+            pitchDeadline: t.pitchDeadline,
             bidDeadline: t.bidDeadline,
             claimedBy: t.claimedBy,
             worker: t.worker,
@@ -1309,10 +1186,11 @@ export const tasksRouter = router({
             currentLowestBid: updateCurrentLowestBid,
             latestSubmissionWorker: updatedLatestSubmission[0]?.workerAddress ?? null,
             evaluator: t.evaluator,
+            disputeResolver: t.disputeResolver,
             evaluatorDeadline: t.evaluatorDeadline,
             appealDeadline: t.appealDeadline,
           },
-          updateSubmissionWindowOpen
+          updateNow
         ),
       };
     }),
@@ -1326,7 +1204,7 @@ export const tasksRouter = router({
         summary: 'Reject a worker submission on a bounty or benchmark task (X402 required)',
       },
     })
-    .input(z.object({ taskId: z.string(), worker: z.string() }))
+    .input(RejectSubmissionInputSchema)
     .output(z.object({ txHash: z.string() }))
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;

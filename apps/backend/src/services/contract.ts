@@ -78,7 +78,7 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes32,string,bytes4,address,bytes32[],bytes) returns (bytes32)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -112,6 +112,16 @@ const FORWARDER_ABI = parseAbi([
   'function relay(address pgtrSenderAddr, uint256 paymentAmount, uint256 validBefore, bytes32 receiptNonce, bytes calldata data)',
 ]);
 const IDENTITY_REGISTRY_ABI = parseAbi(['function register() external returns (uint256)']);
+const HOOK_ABI = parseAbi([
+  'function withdrawFor(address worker, address destination) external',
+  'function claimable(address wallet) external view returns (uint256)',
+  'function dreamsPerUsdc() external view returns (uint256)',
+  'function workerSplitBps() external view returns (uint16)',
+  'function bonusBps() external view returns (uint16)',
+]);
+const REGISTRY_READ_ABI = parseAbi([
+  'function getTaskHooks(bytes32 taskId) view returns (address[])',
+]);
 const REGISTERED_EVENT = parseAbiItem(
   'event Registered(uint256 indexed agentId, string agentURI, address indexed owner)'
 );
@@ -167,8 +177,33 @@ function getPublicClient() {
   return createPublicClient({ chain, transport: http(config.BASE_RPC_URL) });
 }
 
+/**
+ * Retry a flaky RPC read with exponential backoff. Base Sepolia's provider
+ * intermittently times out on eth_getBlockByNumber (both estimateFeesPerGas
+ * and direct getBlock calls depend on it), so a single transient blip
+ * shouldn't fail an otherwise-successful on-chain operation.
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  attempts: number,
+  baseDelayMs: number
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function getGasParams(publicClient: ReturnType<typeof getPublicClient>) {
-  const fees = await publicClient.estimateFeesPerGas();
+  const fees = await retryWithBackoff(() => publicClient.estimateFeesPerGas(), 3, 500);
   return {
     maxFeePerGas: fees.maxFeePerGas * GAS_MULTIPLIER,
     maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER,
@@ -184,6 +219,11 @@ function assertSuccess(receipt: { status: string }, label: string) {
   }
 }
 
+type RelayResult = {
+  txHash: `0x${string}`;
+  blockNumber: bigint;
+};
+
 /**
  * Route a TaskMarket call through the PGTR forwarder (ERC-8194).
  * Approves forwarder to spend USDC if paymentAmount > 0, then calls relay().
@@ -192,11 +232,11 @@ function assertSuccess(receipt: { status: string }, label: string) {
  * @param paymentAmount   USDC to transfer from server to TaskMarket escrow (0 for no payment).
  * @param data            ABI-encoded calldata for the TaskMarket function.
  */
-async function relayThroughForwarder(
+async function relayThroughForwarderResult(
   pgtrSenderAddr: `0x${string}`,
   paymentAmount: bigint,
   data: `0x${string}`
-): Promise<`0x${string}`> {
+): Promise<RelayResult> {
   const config = getServerConfig();
   const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
@@ -286,12 +326,20 @@ async function relayThroughForwarder(
         message: `Contract call rejected: ${revertReason}`,
       });
     }
-    return hash;
+    return { txHash: hash, blockNumber: receipt.blockNumber };
   }
   throw new TRPCError({
     code: 'BAD_REQUEST',
     message: `Contract call rejected: ${decodeRelayRevert(lastError)}`,
   });
+}
+
+async function relayThroughForwarder(
+  pgtrSenderAddr: `0x${string}`,
+  paymentAmount: bigint,
+  data: `0x${string}`
+): Promise<`0x${string}`> {
+  return (await relayThroughForwarderResult(pgtrSenderAddr, paymentAmount, data)).txHash;
 }
 
 /**
@@ -344,6 +392,9 @@ export async function contractCreateTask(
     });
   }
 
+  const hookContracts: `0x${string}`[] =
+    hookContract === '0x0000000000000000000000000000000000000000' ? [] : [hookContract];
+
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'createTask',
@@ -353,12 +404,13 @@ export async function contractCreateTask(
       mode as `0x${string}`,
       pitchDeadlineSecs,
       bidDeadlineSecs,
-      '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
-      '',
       auctionSubtype,
-      hookContract,
-      tags,
-      hookData,
+      [hookContracts, hookData] as const,
+      [
+        '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
+        '',
+        tags,
+      ] as const,
     ],
   });
   return relayThroughForwarder(requester, reward, data);
@@ -399,14 +451,32 @@ export async function contractEvaluate(
   confidence: number,
   evidenceHash: `0x${string}`,
   awards: readonly { worker: `0x${string}`; amount: bigint; rank: number }[]
-): Promise<`0x${string}`> {
+): Promise<{ txHash: `0x${string}`; evaluatedAt: number }> {
   const awardTuples = awards.map((a) => [a.worker, a.amount, a.rank] as const);
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'evaluate',
     args: [taskId, verdictType, score, confidence, evidenceHash, awardTuples],
   });
-  return relayThroughForwarder(evaluator, 0n, data);
+  const result = await relayThroughForwarderResult(evaluator, 0n, data);
+  // A load-balanced RPC provider can serve this getBlock call from a node that
+  // hasn't yet indexed the block the receipt just confirmed on a different node.
+  // The transaction already succeeded on-chain, so retry the read rather than
+  // fail the whole mutation over a transient consistency lag.
+  try {
+    const block = await retryWithBackoff(
+      () => getPublicClient().getBlock({ blockNumber: result.blockNumber }),
+      5,
+      500
+    );
+    return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
+    });
+  }
 }
 
 export async function contractAppeal(
@@ -800,5 +870,94 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   throw new TRPCError({
     code: 'INTERNAL_SERVER_ERROR',
     message: 'Registered event not found in registerIdentity receipt',
+  });
+}
+
+export async function contractWithdrawDreamsRewards(
+  worker: `0x${string}`,
+  destination: `0x${string}`
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) {
+    throw new TRPCError({
+      code: 'PRECONDITION_FAILED',
+      message: 'DREAMS_HOOK_ADDRESS is not configured',
+    });
+  }
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+
+  const hash = await client.writeContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'withdrawFor',
+    args: [worker, destination],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'withdrawFor'
+  );
+  return hash;
+}
+
+export async function contractGetTaskHooks(
+  taskId: `0x${string}`,
+  contractAddress?: string | null
+): Promise<readonly `0x${string}`[]> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const addr = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+  return publicClient.readContract({
+    address: addr,
+    abi: REGISTRY_READ_ABI,
+    functionName: 'getTaskHooks',
+    args: [taskId],
+  });
+}
+
+export async function contractGetDreamsClaimable(wallet: `0x${string}`): Promise<bigint> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0n;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'claimable',
+    args: [wallet],
+  });
+}
+
+export async function contractGetDreamsPerUsdc(): Promise<bigint> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0n;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'dreamsPerUsdc',
+  });
+}
+
+export async function contractGetDreamsWorkerSplitBps(): Promise<number> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'workerSplitBps',
+  });
+}
+
+export async function contractGetDreamsBonusBps(): Promise<number> {
+  const config = getServerConfig();
+  if (!config.DREAMS_HOOK_ADDRESS) return 0;
+  const publicClient = getPublicClient();
+  return publicClient.readContract({
+    address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
+    abi: HOOK_ABI,
+    functionName: 'bonusBps',
   });
 }

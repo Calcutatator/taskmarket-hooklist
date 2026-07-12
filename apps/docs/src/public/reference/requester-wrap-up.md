@@ -23,7 +23,7 @@ Before split acceptance, load `reference/split-acceptance.md`.
 
 ## Spam Rejection
 
-If all submissions are spam or genuinely unusable, the requester may reject each worker individually using `reject-submission`. Each call costs 0.01 USDC relay fee. Once all workers are rejected, `pendingActions` gains a `cancel` action to recover escrow.
+If all submissions are spam or genuinely unusable, the requester may reject each worker individually using `reject-submission`. Each call costs 0.001 USDC. `reject-all-submissions` lists active submissions, deduplicates workers, rejects each in sequence, and can then cancel. Cancellation is a separate 0.001 USDC action.
 
 Before rejecting any submission, get explicit requester approval naming:
 

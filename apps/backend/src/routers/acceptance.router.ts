@@ -67,37 +67,29 @@ export const acceptanceRouter = router({
         });
       }
 
-      // Resolve the deliverable hash. For bounty/benchmark the contract verifies
-      // the hash against its on-chain submission history, so we always derive it
-      // from the DB (never from the caller). For claim/pitch/auction the contract
-      // reads task.deliverable directly and ignores the value we pass.
-      let deliverable: `0x${string}` = `0x${'00'.repeat(32)}` as `0x${string}`;
-      if (task.mode === 'bounty' || task.mode === 'benchmark') {
-        const submissionRow = await ctx.db
-          .select({ deliverableHash: submissions.deliverableHash })
-          .from(submissions)
-          .where(
-            and(
-              eq(submissions.taskId, input.taskId),
-              eq(submissions.workerAddress, input.worker),
-              sql`${submissions.rejectedAt} IS NULL`
-            )
+      // Resolve the deliverable hash from DB. The contract always checks that
+      // the deliverable arg matches task.deliverable on-chain (set by submitWork),
+      // so we must pass the actual hash for all modes.
+      const submissionRow = await ctx.db
+        .select({ deliverableHash: submissions.deliverableHash })
+        .from(submissions)
+        .where(
+          and(
+            eq(submissions.taskId, input.taskId),
+            eq(submissions.workerAddress, input.worker),
+            sql`${submissions.rejectedAt} IS NULL`
           )
-          .orderBy(sql`${submissions.submittedAt} DESC`)
-          .limit(1);
-        const hash = submissionRow[0]?.deliverableHash;
-        if (!hash) {
-          throw new TRPCError({
-            code: 'BAD_REQUEST',
-            message: `No active submission found for worker ${input.worker} on task ${input.taskId}`,
-          });
-        }
-        deliverable = hash as `0x${string}`;
-      } else {
-        // Claim/pitch/auction: deliverable stored in task.deliverable on-chain at submitWork time.
-        // Contract ignores this param for these modes; pass zeros.
-        deliverable = `0x${'00'.repeat(32)}` as `0x${string}`;
+        )
+        .orderBy(sql`${submissions.submittedAt} DESC`)
+        .limit(1);
+      const hash = submissionRow[0]?.deliverableHash;
+      if (!hash) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: `No active submission found for worker ${input.worker} on task ${input.taskId}`,
+        });
       }
+      const deliverable = hash as `0x${string}`;
 
       // Look up requester's ERC-8004 agentId for reputation tracking (0 if not found).
       const requesterAgentRow = await ctx.db

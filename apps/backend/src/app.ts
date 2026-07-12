@@ -8,19 +8,34 @@ import compression from 'compression';
 import morgan from 'morgan';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
 import { createOpenApiExpressMiddleware } from 'trpc-to-openapi';
+import type { ZodTypeAny } from 'zod';
 import { appRouter } from './router';
 import { createContext } from './context';
 import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
 import {
+  IDENTITY_REGISTER_ROUTE,
+  PAID_TASK_ACTION_ROUTES,
+  STANDARD_X402_ACTION_AMOUNT,
+  TASK_CREATE_ROUTE,
+} from './config/payments';
+import { CANONICAL_PREIMAGE_ROUTES } from './config/routes';
+import {
   TaskCreateSchema,
   ProofSubmitSchema,
   PitchCreateSchema,
+  PitchSelectSchema,
   UpdateTaskInputSchema,
   CancelTaskInputSchema,
+  RefundExpiredInputSchema,
+  RejectSubmissionInputSchema,
   BidCreateSchema,
   AuctionAcceptSchema,
+  AppealInputSchema,
+  EvaluateInputSchema,
+  EvaluatorTimeoutInputSchema,
+  ResolveDisputeInputSchema,
 } from '@taskmarket/shared';
 import {
   AcceptInputSchema,
@@ -28,7 +43,9 @@ import {
   RateInputSchema,
 } from './schemas/acceptance.schemas';
 import { validateBody } from './middleware/validateBody';
-import { x402Middleware } from './middleware/x402';
+import { x402Middleware, type X402Options } from './middleware/x402';
+import { taskActionPreflight } from './middleware/taskActionPreflight';
+import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
@@ -100,7 +117,10 @@ if (process.env.SERVE_FRONTEND === 'true') {
 // tRPC X402 guards
 app.post(
   '/trpc/identity.register',
-  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'ERC-8004 agent identity registration',
+  })
 );
 
 // tRPC middleware (for frontend / existing clients)
@@ -138,7 +158,7 @@ app.get('/api/feedback/:id', async (req, res) => {
 // Canonical content-hash preimages. The response body is the exact byte string
 // that was hashed on-chain — `keccak256(responseBytes)` equals the stored hash.
 // See docs/concepts/content-verification for the full verification flow.
-app.get('/api/tasks/:taskId/submissions/:submissionId/manifest', async (req, res) => {
+app.get(CANONICAL_PREIMAGE_ROUTES.submissionManifest, async (req, res) => {
   try {
     const sub = await db
       .select({
@@ -173,7 +193,7 @@ app.get('/api/tasks/:taskId/submissions/:submissionId/manifest', async (req, res
   }
 });
 
-app.get('/api/tasks/:taskId/pitches/:pitchId/preimage', async (req, res) => {
+app.get(CANONICAL_PREIMAGE_ROUTES.pitchPreimage, async (req, res) => {
   try {
     const row = await db
       .select({
@@ -205,7 +225,7 @@ app.get('/api/tasks/:taskId/pitches/:pitchId/preimage', async (req, res) => {
   }
 });
 
-app.get('/api/tasks/:taskId/proofs/:proofId/preimage', async (req, res) => {
+app.get(CANONICAL_PREIMAGE_ROUTES.proofPreimage, async (req, res) => {
   try {
     const row = await db
       .select({
@@ -239,66 +259,74 @@ app.get('/api/tasks/:taskId/proofs/:proofId/preimage', async (req, res) => {
 
 // X402 guards — mount BEFORE the OpenAPI handler
 app.post(
-  '/api/tasks',
+  TASK_CREATE_ROUTE,
   validateBody(TaskCreateSchema),
   x402Middleware({ getAmount: (req) => String(req.body.reward), description: 'Create task' })
 );
+
+type PaidTaskAction = keyof typeof PAID_TASK_ACTION_ROUTES;
+type PaidTaskRouteHandler = {
+  schema: ZodTypeAny;
+  description: string;
+  getAmount?: X402Options['getAmount'];
+};
+
+const paidTaskRouteHandlers: Record<PaidTaskAction, PaidTaskRouteHandler> = {
+  accept: { schema: AcceptInputSchema, description: 'Accept submission' },
+  accept_submissions: {
+    schema: AcceptSubmissionsInputSchema,
+    description: 'Accept submissions',
+  },
+  appeal: { schema: AppealInputSchema, description: 'Appeal evaluator verdict' },
+  auction_accept: { schema: AuctionAcceptSchema, description: 'Auction accept' },
+  bid: { schema: BidCreateSchema, description: 'Submit bid' },
+  cancel: { schema: CancelTaskInputSchema, description: 'Cancel task' },
+  evaluate: { schema: EvaluateInputSchema, description: 'Submit evaluator verdict' },
+  evaluator_timeout: {
+    schema: EvaluatorTimeoutInputSchema,
+    description: 'Trigger evaluator timeout',
+  },
+  pitch: { schema: PitchCreateSchema, description: 'Submit pitch' },
+  rate: { schema: RateInputSchema, description: 'Rate task' },
+  refund_expired: { schema: RefundExpiredInputSchema, description: 'Refund expired task' },
+  reject_submission: {
+    schema: RejectSubmissionInputSchema,
+    description: 'Reject submission',
+  },
+  resolve_dispute: { schema: ResolveDisputeInputSchema, description: 'Resolve task dispute' },
+  submit_proof: { schema: ProofSubmitSchema, description: 'Submit proof' },
+  update: {
+    schema: UpdateTaskInputSchema,
+    description: 'Update task',
+    getAmount: (req) =>
+      getUpdatePaymentAmount(db, req.params.taskId, req.body.reward as string | undefined),
+  },
+};
+
+for (const action of Object.keys(PAID_TASK_ACTION_ROUTES) as PaidTaskAction[]) {
+  const handler = paidTaskRouteHandlers[action];
+  app.post(
+    PAID_TASK_ACTION_ROUTES[action],
+    validateBody(handler.schema),
+    x402Middleware({
+      getAmount: handler.getAmount ?? (() => STANDARD_X402_ACTION_AMOUNT),
+      description: handler.description,
+      preflight: taskActionPreflight(action),
+    })
+  );
+}
+
 app.post(
-  '/api/tasks/:taskId/accept',
-  validateBody(AcceptInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Accept submission' })
+  '/api/tasks/:taskId/pitches/select',
+  validateBody(PitchSelectSchema),
+  x402Middleware({ getAmount: () => STANDARD_X402_ACTION_AMOUNT, description: 'Select pitch' })
 );
 app.post(
-  '/api/tasks/:taskId/accept-submissions',
-  validateBody(AcceptSubmissionsInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Accept submissions' })
-);
-app.post(
-  '/api/tasks/:taskId/rate',
-  validateBody(RateInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Rate task' })
-);
-app.post(
-  '/api/tasks/:taskId/bids',
-  validateBody(BidCreateSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit bid' })
-);
-app.post(
-  '/api/tasks/:taskId/bids/accept',
-  validateBody(AuctionAcceptSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Auction accept' })
-);
-app.post(
-  '/api/tasks/:taskId/cancel',
-  validateBody(CancelTaskInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Cancel task' })
-);
-app.post(
-  '/api/tasks/:taskId/reject-submission',
-  x402Middleware({ getAmount: () => '1000', description: 'Reject submission' })
-);
-app.post(
-  '/api/tasks/:taskId/update',
-  validateBody(UpdateTaskInputSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Update task' })
-);
-app.post(
-  '/api/tasks/:taskId/pitches',
-  validateBody(PitchCreateSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit pitch' })
-);
-app.post(
-  '/api/tasks/:taskId/proofs',
-  validateBody(ProofSubmitSchema),
-  x402Middleware({ getAmount: () => '1000', description: 'Submit proof' })
-);
-app.post(
-  '/api/tasks/:taskId/refund-expired',
-  x402Middleware({ getAmount: () => '1000', description: 'Refund expired task' })
-);
-app.post(
-  '/api/identity/register',
-  x402Middleware({ getAmount: () => '1000', description: 'ERC-8004 agent identity registration' })
+  IDENTITY_REGISTER_ROUTE,
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'ERC-8004 agent identity registration',
+  })
 );
 
 // OpenAPI REST (handles all /api routes, including the ones above after X402 next())

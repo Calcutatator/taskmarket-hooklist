@@ -1,7 +1,0 @@
-#!/bin/sh
-# Entire CLI hooks
-
-# Skip in CI environments
-[ -n "$CI" ] && exit 0
-
-entire hooks git post-merge 2>/dev/null || true

@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -25,6 +25,7 @@ help:
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
 	@echo "  make test                 - Run all tests"
+	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
@@ -34,6 +35,7 @@ help:
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
+	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
@@ -108,6 +110,47 @@ upgrade-accept-pinning:
 			--verify; \
 	else \
 		echo "Usage: make upgrade-accept-pinning <testnet|mainnet>"; \
+		exit 1; \
+	fi
+
+deploy-reward-hook:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && \
+		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
+		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_TESTNET} \
+		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_TESTNET} \
+		FORGE_EPOCH_DURATION=$${FORGE_EPOCH_DURATION:-$$FORGE_EPOCH_DURATION_TESTNET} \
+		FORGE_GLOBAL_EPOCH_CAP_USD=$${FORGE_GLOBAL_EPOCH_CAP_USD:-$$FORGE_GLOBAL_EPOCH_CAP_USD_TESTNET} \
+		FORGE_WORKER_CAP_USD=$${FORGE_WORKER_CAP_USD:-$$FORGE_WORKER_CAP_USD_TESTNET} \
+		FORGE_REQUESTER_CAP_USD=$${FORGE_REQUESTER_CAP_USD:-$$FORGE_REQUESTER_CAP_USD_TESTNET} \
+		FORGE_MAX_USD_PER_TASK=$${FORGE_MAX_USD_PER_TASK:-$$FORGE_MAX_USD_PER_TASK_TESTNET} \
+		FORGE_WORKER_SPLIT_BPS=$${FORGE_WORKER_SPLIT_BPS:-$$FORGE_WORKER_SPLIT_BPS_TESTNET} \
+		FORGE_INITIAL_VAULT_BALANCE=$${FORGE_INITIAL_VAULT_BALANCE:-$$FORGE_INITIAL_VAULT_BALANCE_TESTNET} \
+		FORGE_PGTR_FORWARDER=$${FORGE_PGTR_FORWARDER:-$$FORGE_PGTR_FORWARDER_TESTNET} \
+		forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && \
+		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_MAINNET} \
+		FORGE_PROTOCOL_TOKEN=$${FORGE_PROTOCOL_TOKEN:-$$FORGE_PROTOCOL_TOKEN_MAINNET} \
+		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_MAINNET} \
+		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_MAINNET} \
+		FORGE_EPOCH_DURATION=$${FORGE_EPOCH_DURATION:-$$FORGE_EPOCH_DURATION_MAINNET} \
+		FORGE_GLOBAL_EPOCH_CAP_USD=$${FORGE_GLOBAL_EPOCH_CAP_USD:-$$FORGE_GLOBAL_EPOCH_CAP_USD_MAINNET} \
+		FORGE_WORKER_CAP_USD=$${FORGE_WORKER_CAP_USD:-$$FORGE_WORKER_CAP_USD_MAINNET} \
+		FORGE_REQUESTER_CAP_USD=$${FORGE_REQUESTER_CAP_USD:-$$FORGE_REQUESTER_CAP_USD_MAINNET} \
+		FORGE_MAX_USD_PER_TASK=$${FORGE_MAX_USD_PER_TASK:-$$FORGE_MAX_USD_PER_TASK_MAINNET} \
+		FORGE_WORKER_SPLIT_BPS=$${FORGE_WORKER_SPLIT_BPS:-$$FORGE_WORKER_SPLIT_BPS_MAINNET} \
+		FORGE_PGTR_FORWARDER=$${FORGE_PGTR_FORWARDER:-$$FORGE_PGTR_FORWARDER_MAINNET} \
+		forge script script/DeployRewardHook.s.sol:DeployRewardHook \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make deploy-reward-hook <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
@@ -371,6 +414,13 @@ fix:
 test:
 	$(ENV_LOADER) && pnpm turbo test
 
+skill-conformance:
+	$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/backend exec vitest run test/unit/skill-conformance.test.ts test/integration/middleware/validateBody.test.ts && \
+	pnpm --filter @lucid-agents/taskmarket exec vitest run test/unit/skill-conformance.test.ts && \
+	pnpm --filter @taskmarket/web exec vitest run lib/skill-package.test.ts lib/skill.test.ts
+
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
@@ -382,11 +432,11 @@ contract:
 		echo "Report written to packages/contracts/reports/slither-audit.md"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info && \
 		echo "lcov report written to packages/contracts/reports/coverage/lcov.info"; \
 	elif [ "$(word 1,$(ARGS))" = "coverage-check" ]; then \
 		mkdir -p packages/contracts/reports/coverage && \
-		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "script/" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
+		cd packages/contracts && forge coverage --ir-minimum --no-match-coverage "(script/|src/mocks/|test/mocks/)" --report summary --report lcov --lcov-version 2 --report-file reports/coverage/lcov.info | tee /tmp/forge-coverage.txt && \
 		echo "lcov report written to reports/coverage/lcov.info" && \
 		bash scripts/check-coverage.sh /tmp/forge-coverage.txt; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot" ]; then \
@@ -529,8 +579,16 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:refund-expired; \
 	elif [ "$(word 1,$(ARGS))" = "submission-integrity" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-integrity; \
+	elif [ "$(word 1,$(ARGS))" = "token-reward-hook" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" \
+		REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET" \
+		MOCK_TOKEN_ADDRESS="$$FORGE_MOCK_TOKEN_ADDRESS_TESTNET" \
+		VAULT_ADDRESS="$$FORGE_VAULT_ADDRESS_TESTNET" \
+		pnpm smoke:token-reward-hook; \
+	elif [ "$(word 1,$(ARGS))" = "evaluator" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator>"; \
 		exit 1; \
 	fi
 

@@ -3,16 +3,28 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { createPublicClient, http, parseAbi, recoverMessageAddress } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
-import { agents } from '../db/schema';
+import { agents, dreamsWithdrawNonces } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
-import { contractTransferWithAuthorization } from '../services/contract';
+import {
+  contractTransferWithAuthorization,
+  contractGetDreamsClaimable,
+  contractWithdrawDreamsRewards,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
+} from '../services/contract';
 import {
   SetWithdrawalAddressInputSchema,
   SetWithdrawalAddressOutputSchema,
   GetWithdrawalAddressOutputSchema,
   WithdrawInputSchema,
   WithdrawOutputSchema,
+  DreamsBalanceOutputSchema,
+  WithdrawDreamsInputSchema,
+  WithdrawDreamsOutputSchema,
+  ExchangeRateOutputSchema,
+  dreamsToUsd,
 } from '@taskmarket/shared';
 
 const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -211,5 +223,127 @@ export const walletRouter = router({
         amountBaseUnits: input.amountBaseUnits,
         to: agent.withdrawalAddress,
       };
+    }),
+
+  dreamsBalance: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/wallet/dreams-balance',
+        tags: ['Wallet'],
+        summary: 'Get claimable DREAMS reward balance for an address',
+      },
+    })
+    .input(z.object({ address: z.string() }))
+    .output(DreamsBalanceOutputSchema)
+    .query(async ({ input }) => {
+      const config = getServerConfig();
+      if (!config.DREAMS_HOOK_ADDRESS) {
+        return { claimableBaseUnits: '0' };
+      }
+      const raw = await contractGetDreamsClaimable(input.address as `0x${string}`);
+      return { claimableBaseUnits: raw.toString() };
+    }),
+
+  withdrawDreams: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/wallet/withdraw-dreams',
+        tags: ['Wallet'],
+        summary: 'Withdraw claimable DREAMS rewards to destination address (signed message auth)',
+      },
+    })
+    .input(WithdrawDreamsInputSchema)
+    .output(WithdrawDreamsOutputSchema)
+    .mutation(async ({ input, ctx }) => {
+      const config = getServerConfig();
+      if (!config.DREAMS_HOOK_ADDRESS) {
+        throw new TRPCError({
+          code: 'PRECONDITION_FAILED',
+          message: 'DREAMS rewards are not configured on this server',
+        });
+      }
+
+      // withdrawFor is executed by the trusted backend wallet, not a user transaction,
+      // so replay protection can't live on-chain — a captured signature must be
+      // rejected here on both expiry and reuse. Message binds signer, destination,
+      // nonce, and expiry together so none of them can be swapped independently.
+      const validBefore = BigInt(input.validBefore);
+      const nowSecs = BigInt(Math.floor(Date.now() / 1000));
+      if (validBefore <= nowSecs) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Authorization has expired' });
+      }
+
+      const message = `taskmarket:withdraw-dreams:${input.destination}:${input.nonce}:${input.validBefore}`;
+      let signer: string;
+      try {
+        signer = await recoverMessageAddress({
+          message,
+          signature: input.signature as `0x${string}`,
+        });
+      } catch {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      }
+      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      }
+
+      // Atomically claim the nonce — onConflictDoNothing means a replayed nonce
+      // inserts zero rows, which we detect and reject rather than racing a
+      // select-then-insert check.
+      const inserted = await ctx.db
+        .insert(dreamsWithdrawNonces)
+        .values({ nonce: input.nonce })
+        .onConflictDoNothing()
+        .returning({ nonce: dreamsWithdrawNonces.nonce });
+      if (inserted.length === 0) {
+        throw new TRPCError({ code: 'CONFLICT', message: 'Authorization nonce already used' });
+      }
+
+      // Pre-flight: check there is something to claim (saves a tx)
+      const claimable = await contractGetDreamsClaimable(input.workerAddress as `0x${string}`);
+      if (claimable === 0n) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'No claimable DREAMS rewards for this address',
+        });
+      }
+
+      const txHash = await contractWithdrawDreamsRewards(
+        input.workerAddress as `0x${string}`,
+        input.destination as `0x${string}`
+      );
+
+      const dreamsPerUsdc = await contractGetDreamsPerUsdc();
+      const claimedBaseUnits = claimable.toString();
+
+      return {
+        txHash,
+        destination: input.destination,
+        claimedBaseUnits,
+        dreamsPerUsdc: dreamsPerUsdc.toString(),
+        usdEquivalent: dreamsToUsd(claimedBaseUnits, dreamsPerUsdc.toString()),
+      };
+    }),
+
+  exchangeRate: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/wallet/exchange-rate',
+        tags: ['Wallet'],
+        summary: 'Get the current DREAMS/USDC exchange rate',
+      },
+    })
+    .input(z.void())
+    .output(ExchangeRateOutputSchema)
+    .query(async () => {
+      const [dreamsPerUsdc, workerSplitBps, bonusBps] = await Promise.all([
+        contractGetDreamsPerUsdc(),
+        contractGetDreamsWorkerSplitBps(),
+        contractGetDreamsBonusBps(),
+      ]);
+      return { dreamsPerUsdc: dreamsPerUsdc.toString(), workerSplitBps, bonusBps };
     }),
 });

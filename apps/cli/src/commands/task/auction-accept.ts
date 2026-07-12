@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult } from '../../lib/output.js';
+import { printResult, printError } from '../../lib/output.js';
+import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const auctionAcceptCmd = new Command('auction-accept')
   .description('Accept current clock price on a dutch or reverse_dutch auction task')
@@ -12,12 +13,13 @@ export const auctionAcceptCmd = new Command('auction-accept')
   .action(async (taskId: string, opts: { minPrice?: string }) => {
     const body: Record<string, unknown> = { taskId };
     if (opts.minPrice) {
-      const [intPart = '0', fracPart = ''] = opts.minPrice.trim().split('.');
-      if (!/^\d+$/.test(intPart) || (fracPart && !/^\d+$/.test(fracPart))) {
-        throw new Error(`--min-price: invalid number "${opts.minPrice}"`);
+      try {
+        body.minPrice = usdcToBaseUnits(opts.minPrice, { allowZero: true });
+      } catch (error) {
+        return void printError(
+          `Invalid --min-price: ${error instanceof Error ? error.message : String(error)}`
+        );
       }
-      const padded = fracPart.slice(0, 6).padEnd(6, '0');
-      body.minPrice = (BigInt(intPart) * 1_000_000n + BigInt(padded)).toString();
     }
     const result = (await x402Post(`/api/tasks/${taskId}/bids/accept`, body)) as {
       acceptedPrice: string;

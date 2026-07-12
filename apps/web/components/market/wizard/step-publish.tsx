@@ -14,6 +14,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import type { MarketStats } from '@/lib/api/server';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { trpc } from '@/lib/api/client';
 import {
   buildCreateTaskPayload,
   type CreateTaskFieldErrors,
@@ -25,6 +26,13 @@ import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-conf
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
+import {
+  estimateWorkerDreamsBonus,
+  estimateRequesterDreamsBonus,
+  estimateWorkerUsdBonusValue,
+  estimateRequesterUsdBonusValue,
+  formatDreams,
+} from '@taskmarket/shared';
 
 import type { WizardFormValues, WizardFunnelEvent, WizardVariant } from '../create-task-wizard';
 
@@ -33,7 +41,7 @@ const apiUrl = getBrowserApiBaseUrl();
 // Platform fee charged on task payout. The contract deducts this from the reward
 // at acceptance (worker receives reward minus fee; the requester escrows the full
 // reward), so the x402 amount equals the reward and the breakdown is display-only.
-const PLATFORM_FEE_BPS = 500;
+const PLATFORM_FEE_BPS = Number(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS ?? 750);
 
 // Human-readable platform fee percent derived from the bps source above so the
 // displayed label can never drift from the math used to compute the fee.
@@ -197,6 +205,28 @@ export function StepPublish({
     .map((tag) => tag.trim())
     .filter(Boolean);
   const breakdown = computeCostBreakdown(values.reward);
+
+  const exchangeRateQuery = trpc.wallet.exchangeRate.useQuery();
+  const dreamsPerUsdc = exchangeRateQuery.data?.dreamsPerUsdc;
+  const bonusBps = exchangeRateQuery.data?.bonusBps ?? 0;
+  const workerSplitBps = exchangeRateQuery.data?.workerSplitBps ?? 10_000;
+  // The bonus % (bonusBps) sets how much of the task's USD value becomes a DREAMS
+  // bonus; dreamsPerUsdc is the separate exchange rate used to convert that USD
+  // amount into DREAMS tokens. Both are then split between worker/requester by
+  // workerSplitBps -- three independent knobs, applied in that order.
+  const hasDreamsEstimate = Boolean(dreamsPerUsdc && dreamsPerUsdc !== '0' && bonusBps > 0);
+  const estimatedWorkerUsdBonus = hasDreamsEstimate
+    ? estimateWorkerUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
+    : null;
+  const estimatedWorkerDreamsBonus = hasDreamsEstimate
+    ? estimateWorkerDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
+    : null;
+  const estimatedRequesterUsdBonus = hasDreamsEstimate
+    ? estimateRequesterUsdBonusValue(breakdown.escrowed, bonusBps, workerSplitBps)
+    : null;
+  const estimatedRequesterDreamsBonus = hasDreamsEstimate
+    ? estimateRequesterDreamsBonus(breakdown.escrowed, dreamsPerUsdc!, bonusBps, workerSplitBps)
+    : null;
 
   async function handlePublish() {
     const submitValues = { ...form.getValues() };
@@ -602,6 +632,24 @@ export function StepPublish({
                     {formatUsdcUnits(breakdown.workerNet)}
                   </dd>
                 </div>
+                {estimatedWorkerDreamsBonus && estimatedWorkerDreamsBonus !== '0' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Estimated worker DREAMS bonus</dt>
+                    <dd className="font-mono text-muted-foreground">
+                      ~{formatUsdcUnits(estimatedWorkerUsdBonus!)} · ~
+                      {formatDreams(estimatedWorkerDreamsBonus)} DREAMS
+                    </dd>
+                  </div>
+                ) : null}
+                {estimatedRequesterDreamsBonus && estimatedRequesterDreamsBonus !== '0' ? (
+                  <div className="flex items-center justify-between gap-3">
+                    <dt className="text-muted-foreground">Estimated requester DREAMS bonus</dt>
+                    <dd className="font-mono text-muted-foreground">
+                      ~{formatUsdcUnits(estimatedRequesterUsdBonus!)} · ~
+                      {formatDreams(estimatedRequesterDreamsBonus)} DREAMS
+                    </dd>
+                  </div>
+                ) : null}
               </dl>
               <p className="text-xs leading-5 text-muted-foreground">
                 You fund the full reward up front. The worker is paid the reward minus a{' '}

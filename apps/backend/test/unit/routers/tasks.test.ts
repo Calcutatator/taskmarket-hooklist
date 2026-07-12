@@ -7,6 +7,11 @@ vi.mock('../../../src/services/contract', () => ({
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
   contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
   contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
+  contractGetTaskHooks: vi.fn().mockResolvedValue([]),
+  contractGetDreamsPerUsdc: vi.fn().mockResolvedValue(0n),
+  contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(0),
+  contractGetDreamsBonusBps: vi.fn().mockResolvedValue(0),
+  contractRefundExpired: vi.fn().mockResolvedValue('0xrefundhash'),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
@@ -50,7 +55,13 @@ import {
   contractCreateTask,
   contractUpdateTask,
   contractCancelTask,
+  contractGetTaskHooks,
+  contractGetDreamsPerUsdc,
+  contractGetDreamsWorkerSplitBps,
+  contractGetDreamsBonusBps,
+  contractRefundExpired,
 } from '../../../src/services/contract';
+import { getServerConfig } from '../../../src/config/env';
 import { notifyNewTask } from '../../../src/services/task-notifications';
 
 // Allow microtask-queued fire-and-forget work (notifyNewTask) to settle.
@@ -197,7 +208,7 @@ describe('tasks router', () => {
       expect(result!.pitchCount).toBe(1);
     });
 
-    it('emits forfeit pendingAction for a claimed claim-mode task', async () => {
+    it('emits only forfeit for an expired claimed claim-mode task', async () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(
@@ -212,7 +223,7 @@ describe('tasks router', () => {
       expect(result).not.toBeNull();
       const actions = result!.pendingActions;
       expect(actions.some((a) => a.action === 'forfeit' && a.role === 'requester')).toBe(true);
-      expect(actions.some((a) => a.action === 'submit' && a.role === 'worker')).toBe(true);
+      expect(actions.some((a) => a.action === 'submit' && a.role === 'worker')).toBe(false);
     });
 
     it('does not emit forfeit for a claimed bounty (non-claim mode)', async () => {
@@ -229,6 +240,68 @@ describe('tasks router', () => {
 
       expect(result).not.toBeNull();
       expect(result!.pendingActions.some((a) => a.action === 'forfeit')).toBe(false);
+    });
+
+    it('omits all DREAMS estimate fields when the hook is not configured', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.dreamsPerUsdc).toBeUndefined();
+      expect(result!.bonusBps).toBeUndefined();
+      expect(result!.estimatedUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedWorkerUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedRequesterUsdBonusValue).toBeUndefined();
+      expect(result!.estimatedWorkerDreamsBonus).toBeUndefined();
+      expect(result!.estimatedRequesterDreamsBonus).toBeUndefined();
+      expect(contractGetDreamsPerUsdc).not.toHaveBeenCalled();
+    });
+
+    it('includes worker and requester DREAMS estimates when the hook is attached', async () => {
+      const DREAMS_HOOK = '0x1234567890123456789012345678901234567890';
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        DEFAULT_PLATFORM_FEE_BPS: 500,
+        NODE_ENV: 'test',
+        CHAIN_ID: 84532,
+        BASE_RPC_URL: 'http://localhost:8545',
+        CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000001',
+        USDC_TOKEN_ADDRESS: '0x036CbD53842c5426634e7929541eC2318f3dCF7e',
+        FEE_RECIPIENT_ADDRESS: '0x0000000000000000000000000000000000000002',
+        DATABASE_URL: 'postgres://localhost/test',
+        SERVER_PRIVATE_KEY: '0x' + 'a'.repeat(64),
+        X402_FACILITATOR_URL: 'https://facilitator.daydreams.systems',
+        PORT: 3000,
+        DREAMS_HOOK_ADDRESS: DREAMS_HOOK,
+      } as unknown as ReturnType<typeof getServerConfig>);
+      vi.mocked(contractGetTaskHooks).mockResolvedValueOnce([DREAMS_HOOK as `0x${string}`]);
+      vi.mocked(contractGetDreamsPerUsdc).mockResolvedValueOnce(10n * BigInt(10 ** 18));
+      vi.mocked(contractGetDreamsWorkerSplitBps).mockResolvedValueOnce(8000);
+      vi.mocked(contractGetDreamsBonusBps).mockResolvedValueOnce(750);
+
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      expect(result!.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
+      expect(result!.bonusBps).toBe(750);
+      // reward 1_000_000 (1 USDC) * 7.5% bonus = $0.075 USD bonus value (75000 base units)
+      expect(result!.estimatedUsdBonusValue).toBe('75000');
+      // 80% worker / 20% requester split of the $0.075 bonus
+      expect(result!.estimatedWorkerUsdBonusValue).toBe('60000');
+      expect(result!.estimatedRequesterUsdBonusValue).toBe('15000');
+      // $0.075 * 10 DREAMS/USDC = 0.75 DREAMS total, split 80/20 = 0.6 / 0.15 DREAMS
+      expect(result!.estimatedWorkerDreamsBonus).toBe((6n * BigInt(10 ** 17)).toString());
+      expect(result!.estimatedRequesterDreamsBonus).toBe((15n * BigInt(10 ** 16)).toString());
     });
   });
 
@@ -263,17 +336,27 @@ describe('tasks router', () => {
       expect(result!.submissionWindowOpen).toBe(false);
     });
 
-    it('is false for a claimed task', async () => {
+    it('is true for an active claimed claim task', async () => {
       const ctx = createMockCtx();
       ctx.db.select
-        .mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'claimed', claimedBy: '0xworker' }]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              mode: 'claim',
+              status: 'claimed',
+              claimedBy: '0xworker',
+              expiryTime: new Date(Date.now() + 3600 * 1000),
+            },
+          ])
+        )
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
 
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.get({ taskId: '0xabc' });
 
-      expect(result!.submissionWindowOpen).toBe(false);
+      expect(result!.submissionWindowOpen).toBe(true);
     });
 
     it('expired bounty with submissions: omits submit, keeps accept', async () => {
@@ -395,6 +478,52 @@ describe('tasks router', () => {
       );
     });
 
+    it('keeps auction maxPrice equal to reward when reward changes', async () => {
+      const auction = {
+        ...openBountyRow,
+        mode: 'auction',
+        auctionType: 'english',
+        maxPrice: openBountyRow.reward,
+      };
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([auction]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(
+          makeChain([{ ...auction, reward: '5000000', maxPrice: '5000000' }])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc', reward: '5000000' });
+
+      const updateChain = ctx.db.update.mock.results[0]?.value;
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ reward: '5000000', maxPrice: '5000000' })
+      );
+      expect(result?.maxPrice).toBe('5000000');
+    });
+
+    it('rejects lowering auction reward below its stored clock boundary', async () => {
+      const auction = {
+        ...openBountyRow,
+        mode: 'auction',
+        auctionType: 'dutch',
+        maxPrice: '1000000',
+        auctionFloorPrice: '800000',
+      };
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([auction]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      await expect(
+        tasksRouter.createCaller(ctx).update({ taskId: '0xabc', reward: '700000' })
+      ).rejects.toThrow('auctionFloorPrice must be <= reward');
+      expect(contractUpdateTask).not.toHaveBeenCalled();
+    });
+
     it('surfaces accept and submit actions for an open bounty with submissions', async () => {
       const ctx = createMockCtx();
       const openRowWithSubs = {
@@ -415,7 +544,7 @@ describe('tasks router', () => {
       const actions = result!.pendingActions;
       expect(actions.some((a) => a.action === 'accept' && a.role === 'requester')).toBe(true);
       expect(actions.some((a) => a.action === 'submit' && a.role === 'worker')).toBe(true);
-      expect(actions.some((a) => a.action === 'cancel' && a.role === 'requester')).toBe(true);
+      expect(actions.some((a) => a.action === 'cancel' && a.role === 'requester')).toBe(false);
     });
 
     it('does not surface accept for an open bounty with no submissions', async () => {
@@ -456,7 +585,7 @@ describe('tasks router', () => {
       expect(result!.pendingActions.some((a) => a.action === 'accept' && a.role === 'requester')).toBe(true);
     });
 
-    it('returns no actions for an expired open bounty with no submissions', async () => {
+    it('offers extension and refund for an expired open bounty with no submissions', async () => {
       const ctx = createMockCtx();
       const expiredRowNoSubs = {
         ...mockTaskRow,
@@ -472,16 +601,34 @@ describe('tasks router', () => {
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.get({ taskId: '0xabc' });
 
-      expect(result!.pendingActions).toHaveLength(1);
-      expect(result!.pendingActions[0].action).toBe('refund_expired');
-      expect(result!.pendingActions[0].role).toBe('requester');
+      expect(result!.pendingActions.map((action) => action.action)).toEqual([
+        'update',
+        'refund_expired',
+      ]);
+      expect(result!.pendingActions.every((action) => action.role === 'requester')).toBe(true);
     });
   });
 
   describe('cancel', () => {
-    it('allows cancelling an open bounty with submissions', async () => {
+    it('rejects cancelling an open bounty with active submissions', async () => {
       const ctx = createMockCtx(PAYER);
-      ctx.db.select.mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'open' }]));
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'open' }]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(caller.cancel({ taskId: '0xabc' })).rejects.toThrow(
+        'Active submissions exist'
+      );
+
+      expect(contractCancelTask).not.toHaveBeenCalled();
+    });
+
+    it('allows cancelling an open bounty with no active submissions', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'open' }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
 
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.cancel({ taskId: '0xabc' });
@@ -502,6 +649,49 @@ describe('tasks router', () => {
     });
   });
 
+  describe('refundExpired', () => {
+    it('allows an expired locked-worker task with a submitted deliverable', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          {
+            ...mockTaskRow,
+            mode: 'claim',
+            status: 'pending_approval',
+            worker: '0xworker',
+            expiryTime: new Date(Date.now() - 60_000),
+          },
+        ])
+      );
+
+      const result = await tasksRouter.createCaller(ctx).refundExpired({ taskId: '0xabc' });
+
+      expect(contractRefundExpired).toHaveBeenCalledOnce();
+      expect(result.txHash).toBe('0xrefundhash');
+      expect(ctx.db.select).toHaveBeenCalledOnce();
+    });
+
+    it('blocks an expired contest while active submissions remain', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              ...mockTaskRow,
+              status: 'open',
+              expiryTime: new Date(Date.now() - 60_000),
+            },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 1 }]));
+
+      await expect(
+        tasksRouter.createCaller(ctx).refundExpired({ taskId: '0xabc' })
+      ).rejects.toThrow('Task has active submissions');
+      expect(contractRefundExpired).not.toHaveBeenCalled();
+    });
+  });
+
   describe('create auction validation', () => {
     it('throws when auction mode is missing maxPrice', async () => {
       const ctx = createMockCtx(PAYER);
@@ -517,6 +707,19 @@ describe('tasks router', () => {
       await expect(
         caller.create({ ...baseTaskInput, mode: 'auction', maxPrice: '1000000' })
       ).rejects.toThrow('auctionType is required for auction mode');
+    });
+
+    it('throws when auction maxPrice differs from escrow reward', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+      await expect(
+        caller.create({
+          ...baseTaskInput,
+          mode: 'auction',
+          maxPrice: '900000',
+          auctionType: 'english',
+        })
+      ).rejects.toThrow('maxPrice must equal reward for auction mode');
     });
 
     it('throws when dutch auction is missing auctionFloorPrice', async () => {

@@ -40,3 +40,33 @@ describe('getServerConfig XMTP env parsing', () => {
     expect(config.XMTP_ENABLED).toBe(true);
   });
 });
+
+describe('getServerConfig DREAMS_HOOK_SEED_BLOCK env parsing', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+    };
+    delete process.env.DREAMS_HOOK_SEED_BLOCK;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('defaults to 0 when unset', () => {
+    const config = getServerConfig();
+
+    expect(config.DREAMS_HOOK_SEED_BLOCK).toBe(0);
+  });
+
+  it('coerces a numeric string to a number', () => {
+    process.env.DREAMS_HOOK_SEED_BLOCK = '12345678';
+
+    const config = getServerConfig();
+
+    expect(config.DREAMS_HOOK_SEED_BLOCK).toBe(12345678);
+  });
+});

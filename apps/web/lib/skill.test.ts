@@ -12,7 +12,9 @@ describe('skillInstallCommand', () => {
     vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://market.example/');
 
     expect(getSiteUrl()).toBe('https://market.example');
-    expect(skillInstallCommand()).toBe('curl -fsSL https://market.example/skill.md -o skill.md');
+    expect(skillInstallCommand()).toBe(
+      'curl -fsSL https://market.example/install-skill.sh | sh -s -- https://market.example'
+    );
   });
 
   it('tracks the deployment site URL when the public override is absent', () => {
@@ -20,7 +22,7 @@ describe('skillInstallCommand', () => {
     vi.stubEnv('VERCEL_URL', 'preview.taskmarket.dev');
 
     expect(skillInstallCommand()).toBe(
-      'curl -fsSL https://preview.taskmarket.dev/skill.md -o skill.md'
+      'curl -fsSL https://preview.taskmarket.dev/install-skill.sh | sh -s -- https://preview.taskmarket.dev'
     );
   });
 });

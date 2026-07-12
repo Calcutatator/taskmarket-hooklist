@@ -1,4 +1,5 @@
 import { describe, it, expect } from 'vitest';
+import { shouldStartEvaluatorReview } from '../../../src/services/task-evaluator';
 
 /**
  * Pins the evaluatorDeadline derivation logic used in processTaskSubmittedEvent.
@@ -33,18 +34,34 @@ describe('indexer — evaluatorDeadline formula', () => {
   });
 });
 
+describe('indexer — evaluator review transitions', () => {
+  it('starts review for evaluator-backed locked-worker modes', () => {
+    expect(
+      shouldStartEvaluatorReview({ evaluator: '0xevaluator', evaluationWindow: 3600, mode: 'claim' })
+    ).toBe(true);
+  });
+
+  it.each(['bounty', 'benchmark'])('keeps evaluator-backed %s contests open', (mode) => {
+    expect(
+      shouldStartEvaluatorReview({ evaluator: '0xevaluator', evaluationWindow: 3600, mode })
+    ).toBe(false);
+  });
+});
+
 /**
  * Pins the EvaluatorTimedOut DB set payload shape.
- * The handler must clear evaluatorDeadline (set to null) alongside status/stake.
+ * The handler must clear evaluator identity and deadline alongside status/stake.
  */
 describe('indexer — EvaluatorTimedOut set payload', () => {
   it('payload includes evaluatorDeadline: null to clear the deadline', () => {
     const payload = {
       status: 'pending_approval' as const,
+      evaluator: null,
       evaluatorStake: '0',
       evaluatorDeadline: null,
     };
     expect(payload.status).toBe('pending_approval');
+    expect(payload.evaluator).toBeNull();
     expect(payload.evaluatorStake).toBe('0');
     expect(payload.evaluatorDeadline).toBeNull();
   });

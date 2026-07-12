@@ -9,7 +9,7 @@ import { useMotionDisabled } from '@/components/market/motion/use-motion-disable
 import {
   ACTIVE_THRESHOLD,
   activityNoun,
-  isTerminalStatus,
+  isOpenForWork,
   useTaskActivitySummary,
 } from '@/components/market/live-activity';
 import { type TaskModeData, taskDeadlineSource } from '@/components/market/tasks';
@@ -33,15 +33,15 @@ export function LiveStatusBanner({
   const { address } = useAccount();
   const isOwner = Boolean(address && address.toLowerCase() === task.requester.toLowerCase());
 
-  // Only meaningful while the task is open and still taking work. A terminal task
-  // or a closed submission window has no live story to tell. Gate the shared poll
-  // on this so a hidden banner never enables a query the activity panel would not
-  // (terminal tasks poll nowhere else) - keeps the banner a strict subset.
-  const isOpenForWork =
-    task.status === 'open' && task.submissionWindowOpen === true && !isTerminalStatus(task);
-  const { count, hasActivity, latestActor } = useTaskActivitySummary(task, modeData, isOpenForWork);
+  // Only meaningful while the task is open and still taking work (claims,
+  // pitches, bids, or submissions by mode). A terminal task or a closed intake
+  // window has no live story to tell. Gate the shared poll on this so a hidden
+  // banner never enables a query the activity panel would not (terminal tasks
+  // poll nowhere else) - keeps the banner a strict subset.
+  const openForWork = isOpenForWork(task);
+  const { count, hasActivity, latestActor } = useTaskActivitySummary(task, modeData, openForWork);
 
-  if (!isOpenForWork) {
+  if (!openForWork) {
     return null;
   }
 

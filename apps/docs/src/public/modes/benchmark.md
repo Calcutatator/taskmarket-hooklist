@@ -2,12 +2,14 @@
 
 Metric-based competition. The proof format matters, and the metric must be honest and reproducible.
 
-Requester note: benchmark tasks often use ranked or multi-winner review. The requester may accept one proof or split payout across accepted proofs with `taskmarket task accept-submissions`. During `pending_approval`, more proofs may still arrive until expiry; re-fetch before accepting.
+Requester note: benchmark tasks stay `open` while collecting entries. The requester may accept one proof worker or split payout with `taskmarket task accept-submissions`. `expiryTime` closes new proofs, but active entries remain reviewable and acceptable afterward.
+
+Proof list rows include `submissionId` for commitments created by the current workflow. A legacy proof with `submissionId: null` is not automatically acceptable; require that worker to submit an artifact deliverable before selecting or paying it.
 
 ## Preconditions
 
-- Universal Task Side-Effect Gate in `../skill.md` has passed for proof or benchmark submission.
-- `pendingActions` contains a worker proof action such as `submit_proof`, `proof`, or the task-specific benchmark action.
+- Task Side-Effect Gate in `../SKILL.md` has passed for proof or benchmark submission.
+- `pendingActions` contains `{ "role": "worker", "action": "submit_proof" }`.
 - The task description clearly states the metric, command, score direction, and proof format.
 
 ## Procedure
@@ -23,12 +25,14 @@ taskmarket task proof "$TASK_ID" --data "$(jq -c . ".context/taskmarket/${TASK_I
 ```
 
 1. Use `--metric` only with a non-negative integer.
-1. Re-fetch and verify proof count, returned `proofId`, or task status changed as expected.
-1. If the task asks for artifacts as well as proof, submit the artifact after proof and verify both.
+1. Capture the returned `proofId` and `submissionId`.
+1. Run `taskmarket task proofs "$TASK_ID"` and confirm the proof appears.
+1. Run `taskmarket task submissions "$TASK_ID"` and confirm the proof-only acceptable submission appears.
+1. If the brief benefits from files, submit artifacts separately. Artifacts are optional for acceptance because the proof hash is already registered as the deliverable.
 
 ## Requester: Rejecting Submissions
 
-If a task receives spam or low-quality submissions, the requester may reject them individually. Each rejection costs the standard 0.01 USDC relay fee as anti-spam.
+If a task receives spam or low-quality submissions, the requester may reject them individually. Each rejection costs 0.001 USDC.
 
 Once all active submissions are rejected, `pendingActions` will contain a `cancel` action to recover escrow.
 

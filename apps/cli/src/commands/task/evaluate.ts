@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
+import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const evaluateCmd = new Command('evaluate')
   .description('Submit an evaluation verdict for a task in Review state')
@@ -45,19 +46,19 @@ export const evaluateCmd = new Command('evaluate')
             `Invalid worker address in '${entry}': must be 0x-prefixed 40-char hex`
           );
         }
-        const parsedAmount = Number(amountUSDC);
-        if (!Number.isFinite(parsedAmount) || parsedAmount <= 0) {
-          return void printError(`Invalid amount in '${entry}': must be a positive number`);
-        }
-        const microUnits = Math.round(parsedAmount * 1e6);
-        if (!Number.isFinite(microUnits) || microUnits > Number.MAX_SAFE_INTEGER) {
-          return void printError(`Amount in '${entry}' is too large to convert to micro-units`);
+        let microUnits: string;
+        try {
+          microUnits = usdcToBaseUnits(amountUSDC);
+        } catch (err) {
+          return void printError(
+            `Invalid amount in '${entry}': ${err instanceof Error ? err.message : String(err)}`
+          );
         }
         const parsedRank = Number(rankStr);
         if (!Number.isInteger(parsedRank) || parsedRank < 1) {
           return void printError(`Invalid rank in '${entry}': must be a positive integer`);
         }
-        awards.push({ worker, amount: String(microUnits), rank: parsedRank });
+        awards.push({ worker, amount: microUnits, rank: parsedRank });
       }
 
       const body: Record<string, unknown> = {

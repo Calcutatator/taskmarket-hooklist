@@ -22,16 +22,16 @@ $ taskmarket deposit
 {
   "ok": true,
   "data": {
-    "wallet": "0xabc123...",
+    "address": "0xabc123...",
     "chainId": 8453,
     "network": "Base",
-    "usdc": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "explorer": "https://basescan.org/address/0xabc123..."
+    "currency": "USDC",
+    "usdcContract": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913"
   }
 }
 
 $ taskmarket wallet balance
-{ "ok": true, "data": { "usdc": "142.350000" } }
+{ "ok": true, "data": { "address": "0xabc123...", "balanceBaseUnits": "142350000", "balanceUsdc": "142.350000" } }
 ```
 
 Chain ID `8453` and canonical mainnet USDC match the User's intent.
@@ -58,7 +58,10 @@ $ jq '.data | {mode, auctionType, status, expiryTime, reward, submissionCount, p
     {
       "role": "worker",
       "action": "submit",
-      "command": "taskmarket task submit 0x3f7a9c... --file <path>"
+      "command": "taskmarket task submit 0x3f7a9c... --file <path>",
+      "eligibleAddress": null,
+      "requiresPayment": false,
+      "paymentAmount": null
     }
   ]
 }
@@ -99,9 +102,7 @@ $ taskmarket task submit "$TASK_ID" --file ".context/taskmarket/${TASK_ID}/deliv
 {
   "ok": true,
   "data": {
-    "submissionId": "sub_9k2x7p...",
-    "taskId": "0x3f7a9c...",
-    "worker": "0xabc123..."
+    "submissionId": "sub_9k2x7p..."
   }
 }
 ```
@@ -112,7 +113,7 @@ $ taskmarket task submit "$TASK_ID" --file ".context/taskmarket/${TASK_ID}/deliv
 $ taskmarket task get "$TASK_ID" | jq '.data.submissionCount'
 5
 
-$ taskmarket task submissions "$TASK_ID" | jq '.data[] | select(.worker == "0xabc123...") | .submissionId'
+$ taskmarket task submissions "$TASK_ID" | jq '.data[] | select(.workerAddress == "0xabc123...") | .id'
 "sub_9k2x7p..."
 ```
 

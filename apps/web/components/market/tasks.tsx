@@ -11,6 +11,7 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
+import { formatDreams } from '@taskmarket/shared';
 import { SlidersHorizontal } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
@@ -296,6 +297,24 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
     return task.currentLowestBid ? 'lowest bid' : null;
   }
   return null;
+}
+
+// Estimated worker DREAMS bonus caption for the task detail reward metric. Only present
+// when the DREAMS reward hook is attached to this task and an exchange rate + bonus rate
+// are configured (estimatedWorkerDreamsBonus only exists on the detail response, not list
+// rows). Shows both the USD bonus value and the DREAMS-token equivalent so the two rates
+// (bonusBps and dreamsPerUsdc) are never conflated -- see docs/reference/rewards.md. This
+// is a display estimate -- actual payouts also apply the wallet-age ramp and epoch budget
+// caps, and bounty-mode payouts settle at completion-time rates, not these.
+function dreamsBonusCaption(task: TaskDetailResponse | TaskResponse): string | null {
+  const usdBonus =
+    'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
+  const dreamsBonus =
+    'estimatedWorkerDreamsBonus' in task ? task.estimatedWorkerDreamsBonus : undefined;
+  if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
+    return null;
+  }
+  return `~${formatUsdcUnits(usdBonus)} · ~${formatDreams(dreamsBonus)} DREAMS worker bonus (est.)`;
 }
 
 // Reward as a scannable headline: larger/bolder than the surrounding cells, plus an
@@ -1975,7 +1994,10 @@ export function TaskDetailPanel({
             footerValue={<DeadlineLabel task={task} />}
             label="Reward"
             value={<span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>}
-            valueCaption={auctionPriceCaption(task)}
+            valueCaption={
+              [auctionPriceCaption(task), dreamsBonusCaption(task)].filter(Boolean).join(' · ') ||
+              null
+            }
           />
           <DetailMetric
             footerLabel={rated ? 'Rating' : taskActivityTitle}

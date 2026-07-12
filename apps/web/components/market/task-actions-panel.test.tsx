@@ -4,7 +4,7 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { PendingAction, TaskDetailResponse } from '@taskmarket/shared';
 
-import { TaskActionsPanel } from './task-actions-panel';
+import { canViewAction, TaskActionsPanel } from './task-actions-panel';
 import type { TaskActionComponentProps } from './actions/types';
 
 const { refresh } = vi.hoisted(() => ({ refresh: vi.fn() }));
@@ -61,5 +61,29 @@ describe('TaskActionsPanel', () => {
 
     await user.click(screen.getByRole('button', { name: /run accept/i }));
     expect(refresh).toHaveBeenCalledTimes(1);
+  });
+
+  it('shows permissionless actions to requester and worker wallets', () => {
+    const permissionless = {
+      action: 'select_winner',
+      role: 'anyone',
+      command: 'taskmarket task select-winner task-1',
+      eligibleAddress: null,
+    } as PendingAction;
+
+    expect(
+      canViewAction({
+        action: permissionless,
+        address: task.requester,
+        requester: task.requester,
+      })
+    ).toBe(true);
+    expect(
+      canViewAction({
+        action: permissionless,
+        address: '0x2222222222222222222222222222222222222222',
+        requester: task.requester,
+      })
+    ).toBe(true);
   });
 });

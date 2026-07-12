@@ -1,4 +1,5 @@
-import { describe, it, expect, vi } from 'vitest';
+import { createServer } from 'node:http';
+import { afterAll, beforeAll, describe, it, expect, vi } from 'vitest';
 import request from 'supertest';
 
 // All heavy modules must be mocked before app is imported — vitest hoists vi.mock() calls.
@@ -68,7 +69,27 @@ vi.mock('trpc-to-openapi', () => ({
 }));
 
 // Import after all mocks are registered
-const { app } = await import('../../../src/app');
+const { app: expressApp } = await import('../../../src/app');
+const app = createServer(expressApp);
+
+beforeAll(
+  () =>
+    new Promise<void>((resolve, reject) => {
+      const onError = (error: Error) => reject(error);
+      app.once('error', onError);
+      app.listen(0, '127.0.0.1', () => {
+        app.off('error', onError);
+        resolve();
+      });
+    })
+);
+
+afterAll(
+  () =>
+    new Promise<void>((resolve, reject) => {
+      app.close((error) => (error ? reject(error) : resolve()));
+    })
+);
 
 describe('validateBody integration — routes block invalid bodies before x402', () => {
   // For 400 tests: invalid body → validateBody short-circuits, x402 never runs
@@ -105,6 +126,19 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 402 when body is valid but no payment is provided', async () => {
       const res = await request(app).post('/api/tasks').send(validBody);
       expect(res.status).toBe(402);
+    });
+
+    it('rejects a divergent auction max price before requesting payment', async () => {
+      const res = await request(app)
+        .post('/api/tasks')
+        .send({
+          ...validBody,
+          mode: 'auction',
+          auctionType: 'english',
+          maxPrice: '4000000',
+        });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toContain('maxPrice must equal reward');
     });
   });
 
@@ -245,6 +279,32 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 402 when body is valid but no payment is provided', async () => {
       const res = await request(app).post('/api/tasks/0xtask/proofs').send(validBody);
       expect(res.status).toBe(402);
+    });
+  });
+
+  describe('evaluator payment routes', () => {
+    it.each([
+      ['/api/tasks/0xtask/evaluate', { taskId: '0xtask', verdict: 'approve' }],
+      ['/api/tasks/0xtask/appeal', { taskId: '0xtask' }],
+      [
+        '/api/tasks/0xtask/resolve-dispute',
+        {
+          taskId: '0xtask',
+          verdict: 'approve',
+          awards: [{ worker: FAKE_ADDRESS, amount: '1000000', rank: 1 }],
+        },
+      ],
+      ['/api/tasks/0xtask/evaluator-timeout', { taskId: '0xtask' }],
+    ])('returns 402 for an unpaid valid request to %s', async (path, body) => {
+      const res = await request(app).post(path).send(body);
+      expect(res.status).toBe(402);
+    });
+
+    it('does not require payment to finalize a verdict', async () => {
+      const res = await request(app)
+        .post('/api/tasks/0xtask/finalize-verdict')
+        .send({ taskId: '0xtask' });
+      expect(res.status).not.toBe(402);
     });
   });
 });

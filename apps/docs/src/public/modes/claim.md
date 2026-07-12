@@ -4,7 +4,7 @@ Exclusive worker flow. A worker must claim before producing and submitting. Afte
 
 ## Preconditions
 
-- Universal Task Side-Effect Gate in `../skill.md` has passed for `claim`.
+- Task Side-Effect Gate in `../SKILL.md` has passed for `claim`.
 - `pendingActions` contains `{ "role": "worker", "action": "claim" }`.
 - The task is fresh and reward/deadline justify exclusive work.
 
@@ -28,6 +28,8 @@ taskmarket task submit "$TASK_ID" --file ".context/taskmarket/${TASK_ID}/deliver
 
 1. Re-fetch and verify `submissionCount` increased or the task moved to `pending_approval`.
 1. Run `taskmarket task submissions "$TASK_ID"` and confirm your wallet appears.
+
+The requester may call `taskmarket task forfeit "$TASK_ID"` only after `expiryTime`. Before expiry, the claimed worker retains the delivery right. After forfeit, the requester may need to extend the reopened task before another worker can claim.
 
 ## Anti-Patterns
 

@@ -1,22 +1,34 @@
 /**
- * Auction mode smoke test: create → bid (worker A) → bid (worker B, lower) → select winner → submit → accept → rate → verify feedback
+ * Auction mode smoke test: create → bid (worker A) → bid (worker B, lower, optional) → select winner → submit → accept → rate → verify feedback
  *
  * Auction: requester sets a max price; workers bid down from it. Lowest bid after
  * the deadline wins exclusive assignment. Payment releases at bid price; surplus
  * is refunded to requester.
  *
  * Usage:
- *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... [WORKER_B_PRIVATE_KEY=0x...] \
  *     npx tsx --env-file=../../.env scripts/smoke-auction.ts
+ *
+ * WORKER_B_PRIVATE_KEY is optional. When set, worker B bids lower than worker A to
+ * test competitive bidding. Without it, the test still exercises auction mechanics
+ * with a single bidder.
  */
+import { privateKeyToAccount } from 'viem/accounts';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
+  const workerBKey = process.env.WORKER_B_PRIVATE_KEY as `0x${string}` | undefined;
+  const workerB = workerBKey ? privateKeyToAccount(workerBKey) : undefined;
 
   console.log('=== Taskmarket Smoke Test — Auction Mode ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  if (workerB) {
+    console.log('workerB:  ', workerB.address);
+  } else {
+    console.log('workerB:   (not set — single-bidder path)');
+  }
   console.log('api:      ', API_URL);
 
   // 1. Create auction task (max price 0.001 USDC, 30s bid window)
@@ -49,11 +61,23 @@ async function main() {
   )) as { bidId: string };
   ok('bidId (worker A)', bidIdA);
 
-  // 3. List bids — should show worker A's bid
+  // 2b. Worker B bids lower (optional)
+  if (workerB) {
+    log('2b/7', 'Worker B bidding at 0.0006 USDC (undercutting A)...');
+    const { bidId: bidIdB } = (await x402Post(
+      `/api/tasks/${taskId}/bids`,
+      { taskId, price: '600' },
+      workerB
+    )) as { bidId: string };
+    ok('bidId (worker B)', bidIdB);
+  }
+
+  // 3. List bids — should show at least worker A's bid (and B's if present)
   log('3/7', 'Listing bids...');
   const bidList = (await get(`/api/tasks/${taskId}/bids`)) as unknown[];
-  if (!Array.isArray(bidList) || bidList.length < 1) {
-    throw new Error(`Expected at least 1 bid, got: ${JSON.stringify(bidList)}`);
+  const expectedMinBids = workerB ? 2 : 1;
+  if (!Array.isArray(bidList) || bidList.length < expectedMinBids) {
+    throw new Error(`Expected at least ${expectedMinBids} bid(s), got: ${JSON.stringify(bidList)}`);
   }
   ok('bidCount', bidList.length);
 
@@ -66,12 +90,21 @@ async function main() {
   })) as { workerAddress: string };
   ok('winner', winner);
 
-  // 5. Worker submits deliverable
-  log('5/7', 'Worker submitting deliverable...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  // Verify the right worker won
+  const expectedWinner = workerB ? workerB.address.toLowerCase() : worker.address.toLowerCase();
+  if (winner.toLowerCase() !== expectedWinner) {
+    throw new Error(`Expected winner ${expectedWinner}, got ${winner}`);
+  }
+
+  // The winning worker submits
+  const submittingWorker = workerB ?? worker;
+
+  // 5. Winning worker submits deliverable
+  log('5/7', 'Winning worker submitting deliverable...');
+  const submitSig = await submittingWorker.signMessage({ message: `taskmarket:submit:${taskId}` });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
-    workerAddress: worker.address,
+    workerAddress: submittingWorker.address,
     signature: submitSig,
     artifacts: [
       {
@@ -86,7 +119,11 @@ async function main() {
 
   // 6. Requester accepts
   log('6/7', 'Requester accepting submission (X402)...');
-  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
+  await x402Post(
+    `/api/tasks/${taskId}/accept`,
+    { taskId, worker: submittingWorker.address },
+    requester
+  );
   ok('accepted', true);
 
   // Wait for indexer to process TaskCompleted event before rating
@@ -102,7 +139,7 @@ async function main() {
     `/api/tasks/${taskId}/rate`,
     {
       taskId,
-      worker: worker.address,
+      worker: submittingWorker.address,
       rating: 88,
       feedbackText: 'Thorough audit at a competitive price.',
     },

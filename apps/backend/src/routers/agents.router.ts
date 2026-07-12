@@ -7,13 +7,14 @@ import {
   TaskInboxResponseSchema,
   type TaskStatusType,
   type TaskModeType,
+  Secp256k1PublicKeySchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents, feedbacks, tasks, submissions, proposals, devices } from '../db/schema';
-import { eq, desc, sql, and, or, ilike, gte, inArray } from 'drizzle-orm';
+import { eq, desc, sql, and, or, ilike, gte, inArray, isNull } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { computeSubmissionWindowOpen } from '../lib/task';
+import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
 import { createHash } from 'crypto';
 
 function sha256Hex(data: string): string {
@@ -142,21 +143,27 @@ export const agentsRouter = router({
         return { asRequester: [], asWorker: [] };
       }
 
-      const [submissionCounts, pitchCounts] = await Promise.all([
+      const requesterAddresses = [...new Set(allRows.map((task) => task.requester))];
+      const [submissionCounts, pitchCounts, requesterKeys] = await Promise.all([
         ctx.db
           .select({ taskId: submissions.taskId, count: sql<number>`count(*)` })
           .from(submissions)
-          .where(inArray(submissions.taskId, allIds))
+          .where(and(inArray(submissions.taskId, allIds), isNull(submissions.rejectedAt)))
           .groupBy(submissions.taskId),
         ctx.db
           .select({ taskId: proposals.taskId, count: sql<number>`count(*)` })
           .from(proposals)
           .where(inArray(proposals.taskId, allIds))
           .groupBy(proposals.taskId),
+        ctx.db
+          .select({ address: agents.address, publicKey: agents.publicKey })
+          .from(agents)
+          .where(inArray(agents.address, requesterAddresses)),
       ]);
 
       const submissionCountMap = new Map(submissionCounts.map((r) => [r.taskId, Number(r.count)]));
       const pitchCountMap = new Map(pitchCounts.map((r) => [r.taskId, Number(r.count)]));
+      const requesterKeyMap = new Map(requesterKeys.map((row) => [row.address, row.publicKey]));
 
       const mapTask = (task: typeof tasks.$inferSelect) => {
         const sCount = submissionCountMap.get(task.id) ?? 0;
@@ -166,7 +173,10 @@ export const agentsRouter = router({
         return {
           id: task.id,
           requester: task.requester,
-          requesterPubkey: task.requesterPubkey,
+          requesterPubkey: normalizeRequesterPublicKey(
+            requesterKeyMap.get(task.requester),
+            task.requesterPubkey
+          ),
           description: task.description,
           reward: task.reward,
           escrowTxHash: task.escrowTxHash,
@@ -323,7 +333,8 @@ export const agentsRouter = router({
         .where(eq(agents.address, input.address))
         .limit(1);
 
-      if (!result.length || !result[0].publicKey) {
+      const publicKey = normalizeRequesterPublicKey(result[0]?.publicKey, null);
+      if (!publicKey) {
         throw new TRPCError({
           code: 'NOT_FOUND',
           message:
@@ -331,7 +342,7 @@ export const agentsRouter = router({
         });
       }
 
-      return { publicKey: result[0].publicKey };
+      return { publicKey };
     }),
 
   setPublicKey: publicProcedure
@@ -347,7 +358,7 @@ export const agentsRouter = router({
       z.object({
         deviceId: z.string(),
         apiToken: z.string(),
-        publicKey: z.string(),
+        publicKey: Secp256k1PublicKeySchema,
       })
     )
     .output(z.object({ publicKey: z.string() }))

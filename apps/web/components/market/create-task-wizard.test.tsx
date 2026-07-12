@@ -5,20 +5,40 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { CreateTaskWizard } from './create-task-wizard';
 
-const { connectOrCreateWallet, fund, router, signTypedDataAsync, switchChainAsync, walletState } =
-  vi.hoisted(() => ({
-    connectOrCreateWallet: vi.fn(),
-    fund: vi.fn(),
-    router: {
-      push: vi.fn(),
+const {
+  connectOrCreateWallet,
+  exchangeRateData,
+  fund,
+  router,
+  signTypedDataAsync,
+  switchChainAsync,
+  walletState,
+} = vi.hoisted(() => ({
+  connectOrCreateWallet: vi.fn(),
+  exchangeRateData: {
+    current: undefined as
+      | { dreamsPerUsdc: string; workerSplitBps: number; bonusBps: number }
+      | undefined,
+  },
+  fund: vi.fn(),
+  router: {
+    push: vi.fn(),
+  },
+  signTypedDataAsync: vi.fn(),
+  switchChainAsync: vi.fn(),
+  walletState: {
+    address: undefined as `0x${string}` | undefined,
+    isConnected: false,
+  },
+}));
+
+vi.mock('@/lib/api/client', () => ({
+  trpc: {
+    wallet: {
+      exchangeRate: { useQuery: () => ({ data: exchangeRateData.current, isLoading: false }) },
     },
-    signTypedDataAsync: vi.fn(),
-    switchChainAsync: vi.fn(),
-    walletState: {
-      address: undefined as `0x${string}` | undefined,
-      isConnected: false,
-    },
-  }));
+  },
+}));
 
 vi.mock('next/navigation', () => ({
   useRouter: () => router,
@@ -119,6 +139,7 @@ describe('CreateTaskWizard', () => {
     switchChainAsync.mockResolvedValue(undefined);
     walletState.address = undefined;
     walletState.isConnected = false;
+    exchangeRateData.current = undefined;
     vi.stubGlobal('fetch', vi.fn());
   });
 
@@ -361,7 +382,7 @@ describe('CreateTaskWizard', () => {
     confirmSpy.mockRestore();
   });
 
-  it('shows the cost breakdown on the Publish review (reward, 5% fee, worker receives)', async () => {
+  it('shows the cost breakdown on the Publish review (reward, 7.5% fee, worker receives)', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
@@ -375,14 +396,53 @@ describe('CreateTaskWizard', () => {
       .getAllByRole('term')
       .map((row) => row.textContent);
     expect(labels).toContain('Reward');
-    expect(labels).toContain('Platform fee (5%)');
+    expect(labels).toContain('Platform fee (7.5%)');
     expect(labels).toContain('You pay today');
     expect(labels).toContain('Worker receives');
-    // 100 reward -> 5 fee -> 95 to worker, and the requester pays the full 100.
+    // 100 reward -> 7.5 fee -> 92.5 to worker, and the requester pays the full 100.
     // The reward value appears twice (Reward row and the summed You-pay-today row).
     expect(within(breakdown).getAllByText('100.000 USDC')).toHaveLength(2);
-    expect(within(breakdown).getByText('5.000 USDC')).toBeInTheDocument();
-    expect(within(breakdown).getByText('95.000 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getByText('7.500 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getByText('92.500 USDC')).toBeInTheDocument();
+  });
+
+  it('shows estimated worker and requester DREAMS bonus rows when the exchange rate is configured', async () => {
+    exchangeRateData.current = {
+      dreamsPerUsdc: (10n * 10n ** 18n).toString(),
+      workerSplitBps: 8000,
+      bonusBps: 750,
+    };
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoPublishFromCustom(user, { reward: '100' });
+
+    const breakdownLabel = screen.getByText(/cost breakdown/i);
+    const breakdown = breakdownLabel.closest('div') as HTMLElement;
+    const labels = within(breakdown)
+      .getAllByRole('term')
+      .map((row) => row.textContent);
+    expect(labels).toContain('Estimated worker DREAMS bonus');
+    expect(labels).toContain('Estimated requester DREAMS bonus');
+    // 100 reward * 7.5% bonus = $7.50 bonus value; 10 DREAMS/USDC = 75 DREAMS total;
+    // split 80/20: worker 6.00 USDC / 60 DREAMS, requester 1.50 USDC / 15 DREAMS.
+    expect(within(breakdown).getByText(/~6\.000 usdc.*~60 dreams/i)).toBeInTheDocument();
+    expect(within(breakdown).getByText(/~1\.500 usdc.*~15 dreams/i)).toBeInTheDocument();
+  });
+
+  it('omits the DREAMS bonus row when no exchange rate is configured', async () => {
+    exchangeRateData.current = undefined;
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoPublishFromCustom(user, { reward: '100' });
+
+    const breakdownLabel = screen.getByText(/cost breakdown/i);
+    const breakdown = breakdownLabel.closest('div') as HTMLElement;
+    const labels = within(breakdown)
+      .getAllByRole('term')
+      .map((row) => row.textContent);
+    expect(labels).not.toContain('Estimated worker DREAMS bonus');
   });
 
   it('renders fully when initialMarketStats is null without a market strip', async () => {

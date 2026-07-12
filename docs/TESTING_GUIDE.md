@@ -208,3 +208,23 @@ make test
 ```
 
 This runs CLI tests, backend tests, and contract tests in sequence.
+
+## Skill conformance
+
+Run the platform-to-skill drift gate with:
+
+```bash
+make skill-conformance
+```
+
+The gate verifies:
+
+- runtime modes, statuses, pending actions, submission windows, standard X402 fees, and the pitch-selection signature against the canonical skill;
+- every documented task command against the live Commander command tree;
+- every documented raw REST route against generated OpenAPI and every generated task or evaluation operation against the raw REST reference;
+- recursive Markdown link closure and exact package-manifest contents;
+- backend and web publication paths resolve to the canonical package;
+- clean and upgrade HTTP installations produce the exact package, including removal of files deleted from the manifest; and
+- known stale public claims about statuses, fees, rating identity, and one-file installation remain absent.
+
+GitHub Actions runs the same Makefile target as the independent `skill-conformance` job. When it fails, update the implementation and canonical skill together; do not weaken the assertion or add copied publication files.

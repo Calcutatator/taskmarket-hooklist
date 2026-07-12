@@ -6,6 +6,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  printError: vi.fn((message: string) => {
+    throw new Error(message);
+  }),
 }));
 
 import { auctionAcceptCmd } from '../../src/commands/task/auction-accept.js';
@@ -58,6 +61,16 @@ describe('task auction-accept command', () => {
         ['node', 'auction-accept', '0xtask', '--min-price', 'abc'],
         { from: 'node' }
       )
-    ).rejects.toThrow('--min-price: invalid number "abc"');
+    ).rejects.toThrow('Invalid --min-price: USDC amount must be a positive decimal');
+  });
+
+  it('rejects --min-price precision beyond six decimal places', async () => {
+    await expect(
+      auctionAcceptCmd.parseAsync(
+        ['node', 'auction-accept', '0xtask', '--min-price', '1.0000001'],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('at most 6 fractional digits');
+    expect(x402Post).not.toHaveBeenCalled();
   });
 });

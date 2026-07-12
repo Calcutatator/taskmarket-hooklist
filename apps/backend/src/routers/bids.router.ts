@@ -224,8 +224,7 @@ export const bidsRouter = router({
         method: 'POST',
         path: '/tasks/{taskId}/bids/select-winner',
         tags: ['Tasks'],
-        summary:
-          'Select lowest bidder after deadline. Optional wallet-signed payload restricts the call to the task requester.',
+        summary: 'Permissionlessly finalize the lowest bidder after the deadline',
       },
     })
     .input(

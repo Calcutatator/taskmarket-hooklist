@@ -28,7 +28,7 @@ const envSchema = z
     CONTRACT_DEPLOY_BLOCK: z.coerce.number().default(0),
     FORWARDER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid forwarder address'),
     USDC_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid USDC address'),
-    DEFAULT_PLATFORM_FEE_BPS: z.coerce.number().min(0).max(10000).default(500),
+    DEFAULT_PLATFORM_FEE_BPS: z.coerce.number().min(0).max(10000).default(750),
     AWS_REGION: z.string().optional(),
     AWS_S3_BUCKET: z.string().optional(),
     AWS_ENDPOINT_URL: z.string().url().optional(),
@@ -59,6 +59,11 @@ const envSchema = z
     SMTP_TLS_CERT: z.string().optional(),
     SMTP_TLS_KEY: z.string().optional(),
     ADMIN_SECRET: z.string().min(16).optional(),
+    DREAMS_HOOK_ADDRESS: z
+      .string()
+      .regex(/^0x[a-fA-F0-9]{40}$/)
+      .optional(),
+    DREAMS_HOOK_SEED_BLOCK: z.coerce.number().default(0),
   })
   .superRefine((data, ctx) => {
     if (data.NODE_ENV === 'production') {

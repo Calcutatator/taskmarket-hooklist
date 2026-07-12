@@ -41,6 +41,23 @@ export function isTerminalStatus(task: TaskDetailResponse | TaskResponse) {
   return TERMINAL_STATUSES.includes(task.status);
 }
 
+// The API's submissionWindowOpen reports the deliverable window, which for
+// claim/pitch/auction only opens after a worker is locked in. "Is this open
+// task still taking entries" (claims, pitches, bids, submissions) instead
+// depends on the mode's intake deadline.
+export function isOpenForWork(task: TaskDetailResponse | TaskResponse, now = new Date()): boolean {
+  if (task.status !== 'open') return false;
+  if (new Date(task.expiryTime) <= now) return false;
+  switch (task.mode) {
+    case 'pitch':
+      return new Date(task.pitchDeadline ?? task.expiryTime) > now;
+    case 'auction':
+      return new Date(task.bidDeadline ?? task.expiryTime) > now;
+    default:
+      return true;
+  }
+}
+
 type ActivityNoun = {
   singular: string;
   plural: string;
@@ -409,7 +426,7 @@ export function LiveActivityPanel({
     ? 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
     : 'Work, bids, proofs, and reviews tied to this task.';
 
-  const windowOpen = task.submissionWindowOpen === true;
+  const windowOpen = isOpenForWork(task);
   const showReaching =
     isRequester && task.status === 'open' && !hasActivity && !terminal && windowOpen;
   const animateNew = pollEnabled && !motionDisabled;

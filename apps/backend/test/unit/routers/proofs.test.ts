@@ -3,13 +3,14 @@ import { createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
   contractSubmitProof: vi.fn().mockResolvedValue('0xprooftx'),
+  contractSubmitWork: vi.fn().mockResolvedValue('0xsubmissiontx'),
 }));
 
 import { proofsRouter } from '../../../src/routers/proofs.router';
+import { contractSubmitProof, contractSubmitWork } from '../../../src/services/contract';
 
 const WORKER = '0x0000000000000000000000000000000000000001';
 const TASK_ID = '0x7461736b00000000000000000000000000000000000000000000000000000001';
-const PROOF_ID = '00000000-0000-0000-0000-000000000001';
 
 function makeTask(overrides: Record<string, any> = {}) {
   return {
@@ -35,6 +36,22 @@ function makeTask(overrides: Record<string, any> = {}) {
     claimedAt: null,
     platformFeeBps: 500,
     ...overrides,
+  };
+}
+
+function makeProof() {
+  return {
+    id: 'proof-id',
+    taskId: TASK_ID,
+    workerAddress: WORKER,
+    proofData: 'proof-data-hash',
+    proofType: 'url',
+    metricValue: null,
+    signature: '0xsig',
+    status: 'pending',
+    proofHash: `0x${'ab'.repeat(32)}`,
+    submitTxHash: '0xprooftx',
+    submittedAt: new Date('2026-07-11T00:00:00.000Z'),
   };
 }
 
@@ -78,7 +95,7 @@ describe('proofs router', () => {
       );
     });
 
-    it('inserts proof and returns proofId on happy path', async () => {
+    it('anchors proof and deliverable, then returns both record IDs', async () => {
       const ctx = createMockCtx(WORKER); // X402 payer = worker
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
@@ -87,7 +104,11 @@ describe('proofs router', () => {
 
       expect(result.success).toBe(true);
       expect(typeof result.proofId).toBe('string');
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(typeof result.submissionId).toBe('string');
+      expect(contractSubmitProof).toHaveBeenCalledOnce();
+      expect(contractSubmitWork).toHaveBeenCalledOnce();
+      expect(ctx.db.transaction).toHaveBeenCalledOnce();
+      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
     });
 
     it('throws BAD_REQUEST when X402 payer is missing', async () => {
@@ -106,39 +127,51 @@ describe('proofs router', () => {
       const caller = proofsRouter.createCaller(ctx);
       await expect(caller.submit(submitInput)).rejects.toThrow('Payer must match workerAddress');
     });
-  });
 
-  describe('verify', () => {
-    // NOTE: the verify endpoint has no authentication guard — any caller can
-    // verify any proof by supplying a proofId and taskId. This is a security
-    // gap; tests document existing behaviour without validating authorisation.
-    it('updates proof to verified and task to accepted', async () => {
-      const ctx = createMockCtx();
+    it('returns the proof transaction hash when deliverable commitment fails', async () => {
+      vi.mocked(contractSubmitWork).mockRejectedValueOnce(new Error('relay failed'));
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
-      const caller = proofsRouter.createCaller(ctx);
-      const result = await caller.verify({
-        proofId: PROOF_ID,
-        taskId: TASK_ID,
-        txHash: '0xverifytx',
-      });
-
-      expect(result.success).toBe(true);
-      // update proofs status + update tasks status = 2 update calls
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
+      await expect(proofsRouter.createCaller(ctx).submit(submitInput)).rejects.toThrow(
+        'Proof anchored onchain (0xprooftx) but deliverable commitment failed'
+      );
     });
 
-    it('allows any caller to verify (no auth check)', async () => {
-      // Verify works with no payer set — documents the absence of auth guard
-      const ctx = createMockCtx(); // no payer
+    it('returns both transaction hashes when database sync fails', async () => {
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
+      ctx.db.transaction.mockRejectedValueOnce(new Error('database unavailable'));
 
-      const caller = proofsRouter.createCaller(ctx);
-      const result = await caller.verify({
-        proofId: PROOF_ID,
-        taskId: TASK_ID,
-        txHash: '0xverifytx',
-      });
+      await expect(proofsRouter.createCaller(ctx).submit(submitInput)).rejects.toThrow(
+        'Proof and deliverable anchored onchain (0xprooftx, 0xsubmissiontx)'
+      );
+    });
+  });
 
-      expect(result.success).toBe(true);
+  describe('listByTask', () => {
+    it('returns the acceptable submission ID for a current proof commitment', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeProof()]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([{ id: 'submission-id' }]));
+
+      const result = await proofsRouter.createCaller(ctx).listByTask({ taskId: TASK_ID });
+
+      expect(result[0].submissionId).toBe('submission-id');
+    });
+
+    it('returns null submissionId for a legacy proof', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeProof()]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await proofsRouter.createCaller(ctx).listByTask({ taskId: TASK_ID });
+
+      expect(result[0].submissionId).toBeNull();
     });
   });
 });

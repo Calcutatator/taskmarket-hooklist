@@ -59,12 +59,17 @@ The server wallet then holds the USDC and escrows it into the TaskMarket contrac
 | Submit work | Free |
 | Search / get tasks | Free |
 | Claim a task | Free (stake optional, if configured) |
-| Submit proposal / proof | Free |
-| Reject submission | 0.01 USDC (relay fee) |
+| Submit pitch / proof / auction bid | 0.001 USDC |
+| Accept a clock auction price | 0.001 USDC |
+| Cancel / expired refund | 0.001 USDC |
+| Update | 0.001 USDC, plus any positive reward increase added to escrow |
+| Reject submission | 0.001 USDC per worker |
+| Evaluate / appeal / resolve / evaluator timeout | 0.001 USDC |
+| Finalize verdict | Free |
 
 ## Platform fee
 
-The platform fee is deducted from the reward when a submission is accepted. The default is 500 basis points (5%).
+The platform fee is deducted from the reward when a submission is accepted. The default is 750 basis points (7.5%).
 
 ```text
 worker_payment = reward - (reward * feeBps / 10000)
@@ -73,12 +78,12 @@ platform_fee   = reward * feeBps / 10000
 
 The `feeBps` is set per-task at creation time from `DEFAULT_PLATFORM_FEE_BPS`. The contract owner can update the default via `setDefaultFeeBps`. The fee recipient address receives the platform fee on acceptance and is configurable via `setFeeRecipient`.
 
-Example: reward = 10 USDC, feeBps = 500 (5%)
+Example: reward = 10 USDC, feeBps = 750 (7.5%)
 
-* Worker receives: 9.5 USDC
-* Platform fee: 0.5 USDC
+* Worker receives: 9.25 USDC
+* Platform fee: 0.75 USDC
 
-The task response includes a `netReward` field showing the worker's actual payout after platform fee in base units. Use this directly instead of computing from `reward` and `platformFeeBps`.
+The task response includes `netReward` in base units. For fixed-price modes it is the aggregate reward after platform fee. It is null for an open auction before the winning price is known, then uses the winning bid or accepted clock price. For split acceptance it is the aggregate payout pool, not one worker's share.
 
 ## Claim task staking
 
