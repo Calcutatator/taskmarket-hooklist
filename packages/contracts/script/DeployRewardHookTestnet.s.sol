@@ -11,12 +11,19 @@ interface IDiamondAdmin {
     function setDefaultHooks(address[] calldata hooks) external;
 }
 
+interface IAuthorizedRelayer {
+    function authorizedRelayer() external view returns (address);
+}
+
 /// @notice Testnet deployment of the token reward hook stack using a mock token.
 ///         Use for smoke-testing only. Not suitable for mainnet.
 ///
 /// Required env vars:
 ///   FORGE_DEV_PRIVATE_KEY        — deployer/owner key
 ///   FORGE_DIAMOND_ADDRESS        — TaskMarket Diamond proxy on testnet
+///   FORGE_PGTR_FORWARDER         — TaskMarketForwarder address; its authorizedRelayer() is read
+///                                  on-chain and used as the reward hook's backend address, same
+///                                  as the mainnet script, so the two can never drift out of sync
 ///
 /// Optional:
 ///   FORGE_DREAMS_PER_USDC        — whole DREAMS per $1 (default: 347); scaled by 1e18 in this script
@@ -32,7 +39,6 @@ interface IDiamondAdmin {
 ///   FORGE_REQUESTER_CAP_USD      — USDC base units (default: 50_000e6)
 ///   FORGE_MAX_USD_PER_TASK       — USDC base units (default: 5_000e6)
 ///   FORGE_WORKER_SPLIT_BPS       — worker share in bps (default: 8000 = 80%)
-///   FORGE_BACKEND_ADDRESS        — backend server wallet (defaults to deployer for testnet)
 contract DeployRewardHookTestnet is Script {
     uint8 constant TOKEN_DECIMALS = 18;
 
@@ -52,6 +58,7 @@ contract DeployRewardHookTestnet is Script {
             deployer
         );
         uint256 dreamsPerUsdc = vm.envOr("FORGE_DREAMS_PER_USDC", uint256(347)) * 1e18;
+        address backendAddress = IAuthorizedRelayer(vm.envAddress("FORGE_PGTR_FORWARDER")).authorizedRelayer();
         TaskTokenRewardHook hook = new TaskTokenRewardHook(
             address(vault),
             address(budget),
@@ -61,7 +68,7 @@ contract DeployRewardHookTestnet is Script {
             uint16(vm.envOr("FORGE_BONUS_BPS", uint256(750))),
             address(token),
             uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
-            vm.envOr("FORGE_BACKEND_ADDRESS", deployer),
+            backendAddress,
             deployer
         );
 
@@ -89,6 +96,7 @@ contract DeployRewardHookTestnet is Script {
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
         console.log("Deployer minted (wei):", vaultSeed);
+        console.log("Backend (from forwarder's authorizedRelayer):", hook.backend());
         console.log("Diamond default hooks: set to [TaskTokenRewardHook]");
         console.log("Vault is unfunded -- transfer DREAMS to RewardVault to enable payouts");
     }

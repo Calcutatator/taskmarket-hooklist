@@ -11,11 +11,20 @@ interface IDiamondAdmin {
     function setDefaultHooks(address[] calldata hooks) external;
 }
 
+interface IAuthorizedRelayer {
+    function authorizedRelayer() external view returns (address);
+}
+
 /// @dev Required env vars (set in packages/contracts/.env):
 ///
 ///   FORGE_DEV_PRIVATE_KEY            — deployer/owner key
 ///   FORGE_PROTOCOL_TOKEN             — DREAMS token address
 ///   FORGE_DIAMOND_ADDRESS            — TaskMarket Diamond proxy
+///   FORGE_PGTR_FORWARDER             — TaskMarketForwarder address; its authorizedRelayer()
+///                                       is read on-chain and used as the reward hook's
+///                                       backend address (same server key relays payment-gated
+///                                       calls and calls withdrawFor -- deriving it here means
+///                                       the two can never drift out of sync)
 ///   FORGE_DREAMS_PER_USDC            — whole DREAMS per $1 (e.g. 347); scaled by 1e18 in this script
 ///   FORGE_BONUS_BPS                  — USD bonus % of task value in bps (e.g. 750 = 7.5%,
 ///                                       matching the platform fee)
@@ -26,7 +35,6 @@ interface IDiamondAdmin {
 ///   FORGE_MAX_USD_PER_TASK           — per-task emission cap (USDC base units)
 ///
 ///   FORGE_WORKER_SPLIT_BPS           — worker share in bps (e.g. 8000 = 80%; default 8000)
-///   FORGE_BACKEND_ADDRESS            — backend server wallet address (trusted for withdrawFor)
 ///
 /// Vault funding is intentionally not part of this script. RewardVault has no
 /// deposit function; it just reads token.balanceOf(address(this)). Funding is
@@ -60,6 +68,7 @@ contract DeployRewardHook is Script {
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
+        console.log("Backend (from forwarder's authorizedRelayer):", hook.backend());
         console.log("Diamond default hooks: set to [TaskTokenRewardHook]");
         console.log("Vault is unfunded -- transfer DREAMS to RewardVault to enable payouts");
     }
@@ -83,6 +92,7 @@ contract DeployRewardHook is Script {
     {
         address protocolToken = vm.envAddress("FORGE_PROTOCOL_TOKEN");
         uint256 dreamsPerUsdc = vm.envUint("FORGE_DREAMS_PER_USDC") * 1e18;
+        address backendAddress = IAuthorizedRelayer(vm.envAddress("FORGE_PGTR_FORWARDER")).authorizedRelayer();
         hook = new TaskTokenRewardHook(
             address(vault),
             address(budget),
@@ -92,7 +102,7 @@ contract DeployRewardHook is Script {
             uint16(vm.envUint("FORGE_BONUS_BPS")),
             protocolToken,
             uint16(vm.envOr("FORGE_WORKER_SPLIT_BPS", uint256(8000))),
-            vm.envAddress("FORGE_BACKEND_ADDRESS"),
+            backendAddress,
             deployer
         );
     }
