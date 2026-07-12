@@ -83,8 +83,7 @@ export async function validatePaidTaskAction(
           fail('Task is not awaiting acceptance');
         }
       }
-      const assignedWorker = task.worker ?? task.claimedBy;
-      if (!assignedWorker || assignedWorker.toLowerCase() !== worker.toLowerCase()) {
+      if (!task.worker || task.worker.toLowerCase() !== worker.toLowerCase()) {
         fail('Selected worker does not match the task worker');
       }
       const delivered = await database
@@ -315,10 +314,7 @@ export async function validatePaidTaskAction(
       }
       return;
     case 'appeal':
-      // task.worker is only backfilled by the indexer on final acceptance; a
-      // claim-mode task sitting in Review/Appealing has its worker recorded in
-      // claimedBy instead (see evaluations.router.ts's appeal handler).
-      requirePayer(payer, task.worker ?? task.claimedBy, 'task worker');
+      requirePayer(payer, task.worker, 'task worker');
       if (task.status !== 'appealing') fail('Task is not appealable');
       if (task.appealDeadline && now >= task.appealDeadline) fail('Appeal deadline has passed');
       return;

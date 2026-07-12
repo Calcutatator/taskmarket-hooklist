@@ -272,11 +272,13 @@ describe('paid task action preflight', () => {
     ).rejects.toThrow('Task has expired');
   });
 
-  it('allows accepting the claimer of a claim task when only claimedBy is set', async () => {
+  it('allows accepting the claimer of a claim task', async () => {
     const ctx = createMockCtx();
     ctx.db.select
       .mockReturnValueOnce(
-        makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
+        makeChain([
+          task({ mode: 'claim', status: 'pending_approval', worker: WORKER, claimedBy: WORKER }),
+        ])
       )
       .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
 
@@ -294,7 +296,9 @@ describe('paid task action preflight', () => {
   it('rejects accepting an address that is not the claimed worker', async () => {
     const ctx = createMockCtx();
     ctx.db.select.mockReturnValueOnce(
-      makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
+      makeChain([
+        task({ mode: 'claim', status: 'pending_approval', worker: WORKER, claimedBy: WORKER }),
+      ])
     );
 
     await expect(

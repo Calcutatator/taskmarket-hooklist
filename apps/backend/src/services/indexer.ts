@@ -268,6 +268,7 @@ async function processTaskClaimedEvent(log: EventLog): Promise<void> {
       status: 'claimed',
       claimedBy: worker as string,
       claimedAt: new Date(),
+      worker: worker as string,
     })
     .where(eq(tasks.id, taskId as string));
 

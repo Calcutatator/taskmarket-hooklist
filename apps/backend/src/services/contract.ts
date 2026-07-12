@@ -177,8 +177,33 @@ function getPublicClient() {
   return createPublicClient({ chain, transport: http(config.BASE_RPC_URL) });
 }
 
+/**
+ * Retry a flaky RPC read with exponential backoff. Base Sepolia's provider
+ * intermittently times out on eth_getBlockByNumber (both estimateFeesPerGas
+ * and direct getBlock calls depend on it), so a single transient blip
+ * shouldn't fail an otherwise-successful on-chain operation.
+ */
+async function retryWithBackoff<T>(
+  fn: () => Promise<T>,
+  attempts: number,
+  baseDelayMs: number
+): Promise<T> {
+  let lastError: unknown;
+  for (let attempt = 0; attempt < attempts; attempt++) {
+    try {
+      return await fn();
+    } catch (error) {
+      lastError = error;
+      if (attempt < attempts - 1) {
+        await new Promise((resolve) => setTimeout(resolve, baseDelayMs * 2 ** attempt));
+      }
+    }
+  }
+  throw lastError;
+}
+
 async function getGasParams(publicClient: ReturnType<typeof getPublicClient>) {
-  const fees = await publicClient.estimateFeesPerGas();
+  const fees = await retryWithBackoff(() => publicClient.estimateFeesPerGas(), 3, 500);
   return {
     maxFeePerGas: fees.maxFeePerGas * GAS_MULTIPLIER,
     maxPriorityFeePerGas: (fees.maxPriorityFeePerGas ?? 1_000_000n) * GAS_MULTIPLIER,
@@ -438,21 +463,20 @@ export async function contractEvaluate(
   // hasn't yet indexed the block the receipt just confirmed on a different node.
   // The transaction already succeeded on-chain, so retry the read rather than
   // fail the whole mutation over a transient consistency lag.
-  let lastError: unknown;
-  for (let attempt = 0; attempt < 5; attempt++) {
-    try {
-      const block = await getPublicClient().getBlock({ blockNumber: result.blockNumber });
-      return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
-    } catch (error) {
-      lastError = error;
-      await new Promise((resolve) => setTimeout(resolve, 1000));
-    }
+  try {
+    const block = await retryWithBackoff(
+      () => getPublicClient().getBlock({ blockNumber: result.blockNumber }),
+      5,
+      500
+    );
+    return { txHash: result.txHash, evaluatedAt: Number(block.timestamp) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
+    });
   }
-  const reason = lastError instanceof Error ? lastError.message : String(lastError);
-  throw new TRPCError({
-    code: 'INTERNAL_SERVER_ERROR',
-    message: `Evaluation confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
-  });
 }
 
 export async function contractAppeal(
