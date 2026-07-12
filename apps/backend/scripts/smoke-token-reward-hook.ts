@@ -5,6 +5,11 @@
  * on testnet using the mock oracle and mock DREAMS token deployed by
  * DeployRewardHookTestnet.s.sol.
  *
+ * Setup step (runs before the scenarios below): funds the vault from the deployer
+ * wallet via a plain ERC20 transfer -- DeployRewardHookTestnet.s.sol mints mock
+ * DREAMS to the deployer, not the vault, so this exercises the exact same funding
+ * operation a human runs on mainnet after `make deploy-reward-hook mainnet`.
+ *
  * Scenarios:
  *   A. Bounty task — create → verify task.get DREAMS estimate fields match the
  *      two-step bonusBps/dreamsPerUsdc formula → worker submits → accept winner →
@@ -35,6 +40,8 @@
  * Required env vars:
  *   REQUESTER_PRIVATE_KEY   — funded testnet account
  *   WORKER_PRIVATE_KEY      — second funded testnet account
+ *   FORGE_DEV_PRIVATE_KEY   — deployer key; holds the mock DREAMS minted by
+ *                             DeployRewardHookTestnet.s.sol, used to fund the vault
  *   REWARD_HOOK_ADDRESS     — TaskTokenRewardHook contract address (from deploy)
  *   MOCK_TOKEN_ADDRESS      — MockERC20 (mDREAMS) address (from deploy)
  *   VAULT_ADDRESS           — RewardVault address (from deploy)
@@ -47,7 +54,7 @@
  *   WORKER_WITHDRAWAL_ADDRESS=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-token-reward-hook.ts
  */
-import { createPublicClient, http, parseAbi, getAddress } from 'viem';
+import { createPublicClient, createWalletClient, http, parseAbi, getAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
@@ -61,12 +68,24 @@ const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS
     ? privateKeyToAccount(process.env.WORKER_PRIVATE_KEY as `0x${string}`).address
     : undefined);
 const RPC_URL = process.env.FORGE_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+const DEPLOYER_PRIVATE_KEY = process.env.FORGE_DEV_PRIVATE_KEY;
 
 if (!process.env.REQUESTER_PRIVATE_KEY || !process.env.WORKER_PRIVATE_KEY) {
   console.error(
     'Missing required env vars:\n' +
       '  REQUESTER_PRIVATE_KEY=0x...\n' +
       '  WORKER_PRIVATE_KEY=0x...'
+  );
+  process.exit(1);
+}
+
+if (!DEPLOYER_PRIVATE_KEY) {
+  console.error(
+    'Missing FORGE_DEV_PRIVATE_KEY.\n' +
+      'DeployRewardHookTestnet.s.sol mints mock DREAMS to the deployer wallet, not the\n' +
+      'vault directly -- this smoke test funds the vault itself via a plain transfer,\n' +
+      'the same operation a human would run on mainnet. Needs the deployer key that\n' +
+      'holds the minted supply.'
   );
   process.exit(1);
 }
@@ -81,7 +100,10 @@ if (!REWARD_HOOK_ADDRESS || !MOCK_TOKEN_ADDRESS || !VAULT_ADDRESS) {
   process.exit(1);
 }
 
-const erc20Abi = parseAbi(['function balanceOf(address) view returns (uint256)']);
+const erc20Abi = parseAbi([
+  'function balanceOf(address) view returns (uint256)',
+  'function transfer(address to, uint256 amount) returns (bool)',
+]);
 const hookAbi = parseAbi([
   'function rewardStates(bytes32) view returns (uint256,uint256,uint256,uint256,address,address,bool,bool)',
   'function claimable(address wallet) view returns (uint256)',
@@ -91,6 +113,22 @@ const hookAbi = parseAbi([
 ]);
 
 const client = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
+const deployer = privateKeyToAccount(DEPLOYER_PRIVATE_KEY as `0x${string}`);
+const deployerWallet = createWalletClient({ account: deployer, chain: baseSepolia, transport: http(RPC_URL) });
+
+// Mirrors the mainnet funding flow exactly: DeployRewardHookTestnet.s.sol mints mock
+// DREAMS to the deployer, not the vault, so this plain ERC20 transfer is the same
+// operation (`cast send <token> transfer <vault> <amount>`) a human runs on mainnet
+// after `make deploy-reward-hook mainnet` -- the vault has no deposit function.
+async function fundVault(amount: bigint): Promise<void> {
+  const hash = await deployerWallet.writeContract({
+    address: getAddress(MOCK_TOKEN_ADDRESS!),
+    abi: erc20Abi,
+    functionName: 'transfer',
+    args: [getAddress(VAULT_ADDRESS!), amount],
+  });
+  await client.waitForTransactionReceipt({ hash });
+}
 
 async function tokenBalance(address: string): Promise<bigint> {
   return client.readContract({
@@ -182,6 +220,23 @@ async function main() {
   console.log('hook:         ', REWARD_HOOK_ADDRESS);
   console.log('mock token:   ', MOCK_TOKEN_ADDRESS);
   console.log('vault:        ', VAULT_ADDRESS);
+  console.log('deployer:     ', deployer.address);
+
+  // ─── Setup: fund the vault ─────────────────────────────────────────────────
+  // DeployRewardHookTestnet.s.sol mints mock DREAMS to the deployer, not the vault
+  // (matching the mainnet script, which never holds funds either) -- fund it here
+  // via the same plain ERC20 transfer a human runs on mainnet.
+  log('0/2', 'Funding vault from deployer wallet...');
+  const balanceBefore = await vaultBalance();
+  await fundVault(10_000n * 10n ** 18n);
+  // waitForTransactionReceipt only guarantees inclusion on the node that mined it;
+  // a load-balanced RPC endpoint can still serve a stale read immediately after.
+  let balanceAfter = await vaultBalance();
+  for (let i = 0; i < 5 && balanceAfter <= balanceBefore; i++) {
+    await new Promise((r) => setTimeout(r, 2000));
+    balanceAfter = await vaultBalance();
+  }
+  ok('vault balance', `${balanceBefore} -> ${balanceAfter}`);
 
   // ─── Scenario C: hook wiring ───────────────────────────────────────────────
   // Verify that newly created tasks have the reward hook in their hook list.

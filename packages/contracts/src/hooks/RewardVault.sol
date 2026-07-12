@@ -23,6 +23,7 @@ contract RewardVault is IRewardVault, Ownable {
     event Released(bytes32 indexed taskId, uint256 amount);
     event Paid(bytes32 indexed taskId, address indexed worker, uint256 amount);
     event Withdrawn(address indexed to, uint256 amount);
+    event EmergencyWithdrawn(address indexed to, uint256 amount);
 
     error OnlyHook();
     error InsufficientAvailable(uint256 requested, uint256 available);
@@ -90,5 +91,12 @@ contract RewardVault is IRewardVault, Ownable {
         if (amount > avail) revert InsufficientAvailable(amount, avail);
         token.safeTransfer(to, amount);
         emit Withdrawn(to, amount);
+    }
+
+    /// @notice Sweeps the full balance, bypassing totalReserved.
+    function emergencyWithdraw(address to) external onlyOwner {
+        uint256 balance = token.balanceOf(address(this));
+        token.safeTransfer(to, balance);
+        emit EmergencyWithdrawn(to, balance);
     }
 }

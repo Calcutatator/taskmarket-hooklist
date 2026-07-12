@@ -147,4 +147,34 @@ contract RewardVaultTest is Test {
         assertEq(token.balanceOf(OWNER), 500e6);
         assertEq(vault.available(), 500e6);
     }
+
+    function test_emergencyWithdraw_onlyOwner() public {
+        vm.prank(STRANGER);
+        vm.expectRevert();
+        vault.emergencyWithdraw(STRANGER);
+    }
+
+    function test_emergencyWithdraw_sweepsFullBalanceIgnoringReserve() public {
+        vm.prank(HOOK);
+        vault.reserve(TASK, 900e6); // only 100e6 nominally "available"
+        vm.prank(OWNER);
+        vault.emergencyWithdraw(OWNER);
+        assertEq(token.balanceOf(OWNER), 1000e6);
+        assertEq(token.balanceOf(address(vault)), 0);
+        // totalReserved is untouched by the sweep -- a stale ledger entry, by design.
+        assertEq(vault.totalReserved(), 900e6);
+    }
+
+    function test_emergencyWithdraw_leavesReservationUnfulfillable() public {
+        vm.prank(HOOK);
+        vault.reserve(TASK, 400e6);
+        vm.prank(OWNER);
+        vault.emergencyWithdraw(OWNER);
+        // The reservation still exists in the ledger, but the vault holds
+        // nothing to pay it with -- pay() reverts (caught by the hook's own
+        // try/catch in production, not this test's concern).
+        vm.prank(HOOK);
+        vm.expectRevert();
+        vault.pay(TASK, WORKER, 400e6);
+    }
 }

@@ -2,9 +2,7 @@
 pragma solidity ^0.8.24;
 
 import { Script, console } from "forge-std/Script.sol";
-import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import { IERC20Metadata } from "@openzeppelin/contracts/token/ERC20/extensions/IERC20Metadata.sol";
-import { SafeERC20 } from "@openzeppelin/contracts/token/ERC20/utils/SafeERC20.sol";
 import { RewardVault } from "../src/hooks/RewardVault.sol";
 import { EpochBudget } from "../src/hooks/EpochBudget.sol";
 import { TaskTokenRewardHook } from "../src/hooks/TaskTokenRewardHook.sol";
@@ -30,11 +28,14 @@ interface IDiamondAdmin {
 ///   FORGE_WORKER_SPLIT_BPS           — worker share in bps (e.g. 8000 = 80%; default 8000)
 ///   FORGE_BACKEND_ADDRESS            — backend server wallet address (trusted for withdrawFor)
 ///
-///   Optional:
-///     FORGE_INITIAL_VAULT_BALANCE    — tokens to seed vault with (wei)
+/// Vault funding is intentionally not part of this script. RewardVault has no
+/// deposit function; it just reads token.balanceOf(address(this)). Funding is
+/// a plain ERC20 transfer to the vault address from any wallet holding
+/// DREAMS, fully decoupled from deployment and safe to do before or after
+/// this script runs (or never -- the hook wraps every vault call in
+/// try/catch, so an unfunded vault just means the DREAMS bonus doesn't pay
+/// out yet; USDC payouts and task completion are unaffected).
 contract DeployRewardHook is Script {
-    using SafeERC20 for IERC20;
-
     function run() external {
         uint256 deployerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
         address deployer = vm.addr(deployerKey);
@@ -53,19 +54,14 @@ contract DeployRewardHook is Script {
         defaultHooks[0] = address(hook);
         IDiamondAdmin(vm.envAddress("FORGE_DIAMOND_ADDRESS")).setDefaultHooks(defaultHooks);
 
-        uint256 initialVaultBalance = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(0));
-        if (initialVaultBalance > 0) {
-            IERC20(vm.envAddress("FORGE_PROTOCOL_TOKEN")).safeTransfer(address(vault), initialVaultBalance);
-        }
-
         vm.stopBroadcast();
 
         console.log("=== TaskTokenRewardHook deployment ===");
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
-        console.log("Vault seeded (wei):   ", initialVaultBalance);
         console.log("Diamond default hooks: set to [TaskTokenRewardHook]");
+        console.log("Vault is unfunded -- transfer DREAMS to RewardVault to enable payouts");
     }
 
     function _deployCore(address deployer) internal returns (RewardVault vault, EpochBudget budget) {

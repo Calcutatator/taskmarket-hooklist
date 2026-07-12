@@ -22,7 +22,10 @@ interface IDiamondAdmin {
 ///   FORGE_DREAMS_PER_USDC        — whole DREAMS per $1 (default: 347); scaled by 1e18 in this script
 ///   FORGE_BONUS_BPS              — USD bonus % of task value in bps (default: 750 = 7.5%,
 ///                                  matching the platform fee)
-///   FORGE_INITIAL_VAULT_BALANCE  — mock DREAMS tokens to mint into vault (default: 1_000_000e18)
+///   FORGE_INITIAL_VAULT_BALANCE  — mock DREAMS tokens to mint to the deployer wallet (default:
+///                                  1_000_000e18); minted to the deployer, not the vault, so the
+///                                  smoke test exercises the same plain-transfer funding path a
+///                                  human would use on mainnet
 ///   FORGE_EPOCH_DURATION         — seconds (default: 604800 = 7 days)
 ///   FORGE_GLOBAL_EPOCH_CAP_USD   — USDC base units (default: 100_000e6)
 ///   FORGE_WORKER_CAP_USD         — USDC base units (default: 10_000e6)
@@ -66,7 +69,7 @@ contract DeployRewardHookTestnet is Script {
         budget.setHook(address(hook));
 
         uint256 vaultSeed = vm.envOr("FORGE_INITIAL_VAULT_BALANCE", uint256(1_000_000e18));
-        token.mint(address(vault), vaultSeed);
+        token.mint(deployer, vaultSeed);
 
         // Bypass wallet-age ramp for testnet so new wallets earn full rewards immediately.
         // Thresholds are 1/2/3 seconds; multipliers are all 10000 bps (100%).
@@ -85,7 +88,8 @@ contract DeployRewardHookTestnet is Script {
         console.log("RewardVault:          ", address(vault));
         console.log("EpochBudget:          ", address(budget));
         console.log("TaskTokenRewardHook:  ", address(hook));
-        console.log("Vault seeded (wei):   ", vaultSeed);
+        console.log("Deployer minted (wei):", vaultSeed);
         console.log("Diamond default hooks: set to [TaskTokenRewardHook]");
+        console.log("Vault is unfunded -- transfer DREAMS to RewardVault to enable payouts");
     }
 }
