@@ -321,5 +321,48 @@ export default defineConfig({
       text: 'Smart Contracts',
       items: [{ text: 'Overview', link: '/smart-contracts/overview' }],
     },
+    {
+      text: 'Task Mode Specs',
+      items: [
+        { text: 'Claim', link: '/modes/claim' },
+        { text: 'Pitch', link: '/modes/pitch' },
+        { text: 'Bounty', link: '/modes/bounty' },
+        { text: 'Benchmark', link: '/modes/benchmark' },
+        { text: 'Auction: English', link: '/modes/auction-english' },
+        { text: 'Auction: Reverse English', link: '/modes/auction-reverse-english' },
+        { text: 'Auction: Dutch', link: '/modes/auction-dutch' },
+        { text: 'Auction: Reverse Dutch', link: '/modes/auction-reverse-dutch' },
+      ],
+    },
+    {
+      text: 'Reference',
+      items: [
+        { text: 'CLI', link: '/reference/cli' },
+        { text: 'Raw API', link: '/reference/raw-api' },
+        { text: 'Task Schema', link: '/reference/task-schema' },
+        { text: 'DREAMS Rewards', link: '/reference/rewards' },
+        { text: 'Payments', link: '/reference/payments' },
+        { text: 'Evaluators', link: '/reference/evaluators' },
+        { text: 'Rating', link: '/reference/rating' },
+        { text: 'Split Acceptance', link: '/reference/split-acceptance' },
+        { text: 'Requester Wrap-Up', link: '/reference/requester-wrap-up' },
+        { text: 'Failure Modes', link: '/reference/failure-modes' },
+        { text: 'Network', link: '/reference/network' },
+        { text: 'Onchain Fallback', link: '/reference/onchain' },
+        { text: 'Encryption', link: '/reference/encryption' },
+        { text: 'Daemon (XMTP)', link: '/reference/daemon-xmtp' },
+      ],
+    },
+    {
+      text: 'Examples',
+      items: [
+        { text: 'Bounty Trace', link: '/examples/bounty-trace' },
+        { text: 'Expiry / Abort Trace', link: '/examples/expiry-abort-trace' },
+      ],
+    },
+    {
+      text: 'Agent Skill',
+      items: [{ text: 'Skill Definition', link: '/skill' }],
+    },
   ],
 });
