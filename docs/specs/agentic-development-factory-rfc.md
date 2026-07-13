@@ -133,13 +133,11 @@ above the PR loop:
    testnet and mainnet deployer keys are actually split first (the known
    `FORGE_DEV_PRIVATE_KEY` issue; that fix becomes a hard prerequisite here).
 4. **Release → mainnet.** `make release` tags; `deploy.yml` already ships app services to
-   Railway production on the tag, gated on CI. The mainnet diamond cut is the one step in
-   the entire factory that must never run unattended with an agent holding the key. Options,
-   in increasing order of maturity: a human runs `make upgrade mainnet` from a trusted
-   machine (status quo); CI runs it behind a GitHub protected-environment manual-approval
-   gate; or — the end state — the diamond owner becomes a multisig/timelock, so an agent can
-   *propose* the cut and humans sign it, making key custody structural rather than
-   procedural.
+   Railway production on the tag, gated on CI. The mainnet diamond cut stays exactly as it
+   is today: a developer runs `make upgrade mainnet` manually from their local machine — no
+   CI execution, no agent involvement, no change to owner-key custody. **Decided:** see
+   ADR-0001 (`docs/adr/0001-mainnet-upgrades-stay-manual.md`), including the rejected
+   alternatives (approval-gated CI, multisig/timelock owner).
 
 Ordering constraint at every rung: contracts upgrade before app code that calls the new
 functions deploys. The reverse order serves user traffic against functions that do not exist
@@ -273,9 +271,9 @@ cloud agent for implementation — with the strongest model reappearing only at 
 - The cost-control questions under "Economics and Execution Substrate": per-PR token budgets,
   cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
   costs justify optimization engineering.
-- Which mainnet-upgrade custody model to adopt from the release-path section (manual, CI with
-  protected-environment approval, or multisig/timelock owner), and when to make the
-  testnet/mainnet deployer key split — a prerequisite for automating the testnet rung.
+- When to make the testnet/mainnet deployer key split — a prerequisite for automating the
+  testnet rung of the release path. (The mainnet custody question itself is decided:
+  ADR-0001, manual and developer-local.)
 
 ## Next Step
 

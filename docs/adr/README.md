@@ -78,6 +78,10 @@ The boundary this creates: an agent has full autonomy over reversible, local imp
 choices inside its own environment, and zero autonomy over decisions that would need an ADR —
 those always pause for a human.
 
+## Index
+
+- [0001 — Mainnet contract upgrades stay manual and developer-local](0001-mainnet-upgrades-stay-manual.md)
+
 ## Linting
 
 Structure is enforced by `docs/adr/lint.mjs`:

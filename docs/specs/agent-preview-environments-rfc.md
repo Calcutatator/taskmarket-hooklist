@@ -148,6 +148,25 @@ freshly empty — so every PR-environment deploy uses `make deploy testnet`, nev
 Using `upgrade` here would only import unrelated failure modes (storage-layout diffing,
 facet-selector pinning) into a sandbox that doesn't need them.
 
+### Testing the CLI against a preview environment
+
+The CLI (`@lucid-agents/taskmarket`) resolves its backend from the `TASKMARKET_API_URL`
+environment variable (`apps/cli/src/lib/api.ts`), defaulting to production. Two cases:
+
+- **Using the CLI to exercise a preview environment** (backend/contract PRs): point the
+  published CLI at the environment's backend URL — `TASKMARKET_API_URL=https://<pr-backend
+  domain> taskmarket ...`. Nothing to build.
+- **PRs that change the CLI itself**: there is no per-environment npm publish, and none is
+  needed — the CLI under test is the source sitting in the PR's own branch. Run it from
+  source: `pnpm --filter @lucid-agents/taskmarket build` then `node apps/cli/dist/index.js`,
+  or `pnpm dev` (tsx) for uncompiled iteration, with `TASKMARKET_API_URL` pointing at the
+  PR's preview backend. The smoke tests already follow this pattern (`cd apps/cli &&
+  API_URL=... pnpm smoke:xmtp-live`).
+
+Publishing per-environment npm packages was considered and rejected: it adds a registry
+round-trip and version-churn noise to every PR for something running the branch's own source
+already does correctly.
+
 ## Alternatives Considered
 
 - **Real Base Sepolia deploy per PR environment.** Rejected: needs a funded deployer wallet
