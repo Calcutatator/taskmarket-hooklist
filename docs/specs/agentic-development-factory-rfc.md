@@ -106,6 +106,76 @@ Candidate directions, none chosen:
 This RFC does not pick one. It exists to make sure this gap is written down and visible before
 the bug-fix process above is treated as solved.
 
+## Economics and Execution Substrate
+
+Who pays for the model inference, and where the agents physically run, are not afterthoughts —
+they determine which parts of this factory can scale and which are bounded by headcount.
+
+### The two billing shapes that exist
+
+1. **Subscription-bundled local sessions.** A developer running an agent interactively on
+   their own machine (Claude Code, Cursor, etc.), billed flat through their own personal or
+   team plan. Marginal cost per token is effectively zero, but the capacity is bounded: it
+   requires that developer's machine, that developer's account, and (in practice) that
+   developer's attention. It cannot fan out to N unattended parallel PRs and it stops when
+   the human logs off.
+2. **API-metered cloud execution.** Headless agents — GitHub Actions steps, Discord-triggered
+   cloud agents, anything unattended — authenticate with an organization API key and pay per
+   token. This is the only shape that scales past the number of developers, runs overnight,
+   and can drive many preview environments concurrently. Every attempt costs real money, and
+   a retry loop that would be free on a subscription is a metered bill here.
+
+There is no third option: unattended cloud work cannot ride on personal subscription
+accounts, so the moment an agent is triggered by a Discord message rather than a human at a
+keyboard, the organization is paying API rates for it.
+
+### Model tiering by phase
+
+The two processes in this RFC have very different token-economics profiles, and the model
+choice should follow the judgment density of the phase, not be one global setting:
+
+- **RFC writing, planning, architectural review — strongest available model.** This work is
+  low-volume, high-consequence, and (per the process above) happens with a human in the loop
+  anyway. It naturally lives in an interactive local session on a subscription, so using the
+  most capable model here costs nothing extra at the margin. Getting a design wrong is far
+  more expensive than any inference bill.
+- **Implementation loops — mid-tier model, cloud, metered.** The edit/test/deploy-to-preview
+  cycle is high-volume and more mechanical. This is where cost-per-attempt multiplies across
+  parallel PRs, so it should default to a cheaper tier, escalating to a stronger model only
+  when an attempt stalls.
+- **Mechanical chores (docs sync, formatting, changelog, dependency bumps) — cheapest tier.**
+  High-volume, near-zero judgment.
+
+The corollary: the expensive model plans and reviews; the cheap models grind. A feature's RFC
+might be authored with the strongest model in an attended session, then handed to a cheaper
+cloud agent for implementation — with the strongest model reappearing only at PR-review time.
+
+### Where the work runs
+
+- **Spec/RFC phase: local, attended, subscription-billed.** Already true today; nothing to
+  build.
+- **Implementation phase: cloud, unattended, API-billed**, one agent per PR, each against its
+  own preview environment (per the preview-environments RFC). This is the part that needs the
+  org API key, and it stacks on top of the Railway cost of the preview environments
+  themselves — the factory's two metered bills are inference and infrastructure, and both
+  scale with the number of concurrent PRs.
+- **A hybrid escape hatch worth preserving**: a developer can always pull an agent's branch
+  into a local worktree and continue attended on their own subscription (the Cursor
+  transfer-to-local pattern). Cloud-vs-local is a per-task choice, not an architecture
+  commitment.
+
+### Cost-control questions this raises (open, not designed here)
+
+- A per-PR token budget for unattended implementation agents — what's the cap, and what
+  happens when it's hit (pause and ping a human, or escalate model tier and retry)?
+- Cost attribution: should inference + infra cost per PR be surfaced on the PR itself (a
+  comment, like the preview-URL comment), so the factory's economics stay visible instead of
+  accumulating silently on an org bill?
+- Who owns/rotates the org API key, and is it scoped per-workflow the way Railway tokens
+  should be?
+- At what concurrent-PR volume do the metered costs justify more engineering (checkpoint
+  reuse, model routing, batching), versus just paying the bill?
+
 ## Non-goals
 
 - Designing the exact agent-triggering mechanism (Discord bot, cloud agent orchestration) —
@@ -123,6 +193,9 @@ the bug-fix process above is treated as solved.
   write an ADR," per the existing ADR process — but worth confirming that's sufficient rather
   than needing a formal escalation path to the RFC track.
 - Which of the three reproduction candidates above (if any) is worth prototyping first.
+- The cost-control questions under "Economics and Execution Substrate": per-PR token budgets,
+  cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
+  costs justify optimization engineering.
 
 ## Next Step
 
