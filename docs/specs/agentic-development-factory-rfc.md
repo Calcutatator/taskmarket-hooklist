@@ -108,6 +108,43 @@ invoking an agent SDK, a managed cloud-agent product, or GitHub-Actions-triggere
 runs), and whether one agent handles a task end-to-end or hands off between planning and
 implementation tiers. Those choices belong in ADRs once this overall shape is agreed.
 
+### Developer experience
+
+What using the factory actually feels like, stated plainly: **you talk in Discord (or an
+issue); work comes back as PRs with live preview URLs.** Three entry paths, all converging on
+a PR:
+
+1. **Feature, RFC-first.** A developer drafts the RFC in an attended session with the
+   strongest model, it lands in a PR, gets discussed, and its decisions are recorded as
+   ADRs. Then a single trigger message — "build `docs/specs/foo-rfc.md`" — spins up a cloud
+   agent that reads the RFC, `CLAUDE.md`, and the ADR process, opens an implementation PR,
+   receives its preview environment automatically, and loops until done or paused on an ADR.
+2. **Bug fix.** A single message describing the symptom. The agent spins up, opens a PR,
+   attempts reproduction (see the open problem below), fixes, and requests review.
+3. **Tiny feature, RFC skipped.** Identical to the bug path — the trigger message *is* the
+   spec. Skipping the RFC is the human sender's judgment call, and the ADR pause is the
+   backstop: a "tiny" feature that turns out to need a real architectural decision gets
+   caught at the other checkpoint rather than sailing through.
+
+The developer's surface area is deliberately small:
+
+- **Two review moments**: accepting/rejecting ADRs when an agent pauses, and reviewing the
+  final PR. Everything between is unattended.
+- **One pane of glass**: the PR carries the preview URL comment, the commit-by-commit
+  progress, links to any ADRs it spawned, and (if adopted) its running cost.
+- **One escape hatch**: pull the agent's branch into a local worktree and continue attended
+  on a subscription session at any time — cloud-vs-local is per-task, not structural.
+
+What exists when, honestly tiered:
+
+- **After this PR merges** (plus the two GitHub secrets and one dry-run validation):
+  automatic isolated preview environments on every PR. Immediately useful to human
+  developers, no agents required.
+- **After the testnet/mainnet deployer key split**: automated testnet releases on merge
+  (release-path rung 3).
+- **After the orchestrator ADR is decided and built**: the Discord trigger itself — the one
+  genuinely unbuilt piece between the current state and the full factory.
+
 ### Release path: from preview to the persistent chains
 
 Preview environments validate the *content* of a contract change but never the *upgrade
