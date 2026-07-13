@@ -148,6 +148,43 @@ freshly empty — so every PR-environment deploy uses `make deploy testnet`, nev
 Using `upgrade` here would only import unrelated failure modes (storage-layout diffing,
 facet-selector pinning) into a sandbox that doesn't need them.
 
+### The facilitator: X402 payments on a disposable chain
+
+Payer-gated endpoints (anything the smoke tests hit via `x402Post`) do not work with just a
+chain and a backend: X402 payment verification and settlement go through a **facilitator**
+service (`daydreamsai/facilitator`; the backend's `X402_FACILITATOR_URL` defaults to the
+production instance at `facilitator.daydreams.systems`). The production facilitator
+verifies against the real Base Sepolia RPC, so payments referencing a disposable Anvil
+chain would fail. Every isolated environment therefore needs its own facilitator wired to
+its own chain. Three pieces:
+
+1. **A facilitator instance per environment.** In the agent sandbox: run it as another
+   local process (it is a Bun service; the sandbox needs clone access to the
+   `daydreamsai/facilitator` repo — note this widens the GitHub App / vendor-app repo
+   scope). In the Railway preview environment: a fifth service, deployable from the
+   facilitator repo's existing Dockerfile. The backend's `X402_FACILITATOR_URL` points at
+   it in both cases.
+2. **Chain identity: Base Sepolia masquerade.** The facilitator validates networks against
+   a fixed supported list (chain id 84532 = `base-sepolia`), and the backend derives its
+   X402 network string from `CHAIN_ID`. Rather than teaching either about a new chain, the
+   disposable Anvil runs with `--chain-id 84532` and the facilitator gets
+   `EVM_NETWORKS=base-sepolia` plus `EVM_RPC_URL_BASE_SEPOLIA=<the environment's anvil
+   RPC>` — the explicit RPC override wins its resolution order, so "base-sepolia" resolves
+   to the disposable chain. Backend `CHAIN_ID=84532` completes the alignment. Safe because
+   the chain never leaves the environment's private network.
+3. **An EIP-3009-capable mock USDC — required contract work, not yet done.** X402's
+   `exact` scheme settles via `transferWithAuthorization` (EIP-3009) on the payment token.
+   Real USDC implements it; both existing mocks (`MockERC20`,
+   `test/mocks/MockUSDC.sol`) are plain ERC20s, so settlement reverts on-chain regardless
+   of facilitator configuration. `DeployMockUSDCPreview` must deploy an EIP-3009-capable
+   mock (EIP-712 domain, authorization-state tracking, signature validation) before
+   payer-gated flows work in any isolated environment. This is a self-contained, testable
+   contract task and the single hardest remaining blocker for full smoke coverage on
+   disposable chains.
+
+Until pieces 1 and 3 land, isolated environments support permissionless endpoints and
+non-X402 flows only; payer-gated flows still require the shared testnet.
+
 ### Testing the CLI against a preview environment
 
 The CLI (`@lucid-agents/taskmarket`) resolves its backend from the `TASKMARKET_API_URL`
@@ -233,6 +270,9 @@ persistent testnet remains the right, more expensive, contended fallback.
 
 - Confirm nothing currently depends on Railway's native `botPrEnvironments`/`prDeploys`
   behavior before disabling it.
+- Build the EIP-3009-capable mock USDC and the per-environment facilitator wiring (fifth
+  Railway service in preview environments, local process in sandboxes) — see the
+  facilitator section; payer-gated X402 flows are blocked on both.
 - Exact Anvil service definition (Dockerfile, health check, Railway service config).
 - Railway billing/quota impact of creating and destroying a full environment (4 services +
   Postgres) on every commit across potentially many concurrent PRs — worth checking before

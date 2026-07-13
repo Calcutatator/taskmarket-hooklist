@@ -11,6 +11,18 @@
 # anything the backend still complains about). See the "Tier-2 setup"
 # section of docs/specs/agentic-development-factory-rfc.md.
 #
+# KNOWN GAP -- X402 payments: payer-gated endpoints need a facilitator
+# running against this Anvil chain (see the facilitator section of
+# docs/specs/agent-preview-environments-rfc.md). Anvil runs with
+# --chain-id 84532 (Base Sepolia masquerade) so the backend, the X402
+# network string, and the facilitator's network validation line up; the
+# facilitator itself must be started separately (daydreamsai/facilitator,
+# EVM_NETWORKS=base-sepolia, EVM_RPC_URL_BASE_SEPOLIA pointed here) and
+# X402 settlement additionally requires an EIP-3009-capable mock USDC,
+# which DeployMockUSDCPreview does not yet provide. Until both land,
+# permissionless endpoints and non-X402 smoke paths work; payer-gated
+# ones fail at payment verification/settlement.
+#
 # All keys below are Anvil's well-known, pre-funded default dev accounts.
 # They are public knowledge and safe ONLY because this chain never leaves
 # the sandbox. Never use them against a real network.
@@ -64,7 +76,8 @@ make install
 echo "==> [5/7] Local Anvil chain"
 if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1; then
-  nohup anvil --host 127.0.0.1 --port 8545 > /tmp/anvil.log 2>&1 &
+  # --chain-id 84532: Base Sepolia masquerade, see header note on X402.
+  nohup anvil --host 127.0.0.1 --port 8545 --chain-id 84532 > /tmp/anvil.log 2>&1 &
   for _ in $(seq 1 30); do
     curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
       -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1 && break
@@ -85,6 +98,10 @@ cat > .env << EOF
 # Anvil default dev keys: public knowledge, sandbox-only, never real networks.
 NODE_ENV=development
 DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME
+CHAIN_ID=84532
+# Local facilitator (start separately; see header note). Payer-gated X402
+# endpoints fail until it is running and the mock USDC supports EIP-3009.
+X402_FACILITATOR_URL=http://127.0.0.1:8402
 FORGE_ANVIL_RPC_URL=$ANVIL_RPC_URL
 FORGE_DEV_PRIVATE_KEY=$DEPLOYER_KEY
 FORGE_USDC_TOKEN_ADDRESS=$USDC_ADDRESS
