@@ -108,6 +108,43 @@ invoking an agent SDK, a managed cloud-agent product, or GitHub-Actions-triggere
 runs), and whether one agent handles a task end-to-end or hands off between planning and
 implementation tiers. Those choices belong in ADRs once this overall shape is agreed.
 
+### Release path: from preview to the persistent chains
+
+Preview environments validate the *content* of a contract change but never the *upgrade
+path*. Preview always deploys fresh (`DiamondDeploy`), while the real testnet and mainnet
+have live diamonds with accumulated state that are upgraded in place (`DiamondFullUpgrade` —
+a live diamond cut, gated by the owner key). A PR can pass every preview check and still
+carry a broken upgrade: a storage-layout violation or facet-selector collision only
+surfaces when cutting against existing state. The factory therefore needs a release ladder
+above the PR loop:
+
+1. **PR preview** (empty Anvil, fresh deploy) — validates the change itself. Already covered
+   by the preview-environments RFC.
+2. **Upgrade rehearsal** (fork-mode Anvil) — required for any PR touching
+   `packages/contracts/**`. Anvil's `--fork-url` gives the preview environment a copy of the
+   real chain's current state, and `anvil_impersonateAccount` lets the agent execute the
+   upgrade script *as the diamond owner without possessing the owner key*. The agent
+   rehearses `make upgrade` against real accumulated state and runs smoke tests against the
+   upgraded fork — same preview machinery, forked chain instead of empty chain, still zero
+   real keys in the environment.
+3. **Merge to main → testnet upgrade.** `make upgrade testnet` against the real shared
+   testnet's diamond, followed by testnet smoke tests. This step can be an automated CI job:
+   the testnet owner key living in GitHub secrets is acceptable custody risk — provided the
+   testnet and mainnet deployer keys are actually split first (the known
+   `FORGE_DEV_PRIVATE_KEY` issue; that fix becomes a hard prerequisite here).
+4. **Release → mainnet.** `make release` tags; `deploy.yml` already ships app services to
+   Railway production on the tag, gated on CI. The mainnet diamond cut is the one step in
+   the entire factory that must never run unattended with an agent holding the key. Options,
+   in increasing order of maturity: a human runs `make upgrade mainnet` from a trusted
+   machine (status quo); CI runs it behind a GitHub protected-environment manual-approval
+   gate; or — the end state — the diamond owner becomes a multisig/timelock, so an agent can
+   *propose* the cut and humans sign it, making key custody structural rather than
+   procedural.
+
+Ordering constraint at every rung: contracts upgrade before app code that calls the new
+functions deploys. The reverse order serves user traffic against functions that do not exist
+yet.
+
 ## Open Problem: reproducing a reported bug
 
 This is genuinely unsolved, not just undecided — worth stating plainly rather than papering
@@ -236,6 +273,9 @@ cloud agent for implementation — with the strongest model reappearing only at 
 - The cost-control questions under "Economics and Execution Substrate": per-PR token budgets,
   cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
   costs justify optimization engineering.
+- Which mainnet-upgrade custody model to adopt from the release-path section (manual, CI with
+  protected-environment approval, or multisig/timelock owner), and when to make the
+  testnet/mainnet deployer key split — a prerequisite for automating the testnet rung.
 
 ## Next Step
 
