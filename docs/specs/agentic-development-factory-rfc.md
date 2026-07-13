@@ -138,6 +138,36 @@ The tiers stay useful after tier 3 exists: the local-takeover escape hatch in th
 experience section is exactly a controlled drop from tier 3 to tier 1 — the work moves from
 the agent's identity back under a human's, mid-task, without ceremony.
 
+### Control plane: where agents are triggered and managed
+
+A separating observation: **message-driven and tier 3 are orthogonal.** A chat-triggered
+agent does not require autonomous identity — it depends on whether the chat surface has a
+first-party bridge to a vendor account.
+
+- **Slack is the out-of-the-box control plane.** All three major vendors ship first-party
+  Slack integrations — Cursor (`@Cursor`), Anthropic (Claude in Slack), OpenAI (Codex) — each
+  mapping the Slack user to their own vendor account. That is message-driven tier 2, today,
+  with zero build: identity stays the developer's, billing stays on their plan, and the
+  vendor maintains the bridge. (Vendor specifics to re-verify at orchestrator-ADR time.)
+- **Discord is inherently a tier-3 build.** No vendor ships a first-party Discord
+  integration, so a Discord control plane means a custom bot that receives the message,
+  invokes an agent programmatically (a managed-agents-style API under the org key), and
+  operates under the factory's own GitHub App identity. Discord is not harder because of
+  Discord — it is harder because the identity bridge does not exist until we build it.
+
+Tier-2 vendor landscape for reference (ease of adoption, all anchored to a developer's own
+account plus a GitHub connection): Cursor cloud agents (VM configured in-repo via
+`.cursor/environment.json`, Slack/web/app triggers, transfer-to-local handoff), Claude
+(claude.ai/code cloud sessions, CLI remote control, Claude in Slack, and the Managed Agents
+API as the programmatic substrate a tier-3 orchestrator would sit on), Codex (ChatGPT
+account, cloud environment config plus `AGENTS.md`, GitHub and Slack triggers).
+
+The pragmatic sequencing this suggests: adopt Slack for message-driven tier-2 agents
+immediately at zero build cost, and treat the Discord bot as the tier-3 orchestrator
+deliverable — decided in the orchestrator ADR, built once, carrying its own identity. Which
+chat surface the team actually lives in day-to-day is a real input to that ADR, not a
+technical detail.
+
 ### The agent's execution sandbox (distinct from the preview environment)
 
 The factory involves two different compute contexts that must not be conflated:
