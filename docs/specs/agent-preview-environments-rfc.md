@@ -153,14 +153,46 @@ facet-selector pinning) into a sandbox that doesn't need them.
 - **Real Base Sepolia deploy per PR environment.** Rejected: needs a funded deployer wallet
   shared across every parallel agent, faucet/gas contention, slower per-push turnaround, and
   reintroduces exactly the shared-state collision problem this RFC exists to solve.
-- **Conditional wipe** (only reset Anvil/DB when a commit touches `packages/contracts/**`,
-  otherwise preserve state). Rejected in favor of unconditional full wipe on every commit —
-  simpler, always in sync with HEAD, no partial-drift edge cases.
+- **Persistent chain per PR / conditional wipe** (keep one Anvil chain alive across commits
+  within a PR, only resetting when a commit touches `packages/contracts/**` — or never,
+  using `make upgrade` for contract changes). This is technically possible: the anvil service
+  has no reason to redeploy on app-only commits, and Anvil supports state persistence
+  (`--state`, `anvil_dumpState`/`anvil_loadState`). Rejected knowingly, not for
+  impossibility: (1) contract-touching commits leave the deployed diamond's bytecode stale,
+  forcing a live diamond cut (`make upgrade`) whose failure modes — storage-layout rules,
+  facet-selector diffing — would fail PRs for reasons unrelated to the change under review;
+  (2) the backend indexes chain events into Postgres, so chain and DB must be wiped together
+  or kept together, and keeping both forces migrations-always-additive plus exactly the
+  partial-drift edge cases the unconditional wipe eliminates. Unconditional full wipe on
+  every commit is simpler and always in sync with HEAD. The future speed win is the
+  `PROJECT_SANDBOXES` checkpoint/fork path in Open Questions (fresh-state semantics without
+  re-running the deploy script), not persistence.
 - **Keep Railway's native bot PR-environment feature as-is.** Rejected: its configuration is
   invisible outside the Railway dashboard, and its current base template (`preview`) is
   broken.
 
-## Accepted Limitation
+## Accepted Limitations
+
+### Latency per commit
+
+Every pushed commit pays a full environment rebuild. Decomposed, though, the wipe itself is
+not the slow part:
+
+- Railway rebuild and redeploy of backend/frontend/docs: **minutes**, and unavoidable under
+  any design — the code changed, so the app services must redeploy whether or not the chain
+  persists.
+- Anvil boot plus `forge script` deploying the diamond to it: **seconds**. Anvil mines
+  instantly with no block-time waits. Fresh Postgres plus migrations-on-boot: also seconds.
+
+A real testnet would not fix this — Base Sepolia is slower per iteration (real block times
+and confirmations) on top of costing real gas. The realistic options are "minutes, free,
+isolated" (this design) or "more minutes, real money, shared" (testnet). The rebuild price is
+also paid per pushed commit, not per action: within one deployed preview an agent iterates
+freely — browser, smoke tests, chain time-travel, DB inspection — without triggering a
+rebuild. Mitigations if the per-push minutes become the bottleneck: Railway build caching,
+and the `PROJECT_SANDBOXES` checkpoint/fork path in Open Questions.
+
+### State does not survive commits
 
 Wiping the environment on every commit means bugs that only reproduce after a multi-step
 sequence built up across earlier commits in the same PR (e.g. "create a task on commit 1,
