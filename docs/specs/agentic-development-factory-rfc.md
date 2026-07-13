@@ -183,6 +183,49 @@ agents, single org key) as the orchestrator-ADR deliverable — on whichever cha
 team actually lives in, which is a real input to that ADR, not a technical detail. Tier 4
 stays parked until something concrete demands elastic identity.
 
+### Tier-2 setup: the two pieces of work
+
+Getting vendor cloud agents (Claude Code cloud, Codex cloud) productive against this repo
+decomposes into exactly two pieces of work:
+
+**Piece 1 — preview environments (tear-up / tear-down).** The per-PR Railway environment
+lifecycle: `preview.yml` plus its secrets and dry-run validation, per the
+preview-environments RFC. Vendor-agnostic — whichever agent opens the PR gets the same
+environment. Status: drafted, needs the two GitHub secrets and one live dry run.
+
+**Piece 2 — making the whole stack run inside a sandbox.** The agent's inner loop (local
+Anvil, local Postgres, backend, smoke tests) has to come up inside a single vendor VM with
+no Docker and no external services. The pieces:
+
+- `scripts/cloud-env-setup.sh` — one script both vendors' environment configs call. It
+  installs the toolchain (pnpm, Foundry), inits git submodules, stands up **native**
+  Postgres (cloud sandboxes have no Docker — the one place the repo's `make db start`
+  convention doesn't transfer), boots a local Anvil, deploys mock USDC + the diamond to it,
+  and writes a complete `.env` (which the Makefile's `ENV_LOADER` picks up, so every `make`
+  target works afterwards). Uses Anvil's deterministic pre-funded dev accounts for every
+  role — deployer, server, requester, worker A/B, evaluator — safe strictly because the
+  chain never leaves the sandbox. Status: drafted, not yet executed in a real vendor
+  sandbox; expected first-run friction is native Postgres on the vendor image and the full
+  backend env var set.
+- **Vendor environment config**, per vendor, pointing at that script:
+  - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `CLAUDE.md`
+    already makes the repo agent-ready; set the cloud environment's setup to run
+    `scripts/cloud-env-setup.sh`.
+  - *Codex*: connect the Codex GitHub app; create the environment in ChatGPT's Codex
+    settings with the same setup script; `AGENTS.md` already exists but is stale (still
+    lists the deprecated `apps/frontend`, predates the RFC/ADR conventions) and needs a
+    sync pass.
+- **Makefile adjustments** as friction surfaces: candidates are a Docker-free `make db`
+  path (the setup script currently bypasses `make db start` entirely) and a
+  `make sandbox-up` wrapper so an agent can re-run the stack bring-up idempotently
+  mid-session. To be driven by what the first real cloud session actually hits, not
+  built speculatively.
+- **Browser verification**: sandboxes run headless Chromium, not interactive Chrome — the
+  repo already ships the tooling (Playwright in `apps/web`,
+  `make ui-ci-install-browsers`). Agents drive deployed preview URLs or the local web app
+  via Playwright and read screenshots. Because the smoke loop is all-localhost, it also
+  survives the post-setup network egress restrictions some vendor sandboxes apply.
+
 ### The agent's execution sandbox (distinct from the preview environment)
 
 The factory involves two different compute contexts that must not be conflated:
