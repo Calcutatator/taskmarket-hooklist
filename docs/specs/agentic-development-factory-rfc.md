@@ -109,6 +109,35 @@ invoking an agent SDK, a managed cloud-agent product, or GitHub-Actions-triggere
 runs), and whether one agent handles a task end-to-end or hands off between planning and
 implementation tiers. Those choices belong in ADRs once this overall shape is agreed.
 
+### Agent autonomy tiers
+
+The defining axis for how an agent participates is **identity** — whose accounts it operates
+under. That determines attribution, permissions, billing, and what has to be provisioned
+before it can work. Three tiers, forming the maturity ladder the factory climbs:
+
+- **Tier 1 — remote-controlled developer session (exists today).** An attended or
+  remote-driven session (Claude Code remote control) running entirely under the developer's
+  identity: their machine or session, their GitHub handle on every commit, their
+  subscription billing. Nothing to provision; bounded by one human's accounts and attention.
+- **Tier 2 — managed cloud agent, borrowed identity (buyable today).** Cursor cloud agents,
+  Claude managed agents, Codex cloud: the VM is the vendor's, but identity remains anchored
+  to a human — the agent authenticates through the developer's linked GitHub, and work is
+  attributed to the developer (or a vendor GitHub App acting on their behalf). Scales past
+  the developer's laptop but not past their identity.
+- **Tier 3 — autonomous agent, own identity (what the factory's orchestration lifecycle
+  requires).** The Discord-triggered agent. A Discord or Slack bot is not tied to any GitHub
+  handle — without provisioning, it is effectively an anonymous actor that cannot push a
+  branch or open a PR. Tier 3 therefore requires standing identity infrastructure: a GitHub
+  identity of its own (the sanctioned mechanism is a **GitHub App** — bot-attributed commits
+  like dependabot's, scoped repository permissions, no paid seat — rather than a
+  password-managed machine-user account), a Discord presence, and a metered model-API
+  credential per the economics section. Provisioning this identity is a core deliverable of
+  the orchestrator ADR, not an afterthought.
+
+The tiers stay useful after tier 3 exists: the local-takeover escape hatch in the developer
+experience section is exactly a controlled drop from tier 3 to tier 1 — the work moves from
+the agent's identity back under a human's, mid-task, without ceremony.
+
 ### The agent's execution sandbox (distinct from the preview environment)
 
 The factory involves two different compute contexts that must not be conflated:
