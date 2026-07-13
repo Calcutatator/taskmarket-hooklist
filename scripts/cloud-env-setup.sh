@@ -16,8 +16,7 @@
 # docs/specs/agent-preview-environments-rfc.md). Anvil runs with
 # --chain-id 84532 (Base Sepolia masquerade), this script clones and
 # starts the public daydreamsai/facilitator against it, and the deployed
-# mock USDC (MockUSDC3009) is EIP-3009 capable so X402 settlement works
-# end to end.
+# MockUSDC is EIP-3009 capable so X402 settlement works end to end.
 #
 # All keys below are Anvil's well-known, pre-funded default dev accounts.
 # They are public knowledge and safe ONLY because this chain never leaves

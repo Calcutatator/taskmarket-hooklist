@@ -172,22 +172,23 @@ its own chain. Three pieces:
    RPC>` — the explicit RPC override wins its resolution order, so "base-sepolia" resolves
    to the disposable chain. Backend `CHAIN_ID=84532` completes the alignment. Safe because
    the chain never leaves the environment's private network.
-3. **The mock USDC must be EIP-3009 capable — a hard requirement, met by
-   `MockUSDC3009`.** X402's `exact` scheme settles via `transferWithAuthorization`
-   (EIP-3009) on the payment token; the real testnet/mainnet deployments satisfy this by
-   using Circle's actual USDC contracts, which do not exist on a fresh Anvil chain, and a
-   plain ERC20 stand-in reverts at settlement regardless of facilitator configuration.
-   `src/mocks/MockUSDC3009.sol` implements EIP-3009 (both `transferWithAuthorization`
-   overloads plus `receiveWithAuthorization`, authorization-state tracking, EIP-712 domain
-   matching the backend's default `USD Coin`/version `2` so no backend configuration is
-   needed) and `DeployMockUSDCPreview` deploys it.
+3. **The mock USDC must be EIP-3009 capable — a hard requirement, met by `MockUSDC`.**
+   X402's `exact` scheme settles via `transferWithAuthorization` (EIP-3009) on the payment
+   token; the real testnet/mainnet deployments satisfy this by using Circle's actual USDC
+   contracts, which do not exist on a fresh Anvil chain, and a plain ERC20 stand-in
+   reverts at settlement regardless of facilitator configuration.
+   `src/mocks/MockUSDC.sol` — the repo's single, general-purpose mock USDC, used by the
+   Forge test suite and by `DeployMockUSDCPreview` alike — implements EIP-3009 (both
+   `transferWithAuthorization` overloads plus `receiveWithAuthorization`,
+   authorization-state tracking, EIP-712 domain matching the backend's default
+   `USD Coin`/version `2` so no backend configuration is needed).
 
 All three pieces are wired: the sandbox setup script clones and starts the public
-facilitator against the masqueraded chain and deploys `MockUSDC3009`; the preview
-environment gets the facilitator as a fifth service in the `preview` base environment
-(added once from the public repo, cloned into each PR environment by `--duplicate`, with
-only its RPC URL set per-environment by `preview.yml`). What remains is the same as the
-rest of the workflow: first live dry-run validation.
+facilitator against the masqueraded chain and deploys `MockUSDC`; the preview environment
+gets the facilitator as a fifth service in the `preview` base environment (added once from
+the public repo, cloned into each PR environment by `--duplicate`, with only its RPC URL
+set per-environment by `preview.yml`). What remains is the same as the rest of the
+workflow: first live dry-run validation.
 
 ### Testing the CLI against a preview environment
 

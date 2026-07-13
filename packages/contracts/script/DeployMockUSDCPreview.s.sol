@@ -2,13 +2,13 @@
 pragma solidity ^0.8.24;
 
 import { Script, console } from "forge-std/Script.sol";
-import { MockUSDC3009 } from "../src/mocks/MockUSDC3009.sol";
+import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 
 /// @title DeployMockUSDCPreview — mint a mock USDC on a disposable per-PR Anvil chain
 /// @dev Only for the ephemeral preview-environment flow (docs/specs/agent-preview-environments-rfc.md).
 ///      A fresh Anvil chain has no USDC deployed, unlike Base Sepolia/Base (which use
 ///      Circle's real contracts), so DiamondDeploy's required FORGE_USDC_TOKEN_ADDRESS has
-///      nothing to point at without this. MockUSDC3009 is EIP-3009 capable
+///      nothing to point at without this. MockUSDC is EIP-3009 capable
 ///      (transferWithAuthorization) because X402's exact scheme settles through it — a
 ///      plain ERC20 would make every payer-gated endpoint revert at settlement.
 /// @dev Required env vars:
@@ -22,7 +22,7 @@ contract DeployMockUSDCPreview is Script {
         address deployer = vm.addr(deployerKey);
 
         vm.startBroadcast(deployerKey);
-        MockUSDC3009 usdc = new MockUSDC3009();
+        MockUSDC usdc = new MockUSDC();
         usdc.mint(deployer, MINT_AMOUNT);
         vm.stopBroadcast();
 

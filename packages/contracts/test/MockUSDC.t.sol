@@ -2,17 +2,17 @@
 pragma solidity ^0.8.24;
 
 import { Test } from "forge-std/Test.sol";
-import { MockUSDC3009 } from "../src/mocks/MockUSDC3009.sol";
+import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 
-contract MockUSDC3009Test is Test {
-    MockUSDC3009 internal usdc;
+contract MockUSDCTest is Test {
+    MockUSDC internal usdc;
 
     uint256 internal constant PAYER_KEY = 0xA11CE;
     address internal payer;
     address internal payee = address(0xBEEF);
 
     function setUp() public {
-        usdc = new MockUSDC3009();
+        usdc = new MockUSDC();
         payer = vm.addr(PAYER_KEY);
         usdc.mint(payer, 1_000e6);
         vm.warp(1_000_000);
@@ -92,7 +92,7 @@ contract MockUSDC3009Test is Test {
 
         usdc.transferWithAuthorization(payer, payee, 10e6, validAfter, validBefore, nonce, sig);
 
-        vm.expectRevert(MockUSDC3009.AuthorizationAlreadyUsed.selector);
+        vm.expectRevert(MockUSDC.AuthorizationAlreadyUsed.selector);
         usdc.transferWithAuthorization(payer, payee, 10e6, validAfter, validBefore, nonce, sig);
     }
 
@@ -104,7 +104,7 @@ contract MockUSDC3009Test is Test {
             usdc.TRANSFER_WITH_AUTHORIZATION_TYPEHASH(), payer, payee, 10e6, validAfter, validBefore, nonce
         );
 
-        vm.expectRevert(MockUSDC3009.AuthorizationExpired.selector);
+        vm.expectRevert(MockUSDC.AuthorizationExpired.selector);
         usdc.transferWithAuthorization(payer, payee, 10e6, validAfter, validBefore, nonce, sig);
     }
 
@@ -120,7 +120,7 @@ contract MockUSDC3009Test is Test {
         bytes32 digest = keccak256(abi.encodePacked("\x19\x01", _domainSeparator(), structHash));
         (uint8 v, bytes32 r, bytes32 s) = vm.sign(0xBAD, digest);
 
-        vm.expectRevert(MockUSDC3009.InvalidSignature.selector);
+        vm.expectRevert(MockUSDC.InvalidSignature.selector);
         usdc.transferWithAuthorization(payer, payee, 10e6, validAfter, validBefore, nonce, abi.encodePacked(r, s, v));
     }
 
@@ -132,7 +132,7 @@ contract MockUSDC3009Test is Test {
             usdc.RECEIVE_WITH_AUTHORIZATION_TYPEHASH(), payer, payee, 10e6, validAfter, validBefore, nonce
         );
 
-        vm.expectRevert(MockUSDC3009.CallerMustBePayee.selector);
+        vm.expectRevert(MockUSDC.CallerMustBePayee.selector);
         usdc.receiveWithAuthorization(payer, payee, 10e6, validAfter, validBefore, nonce, sig);
 
         vm.prank(payee);

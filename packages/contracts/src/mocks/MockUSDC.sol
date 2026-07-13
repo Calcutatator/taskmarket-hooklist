@@ -12,7 +12,7 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 ///         backend's default USDC domain ("USD Coin", version "2") so no backend
 ///         configuration is required. Mint is permissionless for sandbox funding.
 ///         Do not deploy to real networks.
-contract MockUSDC3009 is ERC20, EIP712 {
+contract MockUSDC is ERC20, EIP712 {
     bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
     );
@@ -30,7 +30,9 @@ contract MockUSDC3009 is ERC20, EIP712 {
     error InvalidSignature();
     error CallerMustBePayee();
 
-    constructor() ERC20("USD Coin", "USDC") EIP712("USD Coin", "2") { }
+    constructor() ERC20("USD Coin", "USDC") EIP712("USD Coin", "2") {
+        _mint(msg.sender, 10_000_000 * 10 ** 6);
+    }
 
     function decimals() public pure override returns (uint8) {
         return 6;
