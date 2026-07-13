@@ -35,6 +35,22 @@ Two different triggers, two different shapes of work:
   getting it wrong is expensive to unwind once agents and humans are both building on top of
   it.
 
+## Goals
+
+- Define two distinct, written contribution processes — ad hoc bug fixes and RFC-first feature
+  additions — so agents and humans both know which ceremony a piece of work requires.
+- Make cloud agent orchestration a first-class part of the factory: how agents are spun up,
+  handed work, given a preview environment, paused for human decisions, and torn down. The
+  trigger surface (Discord message, issue, direct instruction) is the factory's front door,
+  not an implementation detail to defer.
+- Keep the human at exactly two checkpoints per piece of work: the spec/RFC at the start (for
+  features) and ADR approval when an agent hits an architectural decision — everything between
+  those checkpoints should be able to run unattended.
+- Make the factory's costs (inference and infrastructure) legible and controllable, with model
+  strength matched to the judgment density of each phase rather than one global setting.
+- Name the problems that are not yet solved (bug reproduction from empty state) instead of
+  letting the process documents imply completeness.
+
 ## Proposed Design
 
 ### Two processes, not one
@@ -62,12 +78,35 @@ feature PR without a linked RFC." It's a norm the team (and agents) are expected
 matching how `docs/adr/README.md` treats the human-approval requirement as the one hard
 checkpoint and everything else as expected practice.
 
-### Triggering an agent
+### Cloud agent orchestration
 
-Out of scope for this RFC to fully design (see the earlier Discord/cloud-agent conversation
-this project grew out of), but the shape is: a message (Discord, or otherwise) describes the
-task or bug, a cloud agent is spun up, it opens a PR, and the preview-environment workflow
-takes over from there. The trigger mechanism itself is a separate, smaller piece of work.
+Orchestration is the connective tissue of the factory: the preview-environments RFC defines
+where an agent works, the ADR process defines when it pauses, and this layer defines
+everything around those — how an agent comes into existence, gets its assignment, and reports
+back. The lifecycle:
+
+1. **Trigger.** A message describes the work — a Discord message ("this task page 500s"), an
+   issue, or a human handing over a finished RFC. The trigger carries the work's
+   classification (bug fix or feature) or a human assigns it at trigger time.
+2. **Spin-up.** An orchestrator starts a cloud agent session (headless, API-billed, per the
+   economics section) with the repo, the task description, and the process conventions
+   (CLAUDE.md, this RFC, the ADR process) as its operating context.
+3. **Workspace.** The agent branches, pushes, and opens a PR — which is also how it acquires
+   its preview environment, since the environment is keyed to the PR. The PR is the agent's
+   durable workspace and its progress log; there is deliberately no second tracking system.
+4. **Loop.** The agent iterates: edit, push, wait for the preview environment to rebuild,
+   drive the deployed app (browser or API) against its own Anvil chain and Postgres, repeat.
+5. **Pause points.** Architectural decisions produce a `Proposed` ADR and stop that thread of
+   work until a human accepts it. Questions that don't rise to ADR level go to the PR thread
+   (or back to the triggering Discord thread) as ordinary review conversation.
+6. **Teardown.** PR merge or close destroys the preview environment (already handled by
+   `preview.yml`) and ends the agent session. Cost attribution for the run, if adopted (see
+   economics), lands on the PR before it closes.
+
+What this RFC deliberately does not pick yet: the specific orchestrator (a Discord bot
+invoking an agent SDK, a managed cloud-agent product, or GitHub-Actions-triggered headless
+runs), and whether one agent handles a task end-to-end or hands off between planning and
+implementation tiers. Those choices belong in ADRs once this overall shape is agreed.
 
 ## Open Problem: reproducing a reported bug
 
@@ -178,8 +217,9 @@ cloud agent for implementation — with the strongest model reappearing only at 
 
 ## Non-goals
 
-- Designing the exact agent-triggering mechanism (Discord bot, cloud agent orchestration) —
-  tracked as a separate, smaller piece of work.
+- Choosing the specific orchestrator implementation (which Discord bot framework, which agent
+  SDK or managed cloud-agent product, which CI trigger). The orchestration *lifecycle* above is
+  in scope; the vendor/implementation choice is an ADR to be made against it.
 - Solving the bug-reproduction problem above. It's named here so it isn't silently assumed
   away, not resolved here.
 - Making the RFC-required-for-features convention machine-enforced. It's a norm, not a gate.
