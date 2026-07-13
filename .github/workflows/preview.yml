@@ -130,17 +130,31 @@ jobs:
           make deploy preview 2>&1 | tee /tmp/diamond.log
           echo "DIAMOND_ADDRESS=$(grep 'Diamond deployed at:' /tmp/diamond.log | awk '{print $NF}')" >> "$GITHUB_ENV"
 
-      # The facilitator service (X402 payment verification/settlement) is expected to
-      # exist in the base "preview" environment -- added once from the public
-      # daydreamsai/facilitator repo with static vars (EVM_NETWORKS=base-sepolia,
-      # EVM_PRIVATE_KEY=<anvil dev account #6>, TRACKING_ALLOW_IN_MEMORY_FALLBACK=true) --
-      # and is cloned into each PR environment by --duplicate. Only its RPC URL is
-      # per-environment: point base-sepolia at this PR's anvil (the chain-id 84532
-      # masquerade) and let the variable change trigger its redeploy.
-      - name: Wire facilitator to this environment's anvil
+      # The facilitator handles X402 payment verification/settlement. Railway services
+      # are project-level (with an instance per environment), so create it from the
+      # public daydreamsai/facilitator repo only if the project doesn't have it yet
+      # (first run ever), then set its variables per-environment on every run --
+      # duplicated environments don't reliably carry variable values. The private key
+      # is Anvil's well-known dev account #6: public knowledge, sandbox-only. The final
+      # variable set (the RPC override pointing base-sepolia at this PR's anvil -- the
+      # chain-id 84532 masquerade) omits --skip-deploys so it triggers the deploy.
+      - name: Ensure facilitator service and wire it to this environment's anvil
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
+          railway link ${{ secrets.RAILWAY_PROJECT_ID }}
+          railway environment "$ENV_NAME"
+          if ! railway service list --json | grep -q '"facilitator"'; then
+            railway add --service facilitator --repo daydreamsai/facilitator --json
+          fi
+          for kv in \
+            "EVM_NETWORKS=base-sepolia" \
+            "EVM_PRIVATE_KEY=0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" \
+            "TRACKING_ALLOW_IN_MEMORY_FALLBACK=true"; do
+            railway variable set "$kv" \
+              --service facilitator --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+          done
           railway variable set "EVM_RPC_URL_BASE_SEPOLIA=${{ steps.anvil.outputs.rpc_url }}" \
             --service facilitator --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json

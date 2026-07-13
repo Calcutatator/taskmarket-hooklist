@@ -160,10 +160,12 @@ its own chain. Three pieces:
 
 1. **A facilitator instance per environment.** The `daydreamsai/facilitator` repo is
    public (and published to npm as `@daydreamsai/facilitator`), so no credentials, scope
-   widening, or monorepo vendoring is needed. In the agent sandbox: clone it and run it as
-   another local Bun process. In the Railway preview environment: a fifth service,
-   deployable from the facilitator repo's existing Dockerfile. The backend's
-   `X402_FACILITATOR_URL` points at it in both cases.
+   widening, or monorepo vendoring is needed. In the agent sandbox: the setup script
+   clones it and runs it as another local Bun process. In the Railway preview
+   environment: `preview.yml` self-provisions it — creates the project-level service from
+   the public repo if it doesn't exist yet (first run ever), then sets its variables
+   per-environment on every run. The backend's `X402_FACILITATOR_URL` points at it in
+   both cases. No manual setup step.
 2. **Chain identity: Base Sepolia masquerade.** The facilitator validates networks against
    a fixed supported list (chain id 84532 = `base-sepolia`), and the backend derives its
    X402 network string from `CHAIN_ID`. Rather than teaching either about a new chain, the
@@ -184,11 +186,9 @@ its own chain. Three pieces:
    `USD Coin`/version `2` so no backend configuration is needed).
 
 All three pieces are wired: the sandbox setup script clones and starts the public
-facilitator against the masqueraded chain and deploys `MockUSDC`; the preview environment
-gets the facilitator as a fifth service in the `preview` base environment (added once from
-the public repo, cloned into each PR environment by `--duplicate`, with only its RPC URL
-set per-environment by `preview.yml`). What remains is the same as the rest of the
-workflow: first live dry-run validation.
+facilitator against the masqueraded chain and deploys `MockUSDC`; `preview.yml`
+self-provisions the facilitator service and points it at each PR's anvil. What remains is
+the same as the rest of the workflow: first live dry-run validation.
 
 ### Testing the CLI against a preview environment
 
@@ -275,10 +275,6 @@ persistent testnet remains the right, more expensive, contended fallback.
 
 - Confirm nothing currently depends on Railway's native `botPrEnvironments`/`prDeploys`
   behavior before disabling it.
-- One-time setup: add the facilitator service to the `preview` base environment from the
-  public `daydreamsai/facilitator` repo (static vars: `EVM_NETWORKS=base-sepolia`,
-  `EVM_PRIVATE_KEY=<anvil dev account #6>`, `TRACKING_ALLOW_IN_MEMORY_FALLBACK=true`) so
-  `--duplicate` clones it into every PR environment.
 - Exact Anvil service definition (Dockerfile, health check, Railway service config).
 - Railway billing/quota impact of creating and destroying a full environment (4 services +
   Postgres) on every commit across potentially many concurrent PRs — worth checking before
