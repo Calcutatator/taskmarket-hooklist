@@ -95,5 +95,11 @@ node docs/adr/lint.mjs
 Blocking checks: filename format (`NNNN-kebab-slug.md`), valid `Status`, `Date: YYYY-MM-DD`,
 all four required sections present, no duplicate ADR numbers, Y-statement structural keywords,
 at least one rejected alternative in Considered options, supersession-link symmetry and
-direction, no dangling `ADR-NNNN` cross-references. Warn-only: README index completeness,
-relevant source changes (contracts, backend, RFC specs) without a corresponding ADR change.
+direction, no dangling `ADR-NNNN` cross-references. Warn-only (never fails the build): README
+index completeness, and relevant source changes (contracts, backend, RFC specs) without a
+corresponding ADR change.
+
+The source-changed-without-an-ADR check only activates when the linter is given the changed
+file list. CI passes it automatically on pull requests (via `ADR_LINT_BASE`, diffing against
+the PR's base branch) and surfaces any warnings as annotations on the PR — visible, but never
+a failing check. Locally: `ADR_LINT_BASE=origin/main make adr-lint`.

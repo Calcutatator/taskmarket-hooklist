@@ -18,6 +18,9 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: recursive
+          # Full history so adr-lint can diff against the PR base branch for its
+          # changed-without-an-ADR coverage warning.
+          fetch-depth: 0
 
       - uses: pnpm/action-setup@v2
         with:
@@ -35,6 +38,11 @@ jobs:
       - run: make docs-og-check
 
       - run: make adr-lint
+        env:
+          # On PRs, diff against the base branch so the warn-only "source changed
+          # without an ADR change" coverage check actually receives the file list.
+          # Empty on push events -- integrity checks only.
+          ADR_LINT_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
 
   quality:
     runs-on: ubuntu-latest

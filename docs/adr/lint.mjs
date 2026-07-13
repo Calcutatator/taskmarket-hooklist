@@ -181,6 +181,11 @@ if (changedFiles.length > 0) {
 for (const issue of issues) {
   const prefix = issue.type === 'ERROR' ? 'ERROR' : 'WARN ';
   console.log(`  ${prefix}  ${issue.file}: ${issue.message}`);
+  // Surface as PR annotations when running in GitHub Actions; warnings stay non-blocking.
+  if (process.env.GITHUB_ACTIONS) {
+    const cmd = issue.type === 'ERROR' ? 'error' : 'warning';
+    console.log(`::${cmd}::ADR lint: ${issue.file}: ${issue.message}`);
+  }
 }
 
 const errorCount = issues.filter((i) => i.type === 'ERROR').length;

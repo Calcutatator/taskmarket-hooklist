@@ -438,7 +438,11 @@ docs-og-check:
 	pnpm --filter @taskmarket/docs check-og
 
 adr-lint:
-	node docs/adr/lint.mjs
+	@if [ -n "$$ADR_LINT_BASE" ]; then \
+		node docs/adr/lint.mjs $$(git diff --name-only "$$ADR_LINT_BASE"...HEAD); \
+	else \
+		node docs/adr/lint.mjs; \
+	fi
 
 contract:
 	@$(ENV_LOADER) && \
