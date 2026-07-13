@@ -89,8 +89,9 @@ back. The lifecycle:
    issue, or a human handing over a finished RFC. The trigger carries the work's
    classification (bug fix or feature) or a human assigns it at trigger time.
 2. **Spin-up.** An orchestrator starts a cloud agent session (headless, API-billed, per the
-   economics section) with the repo, the task description, and the process conventions
-   (CLAUDE.md, this RFC, the ADR process) as its operating context.
+   economics section) inside an execution sandbox (see the sandbox section below) with the
+   repo, the task description, and the process conventions (CLAUDE.md, this RFC, the ADR
+   process) as its operating context.
 3. **Workspace.** The agent branches, pushes, and opens a PR — which is also how it acquires
    its preview environment, since the environment is keyed to the PR. The PR is the agent's
    durable workspace and its progress log; there is deliberately no second tracking system.
@@ -107,6 +108,36 @@ What this RFC deliberately does not pick yet: the specific orchestrator (a Disco
 invoking an agent SDK, a managed cloud-agent product, or GitHub-Actions-triggered headless
 runs), and whether one agent handles a task end-to-end or hands off between planning and
 implementation tiers. Those choices belong in ADRs once this overall shape is agreed.
+
+### The agent's execution sandbox (distinct from the preview environment)
+
+The factory involves two different compute contexts that must not be conflated:
+
+- **The execution sandbox is where the agent lives.** A cloud sandbox (Cloudflare Sandboxes,
+  E2B, Fly Machines, or similar — vendor choice deferred with the orchestrator ADR) holding
+  the repo checkout, the toolchain (Node/pnpm, Foundry), and the agent process itself. Inside
+  it the agent runs its own **local** stack: its own Anvil (deploy in seconds, fast-forward
+  time, replay state at will), its own Postgres, its own backend — `make smoke` already
+  defaults to localhost, so the entire smoke suite runs in-sandbox with no external
+  dependency. This is the **inner loop**: edit, build, deploy-to-local-anvil, smoke, repeat —
+  seconds per iteration, no Railway involvement, nothing pushed.
+- **The preview environment is for previewing.** The per-PR Railway environment (per the
+  preview-environments RFC) is the deployed, production-like surface: the URL a human clicks
+  to see the work, the deployed build the agent drives with a browser for UI verification,
+  and proof that the change survives a real build and deployment rather than merely working
+  in the sandbox. This is the **outer loop**: push a commit, the environment rebuilds, verify
+  the deployed result — minutes per iteration, paid only when the agent believes the work is
+  ready to preview.
+
+This split is also what makes the preview environment's per-commit rebuild cost acceptable:
+the minutes-long rebuild bounds only the outer loop. An agent that pushes every exploratory
+edit is using the factory wrong — the sandbox is for iterating, the preview environment is
+for demonstrating.
+
+Sandbox requirements (whatever vendor is chosen): repo clone + push access scoped to its own
+branch, the full toolchain, ability to run Anvil and Postgres locally, a headless browser
+(for driving its own preview environment's deployed UI), outbound network to the preview
+URLs, and a metered model-API credential per the economics section.
 
 ### Developer experience
 
@@ -289,9 +320,11 @@ cloud agent for implementation — with the strongest model reappearing only at 
 
 ## Non-goals
 
-- Choosing the specific orchestrator implementation (which Discord bot framework, which agent
-  SDK or managed cloud-agent product, which CI trigger). The orchestration *lifecycle* above is
-  in scope; the vendor/implementation choice is an ADR to be made against it.
+- Choosing the specific orchestrator implementation and execution-sandbox vendor (which
+  Discord bot framework, which agent SDK or managed cloud-agent product, Cloudflare
+  Sandboxes vs. E2B vs. Fly Machines, which CI trigger). The orchestration *lifecycle* and
+  sandbox *requirements* above are in scope; the vendor/implementation choices are ADRs to be
+  made against them.
 - Solving the bug-reproduction problem above. It's named here so it isn't silently assumed
   away, not resolved here.
 - Making the RFC-required-for-features convention machine-enforced. It's a norm, not a gate.
