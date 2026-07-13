@@ -11,17 +11,13 @@
 # anything the backend still complains about). See the "Tier-2 setup"
 # section of docs/specs/agentic-development-factory-rfc.md.
 #
-# KNOWN GAP -- X402 payments: payer-gated endpoints need a facilitator
-# running against this Anvil chain (see the facilitator section of
+# X402 payments: payer-gated endpoints go through a facilitator wired to
+# this Anvil chain (see the facilitator section of
 # docs/specs/agent-preview-environments-rfc.md). Anvil runs with
-# --chain-id 84532 (Base Sepolia masquerade) so the backend, the X402
-# network string, and the facilitator's network validation line up; the
-# facilitator itself must be started separately (daydreamsai/facilitator,
-# EVM_NETWORKS=base-sepolia, EVM_RPC_URL_BASE_SEPOLIA pointed here) and
-# X402 settlement additionally requires an EIP-3009-capable mock USDC,
-# which DeployMockUSDCPreview does not yet provide. Until both land,
-# permissionless endpoints and non-X402 smoke paths work; payer-gated
-# ones fail at payment verification/settlement.
+# --chain-id 84532 (Base Sepolia masquerade), this script clones and
+# starts the public daydreamsai/facilitator against it, and the deployed
+# mock USDC (MockUSDC3009) is EIP-3009 capable so X402 settlement works
+# end to end.
 #
 # All keys below are Anvil's well-known, pre-funded default dev accounts.
 # They are public knowledge and safe ONLY because this chain never leaves
@@ -46,9 +42,13 @@ WORKER_B_KEY="0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a
 EVALUATOR_KEY="0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"
 DEPLOYER_ADDRESS="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 
-echo "==> [1/7] Toolchain (Node, pnpm, Foundry)"
+echo "==> [1/8] Toolchain (Node, pnpm, bun, Foundry)"
 if ! command -v pnpm > /dev/null 2>&1; then
   npm install -g pnpm@8.15.0
+fi
+if ! command -v bun > /dev/null 2>&1; then
+  curl -fsSL https://bun.sh/install | bash
+  export PATH="$HOME/.bun/bin:$PATH"
 fi
 if ! command -v forge > /dev/null 2>&1; then
   curl -L https://foundry.paradigm.xyz | bash
@@ -56,10 +56,10 @@ if ! command -v forge > /dev/null 2>&1; then
   foundryup
 fi
 
-echo "==> [2/7] Git submodules (contracts dependencies)"
+echo "==> [2/8] Git submodules (contracts dependencies)"
 git submodule update --init --recursive
 
-echo "==> [3/7] Native Postgres (cloud sandboxes have no Docker)"
+echo "==> [3/8] Native Postgres (cloud sandboxes have no Docker)"
 if ! command -v pg_isready > /dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
@@ -70,10 +70,10 @@ sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | gr
 sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
   || sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
 
-echo "==> [4/7] Workspace dependencies"
+echo "==> [4/8] Workspace dependencies"
 make install
 
-echo "==> [5/7] Local Anvil chain"
+echo "==> [5/8] Local Anvil chain"
 if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1; then
   # --chain-id 84532: Base Sepolia masquerade, see header note on X402.
@@ -85,7 +85,30 @@ if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   done
 fi
 
-echo "==> [6/7] Deploy mock USDC + diamond to local Anvil"
+echo "==> [6/8] Local facilitator (X402 payment verification/settlement)"
+FACILITATOR_PORT=8402
+FACILITATOR_KEY="0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" # anvil #6
+if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; then
+  if [ ! -d /tmp/facilitator ]; then
+    git clone --depth 1 https://github.com/daydreamsai/facilitator /tmp/facilitator
+  fi
+  cd /tmp/facilitator
+  bun install
+  cd examples/facilitator-server
+  PORT="$FACILITATOR_PORT" \
+    EVM_NETWORKS="base-sepolia" \
+    EVM_RPC_URL_BASE_SEPOLIA="$ANVIL_RPC_URL" \
+    EVM_PRIVATE_KEY="$FACILITATOR_KEY" \
+    TRACKING_ALLOW_IN_MEMORY_FALLBACK="true" \
+    nohup bun run dev > /tmp/facilitator.log 2>&1 &
+  for _ in $(seq 1 30); do
+    curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 && break
+    sleep 1
+  done
+  cd "$REPO_ROOT"
+fi
+
+echo "==> [7/8] Deploy mock USDC + diamond to local Anvil"
 cd packages/contracts
 FORGE_DEV_PRIVATE_KEY="$DEPLOYER_KEY" \
   forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
@@ -99,8 +122,7 @@ cat > .env << EOF
 NODE_ENV=development
 DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME
 CHAIN_ID=84532
-# Local facilitator (start separately; see header note). Payer-gated X402
-# endpoints fail until it is running and the mock USDC supports EIP-3009.
+# Local facilitator, started by this script.
 X402_FACILITATOR_URL=http://127.0.0.1:8402
 FORGE_ANVIL_RPC_URL=$ANVIL_RPC_URL
 FORGE_DEV_PRIVATE_KEY=$DEPLOYER_KEY
@@ -119,8 +141,9 @@ make deploy preview 2>&1 | tee /tmp/diamond-deploy.log
 DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | awk '{print $NF}')"
 echo "FORGE_DIAMOND_ADDRESS=$DIAMOND_ADDRESS" >> .env
 
-echo "==> [7/7] Done"
-echo "Diamond:   $DIAMOND_ADDRESS"
-echo "Mock USDC: $USDC_ADDRESS"
+echo "==> [8/8] Done"
+echo "Diamond:     $DIAMOND_ADDRESS"
+echo "Mock USDC:   $USDC_ADDRESS"
+echo "Facilitator: http://127.0.0.1:$FACILITATOR_PORT"
 echo "Next: start the backend (make dev, or the backend app directly -- migrations"
 echo "run on boot), then run smoke tests: make smoke <mode>"

@@ -130,10 +130,32 @@ jobs:
           make deploy preview 2>&1 | tee /tmp/diamond.log
           echo "DIAMOND_ADDRESS=$(grep 'Diamond deployed at:' /tmp/diamond.log | awk '{print $NF}')" >> "$GITHUB_ENV"
 
+      # The facilitator service (X402 payment verification/settlement) is expected to
+      # exist in the base "preview" environment -- added once from the public
+      # daydreamsai/facilitator repo with static vars (EVM_NETWORKS=base-sepolia,
+      # EVM_PRIVATE_KEY=<anvil dev account #6>, TRACKING_ALLOW_IN_MEMORY_FALLBACK=true) --
+      # and is cloned into each PR environment by --duplicate. Only its RPC URL is
+      # per-environment: point base-sepolia at this PR's anvil (the chain-id 84532
+      # masquerade) and let the variable change trigger its redeploy.
+      - name: Wire facilitator to this environment's anvil
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          railway variable set "EVM_RPC_URL_BASE_SEPOLIA=${{ steps.anvil.outputs.rpc_url }}" \
+            --service facilitator --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
+
       - name: Write contract addresses into the environment's Railway variables
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
+          FACILITATOR_DOMAIN=$(railway domain --service facilitator \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          railway variable set "X402_FACILITATOR_URL=https://$FACILITATOR_DOMAIN" \
+            --service backend --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
           for svc in backend frontend; do
             railway variable set "FORGE_DIAMOND_ADDRESS=$DIAMOND_ADDRESS" \
               --service "$svc" --environment "$ENV_NAME" \

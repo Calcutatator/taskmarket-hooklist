@@ -172,18 +172,22 @@ its own chain. Three pieces:
    RPC>` — the explicit RPC override wins its resolution order, so "base-sepolia" resolves
    to the disposable chain. Backend `CHAIN_ID=84532` completes the alignment. Safe because
    the chain never leaves the environment's private network.
-3. **An EIP-3009-capable mock USDC — required contract work, not yet done.** X402's
-   `exact` scheme settles via `transferWithAuthorization` (EIP-3009) on the payment token.
-   Real USDC implements it; both existing mocks (`MockERC20`,
-   `test/mocks/MockUSDC.sol`) are plain ERC20s, so settlement reverts on-chain regardless
-   of facilitator configuration. `DeployMockUSDCPreview` must deploy an EIP-3009-capable
-   mock (EIP-712 domain, authorization-state tracking, signature validation) before
-   payer-gated flows work in any isolated environment. This is a self-contained, testable
-   contract task and the single hardest remaining blocker for full smoke coverage on
-   disposable chains.
+3. **The mock USDC must be EIP-3009 capable — a hard requirement, met by
+   `MockUSDC3009`.** X402's `exact` scheme settles via `transferWithAuthorization`
+   (EIP-3009) on the payment token; the real testnet/mainnet deployments satisfy this by
+   using Circle's actual USDC contracts, which do not exist on a fresh Anvil chain, and a
+   plain ERC20 stand-in reverts at settlement regardless of facilitator configuration.
+   `src/mocks/MockUSDC3009.sol` implements EIP-3009 (both `transferWithAuthorization`
+   overloads plus `receiveWithAuthorization`, authorization-state tracking, EIP-712 domain
+   matching the backend's default `USD Coin`/version `2` so no backend configuration is
+   needed) and `DeployMockUSDCPreview` deploys it.
 
-Until pieces 1 and 3 land, isolated environments support permissionless endpoints and
-non-X402 flows only; payer-gated flows still require the shared testnet.
+All three pieces are wired: the sandbox setup script clones and starts the public
+facilitator against the masqueraded chain and deploys `MockUSDC3009`; the preview
+environment gets the facilitator as a fifth service in the `preview` base environment
+(added once from the public repo, cloned into each PR environment by `--duplicate`, with
+only its RPC URL set per-environment by `preview.yml`). What remains is the same as the
+rest of the workflow: first live dry-run validation.
 
 ### Testing the CLI against a preview environment
 
@@ -270,9 +274,10 @@ persistent testnet remains the right, more expensive, contended fallback.
 
 - Confirm nothing currently depends on Railway's native `botPrEnvironments`/`prDeploys`
   behavior before disabling it.
-- Build the EIP-3009-capable mock USDC and the per-environment facilitator wiring (fifth
-  Railway service in preview environments, local process in sandboxes) — see the
-  facilitator section; payer-gated X402 flows are blocked on both.
+- One-time setup: add the facilitator service to the `preview` base environment from the
+  public `daydreamsai/facilitator` repo (static vars: `EVM_NETWORKS=base-sepolia`,
+  `EVM_PRIVATE_KEY=<anvil dev account #6>`, `TRACKING_ALLOW_IN_MEMORY_FALLBACK=true`) so
+  `--duplicate` clones it into every PR environment.
 - Exact Anvil service definition (Dockerfile, health check, Railway service config).
 - Railway billing/quota impact of creating and destroying a full environment (4 services +
   Postgres) on every commit across potentially many concurrent PRs — worth checking before
