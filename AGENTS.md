@@ -15,6 +15,14 @@ When implementing features, follow established patterns in these guides:
 **Database**: Drizzle schema definition, migrations (docs/DB_GUIDE.md)
 **Testing**: Unit tests, integration tests (docs/TESTING_GUIDE.md)
 
+## Design Decisions: RFCs and ADRs
+
+Pre-decision design proposals live in `docs/specs/` (RFCs). Decided architectural or
+hard-to-reverse decisions are recorded in `docs/adr/` (ADRs) — see `docs/adr/README.md` for
+the process. An ADR requires explicit human approval before its status becomes `Accepted`; an
+agent may draft one but may not self-approve it. If you are working a task unattended and hit
+a decision that belongs in an ADR, stop and draft one instead of deciding unilaterally.
+
 ## Repository Structure
 
 - apps/backend - Express + tRPC backend (docs/BACKEND_GUIDE.md)

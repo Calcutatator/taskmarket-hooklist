@@ -1,0 +1,169 @@
+name: Preview Environment
+
+# Per-PR disposable Railway environment + Anvil chain. See
+# docs/specs/agent-preview-environments-rfc.md for the design this implements.
+#
+# NOTE: the exact `railway` CLI invocations below (environment duplication, per-service
+# `railway up`, and the anvil public domain lookup) are written from `railway --help` output
+# and have not yet been exercised against a live Railway deploy. Validate with one real PR
+# before relying on this to gate anything.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  ENV_NAME: pr-${{ github.event.pull_request.number }}
+
+jobs:
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Delete preview environment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          railway environment delete "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --yes --json || true
+
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v2
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: 'pnpm'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      # Every commit gets a fully fresh environment -- no partial state carried forward,
+      # regardless of whether this commit touched contracts. See the RFC's "Accepted
+      # Limitation" section for what this trades away and why.
+      - name: Recreate preview environment
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          railway environment delete "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --yes --json || true
+          railway environment new "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --duplicate preview --json
+
+      - name: Deploy anvil service
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          cd packages/contracts/docker/anvil
+          railway up --service anvil \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --detach --ci
+
+      - name: Expose anvil RPC and wait for it to be healthy
+        id: anvil
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          DOMAIN=$(railway domain --service anvil \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --port 8545 --json | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          RPC_URL="https://$DOMAIN"
+          echo "rpc_url=$RPC_URL" >> "$GITHUB_OUTPUT"
+
+          for i in $(seq 1 30); do
+            if curl -sf -X POST "$RPC_URL" \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null; then
+              echo "anvil is up at $RPC_URL"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "anvil never became healthy at $RPC_URL" >&2
+          exit 1
+
+      # A fresh Anvil chain has no USDC contract, unlike Base Sepolia/Base, so a mock has to be
+      # minted before the diamond can be deployed. FORGE_DEV_PRIVATE_KEY here is Anvil's
+      # well-known default dev account #0 -- safe only because this chain never leaves this
+      # PR's private Railway network. Never reuse this key for real testnet/mainnet deploys.
+      - name: Deploy mock USDC and the diamond to Anvil
+        env:
+          FORGE_ANVIL_RPC_URL: ${{ steps.anvil.outputs.rpc_url }}
+          FORGE_DEV_PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+          FORGE_FEE_RECIPIENT_ADDRESS: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
+          FORGE_DEFAULT_PLATFORM_FEE_BPS: '500'
+        run: |
+          cd packages/contracts
+          forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
+            --rpc-url "$FORGE_ANVIL_RPC_URL" --broadcast 2>&1 | tee /tmp/usdc.log
+          USDC_ADDRESS=$(grep "Mock USDC deployed at:" /tmp/usdc.log | awk '{print $NF}')
+          echo "FORGE_USDC_TOKEN_ADDRESS=$USDC_ADDRESS" >> "$GITHUB_ENV"
+          cd ../..
+          make deploy preview 2>&1 | tee /tmp/diamond.log
+          echo "DIAMOND_ADDRESS=$(grep 'Diamond deployed at:' /tmp/diamond.log | awk '{print $NF}')" >> "$GITHUB_ENV"
+
+      - name: Write contract addresses into the environment's Railway variables
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          for svc in backend frontend; do
+            railway variable set "FORGE_DIAMOND_ADDRESS=$DIAMOND_ADDRESS" \
+              --service "$svc" --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+            railway variable set "FORGE_USDC_TOKEN_ADDRESS=$FORGE_USDC_TOKEN_ADDRESS" \
+              --service "$svc" --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+            railway variable set "RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
+              --service "$svc" --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+          done
+
+      - name: Deploy backend, frontend, docs
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+        run: |
+          for svc in backend frontend docs; do
+            railway up --service "$svc" \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --detach --ci
+          done
+
+      - name: Comment PR with environment URL
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          FRONTEND_DOMAIN=$(railway domain --service frontend \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
+            | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})"

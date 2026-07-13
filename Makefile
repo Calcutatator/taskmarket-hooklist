@@ -5,14 +5,14 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
 
 help:
 	@echo "Taskmarket - Available targets:"
 	@echo "  make                      - Show this help"
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
-	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
+	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
 	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all); 'contracts' also regenerates abi/TaskMarket.json"
 	@echo "  make dev                  - Start all dev servers in parallel"
@@ -27,6 +27,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
+	@echo "  make adr-lint             - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
@@ -48,6 +49,7 @@ install: init
 deploy:
 	@$(ENV_LOADER) && \
 	TMPFILE=$$(mktemp) && \
+	VERIFY=1 && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		CHAINID=84532; \
 		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
@@ -60,14 +62,22 @@ deploy:
 			--rpc-url base \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
+	elif [ "$(word 1,$(ARGS))" = "preview" ]; then \
+		VERIFY=0 && \
+		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+			--rpc-url "$$FORGE_ANVIL_RPC_URL" \
+			--broadcast 2>&1 | tee $$TMPFILE; \
 	else \
 		rm -f $$TMPFILE; \
-		echo "Usage: make deploy <testnet|mainnet>"; \
+		echo "Usage: make deploy <testnet|mainnet|preview>"; \
 		exit 1; \
 	fi; \
 	PROXY=$$(grep "Diamond deployed at:" $$TMPFILE | awk '{print $$NF}'); \
 	rm -f $$TMPFILE; \
 	if [ -n "$$PROXY" ]; then \
+		echo "Diamond deployed at: $$PROXY"; \
+	fi; \
+	if [ "$$VERIFY" = "1" ] && [ -n "$$PROXY" ]; then \
 		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
 		RESP=$$(curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=verifyproxycontract&address=$$PROXY&apikey=$$FORGE_ETHERSCAN_API_KEY") && \
 		GUID=$$(echo "$$RESP" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4) && \
@@ -426,6 +436,9 @@ docs-og-check:
 	$(ENV_LOADER) && \
 	pnpm --filter @taskmarket/docs build && \
 	pnpm --filter @taskmarket/docs check-og
+
+adr-lint:
+	node docs/adr/lint.mjs
 
 contract:
 	@$(ENV_LOADER) && \

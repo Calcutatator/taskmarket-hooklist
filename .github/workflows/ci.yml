@@ -34,6 +34,8 @@ jobs:
 
       - run: make docs-og-check
 
+      - run: make adr-lint
+
   quality:
     runs-on: ubuntu-latest
     timeout-minutes: 30
