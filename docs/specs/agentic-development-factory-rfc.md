@@ -171,8 +171,8 @@ What exists when, honestly tiered:
 - **After this PR merges** (plus the two GitHub secrets and one dry-run validation):
   automatic isolated preview environments on every PR. Immediately useful to human
   developers, no agents required.
-- **After the testnet/mainnet deployer key split**: automated testnet releases on merge
-  (release-path rung 3).
+- **After the testnet/mainnet deployer key split**: automated testnet upgrades and deploys
+  on merge to the `testnet` branch (release-path rung 3).
 - **After the orchestrator ADR is decided and built**: the Discord trigger itself — the one
   genuinely unbuilt piece between the current state and the full factory.
 
@@ -184,7 +184,16 @@ have live diamonds with accumulated state that are upgraded in place (`DiamondFu
 a live diamond cut, gated by the owner key). A PR can pass every preview check and still
 carry a broken upgrade: a storage-layout violation or facet-selector collision only
 surfaces when cutting against existing state. The factory therefore needs a release ladder
-above the PR loop:
+above the PR loop.
+
+The branch model underneath it: PRs target the `testnet` branch; `main` is the production
+mirror, receiving merges only from `testnet`. The shared testnet is the **final staging
+tier** — the last stop before mainnet — with the distinctive property that unlike an
+ordinary staging environment it exercises the real thing at every layer: the real testnet
+diamond on Base Sepolia, the real upgrade script against real accumulated state, the real
+Railway environment serving `testnet-market.daydreams.systems`.
+
+The ladder:
 
 1. **PR preview** (empty Anvil, fresh deploy) — validates the change itself. Already covered
    by the preview-environments RFC.
@@ -195,35 +204,36 @@ above the PR loop:
    rehearses `make upgrade` against real accumulated state and runs smoke tests against the
    upgraded fork — same preview machinery, forked chain instead of empty chain, still zero
    real keys in the environment.
-3. **Merge to the `testnet` branch → real testnet upgrade.** PRs merge to `main` as usual;
-   promotion to the shared testnet is a separate, deliberate merge from `main` into a
-   long-lived `testnet` branch. That push triggers CI to run `make upgrade testnet` against
-   the shared testnet's live diamond, deploy the app services to the testnet Railway
-   environment, and run the testnet smoke suite. Merging to `main` alone deploys nothing —
-   `main` is integration, `testnet` is promotion. This step can be an automated CI job: the
+3. **Merge to the `testnet` branch → real testnet upgrade.** PRs target a long-lived
+   `testnet` branch, and merging one is the lock-in moment: a PR is merged only when the
+   work is finished and going to the public testnet — from that point, contract changes for
+   this release are frozen. The merge triggers CI to run `make upgrade testnet` against the
+   shared testnet's live diamond, deploy the app services to the testnet Railway
+   environment, and run the testnet smoke suite. This step can be an automated CI job: the
    testnet owner key living in GitHub secrets is acceptable custody risk — provided the
    testnet and mainnet deployer keys are actually split first (the known
    `FORGE_DEV_PRIVATE_KEY` issue; that fix becomes a hard prerequisite here).
 
    **The sync invariant this rung exists to protect:** the testnet diamond is the dress
-   rehearsal for the mainnet cut — the same `DiamondFullUpgrade` script, run against a
-   diamond with the same facet history and storage evolution. That rehearsal only predicts
-   mainnet behavior if the testnet diamond never drifts from the mainnet diamond: testnet
-   must always be exactly "mainnet's state plus the pending release," nothing more, nothing
-   less. Hard rules that follow: no manual or out-of-band upgrades to the testnet diamond —
-   every change reaches it through the `testnet` branch; and the mainnet upgrade (rung 4) is
-   cut from the same commit that last upgraded testnet, so the rehearsed script and the real
-   script are byte-identical. If the testnet diamond ever drifts (a skipped release, a manual
-   cut), its value as a rehearsal is void until it is resynced to mainnet's exact state.
-4. **Release → mainnet.** `make release` tags; `deploy.yml` already ships app services to
-   Railway production on the tag, gated on CI. The mainnet diamond cut stays exactly as it
-   is today: a developer runs `make upgrade mainnet` manually from their local machine — no
-   CI execution, no agent involvement, no change to owner-key custody. **Decided:** see
-   ADR-0001 (`docs/adr/0001-mainnet-upgrades-stay-manual.md`), including the rejected
-   alternatives (approval-gated CI, multisig/timelock owner). Per the rung-3 invariant, the
-   developer runs it from the `testnet` branch's last-upgraded commit — the exact code whose
-   upgrade was just rehearsed against the testnet diamond, never from an untested newer
-   `main`.
+   rehearsal for the mainnet cut — the same `DiamondFullUpgrade` script, so the testnet
+   diamond must never drift from the mainnet diamond's upgrade lineage. Hard rules that
+   follow: no manual or out-of-band upgrades to the testnet diamond — every change reaches
+   it through a `testnet`-branch merge; and contract changes after the lock-in merge are
+   allowed only if genuinely unavoidable. Each post-freeze contract change re-cuts the
+   testnet diamond and opens drift between the history testnet rehearsed and the single
+   cumulative cut mainnet will receive — the mainnet upgrade then stops being a rehearsed
+   formality and becomes careful manual developer work to reconcile and finish.
+4. **Merge `testnet` into `main`, then release → mainnet.** Once testnet validation passes,
+   `testnet` is merged into `main`. Under this model `main` is no longer where PRs land — it
+   is the production mirror, only ever receiving merges from `testnet`, so its tip always
+   corresponds to what is (or is about to be) live on mainnet. `make release` tags;
+   `deploy.yml` already ships app services to Railway production on the tag, gated on CI.
+   The mainnet diamond cut stays exactly as it is today: a developer runs
+   `make upgrade mainnet` manually from their local machine, from that `main` tip — the
+   exact code whose upgrade was rehearsed on testnet. No CI execution, no agent involvement,
+   no change to owner-key custody. **Decided:** see ADR-0001
+   (`docs/adr/0001-mainnet-upgrades-stay-manual.md`), including the rejected alternatives
+   (approval-gated CI, multisig/timelock owner).
 
 Ordering constraint at every rung: contracts upgrade before app code that calls the new
 functions deploys. The reverse order serves user traffic against functions that do not exist
