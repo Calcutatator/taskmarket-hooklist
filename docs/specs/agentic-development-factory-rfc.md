@@ -113,7 +113,9 @@ implementation tiers. Those choices belong in ADRs once this overall shape is ag
 
 The defining axis for how an agent participates is **identity** — whose accounts it operates
 under. That determines attribution, permissions, billing, and what has to be provisioned
-before it can work. Three tiers, forming the maturity ladder the factory climbs:
+before it can work. Four tiers, forming the maturity ladder the factory climbs. The split
+between tiers 3 and 4 is the load-bearing one: **whether identity provisioning is a one-time
+manual act or itself automated.**
 
 - **Tier 1 — remote-controlled developer session (exists today).** An attended or
   remote-driven session (Claude Code remote control) running entirely under the developer's
@@ -124,23 +126,33 @@ before it can work. Three tiers, forming the maturity ladder the factory climbs:
   to a human — the agent authenticates through the developer's linked GitHub, and work is
   attributed to the developer (or a vendor GitHub App acting on their behalf). Scales past
   the developer's laptop but not past their identity.
-- **Tier 3 — autonomous agent, own identity (what the factory's orchestration lifecycle
-  requires).** The Discord-triggered agent. A Discord or Slack bot is not tied to any GitHub
-  handle — without provisioning, it is effectively an anonymous actor that cannot push a
-  branch or open a PR. Tier 3 therefore requires standing identity infrastructure: a GitHub
-  identity of its own (the sanctioned mechanism is a **GitHub App** — bot-attributed commits
-  like dependabot's, scoped repository permissions, no paid seat — rather than a
-  password-managed machine-user account), a Discord presence, and a metered model-API
-  credential per the economics section. Provisioning this identity is a core deliverable of
-  the orchestrator ADR, not an afterthought.
+- **Tier 3 — fixed fleet of named agents, manually provisioned identities.** N standing
+  agents (hermes-1, hermes-2, ...), each with its own GitHub identity (the sanctioned
+  mechanism is a **GitHub App** — bot-attributed commits like dependabot's, scoped
+  repository permissions, no paid seat — rather than a password-managed machine-user
+  account) and its own chat presence, all managed under a single org model-API key.
+  Provisioning is manual but happens exactly once, which sidesteps the hardest part of
+  autonomy — automating account creation — while still delivering unattended work with real
+  attribution. The fixed fleet has properties the elastic tier cannot have: persistent
+  per-agent identity means per-agent memory, reputation, and an audit trail humans learn to
+  read; and the fleet size doubles as a natural concurrency and cost cap — a thread pool,
+  where tier 4 is unbounded. This is the tier the factory's orchestration lifecycle actually
+  requires first.
+- **Tier 4 — elastic autonomous agents, automated identity provisioning.** Any number of
+  agents created and destroyed on demand, exactly like preview environments — which
+  requires the orchestrator to provision and revoke GitHub identities and chat handles
+  programmatically. This is real, heavy infrastructure (and platform-policy friction:
+  automated account creation is exactly what GitHub and Discord anti-abuse tooling exists
+  to stop), and nothing in the current design needs it. It is named so the ladder has a top,
+  not because it is on the roadmap.
 
-The tiers stay useful after tier 3 exists: the local-takeover escape hatch in the developer
-experience section is exactly a controlled drop from tier 3 to tier 1 — the work moves from
-the agent's identity back under a human's, mid-task, without ceremony.
+The tiers stay useful as the factory climbs them: the local-takeover escape hatch in the
+developer experience section is exactly a controlled drop from tier 3 (or 4) to tier 1 —
+the work moves from the agent's identity back under a human's, mid-task, without ceremony.
 
 ### Control plane: where agents are triggered and managed
 
-A separating observation: **message-driven and tier 3 are orthogonal.** A chat-triggered
+A separating observation: **message-driven and agent autonomy are orthogonal.** A chat-triggered
 agent does not require autonomous identity — it depends on whether the chat surface has a
 first-party bridge to a vendor account.
 
@@ -149,11 +161,14 @@ first-party bridge to a vendor account.
   mapping the Slack user to their own vendor account. That is message-driven tier 2, today,
   with zero build: identity stays the developer's, billing stays on their plan, and the
   vendor maintains the bridge. (Vendor specifics to re-verify at orchestrator-ADR time.)
-- **Discord is inherently a tier-3 build.** No vendor ships a first-party Discord
-  integration, so a Discord control plane means a custom bot that receives the message,
-  invokes an agent programmatically (a managed-agents-style API under the org key), and
-  operates under the factory's own GitHub App identity. Discord is not harder because of
-  Discord — it is harder because the identity bridge does not exist until we build it.
+- **Discord (or controlling a named fleet from any chat surface) is a tier-3+ build.** No
+  vendor ships a first-party Discord integration, and even on Slack, first-party apps only
+  map a Slack user to *their own* vendor account — commanding a fleet of named agents from
+  chat requires a custom bot on either surface: it receives the message, invokes an agent
+  programmatically (a managed-agents-style API under the org key), and routes work to one
+  of the fleet's own GitHub App identities. Discord is not harder because of Discord — it
+  is harder because the identity bridge does not exist until we build it. (A custom Slack
+  bot is the same build with a different webhook shape.)
 
 Tier-2 vendor landscape for reference (ease of adoption, all anchored to a developer's own
 account plus a GitHub connection): Cursor cloud agents (VM configured in-repo via
@@ -163,10 +178,10 @@ API as the programmatic substrate a tier-3 orchestrator would sit on), Codex (Ch
 account, cloud environment config plus `AGENTS.md`, GitHub and Slack triggers).
 
 The pragmatic sequencing this suggests: adopt Slack for message-driven tier-2 agents
-immediately at zero build cost, and treat the Discord bot as the tier-3 orchestrator
-deliverable — decided in the orchestrator ADR, built once, carrying its own identity. Which
-chat surface the team actually lives in day-to-day is a real input to that ADR, not a
-technical detail.
+immediately at zero build cost, then build the fleet control bot (tier 3: fixed named
+agents, single org key) as the orchestrator-ADR deliverable — on whichever chat surface the
+team actually lives in, which is a real input to that ADR, not a technical detail. Tier 4
+stays parked until something concrete demands elastic identity.
 
 ### The agent's execution sandbox (distinct from the preview environment)
 
