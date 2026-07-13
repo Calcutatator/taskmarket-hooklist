@@ -125,6 +125,7 @@ jobs:
             --rpc-url "$FORGE_ANVIL_RPC_URL" --broadcast 2>&1 | tee /tmp/usdc.log
           USDC_ADDRESS=$(grep "Mock USDC deployed at:" /tmp/usdc.log | awk '{print $NF}')
           echo "FORGE_USDC_TOKEN_ADDRESS=$USDC_ADDRESS" >> "$GITHUB_ENV"
+          export FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS"
           cd ../..
           make deploy preview 2>&1 | tee /tmp/diamond.log
           echo "DIAMOND_ADDRESS=$(grep 'Diamond deployed at:' /tmp/diamond.log | awk '{print $NF}')" >> "$GITHUB_ENV"
