@@ -369,9 +369,16 @@ they determine which parts of this factory can scale and which are bounded by he
    and can drive many preview environments concurrently. Every attempt costs real money, and
    a retry loop that would be free on a subscription is a metered bill here.
 
-There is no third option: unattended cloud work cannot ride on personal subscription
-accounts, so the moment an agent is triggered by a Discord message rather than a human at a
-keyboard, the organization is paying API rates for it.
+There is a middle case worth naming precisely: **vendor cloud agents ride on personal
+subscriptions while running unattended in the vendor's cloud** (autonomy tier 2 — Claude
+Code cloud sessions on a Claude plan, Codex cloud on a ChatGPT plan, Cursor cloud agents on
+a Cursor plan). Each developer can spin up their own vendor's cloud agent against this repo
+on their own subscription, and the repo should carry the in-repo config that makes all of
+them work (`CLAUDE.md`, `AGENTS.md`, `.cursor/environment.json` — they coexist and describe
+the same facts). What personal subscriptions cannot cover is the **pooled fleet**: agents
+with their own identity, triggered from shared chat, not attributable to any one person's
+account — the moment work is fleet-shaped (tier 3), the organization is paying API rates
+for it and capacity stops being bounded by whose plan is whose.
 
 ### Model tiering by phase
 
