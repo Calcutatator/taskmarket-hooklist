@@ -158,12 +158,12 @@ verifies against the real Base Sepolia RPC, so payments referencing a disposable
 chain would fail. Every isolated environment therefore needs its own facilitator wired to
 its own chain. Three pieces:
 
-1. **A facilitator instance per environment.** In the agent sandbox: run it as another
-   local process (it is a Bun service; the sandbox needs clone access to the
-   `daydreamsai/facilitator` repo — note this widens the GitHub App / vendor-app repo
-   scope). In the Railway preview environment: a fifth service, deployable from the
-   facilitator repo's existing Dockerfile. The backend's `X402_FACILITATOR_URL` points at
-   it in both cases.
+1. **A facilitator instance per environment.** The `daydreamsai/facilitator` repo is
+   public (and published to npm as `@daydreamsai/facilitator`), so no credentials, scope
+   widening, or monorepo vendoring is needed. In the agent sandbox: clone it and run it as
+   another local Bun process. In the Railway preview environment: a fifth service,
+   deployable from the facilitator repo's existing Dockerfile. The backend's
+   `X402_FACILITATOR_URL` points at it in both cases.
 2. **Chain identity: Base Sepolia masquerade.** The facilitator validates networks against
    a fixed supported list (chain id 84532 = `base-sepolia`), and the backend derives its
    X402 network string from `CHAIN_ID`. Rather than teaching either about a new chain, the
