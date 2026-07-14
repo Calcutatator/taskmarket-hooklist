@@ -93,6 +93,17 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
+          # `railway up --service <name>` deploys to an existing service, it doesn't create
+          # one -- the `preview` base template has no `anvil` service (only
+          # backend/frontend/docs/Postgres), so a fresh environment needs it created once.
+          # `railway add` has no --project/--environment flags of its own, unlike `service
+          # list` -- it needs the context from a prior `railway link`.
+          if ! railway service list --environment "$ENV_NAME" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json | grep -q '"anvil"'; then
+            railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 \
+              --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+            railway add --service anvil --json
+          fi
           cd packages/contracts/docker/anvil
           railway up --service anvil \
             --environment "$ENV_NAME" \
