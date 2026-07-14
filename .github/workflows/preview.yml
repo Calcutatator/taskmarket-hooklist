@@ -10,12 +10,12 @@ name: Preview Environment
 # positional -- only `railway up`/`domain`/`variable` do. Link the project once via
 # `railway link --project <id>` before any environment delete/new call in the same shell.
 #
-# `railway link` always prompts for an environment (and, unless --service is passed, a
-# service too) when not fully specified via flags -- there's no TTY on a GitHub Actions
-# runner to answer that, so every `railway link` call below passes --environment and
-# --service explicitly, even when linking is only needed for project-level context (in
-# which case any environment/service that's guaranteed to exist works, since the actual
-# environment delete/new/deploy target is specified separately on each command).
+# `railway link` requires --workspace, --environment, and --service to all be passed
+# explicitly in non-interactive mode (no TTY on a GitHub Actions runner to answer any of
+# those prompts). The workspace ID below is TASK MARKET's (`Loaf's Projects`). Where linking
+# is only needed for project-level context, any environment/service that's guaranteed to
+# exist works, since the actual environment delete/new/deploy target is specified
+# separately on each command.
 #
 # Not yet exercised through a full live Railway deploy end to end -- validate before relying
 # on this to gate anything.
@@ -50,7 +50,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment preview --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
 
   deploy:
@@ -59,17 +59,17 @@ jobs:
     timeout-minutes: 25
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
       - name: Install Foundry
@@ -85,7 +85,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment preview --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
           railway environment new "$ENV_NAME" --duplicate preview --json
 
@@ -245,7 +245,7 @@ jobs:
           echo "::add-mask::$FACILITATOR_TOKEN"
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment "$ENV_NAME" --service "@taskmarket/backend" --json
           if ! railway service list --json | grep -q '"facilitator"'; then
             railway add --service facilitator --repo daydreamsai/facilitator --json
           fi
