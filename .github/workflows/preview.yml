@@ -160,16 +160,32 @@ jobs:
           SOURCE_RPC="https://sepolia.base.org"
           LOCAL_RPC="${{ steps.anvil.outputs.rpc_url }}"
 
+          # Railway's edge can 404 ("Application not found") on the very first request or two
+          # right after a service comes up, even once the earlier health-check curl succeeds --
+          # retry a few times before giving up.
+          cast_rpc_local() {
+            local i
+            for i in $(seq 1 5); do
+              if OUTPUT=$(cast rpc "$@" --rpc-url "$LOCAL_RPC" 2>&1); then
+                echo "$OUTPUT"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "$OUTPUT" >&2
+            return 1
+          }
+
           clone_proxy() {
             local proxy_addr="$1"
             local proxy_code impl_addr impl_code
             proxy_code="$(cast code "$proxy_addr" --rpc-url "$SOURCE_RPC")"
             impl_addr="0x$(cast storage "$proxy_addr" "$EIP1967_IMPL_SLOT" --rpc-url "$SOURCE_RPC" | tail -c 41)"
             impl_code="$(cast code "$impl_addr" --rpc-url "$SOURCE_RPC")"
-            cast rpc anvil_setCode "$impl_addr" "$impl_code" --rpc-url "$LOCAL_RPC" > /dev/null
-            cast rpc anvil_setCode "$proxy_addr" "$proxy_code" --rpc-url "$LOCAL_RPC" > /dev/null
-            cast rpc anvil_setStorageAt "$proxy_addr" "$EIP1967_IMPL_SLOT" \
-              "$(cast to-uint256 "$impl_addr")" --rpc-url "$LOCAL_RPC" > /dev/null
+            cast_rpc_local anvil_setCode "$impl_addr" "$impl_code" > /dev/null
+            cast_rpc_local anvil_setCode "$proxy_addr" "$proxy_code" > /dev/null
+            cast_rpc_local anvil_setStorageAt "$proxy_addr" "$EIP1967_IMPL_SLOT" \
+              "$(cast to-uint256 "$impl_addr")" > /dev/null
           }
           clone_proxy "$IDENTITY_REGISTRY"
           clone_proxy "$REPUTATION_REGISTRY"
