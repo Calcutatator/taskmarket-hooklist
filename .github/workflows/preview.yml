@@ -356,8 +356,9 @@ jobs:
               --detach --ci
           done
 
-      # Purely cosmetic -- the environment is already fully deployed by this point, so a
-      # flaky domain lookup or PR comment here shouldn't fail an otherwise-successful run.
+      # The environment URL is the actual deliverable of this workflow (see the RFC's stated
+      # goal: a reachable URL so an agent can drive the real app, not just confirm it deployed)
+      # -- a failure to resolve or post it is a real failure of this run, not a cosmetic one.
       - name: Comment PR with environment URL
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -373,10 +374,10 @@ jobs:
             echo "railway domain returned: $RAW" >&2
             sleep 3
           done
-          FRONTEND_DOMAIN="${FRONTEND_DOMAIN#https://}"
-          if [ -n "$FRONTEND_DOMAIN" ]; then
-            gh pr comment "${{ github.event.pull_request.number }}" \
-              --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})" || true
-          else
-            echo "Could not resolve the frontend domain -- environment is deployed, comment skipped" >&2
+          if [ -z "$FRONTEND_DOMAIN" ]; then
+            echo "Could not resolve the frontend domain after 5 attempts" >&2
+            exit 1
           fi
+          FRONTEND_DOMAIN="${FRONTEND_DOMAIN#https://}"
+          gh pr comment "${{ github.event.pull_request.number }}" \
+            --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})"
