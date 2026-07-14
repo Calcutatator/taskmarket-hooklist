@@ -3,10 +3,13 @@ name: Preview Environment
 # Per-PR disposable Railway environment + Anvil chain. See
 # docs/specs/agent-preview-environments-rfc.md for the design this implements.
 #
-# NOTE: the exact `railway` CLI invocations below (environment duplication, per-service
-# `railway up`, and the anvil public domain lookup) are written from `railway --help` output
-# and have not yet been exercised against a live Railway deploy. Validate with one real PR
-# before relying on this to gate anything.
+# NOTE: a live run of this workflow on PR #158 caught a real CLI bug -- `railway environment
+# delete`/`new` and `railway link` don't accept a `--project` flag/positional in the pinned CLI
+# version below (they only take it via `railway link --project <id>` run first in the same
+# shell). Fixed and reverified directly against the installed `@railway/cli@5.26.1` --help
+# output, not just guessed from docs. The rest of the deploy job (`railway up`/`domain`/
+# `variable`, which do accept --project directly) has not yet completed a full live run --
+# validate end to end before relying on this to gate anything.
 #
 # Every step below mirrors scripts/cloud-env-setup.sh, which brings up the identical stack
 # (mock USDC + diamond + forwarder + facilitator + ERC-8004 registries) against a local Anvil
@@ -41,15 +44,17 @@ jobs:
     timeout-minutes: 10
     steps:
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@5.26.1
 
       - name: Delete preview environment
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
-          railway environment delete "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --yes --json || true
+          # `railway environment delete` has no --project flag -- it operates on whatever
+          # project `railway link` last linked in this shell. Confirmed against the installed
+          # CLI's own --help; the earlier `--project` form errors with "unexpected argument".
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
+          railway environment delete "$ENV_NAME" --yes --json || true
 
   deploy:
     if: github.event.action != 'closed'
@@ -74,7 +79,7 @@ jobs:
         uses: foundry-rs/foundry-toolchain@v1
 
       - name: Install Railway CLI
-        run: npm install -g @railway/cli
+        run: npm install -g @railway/cli@5.26.1
 
       # Every commit gets a fully fresh environment -- no partial state carried forward,
       # regardless of whether this commit touched contracts. See the RFC's "Accepted
@@ -83,12 +88,13 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
-          railway environment delete "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --yes --json || true
-          railway environment new "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --duplicate preview --json
+          # `railway environment delete`/`new` have no --project flag -- confirmed against the
+          # installed CLI's own --help (the earlier form errors with "unexpected argument
+          # '--project' found"). They operate on whatever project `railway link` last linked in
+          # this shell, so link once up front instead.
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
+          railway environment delete "$ENV_NAME" --yes --json || true
+          railway environment new "$ENV_NAME" --duplicate preview --json
 
       - name: Deploy anvil service
         env:
@@ -247,8 +253,9 @@ jobs:
           echo "::add-mask::$FACILITATOR_TOKEN"
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
-          railway link ${{ secrets.RAILWAY_PROJECT_ID }}
-          railway environment "$ENV_NAME"
+          # `railway link <id>` as a bare positional errors ("unexpected argument") on the
+          # installed CLI -- confirmed directly. -p/--project is the only accepted form.
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "$ENV_NAME" --json
           if ! railway service list --json | grep -q '"facilitator"'; then
             railway add --service facilitator --repo daydreamsai/facilitator --json
           fi
