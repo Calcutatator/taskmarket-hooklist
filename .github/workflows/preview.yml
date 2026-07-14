@@ -333,7 +333,7 @@ jobs:
             "X402_FACILITATOR_TOKEN=${{ steps.facilitator.outputs.token }}" \
             "DEFAULT_PLATFORM_FEE_BPS=750"; do
             railway variable set "$kv" \
-              --service backend --environment "$ENV_NAME" \
+              --service "@taskmarket/backend" --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
           done
 
@@ -341,7 +341,7 @@ jobs:
             "NEXT_PUBLIC_CHAIN_ID=84532" \
             "NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=${{ steps.anvil.outputs.rpc_url }}"; do
             railway variable set "$kv" \
-              --service frontend --environment "$ENV_NAME" \
+              --service "@taskmarket/frontend" --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
           done
 
@@ -349,7 +349,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          for svc in backend frontend docs; do
+          for svc in "@taskmarket/backend" "@taskmarket/frontend" "@taskmarket/docs"; do
             railway up --service "$svc" \
               --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
@@ -361,7 +361,7 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FRONTEND_DOMAIN=$(railway domain --service frontend \
+          FRONTEND_DOMAIN=$(railway domain --service "@taskmarket/frontend" \
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
             | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
