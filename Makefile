@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -36,6 +36,7 @@ help:
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
 	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
@@ -52,20 +53,36 @@ deploy:
 	VERIFY=1 && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		CHAINID=84532; \
-		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET}" \
+		FORGE_USDC_TOKEN_ADDRESS="$${FORGE_USDC_TOKEN_ADDRESS:-$$FORGE_USDC_TOKEN_ADDRESS_TESTNET}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_TESTNET}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_TESTNET}" \
+		FORGE_ERC8004_REPUTATION_REGISTRY="$${FORGE_ERC8004_REPUTATION_REGISTRY:-$$FORGE_ERC8004_REPUTATION_REGISTRY_TESTNET}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
 		CHAINID=8453; \
-		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET}" \
+		FORGE_USDC_TOKEN_ADDRESS="$${FORGE_USDC_TOKEN_ADDRESS:-$$FORGE_USDC_TOKEN_ADDRESS_MAINNET}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_MAINNET}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_MAINNET}" \
+		FORGE_ERC8004_REPUTATION_REGISTRY="$${FORGE_ERC8004_REPUTATION_REGISTRY:-$$FORGE_ERC8004_REPUTATION_REGISTRY_MAINNET}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "preview" ]; then \
 		VERIFY=0 && \
-		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
-			--rpc-url "$$FORGE_ANVIL_RPC_URL" \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_PREVIEW}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+			--rpc-url "$${FORGE_RPC_URL:-$$FORGE_RPC_URL_PREVIEW}" \
 			--broadcast 2>&1 | tee $$TMPFILE; \
 	else \
 		rm -f $$TMPFILE; \
@@ -621,6 +638,13 @@ design-system:
 	cp packages/design-system/build/tailwind/base.css apps/frontend/src/styles/css/base.css && \
 	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
 	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js
+
+cli:
+	@$(ENV_LOADER) && \
+	pnpm --filter @lucid-agents/taskmarket build && \
+	if [ -n "$(ARGS)" ]; then \
+		node apps/cli/dist/index.js $(ARGS); \
+	fi
 
 pre-commit:
 	@echo "Running pre-commit checks..."

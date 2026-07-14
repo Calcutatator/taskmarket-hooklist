@@ -8,10 +8,9 @@ import { ECDSA } from "@openzeppelin/contracts/utils/cryptography/ECDSA.sol";
 /// @notice Mintable mock USDC with EIP-3009 transfer authorizations, for disposable
 ///         preview/sandbox chains. X402's exact scheme settles via
 ///         transferWithAuthorization, so whatever token stands in for USDC must implement
-///         EIP-3009 -- a plain ERC20 reverts at settlement. The EIP-712 domain matches the
-///         backend's default USDC domain ("USD Coin", version "2") so no backend
-///         configuration is required. Mint is permissionless for sandbox funding.
-///         Do not deploy to real networks.
+///         EIP-3009 -- a plain ERC20 reverts at settlement. The EIP-712 domain uses "USD
+///         Coin" (mainnet Base USDC's domain) -- set USDC_DOMAIN_NAME=USD Coin to match.
+///         Mint is permissionless for sandbox funding. Do not deploy to real networks.
 contract MockUSDC is ERC20, EIP712 {
     bytes32 public constant TRANSFER_WITH_AUTHORIZATION_TYPEHASH = keccak256(
         "TransferWithAuthorization(address from,address to,uint256 value,uint256 validAfter,uint256 validBefore,bytes32 nonce)"
