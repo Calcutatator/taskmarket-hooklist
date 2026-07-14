@@ -90,13 +90,20 @@ jobs:
           # Deletion is asynchronous -- `environment list` can report the name gone before
           # Railway's name-uniqueness check on `environment new` agrees, so retry the actual
           # create call on that specific race instead of trusting `list` as a proxy signal.
+          # Railway also hard rate-limits environment creation to one per user per 30s.
           CREATED=""
-          for i in $(seq 1 15); do
+          for i in $(seq 1 6); do
             OUTPUT=$(railway environment new "$ENV_NAME" --duplicate preview --json 2>&1) && { echo "$OUTPUT"; CREATED=1; break; }
-            echo "$OUTPUT" | grep -q "already exists" || { echo "$OUTPUT" >&2; exit 1; }
-            sleep 4
+            if echo "$OUTPUT" | grep -q "one environment can be created"; then
+              sleep 32
+            elif echo "$OUTPUT" | grep -q "already exists"; then
+              sleep 4
+            else
+              echo "$OUTPUT" >&2
+              exit 1
+            fi
           done
-          [ -n "$CREATED" ] || { echo "environment new still conflicting after 15 attempts" >&2; exit 1; }
+          [ -n "$CREATED" ] || { echo "environment new still conflicting after 6 attempts" >&2; exit 1; }
 
       - name: Deploy anvil service
         env:
