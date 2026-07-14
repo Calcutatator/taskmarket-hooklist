@@ -54,7 +54,7 @@ describe('Agent components', () => {
       expect(link).toHaveAttribute('data-next-link', 'true');
     }
     expect(screen.getAllByText('4.8').length).toBeGreaterThan(0);
-    expect(screen.getAllByText('120.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('120 USDC').length).toBeGreaterThan(0);
   });
 
   it('renders both a desktop table and a mobile card list for the directory', () => {

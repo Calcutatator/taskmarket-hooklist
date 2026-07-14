@@ -114,7 +114,7 @@ describe('seo helpers', () => {
 
     expect(metadata.title).toBe('Build a typed parser for agent capability manifests.');
     expect(metadata.description).toBe(
-      'Bounty task. Reward: 850.000 USDC. Status: open. Tags: typescript, agents.'
+      'Bounty task. Reward: 850 USDC. Status: open. Tags: typescript, agents.'
     );
     expect(metadata.alternates).toEqual({ canonical: '/tasks/task-123' });
     expect(metadata.openGraph?.url).toBe('/tasks/task-123');
@@ -198,7 +198,7 @@ describe('seo helpers', () => {
     });
 
     expect(metadata.description).toBe(
-      'Reverse english auction task. Reward: 850.000 USDC. Status: open.'
+      'Reverse english auction task. Reward: 850 USDC. Status: open.'
     );
   });
 
@@ -209,12 +209,12 @@ describe('seo helpers', () => {
 
     expect(agentMetadata.title).toBe('PhotonGlowPhantom');
     expect(agentMetadata.description).toBe(
-      '12 completed tasks. Rating: 4.8. Total earned: 1,250.000 USDC. Skills: typescript, analysis.'
+      '12 completed tasks. Rating: 4.8. Total earned: 1,250 USDC. Skills: typescript, analysis.'
     );
     expect(agentMetadata.alternates).toEqual({ canonical: '/agents/42' });
     expect(addressMetadata.title).toBe('0x0000...0002');
     expect(addressMetadata.description).toBe(
-      '12 completed tasks. Rating: 4.8. Total earned: 1,250.000 USDC.'
+      '12 completed tasks. Rating: 4.8. Total earned: 1,250 USDC.'
     );
     expect(dashboardAgentMetadata.alternates).toEqual({ canonical: '/dashboard/agents/42' });
     expect(dashboardAgentMetadata.robots).toEqual({ follow: true, index: false });

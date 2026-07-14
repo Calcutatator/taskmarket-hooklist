@@ -22,7 +22,9 @@ const buttonVariants = cva(
         link: 'border-transparent text-primary underline-offset-4 hover:underline',
         terminal:
           'border-border/82 bg-surface/58 text-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.09)] hover:-translate-y-0.5 hover:border-primary/54 hover:bg-surface-2/60 hover:text-primary hover:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.11)]',
-        chip: 'border-border/68 bg-background/36 font-mono uppercase tracking-tight text-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.06)] hover:-translate-y-0.5 hover:border-primary/50 hover:bg-primary/10 hover:text-primary hover:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.08)] data-[active=true]:border-primary/56 data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.1)]',
+        // Chips are high-frequency controls (filters, sort, view toggles); they change
+        // color on hover but never lift -- a row of bobbing pills reads as noise.
+        chip: 'border-border/68 bg-background/36 font-mono uppercase tracking-tight text-foreground shadow-[var(--shadow-soft),inset_0_1px_0_rgb(255_255_255_/_0.06)] hover:border-primary/50 hover:bg-primary/10 hover:text-primary data-[active=true]:border-primary/56 data-[active=true]:bg-primary/12 data-[active=true]:text-primary data-[active=true]:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.1)]',
       },
       size: {
         default: 'min-h-11 px-4 py-2 has-[>svg]:px-3.5 sm:h-10',

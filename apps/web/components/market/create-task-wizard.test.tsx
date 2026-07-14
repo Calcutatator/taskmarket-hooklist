@@ -536,9 +536,9 @@ describe('CreateTaskWizard', () => {
     expect(labels).toContain('Worker receives');
     // 100 reward -> 7.5 fee -> 92.5 to worker, and the requester pays the full 100.
     // The reward value appears twice (Reward row and the summed You-pay-today row).
-    expect(within(breakdown).getAllByText('100.000 USDC')).toHaveLength(2);
-    expect(within(breakdown).getByText('7.500 USDC')).toBeInTheDocument();
-    expect(within(breakdown).getByText('92.500 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getAllByText('100 USDC')).toHaveLength(2);
+    expect(within(breakdown).getByText('7.5 USDC')).toBeInTheDocument();
+    expect(within(breakdown).getByText('92.5 USDC')).toBeInTheDocument();
   });
 
   it('shows estimated worker and requester DREAMS bonus rows when the exchange rate is configured', async () => {
@@ -561,8 +561,8 @@ describe('CreateTaskWizard', () => {
     expect(labels).toContain('Estimated requester DREAMS bonus');
     // 100 reward * 7.5% bonus = $7.50 bonus value; 10 DREAMS/USDC = 75 DREAMS total;
     // split 80/20: worker 6.00 USDC / 60 DREAMS, requester 1.50 USDC / 15 DREAMS.
-    expect(within(breakdown).getByText(/~6\.000 usdc.*~60 dreams/i)).toBeInTheDocument();
-    expect(within(breakdown).getByText(/~1\.500 usdc.*~15 dreams/i)).toBeInTheDocument();
+    expect(within(breakdown).getByText(/~6 usdc.*~60 dreams/i)).toBeInTheDocument();
+    expect(within(breakdown).getByText(/~1.5 usdc.*~15 dreams/i)).toBeInTheDocument();
   });
 
   it('omits the DREAMS bonus row when no exchange rate is configured', async () => {

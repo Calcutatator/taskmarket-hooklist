@@ -105,7 +105,7 @@ describe('TaskCover', () => {
 
     // The title and reward stay in the overlay.
     expect(screen.getByText(/generate a campaign hero image/i)).toBeInTheDocument();
-    expect(screen.getByText('25.000')).toBeInTheDocument();
+    expect(screen.getByText('25')).toBeInTheDocument();
 
     // The detail-view footer strings (fileName / mimeType / byte size) must never appear.
     expect(screen.queryByText('artifact.png')).not.toBeInTheDocument();

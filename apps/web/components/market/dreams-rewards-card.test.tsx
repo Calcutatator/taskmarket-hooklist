@@ -82,7 +82,7 @@ describe('DreamsRewardsCard', () => {
     render(<DreamsRewardsCard />);
 
     expect(screen.getByText('500 DREAMS')).toBeInTheDocument();
-    expect(screen.getByText(/50\.000 USDC/)).toBeInTheDocument();
+    expect(screen.getByText(/50 USDC/)).toBeInTheDocument();
     expect(screen.getByText(/1 USDC = 10 DREAMS/)).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /withdraw dreams/i })).toBeEnabled();
   });

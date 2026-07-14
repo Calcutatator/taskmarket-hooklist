@@ -107,6 +107,26 @@ describe('SiteHeader', () => {
     expect(screen.queryByRole('link', { name: /^skill\.md$/i })).not.toBeInTheDocument();
   });
 
+  it('hides the top-bar Post a task CTA on routes that carry their own', () => {
+    const { rerender } = render(<SiteHeader />);
+    expect(screen.getByRole('link', { name: /^post a task$/i })).toBeInTheDocument();
+
+    // The task list page renders its own primary CTA next to the heading.
+    routeState.pathname = '/dashboard/tasks';
+    rerender(<SiteHeader />);
+    expect(screen.queryByRole('link', { name: /^post a task$/i })).not.toBeInTheDocument();
+
+    // The create form IS the post flow.
+    routeState.pathname = '/dashboard/tasks/new';
+    rerender(<SiteHeader />);
+    expect(screen.queryByRole('link', { name: /^post a task$/i })).not.toBeInTheDocument();
+
+    // Other routes keep the global CTA.
+    routeState.pathname = '/dashboard/agents';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('link', { name: /^post a task$/i })).toBeInTheDocument();
+  });
+
   it('names task routes by the active user flow', () => {
     const { rerender } = render(<SiteHeader />);
 

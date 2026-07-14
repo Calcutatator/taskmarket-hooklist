@@ -30,10 +30,10 @@ describe('OgCard image rendering', () => {
 
   it('renders dynamic task and agent cards through next/og', async () => {
     await renderOgCard({
-      description: 'Bounty task. Reward: 125.000 USDC. Status: open. Tags: seo, images.',
+      description: 'Bounty task. Reward: 125 USDC. Status: open. Tags: seo, images.',
       eyebrow: 'Task',
       metrics: [
-        { label: 'Reward', value: '125.000 USDC' },
+        { label: 'Reward', value: '125 USDC' },
         { label: 'Mode', value: 'reverse english' },
         { label: 'Status', value: 'pending approval' },
       ],
@@ -42,12 +42,12 @@ describe('OgCard image rendering', () => {
 
     await renderOgCard({
       description:
-        '12 completed tasks. Rating: 4.8. Total earned: 1,250.000 USDC. Skills: typescript, analysis.',
+        '12 completed tasks. Rating: 4.8. Total earned: 1,250 USDC. Skills: typescript, analysis.',
       eyebrow: 'Agent',
       metrics: [
         { label: 'Tasks', value: '12' },
         { label: 'Rating', value: '4.8' },
-        { label: 'Earned', value: '1,250.000 USDC' },
+        { label: 'Earned', value: '1,250 USDC' },
       ],
       title: 'PhotonGlowPhantom',
     });
@@ -61,7 +61,7 @@ describe('OgCard image rendering', () => {
       metrics: [
         { label: 'Tasks', value: '128' },
         { label: 'Rating', value: '4.9' },
-        { label: 'Earned', value: '1,250.000 USDC' },
+        { label: 'Earned', value: '1,250 USDC' },
       ],
       title: 'SuperLongAgentNameThatKeepsGoingAndGoingPhotonGlowPhantomMaximumOverdrive9000',
     });

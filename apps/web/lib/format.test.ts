@@ -4,20 +4,27 @@ import * as format from './format';
 import { formatDateTime, formatRelativePast, formatTimeLeft, formatUsdcUnits } from './format';
 
 describe('formatUsdcUnits', () => {
-  it('groups thousands and keeps three fraction digits without a leading sign', () => {
+  it('groups thousands and trims trailing zeros without a leading sign', () => {
     const result = formatUsdcUnits('1500000000');
-    expect(result).toBe('1,500.000 USDC');
+    expect(result).toBe('1,500 USDC');
     expect(result).not.toMatch(/^\+/);
   });
 
-  it('formats sub-unit amounts without a leading sign', () => {
-    expect(formatUsdcUnits('25000000')).toBe('25.000 USDC');
+  it('formats whole amounts without decimal noise', () => {
+    expect(formatUsdcUnits('25000000')).toBe('25 USDC');
+    expect(formatUsdcUnits('8000000')).toBe('8 USDC');
+  });
+
+  it('keeps significant fraction digits for sub-unit amounts', () => {
+    expect(formatUsdcUnits('50000')).toBe('0.05 USDC');
+    expect(formatUsdcUnits('1000')).toBe('0.001 USDC');
+    expect(formatUsdcUnits('12500000')).toBe('12.5 USDC');
   });
 
   it('returns a zeroed amount for missing or non-finite values', () => {
-    expect(formatUsdcUnits(null)).toBe('0.000 USDC');
-    expect(formatUsdcUnits('')).toBe('0.000 USDC');
-    expect(formatUsdcUnits('not-a-number')).toBe('0.000 USDC');
+    expect(formatUsdcUnits(null)).toBe('0 USDC');
+    expect(formatUsdcUnits('')).toBe('0 USDC');
+    expect(formatUsdcUnits('not-a-number')).toBe('0 USDC');
   });
 });
 

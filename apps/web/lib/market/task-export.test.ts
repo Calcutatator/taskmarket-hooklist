@@ -53,7 +53,7 @@ describe('taskToAgentJson', () => {
       unknown
     >;
     expect(parsed.reward).toBe('2500000');
-    expect(parsed.rewardFormatted).toBe('2.500 USDC');
+    expect(parsed.rewardFormatted).toBe('2.5 USDC');
   });
 
   it('is indented with two spaces', () => {
@@ -143,7 +143,7 @@ describe('taskToAgentJson', () => {
 describe('taskToMarkdown', () => {
   it('contains the formatted reward', () => {
     const md = taskToMarkdown(makeTask({ reward: '2500000' }));
-    expect(md).toContain('2.500 USDC');
+    expect(md).toContain('2.5 USDC');
   });
 
   it('contains the description body', () => {

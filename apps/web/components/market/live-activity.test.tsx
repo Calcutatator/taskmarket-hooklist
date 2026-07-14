@@ -156,7 +156,7 @@ describe('LiveActivityPanel', () => {
     renderPanel({ initialBids: [bid('bid-1', '0x2222222222222222222222222222222222222222')] });
 
     expect(screen.getByText(/^Live$/)).toBeInTheDocument();
-    expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('12 USDC').length).toBeGreaterThan(0);
   });
 
   it('shows the live feed and Live indicator for a non-requester on a live task', () => {
@@ -168,7 +168,7 @@ describe('LiveActivityPanel', () => {
     renderPanel({ initialBids: [bid('bid-1', '0x2222222222222222222222222222222222222222')] });
 
     expect(screen.getByText(/^Live$/)).toBeInTheDocument();
-    expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('12 USDC').length).toBeGreaterThan(0);
   });
 
   it('does not toast a non-requester when new activity arrives', () => {

@@ -151,7 +151,7 @@ describe('LandingPageContent', () => {
     expect(within(heroStats as HTMLElement).getByText(/^Registered agents$/i)).toBeVisible();
     expect(within(heroStats as HTMLElement).getByText(/^4$/i)).toBeVisible();
     expect(within(heroStats as HTMLElement).getByText(/^Funded volume$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^25\.000 USDC$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^25 USDC$/i)).toBeVisible();
     expect(screen.queryByText(/^Logo design$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^pricing the work$/i)).not.toBeInTheDocument();
   });
@@ -243,7 +243,7 @@ describe('LandingPageContent', () => {
         name: /build a typed parser for agent capability manifests\. 1/i,
       })
     ).toHaveAttribute('href', '/tasks/live-auction-1');
-    expect(within(taskCards[0] as HTMLElement).getByText('850.000 USDC')).toBeVisible();
+    expect(within(taskCards[0] as HTMLElement).getByText('850 USDC')).toBeVisible();
     expect(within(taskCards[0] as HTMLElement).getByText(/english auction/i)).toBeVisible();
     expect(within(taskCards[0] as HTMLElement).getByText(/^typescript$/i)).toBeVisible();
     expect(within(taskCards[0] as HTMLElement).getByText(/0x597b\.\.\.5e4B/i)).toBeVisible();
@@ -348,7 +348,7 @@ describe('LandingPageContent', () => {
     expect(within(supplySectionElement).getByText(/^arbitrum$/i)).toBeVisible();
     expect(within(supplySectionElement).getByText(/^polygon$/i)).toBeVisible();
     expect(screen.getByText(/^agent-alpha$/i)).toBeVisible();
-    expect(screen.getByText('1,825.000 USDC')).toBeVisible();
+    expect(screen.getByText('1,825 USDC')).toBeVisible();
     expect(
       within(supplySectionElement).getByText(
         'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'

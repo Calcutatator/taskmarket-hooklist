@@ -112,7 +112,13 @@ export type TaskModeData = {
 };
 
 export function taskTitle(task: TaskResponse) {
-  return task.description.split('\n')[0]?.slice(0, 80) || `Task ${task.id}`;
+  // Strip markdown noise (emphasis, backticks, heading markers) so raw briefs do not
+  // leak "**Title**" into cards. Underscores stay: snake_case identifiers are content.
+  const firstLine = (task.description.split('\n')[0] ?? '')
+    .replace(/^#+\s*/, '')
+    .replace(/[*`]/g, '')
+    .trim();
+  return firstLine.slice(0, 80) || `Task ${task.id}`;
 }
 
 function taskBody(task: TaskResponse) {
@@ -847,6 +853,18 @@ type TaskFilterControlsProps = {
   tags?: string;
 };
 
+// Filter options are radio-group facts, not actions: quiet text rows keep the rail
+// scannable and reserve the pill treatment for horizontal chip rows (sort, active
+// filters). Active state is a tonal primary fill instead of a bordered button.
+const FILTER_ROW_CLASS =
+  'flex min-h-11 items-center rounded-md px-2 text-sm text-muted-foreground transition-colors duration-200 hover:bg-accent/10 hover:text-foreground data-[active=true]:bg-primary/10 data-[active=true]:font-medium data-[active=true]:text-primary sm:min-h-8';
+
+// Sentence-case a labelize()d value for the rail rows ("pending approval" -> "Pending
+// approval"); the old uppercase chips hid casing, quiet text rows do not.
+function sentenceLabel(value: string) {
+  return value.charAt(0).toUpperCase() + value.slice(1);
+}
+
 function TaskFilterControls({
   basePath = '/dashboard/tasks',
   deadlineHours = '',
@@ -872,48 +890,48 @@ function TaskFilterControls({
 
   return (
     <div className="grid gap-4">
-      <div className="grid gap-2">
+      <div className="grid gap-1.5">
         <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
-        <div className="grid grid-cols-1 gap-1">
+        <div className="grid grid-cols-1 gap-0.5">
           {modes.map((mode) => (
-            <Button asChild key={mode} size="chip" variant="chip">
-              <Link
-                data-active={selectedMode === mode}
-                href={taskFiltersHref(basePath, currentFilters, { mode }) as Route}
-              >
-                {mode === 'ALL' ? 'All modes' : labelize(mode)}
-              </Link>
-            </Button>
+            <Link
+              className={FILTER_ROW_CLASS}
+              data-active={selectedMode === mode}
+              href={taskFiltersHref(basePath, currentFilters, { mode }) as Route}
+              key={mode}
+            >
+              {mode === 'ALL' ? 'All modes' : sentenceLabel(labelize(mode))}
+            </Link>
           ))}
         </div>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-1.5">
         <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
-        <div className="grid grid-cols-1 gap-1">
+        <div className="grid grid-cols-1 gap-0.5">
           {statuses.map((status) => (
-            <Button asChild key={status} size="chip" variant="chip">
-              <Link
-                data-active={selectedStatus === status}
-                href={taskFiltersHref(basePath, currentFilters, { status }) as Route}
-              >
-                {status === 'ALL' ? 'All statuses' : labelize(status)}
-              </Link>
-            </Button>
+            <Link
+              className={FILTER_ROW_CLASS}
+              data-active={selectedStatus === status}
+              href={taskFiltersHref(basePath, currentFilters, { status }) as Route}
+              key={status}
+            >
+              {status === 'ALL' ? 'All statuses' : sentenceLabel(labelize(status))}
+            </Link>
           ))}
         </div>
       </div>
-      <div className="grid gap-2">
+      <div className="grid gap-1.5">
         <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
-        <div className="grid grid-cols-1 gap-1">
+        <div className="grid grid-cols-1 gap-0.5">
           {actors.map((actor) => (
-            <Button asChild key={actor} size="chip" variant="chip">
-              <Link
-                data-active={selectedActor === actor}
-                href={taskFiltersHref(basePath, currentFilters, { actor }) as Route}
-              >
-                {actor === 'ALL' ? 'Any' : actor}
-              </Link>
-            </Button>
+            <Link
+              className={FILTER_ROW_CLASS}
+              data-active={selectedActor === actor}
+              href={taskFiltersHref(basePath, currentFilters, { actor }) as Route}
+              key={actor}
+            >
+              {actor === 'ALL' ? 'Any' : sentenceLabel(actor)}
+            </Link>
           ))}
         </div>
       </div>
@@ -1190,7 +1208,7 @@ export function TaskListPageContent({
       : 'Open tasks';
 
   return (
-    <div className="@container/main mx-auto grid w-full max-w-7xl grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-10 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
+    <div className="@container/main mx-auto grid w-full max-w-[96rem] grid-cols-[minmax(0,1fr)] items-start gap-5 px-4 py-10 sm:px-6 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
       <TaskFilterRail
         basePath={basePath}
         deadlineHours={filterParams.deadlineHours}
@@ -1207,10 +1225,7 @@ export function TaskListPageContent({
         className="grid w-full min-w-0 max-w-full gap-5 overflow-hidden"
       >
         <div className="flex flex-col gap-4 sm:flex-row sm:items-end sm:justify-between">
-          <div>
-            <p className="font-mono text-xs uppercase text-primary">Tasks</p>
-            <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight">{heading}</h1>
-          </div>
+          <h1 className="font-display text-4xl font-semibold tracking-tight">{heading}</h1>
           <div className="flex flex-wrap gap-2">
             <div className="lg:hidden">
               <MobileTaskFilterDrawer
@@ -1245,11 +1260,6 @@ export function TaskListPageContent({
             </Button>
           </div>
         ) : null}
-        <TaskSortControl
-          basePath={basePath}
-          currentFilters={sortFilters}
-          selectedSort={filterParams.selectedSort}
-        />
         <TaskListBoard
           createHref={createHref}
           detailBasePath={detailBasePath}
@@ -1257,6 +1267,13 @@ export function TaskListPageContent({
           hasActiveFilters={activeFilters.length > 0}
           listHref={listHref}
           tasks={tasks}
+          toolbarStart={
+            <TaskSortControl
+              basePath={basePath}
+              currentFilters={sortFilters}
+              selectedSort={filterParams.selectedSort}
+            />
+          }
         />
         {filterParams.selectedSort === 'newest' ? (
           <TaskPaginationControl

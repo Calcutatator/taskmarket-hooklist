@@ -44,7 +44,7 @@ function prefersInteractiveMotion() {
 }
 
 const COVER_MEDIA_CLASS =
-  'absolute inset-0 h-full w-full object-cover transition-transform duration-500 ease-[var(--ease-premium)] group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100';
+  'absolute inset-0 h-full w-full object-cover transition-transform duration-300 ease-[var(--ease-premium)] group-hover:scale-[1.04] motion-reduce:transition-none motion-reduce:group-hover:scale-100';
 
 function CoverImage({ artifact, previewUrl }: { artifact: ArtifactResponse; previewUrl: string }) {
   return (
@@ -131,8 +131,8 @@ function placeholderFieldStyle(taskId: string): CSSProperties {
   const chart = `var(--chart-${hashToIndex(taskId, 5) + 1})`;
   return {
     background: [
-      `radial-gradient(ellipse at 72% 28%, color-mix(in oklab, ${chart} 26%, transparent), transparent 55%)`,
-      `radial-gradient(ellipse at 18% 80%, color-mix(in oklab, ${chart} 14%, transparent), transparent 60%)`,
+      `radial-gradient(ellipse at 72% 28%, color-mix(in oklab, ${chart} 40%, transparent), transparent 55%)`,
+      `radial-gradient(ellipse at 18% 80%, color-mix(in oklab, ${chart} 22%, transparent), transparent 60%)`,
       'var(--surface)',
     ].join(', '),
   };
@@ -143,7 +143,7 @@ function TaskPlaceholderCover({ task }: { task: TaskResponse }) {
 
   return (
     <div aria-hidden className="absolute inset-0" style={placeholderFieldStyle(task.id)}>
-      <Glyph className="absolute right-3 top-3 size-16 text-foreground/10" />
+      <Glyph className="absolute -right-4 -top-4 size-28 text-foreground/12" />
     </div>
   );
 }
@@ -188,18 +188,25 @@ export function TaskCover({ task }: { task: TaskResponse }) {
   const count = activityCount(task);
 
   return (
-    <div className="group relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface/44 ring-1 ring-inset ring-border/58">
+    <div className="group relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface/44 ring-1 ring-inset ring-border/58 transition-shadow duration-300 group-hover:ring-border">
       {hasActivity ? <TaskMediaCover task={task} /> : <TaskPlaceholderCover task={task} />}
+      {/* Bottom scrim keeps the title/reward legible; a lighter top scrim backs the
+          badges, which are pinned top-left so their position is constant across the
+          grid instead of floating with title length. */}
       <div
         aria-hidden
         className="pointer-events-none absolute inset-0 bg-gradient-to-t from-background/92 via-background/30 to-transparent"
       />
+      <div
+        aria-hidden
+        className="pointer-events-none absolute inset-x-0 top-0 h-2/5 bg-gradient-to-b from-background/64 via-background/16 to-transparent"
+      />
+      <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-1.5">
+        <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
+        <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
+      </div>
       <div className="absolute inset-x-0 bottom-0 z-10 grid gap-1.5 p-3">
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
-          <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
-        </div>
-        <h3 className="line-clamp-2 font-sans text-sm font-semibold leading-snug text-foreground">
+        <h3 className="line-clamp-2 font-sans text-sm font-semibold leading-snug text-foreground transition-colors duration-200 group-hover:text-primary">
           {taskTitle(task)}
         </h3>
         <div className="flex items-end justify-between gap-3">

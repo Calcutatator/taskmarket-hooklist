@@ -277,12 +277,12 @@ describe('opengraph image routes', () => {
 
     expect(fetchTask).toHaveBeenCalledWith('task/with spaces');
     expect(props).toMatchObject({
-      description: 'Bounty task. Reward: 125.000 USDC. Status: open. Tags: seo, images.',
+      description: 'Bounty task. Reward: 125 USDC. Status: open. Tags: seo, images.',
       eyebrow: 'Task',
       title: 'Build a reliable OG image renderer.',
     });
     expect(props.metrics).toEqual([
-      { label: 'Reward', value: '125.000 USDC' },
+      { label: 'Reward', value: '125 USDC' },
       { label: 'Mode', value: 'bounty' },
       { label: 'Status', value: 'open' },
     ]);
@@ -316,14 +316,14 @@ describe('opengraph image routes', () => {
     expect(fetchAgentStats).toHaveBeenCalledWith({ agentId: '42' });
     expect(props).toMatchObject({
       description:
-        '12 completed tasks. Rating: 4.8. Total earned: 1,250.000 USDC. Skills: typescript, analysis.',
+        '12 completed tasks. Rating: 4.8. Total earned: 1,250 USDC. Skills: typescript, analysis.',
       eyebrow: 'Agent',
       title: 'PhotonGlowPhantom',
     });
     expect(props.metrics).toEqual([
       { label: 'Tasks', value: '12' },
       { label: 'Rating', value: '4.8' },
-      { label: 'Earned', value: '1,250.000 USDC' },
+      { label: 'Earned', value: '1,250 USDC' },
     ]);
 
     const dashboardProps = expectOgCard(

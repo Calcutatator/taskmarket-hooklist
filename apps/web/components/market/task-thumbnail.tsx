@@ -2,7 +2,7 @@
 
 import type { TaskResponse } from '@taskmarket/shared';
 import { LayoutGrid, Rows3 } from 'lucide-react';
-import { useEffect, useState } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 
 import { TaskTable, type TaskListView } from '@/components/market/tasks';
 import { Button } from '@/components/ui/button';
@@ -30,6 +30,7 @@ export function TaskListBoard({
   hasActiveFilters,
   listHref,
   tasks,
+  toolbarStart,
 }: {
   createHref?: string;
   detailBasePath?: string;
@@ -37,6 +38,7 @@ export function TaskListBoard({
   hasActiveFilters?: boolean;
   listHref?: string;
   tasks: TaskResponse[];
+  toolbarStart?: ReactNode;
 }) {
   const [view, setView] = useState<TaskListView>('gallery');
 
@@ -64,36 +66,46 @@ export function TaskListBoard({
     }
   }
 
+  // The toggle hides in error/empty states where there is nothing to lay out; the
+  // caller-provided sort control (toolbarStart) stays visible so a filtered-to-empty
+  // view can still be re-sorted. Sort and view share one toolbar row to keep the
+  // vertical rhythm tight above the grid.
+  const showToggle = !errorMessage && tasks.length > 0;
+
   return (
     <div className="grid gap-3">
-      {/* Hide the toggle in error/empty states where there is nothing to lay out. */}
-      {!errorMessage && tasks.length > 0 ? (
-        <div className="flex items-center justify-end gap-1.5">
-          <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">View</span>
-          <Button
-            aria-label="Table view"
-            aria-pressed={view === 'table'}
-            data-active={view === 'table'}
-            onClick={() => selectView('table')}
-            size="chip"
-            type="button"
-            variant="chip"
-          >
-            <Rows3 className="size-3" />
-            Table
-          </Button>
-          <Button
-            aria-label="Gallery view"
-            aria-pressed={view === 'gallery'}
-            data-active={view === 'gallery'}
-            onClick={() => selectView('gallery')}
-            size="chip"
-            type="button"
-            variant="chip"
-          >
-            <LayoutGrid className="size-3" />
-            Gallery
-          </Button>
+      {toolbarStart || showToggle ? (
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="min-w-0">{toolbarStart}</div>
+          {showToggle ? (
+            <div className="flex items-center gap-1.5">
+              <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">View</span>
+              <Button
+                aria-label="Table view"
+                aria-pressed={view === 'table'}
+                data-active={view === 'table'}
+                onClick={() => selectView('table')}
+                size="chip"
+                type="button"
+                variant="chip"
+              >
+                <Rows3 className="size-3" />
+                Table
+              </Button>
+              <Button
+                aria-label="Gallery view"
+                aria-pressed={view === 'gallery'}
+                data-active={view === 'gallery'}
+                onClick={() => selectView('gallery')}
+                size="chip"
+                type="button"
+                variant="chip"
+              >
+                <LayoutGrid className="size-3" />
+                Gallery
+              </Button>
+            </div>
+          ) : null}
         </div>
       ) : null}
       <TaskTable

@@ -1,16 +1,17 @@
 export function formatUsdcUnits(value?: string | number | null) {
   if (value === null || value === undefined || value === '') {
-    return '0.000 USDC';
+    return '0 USDC';
   }
 
   const parsed = Number(value) / 1_000_000;
   if (!Number.isFinite(parsed)) {
-    return '0.000 USDC';
+    return '0 USDC';
   }
 
+  // Trim trailing zeros ("8 USDC", not "8.000 USDC" -- which reads as eight thousand
+  // under European conventions) while keeping full USDC precision for sub-cent rewards.
   return `${new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 3,
-    minimumFractionDigits: 3,
+    maximumFractionDigits: 6,
   }).format(parsed)} USDC`;
 }
 

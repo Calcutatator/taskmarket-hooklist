@@ -54,7 +54,7 @@ describe('DashboardActivityFeed', () => {
     expect(within(list).getByText('Claimed')).toBeVisible();
     expect(within(list).getByText('Build a typed parser for agent manifests')).toBeVisible();
     expect(within(list).getByText('Untitled task')).toBeVisible();
-    expect(within(list).getByText('850.000 USDC')).toBeVisible();
+    expect(within(list).getByText('850 USDC')).toBeVisible();
     expect(within(rows[0]).getByRole('link')).toHaveAttribute('href', '/dashboard/tasks/task-1');
   });
 

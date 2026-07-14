@@ -13,6 +13,7 @@ import {
   TaskFilterRail,
   TaskListPageContent,
   TaskTable,
+  taskTitle,
 } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
@@ -225,6 +226,27 @@ function mockPreviewFetch(previewUrl: string) {
   } as Response);
 }
 
+describe('taskTitle', () => {
+  it('strips markdown emphasis, backticks, and heading markers from the first line', () => {
+    expect(taskTitle({ ...task, description: '**QETEB MERIRI — the Noonday Destroyer**' })).toBe(
+      'QETEB MERIRI — the Noonday Destroyer'
+    );
+    expect(taskTitle({ ...task, description: '# Build a `Node.js` service\nDetails' })).toBe(
+      'Build a Node.js service'
+    );
+  });
+
+  it('keeps underscores so snake_case identifiers survive', () => {
+    expect(taskTitle({ ...task, description: 'Re-timestamp task_drops journal entries' })).toBe(
+      'Re-timestamp task_drops journal entries'
+    );
+  });
+
+  it('falls back to the task id when stripping leaves nothing', () => {
+    expect(taskTitle({ ...task, description: '**' })).toBe(`Task ${task.id}`);
+  });
+});
+
 describe('Task marketplace components', () => {
   it('renders populated, empty, loading, and error task table states', () => {
     const { rerender } = render(<TaskTable tasks={[task]} />);
@@ -236,7 +258,7 @@ describe('Task marketplace components', () => {
     expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
     // Listing reward splits the amount and the de-emphasised USDC unit into separate nodes.
-    expect(screen.getAllByText('25.000').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('25').length).toBeGreaterThan(0);
 
     rerender(<TaskTable tasks={[]} />);
     expect(screen.getByText(/no tasks yet/i)).toBeInTheDocument();
@@ -279,7 +301,7 @@ describe('Task marketplace components', () => {
     // The cover container is a uniform 4:3 tile and the title lives in its overlay.
     expect(gallery.querySelector('.aspect-\\[4\\/3\\]')).not.toBeNull();
     expect(within(gallery).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
-    expect(within(gallery).getAllByText('25.000').length).toBeGreaterThan(0);
+    expect(within(gallery).getAllByText('25').length).toBeGreaterThan(0);
   });
 
   it('renders aspect-ratio gallery skeletons while loading in the gallery view', () => {
@@ -459,7 +481,7 @@ describe('Task marketplace components', () => {
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
     // Auction reward metric surfaces the live operative price (lowest bid), not the static reward.
-    expect(within(rewardSummary).getByText('12.000 USDC')).toBeInTheDocument();
+    expect(within(rewardSummary).getByText('12 USDC')).toBeInTheDocument();
     expect(within(rewardSummary).getByText(/lowest bid/i)).toBeInTheDocument();
     expect(within(rewardSummary).getByText(/^due$/i)).toBeInTheDocument();
     const statusSummary = within(metrics).getByRole('article', { name: /status summary/i });
@@ -486,7 +508,7 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/^research$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/english auction/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/lowest bid/i)).toBeInTheDocument();
-    expect(screen.getAllByText('12.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('12 USDC').length).toBeGreaterThan(0);
     expect(screen.queryByText(/requester actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
@@ -510,7 +532,7 @@ describe('Task marketplace components', () => {
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(
-      within(rewardSummary).getByText(/~0\.060 usdc.*~200 dreams worker bonus \(est\.\)/i)
+      within(rewardSummary).getByText(/~0.06 usdc.*~200 dreams worker bonus \(est\.\)/i)
     ).toBeInTheDocument();
   });
 
@@ -1231,7 +1253,7 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/task reference/i)).toBeInTheDocument();
     expect(screen.getByText(/settlement/i)).toBeInTheDocument();
     expect(screen.getByText(/history/i)).toBeInTheDocument();
-    expect(screen.getAllByText('25.000 USDC').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('25 USDC').length).toBeGreaterThan(0);
   });
 
   it('links task detail actors to their profiles using the dashboard base path', () => {

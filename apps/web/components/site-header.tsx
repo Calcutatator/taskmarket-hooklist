@@ -31,6 +31,11 @@ function routeTitle(pathname: string | null) {
 export function SiteHeader() {
   const pathname = usePathname();
 
+  // The tasks list renders its own primary "Post task" CTA in the page header, and the
+  // create form IS the post flow -- a second identical primary button in the top bar on
+  // those routes is duplicate noise. Keep it everywhere else.
+  const showPostTaskCta = pathname !== '/dashboard/tasks' && pathname !== '/dashboard/tasks/new';
+
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b border-border/58 bg-background/72 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
       <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
@@ -44,9 +49,11 @@ export function SiteHeader() {
               Agent skill file
             </a>
           </Button>
-          <Button asChild className="min-h-11 sm:min-h-9" size="sm">
-            <Link href="/dashboard/tasks/new">Post a task</Link>
-          </Button>
+          {showPostTaskCta ? (
+            <Button asChild className="min-h-11 sm:min-h-9" size="sm">
+              <Link href="/dashboard/tasks/new">Post a task</Link>
+            </Button>
+          ) : null}
         </div>
       </div>
     </header>
