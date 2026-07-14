@@ -202,8 +202,9 @@ environment variable (`apps/cli/src/lib/api.ts`), defaulting to production. Two 
   needed — the CLI under test is the source sitting in the PR's own branch. Run it from
   source: `pnpm --filter @lucid-agents/taskmarket build` then `node apps/cli/dist/index.js`,
   or `pnpm dev` (tsx) for uncompiled iteration, with `TASKMARKET_API_URL` pointing at the
-  PR's preview backend. The smoke tests already follow this pattern (`cd apps/cli &&
-  API_URL=... pnpm smoke:xmtp-live`).
+  PR's preview backend. The smoke tests already follow this pattern -- `_x402.ts` reads the
+  same `TASKMARKET_API_URL` the CLI does, so one variable covers both (`cd apps/cli &&
+  TASKMARKET_API_URL=... pnpm smoke:xmtp-live`).
 
 Publishing per-environment npm packages was considered and rejected: it adds a registry
 round-trip and version-churn noise to every PR for something running the branch's own source

@@ -7,6 +7,15 @@ name: Preview Environment
 # `railway up`, and the anvil public domain lookup) are written from `railway --help` output
 # and have not yet been exercised against a live Railway deploy. Validate with one real PR
 # before relying on this to gate anything.
+#
+# Every step below mirrors scripts/cloud-env-setup.sh, which brings up the identical stack
+# (mock USDC + diamond + forwarder + facilitator + ERC-8004 registries) against a local Anvil
+# and has actually been run end to end. Six real bugs were found that way and are fixed here
+# too: correct backend variable names, forwarder deploy + registration (missing entirely
+# before), USDC minted to the smoke accounts (not just the deployer), a facilitator
+# BEARER_TOKEN wired into both services, `FORGE_RPC_URL`/`_PREVIEW` naming matching the
+# Makefile's actual fallback convention, and the ERC-8004 registry clone step (previously
+# absent). See PR #158 for the sandbox runs that surfaced these.
 
 on:
   pull_request:
@@ -109,39 +118,129 @@ jobs:
           echo "anvil never became healthy at $RPC_URL" >&2
           exit 1
 
-      # A fresh Anvil chain has no USDC contract, unlike Base Sepolia/Base, so a mock has to be
-      # minted before the diamond can be deployed. FORGE_DEV_PRIVATE_KEY here is Anvil's
-      # well-known default dev account #0 -- safe only because this chain never leaves this
-      # PR's private Railway network. Never reuse this key for real testnet/mainnet deploys.
-      - name: Deploy mock USDC and the diamond to Anvil
-        env:
-          FORGE_ANVIL_RPC_URL: ${{ steps.anvil.outputs.rpc_url }}
-          FORGE_DEV_PRIVATE_KEY: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
-          FORGE_FEE_RECIPIENT_ADDRESS: '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266'
-          FORGE_DEFAULT_PLATFORM_FEE_BPS: '500'
+      # Clones the live ERC-8004 identity/reputation registries (EIP-1967 proxies) from Base
+      # Sepolia onto this PR's fresh anvil, at the same addresses -- identical to
+      # scripts/cloud-env-setup.sh's clone_eip1967_proxy, just run against a remote RPC instead
+      # of a local one. Without this, DiamondDeploy's ERC8004_IDENTITY_REGISTRY/
+      # ERC8004_REPUTATION_REGISTRY inputs would have nothing real to point at.
+      - name: Clone ERC-8004 registries onto anvil
+        id: erc8004
         run: |
+          EIP1967_IMPL_SLOT="0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+          IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
+          REPUTATION_REGISTRY="0x8004B663056A597Dffe9eCcC1965A193B7388713"
+          SOURCE_RPC="https://sepolia.base.org"
+          LOCAL_RPC="${{ steps.anvil.outputs.rpc_url }}"
+
+          clone_proxy() {
+            local proxy_addr="$1"
+            local proxy_code impl_addr impl_code
+            proxy_code="$(cast code "$proxy_addr" --rpc-url "$SOURCE_RPC")"
+            impl_addr="0x$(cast storage "$proxy_addr" "$EIP1967_IMPL_SLOT" --rpc-url "$SOURCE_RPC" | tail -c 41)"
+            impl_code="$(cast code "$impl_addr" --rpc-url "$SOURCE_RPC")"
+            cast rpc anvil_setCode "$impl_addr" "$impl_code" --rpc-url "$LOCAL_RPC" > /dev/null
+            cast rpc anvil_setCode "$proxy_addr" "$proxy_code" --rpc-url "$LOCAL_RPC" > /dev/null
+            cast rpc anvil_setStorageAt "$proxy_addr" "$EIP1967_IMPL_SLOT" \
+              "$(cast to-uint256 "$impl_addr")" --rpc-url "$LOCAL_RPC" > /dev/null
+          }
+          clone_proxy "$IDENTITY_REGISTRY"
+          clone_proxy "$REPUTATION_REGISTRY"
+
+          echo "identity_registry=$IDENTITY_REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "reputation_registry=$REPUTATION_REGISTRY" >> "$GITHUB_OUTPUT"
+
+      # A fresh Anvil chain has no USDC contract, unlike Base Sepolia/Base, so a mock has to be
+      # minted before the diamond can be deployed. Every FORGE_* input carries the _PREVIEW
+      # suffix and is exported bare (FORGE_RPC_URL, FORGE_DEV_PRIVATE_KEY, ...) immediately
+      # before the forge call that reads it -- matching the Makefile's `make deploy preview`
+      # fallback (`${FORGE_RPC_URL:-$FORGE_RPC_URL_PREVIEW}`) and scripts/cloud-env-setup.sh's
+      # convention. The keys below are Anvil's well-known default dev accounts -- public
+      # knowledge, safe only because this chain never leaves this PR's private Railway network.
+      # Never reuse them for real testnet/mainnet deploys.
+      - name: Deploy mock USDC, diamond, and forwarder to anvil
+        id: contracts
+        env:
+          FORGE_RPC_URL_PREVIEW: ${{ steps.anvil.outputs.rpc_url }}
+          FORGE_DEV_PRIVATE_KEY_PREVIEW: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+          FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955'
+          FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW: '750'
+          FORGE_SERVER_ADDRESS_PREVIEW: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+        run: |
+          REPO_ROOT="$(pwd)"
           cd packages/contracts
-          forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
-            --rpc-url "$FORGE_ANVIL_RPC_URL" --broadcast 2>&1 | tee /tmp/usdc.log
-          USDC_ADDRESS=$(grep "Mock USDC deployed at:" /tmp/usdc.log | awk '{print $NF}')
-          echo "FORGE_USDC_TOKEN_ADDRESS=$USDC_ADDRESS" >> "$GITHUB_ENV"
-          export FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS"
-          cd ../..
-          make deploy preview 2>&1 | tee /tmp/diamond.log
-          echo "DIAMOND_ADDRESS=$(grep 'Diamond deployed at:' /tmp/diamond.log | awk '{print $NF}')" >> "$GITHUB_ENV"
+          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/usdc-deploy.log
+          # forge prints script console output twice (dry-run simulation + actual broadcast) --
+          # `tail -1` avoids capturing both addresses joined by a newline.
+          USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
+          cd "$REPO_ROOT"
+
+          FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
+            FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
+            FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
+            FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
+            make deploy preview 2>&1 | tee /tmp/diamond-deploy.log
+          DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
+
+          # The backend's own auth/relay wallet (SERVER_PRIVATE_KEY) is the forwarder's
+          # authorized relayer. DeployForwarder/AddForwarder have no FORGE_ prefix on
+          # USDC_TOKEN_ADDRESS/CONTRACT_ADDRESS/FORWARDER_ADDRESS -- see their source.
+          cd packages/contracts
+          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
+            CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
+            FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
+            forge script script/DeployForwarder.s.sol:DeployForwarder \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/forwarder-deploy.log
+          FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
+
+          # Register the forwarder with the diamond -- without this, every relay() call
+          # reverts with an undecodable selector (confirmed against the local sandbox: every
+          # X402 flow fails end-to-end until this runs). DiamondDeploy can't do this itself,
+          # since the forwarder doesn't exist yet at diamond-deploy time.
+          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
+            FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
+            forge script script/AddForwarder.s.sol:AddForwarder \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tail -5
+
+          # Smoke tests (and anyone driving the API directly against this PR env) need the
+          # requester/worker/etc. accounts to actually hold mock USDC to pay through X402 --
+          # DeployMockUSDCPreview only mints to the deployer. mint() is permissionless by
+          # design for exactly this (see MockUSDC.sol).
+          for ACCOUNT in \
+            "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" \
+            "0x90F79bf6EB2c4f870365E785982E1f101E93b906" \
+            "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65" \
+            "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"; do
+            cast send "$USDC_ADDRESS" "mint(address,uint256)" "$ACCOUNT" 1000000000000 \
+              --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null
+          done
+
+          echo "usdc_address=$USDC_ADDRESS" >> "$GITHUB_OUTPUT"
+          echo "diamond_address=$DIAMOND_ADDRESS" >> "$GITHUB_OUTPUT"
+          echo "forwarder_address=$FORWARDER_ADDRESS" >> "$GITHUB_OUTPUT"
 
       # The facilitator handles X402 payment verification/settlement. Railway services
       # are project-level (with an instance per environment), so create it from the
       # public daydreamsai/facilitator repo only if the project doesn't have it yet
       # (first run ever), then set its variables per-environment on every run --
       # duplicated environments don't reliably carry variable values. The private key
-      # is Anvil's well-known dev account #6: public knowledge, sandbox-only. The final
-      # variable set (the RPC override pointing base-sepolia at this PR's anvil -- the
-      # chain-id 84532 masquerade) omits --skip-deploys so it triggers the deploy.
+      # is Anvil's well-known dev account #6: public knowledge, sandbox-only.
+      # BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically (not
+      # /supported) -- generated fresh per run and written to both this service and the
+      # backend's X402_FACILITATOR_TOKEN below, or every real verify/settle call gets a 401.
       - name: Ensure facilitator service and wire it to this environment's anvil
+        id: facilitator
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
+          FACILITATOR_TOKEN="$(openssl rand -hex 32)"
+          echo "::add-mask::$FACILITATOR_TOKEN"
+          echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
+
           railway link ${{ secrets.RAILWAY_PROJECT_ID }}
           railway environment "$ENV_NAME"
           if ! railway service list --json | grep -q '"facilitator"'; then
@@ -150,7 +249,8 @@ jobs:
           for kv in \
             "EVM_NETWORKS=base-sepolia" \
             "EVM_PRIVATE_KEY=0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" \
-            "TRACKING_ALLOW_IN_MEMORY_FALLBACK=true"; do
+            "TRACKING_ALLOW_IN_MEMORY_FALLBACK=true" \
+            "BEARER_TOKEN=$FACILITATOR_TOKEN"; do
             railway variable set "$kv" \
               --service facilitator --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
@@ -159,6 +259,11 @@ jobs:
             --service facilitator --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
 
+      # Variable names here match exactly what apps/backend/src/config/env.ts reads --
+      # confirmed by reading it directly, since the previous version of this workflow set
+      # FORGE_DIAMOND_ADDRESS/FORGE_USDC_TOKEN_ADDRESS/RPC_URL, none of which the backend
+      # actually consumes (it reads CONTRACT_ADDRESS/USDC_TOKEN_ADDRESS/BASE_RPC_URL), so every
+      # deploy under the old workflow would have left the backend pointed at nothing.
       - name: Write contract addresses into the environment's Railway variables
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
@@ -167,18 +272,29 @@ jobs:
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
             | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
-          railway variable set "X402_FACILITATOR_URL=https://$FACILITATOR_DOMAIN" \
-            --service backend --environment "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
-          for svc in backend frontend; do
-            railway variable set "FORGE_DIAMOND_ADDRESS=$DIAMOND_ADDRESS" \
-              --service "$svc" --environment "$ENV_NAME" \
+
+          for kv in \
+            "CHAIN_ID=84532" \
+            "BASE_RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
+            "CONTRACT_ADDRESS=${{ steps.contracts.outputs.diamond_address }}" \
+            "FORWARDER_ADDRESS=${{ steps.contracts.outputs.forwarder_address }}" \
+            "USDC_TOKEN_ADDRESS=${{ steps.contracts.outputs.usdc_address }}" \
+            "ERC8004_IDENTITY_REGISTRY=${{ steps.erc8004.outputs.identity_registry }}" \
+            "ERC8004_REPUTATION_REGISTRY=${{ steps.erc8004.outputs.reputation_registry }}" \
+            "ERC8004_SEED_BLOCK=0" \
+            "X402_FACILITATOR_URL=https://$FACILITATOR_DOMAIN" \
+            "X402_FACILITATOR_TOKEN=${{ steps.facilitator.outputs.token }}" \
+            "DEFAULT_PLATFORM_FEE_BPS=750"; do
+            railway variable set "$kv" \
+              --service backend --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
-            railway variable set "FORGE_USDC_TOKEN_ADDRESS=$FORGE_USDC_TOKEN_ADDRESS" \
-              --service "$svc" --environment "$ENV_NAME" \
-              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
-            railway variable set "RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
-              --service "$svc" --environment "$ENV_NAME" \
+          done
+
+          for kv in \
+            "NEXT_PUBLIC_CHAIN_ID=84532" \
+            "NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=${{ steps.anvil.outputs.rpc_url }}"; do
+            railway variable set "$kv" \
+              --service frontend --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
           done
 

@@ -59,7 +59,7 @@ FACILITATOR_KEY="0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec15
 FEE_RECIPIENT_KEY="0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356"
 FEE_RECIPIENT_ADDRESS="0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
 
-echo "==> [1/10] Toolchain (Node, pnpm, bun, Foundry)"
+echo "==> [1/11] Toolchain (Node, pnpm, bun, Foundry)"
 if ! command -v pnpm > /dev/null 2>&1; then
   npm install -g pnpm@8.15.0
 fi
@@ -73,10 +73,10 @@ if ! command -v forge > /dev/null 2>&1; then
   foundryup
 fi
 
-echo "==> [2/10] Git submodules (contracts dependencies)"
+echo "==> [2/11] Git submodules (contracts dependencies)"
 git submodule update --init --recursive
 
-echo "==> [3/10] Native Postgres (cloud sandboxes have no Docker)"
+echo "==> [3/11] Native Postgres (cloud sandboxes have no Docker)"
 if ! command -v pg_isready > /dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
@@ -96,10 +96,10 @@ sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_roles WHERE rolname='$
 sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
   || sudo -u postgres createdb -p "$DB_PORT" -O "$DB_USER" "$DB_NAME"
 
-echo "==> [4/10] Workspace dependencies"
+echo "==> [4/11] Workspace dependencies"
 make install
 
-echo "==> [5/10] Local Anvil chain"
+echo "==> [5/11] Local Anvil chain"
 if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1; then
   # --chain-id 84532: Base Sepolia masquerade, see header note on X402.
@@ -111,7 +111,7 @@ if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   done
 fi
 
-echo "==> [6/10] Local facilitator (X402 payment verification/settlement)"
+echo "==> [6/11] Local facilitator (X402 payment verification/settlement)"
 FACILITATOR_PORT=8402
 # BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically
 # (not /supported) -- the backend must present the same token as
@@ -162,14 +162,14 @@ clone_eip1967_proxy() {
     "$(cast to-uint256 "$impl_addr")" --rpc-url "$local_rpc" > /dev/null
 }
 
-echo "==> [7/10] Clone ERC-8004 identity/reputation registries from Base Sepolia"
+echo "==> [7/11] Clone ERC-8004 identity/reputation registries from Base Sepolia"
 BASE_SEPOLIA_RPC_URL="${FORGE_BASE_SEPOLIA_RPC_URL:-https://sepolia.base.org}"
 ERC8004_IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
 ERC8004_REPUTATION_REGISTRY="0x8004B663056A597Dffe9eCcC1965A193B7388713"
 clone_eip1967_proxy "$ERC8004_IDENTITY_REGISTRY" "$BASE_SEPOLIA_RPC_URL" "$ANVIL_RPC_URL"
 clone_eip1967_proxy "$ERC8004_REPUTATION_REGISTRY" "$BASE_SEPOLIA_RPC_URL" "$ANVIL_RPC_URL"
 
-echo "==> [8/10] Deploy mock USDC, diamond, and forwarder to local Anvil"
+echo "==> [8/11] Deploy mock USDC, diamond, and forwarder to local Anvil"
 # Every FORGE_* input below carries the _PREVIEW suffix -- the same convention
 # FORGE_DIAMOND_ADDRESS_TESTNET/_MAINNET already use -- so this file can sit
 # alongside real testnet/mainnet forge config without any name colliding.
@@ -245,8 +245,9 @@ NODE_ENV=development
 PORT=3000
 DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:$DB_PORT/$DB_NAME
 
-# CLI (apps/cli/src/lib/api.ts) -- points the built CLI at this sandbox's own
-# backend. Build and run it with \`make cli <args>\` (see Makefile).
+# Points both the built CLI (apps/cli/src/lib/api.ts) and the smoke test
+# scripts (apps/backend/scripts/_x402.ts) at this sandbox's own backend --
+# one var for both, set explicitly so neither depends on its own fallback.
 TASKMARKET_API_URL=http://127.0.0.1:3000
 
 # Backend runtime config (apps/backend/src/config/env.ts) -- plain values, same
@@ -305,14 +306,30 @@ NEXT_PUBLIC_CHAIN_ID=84532
 NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=$ANVIL_RPC_URL
 EOF
 
-echo "==> [9/10] Build the CLI"
+echo "==> [9/11] Build the CLI"
 make cli
 
-echo "==> [10/10] Done"
+echo "==> [10/11] Start the backend"
+# The whole point of this script is that the sandbox is ready to use the
+# moment it finishes -- not "ready after one more manual step". Migrations
+# run on boot; nohup keeps it alive after this script exits.
+if ! curl -sf http://127.0.0.1:3000 > /dev/null 2>&1; then
+  ( cd apps/backend && nohup pnpm dev > /tmp/backend.log 2>&1 & )
+  for _ in $(seq 1 30); do
+    # -w '%{http_code}' with no -f: any HTTP response (even 404) counts as "up".
+    # "000" means curl couldn't connect at all. `|| true` keeps this safe under
+    # `set -e` -- a bare failing curl here would otherwise abort the whole script.
+    code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000 2>/dev/null || true)"
+    [ "$code" != "000" ] && break
+    sleep 1
+  done
+fi
+
+echo "==> [11/11] Done"
 echo "Diamond:     $DIAMOND_ADDRESS"
 echo "Mock USDC:   $USDC_ADDRESS"
 echo "Forwarder:   $FORWARDER_ADDRESS"
 echo "Facilitator: http://127.0.0.1:$FACILITATOR_PORT"
+echo "Backend:     http://127.0.0.1:3000 (log: /tmp/backend.log)"
 echo "CLI:         built at apps/cli/dist/index.js -- run with \`make cli <args>\`"
-echo "Next: start the backend (make dev, or the backend app directly -- migrations"
-echo "run on boot), then run smoke tests: make smoke <mode>"
+echo "Everything is running. Try: make smoke bounty"
