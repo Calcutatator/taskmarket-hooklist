@@ -40,7 +40,7 @@ jobs:
 
       - name: Delete preview environment
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
           railway environment delete "$ENV_NAME" --yes --json || true
@@ -75,7 +75,7 @@ jobs:
       # Limitation" section for what this trades away and why.
       - name: Recreate preview environment
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
           railway environment delete "$ENV_NAME" --yes --json || true
@@ -83,7 +83,7 @@ jobs:
 
       - name: Deploy anvil service
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           cd packages/contracts/docker/anvil
           railway up --service anvil \
@@ -94,7 +94,7 @@ jobs:
       - name: Expose anvil RPC and wait for it to be healthy
         id: anvil
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           DOMAIN=$(railway domain --service anvil \
             --environment "$ENV_NAME" \
@@ -231,7 +231,7 @@ jobs:
       - name: Ensure facilitator service and wire it to this environment's anvil
         id: facilitator
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           FACILITATOR_TOKEN="$(openssl rand -hex 32)"
           echo "::add-mask::$FACILITATOR_TOKEN"
@@ -258,7 +258,7 @@ jobs:
       # (CONTRACT_ADDRESS/USDC_TOKEN_ADDRESS/BASE_RPC_URL/FORWARDER_ADDRESS).
       - name: Write contract addresses into the environment's Railway variables
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           FACILITATOR_DOMAIN=$(railway domain --service facilitator \
             --environment "$ENV_NAME" \
@@ -292,7 +292,7 @@ jobs:
 
       - name: Deploy backend, frontend, docs
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           for svc in backend frontend docs; do
             railway up --service "$svc" \
@@ -303,7 +303,7 @@ jobs:
 
       - name: Comment PR with environment URL
         env:
-          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           FRONTEND_DOMAIN=$(railway domain --service frontend \
