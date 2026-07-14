@@ -1,24 +1,16 @@
 name: Preview Environment
 
 # Per-PR disposable Railway environment + Anvil chain. See
-# docs/specs/agent-preview-environments-rfc.md for the design this implements.
+# docs/specs/agent-preview-environments-rfc.md for the design this implements, and
+# scripts/cloud-env-setup.sh for the equivalent local sandbox this workflow mirrors (same
+# mock USDC + diamond + forwarder + facilitator + ERC-8004 registry stack, deployed to
+# Railway's anvil instead of a local one).
 #
-# NOTE: a live run of this workflow on PR #158 caught a real CLI bug -- `railway environment
-# delete`/`new` and `railway link` don't accept a `--project` flag/positional in the pinned CLI
-# version below (they only take it via `railway link --project <id>` run first in the same
-# shell). Fixed and reverified directly against the installed `@railway/cli@5.26.1` --help
-# output, not just guessed from docs. The rest of the deploy job (`railway up`/`domain`/
-# `variable`, which do accept --project directly) has not yet completed a full live run --
-# validate end to end before relying on this to gate anything.
-#
-# Every step below mirrors scripts/cloud-env-setup.sh, which brings up the identical stack
-# (mock USDC + diamond + forwarder + facilitator + ERC-8004 registries) against a local Anvil
-# and has actually been run end to end. Six real bugs were found that way and are fixed here
-# too: correct backend variable names, forwarder deploy + registration (missing entirely
-# before), USDC minted to the smoke accounts (not just the deployer), a facilitator
-# BEARER_TOKEN wired into both services, `FORGE_RPC_URL`/`_PREVIEW` naming matching the
-# Makefile's actual fallback convention, and the ERC-8004 registry clone step (previously
-# absent). See PR #158 for the sandbox runs that surfaced these.
+# `railway environment delete`/`new` and `railway link` don't accept a --project flag or
+# positional -- only `railway up`/`domain`/`variable` do. Link the project once via
+# `railway link --project <id>` before any environment delete/new call in the same shell.
+# Not yet exercised through a full live Railway deploy end to end -- validate before relying
+# on this to gate anything.
 
 on:
   pull_request:
@@ -50,9 +42,6 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
-          # `railway environment delete` has no --project flag -- it operates on whatever
-          # project `railway link` last linked in this shell. Confirmed against the installed
-          # CLI's own --help; the earlier `--project` form errors with "unexpected argument".
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
           railway environment delete "$ENV_NAME" --yes --json || true
 
@@ -88,10 +77,6 @@ jobs:
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}
         run: |
-          # `railway environment delete`/`new` have no --project flag -- confirmed against the
-          # installed CLI's own --help (the earlier form errors with "unexpected argument
-          # '--project' found"). They operate on whatever project `railway link` last linked in
-          # this shell, so link once up front instead.
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
           railway environment delete "$ENV_NAME" --yes --json || true
           railway environment new "$ENV_NAME" --duplicate preview --json
@@ -209,9 +194,8 @@ jobs:
           FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
 
           # Register the forwarder with the diamond -- without this, every relay() call
-          # reverts with an undecodable selector (confirmed against the local sandbox: every
-          # X402 flow fails end-to-end until this runs). DiamondDeploy can't do this itself,
-          # since the forwarder doesn't exist yet at diamond-deploy time.
+          # reverts, since DiamondDeploy can't do this itself (the forwarder doesn't exist
+          # yet at diamond-deploy time).
           FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
             FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
@@ -253,8 +237,6 @@ jobs:
           echo "::add-mask::$FACILITATOR_TOKEN"
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
-          # `railway link <id>` as a bare positional errors ("unexpected argument") on the
-          # installed CLI -- confirmed directly. -p/--project is the only accepted form.
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --environment "$ENV_NAME" --json
           if ! railway service list --json | grep -q '"facilitator"'; then
             railway add --service facilitator --repo daydreamsai/facilitator --json
@@ -272,11 +254,8 @@ jobs:
             --service facilitator --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
 
-      # Variable names here match exactly what apps/backend/src/config/env.ts reads --
-      # confirmed by reading it directly, since the previous version of this workflow set
-      # FORGE_DIAMOND_ADDRESS/FORGE_USDC_TOKEN_ADDRESS/RPC_URL, none of which the backend
-      # actually consumes (it reads CONTRACT_ADDRESS/USDC_TOKEN_ADDRESS/BASE_RPC_URL), so every
-      # deploy under the old workflow would have left the backend pointed at nothing.
+      # Variable names here match what apps/backend/src/config/env.ts reads
+      # (CONTRACT_ADDRESS/USDC_TOKEN_ADDRESS/BASE_RPC_URL/FORWARDER_ADDRESS).
       - name: Write contract addresses into the environment's Railway variables
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_ACCOUNT_TOKEN }}

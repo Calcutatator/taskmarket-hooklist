@@ -158,12 +158,9 @@ const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
 const RELAY_VALID_WINDOW_SECS = 300;
 // Retry config for relay simulation failures (RPC read-after-write lag).
-// 6 attempts, 5 gaps of 6s = ~30s total retry window (was ~10s @ 2s/gap) --
-// widened after a sandbox smoke test run exhausted the old window on a
-// rapid multi-submission-then-reject sequence; see PR #158 for the
-// investigation. Does not fix the case if it's a persistent (non-transient)
-// revert rather than RPC read-after-write lag -- only gives real lag more
-// room to clear.
+// 6 attempts, 5 gaps of 6s = ~30s total retry window -- sized against Base's
+// ~12s block time. Only helps if the failure is transient lag; a persistent
+// revert still fails after exhausting the window.
 const RELAY_MAX_RETRIES = 6;
 const RELAY_RETRY_DELAY_MS = 6000;
 

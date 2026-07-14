@@ -173,9 +173,8 @@ contract DiamondDeploy is Script {
         s[17] = CoreFacet.cancelTask.selector;
         s[18] = CoreFacet.updateTask.selector;
         s[19] = CoreFacet.refundExpired.selector;
-        // Present in DiamondFullUpgrade.s.sol's _coreAllSelectors() (the real
-        // testnet/mainnet diamond's steady-state selector set) but missing here --
-        // a fresh deploy never wired rejectSubmission at all. See issue #160.
+        // Must stay in sync with DiamondFullUpgrade.s.sol's _coreAllSelectors(), the real
+        // testnet/mainnet diamond's steady-state selector set.
         s[20] = CoreFacet.rejectSubmission.selector;
     }
 

@@ -124,8 +124,7 @@ if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; t
   cd /tmp/facilitator
   bun install
   # The example server imports the built @daydreamsai/facilitator package, not
-  # its source -- bun install alone does not build it (confirmed: skipping this
-  # fails at "Cannot find module '@daydreamsai/facilitator'").
+  # its source -- bun install alone does not build it.
   cd packages/core
   bun run build
   cd ../../examples/facilitator-server
@@ -144,9 +143,7 @@ if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; t
 fi
 
 # Clones a live EIP-1967 proxy contract (code + implementation-slot + implementation
-# code) from a source chain onto this local Anvil, at the SAME address. Verified
-# end-to-end against Base Sepolia's ERC-8004 identity registry: a real register() call
-# through the cloned proxy succeeds and emits real events, because this is the actual
+# code) from a source chain onto this local Anvil, at the SAME address -- the actual
 # deployed logic, not a hand-written approximation of it. One-time read-only RPC calls
 # to the source chain at setup time only -- no ongoing dependency afterwards.
 EIP1967_IMPL_SLOT="0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
@@ -218,10 +215,8 @@ FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/forwarder-deploy.log
 FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
 
-# Register the forwarder with the diamond -- without this, every relay() call
-# reverts (confirmed: the backend's X402 flows fail end-to-end without it,
-# with an undecodable custom-error selector). DiamondDeploy can't do this
-# itself: the forwarder doesn't exist yet at diamond-deploy time.
+# Register the forwarder with the diamond -- without this, every relay() call reverts.
+# DiamondDeploy can't do this itself: the forwarder doesn't exist yet at diamond-deploy time.
 FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
   FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
