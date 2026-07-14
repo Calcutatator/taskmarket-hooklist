@@ -130,7 +130,7 @@ jobs:
           DOMAIN=$(railway domain --service anvil \
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --port 8545 --json | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+            --port 8545 --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
           # The domain field can come back with or without a scheme already -- strip any
           # existing https:// before adding it, so this doesn't end up doubled.
           DOMAIN="${DOMAIN#https://}"
@@ -313,7 +313,7 @@ jobs:
           FACILITATOR_DOMAIN=$(railway domain --service facilitator \
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
           FACILITATOR_DOMAIN="${FACILITATOR_DOMAIN#https://}"
 
           for kv in \
@@ -362,7 +362,10 @@ jobs:
             RAW=$(railway domain --service "@taskmarket/frontend" \
               --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json 2>&1)
-            FRONTEND_DOMAIN=$(echo "$RAW" | python3 -c "import json,sys; print(json.load(sys.stdin).get('domain',''))" 2>/dev/null)
+            # A service with no domain yet returns {"domain": "..."} (freshly created); a
+            # service that already has one (e.g. inherited from the preview template) returns
+            # {"domains": ["https://..."]} instead.
+            FRONTEND_DOMAIN=$(echo "$RAW" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])" 2>/dev/null)
             [ -n "$FRONTEND_DOMAIN" ] && break
             echo "railway domain returned: $RAW" >&2
             sleep 3
