@@ -87,6 +87,13 @@ jobs:
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
+          # Deletion is asynchronous -- `environment new` with the same name can hit "An
+          # environment with that name already exists" in the propagation window right after
+          # delete returns, so poll until it's actually gone before recreating it.
+          for i in $(seq 1 30); do
+            railway environment list --json | grep -q "\"$ENV_NAME\"" || break
+            sleep 2
+          done
           railway environment new "$ENV_NAME" --duplicate preview --json
 
       - name: Deploy anvil service
