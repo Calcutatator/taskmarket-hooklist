@@ -217,7 +217,8 @@ jobs:
           cd packages/contracts
           FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/usdc-deploy.log
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
+            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tee /tmp/usdc-deploy.log
           # forge prints script console output twice (dry-run simulation + actual broadcast) --
           # `tail -1` avoids capturing both addresses joined by a newline.
           USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
@@ -240,7 +241,8 @@ jobs:
             CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
             FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
             forge script script/DeployForwarder.s.sol:DeployForwarder \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/forwarder-deploy.log
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
+            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tee /tmp/forwarder-deploy.log
           FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
 
           # Register the forwarder with the diamond -- without this, every relay() call
@@ -250,7 +252,8 @@ jobs:
             CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
             FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
             forge script script/AddForwarder.s.sol:AddForwarder \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tail -5
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
+            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tail -5
 
           # Smoke tests (and anyone driving the API directly against this PR env) need the
           # requester/worker/etc. accounts to actually hold mock USDC to pay through X402 --
