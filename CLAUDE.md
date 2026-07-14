@@ -128,6 +128,15 @@ The `"when"` value is not cosmetic — the migrator's only gating logic is `last
 
 `make release` has a guard that checks `.sql` file count against journal entry count and refuses to release if they're out of sync — but nothing else in this repo (tests, CI, `make db:migrate`) catches a missing journal entry before that point, so don't rely on it as your only check.
 
+### Before merging a branch that adds migrations
+
+A present journal entry is not enough on its own — its `"when"` value can still be stale relative to what already merged into `main` while the branch was open, and the migrator will silently skip it with no error (this has happened in production: see the `task_drop_id` incident, where a long-lived branch's `0024`/`0025` entries had `"when"` timestamps older than a `0024`-named migration that had meanwhile shipped to `main` and production — both got skipped on every subsequent boot until the timestamps were fixed).
+
+Before merging or deploying any branch that adds new migration files:
+- Read `apps/backend/drizzle/migrations/meta/_journal.json` on `main` at the tip you're merging into, not just on your branch, and confirm your new entries' `"when"` values are greater than every entry already there — not just greater than your own branch's prior entries.
+- If your branch was cut before other migrations landed on `main`, re-timestamp your entries with a fresh `date +%s000` right before merging, don't reuse timestamps generated when the branch was created.
+- After deploying, check the backend boot logs for migration errors, and independently confirm the new tables/columns actually exist in the target database (e.g. `\d tasks` in psql) — don't infer success just from an absence of errors, since a skipped migration fails silently.
+
 ## Changesets
 
 Changesets are public, user-facing release notes -- write them for someone learning about the change for the first time, not someone who watched the PR get built.

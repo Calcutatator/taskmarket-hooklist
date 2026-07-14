@@ -173,14 +173,14 @@
     {
       "idx": 24,
       "version": "7",
-      "when": 1782880000000,
+      "when": 1784057224001,
       "tag": "0024_add_task_drop_subscriptions",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "7",
-      "when": 1782960000000,
+      "when": 1784057224002,
       "tag": "0025_task_drops_lean_v1",
       "breakpoints": true
     },
