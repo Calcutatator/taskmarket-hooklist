@@ -126,6 +126,9 @@ jobs:
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
             --port 8545 --json | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          # The domain field can come back with or without a scheme already -- strip any
+          # existing https:// before adding it, so this doesn't end up doubled.
+          DOMAIN="${DOMAIN#https://}"
           RPC_URL="https://$DOMAIN"
           echo "rpc_url=$RPC_URL" >> "$GITHUB_OUTPUT"
 
@@ -290,6 +293,7 @@ jobs:
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
             | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          FACILITATOR_DOMAIN="${FACILITATOR_DOMAIN#https://}"
 
           for kv in \
             "CHAIN_ID=84532" \
@@ -336,5 +340,6 @@ jobs:
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
             | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          FRONTEND_DOMAIN="${FRONTEND_DOMAIN#https://}"
           gh pr comment "${{ github.event.pull_request.number }}" \
             --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})"
