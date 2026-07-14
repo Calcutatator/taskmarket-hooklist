@@ -4,10 +4,12 @@ import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
 import { usePrivy } from '@privy-io/react-auth';
 import { AnimatePresence, motion } from 'motion/react';
+import { useAccount } from 'wagmi';
 
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import { StepBrief } from '@/components/market/wizard/step-brief';
 import { StepPublish } from '@/components/market/wizard/step-publish';
+import { StepTaskDrop } from '@/components/market/wizard/step-task-drop';
 import { StepTemplate } from '@/components/market/wizard/step-template';
 import { WizardStepper } from '@/components/market/wizard/wizard-stepper';
 import { Button } from '@/components/ui/button';
@@ -31,14 +33,9 @@ import { isPrivyConfigured } from '@/lib/privy-config';
 
 export type WizardFormValues = CreateTaskFormValues & { templateId: TaskTemplate['id'] };
 
-// When the wizard is opened in a single-vertical campaign context (the /try
-// route), it can lock the template, hide the reward field, and prefill the
-// first template token. All fields are optional so the default dashboard flow
-// is untouched.
 export type WizardLockConfig = {
   templateId: TaskTemplate['id'];
   reward: string;
-  // Value for the template's first token (e.g. the infographic "topic").
   prefillFirstToken?: string;
 };
 
@@ -77,8 +74,6 @@ type CreateTaskWizardInternalProps = CreateTaskWizardBaseProps & {
   variant: WizardVariant;
 };
 
-// Fields validated when leaving the Brief step (step 2). Auction sub-fields are
-// included so the auto-opened advanced disclosure catches max/floor/start errors.
 const STEP_BRIEF_FIELDS: Array<keyof CreateTaskFormValues> = [
   'description',
   'reward',
@@ -89,17 +84,18 @@ const STEP_BRIEF_FIELDS: Array<keyof CreateTaskFormValues> = [
   'auctionStartPrice',
 ];
 
-const WIZARD_STEPS = [{ label: 'Template' }, { label: 'Brief' }, { label: 'Publish' }];
+const STEP_DROP_FIELDS: Array<keyof CreateTaskFormValues> = ['taskDropId', 'taskDropName'];
 
-// Strong ease-out matching --ease-premium, used for the sub-250ms step swap.
+const WIZARD_STEPS = [
+  { label: 'Template' },
+  { label: 'Brief' },
+  { label: 'Task Drop' },
+  { label: 'Publish' },
+];
+
+const CAMPAIGN_STEPS = [{ label: 'Brief' }, { label: 'Fund & publish' }];
 const STEP_EASE = [0.16, 1, 0.3, 1] as const;
 
-// Crossfade the active step in/out on change: a short opacity + translateY with a
-// brief blur mask so replacing the whole step content never reads as a hard cut.
-// Only the locked campaign flow (e.g. /try) opts in via `enabled`, so the
-// dashboard flow renders its steps exactly as before. Under reduced motion it
-// renders a plain container so the SSR tree is unchanged and no transform motion
-// runs. Keyed on stepIndex by the caller.
 function StepTransition({
   children,
   enabled,
@@ -135,9 +131,6 @@ function StepTransition({
   );
 }
 
-// Map a template's suggested values onto the form value shape (UI units/strings).
-// An optional lock overrides the reward and seeds the first token so a campaign
-// flow can open the brief pre-populated.
 function templateValuesFrom(
   template: TaskTemplate,
   lock?: WizardLockConfig
@@ -156,8 +149,6 @@ function templateValuesFrom(
   };
 }
 
-// Initial form defaults, honouring a lock so the campaign flow starts on the
-// locked template with its reward fixed and its first token prefilled.
 function initialFormValues(lock?: WizardLockConfig): WizardFormValues {
   if (!lock) {
     return { ...DEFAULT_FORM_VALUES, templateId: DEFAULT_TEMPLATE_ID };
@@ -257,12 +248,11 @@ function CreateTaskWizardContent({
   variant: WizardVariant;
   walletConfigurationAvailable: boolean;
 }) {
+  const { address } = useAccount();
   const form = useForm<WizardFormValues>({
     defaultValues: initialFormValues(lock),
   });
-  // A locked campaign flow skips the template chooser entirely and opens on the
-  // brief step; the dashboard flow starts on the template step as before.
-  const [stepIndex, setStepIndex] = useState<0 | 1 | 2>(lock ? 1 : 0);
+  const [stepIndex, setStepIndex] = useState<0 | 1 | 2 | 3>(lock ? 1 : 0);
   const [fieldErrors, setFieldErrors] = useState<CreateTaskFieldErrors>({});
   const [campaignTokenError, setCampaignTokenError] = useState<string | null>(null);
   const [campaignBriefState, setCampaignBriefState] = useState<WizardCampaignBriefState>(() =>
@@ -271,18 +261,35 @@ function CreateTaskWizardContent({
   const [mounted, setMounted] = useState(false);
   const formRef = useRef<HTMLFormElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
+  const lastConnectedWalletRef = useRef<string | undefined>(undefined);
   const publishViewedRef = useRef(false);
   const stepFocusInitialisedRef = useRef(false);
 
   const templateId = form.watch('templateId');
-  // Read isDirty during render so react-hook-form subscribes to dirty tracking.
-  // Accessing it only inside the applyTemplate handler leaves it stale (false),
-  // which would skip the re-select confirmation guard.
   const { isDirty } = form.formState;
 
   useEffect(() => {
     setMounted(true);
   }, []);
+
+  useEffect(() => {
+    if (!address) {
+      return;
+    }
+
+    const previousAddress = lastConnectedWalletRef.current;
+    lastConnectedWalletRef.current = address;
+    if (!previousAddress || previousAddress.toLowerCase() === address.toLowerCase()) {
+      return;
+    }
+
+    if (form.getValues('taskDropMode') === 'existing' && form.getValues('taskDropId')) {
+      form.setValue('taskDropId', '', { shouldDirty: true, shouldValidate: false });
+      form.setValue('taskDropName', '', { shouldDirty: true, shouldValidate: false });
+      setFieldErrors({ taskDropId: 'Wallet changed. Choose a drop again.' });
+      setStepIndex(2);
+    }
+  }, [address, form]);
 
   useEffect(() => {
     onDirtyChange?.(isDirty);
@@ -296,13 +303,12 @@ function CreateTaskWizardContent({
   );
 
   useEffect(() => {
-    if (stepIndex === 2 && !publishViewedRef.current) {
+    if (stepIndex === 3 && !publishViewedRef.current) {
       publishViewedRef.current = true;
       onFunnelEvent?.({ name: 'publish_viewed' });
     }
   }, [onFunnelEvent, stepIndex]);
 
-  // On step change, move focus to the heading and bring it into view.
   useEffect(() => {
     if (variant === 'campaign' && !stepFocusInitialisedRef.current) {
       stepFocusInitialisedRef.current = true;
@@ -320,11 +326,10 @@ function CreateTaskWizardContent({
     heading.scrollIntoView({ behavior: reduceMotion ? 'auto' : 'smooth', block: 'start' });
   }, [stepIndex, variant]);
 
-  function goToStep(index: 0 | 1 | 2) {
+  function goToStep(index: 0 | 1 | 2 | 3) {
     setStepIndex(index);
   }
 
-  // Form values without the wizard-only templateId, ready for validate/build.
   function currentFormValues(): CreateTaskFormValues {
     const all = form.getValues();
     const values = { ...all };
@@ -384,7 +389,7 @@ function CreateTaskWizardContent({
     goToStep(2);
   }
 
-  function handleContinueToPublish() {
+  function handleContinueFromBrief() {
     setFieldErrors({});
     if (lock) {
       const campaignTemplate = findTemplate(lock.templateId);
@@ -408,12 +413,24 @@ function CreateTaskWizardContent({
       return;
     }
     onFunnelEvent?.({ name: 'brief_completed' });
-    goToStep(2);
+    goToStep(variant === 'campaign' ? 3 : 2);
+  }
+
+  function handleContinueToPublish() {
+    setFieldErrors({});
+    const values = currentFormValues();
+    const errors = validateCreateTask(values, STEP_DROP_FIELDS);
+    if (errors) {
+      setFieldErrors(errors);
+      window.requestAnimationFrame(() => focusFirstInvalidField(errors));
+      return;
+    }
+    goToStep(3);
   }
 
   function handlePublishValidationError(errors: CreateTaskFieldErrors) {
     setFieldErrors(errors);
-    goToStep(1);
+    goToStep(errors.taskDropId || errors.taskDropName ? 2 : 1);
     window.requestAnimationFrame(() => focusFirstInvalidField(errors));
   }
 
@@ -422,31 +439,31 @@ function CreateTaskWizardContent({
       ? 'Choose a template'
       : stepIndex === 1
         ? 'Write the brief'
-        : variant === 'campaign'
-          ? 'Fund and publish'
-          : 'Review and publish';
+        : stepIndex === 2
+          ? 'Choose a Task Drop'
+          : variant === 'campaign'
+            ? 'Fund and publish'
+            : 'Review and publish';
 
-  // A locked campaign flow (e.g. /try) renders its own section header above the
-  // wizard, so the internal Brief heading would duplicate it. Suppress the
-  // heading only on the Brief step under a lock; keep it everywhere else and in
-  // the unlocked dashboard flow so that flow stays byte-for-byte unchanged.
   const showStepHeading = !(lock && stepIndex === 1);
-
-  // A locked flow hides the template step from the stepper and renumbers the
-  // remaining two so the campaign reads "Brief -> Publish".
   const visibleSteps =
-    variant === 'campaign'
-      ? [{ label: 'Brief' }, { label: 'Fund & publish' }]
-      : lock
-        ? WIZARD_STEPS.slice(1)
-        : WIZARD_STEPS;
-  const stepperCurrent = lock ? stepIndex - 1 : stepIndex;
+    variant === 'campaign' ? CAMPAIGN_STEPS : lock ? WIZARD_STEPS.slice(1) : WIZARD_STEPS;
+  const stepperCurrent =
+    variant === 'campaign' ? (stepIndex === 3 ? 1 : 0) : lock ? stepIndex - 1 : stepIndex;
+
+  function handleStepperClick(index: number) {
+    if (variant === 'campaign') {
+      goToStep(index === 0 ? 1 : 3);
+      return;
+    }
+    goToStep((lock ? index + 1 : index) as 0 | 1 | 2 | 3);
+  }
 
   return (
     <div className="grid gap-6">
       <WizardStepper
         current={stepperCurrent}
-        onStepClick={(index) => goToStep((lock ? index + 1 : index) as 0 | 1 | 2)}
+        onStepClick={handleStepperClick}
         steps={visibleSteps}
       />
 
@@ -502,20 +519,39 @@ function CreateTaskWizardContent({
                       Back
                     </Button>
                   )}
-                  <Button onClick={handleContinueToPublish} type="button">
-                    {variant === 'campaign' ? 'Review and fund' : 'Continue to publish'}
+                  <Button onClick={handleContinueFromBrief} type="button">
+                    {variant === 'campaign' ? 'Review and fund' : 'Continue to Task Drop'}
                   </Button>
                 </div>
               </>
             ) : null}
 
-            {stepIndex === 2 ? (
+            {stepIndex === 2 && variant !== 'campaign' ? (
+              <>
+                <StepTaskDrop
+                  connectOrCreateWallet={connectOrCreateWallet}
+                  fieldErrors={fieldErrors}
+                  form={form}
+                />
+                <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
+                  <Button onClick={() => goToStep(1)} type="button" variant="ghost">
+                    Back to brief
+                  </Button>
+                  <Button onClick={handleContinueToPublish} type="button">
+                    Continue to publish
+                  </Button>
+                </div>
+              </>
+            ) : null}
+
+            {stepIndex === 3 ? (
               <>
                 <StepPublish
                   connectOrCreateWallet={connectOrCreateWallet}
                   form={form}
                   marketStats={initialMarketStats}
                   onEditBrief={() => goToStep(1)}
+                  onEditDrop={() => goToStep(2)}
                   onFunnelEvent={onFunnelEvent}
                   onValidationError={handlePublishValidationError}
                   ready={mounted && ready}
@@ -524,8 +560,8 @@ function CreateTaskWizardContent({
                 />
                 {variant === 'campaign' ? null : (
                   <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
-                    <Button onClick={() => goToStep(1)} type="button" variant="ghost">
-                      Back to brief
+                    <Button onClick={() => goToStep(2)} type="button" variant="ghost">
+                      Back to Task Drop
                     </Button>
                   </div>
                 )}

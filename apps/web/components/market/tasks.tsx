@@ -2027,6 +2027,13 @@ export function TaskDetailPanel({
               {task.auctionType ? (
                 <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
               ) : null}
+              {task.taskDrop ? (
+                <Link href={`/drops/${task.taskDrop.id}` as Route}>
+                  <Badge className="hover:opacity-80" variant="outline">
+                    {task.taskDrop.name}
+                  </Badge>
+                </Link>
+              ) : null}
               <PhaseBadge status={task.status} />
               {taskTypesHref ? (
                 <Link

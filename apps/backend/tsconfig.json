@@ -4,6 +4,7 @@
     "outDir": "./dist",
     "declaration": false,
     "declarationMap": false,
+    "jsx": "react-jsx",
     "baseUrl": ".",
     "paths": {
       "@taskmarket/shared": ["../../packages/shared/src/index.ts"]

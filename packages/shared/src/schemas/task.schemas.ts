@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { TaskDropCreateInlineSchema } from './task-drops.schemas';
 import { PositiveUsdcBaseUnitsSchema, UsdcBaseUnitsSchema } from './common.schemas';
 
 export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
@@ -101,8 +102,18 @@ export const TaskCreateSchema = z
     evaluationWindowHours: z.number().positive().optional(),
     appealWindowHours: z.number().positive().optional(),
     disputeResolver: z.string().optional(),
+    taskDropId: z.string().min(1).optional(),
+    taskDropCreate: TaskDropCreateInlineSchema.optional(),
   })
   .superRefine((input, ctx) => {
+    if (input.taskDropId && input.taskDropCreate) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ['taskDropId'],
+        message: 'Provide taskDropId or taskDropCreate, not both',
+      });
+    }
+
     if (input.mode !== 'auction') return;
 
     // The superRefine still runs when a field-level regex check has already
@@ -225,6 +236,14 @@ export const TaskResponseSchema = z.object({
   netReward: z.string().nullable().optional(),
   pendingActions: PendingActionSchema.array().optional(),
   selfAward: z.boolean().nullable().optional(),
+  taskDropId: z.string().nullable().optional(),
+  taskDrop: z
+    .object({
+      id: z.string(),
+      name: z.string(),
+    })
+    .nullable()
+    .optional(),
   hooks: z.array(z.string()).optional(),
 });
 

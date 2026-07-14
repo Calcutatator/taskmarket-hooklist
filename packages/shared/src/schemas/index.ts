@@ -12,4 +12,5 @@ export * from './wallet.schemas';
 export * from './xmtp.schemas';
 export * from './email.schemas';
 export * from './stats.schemas';
+export * from './task-drops.schemas';
 export * from './evaluation.schemas';

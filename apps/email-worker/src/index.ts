@@ -5,6 +5,29 @@ interface Env {
   RESEND_API_KEY: string;
 }
 
+interface SendEmailBody {
+  bodyHtml?: string;
+  bodyText?: string;
+  from?: string;
+  idempotencyKey?: string;
+  subject?: string;
+  tags?: Array<{ name: string; value: string }>;
+  to?: string;
+}
+
+function isTagArray(value: unknown): value is Array<{ name: string; value: string }> {
+  return (
+    Array.isArray(value) &&
+    value.every(
+      (tag) =>
+        typeof tag === 'object' &&
+        tag !== null &&
+        typeof (tag as { name?: unknown }).name === 'string' &&
+        typeof (tag as { value?: unknown }).value === 'string'
+    )
+  );
+}
+
 export default {
   async email(message: ForwardableEmailMessage, env: Env): Promise<void> {
     const rawResponse = new Response(message.raw);
@@ -38,7 +61,7 @@ export default {
       return new Response('Unauthorized', { status: 401 });
     }
 
-    let body: { from?: string; to?: string; subject?: string; bodyText?: string };
+    let body: SendEmailBody;
     try {
       body = await request.json();
     } catch {
@@ -48,12 +71,12 @@ export default {
       });
     }
 
-    const { from, to, subject, bodyText } = body;
-    if (!from || !to || !subject || !bodyText) {
+    const { bodyHtml, bodyText, from, idempotencyKey, subject, tags, to } = body;
+    if (!from || !to || !subject || (!bodyText && !bodyHtml)) {
       return new Response(
         JSON.stringify({
           ok: false,
-          error: 'Missing required fields: from, to, subject, bodyText',
+          error: 'Missing required fields: from, to, subject, and bodyText or bodyHtml',
         }),
         {
           status: 400,
@@ -72,13 +95,36 @@ export default {
       );
     }
 
+    if (tags !== undefined && !isTagArray(tags)) {
+      return new Response(JSON.stringify({ ok: false, error: 'Invalid tags' }), {
+        status: 400,
+        headers: { 'Content-Type': 'application/json' },
+      });
+    }
+
+    const resendBody: Record<string, unknown> = { from, subject, to };
+    if (bodyHtml) {
+      resendBody.html = bodyHtml;
+    }
+    if (bodyText) {
+      resendBody.text = bodyText;
+    }
+    if (tags) {
+      resendBody.tags = tags;
+    }
+
+    const resendHeaders: Record<string, string> = {
+      Authorization: `Bearer ${env.RESEND_API_KEY}`,
+      'Content-Type': 'application/json',
+    };
+    if (idempotencyKey) {
+      resendHeaders['Idempotency-Key'] = idempotencyKey;
+    }
+
     const res = await fetch('https://api.resend.com/emails', {
       method: 'POST',
-      headers: {
-        Authorization: `Bearer ${env.RESEND_API_KEY}`,
-        'Content-Type': 'application/json',
-      },
-      body: JSON.stringify({ from, to, subject, text: bodyText }),
+      headers: resendHeaders,
+      body: JSON.stringify(resendBody),
     });
 
     if (!res.ok) {

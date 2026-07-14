@@ -12,6 +12,7 @@ const {
   router,
   signTypedDataAsync,
   switchChainAsync,
+  taskDropRows,
   walletState,
 } = vi.hoisted(() => ({
   connectOrCreateWallet: vi.fn(),
@@ -26,6 +27,13 @@ const {
   },
   signTypedDataAsync: vi.fn(),
   switchChainAsync: vi.fn(),
+  taskDropRows: [] as Array<{
+    createdAt: string;
+    description: string | null;
+    id: string;
+    name: string;
+    ownerAddress: string;
+  }>,
   walletState: {
     address: undefined as `0x${string}` | undefined,
     isConnected: false,
@@ -34,6 +42,11 @@ const {
 
 vi.mock('@/lib/api/client', () => ({
   trpc: {
+    taskDrops: {
+      listByOwner: {
+        useQuery: () => ({ data: taskDropRows, isLoading: false }),
+      },
+    },
     wallet: {
       exchangeRate: { useQuery: () => ({ data: exchangeRateData.current, isLoading: false }) },
     },
@@ -109,6 +122,8 @@ async function fillBrief(
 
 // Step 2 (Brief) -> Step 3 (Publish).
 async function continueToPublish(user: ReturnType<typeof userEvent.setup>) {
+  await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+  expect(await screen.findByRole('heading', { name: /choose a task drop/i })).toBeInTheDocument();
   await user.click(screen.getByRole('button', { name: /continue to publish/i }));
 }
 
@@ -133,6 +148,7 @@ describe('CreateTaskWizard', () => {
     connectOrCreateWallet.mockClear();
     fund.mockClear();
     router.push.mockClear();
+    taskDropRows.length = 0;
     signTypedDataAsync.mockReset();
     signTypedDataAsync.mockResolvedValue('0xsigned');
     switchChainAsync.mockReset();
@@ -228,7 +244,7 @@ describe('CreateTaskWizard', () => {
     await fillBrief(user);
     const tags = Array.from({ length: 11 }, (_, index) => `tag${index}`).join(', ');
     await user.type(screen.getByLabelText(/tags/i), tags);
-    await continueToPublish(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
 
     const tagsInput = screen.getByLabelText(/tags/i);
     expect(tagsInput).toHaveAttribute('aria-invalid', 'true');
@@ -237,7 +253,7 @@ describe('CreateTaskWizard', () => {
     const inlineError = document.getElementById(describedBy as string);
     expect(inlineError).toHaveTextContent(/maximum 10 tags/i);
     // Still on the Brief step, no network call made.
-    expect(screen.getByRole('button', { name: /continue to publish/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /continue to task drop/i })).toBeInTheDocument();
     expect(fetchMock).not.toHaveBeenCalled();
   });
 
@@ -329,10 +345,129 @@ describe('CreateTaskWizard', () => {
     await user.click(screen.getByRole('radio', { name: /logo/i }));
     await user.click(screen.getByRole('button', { name: /use this and publish/i }));
 
+    expect(await screen.findByRole('heading', { name: /choose a task drop/i })).toBeInTheDocument();
+    expect(screen.getByRole('radio', { name: /no drop/i })).toHaveAttribute('aria-checked', 'true');
+
+    await user.click(screen.getByRole('button', { name: /continue to publish/i }));
+
     expect(await screen.findByRole('heading', { name: /review and publish/i })).toBeInTheDocument();
-    // The review summary carries the Logo template badge and the composed brief.
     expect(screen.getByText('Logo')).toBeInTheDocument();
     expect(screen.getByText(/primary logo/i, { exact: false })).toBeInTheDocument();
+  });
+
+  it('lets disconnected users connect from the existing-drop choice', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    await user.click(await screen.findByRole('radio', { name: /existing drop/i }));
+
+    const connectButton = screen.getByRole('button', { name: /connect wallet to load drops/i });
+    expect(connectButton).toBeEnabled();
+    await user.click(connectButton);
+
+    expect(connectOrCreateWallet).toHaveBeenCalled();
+  });
+
+  it('shows the selected existing drop name in the publish review', async () => {
+    const user = userEvent.setup();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    taskDropRows.push({
+      createdAt: '2026-07-01T00:00:00.000Z',
+      description: 'Monthly growth tasks.',
+      id: 'drop_growth_123',
+      name: 'Growth drop',
+      ownerAddress: walletState.address,
+    });
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    await user.click(await screen.findByRole('radio', { name: /existing drop/i }));
+    await user.click(screen.getByRole('radio', { name: /growth drop/i }));
+    await user.click(screen.getByRole('button', { name: /continue to publish/i }));
+
+    const taskDropLabel = screen
+      .getAllByText('Task Drop')
+      .find((node) => node.tagName.toLowerCase() === 'p') as HTMLElement;
+    const taskDropSummary = taskDropLabel.closest('div')?.parentElement
+      ?.parentElement as HTMLElement;
+    expect(within(taskDropSummary).getByText('Growth drop')).toBeInTheDocument();
+    expect(within(taskDropSummary).queryByText('drop_growth_123')).not.toBeInTheDocument();
+  });
+
+  it('states that a newly created drop has no subscribers or email recipients', async () => {
+    const user = userEvent.setup();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    await user.click(await screen.findByRole('radio', { name: /create new drop/i }));
+    await user.type(screen.getByLabelText(/drop name/i), 'New work');
+    await user.click(screen.getByRole('button', { name: /continue to publish/i }));
+
+    expect(
+      await screen.findByText(
+        /a new drop will be created.*no subscribers yet.*no task drops email will be sent/i
+      )
+    ).toBeVisible();
+  });
+
+  it('clears an existing drop selection when the connected wallet changes', async () => {
+    const user = userEvent.setup();
+    const walletA = '0x1234567890abcdef1234567890abcdef12345678' as const;
+    const walletB = '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd' as const;
+    walletState.address = walletA;
+    walletState.isConnected = true;
+    taskDropRows.push({
+      createdAt: '2026-07-01T00:00:00.000Z',
+      description: 'Monthly growth tasks.',
+      id: 'drop_growth_123',
+      name: 'Growth drop',
+      ownerAddress: walletA,
+    });
+    const view = render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+    await user.click(await screen.findByRole('radio', { name: /existing drop/i }));
+    await user.click(screen.getByRole('radio', { name: /growth drop/i }));
+    await user.click(screen.getByRole('button', { name: /continue to publish/i }));
+    expect(await screen.findByRole('heading', { name: /review and publish/i })).toBeInTheDocument();
+
+    walletState.address = walletB;
+    taskDropRows.length = 0;
+    view.rerender(<CreateTaskWizard initialMarketStats={null} />);
+
+    expect(await screen.findByRole('heading', { name: /choose a task drop/i })).toBeInTheDocument();
+    expect(screen.getByText(/wallet changed.*choose a drop again/i)).toBeInTheDocument();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('supports arrow-key selection in the Task Drop mode group', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user);
+    await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
+
+    const noDrop = await screen.findByRole('radio', { name: /no drop/i });
+    noDrop.focus();
+    await user.keyboard('{ArrowRight}');
+
+    expect(screen.getByRole('radio', { name: /existing drop/i })).toHaveAttribute(
+      'aria-checked',
+      'true'
+    );
   });
 
   it('keeps the step 1 primary CTA available because a template is always selected', () => {

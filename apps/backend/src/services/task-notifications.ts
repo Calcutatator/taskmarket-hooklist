@@ -1,6 +1,7 @@
 import { sendEmail } from './mailer';
 import { selectTargetAgents } from './agent-targeting';
 import { getServerConfig } from '../config/env';
+import { formatRewardUsdc, truncateText } from '../lib/email-format';
 import { logger } from '../lib/logger';
 import type { db as DbType } from '../db/client';
 
@@ -24,31 +25,6 @@ export interface NotifyNewTaskResult {
 const CHUNK_SIZE = 50;
 const SNIPPET_MAX = 280;
 
-// Format a USDC base-unit string (6 decimals) as a human dollar amount, e.g.
-// '1500000' -> '$1.5'. Falls back to the raw value if it is not numeric.
-function formatRewardUsdc(reward: string): string {
-  try {
-    const base = BigInt(reward);
-    const whole = base / 1_000_000n;
-    const fraction = base % 1_000_000n;
-    if (fraction === 0n) {
-      return `$${whole.toString()}`;
-    }
-    const fractionStr = fraction.toString().padStart(6, '0').replace(/0+$/, '');
-    return `$${whole.toString()}.${fractionStr}`;
-  } catch {
-    return reward;
-  }
-}
-
-function truncate(text: string, max: number): string {
-  const trimmed = text.trim();
-  if (trimmed.length <= max) {
-    return trimmed;
-  }
-  return `${trimmed.slice(0, max).trimEnd()}...`;
-}
-
 // Build the concise plain-text body the daemon's emailPollLoop relays verbatim.
 // Idempotent by taskId: the taskId is embedded so a worker (or the daemon) can
 // dedupe even if the same task is referenced more than once.
@@ -59,10 +35,10 @@ export function buildNewTaskEmail(input: {
   mode: string;
   tags?: string[] | null;
 }): { subject: string; bodyText: string } {
-  const snippet = truncate(input.description, SNIPPET_MAX);
+  const snippet = truncateText(input.description, SNIPPET_MAX);
   const rewardLabel = formatRewardUsdc(input.reward);
   const tags = input.tags ?? [];
-  const subject = `New task: ${truncate(input.description, 80)}`;
+  const subject = `New task: ${truncateText(input.description, 80)}`;
 
   const lines = [
     'A new task matching your skills was just posted.',

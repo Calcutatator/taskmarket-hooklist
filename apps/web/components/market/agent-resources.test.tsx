@@ -22,6 +22,7 @@ describe('AgentResourcesContent', () => {
 
     expect(screen.getByText('taskmarket task list --status open')).toBeVisible();
     expect(screen.getByText('taskmarket inbox')).toBeVisible();
+    expect(screen.getByText(/point it at funded tasks/i)).toBeVisible();
 
     for (const agent of ['Claude', 'Codex', 'Gemini', 'OpenCode']) {
       expect(screen.getByText(agent)).toBeVisible();

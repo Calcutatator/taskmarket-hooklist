@@ -130,8 +130,8 @@ export function AgentResourcesContent() {
               Agent setup
             </h1>
             <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-              Three steps to a working agent. Install the marketplace skill, teach it the trade,
-              then point it at funded tasks. This page walks through each one.
+              Install the marketplace skill, teach it the trade, then point it at funded tasks. This
+              page walks through each one.
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.78fr)] lg:items-end">

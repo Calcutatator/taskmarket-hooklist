@@ -7,17 +7,25 @@ import type { db as DbType } from '../db/client';
 
 type Db = typeof DbType;
 
+export interface EmailTag {
+  name: string;
+  value: string;
+}
+
 export interface SendEmailOptions {
   db: Db;
   from: string;
   to: string;
   subject: string;
   bodyText: string;
+  bodyHtml?: string;
+  idempotencyKey?: string;
+  tags?: EmailTag[];
 }
 
 export async function sendEmail(opts: SendEmailOptions): Promise<void> {
   const config = getServerConfig();
-  const { db, from, to, subject, bodyText } = opts;
+  const { bodyHtml, bodyText, db, from, idempotencyKey, subject, tags, to } = opts;
 
   const toNormalized = to.toLowerCase();
 
@@ -36,18 +44,24 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       });
     }
 
-    await db.insert(emails).values({
+    const insert = db.insert(emails).values({
       id: randomUUID(),
-      messageId: null,
+      messageId: idempotencyKey ?? null,
       fromAddress: from,
       toAddress: toNormalized,
       agentAddress: agentRows[0].address,
       subject,
       bodyText,
-      bodyHtml: null,
+      bodyHtml: bodyHtml ?? null,
       isRead: 0,
       receivedAt: new Date(),
     });
+
+    if (idempotencyKey) {
+      await insert.onConflictDoNothing();
+    } else {
+      await insert;
+    }
     return;
   }
 
@@ -65,7 +79,7 @@ export async function sendEmail(opts: SendEmailOptions): Promise<void> {
       'Content-Type': 'application/json',
       'X-Webhook-Secret': config.EMAIL_WEBHOOK_SECRET ?? '',
     },
-    body: JSON.stringify({ from, to, subject, bodyText }),
+    body: JSON.stringify({ bodyHtml, bodyText, from, idempotencyKey, subject, tags, to }),
   });
 
   if (!res.ok) {

@@ -24,6 +24,10 @@ export type CreateTaskFormValues = {
   evaluationWindow: string;
   appealWindow: string;
   disputeResolver: string;
+  taskDropMode: 'none' | 'existing' | 'new';
+  taskDropId: string;
+  taskDropName: string;
+  taskDropDescription: string;
 };
 
 export type CreateTaskFieldErrors = Partial<Record<keyof CreateTaskFormValues, string>>;
@@ -52,6 +56,10 @@ export const DEFAULT_FORM_VALUES: CreateTaskFormValues = {
   evaluationWindow: '',
   appealWindow: '',
   disputeResolver: '',
+  taskDropMode: 'none',
+  taskDropId: '',
+  taskDropName: '',
+  taskDropDescription: '',
 };
 
 // Maps schema/payload field names to the matching form field where they diverge.
@@ -74,6 +82,8 @@ export const FIELD_FOCUS_ORDER: (keyof CreateTaskFormValues)[] = [
   'auctionStartPrice',
   'metricDescription',
   'metricTarget',
+  'taskDropId',
+  'taskDropName',
 ];
 
 export function optionalNumber(value: string) {
@@ -172,6 +182,17 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
     if (values.disputeResolver.trim()) payload.disputeResolver = values.disputeResolver.trim();
   }
 
+  if (values.taskDropMode === 'existing' && values.taskDropId.trim()) {
+    payload.taskDropId = values.taskDropId.trim();
+  }
+
+  if (values.taskDropMode === 'new' && values.taskDropName.trim()) {
+    payload.taskDropCreate = {
+      name: values.taskDropName.trim(),
+      description: values.taskDropDescription.trim() || undefined,
+    };
+  }
+
   return payload;
 }
 
@@ -213,6 +234,14 @@ export function validateCreateTask(
         errors.auctionStartPrice = 'Start price must be below the max price.';
       }
     }
+  }
+
+  if (values.taskDropMode === 'existing' && !values.taskDropId.trim()) {
+    errors.taskDropId = 'Choose a drop or switch to no drop.';
+  }
+
+  if (values.taskDropMode === 'new' && !values.taskDropName.trim()) {
+    errors.taskDropName = 'Drop name is required.';
   }
 
   if (fields) {

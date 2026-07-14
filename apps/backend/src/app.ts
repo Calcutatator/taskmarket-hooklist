@@ -43,13 +43,14 @@ import {
   RateInputSchema,
 } from './schemas/acceptance.schemas';
 import { validateBody } from './middleware/validateBody';
-import { x402Middleware, type X402Options } from './middleware/x402';
+import { X402PreflightError, x402Middleware, type X402Options } from './middleware/x402';
 import { taskActionPreflight } from './middleware/taskActionPreflight';
 import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
-import { feedbacks, submissions, artifacts, proposals, proofs } from './db/schema';
+import { feedbacks, submissions, artifacts, proposals, proofs, taskDrops } from './db/schema';
+import { unsubscribeTaskDropsSubscription } from './services/task-drops-email';
 import { and, eq } from 'drizzle-orm';
 import {
   buildArtifactManifestJson,
@@ -61,6 +62,87 @@ import {
 export const app = express();
 
 const config = getServerConfig();
+
+function escapeHtml(value: string) {
+  return value.replace(/[&<>"']/g, (char) => {
+    switch (char) {
+      case '&':
+        return '&amp;';
+      case '<':
+        return '&lt;';
+      case '>':
+        return '&gt;';
+      case '"':
+        return '&quot;';
+      default:
+        return '&#39;';
+    }
+  });
+}
+
+function renderTaskDropsUnsubscribePage(input: {
+  action?: string;
+  message: string;
+  title: string;
+}) {
+  const action = input.action
+    ? `<form method="post" action="${escapeHtml(input.action)}">
+        <button type="submit">Unsubscribe</button>
+      </form>`
+    : '';
+
+  return `<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Task Drops unsubscribe</title>
+    <style>
+      body {
+        margin: 0;
+        min-height: 100vh;
+        background: #0d0b0f;
+        color: #f6f0f4;
+        font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+        display: grid;
+        place-items: center;
+      }
+      main {
+        width: min(92vw, 520px);
+        border: 1px solid #342631;
+        border-radius: 8px;
+        background: #171319;
+        padding: 28px;
+      }
+      p {
+        color: #b7aeb6;
+        line-height: 1.6;
+      }
+      a {
+        color: #d86586;
+      }
+      button {
+        border: 0;
+        border-radius: 6px;
+        background: #d86586;
+        color: #170b10;
+        cursor: pointer;
+        font: inherit;
+        font-weight: 700;
+        padding: 10px 16px;
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <h1>${escapeHtml(input.title)}</h1>
+      <p>${escapeHtml(input.message)}</p>
+      ${action}
+      <p><a href="${escapeHtml(config.WEB_APP_URL)}">Return to Taskmarket</a></p>
+    </main>
+  </body>
+</html>`;
+}
 
 app.use(
   helmet({
@@ -108,6 +190,67 @@ app.post(
   express.raw({ type: 'application/octet-stream', limit: '10mb' }),
   emailInboundHandler
 );
+
+app.get('/task-drops/unsubscribe', (req, res) => {
+  const id = typeof req.query.id === 'string' ? req.query.id : '';
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+
+  if (!id || !token) {
+    res
+      .status(400)
+      .type('html')
+      .send(
+        renderTaskDropsUnsubscribePage({
+          message: 'This unsubscribe link is incomplete.',
+          title: 'Unsubscribe link expired',
+        })
+      );
+    return;
+  }
+
+  const query = new URLSearchParams({ id, token }).toString();
+  res
+    .status(200)
+    .type('html')
+    .send(
+      renderTaskDropsUnsubscribePage({
+        action: `/task-drops/unsubscribe?${query}`,
+        message: 'Confirm that you want to stop receiving emails for this Task Drop.',
+        title: 'Confirm unsubscribe',
+      })
+    );
+});
+
+app.post('/task-drops/unsubscribe', async (req, res) => {
+  const id = typeof req.query.id === 'string' ? req.query.id : '';
+  const token = typeof req.query.token === 'string' ? req.query.token : '';
+
+  try {
+    const result = await unsubscribeTaskDropsSubscription({ db, id, token });
+    res
+      .status(result.unsubscribed ? 200 : 400)
+      .type('html')
+      .send(
+        renderTaskDropsUnsubscribePage({
+          message: result.unsubscribed
+            ? `${result.email} has been unsubscribed from Task Drops.`
+            : 'We could not verify this unsubscribe link. It may have already been used or copied incorrectly.',
+          title: result.unsubscribed ? 'Task Drops are off' : 'Unsubscribe link expired',
+        })
+      );
+  } catch (err) {
+    logger.error('Task Drops unsubscribe failed', { err });
+    res
+      .status(500)
+      .type('html')
+      .send(
+        renderTaskDropsUnsubscribePage({
+          message: 'Unable to unsubscribe right now. Please try again.',
+          title: 'Unable to unsubscribe',
+        })
+      );
+  }
+});
 
 // Legacy SPA OG middleware. The production Next app owns metadata and generated OG images.
 if (process.env.SERVE_FRONTEND === 'true') {
@@ -261,7 +404,26 @@ app.get(CANONICAL_PREIMAGE_ROUTES.proofPreimage, async (req, res) => {
 app.post(
   TASK_CREATE_ROUTE,
   validateBody(TaskCreateSchema),
-  x402Middleware({ getAmount: (req) => String(req.body.reward), description: 'Create task' })
+  x402Middleware({
+    getAmount: (req) => String(req.body.reward),
+    description: 'Create task',
+    preflight: async (req, payer) => {
+      const taskDropId = req.body.taskDropId;
+      if (!taskDropId) return;
+
+      const rows = await db
+        .select({ id: taskDrops.id, ownerAddress: taskDrops.ownerAddress })
+        .from(taskDrops)
+        .where(eq(taskDrops.id, taskDropId))
+        .limit(1);
+      const drop = rows[0];
+
+      if (!drop) throw new X402PreflightError('Task drop not found', 404);
+      if (drop.ownerAddress.toLowerCase() !== payer.toLowerCase()) {
+        throw new X402PreflightError('Task drop is not owned by payer', 403);
+      }
+    },
+  })
 );
 
 type PaidTaskAction = keyof typeof PAID_TASK_ACTION_ROUTES;

@@ -6,6 +6,8 @@ import request from 'supertest';
 
 const FAKE_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const FAKE_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
+const OTHER_ADDRESS = '0x1111111111111111111111111111111111111111';
+const mockDb = vi.hoisted(() => ({ select: vi.fn() }));
 
 vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
@@ -29,7 +31,7 @@ vi.mock('../../../src/config/env', () => ({
   }),
 }));
 
-vi.mock('../../../src/db/client', () => ({ db: {} }));
+vi.mock('../../../src/db/client', () => ({ db: mockDb }));
 
 vi.mock('../../../src/lib/wallet', () => ({
   createServerWallet: vi.fn().mockReturnValue({ address: FAKE_ADDRESS }),
@@ -126,6 +128,53 @@ describe('validateBody integration — routes block invalid bodies before x402',
     it('returns 402 when body is valid but no payment is provided', async () => {
       const res = await request(app).post('/api/tasks').send(validBody);
       expect(res.status).toBe(402);
+    });
+
+    it('rejects an existing drop owned by another wallet before settling payment', async () => {
+      const limit = vi.fn().mockResolvedValue([
+        { id: 'drop_other_owner', ownerAddress: OTHER_ADDRESS },
+      ]);
+      mockDb.select.mockReturnValue({
+        from: vi.fn().mockReturnValue({
+          where: vi.fn().mockReturnValue({ limit }),
+        }),
+      });
+      const facilitator = vi.fn().mockResolvedValue({
+        json: async () => ({ success: true, transaction: '0xpayment' }),
+        ok: true,
+      });
+      vi.stubGlobal('fetch', facilitator);
+      const payment = Buffer.from(
+        JSON.stringify({
+          accepted: {
+            amount: validBody.reward,
+            asset: FAKE_ADDRESS,
+            network: 'eip155:84532',
+            payTo: FAKE_ADDRESS,
+            scheme: 'exact',
+          },
+          payload: {
+            authorization: {
+              from: FAKE_ADDRESS,
+              to: FAKE_ADDRESS,
+              value: validBody.reward,
+              validBefore: String(Math.floor(Date.now() / 1000) + 300),
+            },
+          },
+          x402Version: 2,
+        })
+      ).toString('base64');
+
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('PAYMENT-SIGNATURE', payment)
+        .send({ ...validBody, taskDropId: 'drop_other_owner' });
+
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(
+        expect.objectContaining({ error: 'Task drop is not owned by payer' })
+      );
+      expect(facilitator).not.toHaveBeenCalled();
     });
 
     it('rejects a divergent auction max price before requesting payment', async () => {

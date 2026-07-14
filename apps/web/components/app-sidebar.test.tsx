@@ -10,6 +10,10 @@ vi.mock('@/components/nav-user', () => ({
   NavUser: () => <div />,
 }));
 
+vi.mock('@/components/market/first-run-checklist', () => ({
+  FirstRunChecklist: () => <section aria-label="First run onboarding" />,
+}));
+
 vi.mock('@/components/ui/sidebar', () => ({
   Sidebar: ({ children, collapsible }: { children: React.ReactNode; collapsible?: string }) => (
     <aside data-collapsible={collapsible}>{children}</aside>
@@ -46,13 +50,14 @@ describe('AppSidebar', () => {
     expect(screen.getByRole('complementary')).toHaveAttribute('data-collapsible', 'icon');
   });
 
-  it('keeps docs and protocol in resources without duplicate secondary links', () => {
+  it('keeps first-run onboarding and resources in the sidebar', () => {
     render(<AppSidebar />);
 
     const resources = screen.getByText('Resources').closest('nav');
 
     expect(resources).not.toBeNull();
     expect(resources).not.toHaveClass('group-data-[collapsible=icon]:hidden');
+    expect(screen.getByRole('region', { name: /first run onboarding/i })).toBeVisible();
     expect(screen.getByRole('link', { name: /^dashboard$/i })).toHaveAttribute(
       'href',
       '/dashboard'

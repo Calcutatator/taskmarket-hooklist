@@ -42,6 +42,7 @@ const envSchema = z
     X402_FACILITATOR_URL: z.string().url().default('https://facilitator.daydreams.systems'),
     X402_FACILITATOR_TOKEN: z.string().optional(),
     BACKEND_URL: z.string().url().default('http://localhost:3000'),
+    WEB_APP_URL: z.string().url().default('http://localhost:3001'),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),
@@ -89,6 +90,14 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           message: 'BACKEND_URL must not point to localhost in production',
           path: ['BACKEND_URL'],
+        });
+      }
+
+      if (new URL(data.WEB_APP_URL).hostname === 'localhost') {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'WEB_APP_URL must not point to localhost in production',
+          path: ['WEB_APP_URL'],
         });
       }
 

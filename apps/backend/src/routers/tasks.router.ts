@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import {
@@ -19,7 +20,7 @@ import {
   estimateRequesterDreamsBonus,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { tasks, submissions, proposals, agents, bids } from '../db/schema';
+import { tasks, submissions, proposals, agents, bids, taskDrops } from '../db/schema';
 import {
   eq,
   or,
@@ -58,6 +59,7 @@ import {
   computeSubmissionWindowOpen,
   normalizeRequesterPublicKey,
 } from '../lib/task';
+import { notifyTaskDropSubscribers } from '../services/task-drops-email';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
 
@@ -96,11 +98,49 @@ export const tasksRouter = router({
       },
     })
     .input(TaskCreateSchema)
-    .output(z.object({ success: z.boolean(), taskId: z.string() }))
+    .output(
+      z.object({ success: z.boolean(), taskId: z.string(), taskDropId: z.string().nullable() })
+    )
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
       if (!payer) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
+      }
+      const normalizedPayer = payer.toLowerCase();
+
+      let resolvedTaskDropId: string | null = null;
+      let inlineTaskDrop: {
+        id: string;
+        ownerAddress: string;
+        name: string;
+        description: string | null;
+      } | null = null;
+
+      if (input.taskDropId) {
+        const dropRows = await ctx.db
+          .select()
+          .from(taskDrops)
+          .where(eq(taskDrops.id, input.taskDropId))
+          .limit(1);
+        const drop = dropRows[0];
+
+        if (!drop) {
+          throw new TRPCError({ code: 'NOT_FOUND', message: 'Task drop not found' });
+        }
+
+        if (drop.ownerAddress.toLowerCase() !== normalizedPayer) {
+          throw new TRPCError({ code: 'FORBIDDEN', message: 'Task drop is not owned by payer' });
+        }
+
+        resolvedTaskDropId = drop.id;
+      } else if (input.taskDropCreate) {
+        resolvedTaskDropId = `drop_${randomUUID()}`;
+        inlineTaskDrop = {
+          id: resolvedTaskDropId,
+          ownerAddress: normalizedPayer,
+          name: input.taskDropCreate.name,
+          description: input.taskDropCreate.description ?? null,
+        };
       }
 
       if (input.mode === 'auction') {
@@ -191,6 +231,10 @@ export const tasksRouter = router({
         .where(eq(agents.address, payer))
         .limit(1);
 
+      if (inlineTaskDrop) {
+        await ctx.db.insert(taskDrops).values(inlineTaskDrop);
+      }
+
       await ctx.db.insert(tasks).values({
         id: taskId,
         requester: payer,
@@ -221,6 +265,7 @@ export const tasksRouter = router({
         chainId: config.CHAIN_ID,
         contractAddress: config.CONTRACT_ADDRESS,
         hookContract: input.hookContract ?? null,
+        taskDropId: resolvedTaskDropId,
       });
 
       // If evaluator is specified at creation time, assign it immediately.
@@ -266,7 +311,25 @@ export const tasksRouter = router({
         );
       });
 
-      return { success: true, taskId };
+      if (resolvedTaskDropId) {
+        void notifyTaskDropSubscribers({
+          db: ctx.db,
+          taskDropId: resolvedTaskDropId,
+          taskId,
+          description: input.description,
+          reward: input.reward,
+          mode: input.mode ?? 'bounty',
+          tags: input.tags,
+        }).catch((err: unknown) => {
+          logger.warn(
+            `notifyTaskDropSubscribers failed for task ${taskId}: ${
+              err instanceof Error ? err.message : String(err)
+            }`
+          );
+        });
+      }
+
+      return { success: true, taskId, taskDropId: resolvedTaskDropId };
     }),
 
   list: publicProcedure
@@ -479,6 +542,7 @@ export const tasksRouter = router({
           currentLowestBid,
           submissionWindowOpen: computeSubmissionWindowOpen(task, now),
           netReward: computeNetReward(grossPayout, task.platformFeeBps ?? 0),
+          taskDropId: task.taskDropId ?? null,
         };
       });
 
@@ -628,6 +692,16 @@ export const tasksRouter = router({
           : null;
 
       const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
+      const taskDrop =
+        task.taskDropId !== null && task.taskDropId !== undefined
+          ? ((
+              await ctx.db
+                .select({ id: taskDrops.id, name: taskDrops.name })
+                .from(taskDrops)
+                .where(eq(taskDrops.id, task.taskDropId))
+                .limit(1)
+            )[0] ?? null)
+          : null;
 
       const hooksList: string[] =
         taskHooks.length > 0 ? [...taskHooks] : task.hookContract ? [task.hookContract] : [];
@@ -725,6 +799,8 @@ export const tasksRouter = router({
         verdictConfidence: task.verdictConfidence ?? null,
         verdictEvidenceHash: task.verdictEvidenceHash ?? null,
         selfAward: task.selfAward ?? null,
+        taskDropId: task.taskDropId ?? null,
+        taskDrop,
         hooks: hooksList,
         dreamsPerUsdc: dreamsPerUsdcField,
         bonusBps: bonusBpsField,

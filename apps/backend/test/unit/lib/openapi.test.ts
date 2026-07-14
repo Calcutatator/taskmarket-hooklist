@@ -7,7 +7,7 @@ const { generateOpenAPI } = await import('../../../src/lib/openapi');
 
 afterAll(restoreServerEnvironment);
 
-describe('generated OpenAPI task workflows', () => {
+describe('generated OpenAPI routes', () => {
   it.each([
     ['/tasks/{taskId}/pitches', 'get'],
     ['/tasks/{taskId}/proofs', 'get'],
@@ -19,5 +19,12 @@ describe('generated OpenAPI task workflows', () => {
   ])('exposes %s %s', (path, method) => {
     const document = generateOpenAPI();
     expect(document.paths?.[path]?.[method as 'get' | 'post']).toBeDefined();
+  });
+
+  it('exposes Task Drop paths without transform-only response schemas', () => {
+    const document = generateOpenAPI();
+
+    expect(document.paths?.['/task-drops']).toBeDefined();
+    expect(document.paths?.['/task-drops/{taskDropId}']).toBeDefined();
   });
 });

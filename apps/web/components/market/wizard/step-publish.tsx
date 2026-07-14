@@ -162,6 +162,7 @@ type StepPublishProps = {
   ready: boolean;
   connectOrCreateWallet: () => void | Promise<void>;
   onEditBrief: () => void;
+  onEditDrop: () => void;
   onFunnelEvent?: (event: WizardFunnelEvent) => void;
   onValidationError: (errors: CreateTaskFieldErrors) => void;
   variant?: WizardVariant;
@@ -172,6 +173,7 @@ export function StepPublish({
   connectOrCreateWallet,
   form,
   marketStats,
+  onEditDrop,
   onEditBrief,
   onFunnelEvent,
   onValidationError,
@@ -355,10 +357,14 @@ export function StepPublish({
         throw new Error(err.error ?? `Server error: ${createRes.status}`);
       }
 
-      const result = (await createRes.json()) as { taskId?: string };
+      const result = (await createRes.json()) as { taskDropId?: string | null; taskId?: string };
       onFunnelEvent?.({ name: 'task_published' });
       router.push(
-        result.taskId ? `/dashboard/tasks/${result.taskId}?published=1` : '/dashboard/tasks'
+        result.taskId
+          ? `/dashboard/tasks/${result.taskId}?published=1${
+              result.taskDropId ? `&taskDropId=${encodeURIComponent(result.taskDropId)}` : ''
+            }`
+          : '/dashboard/tasks'
       );
     } catch (err) {
       setError(err instanceof Error ? err.message : 'Task creation failed');
@@ -602,6 +608,32 @@ export function StepPublish({
                 </p>
               </div>
             ) : null}
+
+            <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 text-sm leading-5 shadow-[var(--shadow-soft)]">
+              <div className="flex items-start justify-between gap-3">
+                <div>
+                  <p className="font-semibold text-foreground">Task Drop</p>
+                  <p className="mt-1 text-muted-foreground">
+                    {values.taskDropMode === 'existing'
+                      ? 'Subscribers to the selected drop will be notified.'
+                      : values.taskDropMode === 'new'
+                        ? 'A new drop will be created. It has no subscribers yet, so no Task Drops email will be sent.'
+                        : 'No Task Drops email will be sent.'}
+                  </p>
+                </div>
+                <Button onClick={onEditDrop} size="sm" type="button" variant="outline">
+                  Edit
+                </Button>
+              </div>
+              {values.taskDropMode === 'existing' && values.taskDropId ? (
+                <p className="text-sm font-semibold text-foreground">
+                  {values.taskDropName || values.taskDropId}
+                </p>
+              ) : null}
+              {values.taskDropMode === 'new' && values.taskDropName ? (
+                <p className="text-sm font-semibold text-foreground">{values.taskDropName}</p>
+              ) : null}
+            </div>
 
             <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
               <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">

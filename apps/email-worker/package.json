@@ -10,6 +10,7 @@
     "lint:write": "eslint src/ --fix",
     "format:check": "prettier --check src/",
     "format:write": "prettier --write src/",
+    "test": "vitest run",
     "type-check": "tsc --noEmit"
   },
   "devDependencies": {
@@ -17,6 +18,7 @@
     "@taskmarket/prettier-config": "workspace:*",
     "@cloudflare/workers-types": "^4.20260312.1",
     "typescript": "5.7.3",
+    "vitest": "^4.1.5",
     "wrangler": "^4.74.0"
   }
 }

@@ -3,6 +3,7 @@
 import { CircleCheckIcon } from 'lucide-react';
 import { motion } from 'motion/react';
 import type { Route } from 'next';
+import Link from 'next/link';
 import { usePathname, useRouter, useSearchParams } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -31,6 +32,7 @@ export function PublishedCelebration() {
   const motionDisabled = useMotionDisabled();
 
   const published = searchParams?.get('published') === '1';
+  const taskDropId = searchParams?.get('taskDropId');
   const [visible, setVisible] = useState(published);
   const handledRef = useRef(false);
 
@@ -66,6 +68,10 @@ export function PublishedCelebration() {
       if (pathname) {
         router.replace(pathname as Route, { scroll: false });
       }
+      return;
+    }
+
+    if (taskDropId) {
       return;
     }
 
@@ -114,7 +120,12 @@ export function PublishedCelebration() {
             </motion.p>
           </div>
         </div>
-        <motion.div variants={itemVariants}>
+        <motion.div className="flex flex-wrap gap-2" variants={itemVariants}>
+          {taskDropId ? (
+            <Button asChild type="button" variant="outline">
+              <Link href={`/drops/${taskDropId}` as Route}>View drop</Link>
+            </Button>
+          ) : null}
           <Button onClick={dismiss} type="button" variant="outline">
             View activity
           </Button>

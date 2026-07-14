@@ -50,11 +50,11 @@ export const BANNER_SLOTS = [
 export const CAROUSEL_SLOTS = [
   {
     id: 'task-drops',
-    title: 'Task Drops',
-    body: 'Get a heads-up when fresh batches of tasks open up, before they fill.',
+    title: 'Follow specific drops',
+    body: 'Drop subscriptions now live on individual drop pages.',
     href: '#',
-    ctaLabel: 'Sign up for drops',
-    active: true,
+    ctaLabel: 'Open a drop',
+    active: false,
     accent: 'green',
   },
   {
@@ -94,8 +94,8 @@ export const SIDE_CARD_SLOTS = [
   },
   {
     id: 'task-drops-side',
-    title: 'Never miss a drop',
-    body: 'Join the Task Drops list and get notified the moment new batches go live.',
+    title: 'Follow specific drops',
+    body: 'Subscribe from an individual drop page to get scoped new-task email.',
     href: '#',
     // Hidden: duplicates the 'task-drops' carousel card in the same viewport.
     // Keep Task Drops in one place until this slot points somewhere distinct.

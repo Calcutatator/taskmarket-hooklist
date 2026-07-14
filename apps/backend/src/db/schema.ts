@@ -1,3 +1,4 @@
+import { sql } from 'drizzle-orm';
 import {
   pgTable,
   text,
@@ -14,6 +15,20 @@ import {
   serial,
   unique,
 } from 'drizzle-orm/pg-core';
+
+export const taskDrops = pgTable(
+  'task_drops',
+  {
+    id: text('id').primaryKey(),
+    ownerAddress: text('owner_address').notNull(),
+    name: text('name').notNull(),
+    description: text('description'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+  },
+  (table) => ({
+    ownerIdx: index('idx_task_drops_owner').on(sql`lower(${table.ownerAddress})`),
+  })
+);
 
 export const tasks = pgTable(
   'tasks',
@@ -62,6 +77,7 @@ export const tasks = pgTable(
     verdictConfidence: smallint('verdict_confidence'),
     verdictEvidenceHash: text('verdict_evidence_hash'),
     evaluatorDeadline: timestamp('evaluator_deadline', { withTimezone: true }),
+    taskDropId: text('task_drop_id').references(() => taskDrops.id),
   },
   (table) => ({
     statusIdx: index('idx_tasks_status').on(table.status),
@@ -71,6 +87,7 @@ export const tasks = pgTable(
     modeIdx: index('idx_tasks_mode').on(table.mode),
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
     createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
+    taskDropIdx: index('idx_tasks_task_drop').on(table.taskDropId),
   })
 );
 
@@ -376,6 +393,30 @@ export const emails = pgTable(
   })
 );
 
+export const taskDropSubscriptions = pgTable(
+  'task_drop_subscriptions',
+  {
+    id: text('id').primaryKey(),
+    taskDropId: text('task_drop_id').references(() => taskDrops.id),
+    email: text('email').notNull(),
+    walletAddress: text('wallet_address'),
+    agentAddress: text('agent_address'),
+    source: text('source').notNull().default('first_run_panel'),
+    status: text('status').notNull().default('active'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    updatedAt: timestamp('updated_at').defaultNow().notNull(),
+    unsubscribedAt: timestamp('unsubscribed_at'),
+  },
+  (table) => ({
+    dropEmailIdx: uniqueIndex('uidx_task_drop_subscriptions_drop_email')
+      .on(table.taskDropId, sql`lower(${table.email})`)
+      .where(sql`${table.taskDropId} IS NOT NULL`),
+    dropIdx: index('idx_task_drop_subscriptions_drop').on(table.taskDropId),
+    walletIdx: index('idx_task_drop_subscriptions_wallet').on(table.walletAddress),
+    statusIdx: index('idx_task_drop_subscriptions_status').on(table.status),
+  })
+);
+
 export const indexerState = pgTable('indexer_state', {
   id: text('id').primaryKey().default('main'),
   lastBlock: bigint('last_block', { mode: 'number' }).notNull().default(0),
@@ -451,6 +492,8 @@ export const indexedEvents = pgTable(
 
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type TaskDrop = typeof taskDrops.$inferSelect;
+export type NewTaskDrop = typeof taskDrops.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;
 export type NewSubmission = typeof submissions.$inferInsert;
 export type Artifact = typeof artifacts.$inferSelect;
@@ -481,3 +524,5 @@ export type AgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferSelect;
 export type NewAgentXmtpPeerPolicy = typeof agentXmtpPeerPolicies.$inferInsert;
 export type Email = typeof emails.$inferSelect;
 export type NewEmail = typeof emails.$inferInsert;
+export type TaskDropSubscription = typeof taskDropSubscriptions.$inferSelect;
+export type NewTaskDropSubscription = typeof taskDropSubscriptions.$inferInsert;

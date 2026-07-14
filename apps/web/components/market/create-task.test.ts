@@ -26,6 +26,10 @@ describe('buildCreateTaskPayload', () => {
         evaluationWindow: '',
         appealWindow: '',
         disputeResolver: '',
+        taskDropMode: 'none',
+        taskDropId: '',
+        taskDropName: '',
+        taskDropDescription: '',
       })
     ).toEqual({
       auctionFloorPrice: '4250000',
@@ -67,6 +71,10 @@ function validValues() {
     evaluationWindow: '',
     appealWindow: '',
     disputeResolver: '',
+    taskDropMode: 'none' as const,
+    taskDropId: '',
+    taskDropName: '',
+    taskDropDescription: '',
   };
 }
 

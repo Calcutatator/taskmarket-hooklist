@@ -13,7 +13,6 @@ import { DashboardActivityFeed } from '@/components/market/dashboard-activity-fe
 import { DashboardDistributionChart } from '@/components/market/dashboard-distribution-chart';
 import { DashboardHeatmap } from '@/components/market/dashboard-heatmap';
 import { DashboardScope } from '@/components/market/dashboard-scope';
-import { FirstRunChecklist } from '@/components/market/first-run-checklist';
 import { PromoBanner } from '@/components/market/promo-banner';
 import { PromoCarousel } from '@/components/market/promo-carousel';
 import { PromoSideCard } from '@/components/market/promo-side-card';
@@ -80,7 +79,6 @@ export default async function Page() {
     ),
   ]);
 
-  const isFirstRun = taskStats.count === 0;
   const trends = derivePlatformKpiTrends(platformSeries);
 
   const marketContent = (
@@ -98,20 +96,18 @@ export default async function Page() {
         tasksTrend={trends.tasks}
         totalRewards={taskStats.totalRewards}
       />
-      {isFirstRun ? null : (
-        <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
-          <DashboardActivityChart initialData={platformSeries} initialRange="30d" />
-          <DashboardHeatmap
-            initialData={activityHeatmap}
-            initialDimension="mode"
-            initialRange="30d"
-          />
-          <div className="grid gap-4 md:gap-6 @4xl/main:h-[34rem] @4xl/main:grid-cols-[minmax(0,1fr)_360px]">
-            <DashboardDistributionChart initialData={breakdowns} />
-            <DashboardActivityFeed initialData={activityFeed} />
-          </div>
+      <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
+        <DashboardActivityChart initialData={platformSeries} initialRange="30d" />
+        <DashboardHeatmap
+          initialData={activityHeatmap}
+          initialDimension="mode"
+          initialRange="30d"
+        />
+        <div className="grid gap-4 md:gap-6 @4xl/main:h-[34rem] @4xl/main:grid-cols-[minmax(0,1fr)_360px]">
+          <DashboardDistributionChart initialData={breakdowns} />
+          <DashboardActivityFeed initialData={activityFeed} />
         </div>
-      )}
+      </div>
       <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
         <section className="grid gap-4">
           <div className="flex flex-wrap items-end justify-between gap-3">
@@ -161,7 +157,6 @@ export default async function Page() {
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          {isFirstRun ? <FirstRunChecklist /> : null}
           <DashboardScope marketContent={marketContent} />
         </div>
       </div>

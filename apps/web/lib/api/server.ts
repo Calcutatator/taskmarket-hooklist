@@ -16,6 +16,7 @@ import type {
   ProofResponse,
   RequesterStats,
   SubmissionResponse,
+  TaskDropPageData,
   TaskDetailResponse,
   TaskListResponse,
   TaskResponse,
@@ -198,6 +199,20 @@ export async function fetchTasks(searchParams?: {
 export async function fetchTask(taskId: string) {
   try {
     return await readJson<TaskDetailResponse>(`/api/tasks/${taskId}`);
+  } catch (error) {
+    if (error instanceof ApiConnectionError && error.status === 404) {
+      return null;
+    }
+    throw error;
+  }
+}
+
+export async function fetchTaskDrop(taskDropId: string) {
+  try {
+    return await trpcRead<TaskDropPageData | null>(
+      (client) => client.taskDrops.get.query({ taskDropId }),
+      `/trpc/taskDrops.get?taskDropId=${encodeURIComponent(taskDropId)}`
+    );
   } catch (error) {
     if (error instanceof ApiConnectionError && error.status === 404) {
       return null;

@@ -33,6 +33,10 @@ vi.mock('../../../src/services/task-notifications', () => ({
   notifyNewTask: vi.fn().mockResolvedValue({ sent: 0, failed: 0, total: 0 }),
 }));
 
+vi.mock('../../../src/services/task-drops-email', () => ({
+  notifyTaskDropSubscribers: vi.fn().mockResolvedValue({ sent: 0, failed: 0, total: 0 }),
+}));
+
 // Mock config so no real env vars are needed
 vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
@@ -63,11 +67,13 @@ import {
 } from '../../../src/services/contract';
 import { getServerConfig } from '../../../src/config/env';
 import { notifyNewTask } from '../../../src/services/task-notifications';
+import { notifyTaskDropSubscribers } from '../../../src/services/task-drops-email';
 
 // Allow microtask-queued fire-and-forget work (notifyNewTask) to settle.
 const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
-const PAYER = '0xRequester0000000000000000000000000000001';
+const PAYER = '0x1111111111111111111111111111111111111111';
+const DROP_ID = 'drop-1';
 
 const baseTaskInput = {
   description: 'Test task',
@@ -126,6 +132,7 @@ describe('tasks router', () => {
       expect(result.success).toBe(true);
       expect(typeof result.taskId).toBe('string');
       expect(result.taskId.startsWith('0x')).toBe(true);
+      expect(result.taskDropId).toBeNull();
     });
 
     it('passes mode to contractCreateTask', async () => {
@@ -138,7 +145,7 @@ describe('tasks router', () => {
       expect(mode).toBe('0x00000002'); // MODE_MAP.claim
     });
 
-    it('fires the targeted new-task notification exactly once on success', async () => {
+    it('fires targeted new-task notifications and skips Task Drops email without a drop', async () => {
       const ctx = createMockCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
@@ -152,6 +159,67 @@ describe('tasks router', () => {
       expect(arg.reward).toBe(baseTaskInput.reward);
       expect(arg.mode).toBe('bounty');
       expect(arg.tags).toEqual(baseTaskInput.tags);
+      expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
+    });
+
+    it('attaches an owned existing drop and notifies only that drop', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ id: DROP_ID, ownerAddress: PAYER }]))
+        .mockReturnValueOnce(makeChain([]));
+      const caller = tasksRouter.createCaller(ctx);
+
+      const result = await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
+
+      expect(result.success).toBe(true);
+      expect(result.taskDropId).toBe(DROP_ID);
+      expect(notifyTaskDropSubscribers).toHaveBeenCalledOnce();
+      expect(vi.mocked(notifyTaskDropSubscribers).mock.calls[0][0]).toEqual(
+        expect.objectContaining({
+          db: ctx.db,
+          description: baseTaskInput.description,
+          mode: 'bounty',
+          reward: baseTaskInput.reward,
+          tags: baseTaskInput.tags,
+          taskId: result.taskId,
+          taskDropId: DROP_ID,
+        })
+      );
+    });
+
+    it('rejects attaching another requester owned drop', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ id: DROP_ID, ownerAddress: '0x2222222222222222222222222222222222222222' }])
+      );
+      const caller = tasksRouter.createCaller(ctx);
+
+      await expect(caller.create({ ...baseTaskInput, taskDropId: DROP_ID })).rejects.toThrow(
+        'Task drop is not owned by payer'
+      );
+
+      expect(contractCreateTask).not.toHaveBeenCalled();
+      expect(ctx.db.insert).not.toHaveBeenCalled();
+      expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
+    });
+
+    it('creates an inline drop owned by the payer and attaches the task', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+      const caller = tasksRouter.createCaller(ctx);
+
+      const result = await caller.create({
+        ...baseTaskInput,
+        taskDropCreate: { name: 'Documentation QA', description: 'Recurring docs tasks' },
+      });
+
+      expect(result.success).toBe(true);
+      expect(result.taskDropId).toMatch(/^drop_/);
+      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
+      expect(notifyTaskDropSubscribers).toHaveBeenCalledOnce();
+      expect(vi.mocked(notifyTaskDropSubscribers).mock.calls[0][0].taskDropId).toBe(
+        result.taskDropId
+      );
     });
 
     it('passes task tags through to the notifier for skill targeting', async () => {
@@ -162,6 +230,7 @@ describe('tasks router', () => {
 
       const [arg] = vi.mocked(notifyNewTask).mock.calls[0];
       expect(arg.tags).toEqual(['design', 'logo']);
+      expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
 
     it('still returns success when the notification send fails (fire-and-forget)', async () => {
@@ -176,6 +245,7 @@ describe('tasks router', () => {
       // The fire-and-forget rejection is swallowed by the router's .catch handler.
       await flushAsync();
       expect(notifyNewTask).toHaveBeenCalledOnce();
+      expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
   });
 
