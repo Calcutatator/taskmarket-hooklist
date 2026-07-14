@@ -29,12 +29,9 @@ concurrency:
   cancel-in-progress: true
 
 env:
-  # Matches Railway's own native-bot naming (taskmarket-pr-<number>) for consistency. Note:
-  # while Railway's native botPrEnvironments/prDeploys integration is still enabled on this
-  # project, using the identical name means both systems will create/delete/deploy to the
-  # *same* environment independently -- a real collision, not just cosmetic. See the RFC's
-  # "Stop relying on Railway's native PR-environment automation" section; that native
-  # integration should be disabled before this workflow is relied on for real.
+  # Matches Railway's own native-bot naming (taskmarket-pr-<number>). If Railway's native
+  # botPrEnvironments/prDeploys integration is still enabled on this project, both systems
+  # will create/delete/deploy to the same environment independently.
   ENV_NAME: taskmarket-pr-${{ github.event.pull_request.number }}
 
 jobs:
@@ -79,8 +76,7 @@ jobs:
         run: npm install -g @railway/cli@5.26.1
 
       # Every commit gets a fully fresh environment -- no partial state carried forward,
-      # regardless of whether this commit touched contracts. See the RFC's "Accepted
-      # Limitation" section for what this trades away and why.
+      # regardless of whether this commit touched contracts.
       - name: Recreate preview environment
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
@@ -356,9 +352,6 @@ jobs:
               --detach --ci
           done
 
-      # The environment URL is the actual deliverable of this workflow (see the RFC's stated
-      # goal: a reachable URL so an agent can drive the real app, not just confirm it deployed)
-      # -- a failure to resolve or post it is a real failure of this run, not a cosmetic one.
       - name: Comment PR with environment URL
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
