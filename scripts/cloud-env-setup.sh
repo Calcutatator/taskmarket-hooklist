@@ -31,6 +31,11 @@ ANVIL_RPC_URL="http://127.0.0.1:8545"
 DB_USER="taskmarket"
 DB_PASSWORD="taskmarket"
 DB_NAME="taskmarket"
+# A real cloud sandbox is a fresh container with no pre-existing Postgres, so
+# 5432 never collides there. Override via env (DB_PORT=5544 ./cloud-env-setup.sh)
+# when testing this script on a machine that already runs Postgres on 5432 --
+# e.g. a developer's own local dev/testnet database.
+DB_PORT="${DB_PORT:-5432}"
 
 # Anvil default accounts #0..#8, derived from its canonical mnemonic
 # ("test test test test test test test test test test test junk"), deterministic
@@ -43,9 +48,13 @@ DEPLOYER_ADDRESS="0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266"
 SERVER_KEY="0x59c6995e998f97a5a0044966f0945389dc9e86dae88c7a8412f4603b6b78690d"
 SERVER_ADDRESS="0x70997970C51812dc3A010C7d01b50e0d17dc79C8"
 REQUESTER_KEY="0x5de4111afa1a4b94908f83103eb1f1706367c2e68ca870fc3fb9a804cdab365a"
+REQUESTER_ADDRESS="0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC"
 WORKER_KEY="0x7c852118294e51e653712a81e05800f419141751be58f605c371e15141b007a6"
+WORKER_ADDRESS="0x90F79bf6EB2c4f870365E785982E1f101E93b906"
 WORKER_B_KEY="0x47e179ec197488593b187f80a00eb0da91f1b9d0b13f8733639f19c30a34926a"
+WORKER_B_ADDRESS="0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65"
 EVALUATOR_KEY="0x8b3a350cf5c34c9194ca85829a2df0ec3153be0318b5e2d3348e872092edffba"
+EVALUATOR_ADDRESS="0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
 FACILITATOR_KEY="0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"
 FEE_RECIPIENT_KEY="0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356"
 FEE_RECIPIENT_ADDRESS="0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
@@ -72,11 +81,20 @@ if ! command -v pg_isready > /dev/null 2>&1; then
   export DEBIAN_FRONTEND=noninteractive
   sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
 fi
-sudo service postgresql start || sudo pg_ctlcluster "$(ls /etc/postgresql | head -1)" main start
-sudo -u postgres psql -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 \
-  || sudo -u postgres psql -c "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASSWORD' SUPERUSER"
-sudo -u postgres psql -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
-  || sudo -u postgres createdb -O "$DB_USER" "$DB_NAME"
+PG_VERSION="$(ls /etc/postgresql | head -1)"
+PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
+# Set the cluster's real listen port to $DB_PORT before starting it -- a plain
+# `pg_ctlcluster ... start` always uses postgresql.conf's own port setting, so
+# this has to be an edit, not a start-time flag, for psql/DATABASE_URL/every
+# other tool that just connects on $DB_PORT to agree with what's actually
+# listening. Harmless when DB_PORT is left at its 5432 default (a real
+# sandbox is a fresh container with no pre-existing Postgres to collide with).
+sudo sed -i "s/^#\?port = .*/port = $DB_PORT/" "$PG_CONF"
+sudo service postgresql start || sudo pg_ctlcluster "$PG_VERSION" main start
+sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_roles WHERE rolname='$DB_USER'" | grep -q 1 \
+  || sudo -u postgres psql -p "$DB_PORT" -c "CREATE ROLE $DB_USER LOGIN PASSWORD '$DB_PASSWORD' SUPERUSER"
+sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
+  || sudo -u postgres createdb -p "$DB_PORT" -O "$DB_USER" "$DB_NAME"
 
 echo "==> [4/10] Workspace dependencies"
 make install
@@ -95,18 +113,28 @@ fi
 
 echo "==> [6/10] Local facilitator (X402 payment verification/settlement)"
 FACILITATOR_PORT=8402
+# BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically
+# (not /supported) -- the backend must present the same token as
+# X402_FACILITATOR_TOKEN or its real verify/settle calls get rejected with 401.
+FACILITATOR_TOKEN="$(openssl rand -hex 32)"
 if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; then
   if [ ! -d /tmp/facilitator ]; then
     git clone --depth 1 https://github.com/daydreamsai/facilitator /tmp/facilitator
   fi
   cd /tmp/facilitator
   bun install
-  cd examples/facilitator-server
+  # The example server imports the built @daydreamsai/facilitator package, not
+  # its source -- bun install alone does not build it (confirmed: skipping this
+  # fails at "Cannot find module '@daydreamsai/facilitator'").
+  cd packages/core
+  bun run build
+  cd ../../examples/facilitator-server
   PORT="$FACILITATOR_PORT" \
     EVM_NETWORKS="base-sepolia" \
     EVM_RPC_URL_BASE_SEPOLIA="$ANVIL_RPC_URL" \
     EVM_PRIVATE_KEY="$FACILITATOR_KEY" \
     TRACKING_ALLOW_IN_MEMORY_FALLBACK="true" \
+    BEARER_TOKEN="$FACILITATOR_TOKEN" \
     nohup bun run dev > /tmp/facilitator.log 2>&1 &
   for _ in $(seq 1 30); do
     curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 && break
@@ -166,7 +194,7 @@ cd packages/contracts
 FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
   --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/usdc-deploy.log
-USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | awk '{print $NF}')"
+USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
 cd "$REPO_ROOT"
 
 FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
@@ -175,7 +203,7 @@ FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
   FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
   FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
   make deploy preview 2>&1 | tee /tmp/diamond-deploy.log
-DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | awk '{print $NF}')"
+DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
 
 # The backend's own auth/relay wallet (SERVER_PRIVATE_KEY) is the forwarder's
 # authorized relayer -- DeployForwarder reads FORGE_SERVER_ADDRESS for that, plus
@@ -188,15 +216,34 @@ FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
   forge script script/DeployForwarder.s.sol:DeployForwarder \
   --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/forwarder-deploy.log
-FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | awk '{print $NF}')"
+FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
+
+# Register the forwarder with the diamond -- without this, every relay() call
+# reverts (confirmed: the backend's X402 flows fail end-to-end without it,
+# with an undecodable custom-error selector). DiamondDeploy can't do this
+# itself: the forwarder doesn't exist yet at diamond-deploy time.
+FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+  CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
+  FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
+  forge script script/AddForwarder.s.sol:AddForwarder \
+  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tail -5
 cd "$REPO_ROOT"
+
+# Smoke tests (and any agent driving the API directly) need the requester/
+# worker/etc. accounts to actually hold mock USDC to pay through X402 --
+# DeployMockUSDCPreview only mints to the deployer. mint() is permissionless
+# by design for exactly this (see MockUSDC.sol).
+for ACCOUNT in "$REQUESTER_ADDRESS" "$WORKER_ADDRESS" "$WORKER_B_ADDRESS" "$EVALUATOR_ADDRESS"; do
+  cast send "$USDC_ADDRESS" "mint(address,uint256)" "$ACCOUNT" 1000000000000 \
+    --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null
+done
 
 cat > .env << EOF
 # Generated by scripts/cloud-env-setup.sh -- local sandbox stack.
 # Anvil default dev keys: public knowledge, sandbox-only, never real networks.
 NODE_ENV=development
 PORT=3000
-DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:5432/$DB_NAME
+DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:$DB_PORT/$DB_NAME
 
 # CLI (apps/cli/src/lib/api.ts) -- points the built CLI at this sandbox's own
 # backend. Build and run it with \`make cli <args>\` (see Makefile).
@@ -218,8 +265,9 @@ ERC8004_IDENTITY_REGISTRY=$ERC8004_IDENTITY_REGISTRY
 ERC8004_REPUTATION_REGISTRY=$ERC8004_REPUTATION_REGISTRY
 ERC8004_SEED_BLOCK=$ERC8004_SEED_BLOCK_PREVIEW
 X402_FACILITATOR_URL=http://127.0.0.1:$FACILITATOR_PORT
+X402_FACILITATOR_TOKEN=$FACILITATOR_TOKEN
 DEFAULT_PLATFORM_FEE_BPS=750
-USDC_DOMAIN_NAME=USD Coin
+USDC_DOMAIN_NAME="USD Coin"
 CORS_ORIGIN=http://localhost:5173
 SERVER_PRIVATE_KEY=$SERVER_KEY
 PLATFORM_MASTER_KEY=$PLATFORM_MASTER_KEY_GENERATED
