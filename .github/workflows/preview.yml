@@ -356,15 +356,27 @@ jobs:
               --detach --ci
           done
 
+      # Purely cosmetic -- the environment is already fully deployed by this point, so a
+      # flaky domain lookup or PR comment here shouldn't fail an otherwise-successful run.
       - name: Comment PR with environment URL
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          FRONTEND_DOMAIN=$(railway domain --service "@taskmarket/frontend" \
-            --environment "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
-            | python3 -c "import json,sys; print(json.load(sys.stdin)['domain'])")
+          FRONTEND_DOMAIN=""
+          for i in $(seq 1 5); do
+            RAW=$(railway domain --service "@taskmarket/frontend" \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json 2>&1)
+            FRONTEND_DOMAIN=$(echo "$RAW" | python3 -c "import json,sys; print(json.load(sys.stdin).get('domain',''))" 2>/dev/null)
+            [ -n "$FRONTEND_DOMAIN" ] && break
+            echo "railway domain returned: $RAW" >&2
+            sleep 3
+          done
           FRONTEND_DOMAIN="${FRONTEND_DOMAIN#https://}"
-          gh pr comment "${{ github.event.pull_request.number }}" \
-            --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})"
+          if [ -n "$FRONTEND_DOMAIN" ]; then
+            gh pr comment "${{ github.event.pull_request.number }}" \
+              --body "Preview environment ready: https://$FRONTEND_DOMAIN (Anvil RPC: ${{ steps.anvil.outputs.rpc_url }})" || true
+          else
+            echo "Could not resolve the frontend domain -- environment is deployed, comment skipped" >&2
+          fi
