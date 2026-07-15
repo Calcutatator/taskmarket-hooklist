@@ -28,11 +28,19 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           SHA=$(git rev-parse HEAD)
-          STATUS=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
-            --jq '[.check_runs[] | select(.name == "quality")] | .[0].conclusion // "not_found"')
-          echo "CI status for ${SHA}: ${STATUS}"
-          if [ "$STATUS" != "success" ]; then
-            echo "CI did not pass on this commit (status: ${STATUS}). Aborting deploy."
+          # Checks the "CI" workflow's own overall conclusion -- a rollup of every job it
+          # contains -- rather than a specific job by name. Previously only checked the
+          # "quality" check-run, so a tagged release could ship even if ui or
+          # skill-conformance had failed on that commit. This way stays correct automatically
+          # as ci.yml's job list changes, with nothing here to keep in sync. Can't gate this
+          # the same way deploy-testnet.yml does (workflow_run on ci.yml completing) since
+          # that trigger is inherently automatic -- production must stay tag-gated and manual
+          # (ADR-0001).
+          CONCLUSION=$(gh api "repos/${{ github.repository }}/actions/runs?head_sha=${SHA}" \
+            --jq '[.workflow_runs[] | select(.name == "CI")] | .[0].conclusion // "not_found"')
+          echo "CI workflow conclusion for ${SHA}: ${CONCLUSION}"
+          if [ "$CONCLUSION" != "success" ]; then
+            echo "CI did not pass on this commit (status: ${CONCLUSION}). Aborting deploy."
             exit 1
           fi
 
