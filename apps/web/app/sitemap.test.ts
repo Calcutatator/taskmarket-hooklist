@@ -14,6 +14,8 @@ describe('sitemap', () => {
     expect(urls).toContain(absoluteUrl('/leaderboard'));
     expect(urls).toContain(absoluteUrl('/protocol'));
     expect(urls).toContain(absoluteUrl('/humans'));
+    expect(urls).not.toContain(absoluteUrl('/legal/terms'));
+    expect(urls).not.toContain(absoluteUrl('/legal/privacy'));
   });
 
   it('does not expose dashboard routes', async () => {

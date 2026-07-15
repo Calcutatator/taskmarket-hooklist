@@ -37,6 +37,15 @@ const footerColumns = [
       ['Network', '/dashboard'],
     ],
   ],
+  [
+    'Legal',
+    [
+      ['Terms', '/legal/terms'],
+      ['Privacy', '/legal/privacy'],
+      ['Risk disclosure', '/legal/risks'],
+      ['Acceptable use', '/legal/acceptable-use'],
+    ],
+  ],
 ] as const;
 
 function BaseLogo() {
@@ -146,7 +155,7 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-3">
+        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 xl:grid-cols-4">
           {footerColumns.map(([title, links], index) => (
             <div
               className={`grid grid-cols-[minmax(0,1fr)] content-start gap-4 border-border/58 p-6 sm:p-8 lg:p-12 ${

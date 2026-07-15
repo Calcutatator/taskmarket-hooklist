@@ -20,6 +20,7 @@ import { marketRouter } from './routers/market.router';
 import { statsRouter } from './routers/stats.router';
 import { requesterRouter } from './routers/requester.router';
 import { taskDropsRouter } from './routers/task-drops.router';
+import { legalRouter } from './routers/legal.router';
 
 export const appRouter = router({
   health: healthRouter,
@@ -43,6 +44,7 @@ export const appRouter = router({
   emails: emailsRouter,
   evaluations: evaluationsRouter,
   requester: requesterRouter,
+  legal: legalRouter,
 });
 
 export type AppRouter = typeof appRouter;

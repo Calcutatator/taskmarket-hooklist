@@ -5,6 +5,7 @@ import { createTRPCClient, httpBatchLink } from '@trpc/client';
 import { createTRPCReact } from '@trpc/react-query';
 
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { getLegalReceiptHeaders } from '@/lib/legal-receipt';
 
 import type { AppRouter } from '@taskmarket/backend/src/router';
 
@@ -26,6 +27,7 @@ export function makeTrpcClient() {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
+        headers: getLegalReceiptHeaders,
         url: `${getBrowserApiBaseUrl()}/trpc`,
       }),
     ],

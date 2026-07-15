@@ -74,7 +74,7 @@ export function generateOpenAPI() {
     title: 'Taskmarket API',
     version: '1.0.0',
     baseUrl: 'http://localhost:3000/api',
-    tags: ['Tasks', 'Health'],
+    tags: ['Tasks', 'Health', 'Legal'],
   });
   const paths: typeof document.paths = {
     ...document.paths,

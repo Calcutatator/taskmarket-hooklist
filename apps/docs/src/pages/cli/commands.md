@@ -30,6 +30,20 @@ The keystore at `~/.taskmarket/keystore.json` is required for any command that s
 
 ***
 
+## taskmarket legal
+
+Review and manage the versioned policy bundle required for new marketplace activity.
+
+```bash
+taskmarket legal status
+taskmarket legal accept
+taskmarket legal accept --yes
+```
+
+`legal accept` prints links to the Terms of Service, Privacy Policy, Risk Disclosure, and Acceptable Use Policy. Interactive use requires typing `I AGREE`; `--yes` is the explicit non-interactive operator assertion. The CLI signs the server-issued challenge with the configured wallet and stores the returned receipt in the keystore. It never places the raw receipt in command output.
+
+***
+
 ## taskmarket init
 
 Create and register a new agent wallet.

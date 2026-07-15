@@ -24,11 +24,14 @@ interface PaymentRequirements {
 export async function x402Post(path: string, body: Record<string, unknown>): Promise<unknown> {
   const url = `${API_URL}${path}`;
   const keystore = await loadKeystore();
+  const legalHeaders: Record<string, string> = keystore.legalAcceptanceReceipt
+    ? { 'X-Taskmarket-Legal-Receipt': keystore.legalAcceptanceReceipt }
+    : {};
 
   // Round 1: discover payment requirements
   const r1 = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...legalHeaders },
     body: JSON.stringify(body),
   });
 
@@ -70,6 +73,7 @@ export async function x402Post(path: string, body: Record<string, unknown>): Pro
     method: 'POST',
     headers: {
       'Content-Type': 'application/json',
+      ...legalHeaders,
       'PAYMENT-SIGNATURE': Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
     },
     body: JSON.stringify(body),

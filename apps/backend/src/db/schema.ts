@@ -490,6 +490,71 @@ export const indexedEvents = pgTable(
   })
 );
 
+export const legalAcceptances = pgTable(
+  'legal_acceptances',
+  {
+    id: text('id').primaryKey(),
+    bundleVersion: text('bundle_version').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    acceptanceMethod: text('acceptance_method').notNull(),
+    documentManifest: jsonb('document_manifest').notNull(),
+    statementText: text('statement_text').notNull(),
+    acceptedAt: timestamp('accepted_at', { withTimezone: true }).defaultNow().notNull(),
+    signature: text('signature'),
+    challenge: text('challenge'),
+    sessionId: text('session_id'),
+    ipAddress: text('ip_address'),
+    userAgent: text('user_agent'),
+  },
+  (table) => ({
+    subjectBundleUnique: uniqueIndex('uidx_legal_acceptances_subject_bundle').on(
+      table.subjectType,
+      table.subjectId,
+      table.bundleVersion
+    ),
+    bundleIdx: index('idx_legal_acceptances_bundle').on(table.bundleVersion),
+  })
+);
+
+export const legalAcceptanceChallenges = pgTable(
+  'legal_acceptance_challenges',
+  {
+    nonce: text('nonce').primaryKey(),
+    walletAddress: text('wallet_address').notNull(),
+    bundleVersion: text('bundle_version').notNull(),
+    message: text('message').notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    consumedAt: timestamp('consumed_at', { withTimezone: true }),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    walletUnique: uniqueIndex('uidx_legal_acceptance_challenges_wallet').on(table.walletAddress),
+    expiresIdx: index('idx_legal_acceptance_challenges_expires').on(table.expiresAt),
+  })
+);
+
+export const legalAccessReceipts = pgTable(
+  'legal_access_receipts',
+  {
+    id: text('id').primaryKey(),
+    tokenHash: text('token_hash').notNull().unique(),
+    acceptanceId: text('acceptance_id')
+      .notNull()
+      .references(() => legalAcceptances.id, { onDelete: 'cascade' }),
+    bundleVersion: text('bundle_version').notNull(),
+    subjectType: text('subject_type').notNull(),
+    subjectId: text('subject_id').notNull(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => ({
+    subjectIdx: index('idx_legal_access_receipts_subject').on(table.subjectType, table.subjectId),
+    acceptanceIdx: index('idx_legal_access_receipts_acceptance').on(table.acceptanceId),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskDrop = typeof taskDrops.$inferSelect;
@@ -526,3 +591,9 @@ export type Email = typeof emails.$inferSelect;
 export type NewEmail = typeof emails.$inferInsert;
 export type TaskDropSubscription = typeof taskDropSubscriptions.$inferSelect;
 export type NewTaskDropSubscription = typeof taskDropSubscriptions.$inferInsert;
+export type LegalAcceptance = typeof legalAcceptances.$inferSelect;
+export type NewLegalAcceptance = typeof legalAcceptances.$inferInsert;
+export type LegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferSelect;
+export type NewLegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferInsert;
+export type LegalAccessReceipt = typeof legalAccessReceipts.$inferSelect;
+export type NewLegalAccessReceipt = typeof legalAccessReceipts.$inferInsert;

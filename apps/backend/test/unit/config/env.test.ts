@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getServerConfig } from '../../../src/config/env';
 
 const REQUIRED_ENV = {
@@ -38,6 +38,48 @@ describe('getServerConfig XMTP env parsing', () => {
     const config = getServerConfig();
 
     expect(config.XMTP_ENABLED).toBe(true);
+  });
+});
+
+describe('getServerConfig legal enforcement', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+      LEGAL_ENFORCEMENT_ENABLED: 'false',
+    };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('parses an explicit false value without requiring Privy credentials', () => {
+    const config = getServerConfig();
+
+    expect(config.LEGAL_ENFORCEMENT_ENABLED).toBe(false);
+  });
+
+  it('refuses activation while the checked-in legal bundle is a draft', () => {
+    process.env.LEGAL_ENFORCEMENT_ENABLED = 'true';
+    process.env.PRIVY_APP_ID = 'privy-app-id';
+    process.env.PRIVY_APP_SECRET = 'privy-app-secret';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process exited with ${code}`);
+    });
+
+    expect(() => getServerConfig()).toThrow('process exited with 1');
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        LEGAL_ENFORCEMENT_ENABLED: {
+          _errors: [expect.stringContaining('LEGAL_ENFORCEMENT_ENABLED requires final legal copy')],
+        },
+      })
+    );
   });
 });
 

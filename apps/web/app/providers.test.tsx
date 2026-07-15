@@ -8,6 +8,7 @@ vi.mock('@privy-io/react-auth', async () => {
     await vi.importActual<typeof import('@tanstack/react-query')>('@tanstack/react-query');
 
   return {
+    getAccessToken: vi.fn().mockResolvedValue(null),
     PrivyProvider: ({ appId, children }: { appId: string; children: React.ReactNode }) => {
       useQueryClient();
 
@@ -17,6 +18,7 @@ vi.mock('@privy-io/react-auth', async () => {
         </div>
       );
     },
+    usePrivy: () => ({ authenticated: false, logout: vi.fn(), ready: true }),
   };
 });
 

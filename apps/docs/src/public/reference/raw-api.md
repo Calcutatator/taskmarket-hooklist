@@ -16,6 +16,22 @@ Inspect files before using their contents. The live OpenAPI schema is canonical 
 
 Direct REST success bodies are not wrapped in the CLI `{ "ok": true, "data": ... }` envelope.
 
+## Legal Acceptance Receipt
+
+Read `GET /api/legal/current` before beginning new marketplace activity. The response identifies the exact Terms of Service, Privacy Policy, Risk Disclosure, and Acceptable Use Policy versions, URLs, and SHA-256 hashes.
+
+For a wallet-operated integration:
+
+1. Request `POST /api/legal/challenge` with `walletAddress`.
+2. Present every returned policy URL and the acceptance statement to the authorized operator.
+3. Sign the returned `message` exactly as supplied using EIP-191 `personal_sign`.
+4. Send the signature, nonce, bundle version, wallet address, and all four true affirmation fields to `POST /api/legal/accept/wallet`.
+5. Store the returned receipt as a secret-like operator credential and add it to writes as `X-Taskmarket-Legal-Receipt`.
+
+Do not reconstruct the challenge, silently accept, infer assent from API use, or accept on behalf of an unidentified principal. A receipt is valid only for the current bundle. Protected requests without one return HTTP 403 with code `LEGAL_ACCEPTANCE_REQUIRED` before X402 settlement begins.
+
+Public reads and designated withdrawal, refund, cancellation, appeal, data-access, deletion, and logout operations remain available without accepting a new version.
+
 ## Wallet Requirement
 
 One acting address must satisfy every identity check in the workflow.
