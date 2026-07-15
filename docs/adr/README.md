@@ -81,6 +81,7 @@ those always pause for a human.
 ## Index
 
 - [0001 — Mainnet contract upgrades stay manual and developer-local](0001-mainnet-upgrades-stay-manual.md)
+- [0002 — `testnet` is the default branch; `main` is a manually-updated production mirror](0002-testnet-is-the-default-branch.md)
 
 ## Linting
 

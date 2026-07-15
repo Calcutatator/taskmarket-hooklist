@@ -308,7 +308,9 @@ mirror, receiving merges only from `testnet`. The shared testnet is the **final 
 tier** — the last stop before mainnet — with the distinctive property that unlike an
 ordinary staging environment it exercises the real thing at every layer: the real testnet
 diamond on Base Sepolia, the real upgrade script against real accumulated state, the real
-Railway environment serving `testnet-market.daydreams.systems`.
+Railway environment serving `testnet-market.daydreams.systems`. **Decided:** see ADR-0002
+(`docs/adr/0002-testnet-is-the-default-branch.md`) — `testnet` is now the repository's
+default branch.
 
 The ladder:
 
@@ -321,15 +323,17 @@ The ladder:
    rehearses `make upgrade` against real accumulated state and runs smoke tests against the
    upgraded fork — same preview machinery, forked chain instead of empty chain, still zero
    real keys in the environment.
-3. **Merge to the `testnet` branch → real testnet upgrade.** PRs target a long-lived
-   `testnet` branch, and merging one is the lock-in moment: a PR is merged only when the
-   work is finished and going to the public testnet — from that point, contract changes for
-   this release are frozen. The merge triggers CI to run `make upgrade testnet` against the
-   shared testnet's live diamond, deploy the app services to the testnet Railway
-   environment, and run the testnet smoke suite. This step can be an automated CI job: the
-   testnet owner key living in GitHub secrets is acceptable custody risk — provided the
-   testnet and mainnet deployer keys are actually split first (the known
-   `FORGE_DEV_PRIVATE_KEY` issue; that fix becomes a hard prerequisite here).
+3. **Merge to the `testnet` branch → automatic app deploy, manual contract upgrade.** PRs
+   target the `testnet` branch (now the repository default, ADR-0002), and merging one is the
+   lock-in moment: a PR is merged only when the work is finished and going to the public
+   testnet. The merge automatically triggers `.github/workflows/deploy-testnet.yml`, which
+   deploys `@taskmarket/backend`/`@taskmarket/frontend`/`@taskmarket/docs` to the Railway
+   `testnet` environment — app code only, no Anvil, no contracts. A testnet contract upgrade
+   (`make upgrade testnet`) is a separate, manual step a developer runs from their own
+   machine, exactly like mainnet (ADR-0001) — the testnet owner key never enters CI or GitHub
+   secrets. This sidesteps the `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue
+   entirely for now, since no CI job ever touches either deployer key; that fix is still
+   worth doing but is no longer a hard prerequisite for this rung.
 
    **The sync invariant this rung exists to protect:** the testnet diamond is the dress
    rehearsal for the mainnet cut — the same `DiamondFullUpgrade` script, so the testnet
