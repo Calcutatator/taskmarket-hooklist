@@ -70,6 +70,8 @@ Smoke tests live in `apps/backend/scripts/smoke-*.ts` and run against a live bac
 
 `make smoke sandbox` is different: it builds and runs `scripts/sandbox.Dockerfile`, which runs `scripts/cloud-env-setup.sh` inside a real Linux container end to end (including the native-Postgres install path that can't run on macOS), then runs `make smoke bounty` inside it against the stack it just provisioned.
 
+**If you're a cloud agent (Claude Code cloud, Codex cloud) and any `make` target fails with `ECONNREFUSED 127.0.0.1:3000` (or similar -- Postgres/Anvil unreachable too), don't treat it as a real test failure yet.** Background processes started by `scripts/cloud-env-setup.sh` (backend, Anvil, the facilitator) do not reliably survive every session/phase boundary these cloud sandboxes have (e.g. Codex's setup script runs in a separate bash session from the one the agent actually works in). Just re-run `./scripts/cloud-env-setup.sh` first -- it's idempotent, safe to run again, and will detect what's actually still up versus what needs restarting -- then retry the failing command before concluding anything is actually broken.
+
 ### When to write a smoke test
 
 Write or update a smoke test whenever you:
