@@ -332,8 +332,17 @@ echo "==> [10/11] Start the backend"
 # The whole point of this script is that the sandbox is ready to use the
 # moment it finishes -- not "ready after one more manual step". Migrations
 # run on boot; nohup keeps it alive after this script exits.
+# The backend has no dotenv loading of its own -- it expects its process environment
+# to already have .env's values (matching the Makefile's ENV_LOADER convention), so
+# source it explicitly here rather than relying on whatever this shell inherited.
 if ! curl -sf http://127.0.0.1:3000 > /dev/null 2>&1; then
-  ( cd apps/backend && nohup pnpm dev > /tmp/backend.log 2>&1 & )
+  (
+    set -a
+    source "$REPO_ROOT/.env"
+    set +a
+    cd apps/backend
+    nohup pnpm dev > /tmp/backend.log 2>&1 &
+  )
   for _ in $(seq 1 30); do
     # -w '%{http_code}' with no -f: any HTTP response (even 404) counts as "up".
     # "000" means curl couldn't connect at all. `|| true` keeps this safe under
