@@ -44,12 +44,16 @@ this same session (with the wrong domain, never actually deployed to) was delete
 ## Decision
 
 `testnet` is now the repository's default branch (`gh repo edit --default-branch testnet`).
-New PRs target `testnet` by default. Merging to `testnet` triggers
-`.github/workflows/deploy-testnet.yml` automatically: it deploys `@taskmarket/backend`,
-`@taskmarket/frontend`, and `@taskmarket/docs` to the Railway `testnet` environment (formerly
-misnamed `production`) — no Anvil, no contract deploy. A testnet contract upgrade
-(`make upgrade testnet`) stays a separate, manual, developer-run step, exactly like mainnet
-(ADR-0001) — this ADR does not change contract-upgrade custody or automation, only the app
+New PRs target `testnet` by default. Merging to `testnet` triggers `ci.yml`'s `quality` job
+(now also running on push to `testnet`, not just `main`); once that succeeds,
+`.github/workflows/deploy-testnet.yml` fires via a `workflow_run` trigger on `ci.yml`'s
+completion (not the same push event CI itself runs on -- checking "did CI pass" on that same
+event would race `quality`'s multi-minute runtime and abort every deploy). It deploys
+`@taskmarket/backend`, `@taskmarket/frontend`, and `@taskmarket/docs` to the Railway `testnet`
+environment (formerly misnamed `production`) — no Anvil, no contract deploy. A testnet
+contract upgrade (`make upgrade testnet`) stays a separate, manual, developer-run step,
+exactly like mainnet (ADR-0001) — this ADR does not change contract-upgrade custody or
+automation, only the app
 deploy path and where PRs land.
 
 `main` is updated only by a manual merge from `testnet`, once whatever landed there has been

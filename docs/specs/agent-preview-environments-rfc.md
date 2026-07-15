@@ -24,10 +24,11 @@ every commit.
 Agents working in parallel on separate PRs currently have nowhere safe to verify their
 changes:
 
-- The real shared testnet (`production` environment, serving
-  `testnet-market.daydreams.systems`) is a single environment with a single Postgres and a
-  single deployed diamond contract on Base Sepolia. Two agents testing task/bounty flows at
-  the same time would corrupt each other's on-chain and database state.
+- The real shared testnet (the `testnet` Railway environment, serving
+  `testnet-market.daydreams.systems` — at the time this problem was written, confusingly
+  named `production`; renamed since, see ADR-0002) is a single environment with a single
+  Postgres and a single deployed diamond contract on Base Sepolia. Two agents testing
+  task/bounty flows at the same time would corrupt each other's on-chain and database state.
 - Railway's built-in PR-environment feature is already enabled on the project (`prDeploys`,
   `botPrEnvironments`, `focusedPrEnvironments` are all `true`), and does give each PR its own
   Postgres. But it clones its service configuration from a `baseEnvironmentId` pointing at
@@ -44,30 +45,40 @@ changes:
   would mean handing that same key to every agent, or building a funded-wallet-per-environment
   system.
 
-## Current State (verified against the live Railway project)
+## Current State (updated after this RFC's design was implemented and verified live)
 
 Project: `TASK MARKET` (`31b1179a-c6f5-42da-a0aa-58231c519ce2`)
 
 Environments:
-- `taskmarket.io` — real production; deployed to only by `.github/workflows/deploy.yml`,
-  gated on a `v*` git tag and a passing `quality` CI check.
-- `production` — misleadingly named; actually the shared testnet
-  (`testnet-market.daydreams.systems`, `testnet-api-market`, `testnet-market-docs`).
-- `preview` — the current base template for Railway's native PR environments; known broken.
-- `taskmarket-pr-116`, `-133`, `-137`, `-138`, `-154` — live/stale ephemeral environments
-  Railway created automatically via its bot integration.
+- `taskmarket.io` — real production; deployed to only by `.github/workflows/deploy-production.yml`
+  (formerly `deploy.yml`), gated on a `v*` git tag and a passing `quality` CI check.
+- `testnet` — the shared testnet chain (`testnet-market.daydreams.systems`,
+  `testnet-api-market`, `testnet-market-docs`). Renamed from a misleading `production` label to
+  match reality (ADR-0002) — no DNS impact, environment renames are cosmetic only. Deployed to
+  automatically by `.github/workflows/deploy-testnet.yml` on merge to the `testnet` branch (app
+  code only; contract upgrades stay a separate manual `make upgrade testnet` step).
+- `preview` — the base template `deploy-preview.yml` (formerly `preview.yml`) duplicates fresh
+  for every PR. Its services had inherited a stale native GitHub branch connection watching
+  `main`, silently fighting the CLI-driven deploys on every PR environment — disconnected.
+- `taskmarket-pr-<N>` — created explicitly by `deploy-preview.yml` per PR, torn down on close.
+  Railway's own native PR-environment bot separately created some stale ephemeral environments
+  for older PRs before it stopped doing so for new ones; those are historical leftovers, not
+  something this workflow depends on or races against going forward.
 
 Services in every environment: `@taskmarket/backend`, `@taskmarket/frontend`,
 `@taskmarket/docs`, `Postgres`.
 
 CI/CD as it exists in the repo today:
 - `ci.yml` — full quality gate (lint, type-check, tests, gas snapshot, Slither, coverage,
-  Playwright) on push to `main` and on PRs. Does not deploy anything.
-- `deploy-production.yml` — deploys backend/web/docs to the `taskmarket.io` Railway environment,
-  triggered only by pushing a `v*` tag.
-- No workflow deploys a testnet/preview environment. That behavior exists entirely as Railway
-  dashboard configuration (`prDeploys: true`, `botPrEnvironments: true`, `baseEnvironmentId`
-  pointing at `preview`), not as code.
+  Playwright) on push to `main` and `testnet`, and on PRs.
+- `deploy-production.yml` — deploys backend/web/docs to the `taskmarket.io` Railway
+  environment, triggered only by pushing a `v*` tag.
+- `deploy-testnet.yml` — deploys backend/web/docs to the `testnet` Railway environment,
+  triggered via `workflow_run` once `ci.yml` completes successfully on the `testnet` branch.
+- `deploy-preview.yml` — the per-PR preview environment this RFC proposes, now implemented
+  and live-verified (see "Testing the CLI against a preview environment" below).
+- `sandbox-smoke.yml` — runs `scripts/cloud-env-setup.sh` inside a real Linux container
+  whenever the sandbox script, its Dockerfile, or the Makefile change.
 
 ## Documentation-process inconsistency found while writing this
 
@@ -97,7 +108,7 @@ this change.
 
 ## Non-goals
 
-- Replacing or reconfiguring the real shared testnet (`production` environment) or its
+- Replacing or reconfiguring the real shared testnet (`testnet` environment) or its
   deploy/upgrade process.
 - Fixing the `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue — noted here because it
   motivates part of the design, but tracked as a separate, smaller fix.

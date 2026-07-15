@@ -204,17 +204,19 @@ no Docker and no external services. The pieces:
   and writes a complete `.env` (which the Makefile's `ENV_LOADER` picks up, so every `make`
   target works afterwards). Uses Anvil's deterministic pre-funded dev accounts for every
   role — deployer, server, requester, worker A/B, evaluator — safe strictly because the
-  chain never leaves the sandbox. Status: drafted, not yet executed in a real vendor
-  sandbox; expected first-run friction is native Postgres on the vendor image and the full
-  backend env var set.
+  chain never leaves the sandbox. Status: verified end to end in a real Linux container
+  (`scripts/sandbox.Dockerfile`, `make smoke sandbox`, `.github/workflows/sandbox-smoke.yml`)
+  matching the native-Postgres/no-Docker assumptions a real vendor sandbox makes — including
+  the full bounty + reject-path smoke suite passing. Not yet run inside an actual Claude Code
+  cloud or Codex cloud session specifically, only a container reproducing the same
+  constraints.
 - **Vendor environment config**, per vendor, pointing at that script:
-  - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `CLAUDE.md`
+  - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `AGENTS.md`
     already makes the repo agent-ready; set the cloud environment's setup to run
     `scripts/cloud-env-setup.sh`.
   - *Codex*: connect the Codex GitHub app; create the environment in ChatGPT's Codex
-    settings with the same setup script; `AGENTS.md` already exists but is stale (still
-    lists the deprecated `apps/frontend`, predates the RFC/ADR conventions) and needs a
-    sync pass.
+    settings with the same setup script; `AGENTS.md` already documents the RFC/ADR
+    conventions and the sandbox smoke-test flow.
 - **Makefile adjustments** as friction surfaces: candidates are a Docker-free `make db`
   path (the setup script currently bypasses `make db start` entirely) and a
   `make sandbox-up` wrapper so an agent can re-run the stack bring-up idempotently
@@ -285,11 +287,12 @@ The developer's surface area is deliberately small:
 
 What exists when, honestly tiered:
 
-- **After this PR merges**: automatic isolated preview environments on every PR (already
-  live-verified against a real Railway deploy). Immediately useful to human developers, no
-  agents required.
-- **After the testnet/mainnet deployer key split**: automated testnet upgrades and deploys
-  on merge to the `testnet` branch (release-path rung 3).
+- **Already true**: automatic isolated preview environments on every PR (live-verified against
+  a real Railway deploy), and automatic app-code deploys to testnet on merge (ADR-0002,
+  release-path rung 3) — the testnet contract upgrade stays manual and did not need the
+  deployer key split to get here. Immediately useful to human developers, no agents required.
+- **After the testnet/mainnet deployer key split**: automating the testnet *contract upgrade*
+  itself, if that's ever decided — not a prerequisite for anything currently built.
 - **After the orchestrator ADR is decided and built**: the Discord trigger itself — the one
   genuinely unbuilt piece between the current state and the full factory.
 
@@ -326,8 +329,12 @@ The ladder:
 3. **Merge to the `testnet` branch → automatic app deploy, manual contract upgrade.** PRs
    target the `testnet` branch (now the repository default, ADR-0002), and merging one is the
    lock-in moment: a PR is merged only when the work is finished and going to the public
-   testnet. The merge automatically triggers `.github/workflows/deploy-testnet.yml`, which
-   deploys `@taskmarket/backend`/`@taskmarket/frontend`/`@taskmarket/docs` to the Railway
+   testnet. The merge triggers `ci.yml`'s `quality` job (runs on push to `testnet` too, not
+   just `main`); once that succeeds, `.github/workflows/deploy-testnet.yml` fires via a
+   `workflow_run` trigger on `ci.yml`'s completion — not the same push event CI itself runs
+   on, since checking "did CI pass" on that event directly would race `quality`'s multi-minute
+   runtime and abort every deploy. It deploys
+   `@taskmarket/backend`/`@taskmarket/frontend`/`@taskmarket/docs` to the Railway
    `testnet` environment — app code only, no Anvil, no contracts. A testnet contract upgrade
    (`make upgrade testnet`) is a separate, manual step a developer runs from their own
    machine, exactly like mainnet (ADR-0001) — the testnet owner key never enters CI or GitHub
@@ -497,9 +504,10 @@ cloud agent for implementation — with the strongest model reappearing only at 
 - The cost-control questions under "Economics and Execution Substrate": per-PR token budgets,
   cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
   costs justify optimization engineering.
-- When to make the testnet/mainnet deployer key split — a prerequisite for automating the
-  testnet rung of the release path. (The mainnet custody question itself is decided:
-  ADR-0001, manual and developer-local.)
+- When to make the testnet/mainnet deployer key split — not a prerequisite for anything
+  currently built (the testnet rung's app deploy is already automated without it; only the
+  testnet contract upgrade itself would ever need it, if that's later decided). (The mainnet
+  custody question itself is decided: ADR-0001, manual and developer-local.)
 
 ## Next Step
 

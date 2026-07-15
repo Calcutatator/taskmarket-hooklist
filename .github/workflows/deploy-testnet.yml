@@ -1,45 +1,40 @@
 name: Deploy to Railway Testnet
 
-# Automatic on every push to the testnet branch -- app code only (backend/frontend/docs)
-# against the persistent testnet chain/diamond. Unlike deploy-preview.yml, this never touches
-# contracts or spins up an Anvil -- a testnet contract upgrade is `make upgrade testnet`,
-# run manually by a developer, entirely separate from this workflow.
+# Runs after CI's own "CI" workflow completes on the testnet branch, not on the same push
+# event CI itself runs on -- ci.yml's quality job takes many minutes, so checking "did CI pass
+# on this commit" on the push event directly would race it and find "in_progress", not
+# "success". workflow_run instead only fires once CI has genuinely finished.
+#
+# App code only (backend/frontend/docs) against the persistent testnet chain/diamond. Unlike
+# deploy-preview.yml, this never touches contracts or spins up an Anvil -- a testnet contract
+# upgrade is `make upgrade testnet`, run manually by a developer, entirely separate from this
+# workflow.
 
 on:
-  push:
-    branches:
-      - testnet
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [testnet]
 
 concurrency:
-  group: deploy-testnet-${{ github.ref }}
+  group: deploy-testnet-${{ github.event.workflow_run.head_sha }}
   cancel-in-progress: false
 
 jobs:
   deploy:
+    if: github.event.workflow_run.conclusion == 'success'
     runs-on: ubuntu-latest
     timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
         with:
+          ref: ${{ github.event.workflow_run.head_sha }}
           fetch-depth: 1
 
       - uses: actions/setup-node@v7
         with:
           node-version-file: '.nvmrc'
-
-      - name: Verify CI passed on this commit
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          SHA=$(git rev-parse HEAD)
-          STATUS=$(gh api "repos/${{ github.repository }}/commits/${SHA}/check-runs" \
-            --jq '[.check_runs[] | select(.name == "quality")] | .[0].conclusion // "not_found"')
-          echo "CI status for ${SHA}: ${STATUS}"
-          if [ "$STATUS" != "success" ]; then
-            echo "CI did not pass on this commit (status: ${STATUS}). Aborting deploy."
-            exit 1
-          fi
 
       - name: Install Railway CLI
         run: npm install -g @railway/cli
@@ -72,4 +67,4 @@ jobs:
             --detach
 
       - name: Report deployment
-        run: echo "Deployed ${{ github.sha }} to Railway testnet (backend + web + docs)"
+        run: echo "Deployed ${{ github.event.workflow_run.head_sha }} to Railway testnet (backend + web + docs)"
