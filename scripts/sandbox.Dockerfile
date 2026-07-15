@@ -7,7 +7,7 @@ FROM ubuntu:22.04
 ENV DEBIAN_FRONTEND=noninteractive
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
-      curl git ca-certificates sudo build-essential openssl \
+      curl git ca-certificates sudo build-essential openssl unzip python3 \
     && rm -rf /var/lib/apt/lists/*
 
 RUN useradd -m -s /bin/bash sandbox \
