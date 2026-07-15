@@ -6,8 +6,8 @@
  *   tsx scripts/x402-sign.ts <METHOD> <PATH> [body-json]
  *
  * Environment:
- *   DEV_PRIVATE_KEY   Hex private key of the signing wallet (0x...)
- *   API_URL           Backend base URL (default: http://localhost:3000)
+ *   DEV_PRIVATE_KEY     Hex private key of the signing wallet (0x...)
+ *   TASKMARKET_API_URL  Backend base URL (default: http://localhost:3000)
  *
  * Examples:
  *   # Create a task
@@ -25,7 +25,7 @@
 import { privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
 
-const API_URL = process.env.API_URL || 'http://localhost:3000';
+const API_URL = process.env.TASKMARKET_API_URL || process.env.API_URL || 'http://localhost:3000';
 const PRIVATE_KEY = process.env.DEV_PRIVATE_KEY as `0x${string}`;
 
 async function main() {

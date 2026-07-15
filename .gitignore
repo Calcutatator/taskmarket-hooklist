@@ -61,7 +61,6 @@ Thumbs.db
 apps/backend/uploads/
 
 # Claude tooling local state
-.claude/settings.json
 .claude/settings.local.json
 .claude/tsc-cache/
 

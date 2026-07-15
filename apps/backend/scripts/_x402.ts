@@ -6,7 +6,10 @@ import { toHex } from 'viem';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
 
-export const API_URL = process.env.API_URL || 'http://localhost:3000';
+// TASKMARKET_API_URL is the same var apps/cli/src/lib/api.ts reads -- one var
+// for both the CLI and smoke tests, rather than keeping two in sync. API_URL
+// stays as a fallback for anyone already using it directly.
+export const API_URL = process.env.TASKMARKET_API_URL || process.env.API_URL || 'http://localhost:3000';
 
 export function log(step: string, msg: string) {
   console.log(`\n[${step}] ${msg}`);

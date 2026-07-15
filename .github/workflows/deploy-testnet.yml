@@ -1,0 +1,79 @@
+name: Deploy to Railway Testnet
+
+# Runs after CI's own "CI" workflow completes on main, not on the same push event CI itself
+# runs on -- ci.yml's quality job takes many minutes, so checking "did CI pass on this commit"
+# on the push event directly would race it and find "in_progress", not "success".
+# workflow_run instead only fires once CI has genuinely finished.
+#
+# No separate testnet branch: main is both the PR target and this workflow's trigger. This is
+# the first, always-automatic stage of promotion -- validate on the shared testnet chain here,
+# then `make release` promotes the same commit to production once you're happy with it.
+#
+# App code only (backend/frontend/docs) against the persistent testnet chain/diamond. Unlike
+# deploy-preview.yml, this never touches contracts or spins up an Anvil -- a testnet contract
+# upgrade is `make upgrade testnet`, run manually by a developer, entirely separate from this
+# workflow.
+#
+# RAILWAY_TOKEN_TESTNET, not RAILWAY_TOKEN: Railway's own project tokens are scoped to a single
+# environment, not the whole project -- the existing RAILWAY_TOKEN secret was issued for
+# taskmarket.io specifically and can't see the testnet environment at all ("Environment
+# testnet not found"), confirmed live on this workflow's first real run.
+
+on:
+  workflow_run:
+    workflows: ['CI']
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: deploy-testnet-${{ github.event.workflow_run.head_sha }}
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha }}
+          fetch-depth: 1
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli
+
+      - name: Deploy backend to Railway testnet
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
+            --environment testnet \
+            --detach
+
+      - name: Deploy web to Railway testnet
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
+            --environment testnet \
+            --detach
+
+      - name: Deploy docs to Railway testnet
+        env:
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
+        run: |
+          railway up \
+            --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
+            --environment testnet \
+            --detach
+
+      - name: Report deployment
+        run: echo "Deployed ${{ github.event.workflow_run.head_sha }} to Railway testnet (backend + web + docs)"

@@ -1,0 +1,27 @@
+name: Sandbox Smoke Test
+
+on:
+  pull_request:
+    paths:
+      - 'scripts/cloud-env-setup.sh'
+      - 'scripts/sandbox.Dockerfile'
+      - 'Makefile'
+      - '.dockerignore'
+  workflow_dispatch:
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  sandbox:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Build and run the sandbox container
+        run: make smoke sandbox

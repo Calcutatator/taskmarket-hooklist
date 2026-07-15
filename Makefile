@@ -5,14 +5,14 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker
+.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli
 
 help:
 	@echo "Taskmarket - Available targets:"
 	@echo "  make                      - Show this help"
 	@echo "  make init                 - Install all dependencies (uses Node from .nvmrc)"
 	@echo "  make install              - Same as init"
-	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet)"
+	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
 	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all); 'contracts' also regenerates abi/TaskMarket.json"
 	@echo "  make dev                  - Start all dev servers in parallel"
@@ -27,6 +27,7 @@ help:
 	@echo "  make test                 - Run all tests"
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
+	@echo "  make adr-lint             - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
@@ -35,6 +36,7 @@ help:
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
 	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
@@ -48,26 +50,51 @@ install: init
 deploy:
 	@$(ENV_LOADER) && \
 	TMPFILE=$$(mktemp) && \
+	VERIFY=1 && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		CHAINID=84532; \
-		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET}" \
+		FORGE_USDC_TOKEN_ADDRESS="$${FORGE_USDC_TOKEN_ADDRESS:-$$FORGE_USDC_TOKEN_ADDRESS_TESTNET}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_TESTNET}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_TESTNET}" \
+		FORGE_ERC8004_REPUTATION_REGISTRY="$${FORGE_ERC8004_REPUTATION_REGISTRY:-$$FORGE_ERC8004_REPUTATION_REGISTRY_TESTNET}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base_sepolia \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
 		CHAINID=8453; \
-		cd packages/contracts && forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET}" \
+		FORGE_USDC_TOKEN_ADDRESS="$${FORGE_USDC_TOKEN_ADDRESS:-$$FORGE_USDC_TOKEN_ADDRESS_MAINNET}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_MAINNET}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_MAINNET}" \
+		FORGE_ERC8004_REPUTATION_REGISTRY="$${FORGE_ERC8004_REPUTATION_REGISTRY:-$$FORGE_ERC8004_REPUTATION_REGISTRY_MAINNET}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url base \
 			--broadcast \
 			--verify 2>&1 | tee $$TMPFILE; \
+	elif [ "$(word 1,$(ARGS))" = "preview" ]; then \
+		VERIFY=0 && \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_PREVIEW}" \
+		FORGE_FEE_RECIPIENT_ADDRESS="$${FORGE_FEE_RECIPIENT_ADDRESS:-$$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW}" \
+		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW}" \
+		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
+			--rpc-url "$${FORGE_RPC_URL:-$$FORGE_RPC_URL_PREVIEW}" \
+			--broadcast 2>&1 | tee $$TMPFILE; \
 	else \
 		rm -f $$TMPFILE; \
-		echo "Usage: make deploy <testnet|mainnet>"; \
+		echo "Usage: make deploy <testnet|mainnet|preview>"; \
 		exit 1; \
 	fi; \
 	PROXY=$$(grep "Diamond deployed at:" $$TMPFILE | awk '{print $$NF}'); \
 	rm -f $$TMPFILE; \
 	if [ -n "$$PROXY" ]; then \
+		echo "Diamond deployed at: $$PROXY"; \
+	fi; \
+	if [ "$$VERIFY" = "1" ] && [ -n "$$PROXY" ]; then \
 		echo "" && echo "Verifying proxy on Basescan (chain $$CHAINID, $$PROXY)..." && \
 		RESP=$$(curl -s "https://api.etherscan.io/v2/api?chainid=$$CHAINID&module=contract&action=verifyproxycontract&address=$$PROXY&apikey=$$FORGE_ETHERSCAN_API_KEY") && \
 		GUID=$$(echo "$$RESP" | grep -o '"result":"[^"]*"' | head -1 | cut -d'"' -f4) && \
@@ -427,6 +454,13 @@ docs-og-check:
 	pnpm --filter @taskmarket/docs build && \
 	pnpm --filter @taskmarket/docs check-og
 
+adr-lint:
+	@if [ -n "$$ADR_LINT_BASE" ]; then \
+		node docs/adr/lint.mjs $$(git diff --name-only "$$ADR_LINT_BASE"...HEAD); \
+	else \
+		node docs/adr/lint.mjs; \
+	fi
+
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
@@ -604,8 +638,24 @@ smoke:
 		pnpm smoke:token-reward-hook; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator; \
+	elif [ "$(word 1,$(ARGS))" = "sandbox" ]; then \
+		if [ -f .git ]; then \
+			echo "Linked git worktree detected -- its .git file points at the main repo's" ; \
+			echo ".git/worktrees/<name> by absolute host path, which doesn't exist inside the" ; \
+			echo "container. Cloning HEAD into a self-contained tree for the build context." ; \
+			TMPCLONE=$$(mktemp -d) && \
+			git clone --local --recurse-submodules --quiet . "$$TMPCLONE" && \
+			docker build -f "$$TMPCLONE/scripts/sandbox.Dockerfile" -t taskmarket-sandbox-test "$$TMPCLONE"; \
+			BUILD_STATUS=$$?; \
+			rm -rf "$$TMPCLONE"; \
+			[ $$BUILD_STATUS -eq 0 ] || exit $$BUILD_STATUS; \
+			docker run --rm taskmarket-sandbox-test; \
+		else \
+			docker build -f scripts/sandbox.Dockerfile -t taskmarket-sandbox-test . && \
+			docker run --rm taskmarket-sandbox-test; \
+		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|sandbox>"; \
 		exit 1; \
 	fi
 
@@ -615,6 +665,13 @@ design-system:
 	cp packages/design-system/build/tailwind/base.css apps/frontend/src/styles/css/base.css && \
 	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
 	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js
+
+cli:
+	@$(ENV_LOADER) && \
+	pnpm --filter @lucid-agents/taskmarket... build && \
+	if [ -n "$(ARGS)" ]; then \
+		node apps/cli/dist/index.js $(ARGS); \
+	fi
 
 pre-commit:
 	@echo "Running pre-commit checks..."
