@@ -70,7 +70,12 @@ fi
 if ! command -v forge > /dev/null 2>&1; then
   curl -L https://foundry.paradigm.xyz | bash
   export PATH="$HOME/.foundry/bin:$PATH"
-  foundryup
+  # Pinned, not "latest" -- an unpinned foundryup silently drifts to whatever release is
+  # newest at run time, which can raise the MSRV out from under a from-source fallback build
+  # (hit exactly this: main HEAD needed rustc 1.95, v1.7.1 only needs 1.89). A pinned version
+  # also downloads a known release tarball directly rather than resolving "latest" via
+  # api.github.com first, which matters in sandboxes that scope GitHub API access per-repo.
+  foundryup --install v1.7.1
 fi
 
 echo "==> [2/11] Git submodules (contracts dependencies)"

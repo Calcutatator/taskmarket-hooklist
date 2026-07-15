@@ -207,13 +207,23 @@ no Docker and no external services. The pieces:
   chain never leaves the sandbox. Status: verified end to end in a real Linux container
   (`scripts/sandbox.Dockerfile`, `make smoke sandbox`, `.github/workflows/sandbox-smoke.yml`)
   matching the native-Postgres/no-Docker assumptions a real vendor sandbox makes — including
-  the full bounty + reject-path smoke suite passing. Not yet run inside an actual Claude Code
-  cloud or Codex cloud session specifically, only a container reproducing the same
-  constraints.
+  the full bounty + reject-path smoke suite passing. A real Claude Code cloud session run
+  against this script surfaced two genuine, sandbox-specific findings worth keeping in mind:
+  a `SessionStart` hook (not the cloud environment's "Setup script" field, which runs before
+  Claude Code launches and has neither `$CLAUDE_PROJECT_DIR` nor a discoverable repo checkout
+  available) is the correct place to invoke it; and that specific sandbox type scopes GitHub
+  API access (`api.github.com`) per-repo, which broke `foundryup`'s default "install latest"
+  behavior (blocked fetching release info for `foundry-rs/foundry`) even though plain
+  `git clone`/`raw.githubusercontent.com` access was unaffected. Pinning a specific Foundry
+  version (rather than always installing latest) sidesteps this, since it downloads a known
+  release directly rather than resolving "latest" via the blocked API call first -- and is a
+  good practice regardless, since an unpinned Foundry version can raise the toolchain's MSRV
+  out from under a from-source build with no warning.
 - **Vendor environment config**, per vendor, pointing at that script:
   - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `AGENTS.md`
-    already makes the repo agent-ready; set the cloud environment's setup to run
-    `scripts/cloud-env-setup.sh`.
+    already makes the repo agent-ready; point a `SessionStart` hook in `.claude/settings.json`
+    at `scripts/cloud-env-setup.sh`, guarded on `$CLAUDE_CODE_REMOTE = "true"` so it never
+    fires for a local developer's own session (see `.claude/settings.json` in this repo).
   - *Codex*: connect the Codex GitHub app; create the environment in ChatGPT's Codex
     settings with the same setup script; `AGENTS.md` already documents the RFC/ADR
     conventions and the sandbox smoke-test flow.

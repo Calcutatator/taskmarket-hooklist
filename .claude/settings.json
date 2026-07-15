@@ -6,7 +6,7 @@
         "hooks": [
           {
             "type": "command",
-            "command": "[ \"$CLAUDE_CODE_REMOTE\" = \"true\" ] && \"$CLAUDE_PROJECT_DIR\"/scripts/cloud-env-setup.sh || true"
+            "command": "if [ \"$CLAUDE_CODE_REMOTE\" = \"true\" ]; then \"$CLAUDE_PROJECT_DIR\"/scripts/cloud-env-setup.sh; fi"
           }
         ]
       }
