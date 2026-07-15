@@ -101,7 +101,7 @@ back. The lifecycle:
    work until a human accepts it. Questions that don't rise to ADR level go to the PR thread
    (or back to the triggering Discord thread) as ordinary review conversation.
 6. **Teardown.** PR merge or close destroys the preview environment (already handled by
-   `preview.yml`) and ends the agent session. Cost attribution for the run, if adopted (see
+   `deploy-preview.yml`) and ends the agent session. Cost attribution for the run, if adopted (see
    economics), lands on the PR before it closes.
 
 What this RFC deliberately does not pick yet: the specific orchestrator (a Discord bot
@@ -189,7 +189,7 @@ Getting vendor cloud agents (Claude Code cloud, Codex cloud) productive against 
 decomposes into exactly two pieces of work:
 
 **Piece 1 — preview environments (tear-up / tear-down).** The per-PR Railway environment
-lifecycle: `preview.yml` plus its secrets, per the preview-environments RFC. Vendor-agnostic
+lifecycle: `deploy-preview.yml` plus its secrets, per the preview-environments RFC. Vendor-agnostic
 — whichever agent opens the PR gets the same environment. Status: implemented and verified
 against a live Railway deploy, secrets configured.
 
@@ -344,7 +344,7 @@ The ladder:
    `testnet` is merged into `main`. Under this model `main` is no longer where PRs land — it
    is the production mirror, only ever receiving merges from `testnet`, so its tip always
    corresponds to what is (or is about to be) live on mainnet. `make release` tags;
-   `deploy.yml` already ships app services to Railway production on the tag, gated on CI.
+   `deploy-production.yml` already ships app services to Railway production on the tag, gated on CI.
    The mainnet diamond cut stays exactly as it is today: a developer runs
    `make upgrade mainnet` manually from their local machine, from that `main` tip — the
    exact code whose upgrade was rehearsed on testnet. No CI execution, no agent involvement,

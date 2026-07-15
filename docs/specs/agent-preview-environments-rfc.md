@@ -15,7 +15,7 @@ Coding agents (Hermes-class, and eventually Discord-triggered cloud agents) need
 environment per PR where they can push commits, deploy contracts, and verify end-to-end
 behavior without colliding with other agents' in-flight work or with the real shared
 testnet. This RFC proposes replacing Railway's dashboard-configured, invisible PR-environment
-automation with an explicit `preview.yml` GitHub Actions workflow that provisions a fresh
+automation with an explicit `deploy-preview.yml` GitHub Actions workflow that provisions a fresh
 Railway environment plus a disposable Anvil chain for every PR, redeployed from scratch on
 every commit.
 
@@ -63,7 +63,7 @@ Services in every environment: `@taskmarket/backend`, `@taskmarket/frontend`,
 CI/CD as it exists in the repo today:
 - `ci.yml` — full quality gate (lint, type-check, tests, gas snapshot, Slither, coverage,
   Playwright) on push to `main` and on PRs. Does not deploy anything.
-- `deploy.yml` — deploys backend/web/docs to the `taskmarket.io` Railway environment,
+- `deploy-production.yml` — deploys backend/web/docs to the `taskmarket.io` Railway environment,
   triggered only by pushing a `v*` tag.
 - No workflow deploys a testnet/preview environment. That behavior exists entirely as Railway
   dashboard configuration (`prDeploys: true`, `botPrEnvironments: true`, `baseEnvironmentId`
@@ -112,7 +112,7 @@ nothing else currently depends on it, so Railway stops auto-cloning new environm
 broken `preview` base. This is a project-wide setting change and needs explicit sign-off
 before it's flipped, separate from writing the new workflow.
 
-### `preview.yml` GitHub Actions workflow
+### `deploy-preview.yml` GitHub Actions workflow
 
 Triggered on `pull_request: [opened, synchronize, reopened, closed]`.
 
@@ -162,7 +162,7 @@ its own chain. Three pieces:
    public (and published to npm as `@daydreamsai/facilitator`), so no credentials, scope
    widening, or monorepo vendoring is needed. In the agent sandbox: the setup script
    clones it and runs it as another local Bun process. In the Railway preview
-   environment: `preview.yml` self-provisions it — creates the project-level service from
+   environment: `deploy-preview.yml` self-provisions it — creates the project-level service from
    the public repo if it doesn't exist yet (first run ever), then sets its variables
    per-environment on every run. The backend's `X402_FACILITATOR_URL` points at it in
    both cases. No manual setup step.
@@ -186,8 +186,8 @@ its own chain. Three pieces:
    `USD Coin`/version `2` so no backend configuration is needed).
 
 All three pieces are wired: the sandbox setup script clones and starts the public
-facilitator against the masqueraded chain and deploys `MockUSDC`; `preview.yml`
-self-provisions the facilitator service and points it at each PR's anvil. The `preview.yml`
+facilitator against the masqueraded chain and deploys `MockUSDC`; `deploy-preview.yml`
+self-provisions the facilitator service and points it at each PR's anvil. The `deploy-preview.yml`
 infra itself (environment lifecycle, anvil, contract deploys, facilitator service, URL
 resolution) is now confirmed live end to end against a real Railway deploy. X402 payment
 settlement through the deployed facilitator on a disposable per-PR chain has not yet been
