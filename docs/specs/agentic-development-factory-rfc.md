@@ -235,12 +235,18 @@ no Docker and no external services. The pieces:
     script" field (ChatGPT UI, not a repo-committed file -- Codex has no equivalent to
     Claude Code's `.claude/settings.json`), put `./scripts/cloud-env-setup.sh` directly.
     Unlike Claude Code's "Setup script" field, Codex's genuinely runs *after* the repo is
-    checked out and has full internet access, so this works with no hook indirection needed.
-    One real gotcha confirmed in Codex's own docs: the setup script runs in a separate bash
-    session from the one the agent actually works in afterwards, so a plain `export
-    PATH=...` there doesn't carry over -- only files written to disk and background
-    processes do. `cloud-env-setup.sh` writes its PATH additions to `~/.bashrc` explicitly
-    for exactly this reason, not just relying on the installers doing it themselves.
+    checked out and has full internet access, so this works with no hook indirection needed
+    for the one-time, file-based work (toolchain, submodules, contract deploy, `.env`).
+    But Codex's setup script runs in a genuinely separate bash session from the one the
+    agent actually works in afterwards -- confirmed both in OpenAI's own docs and by direct
+    testing, this is a deliberate security boundary (setup gets full network trust, the
+    agent phase deliberately doesn't), not a bug: `export PATH=...` doesn't carry over, and
+    neither do background processes (Postgres, Anvil, the backend, the facilitator) --
+    a database or chain that was reachable during setup is not reachable once the agent
+    starts, with no documented way around it. `cloud-env-setup.sh` writes its PATH
+    additions to `~/.bashrc` explicitly for the former; for the latter, `AGENTS.md`
+    instructs any cloud agent to run the (idempotent) script itself as its first action,
+    in its own session, rather than assuming the setup phase already brought the stack up.
     `AGENTS.md` already documents the RFC/ADR conventions and the sandbox smoke-test flow.
 - **Makefile adjustments** as friction surfaces: candidates are a Docker-free `make db`
   path (the setup script currently bypasses `make db start` entirely) and a
