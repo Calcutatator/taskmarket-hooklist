@@ -83,7 +83,7 @@ deploy:
 		FORGE_DEFAULT_PLATFORM_FEE_BPS="$${FORGE_DEFAULT_PLATFORM_FEE_BPS:-$$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW}" \
 		forge script script/DiamondDeploy.s.sol:DiamondDeploy \
 			--rpc-url "$${FORGE_RPC_URL:-$$FORGE_RPC_URL_PREVIEW}" \
-			--broadcast --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tee $$TMPFILE; \
+			--broadcast 2>&1 | tee $$TMPFILE; \
 	else \
 		rm -f $$TMPFILE; \
 		echo "Usage: make deploy <testnet|mainnet|preview>"; \

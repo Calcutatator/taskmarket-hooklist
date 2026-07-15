@@ -216,46 +216,64 @@ jobs:
           FORGE_SERVER_ADDRESS_PREVIEW: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
         run: |
           REPO_ROOT="$(pwd)"
+
+          # Railway's edge can 404 ("Application not found") on the very first RPC connection
+          # to a freshly-deployed anvil, before any transaction is ever sent -- safe to retry
+          # the whole invocation from scratch since nothing has broadcast yet on that failure.
+          run_with_retry() {
+            local log="$1" marker="$2"
+            shift 2
+            for i in $(seq 1 5); do
+              "$@" 2>&1 | tee "$log"
+              grep -q "$marker" "$log" && return 0
+              grep -q "Application not found" "$log" || return 1
+              sleep 3
+            done
+            return 1
+          }
+
           cd packages/contracts
-          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+          run_with_retry /tmp/usdc-deploy.log "Mock USDC deployed at:" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
-            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tee /tmp/usdc-deploy.log
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
           # forge prints script console output twice (dry-run simulation + actual broadcast) --
           # `tail -1` avoids capturing both addresses joined by a newline.
           USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
           cd "$REPO_ROOT"
 
-          FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
+          run_with_retry /tmp/diamond-deploy.log "Diamond deployed at:" \
+            env FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
             FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
             FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
             FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
-            make deploy preview 2>&1 | tee /tmp/diamond-deploy.log
+            make deploy preview
           DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
 
           # The backend's own auth/relay wallet (SERVER_PRIVATE_KEY) is the forwarder's
           # authorized relayer. DeployForwarder/AddForwarder have no FORGE_ prefix on
           # USDC_TOKEN_ADDRESS/CONTRACT_ADDRESS/FORWARDER_ADDRESS -- see their source.
           cd packages/contracts
-          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+          run_with_retry /tmp/forwarder-deploy.log "Forwarder (FORWARDER_ADDRESS):" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
             CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
             FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
             forge script script/DeployForwarder.s.sol:DeployForwarder \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
-            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tee /tmp/forwarder-deploy.log
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
           FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
 
           # Register the forwarder with the diamond -- without this, every relay() call
           # reverts, since DiamondDeploy can't do this itself (the forwarder doesn't exist
           # yet at diamond-deploy time).
-          FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+          run_with_retry /tmp/addforwarder.log "Added forwarder:" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
             CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
             FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
             forge script script/AddForwarder.s.sol:AddForwarder \
-            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast \
-            --fork-retries 5 --fork-retry-backoff 2000 2>&1 | tail -5
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
+          tail -5 /tmp/addforwarder.log
 
           # Smoke tests (and anyone driving the API directly against this PR env) need the
           # requester/worker/etc. accounts to actually hold mock USDC to pay through X402 --

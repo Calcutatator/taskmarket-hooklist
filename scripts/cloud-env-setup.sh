@@ -187,19 +187,36 @@ ERC8004_SEED_BLOCK_PREVIEW=0 # our own fresh chain, not the real testnet's seed 
 # ADMIN_SECRET.
 PLATFORM_MASTER_KEY_GENERATED="$(openssl rand -hex 32)"
 
+# Retries the whole invocation on a transient RPC-connection failure -- nothing has broadcast
+# yet at that point, so a full retry is safe. Same helper preview.yml uses against Railway's
+# anvil; kept here too so a freshly-started local anvil gets the same protection.
+run_with_retry() {
+  local log="$1" marker="$2"
+  shift 2
+  for i in $(seq 1 5); do
+    "$@" 2>&1 | tee "$log"
+    grep -q "$marker" "$log" && return 0
+    grep -q "Application not found" "$log" || return 1
+    sleep 3
+  done
+  return 1
+}
+
 cd packages/contracts
-FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+run_with_retry /tmp/usdc-deploy.log "Mock USDC deployed at:" \
+  env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
-  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/usdc-deploy.log
+  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
 USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
 cd "$REPO_ROOT"
 
-FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
+run_with_retry /tmp/diamond-deploy.log "Diamond deployed at:" \
+  env FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
   FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
   FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
   FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
-  make deploy preview 2>&1 | tee /tmp/diamond-deploy.log
+  make deploy preview
 DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
 
 # The backend's own auth/relay wallet (SERVER_PRIVATE_KEY) is the forwarder's
@@ -207,21 +224,24 @@ DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1
 # the same USDC_TOKEN_ADDRESS/CONTRACT_ADDRESS names the backend itself uses
 # (DeployForwarder.s.sol has no FORGE_ prefix on those two -- see its source).
 cd packages/contracts
-FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+run_with_retry /tmp/forwarder-deploy.log "Forwarder (FORWARDER_ADDRESS):" \
+  env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
   CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
   FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
   forge script script/DeployForwarder.s.sol:DeployForwarder \
-  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tee /tmp/forwarder-deploy.log
+  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
 FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
 
 # Register the forwarder with the diamond -- without this, every relay() call reverts.
 # DiamondDeploy can't do this itself: the forwarder doesn't exist yet at diamond-deploy time.
-FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+run_with_retry /tmp/addforwarder.log "Added forwarder:" \
+  env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
   CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
   FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
   forge script script/AddForwarder.s.sol:AddForwarder \
-  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast 2>&1 | tail -5
+  --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
+tail -5 /tmp/addforwarder.log
 cd "$REPO_ROOT"
 
 # Smoke tests (and any agent driving the API directly) need the requester/
