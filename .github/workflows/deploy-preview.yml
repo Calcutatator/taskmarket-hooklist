@@ -112,10 +112,19 @@ jobs:
           # backend/frontend/docs/Postgres), so a fresh environment needs it created once.
           # `railway add` has no --project/--environment flags of its own, unlike `service
           # list` -- it needs the context from a prior `railway link`.
-          if ! railway service list --environment "$ENV_NAME" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json | grep -q '"anvil"'; then
-            railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-              --workspace "$RAILWAY_WORKSPACE_ID" \
-              --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+          #
+          # Railway services are project-level (same fact the facilitator step below
+          # already accounts for), so this check must be project-wide too, not scoped to
+          # $ENV_NAME -- an $ENV_NAME-scoped check only tells you whether *this*
+          # environment already has an anvil instance, not whether the project already
+          # owns the name. Once any earlier PR's environment created "anvil", every later
+          # PR's fresh environment (which never inherits it) failed this same scoped
+          # check, tried to create it again, and got "A service named \"anvil\" already
+          # exists in this project" from `railway add`.
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --workspace "$RAILWAY_WORKSPACE_ID" \
+            --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+          if ! railway service list --json | grep -q '"anvil"'; then
             railway add --service anvil --json
           fi
           cd packages/contracts/docker/anvil
