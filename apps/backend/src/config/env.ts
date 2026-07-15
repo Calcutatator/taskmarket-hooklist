@@ -18,6 +18,28 @@ const strictBooleanFromEnv = z.preprocess((value) => {
   return value;
 }, z.boolean());
 
+const officialTaskDropOwnerAddresses = z
+  .string()
+  .default('')
+  .transform((value, ctx) => {
+    const addresses = value
+      .split(',')
+      .map((address) => address.trim().toLowerCase())
+      .filter(Boolean);
+    const uniqueAddresses = [...new Set(addresses)];
+
+    for (const address of uniqueAddresses) {
+      if (!/^0x[a-f0-9]{40}$/.test(address)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'Invalid official Task Drop owner address',
+        });
+      }
+    }
+
+    return uniqueAddresses;
+  });
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -60,6 +82,7 @@ const envSchema = z
     SMTP_TLS_CERT: z.string().optional(),
     SMTP_TLS_KEY: z.string().optional(),
     ADMIN_SECRET: z.string().min(16).optional(),
+    OFFICIAL_TASK_DROP_OWNER_ADDRESSES: officialTaskDropOwnerAddresses,
     DREAMS_HOOK_ADDRESS: z
       .string()
       .regex(/^0x[a-fA-F0-9]{40}$/)

@@ -4,6 +4,7 @@ import { createMockCtx, makeChain } from '../helpers';
 
 // Mock contract service before importing router
 vi.mock('../../../src/services/contract', () => ({
+  contractAssignEvaluator: vi.fn().mockResolvedValue('0xassignhash'),
   contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
   contractUpdateTask: vi.fn().mockResolvedValue('0xupdatehash'),
   contractCancelTask: vi.fn().mockResolvedValue('0xcancelhash'),
@@ -42,6 +43,7 @@ vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     DEFAULT_PLATFORM_FEE_BPS: 500,
     NODE_ENV: 'test',
+    OFFICIAL_TASK_DROP_OWNER_ADDRESSES: ['0x1111111111111111111111111111111111111111'],
     CHAIN_ID: 84532,
     BASE_RPC_URL: 'http://localhost:8545',
     CONTRACT_ADDRESS: '0x0000000000000000000000000000000000000001',
@@ -56,6 +58,7 @@ vi.mock('../../../src/config/env', () => ({
 
 import { tasksRouter } from '../../../src/routers/tasks.router';
 import {
+  contractAssignEvaluator,
   contractCreateTask,
   contractUpdateTask,
   contractCancelTask,
@@ -164,15 +167,15 @@ describe('tasks router', () => {
 
     it('attaches an owned existing drop and notifies only that drop', async () => {
       const ctx = createMockCtx(PAYER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([{ id: DROP_ID, ownerAddress: PAYER }]))
-        .mockReturnValueOnce(makeChain([]));
+      const dropChain = makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]);
+      ctx.db.select.mockReturnValueOnce(dropChain).mockReturnValueOnce(makeChain([]));
       const caller = tasksRouter.createCaller(ctx);
 
       const result = await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
 
       expect(result.success).toBe(true);
       expect(result.taskDropId).toBe(DROP_ID);
+      expect(ctx.db.transaction).toHaveBeenCalledTimes(2);
       expect(notifyTaskDropSubscribers).toHaveBeenCalledOnce();
       expect(vi.mocked(notifyTaskDropSubscribers).mock.calls[0][0]).toEqual(
         expect.objectContaining({
@@ -185,6 +188,51 @@ describe('tasks router', () => {
           taskDropId: DROP_ID,
         })
       );
+    });
+
+    it('reserves the drop before chain settlement and clears it with task persistence', async () => {
+      const ctx = createMockCtx(PAYER);
+      const dropChain = makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]);
+      const reservationInsert = makeChain();
+      const taskInsert = makeChain();
+      ctx.db.select
+        .mockReturnValueOnce(dropChain)
+        .mockReturnValueOnce(makeChain([]));
+      ctx.db.insert.mockReturnValueOnce(reservationInsert).mockReturnValueOnce(taskInsert);
+      const caller = tasksRouter.createCaller(ctx);
+
+      await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
+
+      expect(ctx.db.transaction).toHaveBeenCalledTimes(2);
+      expect(dropChain.for).toHaveBeenCalledWith('update');
+      expect(reservationInsert.values).toHaveBeenCalledWith({
+        reservationId: '0x' + 'a'.repeat(64),
+        taskDropId: DROP_ID,
+      });
+      expect(ctx.db.delete).toHaveBeenCalledOnce();
+
+      const reservationOrder = ctx.db.insert.mock.invocationCallOrder[0];
+      const chainOrder = vi.mocked(contractCreateTask).mock.invocationCallOrder[0];
+      const taskInsertOrder = ctx.db.insert.mock.invocationCallOrder[1];
+      expect(reservationOrder).toBeLessThan(chainOrder);
+      expect(chainOrder).toBeLessThan(taskInsertOrder);
+    });
+
+    it('reuses the reservation created by the X402 preflight', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.res.locals.taskDropReservation = {
+        id: 'reservation-preflight',
+        taskDropId: DROP_ID,
+      };
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+      const caller = tasksRouter.createCaller(ctx);
+
+      await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
+
+      expect(ctx.db.transaction).toHaveBeenCalledOnce();
+      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.db.delete).toHaveBeenCalledOnce();
+      expect(contractCreateTask).toHaveBeenCalledOnce();
     });
 
     it('rejects attaching another requester owned drop', async () => {
@@ -201,6 +249,27 @@ describe('tasks router', () => {
       expect(contractCreateTask).not.toHaveBeenCalled();
       expect(ctx.db.insert).not.toHaveBeenCalled();
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
+    });
+
+    it('rejects adding a task to an announced official drop', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          {
+            announcedAt: new Date('2026-07-15T00:00:00.000Z'),
+            id: DROP_ID,
+            ownerAddress: PAYER,
+          },
+        ])
+      );
+      const caller = tasksRouter.createCaller(ctx);
+
+      await expect(caller.create({ ...baseTaskInput, taskDropId: DROP_ID })).rejects.toThrow(
+        'Official task drop has already been announced'
+      );
+
+      expect(contractCreateTask).not.toHaveBeenCalled();
+      expect(ctx.db.insert).not.toHaveBeenCalled();
     });
 
     it('creates an inline drop owned by the payer and attaches the task', async () => {
@@ -246,6 +315,24 @@ describe('tasks router', () => {
       await flushAsync();
       expect(notifyNewTask).toHaveBeenCalledOnce();
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
+    });
+
+    it('persists the task before surfacing an evaluator assignment failure', async () => {
+      vi.mocked(contractAssignEvaluator).mockRejectedValueOnce(new Error('assignment reverted'));
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      await expect(
+        caller.create({
+          ...baseTaskInput,
+          evaluator: '0x2222222222222222222222222222222222222222',
+        })
+      ).rejects.toThrow('assignment reverted');
+
+      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.db.insert.mock.invocationCallOrder[0]).toBeLessThan(
+        vi.mocked(contractAssignEvaluator).mock.invocationCallOrder[0]
+      );
     });
   });
 
@@ -378,7 +465,11 @@ describe('tasks router', () => {
   describe('submissionWindowOpen', () => {
     it('is true for an active open bounty', async () => {
       const ctx = createMockCtx();
-      const activeRow = { ...mockTaskRow, status: 'open', expiryTime: new Date(Date.now() + 72 * 3600 * 1000) };
+      const activeRow = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
       ctx.db.select
         .mockReturnValueOnce(makeChain([activeRow]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
@@ -393,7 +484,11 @@ describe('tasks router', () => {
 
     it('is false for an expired open bounty', async () => {
       const ctx = createMockCtx();
-      const expiredRow = { ...mockTaskRow, status: 'open', expiryTime: new Date(Date.now() - 3600 * 1000) };
+      const expiredRow = {
+        ...mockTaskRow,
+        status: 'open',
+        expiryTime: new Date(Date.now() - 3600 * 1000),
+      };
       ctx.db.select
         .mockReturnValueOnce(makeChain([expiredRow]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
@@ -559,9 +654,7 @@ describe('tasks router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([auction]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
-        .mockReturnValueOnce(
-          makeChain([{ ...auction, reward: '5000000', maxPrice: '5000000' }])
-        )
+        .mockReturnValueOnce(makeChain([{ ...auction, reward: '5000000', maxPrice: '5000000' }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
 
@@ -652,7 +745,9 @@ describe('tasks router', () => {
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.get({ taskId: '0xabc' });
 
-      expect(result!.pendingActions.some((a) => a.action === 'accept' && a.role === 'requester')).toBe(true);
+      expect(
+        result!.pendingActions.some((a) => a.action === 'accept' && a.role === 'requester')
+      ).toBe(true);
     });
 
     it('offers extension and refund for an expired open bounty with no submissions', async () => {
@@ -687,9 +782,7 @@ describe('tasks router', () => {
         .mockReturnValueOnce(makeChain([{ count: 1 }]));
 
       const caller = tasksRouter.createCaller(ctx);
-      await expect(caller.cancel({ taskId: '0xabc' })).rejects.toThrow(
-        'Active submissions exist'
-      );
+      await expect(caller.cancel({ taskId: '0xabc' })).rejects.toThrow('Active submissions exist');
 
       expect(contractCancelTask).not.toHaveBeenCalled();
     });
@@ -912,7 +1005,9 @@ describe('tasks router', () => {
 
     // Captures the SQL condition passed to the main list query's .where() so we
     // can assert the filter produces exact-match address conditions.
-    function captureListWhere(input: Parameters<ReturnType<typeof tasksRouter.createCaller>['list']>[0]) {
+    function captureListWhere(
+      input: Parameters<ReturnType<typeof tasksRouter.createCaller>['list']>[0]
+    ) {
       const mainChain = makeChain([mockTaskRow]);
       const ctx = createMockCtx();
       ctx.db.select
@@ -949,7 +1044,11 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."requester" = ');
       expect(query.sql).toContain('"tasks"."worker" = ');
       expect(query.sql).toContain('"tasks"."claimed_by" = ');
-      expect(query.params).toEqual([REQUESTER.toLowerCase(), WORKER.toLowerCase(), WORKER.toLowerCase()]);
+      expect(query.params).toEqual([
+        REQUESTER.toLowerCase(),
+        WORKER.toLowerCase(),
+        WORKER.toLowerCase(),
+      ]);
     });
   });
 });

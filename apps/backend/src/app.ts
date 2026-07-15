@@ -1,4 +1,5 @@
 import express from 'express';
+import { randomUUID } from 'node:crypto';
 import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
@@ -49,8 +50,11 @@ import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { db } from './db/client';
-import { feedbacks, submissions, artifacts, proposals, proofs, taskDrops } from './db/schema';
-import { unsubscribeTaskDropsSubscription } from './services/task-drops-email';
+import { feedbacks, submissions, artifacts, proposals, proofs } from './db/schema';
+import {
+  getTaskDropsUnsubscribeDetails,
+  unsubscribeTaskDropsSubscription,
+} from './services/task-drops-email';
 import { and, eq } from 'drizzle-orm';
 import {
   buildArtifactManifestJson,
@@ -58,10 +62,19 @@ import {
   buildProofPreimage,
   type ArtifactManifestRow,
 } from './lib/canonical-hashes';
+import {
+  releaseTaskDropReservation,
+  reserveTaskDropForCreation,
+  TaskDropReservationError,
+} from './services/task-drop-reservations';
 
 export const app = express();
 
 const config = getServerConfig();
+
+if (config.NODE_ENV === 'production') {
+  app.set('trust proxy', 1);
+}
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => {
@@ -191,7 +204,7 @@ app.post(
   emailInboundHandler
 );
 
-app.get('/task-drops/unsubscribe', (req, res) => {
+app.get('/task-drops/unsubscribe', async (req, res) => {
   const id = typeof req.query.id === 'string' ? req.query.id : '';
   const token = typeof req.query.token === 'string' ? req.query.token : '';
 
@@ -208,17 +221,47 @@ app.get('/task-drops/unsubscribe', (req, res) => {
     return;
   }
 
-  const query = new URLSearchParams({ id, token }).toString();
-  res
-    .status(200)
-    .type('html')
-    .send(
-      renderTaskDropsUnsubscribePage({
-        action: `/task-drops/unsubscribe?${query}`,
-        message: 'Confirm that you want to stop receiving emails for this Task Drop.',
-        title: 'Confirm unsubscribe',
-      })
-    );
+  try {
+    const details = await getTaskDropsUnsubscribeDetails({ db, id, token });
+    if (!details) {
+      res
+        .status(400)
+        .type('html')
+        .send(
+          renderTaskDropsUnsubscribePage({
+            message: 'We could not verify this unsubscribe link. It may have already been used.',
+            title: 'Unsubscribe link expired',
+          })
+        );
+      return;
+    }
+
+    const query = new URLSearchParams({ id, token }).toString();
+    res
+      .status(200)
+      .type('html')
+      .send(
+        renderTaskDropsUnsubscribePage({
+          action: `/task-drops/unsubscribe?${query}`,
+          message:
+            details.scope === 'official'
+              ? 'Confirm that you want to stop receiving all official Task Drop announcements.'
+              : 'Confirm that you want to stop receiving emails for this Task Drop.',
+          title: 'Confirm unsubscribe',
+        })
+      );
+  } catch (err) {
+    logger.error('Task Drops unsubscribe confirmation failed', { err });
+    res
+      .status(500)
+      .type('html')
+      .send(
+        renderTaskDropsUnsubscribePage({
+          message: 'Unable to verify this unsubscribe link right now. Please try again.',
+          title: 'Unable to unsubscribe',
+        })
+      );
+  }
 });
 
 app.post('/task-drops/unsubscribe', async (req, res) => {
@@ -233,7 +276,9 @@ app.post('/task-drops/unsubscribe', async (req, res) => {
       .send(
         renderTaskDropsUnsubscribePage({
           message: result.unsubscribed
-            ? `${result.email} has been unsubscribed from Task Drops.`
+            ? result.scope === 'official'
+              ? `${result.email} has been unsubscribed from all official Task Drops.`
+              : `${result.email} has been unsubscribed from this Task Drop.`
             : 'We could not verify this unsubscribe link. It may have already been used or copied incorrectly.',
           title: result.unsubscribed ? 'Task Drops are off' : 'Unsubscribe link expired',
         })
@@ -407,21 +452,27 @@ app.post(
   x402Middleware({
     getAmount: (req) => String(req.body.reward),
     description: 'Create task',
-    preflight: async (req, payer) => {
+    preflight: async (req, payer, res) => {
       const taskDropId = req.body.taskDropId;
       if (!taskDropId) return;
 
-      const rows = await db
-        .select({ id: taskDrops.id, ownerAddress: taskDrops.ownerAddress })
-        .from(taskDrops)
-        .where(eq(taskDrops.id, taskDropId))
-        .limit(1);
-      const drop = rows[0];
-
-      if (!drop) throw new X402PreflightError('Task drop not found', 404);
-      if (drop.ownerAddress.toLowerCase() !== payer.toLowerCase()) {
-        throw new X402PreflightError('Task drop is not owned by payer', 403);
+      const reservation = { id: `reservation_${randomUUID()}`, taskDropId };
+      try {
+        await reserveTaskDropForCreation({
+          db,
+          payer,
+          reservationId: reservation.id,
+          taskDropId,
+        });
+      } catch (error) {
+        if (error instanceof TaskDropReservationError) {
+          throw new X402PreflightError(error.message, error.status);
+        }
+        throw error;
       }
+
+      res.locals.taskDropReservation = reservation;
+      return () => releaseTaskDropReservation({ db, reservationId: reservation.id });
     },
   })
 );

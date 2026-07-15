@@ -14,6 +14,7 @@ import {
   primaryKey,
   serial,
   unique,
+  check,
 } from 'drizzle-orm/pg-core';
 
 export const taskDrops = pgTable(
@@ -24,9 +25,24 @@ export const taskDrops = pgTable(
     name: text('name').notNull(),
     description: text('description'),
     createdAt: timestamp('created_at').defaultNow().notNull(),
+    announcedAt: timestamp('announced_at', { precision: 3, withTimezone: true }),
   },
   (table) => ({
     ownerIdx: index('idx_task_drops_owner').on(sql`lower(${table.ownerAddress})`),
+  })
+);
+
+export const taskDropTaskReservations = pgTable(
+  'task_drop_task_reservations',
+  {
+    reservationId: text('reservation_id').primaryKey(),
+    taskDropId: text('task_drop_id')
+      .notNull()
+      .references(() => taskDrops.id, { onDelete: 'cascade' }),
+    createdAt: timestamp('created_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    taskDropIdx: index('idx_task_drop_task_reservations_drop').on(table.taskDropId),
   })
 );
 
@@ -401,8 +417,12 @@ export const taskDropSubscriptions = pgTable(
     email: text('email').notNull(),
     walletAddress: text('wallet_address'),
     agentAddress: text('agent_address'),
+    scope: text('subscription_scope').notNull().default('drop'),
     source: text('source').notNull().default('first_run_panel'),
     status: text('status').notNull().default('active'),
+    consentedAt: timestamp('consented_at', { precision: 3, withTimezone: true })
+      .defaultNow()
+      .notNull(),
     createdAt: timestamp('created_at').defaultNow().notNull(),
     updatedAt: timestamp('updated_at').defaultNow().notNull(),
     unsubscribedAt: timestamp('unsubscribed_at'),
@@ -414,6 +434,57 @@ export const taskDropSubscriptions = pgTable(
     dropIdx: index('idx_task_drop_subscriptions_drop').on(table.taskDropId),
     walletIdx: index('idx_task_drop_subscriptions_wallet').on(table.walletAddress),
     statusIdx: index('idx_task_drop_subscriptions_status').on(table.status),
+    scopeIdx: index('idx_task_drop_subscriptions_scope').on(table.scope),
+    officialEmailIdx: uniqueIndex('uidx_task_drop_subscriptions_official_email')
+      .on(sql`lower(${table.email})`)
+      .where(sql`${table.scope} = 'official'`),
+    scopeDropCheck: check(
+      'task_drop_subscriptions_scope_drop_check',
+      sql`(${table.scope} = 'drop' AND ${table.taskDropId} IS NOT NULL) OR (${table.scope} IN ('official', 'legacy') AND ${table.taskDropId} IS NULL)`
+    ),
+  })
+);
+
+export const taskDropSubscribeRateLimits = pgTable('task_drop_subscribe_rate_limits', {
+  key: text('rate_limit_key').primaryKey(),
+  windowStartedAt: timestamp('window_started_at', { precision: 3, withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull(),
+  updatedAt: timestamp('updated_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+});
+
+export const taskDropAnnouncementDeliveries = pgTable(
+  'task_drop_announcement_deliveries',
+  {
+    id: text('id').primaryKey(),
+    taskDropId: text('task_drop_id')
+      .notNull()
+      .references(() => taskDrops.id),
+    subscriptionId: text('subscription_id')
+      .notNull()
+      .references(() => taskDropSubscriptions.id),
+    subscriptionConsentedAt: timestamp('subscription_consented_at', {
+      precision: 3,
+      withTimezone: true,
+    }).notNull(),
+    status: text('status').notNull().default('pending'),
+    attempts: integer('attempts').notNull().default(0),
+    processingAt: timestamp('processing_at', { precision: 3, withTimezone: true }),
+    lastError: text('last_error'),
+    sentAt: timestamp('sent_at', { precision: 3, withTimezone: true }),
+    createdAt: timestamp('created_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    taskDropIdx: index('idx_task_drop_announcement_deliveries_drop').on(table.taskDropId),
+    statusIdx: index('idx_task_drop_announcement_deliveries_status').on(table.status),
+    dropSubscriptionIdx: uniqueIndex('uidx_task_drop_announcement_delivery_subscription').on(
+      table.taskDropId,
+      table.subscriptionId
+    ),
+    statusCheck: check(
+      'task_drop_announcement_deliveries_status_check',
+      sql`${table.status} IN ('pending', 'processing', 'sent', 'failed', 'skipped')`
+    ),
   })
 );
 

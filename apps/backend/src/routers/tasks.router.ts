@@ -20,7 +20,15 @@ import {
   estimateRequesterDreamsBonus,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { tasks, submissions, proposals, agents, bids, taskDrops } from '../db/schema';
+import {
+  tasks,
+  submissions,
+  proposals,
+  agents,
+  bids,
+  taskDrops,
+  taskDropTaskReservations,
+} from '../db/schema';
 import {
   eq,
   or,
@@ -62,6 +70,11 @@ import {
 import { notifyTaskDropSubscribers } from '../services/task-drops-email';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
+import {
+  releaseTaskDropReservation,
+  reserveTaskDropForCreation,
+  TaskDropReservationError,
+} from '../services/task-drop-reservations';
 
 export const tasksRouter = router({
   stats: publicProcedure
@@ -108,7 +121,7 @@ export const tasksRouter = router({
       }
       const normalizedPayer = payer.toLowerCase();
 
-      let resolvedTaskDropId: string | null = null;
+      let resolvedTaskDropId: string | null = input.taskDropId ?? null;
       let inlineTaskDrop: {
         id: string;
         ownerAddress: string;
@@ -116,24 +129,7 @@ export const tasksRouter = router({
         description: string | null;
       } | null = null;
 
-      if (input.taskDropId) {
-        const dropRows = await ctx.db
-          .select()
-          .from(taskDrops)
-          .where(eq(taskDrops.id, input.taskDropId))
-          .limit(1);
-        const drop = dropRows[0];
-
-        if (!drop) {
-          throw new TRPCError({ code: 'NOT_FOUND', message: 'Task drop not found' });
-        }
-
-        if (drop.ownerAddress.toLowerCase() !== normalizedPayer) {
-          throw new TRPCError({ code: 'FORBIDDEN', message: 'Task drop is not owned by payer' });
-        }
-
-        resolvedTaskDropId = drop.id;
-      } else if (input.taskDropCreate) {
+      if (input.taskDropCreate) {
         resolvedTaskDropId = `drop_${randomUUID()}`;
         inlineTaskDrop = {
           id: resolvedTaskDropId,
@@ -194,6 +190,38 @@ export const tasksRouter = router({
       // The contract generates: keccak256(abi.encode(chainId, address(this), requester, nonce))
       const taskId = await precomputeTaskId(payer as `0x${string}`, config.CONTRACT_ADDRESS);
 
+      let taskDropReservationId: string | null = null;
+      const existingTaskDropId = input.taskDropId;
+      if (existingTaskDropId) {
+        const preflightReservation = ctx.res.locals.taskDropReservation as
+          | { id: string; taskDropId: string }
+          | undefined;
+        if (preflightReservation) {
+          if (preflightReservation.taskDropId !== existingTaskDropId) {
+            throw new TRPCError({
+              code: 'INTERNAL_SERVER_ERROR',
+              message: 'Task drop reservation does not match request',
+            });
+          }
+          taskDropReservationId = preflightReservation.id;
+        } else {
+          taskDropReservationId = taskId;
+          try {
+            await reserveTaskDropForCreation({
+              db: ctx.db,
+              payer: normalizedPayer,
+              reservationId: taskDropReservationId,
+              taskDropId: existingTaskDropId,
+            });
+          } catch (error) {
+            if (error instanceof TaskDropReservationError) {
+              throw new TRPCError({ code: error.code, message: error.message });
+            }
+            throw error;
+          }
+        }
+      }
+
       const auctionSubtype =
         input.mode === 'auction' && input.auctionType
           ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
@@ -209,19 +237,38 @@ export const tasksRouter = router({
       const hookDataBytes = (input.hookData ?? '0x') as `0x${string}`;
 
       const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
-      const escrowTxHash = await contractCreateTask(
-        payer as `0x${string}`,
-        reward,
-        durationSecs,
-        mode,
-        pitchDeadlineSecs,
-        bidDeadlineSecs,
-        auctionSubtype,
-        hookContractAddr,
-        hashedTags,
-        hookDataBytes,
-        paymentTxHash
-      );
+      let escrowTxHash: `0x${string}`;
+      try {
+        escrowTxHash = await contractCreateTask(
+          payer as `0x${string}`,
+          reward,
+          durationSecs,
+          mode,
+          pitchDeadlineSecs,
+          bidDeadlineSecs,
+          auctionSubtype,
+          hookContractAddr,
+          hashedTags,
+          hookDataBytes,
+          paymentTxHash
+        );
+      } catch (error) {
+        if (taskDropReservationId) {
+          try {
+            await releaseTaskDropReservation({
+              db: ctx.db,
+              reservationId: taskDropReservationId,
+            });
+          } catch (cleanupError) {
+            logger.error(
+              `Failed to release task drop reservation ${taskDropReservationId}: ${
+                cleanupError instanceof Error ? cleanupError.message : String(cleanupError)
+              }`
+            );
+          }
+        }
+        throw error;
+      }
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
 
@@ -231,67 +278,81 @@ export const tasksRouter = router({
         .where(eq(agents.address, payer))
         .limit(1);
 
-      if (inlineTaskDrop) {
-        await ctx.db.insert(taskDrops).values(inlineTaskDrop);
-      }
+      const evaluatorAssignment: {
+        evaluator: string;
+        evaluatorFeeBps: number;
+        evaluationWindow: number;
+        appealWindow: number;
+        disputeResolver: string | null;
+      } | null = input.evaluator
+        ? {
+            evaluator: input.evaluator,
+            evaluatorFeeBps: input.evaluatorFeeBps ?? 0,
+            evaluationWindow: Math.round((input.evaluationWindowHours ?? 24) * 3600),
+            appealWindow: Math.round((input.appealWindowHours ?? 24) * 3600),
+            disputeResolver: input.disputeResolver ?? null,
+          }
+        : null;
 
-      await ctx.db.insert(tasks).values({
-        id: taskId,
-        requester: payer,
-        requesterPubkey: normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '',
-        description: input.description,
-        reward: input.reward,
-        escrowTxHash,
-        expiryTime,
-        status: 'open',
-        tags: input.tags,
-        mode: input.mode ?? 'bounty',
-        stakeRequired: input.stakeRequired ? 1 : 0,
-        stakeBps: input.stakeBps ?? 0,
-        pitchDeadline: input.pitchDeadline
-          ? new Date(Date.now() + input.pitchDeadline * 1000)
-          : null,
-        bidDeadline: input.bidDeadline
-          ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
-          : null,
-        maxPrice: input.maxPrice ?? null,
-        auctionType: input.auctionType ?? null,
-        auctionStartPrice: input.auctionStartPrice ?? null,
-        auctionFloorPrice: input.auctionFloorPrice ?? null,
-        metricDescription: input.metricDescription ?? null,
-        metricTarget: input.metricTarget ?? null,
-        platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
-        requesterAgentId: requesterAgent[0]?.agentId ?? null,
-        chainId: config.CHAIN_ID,
-        contractAddress: config.CONTRACT_ADDRESS,
-        hookContract: input.hookContract ?? null,
-        taskDropId: resolvedTaskDropId,
+      // Persist the drop/task rows atomically. Short, on-chain-free transaction.
+      await ctx.db.transaction(async (tx) => {
+        if (inlineTaskDrop) {
+          await tx.insert(taskDrops).values(inlineTaskDrop);
+        }
+
+        await tx.insert(tasks).values({
+          id: taskId,
+          requester: payer,
+          requesterPubkey: normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '',
+          description: input.description,
+          reward: input.reward,
+          escrowTxHash,
+          expiryTime,
+          status: 'open',
+          tags: input.tags,
+          mode: input.mode ?? 'bounty',
+          stakeRequired: input.stakeRequired ? 1 : 0,
+          stakeBps: input.stakeBps ?? 0,
+          pitchDeadline: input.pitchDeadline
+            ? new Date(Date.now() + input.pitchDeadline * 1000)
+            : null,
+          bidDeadline: input.bidDeadline
+            ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
+            : null,
+          maxPrice: input.maxPrice ?? null,
+          auctionType: input.auctionType ?? null,
+          auctionStartPrice: input.auctionStartPrice ?? null,
+          auctionFloorPrice: input.auctionFloorPrice ?? null,
+          metricDescription: input.metricDescription ?? null,
+          metricTarget: input.metricTarget ?? null,
+          platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
+          requesterAgentId: requesterAgent[0]?.agentId ?? null,
+          chainId: config.CHAIN_ID,
+          contractAddress: config.CONTRACT_ADDRESS,
+          hookContract: input.hookContract ?? null,
+          taskDropId: resolvedTaskDropId,
+        });
+
+        if (taskDropReservationId) {
+          await tx
+            .delete(taskDropTaskReservations)
+            .where(eq(taskDropTaskReservations.reservationId, taskDropReservationId));
+        }
       });
 
-      // If evaluator is specified at creation time, assign it immediately.
-      if (input.evaluator) {
-        const evalWindowSecs = Math.round((input.evaluationWindowHours ?? 24) * 3600);
-        const appealWindowSecs = Math.round((input.appealWindowHours ?? 24) * 3600);
+      if (evaluatorAssignment) {
         await contractAssignEvaluator(
           taskId as `0x${string}`,
           payer as `0x${string}`,
-          input.evaluator as `0x${string}`,
+          evaluatorAssignment.evaluator as `0x${string}`,
           0n,
-          input.evaluatorFeeBps ?? 0,
-          evalWindowSecs,
-          appealWindowSecs,
-          (input.disputeResolver ?? '0x0000000000000000000000000000000000000000') as `0x${string}`
+          evaluatorAssignment.evaluatorFeeBps,
+          evaluatorAssignment.evaluationWindow,
+          evaluatorAssignment.appealWindow,
+          (evaluatorAssignment.disputeResolver ??
+            '0x0000000000000000000000000000000000000000') as `0x${string}`
         );
-        await ctx.db
-          .update(tasks)
-          .set({
-            evaluator: input.evaluator,
-            evaluatorFeeBps: input.evaluatorFeeBps ?? 0,
-            evaluationWindow: evalWindowSecs,
-            appealWindow: appealWindowSecs,
-            disputeResolver: input.disputeResolver ?? null,
-          })
-          .where(eq(tasks.id, taskId));
+        await ctx.db.update(tasks).set(evaluatorAssignment).where(eq(tasks.id, taskId));
       }
 
       // Fire-and-forget targeted "new task" notification to eligible worker agents.

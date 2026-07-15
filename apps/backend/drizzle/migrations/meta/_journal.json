@@ -190,6 +190,13 @@
       "when": 1783690068000,
       "tag": "0024_add_dreams_withdraw_nonces",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1784091337000,
+      "tag": "0026_official_task_drop_subscriptions",
+      "breakpoints": true
     }
   ]
 }

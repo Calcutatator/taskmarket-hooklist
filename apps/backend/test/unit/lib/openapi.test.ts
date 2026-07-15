@@ -26,5 +26,8 @@ describe('generated OpenAPI routes', () => {
 
     expect(document.paths?.['/task-drops']).toBeDefined();
     expect(document.paths?.['/task-drops/{taskDropId}']).toBeDefined();
+    expect(document.paths?.['/task-drops/official/subscribe']?.post).toBeDefined();
+    expect(document.paths?.['/task-drops/official/status']?.get).toBeDefined();
+    expect(document.paths?.['/task-drops/{taskDropId}/announce']?.post).toBeDefined();
   });
 });

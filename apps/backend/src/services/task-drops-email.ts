@@ -1,9 +1,11 @@
 import { createHmac, timingSafeEqual } from 'crypto';
 import { and, eq } from 'drizzle-orm';
 
-import { taskDrops, taskDropSubscriptions } from '../db/schema';
+import { taskDrops, taskDropSubscriptions, tasks } from '../db/schema';
 import {
   renderTaskmarketEmail,
+  OfficialTaskDropAnnouncementEmail,
+  OfficialTaskDropsWelcomeEmail,
   TaskDropNewTaskEmail,
   TaskDropsWelcomeEmail,
 } from '../emails/task-drops';
@@ -17,8 +19,10 @@ type Db = typeof DbType;
 
 type TaskDropSubscription = Pick<
   typeof taskDropSubscriptions.$inferSelect,
-  'email' | 'id' | 'status' | 'taskDropId'
+  'email' | 'id' | 'scope' | 'status' | 'taskDropId'
 >;
+
+type OfficialAnnouncementTask = Pick<typeof tasks.$inferSelect, 'description' | 'mode' | 'reward'>;
 
 export interface NotifyTaskDropSubscribersInput {
   db: Db;
@@ -81,6 +85,11 @@ function buildDashboardUrl(): string {
   return new URL('/dashboard', config.WEB_APP_URL).toString();
 }
 
+function buildTaskDropsUrl(): string {
+  const config = getServerConfig();
+  return new URL('/taskdrop', config.WEB_APP_URL).toString();
+}
+
 function fromAddress(): string {
   const config = getServerConfig();
   return `noreply@${config.EMAIL_DOMAIN}`;
@@ -126,6 +135,70 @@ export async function sendTaskDropsWelcome(input: {
   });
 }
 
+export async function sendOfficialTaskDropsWelcome(input: {
+  consentAt: Date;
+  db: Db;
+  subscription: TaskDropSubscription;
+}): Promise<void> {
+  const { consentAt, db, subscription } = input;
+  if (subscription.status !== 'active' || subscription.scope !== 'official') return;
+
+  const { bodyHtml, bodyText } = await renderTaskmarketEmail(
+    OfficialTaskDropsWelcomeEmail({
+      taskDropsUrl: buildTaskDropsUrl(),
+      unsubscribeUrl: buildTaskDropsUnsubscribeUrl(subscription),
+    })
+  );
+
+  await sendEmail({
+    bodyHtml,
+    bodyText,
+    db,
+    from: fromAddress(),
+    idempotencyKey: `official-task-drops-welcome-${subscription.id}-${consentAt.getTime()}`,
+    subject: 'You are subscribed to official Task Drops',
+    tags: [...taskDropsTags, { name: 'type', value: 'official_welcome' }],
+    to: subscription.email,
+  });
+}
+
+export async function sendOfficialTaskDropAnnouncement(input: {
+  announcedAt: Date;
+  db: Db;
+  drop: typeof taskDrops.$inferSelect;
+  subscription: TaskDropSubscription;
+  tasks: OfficialAnnouncementTask[];
+}): Promise<void> {
+  const { announcedAt, db, drop, subscription, tasks: announcementTasks } = input;
+  if (subscription.status !== 'active' || subscription.scope !== 'official') return;
+
+  const { bodyHtml, bodyText } = await renderTaskmarketEmail(
+    OfficialTaskDropAnnouncementEmail({
+      announcedAt: announcedAt.toISOString(),
+      description: drop.description,
+      dropName: drop.name,
+      dropUrl: buildDropUrl(drop.id),
+      tasks: announcementTasks.map((task) => ({
+        description: truncateText(task.description, SNIPPET_MAX),
+        mode: task.mode,
+        rewardLabel: formatRewardUsdc(task.reward.toString()),
+      })),
+      unsubscribeUrl: buildTaskDropsUnsubscribeUrl(subscription),
+    })
+  );
+
+  await sendEmail({
+    bodyHtml,
+    bodyText,
+    db,
+    from: fromAddress(),
+    idempotencyKey: `official-task-drop-announcement-${drop.id}-${subscription.id}`,
+    subject: `${drop.name} is live on Taskmarket`,
+    tags: [...taskDropsTags, { name: 'type', value: 'official_announcement' }],
+    to: subscription.email,
+  });
+}
+
 export async function notifyTaskDropSubscribers(
   input: NotifyTaskDropSubscribersInput
 ): Promise<TaskDropEmailResult> {
@@ -143,6 +216,7 @@ export async function notifyTaskDropSubscribers(
     .where(
       and(
         eq(taskDropSubscriptions.taskDropId, taskDropId),
+        eq(taskDropSubscriptions.scope, 'drop'),
         eq(taskDropSubscriptions.status, 'active')
       )
     );
@@ -203,7 +277,7 @@ export async function unsubscribeTaskDropsSubscription(input: {
   db: Db;
   id: string;
   token: string;
-}): Promise<{ email: string; unsubscribed: boolean }> {
+}): Promise<{ email: string; scope: 'drop' | 'official' | null; unsubscribed: boolean }> {
   const rows = await input.db
     .select()
     .from(taskDropSubscriptions)
@@ -212,7 +286,7 @@ export async function unsubscribeTaskDropsSubscription(input: {
   const subscription = rows[0];
 
   if (!subscription || !verifyTaskDropsUnsubscribeToken(subscription, input.token)) {
-    return { email: '', unsubscribed: false };
+    return { email: '', scope: null, unsubscribed: false };
   }
 
   await input.db
@@ -224,5 +298,29 @@ export async function unsubscribeTaskDropsSubscription(input: {
     })
     .where(eq(taskDropSubscriptions.id, subscription.id));
 
-  return { email: subscription.email, unsubscribed: true };
+  return {
+    email: subscription.email,
+    scope: subscription.scope === 'official' ? 'official' : 'drop',
+    unsubscribed: true,
+  };
+}
+
+export async function getTaskDropsUnsubscribeDetails(input: {
+  db: Db;
+  id: string;
+  token: string;
+}): Promise<{ email: string; scope: 'drop' | 'official' } | null> {
+  const rows = await input.db
+    .select()
+    .from(taskDropSubscriptions)
+    .where(and(eq(taskDropSubscriptions.id, input.id), eq(taskDropSubscriptions.status, 'active')))
+    .limit(1);
+  const subscription = rows[0];
+
+  if (!subscription || !verifyTaskDropsUnsubscribeToken(subscription, input.token)) return null;
+
+  return {
+    email: subscription.email,
+    scope: subscription.scope === 'official' ? 'official' : 'drop',
+  };
 }

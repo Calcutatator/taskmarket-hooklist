@@ -1,4 +1,4 @@
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
 import { getServerConfig } from '../../../src/config/env';
 
 const REQUIRED_ENV = {
@@ -22,6 +22,7 @@ describe('getServerConfig XMTP env parsing', () => {
 
   afterEach(() => {
     process.env = { ...originalEnv };
+    vi.restoreAllMocks();
   });
 
   it('parses XMTP_ENABLED=false as false', () => {
@@ -38,6 +39,50 @@ describe('getServerConfig XMTP env parsing', () => {
     const config = getServerConfig();
 
     expect(config.XMTP_ENABLED).toBe(true);
+  });
+});
+
+describe('getServerConfig official Task Drop owner parsing', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+    };
+    delete process.env.OFFICIAL_TASK_DROP_OWNER_ADDRESSES;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to an empty owner allowlist', () => {
+    expect(getServerConfig().OFFICIAL_TASK_DROP_OWNER_ADDRESSES).toEqual([]);
+  });
+
+  it('normalizes and deduplicates comma-separated owner addresses', () => {
+    process.env.OFFICIAL_TASK_DROP_OWNER_ADDRESSES =
+      ' 0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD,0xabcdefabcdefabcdefabcdefabcdefabcdefabcd,0x2222222222222222222222222222222222222222 ';
+
+    expect(getServerConfig().OFFICIAL_TASK_DROP_OWNER_ADDRESSES).toEqual([
+      '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+      '0x2222222222222222222222222222222222222222',
+    ]);
+  });
+
+  it('rejects an invalid official owner address', () => {
+    process.env.OFFICIAL_TASK_DROP_OWNER_ADDRESSES = 'not-an-address';
+    const errorSpy = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((() => {
+      throw new Error('process exited');
+    }) as never);
+
+    expect(() => getServerConfig()).toThrow('process exited');
+    expect(JSON.stringify(errorSpy.mock.calls)).toContain(
+      'Invalid official Task Drop owner address'
+    );
   });
 });
 

@@ -2,8 +2,42 @@
 ## Product Requirements Document (PRD) + Technical Design Document (TDD)
 
 Document owner: Product + Backend + Frontend  
-Last updated: July 3, 2026  
-Status: Proposed lean v1
+Last updated: July 15, 2026
+Status: Implemented lean v1 with official-drop announcement extension
+
+## Official Task Drop Extension
+
+The per-drop model remains the default for requester-owned drops. Taskmarket-operated drops are the
+single exception: a user gives fresh umbrella consent once and receives one launch announcement for
+each future official Task Drop.
+
+An official drop is derived from its owner wallet. The backend validates the case-insensitive
+`OFFICIAL_TASK_DROP_OWNER_ADDRESSES` allowlist and returns `isOfficial`; `officialWalletAddress`
+remains an owner-address compatibility alias and is not an endorsement signal.
+
+Official-list rules:
+
+- `task_drop_subscriptions.subscription_scope` is `drop`, `official`, or `legacy`. Existing null-drop
+  rows are inert `legacy` rows and are never broadened into official consent.
+- New exact subscriptions to official drops are rejected. A fresh official signup creates or
+  reactivates one case-insensitive umbrella subscription and supersedes that email's active exact
+  subscriptions to drops whose current owners are official.
+- Grandfathered exact subscriptions continue receiving per-task mail until they are superseded or
+  unsubscribed. Official umbrella subscriptions never receive per-task mail.
+- The first authenticated announcement freezes the drop with `announced_at`, snapshots active
+  official subscriptions into `task_drop_announcement_deliveries`, and sends one launch summary per
+  recipient. Later calls retry only pending or failed snapshot rows with stable idempotency keys.
+- Subscribers added after `announced_at` do not receive that historical announcement. Recipients who
+  unsubscribe after the snapshot are skipped.
+- Once an official drop is announced, task creation cannot attach more tasks to it. Both X402
+  preflight and task creation enforce the freeze so a known-invalid request is rejected before
+  payment settlement.
+- `/taskdrop` and official drop pages use the same umbrella signup and browser-storage key.
+  Nonofficial drop pages retain exact-drop consent and per-task notifications.
+
+The launch email contains the drop name and description, task summaries, rewards, modes, launch
+time, drop link, and official-list-specific unsubscribe language. Announcement access uses the same
+`X-Admin-Secret` convention as other backend admin operations.
 
 ## 1. Executive Summary
 
@@ -306,18 +340,18 @@ Update `tasks.create`:
 1. Read X402 payer from `ctx.res.locals.payer`.
 2. Resolve drop choice:
    - no drop: `resolvedTaskDropId = null`
-   - existing drop: fetch drop and verify owner equals payer
+   - existing drop: before settlement, lock the drop, verify owner equals payer, and reserve task
+     creation so an official announcement cannot freeze concurrently
    - new drop: create drop row owned by payer
 3. Call `contractCreateTask`.
-4. Insert task row with `taskDropId`.
+4. Insert the task row with `taskDropId` and release any reservation in the same transaction.
 5. Send worker-agent notification as today.
 6. If `taskDropId` exists, call scoped Task Drops notifier.
 7. Return `{ success: true, taskId, taskDropId }`.
 
-Important v1 trade-off:
-- Existing drop ownership validation happens after X402 settlement.
-- This is acceptable for lean v1 because the web UI lists only the connected wallet's drops and the backend still enforces ownership.
-- If this becomes a support issue, add a narrow preflight endpoint before adding a generic X402 hook.
+The X402 preflight owns the reservation through settlement and downstream request processing. Failed
+settlement and completed responses release it; the router also releases it after contract failure or
+task persistence. Announcement removes abandoned reservations after their lease expires.
 
 ### 9.4 Scoped Notifier
 
@@ -602,7 +636,6 @@ Explicitly defer:
 - public drops directory beyond direct `/drops/[dropId]` pages
 - post-publish attach/move/detach
 - legacy subscriber reactivation campaign
-- pre-settlement ownership validation hook
 
 These should be reconsidered only after lean v1 shows that requesters create drops and subscribers engage with drop emails.
 
