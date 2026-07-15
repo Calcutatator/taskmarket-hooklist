@@ -644,7 +644,7 @@ design-system:
 
 cli:
 	@$(ENV_LOADER) && \
-	pnpm --filter @lucid-agents/taskmarket build && \
+	pnpm --filter @lucid-agents/taskmarket... build && \
 	if [ -n "$(ARGS)" ]; then \
 		node apps/cli/dist/index.js $(ARGS); \
 	fi
