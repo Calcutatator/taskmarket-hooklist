@@ -13,6 +13,11 @@ name: Deploy to Railway Testnet
 # deploy-preview.yml, this never touches contracts or spins up an Anvil -- a testnet contract
 # upgrade is `make upgrade testnet`, run manually by a developer, entirely separate from this
 # workflow.
+#
+# RAILWAY_TOKEN_TESTNET, not RAILWAY_TOKEN: Railway's own project tokens are scoped to a single
+# environment, not the whole project -- the existing RAILWAY_TOKEN secret was issued for
+# taskmarket.io specifically and can't see the testnet environment at all ("Environment
+# testnet not found"), confirmed live on this workflow's first real run.
 
 on:
   workflow_run:
@@ -45,7 +50,7 @@ jobs:
 
       - name: Deploy backend to Railway testnet
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
@@ -54,7 +59,7 @@ jobs:
 
       - name: Deploy web to Railway testnet
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
@@ -63,7 +68,7 @@ jobs:
 
       - name: Deploy docs to Railway testnet
         env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN_TESTNET }}
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
