@@ -1,17 +1,19 @@
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
+import { LEGAL_RECEIPT_HEADER } from '@taskmarket/shared';
 
 import { getServerConfig } from '../config/env';
+import type { Context } from '../context';
 import { verifyPrivyAccessToken } from '../lib/privy-auth';
 import {
   LEGAL_ACCEPTANCE_REQUIRED_CODE,
-  LEGAL_RECEIPT_HEADER,
   getCurrentLegalBundle,
   verifyLegalReceipt,
 } from '../services/legal';
+import { authenticateXmtpDevice } from '../services/xmtp-auth';
 
 const EXIT_OR_PUBLIC_WRITE_ROUTES = [
   /^\/api\/legal(?:\/|$)/,
-  /^\/api\/devices(?:\/|$)/,
+  /^\/api\/devices\/[^/]+\/key$/,
   /^\/api\/task-drops\/subscribe$/,
   /^\/api\/emails\/delete$/,
   /^\/api\/wallet\/(?:withdraw|withdraw-dreams|set-withdrawal-address)$/,
@@ -24,7 +26,6 @@ const EXIT_OR_PUBLIC_TRPC_PROCEDURES = new Set([
   'acceptance.accept',
   'acceptance.acceptSubmissions',
   'devices.key',
-  'devices.register',
   'devices.status',
   'emails.delete',
   'evaluations.appeal',
@@ -91,6 +92,38 @@ function requestPaymentPayer(req: Request): string | undefined {
   }
 }
 
+function requestDeviceCredentials(req: Request): Array<{ apiToken: string; deviceId: string }> {
+  const header = req.headers['x-taskmarket-api-token'];
+  const headerToken = Array.isArray(header) ? header[0] : header;
+  const credentials = new Map<string, { apiToken: string; deviceId: string }>();
+
+  const visit = (value: unknown, root = false): void => {
+    if (!value || typeof value !== 'object') return;
+    if (Array.isArray(value)) {
+      value.forEach((item) => visit(item));
+      return;
+    }
+
+    const record = value as Record<string, unknown>;
+    const apiToken = typeof record.apiToken === 'string' ? record.apiToken : headerToken;
+    if (typeof record.deviceId === 'string' && typeof apiToken === 'string') {
+      credentials.set(`${record.deviceId}\0${apiToken}`, {
+        apiToken,
+        deviceId: record.deviceId,
+      });
+    }
+
+    for (const [key, nested] of Object.entries(record)) {
+      if (key === 'input' || key === 'json' || (root && /^\d+$/.test(key))) {
+        visit(nested);
+      }
+    }
+  };
+
+  visit(req.body, true);
+  return [...credentials.values()];
+}
+
 function expectsX402Payment(req: Request): boolean {
   const path = requestPath(req);
   return (
@@ -122,70 +155,78 @@ export function isLegalReceiptExempt(req: Request): boolean {
   return EXIT_OR_PUBLIC_WRITE_ROUTES.some((pattern) => pattern.test(path));
 }
 
-export const legalAccessMiddleware: RequestHandler = async (
-  req: Request,
-  res: Response,
-  next: NextFunction
-) => {
-  const config = getServerConfig();
-  if (!config.LEGAL_ENFORCEMENT_ENABLED || isLegalReceiptExempt(req)) {
-    next();
-    return;
-  }
+export function createLegalAccessMiddleware(context: Pick<Context, 'db'>): RequestHandler {
+  return async (req: Request, res: Response, next: NextFunction) => {
+    const config = getServerConfig();
+    if (!config.LEGAL_ENFORCEMENT_ENABLED || isLegalReceiptExempt(req)) {
+      next();
+      return;
+    }
 
-  const value = req.headers[LEGAL_RECEIPT_HEADER];
-  const receipt = Array.isArray(value) ? value[0] : value;
-  let identity: Awaited<ReturnType<typeof verifyLegalReceipt>>;
-  try {
-    identity = receipt ? await verifyLegalReceipt(receipt) : null;
-  } catch {
-    res.status(503).json({
-      code: 'LEGAL_STATUS_UNAVAILABLE',
-      error: 'Taskmarket could not verify legal acceptance. Try again before submitting.',
-    });
-    return;
-  }
-  if (identity) {
-    if (identity.subjectType === 'privy_user') {
-      try {
-        const claim = await verifyPrivyAccessToken(req.headers.authorization);
-        if (claim.user_id !== identity.subjectId) {
+    const value = req.headers[LEGAL_RECEIPT_HEADER.toLowerCase()];
+    const receipt = Array.isArray(value) ? value[0] : value;
+    let identity: Awaited<ReturnType<typeof verifyLegalReceipt>>;
+    try {
+      identity = receipt ? await verifyLegalReceipt(receipt) : null;
+    } catch {
+      res.status(503).json({
+        code: 'LEGAL_STATUS_UNAVAILABLE',
+        error: 'Taskmarket could not verify legal acceptance. Try again before submitting.',
+      });
+      return;
+    }
+    if (identity) {
+      if (identity.subjectType === 'privy_user') {
+        try {
+          const claim = await verifyPrivyAccessToken(req.headers.authorization);
+          if (claim.user_id !== identity.subjectId) {
+            identity = null;
+          }
+        } catch {
           identity = null;
         }
-      } catch {
+      } else if (identity.subjectType === 'wallet') {
+        const expectedWallet = identity.subjectId.toLowerCase();
+        const payer = requestPaymentPayer(req);
+        const actingWallet = requestActingWallet(req);
+        const deviceWallets: string[] = [];
+        for (const deviceCredentials of requestDeviceCredentials(req)) {
+          try {
+            const device = await authenticateXmtpDevice(context, deviceCredentials);
+            deviceWallets.push(device.walletAddress.toLowerCase());
+          } catch {
+            // The downstream procedure remains responsible for invalid device credentials.
+          }
+        }
+        if (
+          deviceWallets.some((wallet) => wallet !== expectedWallet) ||
+          (payer
+            ? payer !== expectedWallet
+            : !expectsX402Payment(req) && actingWallet && actingWallet !== expectedWallet)
+        ) {
+          identity = null;
+        }
+      } else {
         identity = null;
       }
-    } else if (identity.subjectType === 'wallet') {
-      const expectedWallet = identity.subjectId.toLowerCase();
-      const payer = requestPaymentPayer(req);
-      const actingWallet = requestActingWallet(req);
-      if (
-        payer
-          ? payer !== expectedWallet
-          : !expectsX402Payment(req) && actingWallet && actingWallet !== expectedWallet
-      ) {
-        identity = null;
-      }
-    } else {
-      identity = null;
     }
-  }
 
-  if (identity) {
-    res.locals.legalAcceptance = identity;
-    next();
-    return;
-  }
+    if (identity) {
+      res.locals.legalAcceptance = identity;
+      next();
+      return;
+    }
 
-  const bundle = getCurrentLegalBundle();
-  res.setHeader('X-Taskmarket-Legal-Version', bundle.version);
-  res.status(403).json({
-    code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
-    error: 'Current Taskmarket legal terms must be accepted before starting new activity.',
-    legal: {
-      acceptUrl: new URL('/legal', config.WEB_APP_URL).toString(),
-      bundleVersion: bundle.version,
-      cliCommand: 'taskmarket legal accept',
-    },
-  });
-};
+    const bundle = getCurrentLegalBundle();
+    res.setHeader('X-Taskmarket-Legal-Version', bundle.version);
+    res.status(403).json({
+      code: LEGAL_ACCEPTANCE_REQUIRED_CODE,
+      error: 'Current Taskmarket legal terms must be accepted before starting new activity.',
+      legal: {
+        acceptUrl: new URL('/legal', config.WEB_APP_URL).toString(),
+        bundleVersion: bundle.version,
+        cliCommand: 'taskmarket legal accept',
+      },
+    });
+  };
+}

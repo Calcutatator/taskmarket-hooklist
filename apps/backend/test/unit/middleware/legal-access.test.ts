@@ -7,7 +7,6 @@ const { verifyLegalReceipt, verifyPrivyAccessToken } = vi.hoisted(() => ({
 
 vi.mock('../../../src/services/legal', () => ({
   LEGAL_ACCEPTANCE_REQUIRED_CODE: 'LEGAL_ACCEPTANCE_REQUIRED',
-  LEGAL_RECEIPT_HEADER: 'x-taskmarket-legal-receipt',
   getCurrentLegalBundle: () => ({ version: '2026-07-1' }),
   verifyLegalReceipt,
 }));
@@ -21,7 +20,9 @@ vi.mock('../../../src/config/env', () => ({
 
 vi.mock('../../../src/lib/privy-auth', () => ({ verifyPrivyAccessToken }));
 
-import { legalAccessMiddleware } from '../../../src/middleware/legal-access';
+import { createLegalAccessMiddleware } from '../../../src/middleware/legal-access';
+
+const legalAccessMiddleware = createLegalAccessMiddleware({ db: {} as never });
 
 function response() {
   const res: Record<string, unknown> = {

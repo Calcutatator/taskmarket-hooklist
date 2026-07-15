@@ -1,4 +1,6 @@
 import { Command } from 'commander';
+import { LegalBundleSchema } from '@taskmarket/shared';
+import { privateKeyToAccount } from 'viem/accounts';
 import {
   generateKeypair,
   encryptPrivateKey,
@@ -6,10 +8,12 @@ import {
   keystoreExists,
   loadKeystore,
 } from '../lib/keystore.js';
-import { API_URL, apiGet, apiPost } from '../lib/api.js';
+import { API_ORIGIN, API_URL, apiGet, apiPost } from '../lib/api.js';
 import { printResult, printError } from '../lib/output.js';
 import { pollAgentId } from '../lib/agent.js';
+import { registerDevice } from '../lib/device-registration.js';
 import { deriveCompressedPublicKey } from '../lib/encryption.js';
+import { acceptLegalBundle } from './legal/index.js';
 
 type NetworkInfo = {
   chainId: number;
@@ -70,7 +74,11 @@ export const initCommand = new Command('init')
     '--email <username>',
     'Claim a custom email username (default: auto-generated from agent ID)'
   )
-  .action(async (opts: { email?: string }) => {
+  .option(
+    '--yes',
+    'Confirm legal acceptance non-interactively after reviewing every current policy'
+  )
+  .action(async (opts: { email?: string; yes?: boolean }) => {
     // Fail-fast availability check for explicit --email before doing any other work
     if (opts.email) {
       const check = (await apiGet(
@@ -140,29 +148,27 @@ export const initCommand = new Command('init')
 
     const { privateKey, address } = generateKeypair();
     const publicKey = deriveCompressedPublicKey(privateKey);
-
-    const res = await fetch(`${API_URL}/api/devices`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress: address, publicKey }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Device registration failed (${res.status}): ${text}`);
-    }
+    const legalBundle = LegalBundleSchema.parse(await apiGet('/api/legal/current'));
+    const legalAcceptance = legalBundle.enforcementEnabled
+      ? await acceptLegalBundle({
+          assumeYes: Boolean(opts.yes),
+          bundle: legalBundle,
+          signMessage: (message) =>
+            privateKeyToAccount(privateKey as `0x${string}`).signMessage({ message }),
+          walletAddress: address,
+        })
+      : undefined;
 
     const {
       deviceId,
       apiToken,
       deviceEncryptionKey,
       agentId: initialAgentId,
-    } = (await res.json()) as {
-      deviceId: string;
-      apiToken: string;
-      deviceEncryptionKey: string;
-      agentId: string | null;
-    };
+    } = await registerDevice({
+      legalReceipt: legalAcceptance?.receipt,
+      publicKey,
+      walletAddress: address,
+    });
 
     const encryptedKey = encryptPrivateKey(deviceEncryptionKey, privateKey);
 
@@ -174,6 +180,13 @@ export const initCommand = new Command('init')
       apiToken,
       agentId,
       keyServerUrl: API_URL,
+      ...(legalAcceptance
+        ? {
+            legalAcceptanceApiOrigin: API_ORIGIN,
+            legalAcceptanceBundleVersion: legalAcceptance.bundleVersion,
+            legalAcceptanceReceipt: legalAcceptance.receipt,
+          }
+        : {}),
     });
 
     if (!agentId) {

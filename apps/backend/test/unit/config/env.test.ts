@@ -87,6 +87,26 @@ describe('getServerConfig legal enforcement', () => {
       })
     );
   });
+
+  it('refuses activation when the web and backend Privy app ids differ', () => {
+    process.env.LEGAL_ENFORCEMENT_ENABLED = 'true';
+    process.env.PRIVY_APP_ID = 'backend-privy-app';
+    process.env.PRIVY_APP_SECRET = 'privy-app-secret';
+    process.env.NEXT_PUBLIC_PRIVY_APP_ID = 'web-privy-app';
+    const error = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    vi.spyOn(process, 'exit').mockImplementation((code) => {
+      throw new Error(`process exited with ${code}`);
+    });
+
+    expect(() => getServerConfig()).toThrow('process exited with 1');
+    expect(error).toHaveBeenCalledWith(
+      expect.objectContaining({
+        NEXT_PUBLIC_PRIVY_APP_ID: {
+          _errors: [expect.stringContaining('must match PRIVY_APP_ID')],
+        },
+      })
+    );
+  });
 });
 
 describe('getServerConfig DREAMS_HOOK_SEED_BLOCK env parsing', () => {

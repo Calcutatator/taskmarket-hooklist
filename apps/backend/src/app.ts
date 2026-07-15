@@ -48,7 +48,7 @@ import { taskActionPreflight } from './middleware/taskActionPreflight';
 import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
-import { legalAccessMiddleware } from './middleware/legal-access';
+import { createLegalAccessMiddleware } from './middleware/legal-access';
 import { getCurrentLegalDocument } from './services/legal';
 import { db } from './db/client';
 import { feedbacks, submissions, artifacts, proposals, proofs, taskDrops } from './db/schema';
@@ -281,7 +281,7 @@ if (process.env.SERVE_FRONTEND === 'true') {
 
 // Enforce versioned legal assent before any paid middleware can settle a payment.
 // Public reads and designated exit/recovery routes are exempted inside the guard.
-app.use(legalAccessMiddleware);
+app.use(createLegalAccessMiddleware({ db }));
 
 // tRPC X402 guards
 app.post(

@@ -13,7 +13,7 @@ import { privyAppId, privyClientId, privyConfig, wagmiConfig } from '@/lib/web3/
 
 import { Toaster } from '@/components/ui/sonner';
 import { TooltipProvider } from '@/components/ui/tooltip';
-import { LegalConsentGate } from '@/components/legal-consent-gate';
+import { LegalProviderGate } from '@/components/legal-provider-gate';
 
 export function Providers({ children }: { children: React.ReactNode }) {
   const [queryClient] = useState(() => makeQueryClient());
@@ -33,7 +33,9 @@ export function Providers({ children }: { children: React.ReactNode }) {
   if (!isPrivyConfigured()) {
     return (
       <QueryClientProvider client={queryClient}>
-        <WagmiProvider config={wagmiConfig}>{app}</WagmiProvider>
+        <WagmiProvider config={wagmiConfig}>
+          <LegalProviderGate>{app}</LegalProviderGate>
+        </WagmiProvider>
       </QueryClientProvider>
     );
   }
@@ -42,7 +44,7 @@ export function Providers({ children }: { children: React.ReactNode }) {
     <QueryClientProvider client={queryClient}>
       <PrivyProvider appId={privyAppId} clientId={privyClientId} config={privyConfig}>
         <PrivyWagmiProvider config={wagmiConfig}>
-          <LegalConsentGate>{app}</LegalConsentGate>
+          <LegalProviderGate consentEnabled>{app}</LegalProviderGate>
         </PrivyWagmiProvider>
       </PrivyProvider>
     </QueryClientProvider>

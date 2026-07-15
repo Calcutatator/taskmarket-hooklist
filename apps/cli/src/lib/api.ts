@@ -1,7 +1,20 @@
-import { loadKeystore } from './keystore.js';
+import { buildLegalReceiptHeaders } from '@taskmarket/shared';
+
+import { loadKeystore, type Keystore } from './keystore.js';
 
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
 export const API_ORIGIN = new URL(API_URL).origin;
+
+export function legalReceiptHeadersForKeystore(
+  keystore: Pick<Keystore, 'legalAcceptanceApiOrigin' | 'legalAcceptanceReceipt'>,
+  path: string,
+  method: 'GET' | 'POST'
+): Record<string, string> {
+  const canSend =
+    keystore.legalAcceptanceApiOrigin === API_ORIGIN &&
+    (method === 'POST' || path === '/api/legal/status');
+  return canSend ? buildLegalReceiptHeaders(keystore.legalAcceptanceReceipt) : {};
+}
 
 async function legalReceiptHeaders(
   path: string,
@@ -9,12 +22,7 @@ async function legalReceiptHeaders(
 ): Promise<Record<string, string>> {
   try {
     const keystore = await loadKeystore();
-    const canSend =
-      keystore.legalAcceptanceApiOrigin === API_ORIGIN &&
-      (method === 'POST' || path === '/api/legal/status');
-    return canSend && keystore.legalAcceptanceReceipt
-      ? { 'X-Taskmarket-Legal-Receipt': keystore.legalAcceptanceReceipt }
-      : {};
+    return legalReceiptHeadersForKeystore(keystore, path, method);
   } catch {
     return {};
   }
@@ -27,6 +35,7 @@ export async function apiGet(
   const legalHeaders = await legalReceiptHeaders(path, 'GET');
   const res = await fetch(`${API_URL}${path}`, {
     method: 'GET',
+    redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
@@ -44,6 +53,7 @@ export async function apiPost(path: string, body: Record<string, unknown>): Prom
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
+    redirect: 'error',
     headers: { 'Content-Type': 'application/json', ...legalHeaders },
     body: JSON.stringify(body),
   });

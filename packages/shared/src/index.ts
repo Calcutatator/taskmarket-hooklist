@@ -13,13 +13,18 @@ export {
 export { buildSelectWorkerMessage } from './lib/authMessages';
 export {
   CURRENT_LEGAL_BUNDLE,
+  LEGAL_BUNDLES,
   LEGAL_ACCEPTANCE_STATEMENT,
   LEGAL_ENTITY,
+  LEGAL_RECEIPT_HEADER,
+  buildLegalReceiptHeaders,
   buildWalletLegalAcceptanceMessage,
   getCurrentLegalBundleActivationIssues,
+  getLegalBundleActivationIssues,
   isCurrentLegalBundleActivationReady,
   type LegalCopyStatus,
   type LegalDocument,
   type LegalDocumentEvidence,
   type LegalDocumentType,
+  type LegalPolicyBundle,
 } from './legal';

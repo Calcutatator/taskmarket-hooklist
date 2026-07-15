@@ -1,11 +1,13 @@
 import { createHash, randomBytes, randomUUID } from 'crypto';
 import {
   CURRENT_LEGAL_BUNDLE,
+  LEGAL_BUNDLES,
   LEGAL_ACCEPTANCE_STATEMENT,
   buildWalletLegalAcceptanceMessage,
   getCurrentLegalBundleActivationIssues,
   isCurrentLegalBundleActivationReady,
   type LegalDocumentEvidence,
+  type LegalPolicyBundle,
 } from '@taskmarket/shared';
 import { and, eq, isNull } from 'drizzle-orm';
 import { getAddress, recoverMessageAddress } from 'viem';
@@ -19,7 +21,6 @@ import {
   type LegalAcceptance,
 } from '../db/schema';
 
-export const LEGAL_RECEIPT_HEADER = 'x-taskmarket-legal-receipt';
 export const LEGAL_ACCEPTANCE_REQUIRED_CODE = 'LEGAL_ACCEPTANCE_REQUIRED';
 const CHALLENGE_TTL_MS = 10 * 60 * 1000;
 
@@ -48,8 +49,10 @@ function normalizeSubjectId(type: LegalSubjectType, value: string): string {
   return type === 'wallet' ? getAddress(value).toLowerCase() : value.trim();
 }
 
-function legalDocumentEvidence(): LegalDocumentEvidence[] {
-  return CURRENT_LEGAL_BUNDLE.documents.map((document) => ({
+function legalDocumentEvidence(
+  bundle: LegalPolicyBundle = CURRENT_LEGAL_BUNDLE
+): LegalDocumentEvidence[] {
+  return bundle.documents.map((document) => ({
     contentHash: `sha256:${sha256(document.markdown)}`,
     title: document.title,
     type: document.type,
@@ -104,6 +107,7 @@ export function getCurrentLegalBundle() {
     })),
     effectiveAt: CURRENT_LEGAL_BUNDLE.effectiveAt,
     enforcementEnabled: config.LEGAL_ENFORCEMENT_ENABLED,
+    privyAppId: config.PRIVY_APP_ID ?? null,
     publishedAt: CURRENT_LEGAL_BUNDLE.publishedAt,
     status: CURRENT_LEGAL_BUNDLE.status,
     version: CURRENT_LEGAL_BUNDLE.version,
@@ -115,11 +119,12 @@ export function getCurrentLegalDocument(
   slug: string,
   contentHash: string
 ): { contentHash: string; markdown: string; title: string; version: string } | null {
-  if (version !== CURRENT_LEGAL_BUNDLE.version) return null;
-  const documentIndex = CURRENT_LEGAL_BUNDLE.documents.findIndex((item) => item.slug === slug);
+  const bundle = LEGAL_BUNDLES.find((item) => item.version === version);
+  if (!bundle) return null;
+  const documentIndex = bundle.documents.findIndex((item) => item.slug === slug);
   if (documentIndex < 0) return null;
-  const document = CURRENT_LEGAL_BUNDLE.documents[documentIndex];
-  const evidence = legalDocumentEvidence()[documentIndex];
+  const document = bundle.documents[documentIndex];
+  const evidence = legalDocumentEvidence(bundle)[documentIndex];
   if (contentHash !== evidence.contentHash) return null;
   return {
     contentHash: evidence.contentHash,

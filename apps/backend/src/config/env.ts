@@ -71,6 +71,7 @@ const envSchema = z
     PRIVY_APP_ID: z.string().optional(),
     PRIVY_APP_SECRET: z.string().optional(),
     PRIVY_JWT_VERIFICATION_KEY: z.string().optional(),
+    NEXT_PUBLIC_PRIVY_APP_ID: z.string().optional(),
   })
   .superRefine((data, ctx) => {
     if (data.LEGAL_ENFORCEMENT_ENABLED) {
@@ -96,6 +97,21 @@ const envSchema = z
           code: z.ZodIssueCode.custom,
           message: 'PRIVY_APP_SECRET is required when legal enforcement is enabled',
           path: ['PRIVY_APP_SECRET'],
+        });
+      }
+
+      if (!data.NEXT_PUBLIC_PRIVY_APP_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'NEXT_PUBLIC_PRIVY_APP_ID is required when legal enforcement is enabled',
+          path: ['NEXT_PUBLIC_PRIVY_APP_ID'],
+        });
+      } else if (data.PRIVY_APP_ID && data.NEXT_PUBLIC_PRIVY_APP_ID !== data.PRIVY_APP_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'NEXT_PUBLIC_PRIVY_APP_ID must match PRIVY_APP_ID when legal enforcement is enabled',
+          path: ['NEXT_PUBLIC_PRIVY_APP_ID'],
         });
       }
     }

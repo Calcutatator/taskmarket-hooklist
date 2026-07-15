@@ -1,42 +1,22 @@
 import { Command } from 'commander';
 import { createInterface } from 'node:readline/promises';
-import { buildWalletLegalAcceptanceMessage, type LegalDocumentEvidence } from '@taskmarket/shared';
+import {
+  LegalAcceptanceResponseSchema,
+  LegalBundleSchema,
+  LegalChallengeResponseSchema,
+  LegalStatusResponseSchema,
+  buildWalletLegalAcceptanceMessage,
+  type LegalAcceptanceResponse,
+  type LegalBundle,
+  type LegalChallenge,
+} from '@taskmarket/shared';
 
 import { API_ORIGIN, apiGet, apiPost } from '../../lib/api.js';
 import { loadKeystore, saveKeystore } from '../../lib/keystore.js';
 import { printResult } from '../../lib/output.js';
-import { signMessage } from '../../lib/signer.js';
+import { signMessage as signKeystoreMessage } from '../../lib/signer.js';
 
-export type LegalBundle = {
-  acceptanceAvailable: boolean;
-  acceptanceStatement: string;
-  bundleDigest: string;
-  documents: Array<{
-    contentHash: string;
-    title: string;
-    type: LegalDocumentEvidence['type'];
-    url: string;
-    version: string;
-  }>;
-  enforcementEnabled: boolean;
-  status: 'draft' | 'approved';
-  version: string;
-};
-
-export type LegalChallenge = {
-  bundle: LegalBundle;
-  expiresAt: string;
-  issuedAt: string;
-  message: string;
-  nonce: string;
-  walletAddress: string;
-};
-
-type LegalStatus = {
-  accepted: boolean;
-  bundle: LegalBundle;
-  receipt?: string;
-};
+export type { LegalBundle, LegalChallenge };
 
 const affirmations = {
   acknowledgedRisk: true,
@@ -44,6 +24,8 @@ const affirmations = {
   agreedToTerms: true,
   receivedPrivacyNotice: true,
 } as const;
+
+export type LegalAcceptanceResult = LegalAcceptanceResponse;
 
 async function confirmAcceptance(bundle: LegalBundle, assumeYes: boolean): Promise<void> {
   const documentList = bundle.documents
@@ -114,11 +96,48 @@ export function validateLegalChallenge(
   }
 }
 
+export async function acceptLegalBundle(options: {
+  assumeYes: boolean;
+  bundle?: LegalBundle;
+  signMessage: (message: string) => Promise<string>;
+  walletAddress: string;
+}): Promise<LegalAcceptanceResult> {
+  const bundle = LegalBundleSchema.parse(options.bundle ?? (await apiGet('/api/legal/current')));
+  if (!bundle.acceptanceAvailable) {
+    throw new Error('The current legal bundle is a counsel-review draft and cannot be accepted.');
+  }
+
+  await confirmAcceptance(bundle, options.assumeYes);
+  const challenge = LegalChallengeResponseSchema.parse(
+    await apiPost('/api/legal/challenge', {
+      walletAddress: options.walletAddress,
+    })
+  );
+  validateLegalChallenge(bundle, challenge, options.walletAddress);
+
+  const signature = await options.signMessage(challenge.message);
+  const result = LegalAcceptanceResponseSchema.parse(
+    await apiPost('/api/legal/accept/wallet', {
+      ...affirmations,
+      bundleDigest: bundle.bundleDigest,
+      bundleVersion: bundle.version,
+      nonce: challenge.nonce,
+      signature,
+      walletAddress: options.walletAddress,
+    })
+  );
+
+  if (result.bundleDigest !== bundle.bundleDigest || result.bundleVersion !== bundle.version) {
+    throw new Error('The server returned a receipt for a different legal bundle.');
+  }
+  return result;
+}
+
 const statusCommand = new Command('status')
   .description('Show whether this CLI has accepted the current legal bundle')
   .action(async () => {
     const keystore = await loadKeystore();
-    const status = (await apiGet('/api/legal/status')) as LegalStatus;
+    const status = LegalStatusResponseSchema.parse(await apiGet('/api/legal/status'));
     if (status.receipt) {
       await saveKeystore({
         ...keystore,
@@ -149,35 +168,11 @@ const acceptCommand = new Command('accept')
   )
   .action(async (options: { yes?: boolean }) => {
     const keystore = await loadKeystore();
-    const bundle = (await apiGet('/api/legal/current')) as LegalBundle;
-    if (!bundle.acceptanceAvailable) {
-      throw new Error('The current legal bundle is a counsel-review draft and cannot be accepted.');
-    }
-
-    await confirmAcceptance(bundle, Boolean(options.yes));
-    const challenge = (await apiPost('/api/legal/challenge', {
+    const result = await acceptLegalBundle({
+      assumeYes: Boolean(options.yes),
+      signMessage: (message) => signKeystoreMessage(message, keystore),
       walletAddress: keystore.walletAddress,
-    })) as LegalChallenge;
-    validateLegalChallenge(bundle, challenge, keystore.walletAddress);
-
-    const signature = await signMessage(challenge.message, keystore);
-    const result = (await apiPost('/api/legal/accept/wallet', {
-      ...affirmations,
-      bundleDigest: bundle.bundleDigest,
-      bundleVersion: bundle.version,
-      nonce: challenge.nonce,
-      signature,
-      walletAddress: keystore.walletAddress,
-    })) as {
-      acceptedAt: string;
-      bundleDigest: string;
-      bundleVersion: string;
-      receipt: string;
-    };
-
-    if (result.bundleDigest !== bundle.bundleDigest || result.bundleVersion !== bundle.version) {
-      throw new Error('The server returned a receipt for a different legal bundle.');
-    }
+    });
 
     await saveKeystore({
       ...keystore,

@@ -6,6 +6,14 @@ export type LegalDocumentType =
 
 export type LegalCopyStatus = 'draft' | 'approved';
 
+export const LEGAL_RECEIPT_HEADER = 'X-Taskmarket-Legal-Receipt';
+
+export function buildLegalReceiptHeaders(
+  receipt: string | null | undefined
+): Record<string, string> {
+  return receipt ? { [LEGAL_RECEIPT_HEADER]: receipt } : {};
+}
+
 export interface LegalDocument {
   type: LegalDocumentType;
   title: string;
@@ -20,6 +28,14 @@ export interface LegalDocumentEvidence {
   title: string;
   version: string;
   contentHash: string;
+}
+
+export interface LegalPolicyBundle {
+  version: string;
+  status: LegalCopyStatus;
+  publishedAt: string;
+  effectiveAt: string | null;
+  documents: readonly LegalDocument[];
 }
 
 export const LEGAL_ENTITY = {
@@ -382,31 +398,41 @@ export const CURRENT_LEGAL_BUNDLE = {
   publishedAt: PUBLISHED_AT,
   effectiveAt: EFFECTIVE_AT,
   documents: [termsOfService, privacyPolicy, riskDisclosure, acceptableUsePolicy],
-} as const;
+} as const satisfies LegalPolicyBundle;
 
-export function getCurrentLegalBundleActivationIssues(): string[] {
+// Canonical acceptance URLs are permanent. Before replacing the current bundle,
+// retain its exact immutable definition in this registry as a named historical bundle.
+export const LEGAL_BUNDLES: readonly LegalPolicyBundle[] = [CURRENT_LEGAL_BUNDLE];
+
+export function getLegalBundleActivationIssues(
+  bundle: LegalPolicyBundle,
+  legalEntity: Readonly<Record<string, string>> = LEGAL_ENTITY
+): string[] {
   const issues: string[] = [];
-  if (CURRENT_LEGAL_BUNDLE.status !== 'approved') {
+  if (bundle.status !== 'approved') {
     issues.push('bundle status is not approved');
   }
-  if (!CURRENT_LEGAL_BUNDLE.effectiveAt) {
+  if (!bundle.effectiveAt) {
     issues.push('effective date is missing');
+  } else if (
+    !/^\d{4}-\d{2}-\d{2}T\d{2}:\d{2}:\d{2}(?:\.\d{3})?Z$/.test(bundle.effectiveAt) ||
+    Number.isNaN(Date.parse(bundle.effectiveAt))
+  ) {
+    issues.push('effective date is invalid');
   }
-  if (CURRENT_LEGAL_BUNDLE.version.toLowerCase().includes('draft')) {
+  if (bundle.version.toLowerCase().includes('draft')) {
     issues.push('bundle version is still marked draft');
   }
-  if (Object.values(LEGAL_ENTITY).some((value) => /^\[[^\]]+\]$/.test(value))) {
+  if (Object.values(legalEntity).some((value) => /^\[[^\]]+\]$/.test(value))) {
     issues.push('contracting entity details contain placeholders');
   }
   if (
-    CURRENT_LEGAL_BUNDLE.documents.some((document) =>
-      /\bdraft\b|not approved or active/i.test(document.markdown)
-    )
+    bundle.documents.some((document) => /\bdraft\b|not approved or active/i.test(document.markdown))
   ) {
     issues.push('policy copy still contains draft markers');
   }
   if (
-    CURRENT_LEGAL_BUNDLE.documents.some((document) =>
+    bundle.documents.some((document) =>
       /\[[^\]\n]*\b(?:APPROVED|COUNSEL|FORUM|GOVERNING|INSERT|JURISDICTION|LIABILITY|PRODUCT|REGISTERED|REQUIRED)\b[^\]\n]*\]/.test(
         document.markdown
       )
@@ -415,6 +441,10 @@ export function getCurrentLegalBundleActivationIssues(): string[] {
     issues.push('policy copy contains counsel or product placeholders');
   }
   return issues;
+}
+
+export function getCurrentLegalBundleActivationIssues(): string[] {
+  return getLegalBundleActivationIssues(CURRENT_LEGAL_BUNDLE);
 }
 
 export function isCurrentLegalBundleActivationReady(): boolean {

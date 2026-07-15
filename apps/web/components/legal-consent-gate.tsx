@@ -1,6 +1,7 @@
 'use client';
 
 import { getAccessToken, usePrivy } from '@privy-io/react-auth';
+import type { LegalBundle, LegalDocumentType } from '@taskmarket/shared';
 import { usePathname } from 'next/navigation';
 import { useEffect, useMemo, useRef, useState } from 'react';
 
@@ -14,28 +15,8 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { clearLegalReceipt, getLegalReceiptHeaders, setLegalReceipt } from '@/lib/legal-receipt';
-
-type LegalDocumentType =
-  | 'terms_of_service'
-  | 'privacy_policy'
-  | 'risk_disclosure'
-  | 'acceptable_use_policy';
-
-type LegalBundle = {
-  acceptanceAvailable: boolean;
-  acceptanceStatement: string;
-  bundleDigest: string;
-  documents: Array<{
-    title: string;
-    type: LegalDocumentType;
-    url: string;
-  }>;
-  enforcementEnabled: boolean;
-  status: 'draft' | 'approved';
-  version: string;
-};
+import { acceptWebLegalBundle, getLegalStatus } from '@/lib/legal-api';
+import { clearLegalReceipt, setLegalReceipt } from '@/lib/legal-receipt';
 
 type GateState =
   | { kind: 'idle' | 'checking' | 'accepted' | 'limited' }
@@ -78,18 +59,7 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
     void (async () => {
       try {
         const token = await getAccessToken();
-        const response = await fetch(`${getBrowserApiBaseUrl()}/api/legal/status`, {
-          headers: {
-            ...getLegalReceiptHeaders(),
-            ...(token ? { Authorization: `Bearer ${token}` } : {}),
-          },
-        });
-        if (!response.ok) throw new Error(`Legal status check failed (${response.status})`);
-        const status = (await response.json()) as {
-          accepted: boolean;
-          bundle: LegalBundle;
-          receipt?: string;
-        };
+        const status = await getLegalStatus(token);
         if (cancelled) return;
         if (status.receipt) setLegalReceipt(status.receipt, status.bundle.version);
         limitedAfterError.current = false;
@@ -136,37 +106,21 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
     try {
       const token = await getAccessToken();
       if (!token) throw new Error('Your login session expired. Sign in again.');
-      const response = await fetch(`${getBrowserApiBaseUrl()}/api/legal/accept/web`, {
-        body: JSON.stringify({
+      const result = await acceptWebLegalBundle(
+        {
           acknowledgedRisk: true,
           agreedToAcceptableUse: true,
           agreedToTerms: true,
           bundleDigest: bundle.bundleDigest,
           bundleVersion: bundle.version,
           receivedPrivacyNotice: true,
-        }),
-        headers: {
-          Authorization: `Bearer ${token}`,
-          'Content-Type': 'application/json',
         },
-        method: 'POST',
-      });
-      const body = (await response.json().catch(() => ({}))) as {
-        message?: string;
-        error?: string;
-        receipt?: string;
-        bundleDigest?: string;
-        bundleVersion?: string;
-      };
-      if (
-        !response.ok ||
-        !body.receipt ||
-        body.bundleDigest !== bundle.bundleDigest ||
-        body.bundleVersion !== bundle.version
-      ) {
-        throw new Error(body.message ?? body.error ?? `Acceptance failed (${response.status})`);
+        token
+      );
+      if (result.bundleDigest !== bundle.bundleDigest || result.bundleVersion !== bundle.version) {
+        throw new Error('The server returned a receipt for a different legal bundle.');
       }
-      setLegalReceipt(body.receipt, body.bundleVersion);
+      setLegalReceipt(result.receipt, result.bundleVersion);
       limitedBundleVersion.current = null;
       limitedAfterError.current = false;
       setState({ kind: 'accepted' });

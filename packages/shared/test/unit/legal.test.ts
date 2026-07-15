@@ -5,6 +5,7 @@ import {
   LEGAL_ACCEPTANCE_STATEMENT,
   buildWalletLegalAcceptanceMessage,
   getCurrentLegalBundleActivationIssues,
+  getLegalBundleActivationIssues,
   isCurrentLegalBundleActivationReady,
 } from '../../src/legal';
 
@@ -34,6 +35,16 @@ describe('legal bundle', () => {
         'policy copy contains counsel or product placeholders',
       ])
     );
+  });
+
+  it('rejects a malformed effective date even when the bundle is marked approved', () => {
+    const issues = getLegalBundleActivationIssues({
+      ...CURRENT_LEGAL_BUNDLE,
+      effectiveAt: 'not-a-date',
+      status: 'approved',
+    });
+
+    expect(issues).toContain('effective date is invalid');
   });
 
   it('builds a deterministic wallet message that binds every document hash', () => {

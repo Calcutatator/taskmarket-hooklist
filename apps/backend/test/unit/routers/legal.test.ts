@@ -18,7 +18,7 @@ const bundle = {
   bundleDigest: `sha256:${'a'.repeat(64)}`,
   documents: [
     {
-      contentHash: 'a'.repeat(64),
+      contentHash: `sha256:${'a'.repeat(64)}`,
       slug: 'terms' as const,
       summary: 'Terms summary',
       title: 'Terms of Service',
@@ -29,6 +29,7 @@ const bundle = {
   ],
   effectiveAt: '2026-07-15T00:00:00.000Z',
   enforcementEnabled: true,
+  privyAppId: 'server-privy-app-id',
   publishedAt: '2026-07-15T00:00:00.000Z',
   status: 'approved' as const,
   version: '2026-07-1',
@@ -37,7 +38,6 @@ const bundle = {
 vi.mock('../../../src/lib/privy-auth', () => ({ verifyPrivyAccessToken }));
 
 vi.mock('../../../src/services/legal', () => ({
-  LEGAL_RECEIPT_HEADER: 'x-taskmarket-legal-receipt',
   acceptWalletLegalTerms: vi.fn(),
   assertLegalAcceptanceAvailable: vi.fn(),
   createWalletLegalChallenge: vi.fn(),

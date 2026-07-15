@@ -3,15 +3,31 @@ import { CURRENT_LEGAL_BUNDLE } from '@taskmarket/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { privateKeyToAccount } from 'viem/accounts';
 
+const { historicalMarkdown, historicalVersion } = vi.hoisted(() => ({
+  historicalMarkdown: '# Historical Terms\n\nThese are the exact accepted terms.',
+  historicalVersion: '2026-06',
+}));
+
 vi.mock('@taskmarket/shared', async () => {
   const actual = await vi.importActual<typeof import('@taskmarket/shared')>('@taskmarket/shared');
+  const currentBundle = {
+    ...actual.CURRENT_LEGAL_BUNDLE,
+    effectiveAt: '2026-07-15T00:00:00.000Z',
+    status: 'approved',
+  };
+  const historicalBundle = {
+    ...actual.CURRENT_LEGAL_BUNDLE,
+    version: historicalVersion,
+    documents: actual.CURRENT_LEGAL_BUNDLE.documents.map((document) => ({
+      ...document,
+      markdown: document.slug === 'terms' ? historicalMarkdown : document.markdown,
+      version: historicalVersion,
+    })),
+  };
   return {
     ...actual,
-    CURRENT_LEGAL_BUNDLE: {
-      ...actual.CURRENT_LEGAL_BUNDLE,
-      effectiveAt: '2026-07-15T00:00:00.000Z',
-      status: 'approved',
-    },
+    CURRENT_LEGAL_BUNDLE: currentBundle,
+    LEGAL_BUNDLES: [currentBundle, historicalBundle],
     getCurrentLegalBundleActivationIssues: () => [],
     isCurrentLegalBundleActivationReady: () => true,
   };
@@ -21,6 +37,7 @@ vi.mock('../../../src/config/env', () => ({
   getServerConfig: () => ({
     BACKEND_URL: 'https://api.taskmarket.example',
     LEGAL_ENFORCEMENT_ENABLED: true,
+    PRIVY_APP_ID: 'server-privy-app-id',
     WEB_APP_URL: 'https://taskmarket.example',
   }),
 }));
@@ -58,6 +75,7 @@ describe('wallet legal acceptance service', () => {
   it('serves each reviewed policy from its canonical hash-addressed backend URL', () => {
     const bundle = getCurrentLegalBundle();
 
+    expect(bundle.privyAppId).toBe('server-privy-app-id');
     for (const document of bundle.documents) {
       const url = new URL(document.url);
       const [version, slug, contentHash] = url.pathname
@@ -73,6 +91,17 @@ describe('wallet legal acceptance service', () => {
         version: document.version,
       });
     }
+  });
+
+  it('keeps an accepted historical policy available at its canonical hash-addressed URL', () => {
+    const contentHash = `sha256:${createHash('sha256').update(historicalMarkdown).digest('hex')}`;
+
+    expect(getCurrentLegalDocument(historicalVersion, 'terms', contentHash)).toEqual({
+      contentHash,
+      markdown: historicalMarkdown,
+      title: 'Terms of Service',
+      version: historicalVersion,
+    });
   });
 
   it('rejects a stale same-version bundle digest', () => {

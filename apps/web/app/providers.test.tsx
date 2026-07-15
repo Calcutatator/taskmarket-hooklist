@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Providers } from './providers';
@@ -51,9 +51,39 @@ vi.mock('@/components/ui/tooltip', () => ({
   ),
 }));
 
+const backendBundle = {
+  acceptanceAvailable: true,
+  acceptanceStatement: 'I agree to the policies.',
+  bundleDigest: `sha256:${'a'.repeat(64)}`,
+  documents: [
+    {
+      contentHash: `sha256:${'b'.repeat(64)}`,
+      slug: 'terms',
+      summary: 'Marketplace terms.',
+      title: 'Terms of Service',
+      type: 'terms_of_service',
+      url: 'https://api.taskmarket.example/legal/terms',
+      version: '2026-07-1',
+    },
+  ],
+  effectiveAt: '2026-07-15T00:00:00.000Z',
+  enforcementEnabled: true,
+  privyAppId: '1234567890123456789012345',
+  publishedAt: '2026-07-01T00:00:00.000Z',
+  status: 'approved',
+  version: '2026-07-1',
+};
+
 describe('Providers', () => {
   beforeEach(() => {
     vi.unstubAllEnvs();
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => backendBundle,
+      })
+    );
   });
 
   it('initializes Privy and Privy wagmi providers when a Privy app id is configured', () => {
@@ -88,5 +118,43 @@ describe('Providers', () => {
     expect(container.querySelector('[data-provider="privy"]')).not.toBeInTheDocument();
     expect(container.querySelector('[data-provider="privy-wagmi"]')).not.toBeInTheDocument();
     expect(container.querySelector('[data-provider="wagmi"]')).toBeInTheDocument();
+  });
+
+  it('surfaces an enforced legal configuration when the web Privy app id is missing', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '');
+
+    render(
+      <Providers>
+        <span>public market</span>
+      </Providers>
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-in configuration unavailable' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('public market')).toBeInTheDocument();
+  });
+
+  it('surfaces an enforced legal configuration when the web and backend Privy app ids differ', async () => {
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '1234567890123456789012345');
+    vi.mocked(fetch).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({
+        ...backendBundle,
+        privyAppId: 'different-server-privy-app-id',
+      }),
+    } as Response);
+
+    render(
+      <Providers>
+        <span>public market</span>
+      </Providers>
+    );
+
+    expect(
+      await screen.findByRole('heading', { name: 'Sign-in configuration unavailable' })
+    ).toBeInTheDocument();
+    expect(screen.getByText('public market')).toBeInTheDocument();
+    await waitFor(() => expect(fetch).toHaveBeenCalledTimes(1));
   });
 });

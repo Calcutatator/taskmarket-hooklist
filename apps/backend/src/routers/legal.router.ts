@@ -1,9 +1,18 @@
 import { TRPCError } from '@trpc/server';
+import {
+  LEGAL_RECEIPT_HEADER,
+  LegalAcceptanceResponseSchema,
+  LegalBundleSchema,
+  LegalChallengeInputSchema,
+  LegalChallengeResponseSchema,
+  LegalStatusResponseSchema,
+  LegalWalletAcceptanceInputSchema,
+  LegalWebAcceptanceInputSchema,
+} from '@taskmarket/shared';
 import { z } from 'zod';
 
 import { verifyPrivyAccessToken } from '../lib/privy-auth';
 import {
-  LEGAL_RECEIPT_HEADER,
   acceptWalletLegalTerms,
   assertLegalAcceptanceAvailable,
   createWalletLegalChallenge,
@@ -15,56 +24,13 @@ import {
 } from '../services/legal';
 import { publicProcedure, router } from '../trpc';
 
-const LegalDocumentTypeSchema = z.enum([
-  'terms_of_service',
-  'privacy_policy',
-  'risk_disclosure',
-  'acceptable_use_policy',
-]);
-
-const LegalBundleSchema = z.object({
-  acceptanceAvailable: z.boolean(),
-  acceptanceStatement: z.string(),
-  bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-  documents: z.array(
-    z.object({
-      contentHash: z.string(),
-      slug: z.enum(['terms', 'privacy', 'risks', 'acceptable-use']),
-      summary: z.string(),
-      title: z.string(),
-      type: LegalDocumentTypeSchema,
-      url: z.string().url(),
-      version: z.string(),
-    })
-  ),
-  effectiveAt: z.string().nullable(),
-  enforcementEnabled: z.boolean(),
-  publishedAt: z.string(),
-  status: z.enum(['draft', 'approved']),
-  version: z.string(),
-});
-
-const AffirmationsSchema = z.object({
-  agreedToTerms: z.literal(true),
-  agreedToAcceptableUse: z.literal(true),
-  acknowledgedRisk: z.literal(true),
-  receivedPrivacyNotice: z.literal(true),
-});
-
-const AcceptanceResponseSchema = z.object({
-  acceptedAt: z.string(),
-  bundleDigest: z.string(),
-  bundleVersion: z.string(),
-  receipt: z.string(),
-});
-
 function preventCredentialCaching(res: {
   setHeader(name: string, value: string): unknown;
   vary(field: string): unknown;
 }): void {
   res.setHeader('Cache-Control', 'private, no-store');
   res.vary('Authorization');
-  res.vary('X-Taskmarket-Legal-Receipt');
+  res.vary(LEGAL_RECEIPT_HEADER);
 }
 
 function requestEvidence(req: {
@@ -119,18 +85,11 @@ export const legalRouter = router({
       },
     })
     .input(z.object({}))
-    .output(
-      z.object({
-        accepted: z.boolean(),
-        bundle: LegalBundleSchema,
-        receipt: z.string().optional(),
-        subjectType: z.enum(['privy_user', 'wallet']).optional(),
-      })
-    )
+    .output(LegalStatusResponseSchema)
     .query(async ({ ctx }) => {
       preventCredentialCaching(ctx.res);
       const bundle = getCurrentLegalBundle();
-      const header = ctx.req.headers[LEGAL_RECEIPT_HEADER];
+      const header = ctx.req.headers[LEGAL_RECEIPT_HEADER.toLowerCase()];
       const receipt = Array.isArray(header) ? header[0] : header;
 
       if (ctx.req.headers.authorization) {
@@ -187,17 +146,8 @@ export const legalRouter = router({
         summary: 'Create a wallet-signature challenge for legal acceptance',
       },
     })
-    .input(z.object({ walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/) }))
-    .output(
-      z.object({
-        bundle: LegalBundleSchema,
-        expiresAt: z.string(),
-        issuedAt: z.string(),
-        message: z.string(),
-        nonce: z.string(),
-        walletAddress: z.string(),
-      })
-    )
+    .input(LegalChallengeInputSchema)
+    .output(LegalChallengeResponseSchema)
     .mutation(async ({ input, ctx }) => {
       preventCredentialCaching(ctx.res);
       try {
@@ -216,16 +166,8 @@ export const legalRouter = router({
         summary: 'Accept the current legal bundle with a wallet signature',
       },
     })
-    .input(
-      AffirmationsSchema.extend({
-        bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-        bundleVersion: z.string().max(128),
-        nonce: z.string().uuid(),
-        signature: z.string().regex(/^0x[a-fA-F0-9]{128}(?:[a-fA-F0-9]{2})?$/),
-        walletAddress: z.string().regex(/^0x[a-fA-F0-9]{40}$/),
-      })
-    )
-    .output(AcceptanceResponseSchema)
+    .input(LegalWalletAcceptanceInputSchema)
+    .output(LegalAcceptanceResponseSchema)
     .mutation(async ({ input, ctx }) => {
       preventCredentialCaching(ctx.res);
       try {
@@ -257,13 +199,8 @@ export const legalRouter = router({
         summary: 'Accept the current legal bundle from an authenticated web session',
       },
     })
-    .input(
-      AffirmationsSchema.extend({
-        bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
-        bundleVersion: z.string().max(128),
-      })
-    )
-    .output(AcceptanceResponseSchema)
+    .input(LegalWebAcceptanceInputSchema)
+    .output(LegalAcceptanceResponseSchema)
     .mutation(async ({ input, ctx }) => {
       preventCredentialCaching(ctx.res);
       try {
