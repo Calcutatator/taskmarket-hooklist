@@ -10,9 +10,9 @@
 > and a manual merge-forward, accepting that testnet now deploys on every merge to `main`
 > whether or not that specific change touches anything testnet-relevant.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-15
-- **Deciders:** (awaiting explicit approval — Beau)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
