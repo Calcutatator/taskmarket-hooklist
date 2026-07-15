@@ -15,6 +15,14 @@ When implementing features, follow established patterns in these guides:
 **Database**: Drizzle schema definition, migrations (docs/DB_GUIDE.md)
 **Testing**: Unit tests, integration tests (docs/TESTING_GUIDE.md)
 
+## Design Decisions: RFCs and ADRs
+
+Pre-decision design proposals live in `docs/specs/` (RFCs). Decided architectural or
+hard-to-reverse decisions are recorded in `docs/adr/` (ADRs) — see `docs/adr/README.md` for
+the process. An ADR requires explicit human approval before its status becomes `Accepted`; an
+agent may draft one but may not self-approve it. If you are working a task unattended and hit
+a decision that belongs in an ADR, stop and draft one instead of deciding unilaterally.
+
 ## Repository Structure
 
 - apps/backend - Express + tRPC backend (docs/BACKEND_GUIDE.md)
@@ -59,6 +67,8 @@ Any time you add or edit a file under `public/reference/`, `public/modes/`, `pub
 ## Smoke Tests
 
 Smoke tests live in `apps/backend/scripts/smoke-*.ts` and run against a live backend + deployed contract. Run with `make smoke <name>` (e.g. `make smoke bounty`, `make smoke evaluator`).
+
+`make smoke sandbox` is different: it builds and runs `scripts/sandbox.Dockerfile`, which runs `scripts/cloud-env-setup.sh` inside a real Linux container end to end (including the native-Postgres install path that can't run on macOS), then runs `make smoke bounty` inside it against the stack it just provisioned.
 
 ### When to write a smoke test
 

@@ -15,17 +15,20 @@ jobs:
     timeout-minutes: 10
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
+          # Full history so adr-lint can diff against the PR base branch for its
+          # changed-without-an-ADR coverage warning.
+          fetch-depth: 0
 
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
       - run: make install
@@ -33,6 +36,13 @@ jobs:
       - run: make skill-conformance
 
       - run: make docs-og-check
+
+      - run: make adr-lint
+        env:
+          # On PRs, diff against the base branch so the warn-only "source changed
+          # without an ADR change" coverage check actually receives the file list.
+          # Empty on push events -- integrity checks only.
+          ADR_LINT_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
 
   quality:
     runs-on: ubuntu-latest
@@ -54,17 +64,17 @@ jobs:
           --health-retries 5
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
       - name: Install Foundry
@@ -123,17 +133,17 @@ jobs:
     timeout-minutes: 20
 
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v7
         with:
           submodules: recursive
 
-      - uses: pnpm/action-setup@v2
+      - uses: pnpm/action-setup@v6
         with:
           version: 8.15.0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v7
         with:
-          node-version: 22
+          node-version-file: '.nvmrc'
           cache: 'pnpm'
 
       - run: make install

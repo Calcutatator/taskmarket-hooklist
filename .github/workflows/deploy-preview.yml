@@ -1,0 +1,409 @@
+name: Preview Environment
+
+# Per-PR disposable Railway environment + Anvil chain. See
+# docs/specs/agent-preview-environments-rfc.md for the design this implements, and
+# scripts/cloud-env-setup.sh for the equivalent local sandbox this workflow mirrors (same
+# mock USDC + diamond + forwarder + facilitator + ERC-8004 registry stack, deployed to
+# Railway's anvil instead of a local one).
+#
+# `railway environment delete`/`new` and `railway link` don't accept a --project flag or
+# positional -- only `railway up`/`domain`/`variable` do. Link the project once via
+# `railway link --project <id>` before any environment delete/new call in the same shell.
+#
+# `railway link` requires --workspace, --environment, and --service to all be passed
+# explicitly in non-interactive mode (no TTY on a GitHub Actions runner to answer any of
+# those prompts). The workspace ID below is TASK MARKET's (`Loaf's Projects`). Where linking
+# is only needed for project-level context, any environment/service that's guaranteed to
+# exist works, since the actual environment delete/new/deploy target is specified
+# separately on each command.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, closed]
+
+concurrency:
+  group: preview-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+env:
+  # Matches Railway's own native-bot naming (taskmarket-pr-<number>). If Railway's native
+  # botPrEnvironments/prDeploys integration is still enabled on this project, both systems
+  # will create/delete/deploy to the same environment independently.
+  ENV_NAME: taskmarket-pr-${{ github.event.pull_request.number }}
+  # The TASK MARKET project's workspace ("Loaf's Projects"). railway link requires this
+  # explicitly in non-interactive mode.
+  RAILWAY_WORKSPACE_ID: cdc66cc4-373f-4156-9d42-b8464a10f096
+
+jobs:
+  teardown:
+    if: github.event.action == 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.26.1
+
+      - name: Delete preview environment
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
+          railway environment delete "$ENV_NAME" --yes --json || true
+
+  deploy:
+    if: github.event.action != 'closed'
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - name: Install Foundry
+        uses: foundry-rs/foundry-toolchain@v1
+
+      - name: Install Railway CLI
+        run: npm install -g @railway/cli@5.26.1
+
+      # Every commit gets a fully fresh environment -- no partial state carried forward,
+      # regardless of whether this commit touched contracts.
+      - name: Recreate preview environment
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
+          railway environment delete "$ENV_NAME" --yes --json || true
+          # Deletion is asynchronous -- `environment list` can report the name gone before
+          # Railway's name-uniqueness check on `environment new` agrees, so retry the actual
+          # create call on that specific race instead of trusting `list` as a proxy signal.
+          # Railway also hard rate-limits environment creation to one per user per 30s.
+          CREATED=""
+          for i in $(seq 1 15); do
+            OUTPUT=$(railway environment new "$ENV_NAME" --duplicate preview --json 2>&1) && { echo "$OUTPUT"; CREATED=1; break; }
+            if echo "$OUTPUT" | grep -q "one environment can be created"; then
+              sleep 32
+            elif echo "$OUTPUT" | grep -q "already exists"; then
+              sleep 6
+            else
+              echo "$OUTPUT" >&2
+              exit 1
+            fi
+          done
+          [ -n "$CREATED" ] || { echo "environment new still conflicting after 15 attempts" >&2; exit 1; }
+
+      - name: Deploy anvil service
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          # `railway up --service <name>` deploys to an existing service, it doesn't create
+          # one -- the `preview` base template has no `anvil` service (only
+          # backend/frontend/docs/Postgres), so a fresh environment needs it created once.
+          # `railway add` has no --project/--environment flags of its own, unlike `service
+          # list` -- it needs the context from a prior `railway link`.
+          if ! railway service list --environment "$ENV_NAME" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json | grep -q '"anvil"'; then
+            railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --workspace "$RAILWAY_WORKSPACE_ID" \
+              --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+            railway add --service anvil --json
+          fi
+          cd packages/contracts/docker/anvil
+          railway up --service anvil \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --detach --ci
+
+      - name: Expose anvil RPC and wait for it to be healthy
+        id: anvil
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          DOMAIN=$(railway domain --service anvil \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+            --port 8545 --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
+          # The domain field can come back with or without a scheme already -- strip any
+          # existing https:// before adding it, so this doesn't end up doubled.
+          DOMAIN="${DOMAIN#https://}"
+          RPC_URL="https://$DOMAIN"
+          echo "rpc_url=$RPC_URL" >> "$GITHUB_OUTPUT"
+
+          for i in $(seq 1 30); do
+            if curl -sf -X POST "$RPC_URL" \
+              -H 'Content-Type: application/json' \
+              -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null; then
+              echo "anvil is up at $RPC_URL"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "anvil never became healthy at $RPC_URL" >&2
+          exit 1
+
+      # Clones the live ERC-8004 identity/reputation registries (EIP-1967 proxies) from Base
+      # Sepolia onto this PR's fresh anvil, at the same addresses -- same logic as
+      # scripts/cloud-env-setup.sh's clone_eip1967_proxy, plus a retry wrapper around the local
+      # RPC calls since Railway's edge can 404 right after a service comes up (the local
+      # script's Anvil doesn't need this). Without this, DiamondDeploy's
+      # ERC8004_IDENTITY_REGISTRY/ERC8004_REPUTATION_REGISTRY inputs would have nothing real to
+      # point at.
+      - name: Clone ERC-8004 registries onto anvil
+        id: erc8004
+        run: |
+          EIP1967_IMPL_SLOT="0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+          IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
+          REPUTATION_REGISTRY="0x8004B663056A597Dffe9eCcC1965A193B7388713"
+          SOURCE_RPC="https://sepolia.base.org"
+          LOCAL_RPC="${{ steps.anvil.outputs.rpc_url }}"
+
+          # Railway's edge can 404 ("Application not found") on the very first request or two
+          # right after a service comes up, even once the earlier health-check curl succeeds --
+          # retry a few times before giving up.
+          cast_rpc_local() {
+            local i
+            for i in $(seq 1 5); do
+              if OUTPUT=$(cast rpc "$@" --rpc-url "$LOCAL_RPC" 2>&1); then
+                echo "$OUTPUT"
+                return 0
+              fi
+              sleep 2
+            done
+            echo "$OUTPUT" >&2
+            return 1
+          }
+
+          clone_proxy() {
+            local proxy_addr="$1"
+            local proxy_code impl_addr impl_code
+            proxy_code="$(cast code "$proxy_addr" --rpc-url "$SOURCE_RPC")"
+            impl_addr="0x$(cast storage "$proxy_addr" "$EIP1967_IMPL_SLOT" --rpc-url "$SOURCE_RPC" | tail -c 41)"
+            impl_code="$(cast code "$impl_addr" --rpc-url "$SOURCE_RPC")"
+            cast_rpc_local anvil_setCode "$impl_addr" "$impl_code" > /dev/null
+            cast_rpc_local anvil_setCode "$proxy_addr" "$proxy_code" > /dev/null
+            cast_rpc_local anvil_setStorageAt "$proxy_addr" "$EIP1967_IMPL_SLOT" \
+              "$(cast to-uint256 "$impl_addr")" > /dev/null
+          }
+          clone_proxy "$IDENTITY_REGISTRY"
+          clone_proxy "$REPUTATION_REGISTRY"
+
+          echo "identity_registry=$IDENTITY_REGISTRY" >> "$GITHUB_OUTPUT"
+          echo "reputation_registry=$REPUTATION_REGISTRY" >> "$GITHUB_OUTPUT"
+
+      # A fresh Anvil chain has no USDC contract, unlike Base Sepolia/Base, so a mock has to be
+      # minted before the diamond can be deployed. Every FORGE_* input carries the _PREVIEW
+      # suffix and is exported bare (FORGE_RPC_URL, FORGE_DEV_PRIVATE_KEY, ...) immediately
+      # before the forge call that reads it -- matching the Makefile's `make deploy preview`
+      # fallback (`${FORGE_RPC_URL:-$FORGE_RPC_URL_PREVIEW}`) and scripts/cloud-env-setup.sh's
+      # convention. The keys below are Anvil's well-known default dev accounts -- public
+      # knowledge, safe only because this chain never leaves this PR's private Railway network.
+      # Never reuse them for real testnet/mainnet deploys.
+      - name: Deploy mock USDC, diamond, and forwarder to anvil
+        id: contracts
+        env:
+          FORGE_RPC_URL_PREVIEW: ${{ steps.anvil.outputs.rpc_url }}
+          FORGE_DEV_PRIVATE_KEY_PREVIEW: '0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80'
+          FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW: '0x14dC79964da2C08b23698B3D3cc7Ca32193d9955'
+          FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW: '750'
+          FORGE_SERVER_ADDRESS_PREVIEW: '0x70997970C51812dc3A010C7d01b50e0d17dc79C8'
+        run: |
+          REPO_ROOT="$(pwd)"
+
+          # Railway's edge can 404 ("Application not found") on the very first RPC connection
+          # to a freshly-deployed anvil, before any transaction is ever sent -- safe to retry
+          # the whole invocation from scratch since nothing has broadcast yet on that failure.
+          run_with_retry() {
+            local log="$1" marker="$2"
+            shift 2
+            for i in $(seq 1 5); do
+              "$@" 2>&1 | tee "$log"
+              grep -q "$marker" "$log" && return 0
+              grep -q "Application not found" "$log" || return 1
+              sleep 3
+            done
+            return 1
+          }
+
+          cd packages/contracts
+          run_with_retry /tmp/usdc-deploy.log "Mock USDC deployed at:" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            forge script script/DeployMockUSDCPreview.s.sol:DeployMockUSDCPreview \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
+          # forge prints script console output twice (dry-run simulation + actual broadcast) --
+          # `tail -1` avoids capturing both addresses joined by a newline.
+          USDC_ADDRESS="$(grep 'Mock USDC deployed at:' /tmp/usdc-deploy.log | tail -1 | awk '{print $NF}')"
+          cd "$REPO_ROOT"
+
+          run_with_retry /tmp/diamond-deploy.log "Diamond deployed at:" \
+            env FORGE_RPC_URL="$FORGE_RPC_URL_PREVIEW" \
+            FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
+            FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
+            FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
+            make deploy preview
+          DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
+
+          # The backend's own auth/relay wallet (SERVER_PRIVATE_KEY) is the forwarder's
+          # authorized relayer. DeployForwarder/AddForwarder have no FORGE_ prefix on
+          # USDC_TOKEN_ADDRESS/CONTRACT_ADDRESS/FORWARDER_ADDRESS -- see their source.
+          cd packages/contracts
+          run_with_retry /tmp/forwarder-deploy.log "Forwarder (FORWARDER_ADDRESS):" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
+            CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
+            FORGE_SERVER_ADDRESS="$FORGE_SERVER_ADDRESS_PREVIEW" \
+            forge script script/DeployForwarder.s.sol:DeployForwarder \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
+          FORWARDER_ADDRESS="$(grep 'Forwarder (FORWARDER_ADDRESS):' /tmp/forwarder-deploy.log | tail -1 | awk '{print $NF}')"
+
+          # Register the forwarder with the diamond -- without this, every relay() call
+          # reverts, since DiamondDeploy can't do this itself (the forwarder doesn't exist
+          # yet at diamond-deploy time).
+          run_with_retry /tmp/addforwarder.log "Added forwarder:" \
+            env FORGE_DEV_PRIVATE_KEY="$FORGE_DEV_PRIVATE_KEY_PREVIEW" \
+            CONTRACT_ADDRESS="$DIAMOND_ADDRESS" \
+            FORWARDER_ADDRESS="$FORWARDER_ADDRESS" \
+            forge script script/AddForwarder.s.sol:AddForwarder \
+            --rpc-url "$FORGE_RPC_URL_PREVIEW" --broadcast
+          tail -5 /tmp/addforwarder.log
+
+          # Smoke tests (and anyone driving the API directly against this PR env) need the
+          # requester/worker/etc. accounts to actually hold mock USDC to pay through X402 --
+          # DeployMockUSDCPreview only mints to the deployer. mint() is permissionless by
+          # design for exactly this (see MockUSDC.sol).
+          for ACCOUNT in \
+            "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" \
+            "0x90F79bf6EB2c4f870365E785982E1f101E93b906" \
+            "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65" \
+            "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"; do
+            cast send "$USDC_ADDRESS" "mint(address,uint256)" "$ACCOUNT" 1000000000000 \
+              --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null
+          done
+
+          echo "usdc_address=$USDC_ADDRESS" >> "$GITHUB_OUTPUT"
+          echo "diamond_address=$DIAMOND_ADDRESS" >> "$GITHUB_OUTPUT"
+          echo "forwarder_address=$FORWARDER_ADDRESS" >> "$GITHUB_OUTPUT"
+
+      # The facilitator handles X402 payment verification/settlement. Railway services
+      # are project-level (with an instance per environment), so create it from the
+      # public daydreamsai/facilitator repo only if the project doesn't have it yet
+      # (first run ever), then set its variables per-environment on every run --
+      # duplicated environments don't reliably carry variable values. The private key
+      # is Anvil's well-known dev account #6: public knowledge, sandbox-only.
+      # BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically (not
+      # /supported) -- generated fresh per run and written to both this service and the
+      # backend's X402_FACILITATOR_TOKEN below, or every real verify/settle call gets a 401.
+      - name: Ensure facilitator service and wire it to this environment's anvil
+        id: facilitator
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          FACILITATOR_TOKEN="$(openssl rand -hex 32)"
+          echo "::add-mask::$FACILITATOR_TOKEN"
+          echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
+
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+          if ! railway service list --json | grep -q '"facilitator"'; then
+            railway add --service facilitator --repo daydreamsai/facilitator --json
+          fi
+          for kv in \
+            "EVM_NETWORKS=base-sepolia" \
+            "EVM_PRIVATE_KEY=0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" \
+            "TRACKING_ALLOW_IN_MEMORY_FALLBACK=true" \
+            "BEARER_TOKEN=$FACILITATOR_TOKEN"; do
+            railway variable set "$kv" \
+              --service facilitator --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+          done
+          railway variable set "EVM_RPC_URL_BASE_SEPOLIA=${{ steps.anvil.outputs.rpc_url }}" \
+            --service facilitator --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
+
+      # Variable names here match what apps/backend/src/config/env.ts reads
+      # (CONTRACT_ADDRESS/USDC_TOKEN_ADDRESS/BASE_RPC_URL/FORWARDER_ADDRESS).
+      - name: Write contract addresses into the environment's Railway variables
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          FACILITATOR_DOMAIN=$(railway domain --service facilitator \
+            --environment "$ENV_NAME" \
+            --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
+            | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
+          FACILITATOR_DOMAIN="${FACILITATOR_DOMAIN#https://}"
+
+          for kv in \
+            "CHAIN_ID=84532" \
+            "BASE_RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
+            "CONTRACT_ADDRESS=${{ steps.contracts.outputs.diamond_address }}" \
+            "FORWARDER_ADDRESS=${{ steps.contracts.outputs.forwarder_address }}" \
+            "USDC_TOKEN_ADDRESS=${{ steps.contracts.outputs.usdc_address }}" \
+            "ERC8004_IDENTITY_REGISTRY=${{ steps.erc8004.outputs.identity_registry }}" \
+            "ERC8004_REPUTATION_REGISTRY=${{ steps.erc8004.outputs.reputation_registry }}" \
+            "ERC8004_SEED_BLOCK=0" \
+            "X402_FACILITATOR_URL=https://$FACILITATOR_DOMAIN" \
+            "X402_FACILITATOR_TOKEN=${{ steps.facilitator.outputs.token }}" \
+            "DEFAULT_PLATFORM_FEE_BPS=750"; do
+            railway variable set "$kv" \
+              --service "@taskmarket/backend" --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+          done
+
+          for kv in \
+            "NEXT_PUBLIC_CHAIN_ID=84532" \
+            "NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=${{ steps.anvil.outputs.rpc_url }}"; do
+            railway variable set "$kv" \
+              --service "@taskmarket/frontend" --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
+          done
+
+      - name: Deploy backend, frontend, docs
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+        run: |
+          for svc in "@taskmarket/backend" "@taskmarket/frontend" "@taskmarket/docs"; do
+            railway up --service "$svc" \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --detach --ci
+          done
+
+      - name: Comment PR with environment URL
+        env:
+          RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          # A service with no domain yet returns {"domain": "..."} (freshly created); a
+          # service that already has one (e.g. inherited from the preview template) returns
+          # {"domains": ["https://..."]} instead.
+          resolve_domain() {
+            local service="$1" out=""
+            for i in $(seq 1 5); do
+              RAW=$(railway domain --service "$service" \
+                --environment "$ENV_NAME" \
+                --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json 2>&1)
+              out=$(echo "$RAW" | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])" 2>/dev/null)
+              if [ -n "$out" ]; then
+                echo "${out#https://}"
+                return 0
+              fi
+              echo "railway domain ($service) returned: $RAW" >&2
+              sleep 3
+            done
+            return 1
+          }
+
+          FRONTEND_DOMAIN=$(resolve_domain "@taskmarket/frontend") || { echo "Could not resolve the frontend domain" >&2; exit 1; }
+          BACKEND_DOMAIN=$(resolve_domain "@taskmarket/backend") || { echo "Could not resolve the backend domain" >&2; exit 1; }
+          FACILITATOR_DOMAIN=$(resolve_domain facilitator) || { echo "Could not resolve the facilitator domain" >&2; exit 1; }
+
+          BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Backend | https://%s |\n| Facilitator | https://%s |\n| Anvil RPC | %s |\n' \
+            "$FRONTEND_DOMAIN" "$BACKEND_DOMAIN" "$FACILITATOR_DOMAIN" "${{ steps.anvil.outputs.rpc_url }}")
+          gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"

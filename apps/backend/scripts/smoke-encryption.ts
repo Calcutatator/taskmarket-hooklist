@@ -43,7 +43,8 @@ interface RunResult {
   code: number;
 }
 
-const CLI_API_URL = process.env.API_URL || process.env.VITE_API_URL || 'http://localhost:3000';
+const CLI_API_URL =
+  process.env.TASKMARKET_API_URL || process.env.API_URL || 'http://localhost:3000';
 
 function runCli(args: string, env: Record<string, string> = {}): RunResult {
   try {
