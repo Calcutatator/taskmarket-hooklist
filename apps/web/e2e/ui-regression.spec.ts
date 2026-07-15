@@ -5,6 +5,13 @@ import { startMockApiServer, taskListResponse } from './mock-api';
 const clientFailures = new WeakMap<Page, string[]>();
 let mockApi: Awaited<ReturnType<typeof startMockApiServer>>;
 
+async function expectNoHorizontalOverflow(page: Page) {
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+}
+
 test.beforeAll(async () => {
   mockApi = await startMockApiServer();
   test.info().annotations.push({
@@ -79,10 +86,7 @@ for (const route of publicRoutes) {
     await expect(page.getByRole('heading', { name: route.heading }).first()).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/Application error|Internal Server Error/);
 
-    const horizontalOverflow = await page.evaluate(
-      () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-    );
-    expect(horizontalOverflow).toBeLessThanOrEqual(1);
+    await expectNoHorizontalOverflow(page);
   });
 }
 
@@ -138,10 +142,7 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   ).toBeVisible();
   await expect(payoutRequirement.getByRole('button', { name: /Connect wallet/i })).toBeVisible();
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('surfaces the live status banner on an open task and stays hydration-clean', async ({
@@ -153,10 +154,20 @@ test('surfaces the live status banner on an open task and stays hydration-clean'
   await expect(banner).toBeVisible();
   await expect(banner).toContainText(/Live and broadcasting to the network/i);
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
+});
+
+test('keeps long task brief references within the mobile viewport', async ({ page }, testInfo) => {
+  test.skip(!testInfo.project.name.includes('mobile'), 'Mobile task-detail regression.');
+
+  await page.goto('/tasks/mock-bounty-open');
+
+  await expect(page.getByRole('heading', { name: /Details/i })).toBeVisible();
+  await expect(
+    page.locator('#main-content').getByText(/7ba0f258954455441a7bd3d21ca19049/i)
+  ).toBeVisible();
+
+  await expectNoHorizontalOverflow(page);
 });
 
 test('hides the live status banner on a terminal task', async ({ page }) => {
@@ -204,10 +215,7 @@ test('collapses the desktop sidebar to an icon rail', async ({ page }, testInfo)
   await expect(sidebar).toHaveAttribute('data-state', 'collapsed');
   await expect(sidebar).toHaveAttribute('data-collapsible', 'icon');
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('prioritizes mobile task results and moves filters into a drawer', async ({
@@ -235,10 +243,7 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
   await page.getByRole('link', { name: /^auction$/i }).click();
   await expect(page).toHaveURL(/\/dashboard\/tasks\?mode=auction/);
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('keeps primary mobile chrome controls at touch size', async ({ page }, testInfo) => {
@@ -303,10 +308,7 @@ test('runs the /try prompt-to-brief path with loaded proof images and keyboard o
   }
   await expect(page.locator('.try-drop-collage')).toHaveAttribute('data-running', 'false');
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('explains when /try publication is unavailable without Privy', async ({ page }) => {
@@ -351,10 +353,7 @@ test('keeps /try static and legible with reduced motion and long input', async (
   await topic.fill('A'.repeat(180));
   await expect(topic).toHaveValue('A'.repeat(180));
 
-  const horizontalOverflow = await page.evaluate(
-    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
-  );
-  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+  await expectNoHorizontalOverflow(page);
 });
 
 test('captures /try at the campaign regression viewports', async ({ page }, testInfo) => {

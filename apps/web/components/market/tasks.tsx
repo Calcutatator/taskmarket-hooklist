@@ -1901,14 +1901,14 @@ function TaskBrief({ body }: { body: string }) {
   // No structure detected: keep the original single-paragraph rendering verbatim.
   if (!hasHeadings) {
     return (
-      <p className="whitespace-pre-wrap text-sm leading-6 text-muted-foreground">
+      <p className="min-w-0 whitespace-pre-wrap [overflow-wrap:anywhere] text-sm leading-6 text-muted-foreground">
         {softenShout(body)}
       </p>
     );
   }
 
   return (
-    <div className="grid gap-4">
+    <div className="grid min-w-0 gap-4 [overflow-wrap:anywhere]">
       {summary ? <p className="text-sm font-medium leading-6 text-foreground">{summary}</p> : null}
       <div className="grid gap-2">
         {sections.map((section, index) =>
