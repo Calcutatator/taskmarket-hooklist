@@ -189,9 +189,9 @@ Getting vendor cloud agents (Claude Code cloud, Codex cloud) productive against 
 decomposes into exactly two pieces of work:
 
 **Piece 1 — preview environments (tear-up / tear-down).** The per-PR Railway environment
-lifecycle: `preview.yml` plus its secrets and dry-run validation, per the
-preview-environments RFC. Vendor-agnostic — whichever agent opens the PR gets the same
-environment. Status: drafted, needs the two GitHub secrets and one live dry run.
+lifecycle: `preview.yml` plus its secrets, per the preview-environments RFC. Vendor-agnostic
+— whichever agent opens the PR gets the same environment. Status: implemented and verified
+against a live Railway deploy, secrets configured.
 
 **Piece 2 — making the whole stack run inside a sandbox.** The agent's inner loop (local
 Anvil, local Postgres, backend, smoke tests) has to come up inside a single vendor VM with
@@ -285,9 +285,9 @@ The developer's surface area is deliberately small:
 
 What exists when, honestly tiered:
 
-- **After this PR merges** (plus the two GitHub secrets and one dry-run validation):
-  automatic isolated preview environments on every PR. Immediately useful to human
-  developers, no agents required.
+- **After this PR merges**: automatic isolated preview environments on every PR (already
+  live-verified against a real Railway deploy). Immediately useful to human developers, no
+  agents required.
 - **After the testnet/mainnet deployer key split**: automated testnet upgrades and deploys
   on merge to the `testnet` branch (release-path rung 3).
 - **After the orchestrator ADR is decided and built**: the Discord trigger itself — the one

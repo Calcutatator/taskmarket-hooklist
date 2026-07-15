@@ -16,9 +16,6 @@ name: Preview Environment
 # is only needed for project-level context, any environment/service that's guaranteed to
 # exist works, since the actual environment delete/new/deploy target is specified
 # separately on each command.
-#
-# Not yet exercised through a full live Railway deploy end to end -- validate before relying
-# on this to gate anything.
 
 on:
   pull_request:
@@ -33,6 +30,9 @@ env:
   # botPrEnvironments/prDeploys integration is still enabled on this project, both systems
   # will create/delete/deploy to the same environment independently.
   ENV_NAME: taskmarket-pr-${{ github.event.pull_request.number }}
+  # The TASK MARKET project's workspace ("Loaf's Projects"). railway link requires this
+  # explicitly in non-interactive mode.
+  RAILWAY_WORKSPACE_ID: cdc66cc4-373f-4156-9d42-b8464a10f096
 
 jobs:
   teardown:
@@ -47,7 +47,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment preview --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
 
   deploy:
@@ -81,7 +81,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment preview --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
           # Deletion is asynchronous -- `environment list` can report the name gone before
           # Railway's name-uniqueness check on `environment new` agrees, so retry the actual
@@ -112,7 +112,7 @@ jobs:
           # list` -- it needs the context from a prior `railway link`.
           if ! railway service list --environment "$ENV_NAME" --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json | grep -q '"anvil"'; then
             railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-              --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 \
+              --workspace "$RAILWAY_WORKSPACE_ID" \
               --environment "$ENV_NAME" --service "@taskmarket/backend" --json
             railway add --service anvil --json
           fi
@@ -150,10 +150,12 @@ jobs:
           exit 1
 
       # Clones the live ERC-8004 identity/reputation registries (EIP-1967 proxies) from Base
-      # Sepolia onto this PR's fresh anvil, at the same addresses -- identical to
-      # scripts/cloud-env-setup.sh's clone_eip1967_proxy, just run against a remote RPC instead
-      # of a local one. Without this, DiamondDeploy's ERC8004_IDENTITY_REGISTRY/
-      # ERC8004_REPUTATION_REGISTRY inputs would have nothing real to point at.
+      # Sepolia onto this PR's fresh anvil, at the same addresses -- same logic as
+      # scripts/cloud-env-setup.sh's clone_eip1967_proxy, plus a retry wrapper around the local
+      # RPC calls since Railway's edge can 404 right after a service comes up (the local
+      # script's Anvil doesn't need this). Without this, DiamondDeploy's
+      # ERC8004_IDENTITY_REGISTRY/ERC8004_REPUTATION_REGISTRY inputs would have nothing real to
+      # point at.
       - name: Clone ERC-8004 registries onto anvil
         id: erc8004
         run: |
@@ -290,7 +292,7 @@ jobs:
           echo "::add-mask::$FACILITATOR_TOKEN"
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace cdc66cc4-373f-4156-9d42-b8464a10f096 --environment "$ENV_NAME" --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment "$ENV_NAME" --service "@taskmarket/backend" --json
           if ! railway service list --json | grep -q '"facilitator"'; then
             railway add --service facilitator --repo daydreamsai/facilitator --json
           fi

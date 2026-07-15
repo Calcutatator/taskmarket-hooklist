@@ -187,8 +187,11 @@ its own chain. Three pieces:
 
 All three pieces are wired: the sandbox setup script clones and starts the public
 facilitator against the masqueraded chain and deploys `MockUSDC`; `preview.yml`
-self-provisions the facilitator service and points it at each PR's anvil. What remains is
-the same as the rest of the workflow: first live dry-run validation.
+self-provisions the facilitator service and points it at each PR's anvil. The `preview.yml`
+infra itself (environment lifecycle, anvil, contract deploys, facilitator service, URL
+resolution) is now confirmed live end to end against a real Railway deploy. X402 payment
+settlement through the deployed facilitator on a disposable per-PR chain has not yet been
+exercised live -- that piece remains open.
 
 ### Testing the CLI against a preview environment
 
