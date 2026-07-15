@@ -1,0 +1,14 @@
+# .git is intentionally NOT excluded -- scripts/cloud-env-setup.sh runs
+# `git submodule update --init --recursive`, which needs a real repo.
+node_modules
+**/node_modules
+**/dist
+**/build
+**/.next
+**/out
+**/coverage
+packages/contracts/cache
+packages/contracts/out
+packages/contracts/broadcast
+.env
+.env.*.local

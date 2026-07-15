@@ -627,8 +627,11 @@ smoke:
 		pnpm smoke:token-reward-hook; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator; \
+	elif [ "$(word 1,$(ARGS))" = "sandbox" ]; then \
+		docker build -f scripts/sandbox.Dockerfile -t taskmarket-sandbox-test . && \
+		docker run --rm taskmarket-sandbox-test; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|sandbox>"; \
 		exit 1; \
 	fi
 
