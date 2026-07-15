@@ -1,19 +1,22 @@
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { getServerConfig } from '../config/env';
+import { logger } from '../lib/logger';
 import { createServerWallet } from '../lib/wallet';
 
 const FACILITATOR_TIMEOUT_MS = 60_000;
 
+export type X402PreflightCleanup = () => Promise<void>;
+
 export interface X402Options {
   getAmount: (req: Request) => string | Promise<string>; // base units (6 decimals)
   description?: string;
-  preflight?: (req: Request, payer: string) => Promise<void>;
+  preflight?: (req: Request, payer: string, res: Response) => Promise<X402PreflightCleanup | void>;
 }
 
 export class X402PreflightError extends Error {
   constructor(
     message: string,
-    readonly status: 400 | 403 | 404 = 400
+    readonly status: 400 | 403 | 404 | 409 = 400
   ) {
     super(message);
     this.name = 'X402PreflightError';
@@ -35,6 +38,18 @@ export function x402Middleware(opts: X402Options): RequestHandler {
     const paymentSignature =
       (req.headers['payment-signature'] as string | undefined) ??
       (req.headers['PAYMENT-SIGNATURE'] as string | undefined);
+
+    let preflightCleanup: X402PreflightCleanup | undefined;
+    let preflightCleanupPromise: Promise<void> | undefined;
+    const cleanupPreflight = (): Promise<void> => {
+      if (!preflightCleanup) return Promise.resolve();
+      preflightCleanupPromise ??= Promise.resolve()
+        .then(preflightCleanup)
+        .catch((error: unknown) => {
+          logger.error('X402 preflight cleanup failed', { error });
+        });
+      return preflightCleanupPromise;
+    };
 
     if (!paymentSignature) {
       // getAmount can be async and DB-backed; a rejection here must not
@@ -111,16 +126,15 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         throw new Error('Payment payload does not match server requirements');
       }
 
-      // Validate current task state and declared payer before settlement. The
-      // router repeats authorization after settlement; this pass prevents a
-      // known-invalid request from charging the caller first.
-      await opts.preflight?.(req, payer);
-
       // Validate payment hasn't expired
       const validBefore = Number(paymentPayload.payload.authorization.validBefore);
       if (validBefore < Math.floor(Date.now() / 1000) + 6) {
         throw new Error('Payment authorization has expired');
       }
+
+      // Validate current task state and declared payer before settlement. A
+      // preflight may reserve mutable state and return an idempotent release.
+      preflightCleanup = (await opts.preflight?.(req, payer, res)) ?? undefined;
 
       const paymentRequirements = {
         scheme: 'exact',
@@ -165,9 +179,12 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       if (!settle.success) {
         throw new Error(`Settlement failed: ${settle.errorReason ?? 'unknown'}`);
       }
+      if (settle.payer && settle.payer.toLowerCase() !== payer.toLowerCase()) {
+        throw new Error('Facilitator payer does not match payment authorization');
+      }
 
       // Settlement confirmed — USDC is now in server wallet
-      res.locals.payer = settle.payer ?? payer;
+      res.locals.payer = payer;
       res.locals.paymentTxHash = settle.transaction;
       res.setHeader(
         'PAYMENT-RESPONSE',
@@ -175,8 +192,12 @@ export function x402Middleware(opts: X402Options): RequestHandler {
           'base64'
         )
       );
+      if (preflightCleanup) {
+        res.once('finish', cleanupPreflight);
+      }
       next();
     } catch (err) {
+      await cleanupPreflight();
       const msg = err instanceof Error ? err.message : 'Payment verification failed';
       if (err instanceof X402PreflightError) {
         return res.status(err.status).json({ error: msg });

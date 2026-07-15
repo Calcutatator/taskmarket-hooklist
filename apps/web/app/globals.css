@@ -126,6 +126,26 @@
   color-scheme: light;
 }
 
+.taskdrop-theme {
+  --taskdrop-green: #1e7a3a;
+  --taskdrop-pink: #e74079;
+  --taskdrop-pink-bright: #ff3d7e;
+  --taskdrop-pink-link: #ff85b0;
+  --taskdrop-cream: #fff6e8;
+  --taskdrop-cream-muted: #efe6d6;
+  --taskdrop-cream-border: #eadfc9;
+  --taskdrop-ink: #2c1f1a;
+  --taskdrop-brown: #5a302e;
+  --taskdrop-brown-muted: #6b5f52;
+  --taskdrop-heat: #ffb8d0;
+  --taskdrop-panel-muted: #d8cfc0;
+  --taskdrop-panel-subtle: #9b9184;
+  --taskdrop-video: #0e0d0b;
+  --taskdrop-video-muted: #8a8378;
+  --taskdrop-code: #191310;
+  --taskdrop-code-border: #3a2f27;
+}
+
 @theme inline {
   --font-sans: var(--font-space-grotesk);
   --font-display: var(--font-space-grotesk);

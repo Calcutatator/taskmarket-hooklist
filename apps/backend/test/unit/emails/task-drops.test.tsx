@@ -1,6 +1,8 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  OfficialTaskDropAnnouncementEmail,
+  OfficialTaskDropsWelcomeEmail,
   renderTaskmarketEmail,
   TaskDropNewTaskEmail,
   TaskDropsWelcomeEmail,
@@ -46,5 +48,35 @@ describe('Task Drops email templates', () => {
     expect(rendered.bodyHtml).toContain('bounty');
     expect(rendered.bodyHtml).toContain('benchmark, dashboard');
     expect(rendered.bodyText).toContain('View task');
+  });
+
+  it('renders official welcome consent and cadence copy', async () => {
+    const { bodyText } = await renderTaskmarketEmail(
+      OfficialTaskDropsWelcomeEmail({
+        taskDropsUrl: 'https://taskmarket.example/taskdrop',
+        unsubscribeUrl: UNSUBSCRIBE_URL,
+      })
+    );
+
+    expect(bodyText).toContain('one announcement');
+    expect(bodyText).toContain('all official Task Drops');
+  });
+
+  it('renders an official launch with task summaries and rewards', async () => {
+    const { bodyText } = await renderTaskmarketEmail(
+      OfficialTaskDropAnnouncementEmail({
+        announcedAt: '2026-07-15T00:00:00.000Z',
+        description: 'A coordinated launch.',
+        dropName: 'Cosmos',
+        dropUrl: 'https://taskmarket.example/drops/drop-1',
+        tasks: [{ description: 'Audit the docs', mode: 'bounty', rewardLabel: '25 USDC' }],
+        unsubscribeUrl: UNSUBSCRIBE_URL,
+      })
+    );
+
+    expect(bodyText).toContain('COSMOS IS LIVE');
+    expect(bodyText).toContain('Audit the docs');
+    expect(bodyText).toContain('25 USDC');
+    expect(bodyText).toContain('all official Task Drops');
   });
 });

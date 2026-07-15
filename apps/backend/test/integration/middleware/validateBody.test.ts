@@ -7,11 +7,16 @@ import request from 'supertest';
 const FAKE_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const FAKE_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
 const OTHER_ADDRESS = '0x1111111111111111111111111111111111111111';
-const mockDb = vi.hoisted(() => ({ select: vi.fn() }));
+const mockDb = vi.hoisted(() => ({
+  delete: vi.fn(),
+  insert: vi.fn(),
+  select: vi.fn(),
+  transaction: vi.fn(),
+}));
 
 vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
-    NODE_ENV: 'test',
+    NODE_ENV: 'production',
     PORT: 3000,
     CORS_ORIGIN: '*',
     CHAIN_ID: 84532,
@@ -28,6 +33,7 @@ vi.mock('../../../src/config/env', () => ({
     XMTP_ENABLED: false,
     XMTP_POLICY_DEFAULT: 'open',
     EMAIL_DOMAIN: 'taskmarket.dev',
+    OFFICIAL_TASK_DROP_OWNER_ADDRESSES: [FAKE_ADDRESS.toLowerCase()],
   }),
 }));
 
@@ -72,6 +78,7 @@ vi.mock('trpc-to-openapi', () => ({
 
 // Import after all mocks are registered
 const { app: expressApp } = await import('../../../src/app');
+expressApp.get('/__test/client-ip', (req, res) => res.json({ ip: req.ip }));
 const app = createServer(expressApp);
 
 beforeAll(
@@ -92,6 +99,40 @@ afterAll(
       app.close((error) => (error ? reject(error) : resolve()));
     })
 );
+
+function mockLockedTaskDrop(drop: {
+  announcedAt?: Date | null;
+  id: string;
+  ownerAddress: string;
+}) {
+  const reservationValues = vi.fn().mockResolvedValue(undefined);
+  const tx = {
+    insert: vi.fn().mockReturnValue({ values: reservationValues }),
+    select: vi.fn().mockReturnValue({
+      from: vi.fn().mockReturnValue({
+        where: vi.fn().mockReturnValue({
+          limit: vi.fn().mockReturnValue({
+            for: vi.fn().mockResolvedValue([drop]),
+          }),
+        }),
+      }),
+    }),
+  };
+  mockDb.transaction.mockImplementationOnce(async (callback) => callback(tx));
+  return { reservationValues, tx };
+}
+
+describe('proxy configuration', () => {
+  it('uses the address supplied by the nearest forwarding proxy in production', async () => {
+    expect(expressApp.get('trust proxy')).toBe(1);
+
+    const res = await request(app)
+      .get('/__test/client-ip')
+      .set('X-Forwarded-For', '198.51.100.20, 203.0.113.10');
+
+    expect(res.body).toEqual({ ip: '203.0.113.10' });
+  });
+});
 
 describe('validateBody integration — routes block invalid bodies before x402', () => {
   // For 400 tests: invalid body → validateBody short-circuits, x402 never runs
@@ -131,13 +172,9 @@ describe('validateBody integration — routes block invalid bodies before x402',
     });
 
     it('rejects an existing drop owned by another wallet before settling payment', async () => {
-      const limit = vi.fn().mockResolvedValue([
-        { id: 'drop_other_owner', ownerAddress: OTHER_ADDRESS },
-      ]);
-      mockDb.select.mockReturnValue({
-        from: vi.fn().mockReturnValue({
-          where: vi.fn().mockReturnValue({ limit }),
-        }),
+      mockLockedTaskDrop({
+        id: 'drop_other_owner',
+        ownerAddress: OTHER_ADDRESS,
       });
       const facilitator = vi.fn().mockResolvedValue({
         json: async () => ({ success: true, transaction: '0xpayment' }),
@@ -175,6 +212,102 @@ describe('validateBody integration — routes block invalid bodies before x402',
         expect.objectContaining({ error: 'Task drop is not owned by payer' })
       );
       expect(facilitator).not.toHaveBeenCalled();
+    });
+
+    it('rejects an announced official drop before settling payment', async () => {
+      mockLockedTaskDrop({
+        announcedAt: new Date('2026-07-15T00:00:00.000Z'),
+        id: 'drop_announced',
+        ownerAddress: FAKE_ADDRESS,
+      });
+      const facilitator = vi.fn().mockResolvedValue({
+        json: async () => ({ success: true, transaction: '0xpayment' }),
+        ok: true,
+      });
+      vi.stubGlobal('fetch', facilitator);
+      const payment = Buffer.from(
+        JSON.stringify({
+          accepted: {
+            amount: validBody.reward,
+            asset: FAKE_ADDRESS,
+            network: 'eip155:84532',
+            payTo: FAKE_ADDRESS,
+            scheme: 'exact',
+          },
+          payload: {
+            authorization: {
+              from: FAKE_ADDRESS,
+              to: FAKE_ADDRESS,
+              value: validBody.reward,
+              validBefore: String(Math.floor(Date.now() / 1000) + 300),
+            },
+          },
+          x402Version: 2,
+        })
+      ).toString('base64');
+
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('PAYMENT-SIGNATURE', payment)
+        .send({ ...validBody, taskDropId: 'drop_announced' });
+
+      expect(res.status).toBe(409);
+      expect(res.body).toEqual(
+        expect.objectContaining({ error: 'Official task drop has already been announced' })
+      );
+      expect(facilitator).not.toHaveBeenCalled();
+    });
+
+    it('reserves an existing drop before settlement and releases it when settlement fails', async () => {
+      const lockedDrop = {
+        announcedAt: null,
+        id: 'drop_payment_race',
+        ownerAddress: FAKE_ADDRESS,
+      };
+      const reservationWhere = vi.fn().mockResolvedValue(undefined);
+      const { reservationValues } = mockLockedTaskDrop(lockedDrop);
+      mockDb.delete.mockReturnValue({ where: reservationWhere });
+      const facilitator = vi.fn().mockImplementation(async () => {
+        expect(reservationValues).toHaveBeenCalledOnce();
+        return {
+          ok: false,
+          status: 503,
+          text: async () => 'unavailable',
+        };
+      });
+      vi.stubGlobal('fetch', facilitator);
+      const payment = Buffer.from(
+        JSON.stringify({
+          accepted: {
+            amount: validBody.reward,
+            asset: FAKE_ADDRESS,
+            network: 'eip155:84532',
+            payTo: FAKE_ADDRESS,
+            scheme: 'exact',
+          },
+          payload: {
+            authorization: {
+              from: FAKE_ADDRESS,
+              to: FAKE_ADDRESS,
+              value: validBody.reward,
+              validBefore: String(Math.floor(Date.now() / 1000) + 300),
+            },
+          },
+          x402Version: 2,
+        })
+      ).toString('base64');
+
+      const res = await request(app)
+        .post('/api/tasks')
+        .set('PAYMENT-SIGNATURE', payment)
+        .send({ ...validBody, taskDropId: lockedDrop.id });
+
+      expect(res.status).toBe(402);
+      expect(facilitator).toHaveBeenCalledOnce();
+      expect(reservationValues).toHaveBeenCalledWith(
+        expect.objectContaining({ taskDropId: lockedDrop.id })
+      );
+      expect(reservationWhere).toHaveBeenCalled();
     });
 
     it('rejects a divergent auction max price before requesting payment', async () => {

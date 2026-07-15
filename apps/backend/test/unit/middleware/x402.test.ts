@@ -18,6 +18,10 @@ vi.mock('../../../src/lib/wallet', () => ({
   createServerWallet: () => ({ address: PAY_TO }),
 }));
 
+vi.mock('../../../src/lib/logger', () => ({
+  logger: { error: vi.fn() },
+}));
+
 import { X402PreflightError, x402Middleware } from '../../../src/middleware/x402';
 
 function paymentHeader(amount = '1000') {
@@ -59,6 +63,7 @@ function request(header = paymentHeader()) {
 function response() {
   const res: Record<string, unknown> = {
     locals: {},
+    once: vi.fn(),
     setHeader: vi.fn(),
     status: vi.fn(),
     json: vi.fn(),
@@ -133,5 +138,72 @@ describe('x402 middleware settlement safety', () => {
     expect(fetch).toHaveBeenCalledOnce();
     expect((res as { locals: Record<string, string> }).locals.payer).toBe(PAYER);
     expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('releases preflight state when settlement fails', async () => {
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        text: async () => 'unavailable',
+      })
+    );
+    const res = response();
+    const next = vi.fn();
+    const middleware = x402Middleware({
+      getAmount: () => '1000',
+      preflight: async () => cleanup,
+    });
+
+    await middleware(request(), res, next);
+
+    expect(cleanup).toHaveBeenCalledOnce();
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(402);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('releases preflight state when the downstream response finishes', async () => {
+    const cleanup = vi.fn().mockResolvedValue(undefined);
+    const res = response();
+    const next = vi.fn();
+    const middleware = x402Middleware({
+      getAmount: () => '1000',
+      preflight: async () => cleanup,
+    });
+
+    await middleware(request(), res, next);
+
+    const once = (res as { once: ReturnType<typeof vi.fn> }).once;
+    expect(once).toHaveBeenCalledWith('finish', expect.any(Function));
+    expect(once).not.toHaveBeenCalledWith('close', expect.any(Function));
+    const finishCleanup = once.mock.calls.find(([event]) => event === 'finish')?.[1];
+
+    await finishCleanup();
+
+    expect(cleanup).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a facilitator response for a different payer', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: true,
+        json: async () => ({
+          success: true,
+          transaction: '0xtx',
+          payer: '0x0000000000000000000000000000000000000004',
+        }),
+      })
+    );
+    const res = response();
+    const next = vi.fn();
+    const middleware = x402Middleware({ getAmount: () => '1000' });
+
+    await middleware(request(), res, next);
+
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(402);
+    expect(next).not.toHaveBeenCalled();
   });
 });

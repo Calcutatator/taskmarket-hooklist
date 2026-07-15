@@ -22,6 +22,7 @@ type RenderedEmail = {
 type TaskmarketEmailShellProps = {
   children: ReactNode;
   preview: string;
+  subscriptionReason?: string;
   title: string;
   unsubscribeUrl?: string;
 };
@@ -43,6 +44,7 @@ const monoStack = 'SFMono-Regular, Consolas, "Liberation Mono", Menlo, ui-monosp
 function TaskmarketEmailShell({
   children,
   preview,
+  subscriptionReason = 'You are receiving this because you subscribed to this Task Drop.',
   title,
   unsubscribeUrl,
 }: TaskmarketEmailShellProps) {
@@ -108,7 +110,7 @@ function TaskmarketEmailShell({
                 margin: 0,
               }}
             >
-              You are receiving this because you signed up for Task Drops.
+              {subscriptionReason}
               {unsubscribeUrl ? (
                 <>
                   {' '}
@@ -172,6 +174,116 @@ export function TaskDropsWelcomeEmail({
         </Text>
         <CtaButton href={dropUrl} label="Open drop" />
         <CtaButton href={dashboardUrl} label="Open Taskmarket" />
+      </Section>
+    </TaskmarketEmailShell>
+  );
+}
+
+export function OfficialTaskDropsWelcomeEmail({
+  taskDropsUrl,
+  unsubscribeUrl,
+}: {
+  taskDropsUrl: string;
+  unsubscribeUrl: string;
+}) {
+  return (
+    <TaskmarketEmailShell
+      preview="You will receive one launch announcement for each official Task Drop."
+      subscriptionReason="You are receiving this because you subscribed to all official Task Drops."
+      title="Official Task Drops"
+      unsubscribeUrl={unsubscribeUrl}
+    >
+      <Section style={{ padding: '10px 28px 8px' }}>
+        <Text style={{ color: colors.muted, fontSize: '15px', lineHeight: '24px', margin: 0 }}>
+          You are on the official Task Drops list. We will send one announcement when each future
+          official drop launches. We will not email you once per task.
+        </Text>
+        <CtaButton href={taskDropsUrl} label="Explore Task Drops" />
+      </Section>
+    </TaskmarketEmailShell>
+  );
+}
+
+export type OfficialTaskDropAnnouncementTask = {
+  description: string;
+  mode: string;
+  rewardLabel: string;
+};
+
+export function OfficialTaskDropAnnouncementEmail({
+  announcedAt,
+  description,
+  dropName,
+  dropUrl,
+  tasks,
+  unsubscribeUrl,
+}: {
+  announcedAt: string;
+  description: string | null;
+  dropName: string;
+  dropUrl: string;
+  tasks: OfficialTaskDropAnnouncementTask[];
+  unsubscribeUrl: string;
+}) {
+  const totalRewards = tasks.map((task) => task.rewardLabel).join(' + ');
+
+  return (
+    <TaskmarketEmailShell
+      preview={`${dropName} is live with ${tasks.length} task${tasks.length === 1 ? '' : 's'}.`}
+      subscriptionReason="You are receiving this because you subscribed to all official Task Drops."
+      title={`${dropName} is live`}
+      unsubscribeUrl={unsubscribeUrl}
+    >
+      <Section style={{ padding: '10px 28px 8px' }}>
+        {description ? (
+          <Text style={{ color: colors.muted, fontSize: '15px', lineHeight: '24px', margin: 0 }}>
+            {description}
+          </Text>
+        ) : null}
+        <Text
+          style={{
+            color: colors.muted,
+            fontFamily: monoStack,
+            fontSize: '12px',
+            lineHeight: '18px',
+            margin: '16px 0',
+          }}
+        >
+          Launched {announcedAt}
+          <br />
+          {tasks.length} task{tasks.length === 1 ? '' : 's'}
+          {totalRewards ? ` / ${totalRewards}` : ''}
+        </Text>
+        {tasks.map((task, index) => (
+          <Section
+            key={`${task.description}-${index}`}
+            style={{
+              backgroundColor: colors.panelSoft,
+              border: `1px solid ${colors.border}`,
+              borderRadius: '10px',
+              marginBottom: '10px',
+              padding: '14px',
+            }}
+          >
+            <Text
+              style={{
+                color: colors.accent,
+                fontFamily: monoStack,
+                fontSize: '11px',
+                letterSpacing: '0.08em',
+                lineHeight: '16px',
+                margin: '0 0 8px',
+                textTransform: 'uppercase',
+              }}
+            >
+              {task.rewardLabel} / {task.mode}
+            </Text>
+            <Text style={{ color: colors.text, fontSize: '15px', lineHeight: '22px', margin: 0 }}>
+              {task.description}
+            </Text>
+          </Section>
+        ))}
+        <CtaButton href={dropUrl} label="Open drop" />
       </Section>
     </TaskmarketEmailShell>
   );

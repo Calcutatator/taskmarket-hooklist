@@ -37,7 +37,9 @@ export async function generateMetadata({ params }: DropPageProps): Promise<Metad
       return buildPageMetadata({
         description:
           data.drop.description ??
-          `Follow ${data.drop.name} and get notified when new tasks are published into it.`,
+          (data.drop.isOfficial
+            ? `Explore ${data.drop.name} and subscribe to future official Task Drop launches.`
+            : `Follow ${data.drop.name} and get notified when new tasks are published into it.`),
         path: `/drops/${encodeURIComponent(decodedDropId)}`,
         title: data.drop.name,
       });
@@ -71,11 +73,12 @@ export default async function DropPage({ params }: DropPageProps) {
         <section className="grid gap-4 border-b border-border/58 pb-6">
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="terminal">Task Drop</Badge>
+            {data.drop.isOfficial ? <Badge variant="secondary">Official</Badge> : null}
             <span
               className="inline-flex min-w-0 items-center gap-1.5 font-mono text-xs text-muted-foreground"
               title={data.drop.officialWalletAddress}
             >
-              <span className="uppercase">Official wallet</span>
+              <span className="uppercase">Publisher wallet</span>
               <span>{compactAddress(data.drop.officialWalletAddress)}</span>
             </span>
           </div>
@@ -89,7 +92,9 @@ export default async function DropPage({ params }: DropPageProps) {
               </p>
             ) : null}
             <dl className="grid max-w-3xl gap-1 rounded-lg border border-border/58 bg-surface/42 p-3 sm:grid-cols-[160px_minmax(0,1fr)]">
-              <dt className="font-mono text-xs uppercase text-muted-foreground">Official wallet</dt>
+              <dt className="font-mono text-xs uppercase text-muted-foreground">
+                Publisher wallet
+              </dt>
               <dd className="break-all font-mono text-xs text-foreground">
                 {data.drop.officialWalletAddress}
               </dd>
@@ -151,13 +156,17 @@ export default async function DropPage({ params }: DropPageProps) {
       <aside className="h-fit lg:sticky lg:top-20">
         <Card>
           <CardHeader>
-            <CardTitle>Follow this drop</CardTitle>
+            <CardTitle>
+              {data.drop.isOfficial ? 'Get official drops' : 'Follow this drop'}
+            </CardTitle>
             <CardDescription>
-              Get email when new tasks are published into {data.drop.name}.
+              {data.drop.isOfficial
+                ? 'Get one launch announcement for each future official Task Drop.'
+                : `Get email when new tasks are published into ${data.drop.name}.`}
             </CardDescription>
           </CardHeader>
           <CardContent>
-            <TaskDropSubscribeForm taskDropId={data.drop.id} />
+            <TaskDropSubscribeForm isOfficial={data.drop.isOfficial} taskDropId={data.drop.id} />
           </CardContent>
         </Card>
       </aside>

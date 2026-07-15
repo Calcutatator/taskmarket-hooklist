@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  TaskDropAnnouncementInputSchema,
+  TaskDropAnnouncementResponseSchema,
+  TaskDropOfficialStatusInputSchema,
+  TaskDropOfficialSubscribeInputSchema,
   TaskDropListByOwnerInputSchema,
   TaskDropPageDataSchema,
   TaskDropStatusInputSchema,
@@ -30,6 +34,48 @@ describe('Task Drops schemas', () => {
 
     expect(parsed.source).toBe('agent_setup');
     expect(parsed.walletAddress).toBe('0xabcdefabcdefabcdefabcdefabcdefabcdefabcd');
+  });
+
+  it('normalizes official-list subscription and status inputs', () => {
+    expect(
+      TaskDropOfficialSubscribeInputSchema.parse({
+        email: '  ALICE@Example.COM  ',
+      })
+    ).toEqual({ email: 'alice@example.com', source: 'taskdrop_landing' });
+
+    expect(
+      TaskDropOfficialSubscribeInputSchema.parse({
+        email: 'agent@example.com',
+        source: 'official_drop_page',
+        walletAddress: '0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
+      })
+    ).toEqual({
+      email: 'agent@example.com',
+      source: 'official_drop_page',
+      walletAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
+    });
+
+    expect(TaskDropOfficialStatusInputSchema.parse({ email: ' BOB@Example.COM ' })).toEqual({
+      email: 'bob@example.com',
+    });
+  });
+
+  it('validates the official announcement contract', () => {
+    expect(TaskDropAnnouncementInputSchema.parse({ taskDropId: 'drop-1' })).toEqual({
+      taskDropId: 'drop-1',
+    });
+
+    expect(
+      TaskDropAnnouncementResponseSchema.parse({
+        alreadyAnnounced: false,
+        announcedAt: '2026-07-15T00:00:00.000Z',
+        failed: 1,
+        pending: 0,
+        sent: 9,
+        taskDropId: 'drop-1',
+        total: 10,
+      })
+    ).toMatchObject({ sent: 9, failed: 1, total: 10 });
   });
 
   it('rejects invalid email addresses and invalid wallet addresses', () => {
@@ -102,9 +148,11 @@ describe('Task Drops schemas', () => {
     expect(
       TaskDropPageDataSchema.parse({
         drop: {
+          announcedAt: null,
           createdAt: '2026-07-01T00:00:00.000Z',
           description: null,
           id: 'drop-1',
+          isOfficial: true,
           name: 'Growth',
           officialWalletAddress: '0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
           ownerAddress: '0xABCDEFabcdefABCDEFabcdefABCDEFabcdefABCD',
@@ -125,6 +173,7 @@ describe('Task Drops schemas', () => {
     ).toMatchObject({
       drop: {
         id: 'drop-1',
+        isOfficial: true,
         name: 'Growth',
         officialWalletAddress: '0xabcdefabcdefabcdefabcdefabcdefabcdefabcd',
       },
@@ -136,9 +185,11 @@ describe('Task Drops schemas', () => {
     expect(() =>
       TaskDropPageDataSchema.parse({
         drop: {
+          announcedAt: null,
           createdAt: '2026-07-01T00:00:00.000Z',
           description: null,
           id: 'drop-1',
+          isOfficial: false,
           name: 'Growth',
           officialWalletAddress: '0x2222222222222222222222222222222222222222',
           ownerAddress: '0x1111111111111111111111111111111111111111',

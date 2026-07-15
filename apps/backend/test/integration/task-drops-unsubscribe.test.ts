@@ -1,7 +1,8 @@
 import request from 'supertest';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { unsubscribeTaskDropsSubscription } = vi.hoisted(() => ({
+const { getTaskDropsUnsubscribeDetails, unsubscribeTaskDropsSubscription } = vi.hoisted(() => ({
+  getTaskDropsUnsubscribeDetails: vi.fn(),
   unsubscribeTaskDropsSubscription: vi.fn(),
 }));
 
@@ -34,6 +35,7 @@ vi.mock('../../src/config/env', () => ({
 vi.mock('../../src/db/client', () => ({ db: {} }));
 
 vi.mock('../../src/services/task-drops-email', () => ({
+  getTaskDropsUnsubscribeDetails,
   unsubscribeTaskDropsSubscription,
 }));
 
@@ -83,6 +85,10 @@ const { app } = await import('../../src/app');
 describe('Task Drops unsubscribe HTTP flow', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    getTaskDropsUnsubscribeDetails.mockResolvedValue({
+      email: 'alice@example.com',
+      scope: 'official',
+    });
   });
 
   it('requires confirmation without mutating on GET', async () => {
@@ -90,13 +96,38 @@ describe('Task Drops unsubscribe HTTP flow', () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toContain('Confirm unsubscribe');
+    expect(response.text).toContain('all official Task Drop announcements');
     expect(response.text).toContain('method="post"');
+    expect(getTaskDropsUnsubscribeDetails).toHaveBeenCalledWith({
+      db: expect.anything(),
+      id: 'sub-1',
+      token: 'token-1',
+    });
     expect(unsubscribeTaskDropsSubscription).not.toHaveBeenCalled();
+  });
+
+  it('uses scoped copy for exact-drop confirmation and rejects invalid tokens', async () => {
+    getTaskDropsUnsubscribeDetails.mockResolvedValueOnce({
+      email: 'alice@example.com',
+      scope: 'drop',
+    });
+    const exactResponse = await request(app).get(
+      '/task-drops/unsubscribe?id=sub-1&token=token-1'
+    );
+    expect(exactResponse.text).toContain('emails for this Task Drop');
+
+    getTaskDropsUnsubscribeDetails.mockResolvedValueOnce(null);
+    const invalidResponse = await request(app).get(
+      '/task-drops/unsubscribe?id=sub-1&token=invalid'
+    );
+    expect(invalidResponse.status).toBe(400);
+    expect(invalidResponse.text).toContain('Unsubscribe link expired');
   });
 
   it('unsubscribes only after a POST confirmation', async () => {
     unsubscribeTaskDropsSubscription.mockResolvedValue({
       email: 'alice@example.com',
+      scope: 'official',
       unsubscribed: true,
     });
 
@@ -104,6 +135,7 @@ describe('Task Drops unsubscribe HTTP flow', () => {
 
     expect(response.status).toBe(200);
     expect(response.text).toContain('Task Drops are off');
+    expect(response.text).toContain('all official Task Drops');
     expect(unsubscribeTaskDropsSubscription).toHaveBeenCalledWith({
       db: expect.anything(),
       id: 'sub-1',

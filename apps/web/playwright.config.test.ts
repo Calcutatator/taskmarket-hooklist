@@ -1,5 +1,13 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
+vi.mock('@playwright/test', () => ({
+  defineConfig: (config: unknown) => config,
+  devices: {
+    'Desktop Chrome': {},
+    'Pixel 7': {},
+  },
+}));
+
 describe('Playwright configuration', () => {
   afterEach(() => {
     vi.unstubAllEnvs();
@@ -21,6 +29,7 @@ describe('Playwright configuration', () => {
 
   it('does not treat the generic application port as the mock web port', async () => {
     vi.stubEnv('PORT', '3000');
+    vi.stubEnv('TASKMARKET_MOCK_WEB_PORT', undefined);
 
     const { default: config } = await import('./playwright.config');
 
@@ -32,6 +41,7 @@ describe('Playwright configuration', () => {
   });
 
   it('uses the shared mock API port when no e2e-specific port is configured', async () => {
+    vi.stubEnv('E2E_MOCK_API_PORT', undefined);
     vi.stubEnv('TASKMARKET_MOCK_API_PORT', '3401');
 
     const { default: config } = await import('./playwright.config');

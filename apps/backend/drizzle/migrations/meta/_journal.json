@@ -194,7 +194,14 @@
     {
       "idx": 27,
       "version": "7",
-      "when": 1784073498000,
+      "when": 1784091337000,
+      "tag": "0026_official_task_drop_subscriptions",
+      "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784094737000,
       "tag": "0026_add_legal_acceptance",
       "breakpoints": true
     }

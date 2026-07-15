@@ -64,10 +64,30 @@ describe('legal access middleware', () => {
     '/api/wallet/withdraw-dreams',
     '/api/emails/delete',
     '/api/devices/device-1/key',
+    '/api/task-drops/subscribe',
+    '/api/task-drops/official/subscribe',
   ])('allows the exit or recovery route %s without a receipt', async (originalUrl) => {
     const next = vi.fn();
     await legalAccessMiddleware(
       { method: 'POST', path: originalUrl.replace('/api', ''), originalUrl, headers: {} } as never,
+      response(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(verifyLegalReceipt).not.toHaveBeenCalled();
+  });
+
+  it('allows public Task Drop subscription procedures without a receipt', async () => {
+    const next = vi.fn();
+    await legalAccessMiddleware(
+      {
+        method: 'POST',
+        path: '/taskDrops.subscribe%2CtaskDrops.subscribeOfficial',
+        originalUrl:
+          '/trpc/taskDrops.subscribe%2CtaskDrops.subscribeOfficial?batch=1',
+        headers: {},
+      } as never,
       response(),
       next
     );

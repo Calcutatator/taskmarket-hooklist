@@ -22,6 +22,7 @@ export function makeChain(resolveValue: any = undefined) {
     innerJoin: vi.fn().mockReturnThis(),
     rightJoin: vi.fn().mockReturnThis(),
     fullJoin: vi.fn().mockReturnThis(),
+    for: vi.fn().mockReturnThis(),
     // Thenable so that `await chain` resolves correctly
     then: (onfulfilled: any, onrejected?: any) =>
       Promise.resolve(resolveValue).then(onfulfilled, onrejected),
