@@ -78,8 +78,12 @@ git submodule update --init --recursive
 
 echo "==> [3/11] Native Postgres (cloud sandboxes have no Docker)"
 if ! command -v pg_isready > /dev/null 2>&1; then
-  export DEBIAN_FRONTEND=noninteractive
-  sudo apt-get update -qq && sudo apt-get install -y -qq postgresql
+  # sudo resets the environment by default -- a plain `export` here never reaches the
+  # sudo'd apt-get, so tzdata's postinstall prompts interactively and hangs forever on
+  # a non-interactive shell. Route it through `env` explicitly rather than relying on
+  # sudo's own (sudoers-policy-dependent) VAR=value command-line parsing.
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get update -qq \
+    && sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y -qq postgresql
 fi
 PG_VERSION="$(ls /etc/postgresql | head -1)"
 PG_CONF="/etc/postgresql/$PG_VERSION/main/postgresql.conf"
