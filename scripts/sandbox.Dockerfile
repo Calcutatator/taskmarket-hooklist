@@ -28,4 +28,4 @@ RUN curl -o- https://raw.githubusercontent.com/nvm-sh/nvm/v0.40.1/install.sh | b
 COPY --chown=sandbox:sandbox . .
 
 ENTRYPOINT ["/bin/bash", "-c"]
-CMD [". $NVM_DIR/nvm.sh && nvm use 24 && ./scripts/cloud-env-setup.sh && make smoke bounty"]
+CMD [". $NVM_DIR/nvm.sh && nvm use 24 && ./scripts/cloud-env-setup.sh && (make smoke bounty || (echo '--- /tmp/backend.log ---'; cat /tmp/backend.log; exit 1))"]
