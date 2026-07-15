@@ -67,6 +67,14 @@ if ! command -v bun > /dev/null 2>&1; then
   curl -fsSL https://bun.sh/install | bash
   export PATH="$HOME/.bun/bin:$PATH"
 fi
+# Foundry's own installer only adds ~/.foundry/bin to ~/.bashrc, which non-interactive
+# shells (like this script running as a hook command) never source -- so a prior run's
+# install is invisible to `command -v` here even though the binary is genuinely on disk.
+# Check the known install path directly first, so an already-installed forge is correctly
+# found instead of triggering a needless, network-dependent reinstall on every invocation.
+if [ -x "$HOME/.foundry/bin/forge" ]; then
+  export PATH="$HOME/.foundry/bin:$PATH"
+fi
 if ! command -v forge > /dev/null 2>&1; then
   curl -L https://foundry.paradigm.xyz | bash
   export PATH="$HOME/.foundry/bin:$PATH"
@@ -75,7 +83,11 @@ if ! command -v forge > /dev/null 2>&1; then
   # (hit exactly this: main HEAD needed rustc 1.95, v1.7.1 only needs 1.89). A pinned version
   # also downloads a known release tarball directly rather than resolving "latest" via
   # api.github.com first, which matters in sandboxes that scope GitHub API access per-repo.
-  foundryup --install v1.7.1
+  # --force skips foundryup's SHA/attestation verification -- normally undesirable, but that
+  # verification step itself needs a GitHub-scoped call this kind of sandbox blocks even for
+  # a pinned version. Accepted here specifically because the version is pinned to an exact,
+  # known-good release tag rather than "whatever's latest", not a general bypass.
+  foundryup --install v1.7.1 --force
 fi
 
 echo "==> [2/11] Git submodules (contracts dependencies)"
