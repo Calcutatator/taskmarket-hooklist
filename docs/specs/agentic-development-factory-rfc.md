@@ -204,21 +204,28 @@ no Docker and no external services. The pieces:
   and writes a complete `.env` (which the Makefile's `ENV_LOADER` picks up, so every `make`
   target works afterwards). Uses Anvil's deterministic pre-funded dev accounts for every
   role — deployer, server, requester, worker A/B, evaluator — safe strictly because the
-  chain never leaves the sandbox. Status: verified end to end in a real Linux container
+  chain never leaves the sandbox. Status: verified end to end both in a real Linux container
   (`scripts/sandbox.Dockerfile`, `make smoke sandbox`, `.github/workflows/sandbox-smoke.yml`)
-  matching the native-Postgres/no-Docker assumptions a real vendor sandbox makes — including
-  the full bounty + reject-path smoke suite passing. A real Claude Code cloud session run
-  against this script surfaced two genuine, sandbox-specific findings worth keeping in mind:
+  and inside a genuine Claude Code cloud environment (claude.ai/code) — `make smoke bounty`
+  passing clean, both the happy path and the reject path, triggered automatically by a
+  `SessionStart` hook with no manual setup step. Getting the cloud case working surfaced
+  real, sandbox-specific findings worth keeping as institutional knowledge:
   a `SessionStart` hook (not the cloud environment's "Setup script" field, which runs before
   Claude Code launches and has neither `$CLAUDE_PROJECT_DIR` nor a discoverable repo checkout
-  available) is the correct place to invoke it; and that specific sandbox type scopes GitHub
-  API access (`api.github.com`) per-repo, which broke `foundryup`'s default "install latest"
-  behavior (blocked fetching release info for `foundry-rs/foundry`) even though plain
-  `git clone`/`raw.githubusercontent.com` access was unaffected. Pinning a specific Foundry
-  version (rather than always installing latest) sidesteps this, since it downloads a known
-  release directly rather than resolving "latest" via the blocked API call first -- and is a
-  good practice regardless, since an unpinned Foundry version can raise the toolchain's MSRV
-  out from under a from-source build with no warning.
+  available) is the correct place to invoke it; that sandbox type scopes GitHub API access
+  (`api.github.com`) per-repo, which broke `foundryup`'s default "install latest" behavior
+  (blocked fetching release info for `foundry-rs/foundry`) even though plain
+  `git clone`/`raw.githubusercontent.com` access was unaffected -- pinning a specific version
+  sidesteps the "resolve latest" lookup, and is good practice regardless since an unpinned
+  version can raise the toolchain's MSRV out from under a from-source build with no warning;
+  and that same sandbox's SHA/attestation verification for a pinned release download also
+  needs a blocked GitHub-scoped call, requiring `--force` to skip it (accepted specifically
+  because the version is pinned to a known-good tag, not a bypass for arbitrary versions).
+  Separately, `command -v forge` false-negatives on every non-interactive invocation once
+  Foundry is already installed, since its installer only adds `~/.foundry/bin` to
+  `~/.bashrc` (never sourced by a non-interactive hook shell) -- the script now checks the
+  known install path directly first, so an already-installed toolchain from a prior session
+  is correctly detected instead of triggering a needless reinstall every time.
 - **Vendor environment config**, per vendor, pointing at that script:
   - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `AGENTS.md`
     already makes the repo agent-ready; point a `SessionStart` hook in `.claude/settings.json`
