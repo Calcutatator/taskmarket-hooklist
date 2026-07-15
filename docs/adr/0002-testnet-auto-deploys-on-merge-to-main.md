@@ -80,8 +80,8 @@ CI passing and a `v*` tag push, exactly as it worked before this ADR.
   directly rather than a separate branch that represents a deliberate snapshot.
 
 **Neutral / follow-up:**
-- `docs/specs/agentic-development-factory-rfc.md`'s release-ladder section should describe
-  this single-branch model rather than the separate-branch one it originally sketched.
+- None outstanding — `docs/specs/agentic-development-factory-rfc.md`'s release-ladder section
+  was updated alongside this ADR to describe this single-branch model.
 
 ## References
 
