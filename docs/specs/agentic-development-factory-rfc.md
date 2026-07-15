@@ -288,9 +288,10 @@ The developer's surface area is deliberately small:
 What exists when, honestly tiered:
 
 - **Already true**: automatic isolated preview environments on every PR (live-verified against
-  a real Railway deploy), and automatic app-code deploys to testnet on merge (ADR-0002,
-  release-path rung 3) — the testnet contract upgrade stays manual and did not need the
-  deployer key split to get here. Immediately useful to human developers, no agents required.
+  a real Railway deploy), and automatic app-code deploys to the shared testnet on every merge
+  to `main` (ADR-0002, release-path rung 3) — the testnet contract upgrade stays manual and
+  did not need the deployer key split to get here. Immediately useful to human developers, no
+  agents required.
 - **After the testnet/mainnet deployer key split**: automating the testnet *contract upgrade*
   itself, if that's ever decided — not a prerequisite for anything currently built.
 - **After the orchestrator ADR is decided and built**: the Discord trigger itself — the one
@@ -306,14 +307,13 @@ carry a broken upgrade: a storage-layout violation or facet-selector collision o
 surfaces when cutting against existing state. The factory therefore needs a release ladder
 above the PR loop.
 
-The branch model underneath it: PRs target the `testnet` branch; `main` is the production
-mirror, receiving merges only from `testnet`. The shared testnet is the **final staging
-tier** — the last stop before mainnet — with the distinctive property that unlike an
-ordinary staging environment it exercises the real thing at every layer: the real testnet
-diamond on Base Sepolia, the real upgrade script against real accumulated state, the real
-Railway environment serving `testnet-market.daydreams.systems`. **Decided:** see ADR-0002
-(`docs/adr/0002-testnet-is-the-default-branch.md`) — `testnet` is now the repository's
-default branch.
+No separate branch underneath it: `main` is the sole PR target and the repository's default
+branch — see ADR-0002 (`docs/adr/0002-testnet-auto-deploys-on-merge-to-main.md`), which
+considered and rejected a second long-lived `testnet` branch as unnecessary process weight.
+The shared testnet is the **final staging tier** — the last stop before mainnet — with the
+distinctive property that unlike an ordinary staging environment it exercises the real thing
+at every layer: the real testnet diamond on Base Sepolia, the real upgrade script against
+real accumulated state, the real Railway environment serving `testnet-market.daydreams.systems`.
 
 The ladder:
 
@@ -326,16 +326,14 @@ The ladder:
    rehearses `make upgrade` against real accumulated state and runs smoke tests against the
    upgraded fork — same preview machinery, forked chain instead of empty chain, still zero
    real keys in the environment.
-3. **Merge to the `testnet` branch → automatic app deploy, manual contract upgrade.** PRs
-   target the `testnet` branch (now the repository default, ADR-0002), and merging one is the
-   lock-in moment: a PR is merged only when the work is finished and going to the public
-   testnet. The merge triggers `ci.yml`'s `quality` job (runs on push to `testnet` too, not
-   just `main`); once that succeeds, `.github/workflows/deploy-testnet.yml` fires via a
-   `workflow_run` trigger on `ci.yml`'s completion — not the same push event CI itself runs
-   on, since checking "did CI pass" on that event directly would race `quality`'s multi-minute
-   runtime and abort every deploy. It deploys
+3. **Merge to `main` → automatic app deploy, manual contract upgrade.** Merging a PR triggers
+   `ci.yml`'s `quality` job; once that succeeds, `.github/workflows/deploy-testnet.yml` fires
+   via a `workflow_run` trigger on `ci.yml`'s completion — not the same push event CI itself
+   runs on, since checking "did CI pass" on that event directly would race `quality`'s
+   multi-minute runtime and abort every deploy. It deploys
    `@taskmarket/backend`/`@taskmarket/frontend`/`@taskmarket/docs` to the Railway
-   `testnet` environment — app code only, no Anvil, no contracts. A testnet contract upgrade
+   `testnet` environment — app code only, no Anvil, no contracts, on every merge regardless of
+   whether that specific change is testnet-relevant. A testnet contract upgrade
    (`make upgrade testnet`) is a separate, manual step a developer runs from their own
    machine, exactly like mainnet (ADR-0001) — the testnet owner key never enters CI or GitHub
    secrets. This sidesteps the `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue
@@ -346,18 +344,16 @@ The ladder:
    rehearsal for the mainnet cut — the same `DiamondFullUpgrade` script, so the testnet
    diamond must never drift from the mainnet diamond's upgrade lineage. Hard rules that
    follow: no manual or out-of-band upgrades to the testnet diamond — every change reaches
-   it through a `testnet`-branch merge; and contract changes after the lock-in merge are
-   allowed only if genuinely unavoidable. Each post-freeze contract change re-cuts the
-   testnet diamond and opens drift between the history testnet rehearsed and the single
-   cumulative cut mainnet will receive — the mainnet upgrade then stops being a rehearsed
-   formality and becomes careful manual developer work to reconcile and finish.
-4. **Merge `testnet` into `main`, then release → mainnet.** Once testnet validation passes,
-   `testnet` is merged into `main`. Under this model `main` is no longer where PRs land — it
-   is the production mirror, only ever receiving merges from `testnet`, so its tip always
-   corresponds to what is (or is about to be) live on mainnet. `make release` tags;
-   `deploy-production.yml` already ships app services to Railway production on the tag, gated on CI.
+   it through a merge to `main`; and contract changes after a testnet upgrade are allowed
+   only if genuinely unavoidable. Each post-upgrade contract change re-cuts the testnet
+   diamond and opens drift between the history testnet rehearsed and the single cumulative
+   cut mainnet will receive — the mainnet upgrade then stops being a rehearsed formality and
+   becomes careful manual developer work to reconcile and finish.
+4. **`make release` → mainnet.** Once testnet validation passes, a developer runs
+   `make release` from `main`'s tip — the exact commit already live on testnet. It tags;
+   `deploy-production.yml` ships app services to Railway production on the tag, gated on CI.
    The mainnet diamond cut stays exactly as it is today: a developer runs
-   `make upgrade mainnet` manually from their local machine, from that `main` tip — the
+   `make upgrade mainnet` manually from their local machine, from that same tip — the
    exact code whose upgrade was rehearsed on testnet. No CI execution, no agent involvement,
    no change to owner-key custody. **Decided:** see ADR-0001
    (`docs/adr/0001-mainnet-upgrades-stay-manual.md`), including the rejected alternatives

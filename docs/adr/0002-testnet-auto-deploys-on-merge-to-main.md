@@ -1,13 +1,14 @@
-# 0002 — `testnet` is the default branch; `main` is a manually-updated production mirror
+# 0002 — Merging to `main` automatically deploys app code to the shared testnet
 
 > **Decision (Y-statement):** In the context of the agentic development factory's branch and
-> release flow, facing the question of where PRs should land and how code reaches the shared
-> testnet and mainnet, we decided to make `testnet` the repository's default branch and PR
-> target, with `main` receiving merges only manually from `testnet` once it has been validated
-> there, to achieve a real staging step between "code review passed" and "live on mainnet"
-> without adding process weight to the common case, accepting that `main` no longer reflects
-> the tip of ongoing work and that existing open PRs targeting `main` are not automatically
-> retargeted.
+> release flow, facing the question of how code reaches the shared testnet and mainnet without
+> adding a second long-lived branch to manage, we decided to keep `main` as the sole PR target
+> and default branch, with every merge automatically deploying app code
+> (backend/frontend/docs) to the shared testnet Railway environment, and `make release`
+> promoting that same validated commit to production on a separate, manual, tag-gated step —
+> to achieve a real staging step before mainnet without the process weight of a second branch
+> and a manual merge-forward, accepting that testnet now deploys on every merge to `main`
+> whether or not that specific change touches anything testnet-relevant.
 
 - **Status:** Proposed
 - **Date:** 2026-07-15
@@ -19,77 +20,68 @@
 Before this decision, PRs targeted `main` directly, and Railway's environment naming was
 itself confusing: an environment literally named `production` was actually the persistent
 shared testnet chain (serving `testnet-market.daydreams.systems`), while the real production
-environment was named `taskmarket.io`. There was no branch or CI path corresponding to
-"testnet" as a concept at all — `deploy-production.yml` (formerly `deploy.yml`) only deploys
-on a `v*` tag to real production, and nothing deployed to the shared testnet automatically.
+environment was named `taskmarket.io`. Nothing deployed to the shared testnet automatically —
+`deploy-production.yml` (formerly `deploy.yml`) only deploys on a `v*` tag to real production.
 
-Separately, `docs/specs/agentic-development-factory-rfc.md` already describes an aspirational
-release ladder — preview → testnet → mainnet — with `testnet` as a long-lived branch PRs merge
-into and `main` as a production mirror receiving merges only from `testnet`. This ADR is the
-first piece of that ladder actually implemented and decided, not merely proposed.
+An earlier version of this ADR proposed a separate long-lived `testnet` branch as the default
+PR target, with `main` as a production mirror updated only by a manual merge from `testnet`
+(matching an aspirational branch model already sketched in
+`docs/specs/agentic-development-factory-rfc.md`). That branch was created, the repository's
+default branch was flipped to it, and this PR was retargeted to it — then reverted before
+merge: the manual `testnet` → `main` merge-forward step added process weight without a
+corresponding safety benefit, since nothing about promoting already-validated app code to
+production requires a second branch to gate it. `main` returned to being the default branch
+and PR target; the `testnet` branch this session created was deleted.
 
-Alongside this decision, the Railway side was cleaned up to match: the misnamed `production`
-environment was renamed to `testnet` (already had the correct `testnet-*.daydreams.systems`
-domains, so no DNS change was needed), and a stray empty `testnet` environment created during
-this same session (with the wrong domain, never actually deployed to) was deleted.
+The Railway-side cleanup from that same session stands independent of which git branch drives
+it: the misnamed `production` environment was renamed to `testnet` (already had the correct
+`testnet-*.daydreams.systems` domains, so no DNS change was needed), and a stray empty
+duplicate `testnet` environment with the wrong domain was deleted.
 
 ## Considered options
 
 | Option | Pros | Cons |
 |---|---|---|
-| `testnet` as default branch, PRs target it, `main` updated manually from `testnet` | Real staging step before mainnet; matches the already-written RFC's release ladder; automatic app deploys to testnet are safe (no real money, no owner key) | `main` no longer reflects tip-of-work, which can surprise anyone assuming `main` is where PRs land; existing open PRs still target `main` and need manual retargeting or a merge-forward step |
-| Keep `main` as the default branch; testnet only reachable via a manual `git push`/cherry-pick (rejected) | No repo-setting change, no PR-retargeting confusion | Testnet drifts from what's actually been reviewed and merged; no natural "this batch of PRs is now on testnet" checkpoint; contradicts the RFC's already-written design |
-| Auto-merge `main` into `testnet` (or vice versa) via a bot on every push (rejected) | Removes the manual merge step entirely | Removes the deliberate checkpoint this decision exists to create; a testnet regression would auto-propagate towards mainnet with no human in the loop |
+| Single `main` branch; merge auto-deploys to testnet, `make release` promotes to production | No second branch to keep in sync; no manual merge-forward step; testnet always reflects what's actually on `main` | Testnet redeploys on every merge, including changes that don't touch testnet-relevant code; no "batch of PRs is now locked in for this testnet cycle" checkpoint |
+| Separate `testnet` branch as PR target and default, `main` as a manually-updated production mirror (the originally proposed, then reverted, design) | Real lock-in checkpoint before testnet; `main`'s tip only ever reflects validated, promoted code | Extra manual merge-forward step for every batch of work; a second long-lived branch to keep straight; existing tooling/mental model already assumes `main` is where PRs land |
+| Auto-merge `main` into a separate `testnet` branch (or vice versa) via a bot on every push (rejected) | Removes the manual merge step while still having two branches | Two branches with no distinct purpose between them — strictly worse than just using one |
 
 ## Decision
 
-`testnet` is now the repository's default branch (`gh repo edit --default-branch testnet`).
-New PRs target `testnet` by default. Merging to `testnet` triggers `ci.yml`'s `quality` job
-(now also running on push to `testnet`, not just `main`); once that succeeds,
+`main` stays the repository's default branch and sole PR target — no separate `testnet`
+branch. Every merge to `main` triggers `ci.yml`'s `quality` job; once that succeeds,
 `.github/workflows/deploy-testnet.yml` fires via a `workflow_run` trigger on `ci.yml`'s
-completion (not the same push event CI itself runs on -- checking "did CI pass" on that same
-event would race `quality`'s multi-minute runtime and abort every deploy). It deploys
+completion (not the same push event CI itself runs on, since checking "did CI pass" on that
+same event would race `quality`'s multi-minute runtime and abort every deploy). It deploys
 `@taskmarket/backend`, `@taskmarket/frontend`, and `@taskmarket/docs` to the Railway `testnet`
-environment (formerly misnamed `production`) — no Anvil, no contract deploy. A testnet
-contract upgrade (`make upgrade testnet`) stays a separate, manual, developer-run step,
-exactly like mainnet (ADR-0001) — this ADR does not change contract-upgrade custody or
-automation, only the app
-deploy path and where PRs land.
+environment (renamed from a misleading `production` label) — no Anvil, no contract deploy. A
+testnet contract upgrade (`make upgrade testnet`) stays a separate, manual, developer-run
+step, exactly like mainnet (ADR-0001) — this ADR does not change contract-upgrade custody or
+automation, only the app deploy path.
 
-`main` is updated only by a manual merge from `testnet`, once whatever landed there has been
-validated against the real shared testnet chain. From that point, `main`'s tip is what
-`make release` (tag) and `deploy-production.yml` deploy to real production, unchanged from
-today.
-
-The 13 PRs open at the time of this change (targeting `main`) are not retargeted
-automatically — they either get manually retargeted to `testnet`, or merge to `main` as
-originally planned and get folded into `testnet` on the next manual merge-forward.
+When a developer is satisfied with what's live on testnet, `make release` tags that same
+commit and `deploy-production.yml` deploys it to real production (`taskmarket.io`), gated on
+CI passing and a `v*` tag push, exactly as it worked before this ADR.
 
 ## Consequences
 
 **Positive:**
-- A real, exercised staging step exists before mainnet: testnet gets continuous, automatic
-  app deploys, giving a live environment that reflects what's actually been merged, not just
-  what preview environments showed in isolation.
-- Matches the branch/release flow already described in
-  `docs/specs/agentic-development-factory-rfc.md`, turning an aspirational design into a
-  decided one.
+- A real, exercised staging step exists before mainnet: testnet redeploys automatically on
+  every merge, giving a live environment that reflects what's actually on `main`.
+- No second long-lived branch to keep in sync, no manual merge-forward step, no risk of
+  `main` and a `testnet` branch drifting apart.
 - Contract-upgrade custody is untouched: testnet and mainnet upgrades both stay manual,
   developer-run actions (this ADR only automates the app-code deploy, never contracts).
 
 **Negative / trade-offs:**
-- `main` no longer reflects tip-of-work — anyone (human or agent) assuming `main` is where
-  active development lives needs to unlearn that.
-- The manual `testnet` → `main` merge step is a new human bottleneck, on top of the existing
-  manual `make release`/`make upgrade mainnet` steps.
-- Existing open PRs targeting `main` are now slightly out of step with the new default and
-  need explicit handling (retarget, or merge as-is and reconcile on the next merge-forward).
+- Testnet redeploys on every merge to `main`, including changes with nothing to do with
+  testnet (e.g. a docs-only or CLI-only PR) — there's no batching or lock-in checkpoint.
+- Anyone reasoning about "what's on testnet right now" needs to just check `main`'s tip
+  directly rather than a separate branch that represents a deliberate snapshot.
 
 **Neutral / follow-up:**
-- Whether to bulk-retarget the 13 currently-open PRs to `testnet` is a separate, smaller
-  decision left to whoever triages them.
-- `docs/specs/agentic-development-factory-rfc.md`'s release-ladder section should be updated
-  to reference this ADR as the decided implementation of its rung 3/4 description.
+- `docs/specs/agentic-development-factory-rfc.md`'s release-ladder section should describe
+  this single-branch model rather than the separate-branch one it originally sketched.
 
 ## References
 

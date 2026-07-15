@@ -55,7 +55,7 @@ Environments:
 - `testnet` — the shared testnet chain (`testnet-market.daydreams.systems`,
   `testnet-api-market`, `testnet-market-docs`). Renamed from a misleading `production` label to
   match reality (ADR-0002) — no DNS impact, environment renames are cosmetic only. Deployed to
-  automatically by `.github/workflows/deploy-testnet.yml` on merge to the `testnet` branch (app
+  automatically by `.github/workflows/deploy-testnet.yml` on every merge to `main` (app
   code only; contract upgrades stay a separate manual `make upgrade testnet` step).
 - `preview` — the base template `deploy-preview.yml` (formerly `preview.yml`) duplicates fresh
   for every PR. Its services had inherited a stale native GitHub branch connection watching
@@ -70,11 +70,12 @@ Services in every environment: `@taskmarket/backend`, `@taskmarket/frontend`,
 
 CI/CD as it exists in the repo today:
 - `ci.yml` — full quality gate (lint, type-check, tests, gas snapshot, Slither, coverage,
-  Playwright) on push to `main` and `testnet`, and on PRs.
+  Playwright) on push to `main` and on PRs.
 - `deploy-production.yml` — deploys backend/web/docs to the `taskmarket.io` Railway
   environment, triggered only by pushing a `v*` tag.
 - `deploy-testnet.yml` — deploys backend/web/docs to the `testnet` Railway environment,
-  triggered via `workflow_run` once `ci.yml` completes successfully on the `testnet` branch.
+  triggered via `workflow_run` once `ci.yml` completes successfully on `main` (ADR-0002; no
+  separate `testnet` branch).
 - `deploy-preview.yml` — the per-PR preview environment this RFC proposes, now implemented
   and live-verified (see "Testing the CLI against a preview environment" below).
 - `sandbox-smoke.yml` — runs `scripts/cloud-env-setup.sh` inside a real Linux container

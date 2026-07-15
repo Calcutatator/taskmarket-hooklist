@@ -1,9 +1,13 @@
 name: Deploy to Railway Testnet
 
-# Runs after CI's own "CI" workflow completes on the testnet branch, not on the same push
-# event CI itself runs on -- ci.yml's quality job takes many minutes, so checking "did CI pass
-# on this commit" on the push event directly would race it and find "in_progress", not
-# "success". workflow_run instead only fires once CI has genuinely finished.
+# Runs after CI's own "CI" workflow completes on main, not on the same push event CI itself
+# runs on -- ci.yml's quality job takes many minutes, so checking "did CI pass on this commit"
+# on the push event directly would race it and find "in_progress", not "success".
+# workflow_run instead only fires once CI has genuinely finished.
+#
+# No separate testnet branch: main is both the PR target and this workflow's trigger. This is
+# the first, always-automatic stage of promotion -- validate on the shared testnet chain here,
+# then `make release` promotes the same commit to production once you're happy with it.
 #
 # App code only (backend/frontend/docs) against the persistent testnet chain/diamond. Unlike
 # deploy-preview.yml, this never touches contracts or spins up an Anvil -- a testnet contract
@@ -14,7 +18,7 @@ on:
   workflow_run:
     workflows: ['CI']
     types: [completed]
-    branches: [testnet]
+    branches: [main]
 
 concurrency:
   group: deploy-testnet-${{ github.event.workflow_run.head_sha }}
