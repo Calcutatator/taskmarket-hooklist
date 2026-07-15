@@ -6,7 +6,7 @@ vi.mock('../../src/lib/keystore.js', () => ({
   loadKeystore,
 }));
 
-import { apiGet, apiPost } from '../../src/lib/api.js';
+import { API_ORIGIN, apiGet, apiPost } from '../../src/lib/api.js';
 
 const mockFetch = vi.fn();
 vi.stubGlobal('fetch', mockFetch);
@@ -22,7 +22,10 @@ describe('legal acceptance receipt headers', () => {
   });
 
   it('adds the locally stored receipt to API writes', async () => {
-    loadKeystore.mockResolvedValue({ legalAcceptanceReceipt: 'receipt-1' });
+    loadKeystore.mockResolvedValue({
+      legalAcceptanceApiOrigin: API_ORIGIN,
+      legalAcceptanceReceipt: 'receipt-1',
+    });
 
     await apiPost('/api/tasks', { description: 'task' });
 
@@ -36,6 +39,34 @@ describe('legal acceptance receipt headers', () => {
 
   it('keeps public reads usable before a keystore exists', async () => {
     loadKeystore.mockRejectedValue(new Error('missing'));
+
+    await apiGet('/api/tasks');
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tasks'),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
+    );
+  });
+
+  it('does not disclose a receipt to a different configured API origin', async () => {
+    loadKeystore.mockResolvedValue({
+      legalAcceptanceApiOrigin: 'https://other.example',
+      legalAcceptanceReceipt: 'production-receipt',
+    });
+
+    await apiPost('/api/tasks', { description: 'task' });
+
+    expect(mockFetch).toHaveBeenCalledWith(
+      expect.stringContaining('/api/tasks'),
+      expect.objectContaining({ headers: { 'Content-Type': 'application/json' } })
+    );
+  });
+
+  it('omits the receipt from ordinary public GET requests', async () => {
+    loadKeystore.mockResolvedValue({
+      legalAcceptanceApiOrigin: API_ORIGIN,
+      legalAcceptanceReceipt: 'receipt-1',
+    });
 
     await apiGet('/api/tasks');
 

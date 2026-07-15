@@ -16,7 +16,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { getLegalReceiptHeaders } from '@/lib/legal-receipt';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -109,7 +109,7 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
           workerAddress: selected.workerAddress,
           signature,
         }),
-        headers: { 'Content-Type': 'application/json', ...getLegalReceiptHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
         method: 'POST',
       });
       setPending(false);

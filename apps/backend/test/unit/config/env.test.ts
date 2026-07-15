@@ -63,6 +63,12 @@ describe('getServerConfig legal enforcement', () => {
     expect(config.LEGAL_ENFORCEMENT_ENABLED).toBe(false);
   });
 
+  it('parses the trusted reverse-proxy hop count used for acceptance IP evidence', () => {
+    process.env.TRUST_PROXY_HOPS = '2';
+
+    expect(getServerConfig().TRUST_PROXY_HOPS).toBe(2);
+  });
+
   it('refuses activation while the checked-in legal bundle is a draft', () => {
     process.env.LEGAL_ENFORCEMENT_ENABLED = 'true';
     process.env.PRIVY_APP_ID = 'privy-app-id';

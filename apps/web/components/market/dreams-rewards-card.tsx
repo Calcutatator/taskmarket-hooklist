@@ -11,7 +11,7 @@ import { trpc } from '@/lib/api/client';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { formatUsdcUnits } from '@/lib/format';
-import { getLegalReceiptHeaders } from '@/lib/legal-receipt';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 type WithdrawState = 'idle' | 'signing' | 'submitting';
 
@@ -73,7 +73,7 @@ export function DreamsRewardsCard() {
     try {
       const res = await fetch(`${getBrowserApiBaseUrl()}/api/wallet/withdraw-dreams`, {
         body: JSON.stringify({ workerAddress: address, destination, signature }),
-        headers: { 'Content-Type': 'application/json', ...getLegalReceiptHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
         method: 'POST',
       });
       if (!res.ok) {

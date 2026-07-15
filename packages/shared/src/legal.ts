@@ -33,7 +33,12 @@ export const LEGAL_ACCEPTANCE_STATEMENT =
   'I agree to the Terms of Service and Acceptable Use Policy, acknowledge the Risk Disclosure, and confirm that I have been given the Privacy Policy.';
 
 const VERSION = '2026-07-draft-1';
+const PUBLISHED_AT = '2026-07-15T00:00:00.000Z';
+const EFFECTIVE_AT: string | null = null;
 const DRAFT_NOTICE = `> Draft for counsel review. This policy is not approved or active. The contracting entity details in square brackets must be replaced before activation.`;
+const POLICY_DATE_LINES = `Published: 15 July 2026
+
+Effective date: ${EFFECTIVE_AT ?? '[COUNSEL TO APPROVE EFFECTIVE DATE]'}`;
 
 const termsOfService: LegalDocument = {
   type: 'terms_of_service',
@@ -45,7 +50,7 @@ const termsOfService: LegalDocument = {
 
 Version ${VERSION}
 
-Draft date: 15 July 2026
+${POLICY_DATE_LINES}
 
 ${DRAFT_NOTICE}
 
@@ -153,7 +158,7 @@ const privacyPolicy: LegalDocument = {
 
 Version ${VERSION}
 
-Draft date: 15 July 2026
+${POLICY_DATE_LINES}
 
 ${DRAFT_NOTICE}
 
@@ -251,7 +256,7 @@ const riskDisclosure: LegalDocument = {
 
 Version ${VERSION}
 
-Draft date: 15 July 2026
+${POLICY_DATE_LINES}
 
 ${DRAFT_NOTICE}
 
@@ -317,7 +322,7 @@ const acceptableUsePolicy: LegalDocument = {
 
 Version ${VERSION}
 
-Draft date: 15 July 2026
+${POLICY_DATE_LINES}
 
 ${DRAFT_NOTICE}
 
@@ -374,8 +379,8 @@ Report suspected violations to ${LEGAL_ENTITY.legalNoticeEmail} with the relevan
 export const CURRENT_LEGAL_BUNDLE = {
   version: VERSION,
   status: 'draft' as LegalCopyStatus,
-  publishedAt: '2026-07-15T00:00:00.000Z',
-  effectiveAt: null,
+  publishedAt: PUBLISHED_AT,
+  effectiveAt: EFFECTIVE_AT,
   documents: [termsOfService, privacyPolicy, riskDisclosure, acceptableUsePolicy],
 } as const;
 
@@ -395,10 +400,10 @@ export function getCurrentLegalBundleActivationIssues(): string[] {
   }
   if (
     CURRENT_LEGAL_BUNDLE.documents.some((document) =>
-      /Draft for counsel review|not approved or active/i.test(document.markdown)
+      /\bdraft\b|not approved or active/i.test(document.markdown)
     )
   ) {
-    issues.push('policy copy still contains the draft notice');
+    issues.push('policy copy still contains draft markers');
   }
   if (
     CURRENT_LEGAL_BUNDLE.documents.some((document) =>

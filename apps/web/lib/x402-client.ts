@@ -5,7 +5,7 @@
 // duplicating the full 90-line dance.
 
 import type { useSignTypedData, useSwitchChain } from 'wagmi';
-import { getLegalReceiptHeaders } from '@/lib/legal-receipt';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 export type X402Step = 'payment' | 'signing' | 'submitting';
 
@@ -82,7 +82,7 @@ export async function payX402Post<T = unknown>(
     onStep?.('payment');
     const probeRes = await fetch(`${deps.apiUrl}${path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...getLegalReceiptHeaders() },
+      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
       method: 'POST',
     });
     if (probeRes.status !== 402) {
@@ -179,7 +179,7 @@ export async function payX402Post<T = unknown>(
       body: JSON.stringify(body),
       headers: {
         'Content-Type': 'application/json',
-        ...getLegalReceiptHeaders(),
+        ...(await getLegalRequestHeaders()),
         'payment-signature': btoa(JSON.stringify(paymentPayload)),
       },
       method: 'POST',
@@ -221,7 +221,7 @@ export async function probeX402Cost(
   try {
     const probeRes = await fetch(`${apiUrl}${path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json', ...getLegalReceiptHeaders() },
+      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
       method: 'POST',
     });
     if (probeRes.status !== 402) return null;

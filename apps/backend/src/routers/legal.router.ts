@@ -25,6 +25,7 @@ const LegalDocumentTypeSchema = z.enum([
 const LegalBundleSchema = z.object({
   acceptanceAvailable: z.boolean(),
   acceptanceStatement: z.string(),
+  bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
   documents: z.array(
     z.object({
       contentHash: z.string(),
@@ -52,9 +53,19 @@ const AffirmationsSchema = z.object({
 
 const AcceptanceResponseSchema = z.object({
   acceptedAt: z.string(),
+  bundleDigest: z.string(),
   bundleVersion: z.string(),
   receipt: z.string(),
 });
+
+function preventCredentialCaching(res: {
+  setHeader(name: string, value: string): unknown;
+  vary(field: string): unknown;
+}): void {
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.vary('Authorization');
+  res.vary('X-Taskmarket-Legal-Receipt');
+}
 
 function requestEvidence(req: {
   ip?: string;
@@ -117,6 +128,7 @@ export const legalRouter = router({
       })
     )
     .query(async ({ ctx }) => {
+      preventCredentialCaching(ctx.res);
       const bundle = getCurrentLegalBundle();
       const header = ctx.req.headers[LEGAL_RECEIPT_HEADER];
       const receipt = Array.isArray(header) ? header[0] : header;
@@ -155,10 +167,11 @@ export const legalRouter = router({
 
       if (receipt) {
         const identity = await verifyLegalReceipt(receipt);
+        const walletIdentity = identity?.subjectType === 'wallet' ? identity : null;
         return {
-          accepted: Boolean(identity),
+          accepted: Boolean(walletIdentity),
           bundle,
-          ...(identity ? { subjectType: identity.subjectType as 'privy_user' | 'wallet' } : {}),
+          ...(walletIdentity ? { subjectType: 'wallet' as const } : {}),
         };
       }
 
@@ -186,6 +199,7 @@ export const legalRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      preventCredentialCaching(ctx.res);
       try {
         return await createWalletLegalChallenge(ctx.db, input.walletAddress);
       } catch (error) {
@@ -204,6 +218,7 @@ export const legalRouter = router({
     })
     .input(
       AffirmationsSchema.extend({
+        bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
         bundleVersion: z.string().max(128),
         nonce: z.string().uuid(),
         signature: z.string().regex(/^0x[a-fA-F0-9]{128}(?:[a-fA-F0-9]{2})?$/),
@@ -212,9 +227,11 @@ export const legalRouter = router({
     )
     .output(AcceptanceResponseSchema)
     .mutation(async ({ input, ctx }) => {
+      preventCredentialCaching(ctx.res);
       try {
         const result = await acceptWalletLegalTerms(ctx.db, {
           ...requestEvidence(ctx.req),
+          bundleDigest: input.bundleDigest,
           bundleVersion: input.bundleVersion,
           nonce: input.nonce,
           signature: input.signature as `0x${string}`,
@@ -222,6 +239,7 @@ export const legalRouter = router({
         });
         return {
           acceptedAt: result.acceptance.acceptedAt.toISOString(),
+          bundleDigest: result.acceptance.bundleDigest,
           bundleVersion: result.acceptance.bundleVersion,
           receipt: result.receipt,
         };
@@ -239,11 +257,17 @@ export const legalRouter = router({
         summary: 'Accept the current legal bundle from an authenticated web session',
       },
     })
-    .input(AffirmationsSchema.extend({ bundleVersion: z.string().max(128) }))
+    .input(
+      AffirmationsSchema.extend({
+        bundleDigest: z.string().regex(/^sha256:[a-f0-9]{64}$/),
+        bundleVersion: z.string().max(128),
+      })
+    )
     .output(AcceptanceResponseSchema)
     .mutation(async ({ input, ctx }) => {
+      preventCredentialCaching(ctx.res);
       try {
-        assertLegalAcceptanceAvailable(input.bundleVersion);
+        assertLegalAcceptanceAvailable(input.bundleVersion, input.bundleDigest);
         const claim = await verifiedPrivyClaim(ctx.req.headers.authorization);
         const result = await recordLegalAcceptance(ctx.db, {
           ...requestEvidence(ctx.req),
@@ -254,6 +278,7 @@ export const legalRouter = router({
         });
         return {
           acceptedAt: result.acceptance.acceptedAt.toISOString(),
+          bundleDigest: result.acceptance.bundleDigest,
           bundleVersion: result.acceptance.bundleVersion,
           receipt: result.receipt,
         };

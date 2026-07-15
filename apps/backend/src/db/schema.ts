@@ -495,6 +495,7 @@ export const legalAcceptances = pgTable(
   {
     id: text('id').primaryKey(),
     bundleVersion: text('bundle_version').notNull(),
+    bundleDigest: text('bundle_digest').notNull(),
     subjectType: text('subject_type').notNull(),
     subjectId: text('subject_id').notNull(),
     acceptanceMethod: text('acceptance_method').notNull(),
@@ -508,10 +509,11 @@ export const legalAcceptances = pgTable(
     userAgent: text('user_agent'),
   },
   (table) => ({
-    subjectBundleUnique: uniqueIndex('uidx_legal_acceptances_subject_bundle').on(
+    subjectBundleUnique: uniqueIndex('uidx_legal_acceptances_subject_bundle_digest').on(
       table.subjectType,
       table.subjectId,
-      table.bundleVersion
+      table.bundleVersion,
+      table.bundleDigest
     ),
     bundleIdx: index('idx_legal_acceptances_bundle').on(table.bundleVersion),
   })
@@ -523,13 +525,16 @@ export const legalAcceptanceChallenges = pgTable(
     nonce: text('nonce').primaryKey(),
     walletAddress: text('wallet_address').notNull(),
     bundleVersion: text('bundle_version').notNull(),
+    bundleDigest: text('bundle_digest').notNull(),
+    documentManifest: jsonb('document_manifest').notNull(),
+    statementText: text('statement_text').notNull(),
     message: text('message').notNull(),
     expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
     consumedAt: timestamp('consumed_at', { withTimezone: true }),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
   },
   (table) => ({
-    walletUnique: uniqueIndex('uidx_legal_acceptance_challenges_wallet').on(table.walletAddress),
+    walletIdx: index('idx_legal_acceptance_challenges_wallet').on(table.walletAddress),
     expiresIdx: index('idx_legal_acceptance_challenges_expires').on(table.expiresAt),
   })
 );
@@ -543,6 +548,7 @@ export const legalAccessReceipts = pgTable(
       .notNull()
       .references(() => legalAcceptances.id, { onDelete: 'cascade' }),
     bundleVersion: text('bundle_version').notNull(),
+    bundleDigest: text('bundle_digest').notNull(),
     subjectType: text('subject_type').notNull(),
     subjectId: text('subject_id').notNull(),
     issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),

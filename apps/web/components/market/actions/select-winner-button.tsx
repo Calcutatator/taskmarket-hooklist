@@ -7,7 +7,7 @@ import { useAccount, useSignMessage } from 'wagmi';
 
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { getLegalReceiptHeaders } from '@/lib/legal-receipt';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -61,7 +61,7 @@ export function SelectWinnerButton({ disabled, onSuccess, task }: TaskActionComp
           requesterAddress: address,
           signature,
         }),
-        headers: { 'Content-Type': 'application/json', ...getLegalReceiptHeaders() },
+        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
         method: 'POST',
       });
       setPending(false);

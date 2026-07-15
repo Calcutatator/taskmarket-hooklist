@@ -19,6 +19,7 @@ export interface Keystore {
   xmtpDbPath?: string;
   legalAcceptanceReceipt?: string;
   legalAcceptanceBundleVersion?: string;
+  legalAcceptanceApiOrigin?: string;
 }
 
 export function getKeystorePath(): string {

@@ -1,4 +1,4 @@
-import { API_URL } from './api.js';
+import { API_ORIGIN, API_URL } from './api.js';
 import { loadKeystore } from './keystore.js';
 import { createTransferAuthorization } from './signer.js';
 
@@ -24,9 +24,10 @@ interface PaymentRequirements {
 export async function x402Post(path: string, body: Record<string, unknown>): Promise<unknown> {
   const url = `${API_URL}${path}`;
   const keystore = await loadKeystore();
-  const legalHeaders: Record<string, string> = keystore.legalAcceptanceReceipt
-    ? { 'X-Taskmarket-Legal-Receipt': keystore.legalAcceptanceReceipt }
-    : {};
+  const legalHeaders: Record<string, string> =
+    keystore.legalAcceptanceApiOrigin === API_ORIGIN && keystore.legalAcceptanceReceipt
+      ? { 'X-Taskmarket-Legal-Receipt': keystore.legalAcceptanceReceipt }
+      : {};
 
   // Round 1: discover payment requirements
   const r1 = await fetch(url, {

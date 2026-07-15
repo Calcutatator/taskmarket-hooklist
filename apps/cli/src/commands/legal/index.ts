@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { createInterface } from 'node:readline/promises';
 import { buildWalletLegalAcceptanceMessage, type LegalDocumentEvidence } from '@taskmarket/shared';
 
-import { apiGet, apiPost } from '../../lib/api.js';
+import { API_ORIGIN, apiGet, apiPost } from '../../lib/api.js';
 import { loadKeystore, saveKeystore } from '../../lib/keystore.js';
 import { printResult } from '../../lib/output.js';
 import { signMessage } from '../../lib/signer.js';
@@ -10,6 +10,7 @@ import { signMessage } from '../../lib/signer.js';
 export type LegalBundle = {
   acceptanceAvailable: boolean;
   acceptanceStatement: string;
+  bundleDigest: string;
   documents: Array<{
     contentHash: string;
     title: string;
@@ -74,6 +75,7 @@ async function confirmAcceptance(bundle: LegalBundle, assumeYes: boolean): Promi
 function bundleEvidence(bundle: LegalBundle): string {
   return JSON.stringify({
     acceptanceStatement: bundle.acceptanceStatement,
+    bundleDigest: bundle.bundleDigest,
     documents: bundle.documents.map(({ contentHash, title, type, version }) => ({
       contentHash,
       title,
@@ -120,12 +122,14 @@ const statusCommand = new Command('status')
     if (status.receipt) {
       await saveKeystore({
         ...keystore,
+        legalAcceptanceApiOrigin: API_ORIGIN,
         legalAcceptanceBundleVersion: status.bundle.version,
         legalAcceptanceReceipt: status.receipt,
       });
     }
     printResult({
       accepted: status.accepted,
+      bundleDigest: status.bundle.bundleDigest,
       bundleVersion: status.bundle.version,
       enforcementEnabled: status.bundle.enforcementEnabled,
       status: status.bundle.status,
@@ -159,20 +163,32 @@ const acceptCommand = new Command('accept')
     const signature = await signMessage(challenge.message, keystore);
     const result = (await apiPost('/api/legal/accept/wallet', {
       ...affirmations,
+      bundleDigest: bundle.bundleDigest,
       bundleVersion: bundle.version,
       nonce: challenge.nonce,
       signature,
       walletAddress: keystore.walletAddress,
-    })) as { acceptedAt: string; bundleVersion: string; receipt: string };
+    })) as {
+      acceptedAt: string;
+      bundleDigest: string;
+      bundleVersion: string;
+      receipt: string;
+    };
+
+    if (result.bundleDigest !== bundle.bundleDigest || result.bundleVersion !== bundle.version) {
+      throw new Error('The server returned a receipt for a different legal bundle.');
+    }
 
     await saveKeystore({
       ...keystore,
+      legalAcceptanceApiOrigin: API_ORIGIN,
       legalAcceptanceBundleVersion: result.bundleVersion,
       legalAcceptanceReceipt: result.receipt,
     });
     printResult({
       accepted: true,
       acceptedAt: result.acceptedAt,
+      bundleDigest: result.bundleDigest,
       bundleVersion: result.bundleVersion,
       walletAddress: keystore.walletAddress,
     });

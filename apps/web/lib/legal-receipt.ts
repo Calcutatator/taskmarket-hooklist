@@ -1,3 +1,5 @@
+import { getAccessToken } from '@privy-io/react-auth';
+
 const LEGAL_RECEIPT_STORAGE_KEY = 'taskmarket:legal-receipt';
 const LEGAL_BUNDLE_STORAGE_KEY = 'taskmarket:legal-bundle-version';
 
@@ -21,4 +23,15 @@ export function clearLegalReceipt(): void {
 export function getLegalReceiptHeaders(): Record<string, string> {
   const receipt = getLegalReceipt();
   return receipt ? { 'X-Taskmarket-Legal-Receipt': receipt } : {};
+}
+
+export async function getLegalRequestHeaders(): Promise<Record<string, string>> {
+  const headers = getLegalReceiptHeaders();
+  if (!headers['X-Taskmarket-Legal-Receipt']) return headers;
+  try {
+    const accessToken = await getAccessToken();
+    return accessToken ? { ...headers, Authorization: `Bearer ${accessToken}` } : headers;
+  } catch {
+    return headers;
+  }
 }

@@ -15,6 +15,7 @@ const {
 const bundle = {
   acceptanceAvailable: true,
   acceptanceStatement: 'I accept the current policies.',
+  bundleDigest: `sha256:${'a'.repeat(64)}`,
   documents: [
     {
       contentHash: 'a'.repeat(64),
@@ -74,16 +75,18 @@ describe('legal router status', () => {
       subjectType: 'privy_user',
     });
 
-    const result = await legalRouter.createCaller(
-      context({
-        authorization: 'Bearer privy-token',
-        'x-taskmarket-legal-receipt': 'receipt-1',
-      })
-    ).status({});
+    const ctx = context({
+      authorization: 'Bearer privy-token',
+      'x-taskmarket-legal-receipt': 'receipt-1',
+    });
+    const result = await legalRouter.createCaller(ctx).status({});
 
     expect(result.accepted).toBe(true);
     expect(verifyPrivyAccessToken).toHaveBeenCalledWith('Bearer privy-token');
     expect(getLegalAcceptanceForSubject).not.toHaveBeenCalled();
+    expect(ctx.res.setHeader).toHaveBeenCalledWith('Cache-Control', 'private, no-store');
+    expect(ctx.res.vary).toHaveBeenCalledWith('Authorization');
+    expect(ctx.res.vary).toHaveBeenCalledWith('X-Taskmarket-Legal-Receipt');
   });
 
   it('does not treat another subject\'s receipt as the authenticated user\'s acceptance', async () => {
@@ -121,6 +124,21 @@ describe('legal router status', () => {
 
     expect(result).toMatchObject({ accepted: true, subjectType: 'wallet' });
     expect(verifyPrivyAccessToken).not.toHaveBeenCalled();
+  });
+
+  it('does not honor a Privy receipt without its matching bearer token', async () => {
+    verifyLegalReceipt.mockResolvedValue({
+      acceptanceId: 'acceptance-3',
+      subjectId: 'did:privy:user-1',
+      subjectType: 'privy_user',
+    });
+
+    const result = await legalRouter.createCaller(
+      context({ 'x-taskmarket-legal-receipt': 'privy-receipt' })
+    ).status({});
+
+    expect(result).toMatchObject({ accepted: false });
+    expect(result).not.toHaveProperty('subjectType');
   });
 
   it('reissues a receipt for a returning authenticated user', async () => {

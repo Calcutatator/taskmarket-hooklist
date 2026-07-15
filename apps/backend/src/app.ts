@@ -49,6 +49,7 @@ import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
 import { legalAccessMiddleware } from './middleware/legal-access';
+import { getCurrentLegalDocument } from './services/legal';
 import { db } from './db/client';
 import { feedbacks, submissions, artifacts, proposals, proofs, taskDrops } from './db/schema';
 import { unsubscribeTaskDropsSubscription } from './services/task-drops-email';
@@ -63,6 +64,10 @@ import {
 export const app = express();
 
 const config = getServerConfig();
+
+if (config.TRUST_PROXY_HOPS > 0) {
+  app.set('trust proxy', config.TRUST_PROXY_HOPS);
+}
 
 function escapeHtml(value: string) {
   return value.replace(/[&<>"']/g, (char) => {
@@ -168,6 +173,22 @@ app.use(
 );
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
+
+app.get('/legal-documents/:version/:slug/:contentHash', (req, res) => {
+  const document = getCurrentLegalDocument(
+    req.params.version,
+    req.params.slug,
+    req.params.contentHash
+  );
+  if (!document) {
+    res.status(404).type('text/plain').send('Legal document version not found.');
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Taskmarket-Legal-Hash', document.contentHash);
+  res.type('text/markdown').send(document.markdown);
+});
 
 if (config.NODE_ENV !== 'production') {
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));

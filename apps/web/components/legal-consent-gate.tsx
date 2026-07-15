@@ -2,7 +2,7 @@
 
 import { getAccessToken, usePrivy } from '@privy-io/react-auth';
 import { usePathname } from 'next/navigation';
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
 
 import { Button } from '@/components/ui/button';
 import { Checkbox } from '@/components/ui/checkbox';
@@ -26,6 +26,7 @@ type LegalDocumentType =
 type LegalBundle = {
   acceptanceAvailable: boolean;
   acceptanceStatement: string;
+  bundleDigest: string;
   documents: Array<{
     title: string;
     type: LegalDocumentType;
@@ -37,7 +38,7 @@ type LegalBundle = {
 };
 
 type GateState =
-  | { kind: 'idle' | 'checking' | 'accepted' }
+  | { kind: 'idle' | 'checking' | 'accepted' | 'limited' }
   | { kind: 'required'; bundle: LegalBundle }
   | { kind: 'error'; message: string };
 
@@ -55,6 +56,8 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
   const [checks, setChecks] = useState(initialChecks);
   const [submitting, setSubmitting] = useState(false);
   const [submitError, setSubmitError] = useState<string | null>(null);
+  const limitedBundleVersion = useRef<string | null>(null);
+  const limitedAfterError = useRef(false);
 
   useEffect(() => {
     if (pathname === '/legal' || pathname.startsWith('/legal/')) {
@@ -64,6 +67,8 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
     if (!ready) return;
     if (!authenticated) {
       clearLegalReceipt();
+      limitedBundleVersion.current = null;
+      limitedAfterError.current = false;
       setState({ kind: 'idle' });
       return;
     }
@@ -87,14 +92,24 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
         };
         if (cancelled) return;
         if (status.receipt) setLegalReceipt(status.receipt, status.bundle.version);
-        if (!status.bundle.enforcementEnabled || status.accepted) {
+        limitedAfterError.current = false;
+        if (!status.bundle.acceptanceAvailable || status.accepted) {
+          limitedBundleVersion.current = null;
           setState({ kind: 'accepted' });
+          return;
+        }
+        if (limitedBundleVersion.current === status.bundle.version) {
+          setState({ kind: 'limited' });
           return;
         }
         setChecks(initialChecks);
         setState({ kind: 'required', bundle: status.bundle });
       } catch (error) {
         if (!cancelled) {
+          if (limitedAfterError.current) {
+            setState({ kind: 'limited' });
+            return;
+          }
           setState({
             kind: 'error',
             message: error instanceof Error ? error.message : 'Unable to verify legal status',
@@ -126,6 +141,7 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
           acknowledgedRisk: true,
           agreedToAcceptableUse: true,
           agreedToTerms: true,
+          bundleDigest: bundle.bundleDigest,
           bundleVersion: bundle.version,
           receivedPrivacyNotice: true,
         }),
@@ -139,12 +155,20 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
         message?: string;
         error?: string;
         receipt?: string;
+        bundleDigest?: string;
         bundleVersion?: string;
       };
-      if (!response.ok || !body.receipt || !body.bundleVersion) {
+      if (
+        !response.ok ||
+        !body.receipt ||
+        body.bundleDigest !== bundle.bundleDigest ||
+        body.bundleVersion !== bundle.version
+      ) {
         throw new Error(body.message ?? body.error ?? `Acceptance failed (${response.status})`);
       }
       setLegalReceipt(body.receipt, body.bundleVersion);
+      limitedBundleVersion.current = null;
+      limitedAfterError.current = false;
       setState({ kind: 'accepted' });
     } catch (error) {
       setSubmitError(error instanceof Error ? error.message : 'Unable to record acceptance');
@@ -156,6 +180,15 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
   async function signOutAndRead(): Promise<void> {
     clearLegalReceipt();
     await logout();
+  }
+
+  function continueWithoutAccepting(): void {
+    if (state.kind === 'required') {
+      limitedBundleVersion.current = state.bundle.version;
+    } else if (state.kind === 'error') {
+      limitedAfterError.current = true;
+    }
+    setState({ kind: 'limited' });
   }
 
   return (
@@ -183,8 +216,11 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
                 <Button onClick={() => window.location.reload()} type="button">
                   Retry
                 </Button>
-                <Button onClick={signOutAndRead} type="button" variant="outline">
-                  Sign out and continue read-only
+                <Button onClick={continueWithoutAccepting} type="button" variant="outline">
+                  Continue with limited access
+                </Button>
+                <Button onClick={signOutAndRead} type="button" variant="ghost">
+                  Sign out
                 </Button>
               </DialogFooter>
             </>
@@ -193,8 +229,9 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
               <DialogHeader>
                 <DialogTitle>Review Taskmarket&apos;s legal policies</DialogTitle>
                 <DialogDescription>
-                  Version {bundle.version} applies before you can fund, accept, submit, evaluate, or
-                  otherwise begin new marketplace activity. Each policy opens in a new page.
+                  Version {bundle.version} applies before you can fund, create, submit, bid, pitch,
+                  evaluate, or otherwise begin new marketplace activity. Each policy opens in a new
+                  page.
                 </DialogDescription>
               </DialogHeader>
 
@@ -289,19 +326,26 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
                 </div>
               </div>
 
+              <p className="rounded-lg border border-border/70 bg-muted/35 p-3 text-sm leading-6 text-foreground">
+                {bundle.acceptanceStatement}
+              </p>
+
               <p className="text-xs leading-5 text-muted-foreground">
                 Taskmarket records the policy versions, content hashes, time, session evidence, IP
                 address, and user agent associated with this acceptance. Refusing does not block
-                public reads or designated withdrawal, refund, cancellation, data, and logout
-                actions.
+                public reads or designated terminal settlement, withdrawal, refund, cancellation,
+                appeal, data, and logout actions.
               </p>
               {submitError ? <p className="text-sm text-destructive">{submitError}</p> : null}
               <DialogFooter>
                 <Button disabled={!allChecked || submitting} onClick={accept} type="button">
                   {submitting ? 'Recording acceptance...' : 'Accept and continue'}
                 </Button>
-                <Button onClick={signOutAndRead} type="button" variant="outline">
-                  Sign out and continue read-only
+                <Button onClick={continueWithoutAccepting} type="button" variant="outline">
+                  Continue without accepting
+                </Button>
+                <Button onClick={signOutAndRead} type="button" variant="ghost">
+                  Sign out
                 </Button>
               </DialogFooter>
             </>

@@ -28,6 +28,12 @@ type Database = LegalDatabase & Pick<typeof db, 'transaction'>;
 type LegalSubjectType = 'privy_user' | 'wallet';
 type LegalAcceptanceMethod = 'web_clickwrap' | 'wallet_signature';
 
+type LegalEvidenceSnapshot = {
+  acceptanceStatement: string;
+  bundleDigest: string;
+  documents: LegalDocumentEvidence[];
+};
+
 export type LegalReceiptIdentity = {
   acceptanceId: string;
   subjectType: string;
@@ -51,22 +57,50 @@ function legalDocumentEvidence(): LegalDocumentEvidence[] {
   }));
 }
 
-function legalDocumentUrl(webAppUrl: string, slug: string): string {
-  return new URL(`/legal/${slug}`, webAppUrl).toString();
+function currentLegalEvidence(): LegalEvidenceSnapshot {
+  const documents = legalDocumentEvidence();
+  const digestPayload = JSON.stringify({
+    acceptanceStatement: LEGAL_ACCEPTANCE_STATEMENT,
+    documents,
+    version: CURRENT_LEGAL_BUNDLE.version,
+  });
+  return {
+    acceptanceStatement: LEGAL_ACCEPTANCE_STATEMENT,
+    bundleDigest: `sha256:${sha256(digestPayload)}`,
+    documents,
+  };
+}
+
+function legalDocumentUrl(
+  backendUrl: string,
+  version: string,
+  slug: string,
+  contentHash: string
+): string {
+  return new URL(
+    `/legal-documents/${encodeURIComponent(version)}/${encodeURIComponent(slug)}/${encodeURIComponent(contentHash)}`,
+    backendUrl
+  ).toString();
 }
 
 export function getCurrentLegalBundle() {
   const config = getServerConfig();
-  const evidence = legalDocumentEvidence();
+  const evidence = currentLegalEvidence();
 
   return {
     acceptanceAvailable: isCurrentLegalBundleActivationReady(),
-    acceptanceStatement: LEGAL_ACCEPTANCE_STATEMENT,
+    acceptanceStatement: evidence.acceptanceStatement,
+    bundleDigest: evidence.bundleDigest,
     documents: CURRENT_LEGAL_BUNDLE.documents.map((document, index) => ({
-      ...evidence[index],
+      ...evidence.documents[index],
       slug: document.slug,
       summary: document.summary,
-      url: legalDocumentUrl(config.WEB_APP_URL, document.slug),
+      url: legalDocumentUrl(
+        config.BACKEND_URL,
+        CURRENT_LEGAL_BUNDLE.version,
+        document.slug,
+        evidence.documents[index].contentHash
+      ),
     })),
     effectiveAt: CURRENT_LEGAL_BUNDLE.effectiveAt,
     enforcementEnabled: config.LEGAL_ENFORCEMENT_ENABLED,
@@ -76,7 +110,26 @@ export function getCurrentLegalBundle() {
   };
 }
 
-export function assertLegalAcceptanceAvailable(bundleVersion: string): void {
+export function getCurrentLegalDocument(
+  version: string,
+  slug: string,
+  contentHash: string
+): { contentHash: string; markdown: string; title: string; version: string } | null {
+  if (version !== CURRENT_LEGAL_BUNDLE.version) return null;
+  const documentIndex = CURRENT_LEGAL_BUNDLE.documents.findIndex((item) => item.slug === slug);
+  if (documentIndex < 0) return null;
+  const document = CURRENT_LEGAL_BUNDLE.documents[documentIndex];
+  const evidence = legalDocumentEvidence()[documentIndex];
+  if (contentHash !== evidence.contentHash) return null;
+  return {
+    contentHash: evidence.contentHash,
+    markdown: document.markdown,
+    title: document.title,
+    version: document.version,
+  };
+}
+
+export function assertLegalAcceptanceAvailable(bundleVersion: string, bundleDigest?: string): void {
   const activationIssues = getCurrentLegalBundleActivationIssues();
   if (activationIssues.length > 0) {
     throw new Error(
@@ -85,6 +138,9 @@ export function assertLegalAcceptanceAvailable(bundleVersion: string): void {
   }
   if (bundleVersion !== CURRENT_LEGAL_BUNDLE.version) {
     throw new Error(`Legal bundle ${bundleVersion} is not current`);
+  }
+  if (bundleDigest && bundleDigest !== currentLegalEvidence().bundleDigest) {
+    throw new Error('The legal bundle changed before acceptance was recorded');
   }
 }
 
@@ -97,36 +153,27 @@ export async function createWalletLegalChallenge(
   const normalizedWallet = normalizeSubjectId('wallet', walletAddress);
   const nonce = randomUUID();
   const expiresAt = new Date(now.getTime() + CHALLENGE_TTL_MS);
+  const evidence = currentLegalEvidence();
   const message = buildWalletLegalAcceptanceMessage({
     bundleVersion: CURRENT_LEGAL_BUNDLE.version,
-    documents: legalDocumentEvidence(),
+    documents: evidence.documents,
     expiresAt: expiresAt.toISOString(),
     issuedAt: now.toISOString(),
     nonce,
     walletAddress: normalizedWallet,
   });
 
-  await database
-    .insert(legalAcceptanceChallenges)
-    .values({
-      bundleVersion: CURRENT_LEGAL_BUNDLE.version,
-      createdAt: now,
-      expiresAt,
-      message,
-      nonce,
-      walletAddress: normalizedWallet,
-    })
-    .onConflictDoUpdate({
-      set: {
-        bundleVersion: CURRENT_LEGAL_BUNDLE.version,
-        consumedAt: null,
-        createdAt: now,
-        expiresAt,
-        message,
-        nonce,
-      },
-      target: legalAcceptanceChallenges.walletAddress,
-    });
+  await database.insert(legalAcceptanceChallenges).values({
+    bundleDigest: evidence.bundleDigest,
+    bundleVersion: CURRENT_LEGAL_BUNDLE.version,
+    createdAt: now,
+    documentManifest: evidence.documents,
+    expiresAt,
+    message,
+    nonce,
+    statementText: evidence.acceptanceStatement,
+    walletAddress: normalizedWallet,
+  });
 
   return {
     bundle: getCurrentLegalBundle(),
@@ -150,7 +197,8 @@ async function findAcceptance(
       and(
         eq(legalAcceptances.subjectType, subjectType),
         eq(legalAcceptances.subjectId, normalizeSubjectId(subjectType, subjectId)),
-        eq(legalAcceptances.bundleVersion, CURRENT_LEGAL_BUNDLE.version)
+        eq(legalAcceptances.bundleVersion, CURRENT_LEGAL_BUNDLE.version),
+        eq(legalAcceptances.bundleDigest, currentLegalEvidence().bundleDigest)
       )
     )
     .limit(1);
@@ -164,6 +212,7 @@ async function issueLegalReceipt(
   const receipt = `tmlegal_${randomBytes(32).toString('base64url')}`;
   await database.insert(legalAccessReceipts).values({
     acceptanceId: acceptance.id,
+    bundleDigest: acceptance.bundleDigest,
     bundleVersion: acceptance.bundleVersion,
     id: randomUUID(),
     subjectId: acceptance.subjectId,
@@ -184,21 +233,25 @@ export async function recordLegalAcceptance(
     sessionId?: string;
     ipAddress?: string;
     userAgent?: string;
+    evidence?: LegalEvidenceSnapshot;
   }
 ) {
   const subjectId = normalizeSubjectId(input.subjectType, input.subjectId);
+  const evidence = input.evidence ?? currentLegalEvidence();
+  assertLegalAcceptanceAvailable(CURRENT_LEGAL_BUNDLE.version, evidence.bundleDigest);
   await database
     .insert(legalAcceptances)
     .values({
       acceptanceMethod: input.acceptanceMethod,
+      bundleDigest: evidence.bundleDigest,
       bundleVersion: CURRENT_LEGAL_BUNDLE.version,
       challenge: input.challenge,
-      documentManifest: legalDocumentEvidence(),
+      documentManifest: evidence.documents,
       id: randomUUID(),
       ipAddress: input.ipAddress,
       sessionId: input.sessionId,
       signature: input.signature,
-      statementText: LEGAL_ACCEPTANCE_STATEMENT,
+      statementText: evidence.acceptanceStatement,
       subjectId,
       subjectType: input.subjectType,
       userAgent: input.userAgent?.slice(0, 1024),
@@ -220,6 +273,7 @@ export async function acceptWalletLegalTerms(
   database: Database,
   input: {
     walletAddress: string;
+    bundleDigest: string;
     bundleVersion: string;
     nonce: string;
     signature: `0x${string}`;
@@ -228,7 +282,7 @@ export async function acceptWalletLegalTerms(
   },
   now = new Date()
 ) {
-  assertLegalAcceptanceAvailable(input.bundleVersion);
+  assertLegalAcceptanceAvailable(input.bundleVersion, input.bundleDigest);
   const walletAddress = normalizeSubjectId('wallet', input.walletAddress);
   const rows = await database
     .select()
@@ -241,6 +295,8 @@ export async function acceptWalletLegalTerms(
     !challenge ||
     challenge.walletAddress !== walletAddress ||
     challenge.bundleVersion !== input.bundleVersion ||
+    challenge.bundleDigest !== input.bundleDigest ||
+    challenge.bundleDigest !== currentLegalEvidence().bundleDigest ||
     challenge.consumedAt ||
     challenge.expiresAt <= now
   ) {
@@ -273,6 +329,11 @@ export async function acceptWalletLegalTerms(
     return recordLegalAcceptance(tx, {
       acceptanceMethod: 'wallet_signature',
       challenge: challenge.message,
+      evidence: {
+        acceptanceStatement: challenge.statementText,
+        bundleDigest: challenge.bundleDigest,
+        documents: challenge.documentManifest as LegalDocumentEvidence[],
+      },
       ipAddress: input.ipAddress,
       signature: input.signature,
       subjectId: walletAddress,
@@ -303,6 +364,7 @@ export async function verifyLegalReceipt(receipt: string): Promise<LegalReceiptI
       and(
         eq(legalAccessReceipts.tokenHash, sha256(receipt)),
         eq(legalAccessReceipts.bundleVersion, CURRENT_LEGAL_BUNDLE.version),
+        eq(legalAccessReceipts.bundleDigest, currentLegalEvidence().bundleDigest),
         isNull(legalAccessReceipts.revokedAt)
       )
     )

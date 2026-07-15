@@ -30,7 +30,7 @@ describe('legal bundle', () => {
         'effective date is missing',
         'bundle version is still marked draft',
         'contracting entity details contain placeholders',
-        'policy copy still contains the draft notice',
+        'policy copy still contains draft markers',
         'policy copy contains counsel or product placeholders',
       ])
     );

@@ -1,4 +1,5 @@
 import { createHash } from 'crypto';
+import { CURRENT_LEGAL_BUNDLE } from '@taskmarket/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -18,6 +19,7 @@ vi.mock('@taskmarket/shared', async () => {
 
 vi.mock('../../../src/config/env', () => ({
   getServerConfig: () => ({
+    BACKEND_URL: 'https://api.taskmarket.example',
     LEGAL_ENFORCEMENT_ENABLED: true,
     WEB_APP_URL: 'https://taskmarket.example',
   }),
@@ -25,7 +27,10 @@ vi.mock('../../../src/config/env', () => ({
 
 import {
   acceptWalletLegalTerms,
+  assertLegalAcceptanceAvailable,
   createWalletLegalChallenge,
+  getCurrentLegalBundle,
+  getCurrentLegalDocument,
 } from '../../../src/services/legal';
 import { makeChain } from '../helpers';
 
@@ -50,6 +55,32 @@ describe('wallet legal acceptance service', () => {
     vi.clearAllMocks();
   });
 
+  it('serves each reviewed policy from its canonical hash-addressed backend URL', () => {
+    const bundle = getCurrentLegalBundle();
+
+    for (const document of bundle.documents) {
+      const url = new URL(document.url);
+      const [version, slug, contentHash] = url.pathname
+        .replace('/legal-documents/', '')
+        .split('/')
+        .map(decodeURIComponent);
+      const canonical = getCurrentLegalDocument(version, slug, contentHash);
+
+      expect(url.origin).toBe('https://api.taskmarket.example');
+      expect(canonical).toMatchObject({
+        contentHash: document.contentHash,
+        title: document.title,
+        version: document.version,
+      });
+    }
+  });
+
+  it('rejects a stale same-version bundle digest', () => {
+    expect(() =>
+      assertLegalAcceptanceAvailable(CURRENT_LEGAL_BUNDLE.version, `sha256:${'0'.repeat(64)}`)
+    ).toThrow('changed before acceptance');
+  });
+
   it('creates a short-lived challenge bound to the normalized wallet and all four documents', async () => {
     const db = database();
     const insert = makeChain();
@@ -69,14 +100,17 @@ describe('wallet legal acceptance service', () => {
     }
     expect(insert.values).toHaveBeenCalledWith(
       expect.objectContaining({
+        bundleDigest: challenge.bundle.bundleDigest,
+        documentManifest: challenge.bundle.documents.map(
+          ({ contentHash, title, type, version }) => ({ contentHash, title, type, version })
+        ),
         message: challenge.message,
         nonce: challenge.nonce,
+        statementText: challenge.bundle.acceptanceStatement,
         walletAddress: account.address.toLowerCase(),
       })
     );
-    expect(insert.onConflictDoUpdate).toHaveBeenCalledWith(
-      expect.objectContaining({ target: expect.anything() })
-    );
+    expect(insert.onConflictDoUpdate).not.toHaveBeenCalled();
   });
 
   it('verifies the wallet signature, consumes the challenge once, and hashes the receipt', async () => {
@@ -86,17 +120,21 @@ describe('wallet legal acceptance service', () => {
     db.insert.mockReturnValueOnce(challengeInsert);
     const challenge = await createWalletLegalChallenge(db as never, account.address, now);
     const storedChallenge = {
+      bundleDigest: challenge.bundle.bundleDigest,
       bundleVersion: challenge.bundle.version,
       consumedAt: null,
+      documentManifest: challenge.bundle.documents,
       expiresAt: new Date(challenge.expiresAt),
       message: challenge.message,
       nonce: challenge.nonce,
+      statementText: challenge.bundle.acceptanceStatement,
       walletAddress: challenge.walletAddress,
     };
     const signature = await account.signMessage({ message: challenge.message });
     const acceptance = {
       acceptanceMethod: 'wallet_signature',
       acceptedAt: now,
+      bundleDigest: challenge.bundle.bundleDigest,
       bundleVersion: challenge.bundle.version,
       challenge: challenge.message,
       documentManifest: challenge.bundle.documents,
@@ -121,6 +159,7 @@ describe('wallet legal acceptance service', () => {
     const result = await acceptWalletLegalTerms(
       db as never,
       {
+        bundleDigest: challenge.bundle.bundleDigest,
         bundleVersion: challenge.bundle.version,
         ipAddress: '203.0.113.10',
         nonce: challenge.nonce,
@@ -162,11 +201,14 @@ describe('wallet legal acceptance service', () => {
     db.select.mockReturnValueOnce(
       makeChain([
         {
+          bundleDigest: challenge.bundle.bundleDigest,
           bundleVersion: challenge.bundle.version,
           consumedAt: null,
+          documentManifest: challenge.bundle.documents,
           expiresAt: new Date(challenge.expiresAt),
           message: challenge.message,
           nonce: challenge.nonce,
+          statementText: challenge.bundle.acceptanceStatement,
           walletAddress: challenge.walletAddress,
         },
       ])
@@ -176,6 +218,7 @@ describe('wallet legal acceptance service', () => {
       acceptWalletLegalTerms(
         db as never,
         {
+          bundleDigest: challenge.bundle.bundleDigest,
           bundleVersion: challenge.bundle.version,
           nonce: challenge.nonce,
           signature,
@@ -184,6 +227,45 @@ describe('wallet legal acceptance service', () => {
         now
       )
     ).rejects.toThrow('signature does not match');
+    expect(db.transaction).not.toHaveBeenCalled();
+    expect(db.update).not.toHaveBeenCalled();
+  });
+
+  it('rejects an expired challenge without consuming it', async () => {
+    const db = database();
+    const issuedAt = new Date('2026-07-15T01:00:00.000Z');
+    db.insert.mockReturnValueOnce(makeChain());
+    const challenge = await createWalletLegalChallenge(db as never, account.address, issuedAt);
+    const signature = await account.signMessage({ message: challenge.message });
+    db.select.mockReturnValueOnce(
+      makeChain([
+        {
+          bundleDigest: challenge.bundle.bundleDigest,
+          bundleVersion: challenge.bundle.version,
+          consumedAt: null,
+          documentManifest: challenge.bundle.documents,
+          expiresAt: new Date(challenge.expiresAt),
+          message: challenge.message,
+          nonce: challenge.nonce,
+          statementText: challenge.bundle.acceptanceStatement,
+          walletAddress: challenge.walletAddress,
+        },
+      ])
+    );
+
+    await expect(
+      acceptWalletLegalTerms(
+        db as never,
+        {
+          bundleDigest: challenge.bundle.bundleDigest,
+          bundleVersion: challenge.bundle.version,
+          nonce: challenge.nonce,
+          signature,
+          walletAddress: account.address,
+        },
+        new Date(challenge.expiresAt)
+      )
+    ).rejects.toThrow('invalid or expired');
     expect(db.transaction).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
   });
@@ -197,11 +279,14 @@ describe('wallet legal acceptance service', () => {
     db.select.mockReturnValueOnce(
       makeChain([
         {
+          bundleDigest: challenge.bundle.bundleDigest,
           bundleVersion: challenge.bundle.version,
           consumedAt: null,
+          documentManifest: challenge.bundle.documents,
           expiresAt: new Date(challenge.expiresAt),
           message: challenge.message,
           nonce: challenge.nonce,
+          statementText: challenge.bundle.acceptanceStatement,
           walletAddress: challenge.walletAddress,
         },
       ])
@@ -212,6 +297,7 @@ describe('wallet legal acceptance service', () => {
       acceptWalletLegalTerms(
         db as never,
         {
+          bundleDigest: challenge.bundle.bundleDigest,
           bundleVersion: challenge.bundle.version,
           nonce: challenge.nonce,
           signature,

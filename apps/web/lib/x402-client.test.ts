@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('@privy-io/react-auth', () => ({
+  getAccessToken: vi.fn().mockResolvedValue('privy-token'),
+}));
+
 import { payX402Post, type X402Deps } from './x402-client';
 
 const fetchMock = vi.fn();
@@ -92,7 +96,9 @@ describe('payX402Post', () => {
     const probeHeaders = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> })
       .headers;
     expect(probeHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
+    expect(probeHeaders.Authorization).toBe('Bearer privy-token');
     expect(retryHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
+    expect(retryHeaders.Authorization).toBe('Bearer privy-token');
     expect(retryHeaders['payment-signature']).toBeTruthy();
   });
 

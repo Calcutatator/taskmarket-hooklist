@@ -11,6 +11,7 @@ const walletAddress = '0x1111111111111111111111111111111111111111';
 const bundle: LegalBundle = {
   acceptanceAvailable: true,
   acceptanceStatement: 'I agree to the reviewed policies.',
+  bundleDigest: `sha256:${'a'.repeat(64)}`,
   documents: [
     {
       contentHash: 'sha256:aaa',

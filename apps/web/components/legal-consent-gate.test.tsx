@@ -23,6 +23,7 @@ const bundle = {
   acceptanceAvailable: true,
   acceptanceStatement:
     'I agree to the Terms and Acceptable Use Policy, acknowledge the risks, and received the Privacy Policy.',
+  bundleDigest: `sha256:${'a'.repeat(64)}`,
   documents: [
     { title: 'Terms of Service', type: 'terms_of_service', url: '/legal/terms' },
     { title: 'Privacy Policy', type: 'privacy_policy', url: '/legal/privacy' },
@@ -49,6 +50,7 @@ describe('LegalConsentGate', () => {
           ok: true,
           json: async () => ({
             acceptedAt: '2026-07-15T00:00:00.000Z',
+            bundleDigest: bundle.bundleDigest,
             bundleVersion: bundle.version,
             receipt: 'receipt-1',
           }),
@@ -66,6 +68,7 @@ describe('LegalConsentGate', () => {
 
     const accept = await screen.findByRole('button', { name: 'Accept and continue' });
     expect(accept).toBeDisabled();
+    expect(screen.getByText(bundle.acceptanceStatement)).toBeInTheDocument();
 
     const termsCheckbox = screen.getByRole('checkbox', { name: /agree to the Terms of Service/i });
     await user.click(screen.getByRole('link', { name: 'Terms of Service' }));
@@ -95,5 +98,37 @@ describe('LegalConsentGate', () => {
     expect(screen.getByText('policy text')).toBeInTheDocument();
     await waitFor(() => expect(fetch).not.toHaveBeenCalled());
     expect(screen.queryByRole('button', { name: 'Accept and continue' })).not.toBeInTheDocument();
+  });
+
+  it('lets a signed-in user continue to recovery and read-only features without accepting', async () => {
+    const user = userEvent.setup();
+    render(
+      <LegalConsentGate>
+        <div>market recovery controls</div>
+      </LegalConsentGate>
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Continue without accepting' }));
+
+    expect(screen.getByText('market recovery controls')).toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Accept and continue' })).not.toBeInTheDocument();
+    expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('supports acceptance rollout before write enforcement is enabled', async () => {
+    vi.mocked(fetch)
+      .mockReset()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ accepted: false, bundle: { ...bundle, enforcementEnabled: false } }),
+      } as Response);
+
+    render(
+      <LegalConsentGate>
+        <div>market</div>
+      </LegalConsentGate>
+    );
+
+    expect(await screen.findByRole('button', { name: 'Accept and continue' })).toBeInTheDocument();
   });
 });

@@ -1,6 +1,9 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
-const { verifyLegalReceipt } = vi.hoisted(() => ({ verifyLegalReceipt: vi.fn() }));
+const { verifyLegalReceipt, verifyPrivyAccessToken } = vi.hoisted(() => ({
+  verifyLegalReceipt: vi.fn(),
+  verifyPrivyAccessToken: vi.fn(),
+}));
 
 vi.mock('../../../src/services/legal', () => ({
   LEGAL_ACCEPTANCE_REQUIRED_CODE: 'LEGAL_ACCEPTANCE_REQUIRED',
@@ -15,6 +18,8 @@ vi.mock('../../../src/config/env', () => ({
     WEB_APP_URL: 'https://taskmarket.example',
   }),
 }));
+
+vi.mock('../../../src/lib/privy-auth', () => ({ verifyPrivyAccessToken }));
 
 import { legalAccessMiddleware } from '../../../src/middleware/legal-access';
 
@@ -32,6 +37,7 @@ function response() {
 describe('legal access middleware', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    verifyPrivyAccessToken.mockResolvedValue({ user_id: 'did:privy:user-1' });
   });
 
   it('allows public reads without an acceptance receipt', async () => {
@@ -50,6 +56,8 @@ describe('legal access middleware', () => {
     '/api/tasks/0xtask/cancel',
     '/api/tasks/0xtask/refund-expired',
     '/api/tasks/0xtask/appeal',
+    '/api/tasks/0xtask/accept',
+    '/api/tasks/0xtask/accept-submissions',
     '/api/tasks/0xtask/resolve-dispute',
     '/api/wallet/withdraw',
     '/api/wallet/withdraw-dreams',
@@ -74,6 +82,23 @@ describe('legal access middleware', () => {
         method: 'POST',
         path: '/tasks.cancel%2Cevaluations.appeal',
         originalUrl: '/trpc/tasks.cancel%2Cevaluations.appeal?batch=1',
+        headers: {},
+      } as never,
+      response(),
+      next
+    );
+
+    expect(next).toHaveBeenCalledOnce();
+    expect(verifyLegalReceipt).not.toHaveBeenCalled();
+  });
+
+  it('allows terminal acceptance procedures needed to settle funded work', async () => {
+    const next = vi.fn();
+    await legalAccessMiddleware(
+      {
+        method: 'POST',
+        path: '/acceptance.accept%2Cacceptance.acceptSubmissions',
+        originalUrl: '/trpc/acceptance.accept%2Cacceptance.acceptSubmissions?batch=1',
         headers: {},
       } as never,
       response(),
@@ -132,7 +157,10 @@ describe('legal access middleware', () => {
         method: 'POST',
         path: '/tasks',
         originalUrl: '/api/tasks',
-        headers: { 'x-taskmarket-legal-receipt': 'receipt-1' },
+        headers: {
+          authorization: 'Bearer privy-token',
+          'x-taskmarket-legal-receipt': 'receipt-1',
+        },
       } as never,
       res,
       next
@@ -142,6 +170,90 @@ describe('legal access middleware', () => {
     expect((res as { locals: Record<string, unknown> }).locals.legalAcceptance).toEqual(
       expect.objectContaining({ acceptanceId: 'acceptance-1' })
     );
+    expect(next).toHaveBeenCalledOnce();
+  });
+
+  it('rejects a Privy receipt presented by a different authenticated user', async () => {
+    verifyLegalReceipt.mockResolvedValueOnce({
+      acceptanceId: 'acceptance-1',
+      subjectId: 'did:privy:user-1',
+      subjectType: 'privy_user',
+    });
+    verifyPrivyAccessToken.mockResolvedValueOnce({ user_id: 'did:privy:user-2' });
+    const res = response();
+    const next = vi.fn();
+
+    await legalAccessMiddleware(
+      {
+        method: 'POST',
+        path: '/tasks',
+        originalUrl: '/api/tasks',
+        headers: {
+          authorization: 'Bearer other-user-token',
+          'x-taskmarket-legal-receipt': 'receipt-1',
+        },
+      } as never,
+      res,
+      next
+    );
+
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a wallet receipt when the X402 payer is a different wallet', async () => {
+    verifyLegalReceipt.mockResolvedValueOnce({
+      acceptanceId: 'acceptance-1',
+      subjectId: '0x1111111111111111111111111111111111111111',
+      subjectType: 'wallet',
+    });
+    const paymentSignature = Buffer.from(
+      JSON.stringify({
+        payload: { authorization: { from: '0x2222222222222222222222222222222222222222' } },
+      })
+    ).toString('base64');
+    const res = response();
+    const next = vi.fn();
+
+    await legalAccessMiddleware(
+      {
+        body: {},
+        method: 'POST',
+        path: '/tasks',
+        originalUrl: '/api/tasks',
+        headers: {
+          'payment-signature': paymentSignature,
+          'x-taskmarket-legal-receipt': 'receipt-1',
+        },
+      } as never,
+      res,
+      next
+    );
+
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('allows a wallet receipt to reach an unpaid X402 probe before payer evidence exists', async () => {
+    verifyLegalReceipt.mockResolvedValueOnce({
+      acceptanceId: 'acceptance-1',
+      subjectId: '0x1111111111111111111111111111111111111111',
+      subjectType: 'wallet',
+    });
+    const next = vi.fn();
+
+    await legalAccessMiddleware(
+      {
+        body: { workerAddress: '0x2222222222222222222222222222222222222222' },
+        method: 'POST',
+        path: '/tasks/task-1/pitches/select',
+        originalUrl: '/api/tasks/task-1/pitches/select',
+        headers: { 'x-taskmarket-legal-receipt': 'receipt-1' },
+      } as never,
+      response(),
+      next
+    );
+
     expect(next).toHaveBeenCalledOnce();
   });
 
