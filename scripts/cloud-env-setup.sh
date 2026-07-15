@@ -5,11 +5,11 @@
 # deployed to it, and a .env the Makefile's ENV_LOADER picks up -- so
 # `make smoke <mode>` works entirely on localhost afterwards.
 #
-# STATUS: first draft, not yet executed inside a real vendor sandbox.
-# Expected first-run friction: native Postgres setup on the vendor image,
-# git submodules, and the full backend env var set (see .env.example for
-# anything the backend still complains about). See the "Tier-2 setup"
-# section of docs/specs/agentic-development-factory-rfc.md.
+# STATUS: verified end to end in a real Claude Code cloud environment (triggered
+# automatically by the SessionStart hook in .claude/settings.json) and in a Docker
+# container standing in for one (make smoke sandbox) -- make smoke bounty passes clean,
+# both the happy path and the reject path. See the "Tier-2 setup" section of
+# docs/specs/agentic-development-factory-rfc.md for what that surfaced.
 #
 # X402 payments: payer-gated endpoints go through a facilitator wired to
 # this Anvil chain (see the facilitator section of
@@ -60,6 +60,15 @@ FEE_RECIPIENT_KEY="0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cb
 FEE_RECIPIENT_ADDRESS="0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
 
 echo "==> [1/11] Toolchain (Node, pnpm, bun, Foundry)"
+# Match the Makefile's own ENV_LOADER (`nvm install && nvm use`, reading .nvmrc) before
+# installing anything globally -- npm/pnpm installs are keyed to whichever node version is
+# active at install time, and nvm keeps each version's global packages separate. Skipping
+# this let pnpm get installed under the sandbox's default node, invisible once `make` later
+# switches to .nvmrc's version via its own ENV_LOADER ("pnpm: command not found").
+export NVM_DIR="${NVM_DIR:-$HOME/.nvm}"
+if [ -s "$NVM_DIR/nvm.sh" ]; then
+  . "$NVM_DIR/nvm.sh" && nvm install && nvm use
+fi
 if ! command -v pnpm > /dev/null 2>&1; then
   npm install -g pnpm@8.15.0
 fi
@@ -89,6 +98,17 @@ if ! command -v forge > /dev/null 2>&1; then
   # known-good release tag rather than "whatever's latest", not a general bypass.
   foundryup --install v1.7.1 --force
 fi
+# Belt-and-suspenders: some cloud sandboxes (Codex cloud, confirmed) run this setup script in
+# a separate bash session from whatever session actually uses the repo afterwards -- a plain
+# `export PATH=...` above only affects this script's own process, not that later session. The
+# installers above already add these to ~/.bashrc themselves, but don't rely on that alone;
+# write them explicitly and idempotently so a later interactive shell picks them up regardless
+# of installer behavior.
+for LINE in \
+  'export PATH="$HOME/.bun/bin:$PATH"' \
+  'export PATH="$HOME/.foundry/bin:$PATH"'; do
+  grep -qxF "$LINE" "$HOME/.bashrc" 2>/dev/null || echo "$LINE" >> "$HOME/.bashrc"
+done
 
 echo "==> [2/11] Git submodules (contracts dependencies)"
 git submodule update --init --recursive

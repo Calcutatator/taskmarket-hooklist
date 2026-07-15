@@ -231,9 +231,17 @@ no Docker and no external services. The pieces:
     already makes the repo agent-ready; point a `SessionStart` hook in `.claude/settings.json`
     at `scripts/cloud-env-setup.sh`, guarded on `$CLAUDE_CODE_REMOTE = "true"` so it never
     fires for a local developer's own session (see `.claude/settings.json` in this repo).
-  - *Codex*: connect the Codex GitHub app; create the environment in ChatGPT's Codex
-    settings with the same setup script; `AGENTS.md` already documents the RFC/ADR
-    conventions and the sandbox smoke-test flow.
+  - *Codex*: connect the Codex GitHub app; in the Codex cloud environment's own "Setup
+    script" field (ChatGPT UI, not a repo-committed file -- Codex has no equivalent to
+    Claude Code's `.claude/settings.json`), put `./scripts/cloud-env-setup.sh` directly.
+    Unlike Claude Code's "Setup script" field, Codex's genuinely runs *after* the repo is
+    checked out and has full internet access, so this works with no hook indirection needed.
+    One real gotcha confirmed in Codex's own docs: the setup script runs in a separate bash
+    session from the one the agent actually works in afterwards, so a plain `export
+    PATH=...` there doesn't carry over -- only files written to disk and background
+    processes do. `cloud-env-setup.sh` writes its PATH additions to `~/.bashrc` explicitly
+    for exactly this reason, not just relying on the installers doing it themselves.
+    `AGENTS.md` already documents the RFC/ADR conventions and the sandbox smoke-test flow.
 - **Makefile adjustments** as friction surfaces: candidates are a Docker-free `make db`
   path (the setup script currently bypasses `make db start` entirely) and a
   `make sandbox-up` wrapper so an agent can re-run the stack bring-up idempotently
