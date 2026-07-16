@@ -82,6 +82,8 @@ those always pause for a human.
 
 - [0001 — Mainnet contract upgrades stay manual and developer-local](0001-mainnet-upgrades-stay-manual.md)
 - [0002 — Merging to `main` automatically deploys app code to the shared testnet](0002-testnet-auto-deploys-on-merge-to-main.md)
+- [0003 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0003-legal-acceptance-opaque-receipt-default-deny-middleware.md)
+- [0004 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0004-legal-bundle-content-digest-invalidates-prior-acceptance.md)
 
 ## Linting
 
