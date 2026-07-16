@@ -33,6 +33,13 @@ env:
   # The TASK MARKET project's workspace ("Loaf's Projects"). railway link requires this
   # explicitly in non-interactive mode.
   RAILWAY_WORKSPACE_ID: cdc66cc4-373f-4156-9d42-b8464a10f096
+  # anvil/facilitator are deployed via `railway up` from local source, not a connected
+  # GitHub repo -- this kind of service supports only one live owning environment at a
+  # time, so a name shared across every PR's environment doesn't work. Each PR gets its
+  # own uniquely-named service; teardown deletes it (not just the environment) to avoid
+  # leaving an orphaned service behind.
+  ANVIL_SERVICE_NAME: anvil-pr-${{ github.event.pull_request.number }}
+  FACILITATOR_SERVICE_NAME: facilitator-pr-${{ github.event.pull_request.number }}
 
 jobs:
   teardown:
@@ -48,6 +55,11 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
+          # anvil/facilitator are per-PR services (see the top-level env block) -- delete
+          # them explicitly before deleting the environment, or they become permanent
+          # orphaned services nothing can ever reuse.
+          railway service delete --service "$ANVIL_SERVICE_NAME" --environment "$ENV_NAME" --yes --json || true
+          railway service delete --service "$FACILITATOR_SERVICE_NAME" --environment "$ENV_NAME" --yes --json || true
           railway environment delete "$ENV_NAME" --yes --json || true
 
   deploy:
@@ -108,42 +120,25 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           # `railway up --service <name>` deploys to an existing service, it doesn't create
-          # one -- the `preview` base template has no `anvil` service (only
-          # backend/frontend/docs/Postgres), so a fresh environment needs it created once.
-          # `railway add` has no --project/--environment flags of its own, unlike `service
-          # list` -- it needs the context from a prior `railway link`.
-          #
-          # Railway services are project-level (same fact the facilitator step below
-          # already accounts for), so once any earlier PR's environment created "anvil",
-          # the name is taken project-wide even though a fresh environment never inherits
-          # an instance of it. A pre-check via `railway service list` is NOT reliable here:
-          # confirmed by direct testing, `railway service list --json` right after linking
-          # to this environment only reflects *this* environment's own service instances,
-          # not the project's full service inventory -- so it reports "no anvil" even when
-          # `railway add` then immediately fails with "A service named \"anvil\" already
-          # exists in this project". Rather than depend on a query that's proven unreliable,
-          # just attempt the add and treat that specific error as success (reuse the
-          # existing project-level service) instead of a failure.
+          # one -- a fresh environment needs it created once. `railway add` has no
+          # --project/--environment flags of its own, unlike `service list` -- it needs
+          # the context from a prior `railway link`.
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
             --workspace "$RAILWAY_WORKSPACE_ID" \
             --environment "$ENV_NAME" --service "@taskmarket/backend" --json
-          ADD_OUTPUT=$(railway add --service anvil --json 2>&1) && echo "$ADD_OUTPUT" || {
+          ADD_OUTPUT=$(railway add --service "$ANVIL_SERVICE_NAME" --json 2>&1) && echo "$ADD_OUTPUT" || {
             echo "$ADD_OUTPUT" | grep -q "already exists" || { echo "$ADD_OUTPUT" >&2; exit 1; }
-            echo "anvil service already exists at the project level -- reusing it."
+            echo "$ANVIL_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
           }
           cd packages/contracts/docker/anvil
-          # A service that was just created or freshly reused (see above) can 404 on its
-          # very first code upload to a new environment -- confirmed by direct testing:
-          # "Failed to upload code with status code 404 Not Found", immediately after the
-          # service link succeeded. Same class of transient just-came-up-not-ready issue
-          # the RPC calls elsewhere in this workflow already retry around; retry here too
-          # rather than failing the whole job on what clears up within a few seconds.
+          # A freshly created service can 404 on its first code upload for a few seconds;
+          # retry rather than fail the job.
           for i in $(seq 1 5); do
-            railway up --service anvil \
+            railway up --service "$ANVIL_SERVICE_NAME" \
               --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
               --detach --ci && break
-            [ "$i" -lt 5 ] || { echo "railway up --service anvil still failing after 5 attempts" >&2; exit 1; }
+            [ "$i" -lt 5 ] || { echo "railway up --service $ANVIL_SERVICE_NAME still failing after 5 attempts" >&2; exit 1; }
             sleep 5
           done
 
@@ -152,7 +147,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          DOMAIN=$(railway domain --service anvil \
+          DOMAIN=$(railway domain --service "$ANVIL_SERVICE_NAME" \
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
             --port 8545 --json | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
@@ -317,21 +312,12 @@ jobs:
           echo "diamond_address=$DIAMOND_ADDRESS" >> "$GITHUB_OUTPUT"
           echo "forwarder_address=$FORWARDER_ADDRESS" >> "$GITHUB_OUTPUT"
 
-      # The facilitator handles X402 payment verification/settlement. Railway services
-      # are project-level (with an instance per environment), so create it from the
-      # public daydreamsai/facilitator repo only if the project doesn't have it yet
-      # (first run ever), then set its variables per-environment on every run --
-      # duplicated environments don't reliably carry variable values. The private key
-      # is Anvil's well-known dev account #6: public knowledge, sandbox-only.
+      # The facilitator handles X402 payment verification/settlement, deployed from the
+      # public daydreamsai/facilitator repo. Create it if this PR doesn't have one yet.
+      # The private key is Anvil's well-known dev account #6: public knowledge, sandbox-only.
       # BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically (not
       # /supported) -- generated fresh per run and written to both this service and the
       # backend's X402_FACILITATOR_TOKEN below, or every real verify/settle call gets a 401.
-      #
-      # Don't pre-check via `railway service list` -- confirmed by direct testing (see the
-      # anvil step above), it only reflects the just-linked environment's own service
-      # instances, not the project's full inventory, so it can report "not found" even when
-      # the service already exists project-wide. Attempt the add and treat "already exists"
-      # as success (reuse it) instead of trying to predict it in advance.
       - name: Ensure facilitator service and wire it to this environment's anvil
         id: facilitator
         env:
@@ -342,9 +328,9 @@ jobs:
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment "$ENV_NAME" --service "@taskmarket/backend" --json
-          ADD_OUTPUT=$(railway add --service facilitator --repo daydreamsai/facilitator --json 2>&1) && echo "$ADD_OUTPUT" || {
+          ADD_OUTPUT=$(railway add --service "$FACILITATOR_SERVICE_NAME" --repo daydreamsai/facilitator --json 2>&1) && echo "$ADD_OUTPUT" || {
             echo "$ADD_OUTPUT" | grep -q "already exists" || { echo "$ADD_OUTPUT" >&2; exit 1; }
-            echo "facilitator service already exists at the project level -- reusing it."
+            echo "$FACILITATOR_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
           }
           for kv in \
             "EVM_NETWORKS=base-sepolia" \
@@ -352,11 +338,11 @@ jobs:
             "TRACKING_ALLOW_IN_MEMORY_FALLBACK=true" \
             "BEARER_TOKEN=$FACILITATOR_TOKEN"; do
             railway variable set "$kv" \
-              --service facilitator --environment "$ENV_NAME" \
+              --service "$FACILITATOR_SERVICE_NAME" --environment "$ENV_NAME" \
               --project "${{ secrets.RAILWAY_PROJECT_ID }}" --skip-deploys --json
           done
           railway variable set "EVM_RPC_URL_BASE_SEPOLIA=${{ steps.anvil.outputs.rpc_url }}" \
-            --service facilitator --environment "$ENV_NAME" \
+            --service "$FACILITATOR_SERVICE_NAME" --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json
 
       # Variable names here match what apps/backend/src/config/env.ts reads
@@ -365,7 +351,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          FACILITATOR_DOMAIN=$(railway domain --service facilitator \
+          FACILITATOR_DOMAIN=$(railway domain --service "$FACILITATOR_SERVICE_NAME" \
             --environment "$ENV_NAME" \
             --project "${{ secrets.RAILWAY_PROJECT_ID }}" --json \
             | python3 -c "import json,sys; d=json.load(sys.stdin); print(d.get('domain') or (d.get('domains') or [''])[0])")
@@ -434,7 +420,7 @@ jobs:
 
           FRONTEND_DOMAIN=$(resolve_domain "@taskmarket/frontend") || { echo "Could not resolve the frontend domain" >&2; exit 1; }
           BACKEND_DOMAIN=$(resolve_domain "@taskmarket/backend") || { echo "Could not resolve the backend domain" >&2; exit 1; }
-          FACILITATOR_DOMAIN=$(resolve_domain facilitator) || { echo "Could not resolve the facilitator domain" >&2; exit 1; }
+          FACILITATOR_DOMAIN=$(resolve_domain "$FACILITATOR_SERVICE_NAME") || { echo "Could not resolve the facilitator domain" >&2; exit 1; }
 
           BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Backend | https://%s |\n| Facilitator | https://%s |\n| Anvil RPC | %s |\n' \
             "$FRONTEND_DOMAIN" "$BACKEND_DOMAIN" "$FACILITATOR_DOMAIN" "${{ steps.anvil.outputs.rpc_url }}")
