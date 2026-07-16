@@ -144,7 +144,12 @@ echo "==> [5/12] Local Anvil chain"
 if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1; then
   # --chain-id 84532: Base Sepolia masquerade, see header note on X402.
-  nohup anvil --host 127.0.0.1 --port 8545 --chain-id 84532 > /tmp/anvil.log 2>&1 &
+  # setsid, not just nohup: nohup alone only makes the immediate process ignore
+  # SIGHUP -- it does not reliably survive when the process is later replaced by an
+  # exec'd child or wrapped by another runtime. setsid detaches the whole process
+  # into its own session with no controlling terminal, so a session/terminal hangup
+  # elsewhere can't reach it at all.
+  setsid nohup anvil --host 127.0.0.1 --port 8545 --chain-id 84532 > /tmp/anvil.log 2>&1 &
   for _ in $(seq 1 30); do
     curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
       -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1 && break
@@ -169,13 +174,19 @@ if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; t
   cd packages/core
   bun run build
   cd ../../examples/facilitator-server
+  # setsid, not just nohup: `bun run dev` spawns the actual server as a further
+  # child process, and nohup's SIGHUP-ignore on the immediate bun process doesn't
+  # reliably extend to that child -- confirmed by direct testing, the underlying
+  # process was killed by SIGHUP ("Terminal hung up") despite nohup. setsid
+  # detaches the whole process tree into its own session with no controlling
+  # terminal, so a session/terminal hangup elsewhere can't reach it at all.
   PORT="$FACILITATOR_PORT" \
     EVM_NETWORKS="base-sepolia" \
     EVM_RPC_URL_BASE_SEPOLIA="$ANVIL_RPC_URL" \
     EVM_PRIVATE_KEY="$FACILITATOR_KEY" \
     TRACKING_ALLOW_IN_MEMORY_FALLBACK="true" \
     BEARER_TOKEN="$FACILITATOR_TOKEN" \
-    nohup bun run dev > /tmp/facilitator.log 2>&1 &
+    setsid nohup bun run dev > /tmp/facilitator.log 2>&1 &
   for _ in $(seq 1 30); do
     curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 && break
     sleep 1
@@ -415,7 +426,12 @@ if ! curl -sf http://127.0.0.1:3000 > /dev/null 2>&1; then
     source "$REPO_ROOT/.env"
     set +a
     cd apps/backend
-    nohup pnpm dev > /tmp/backend.log 2>&1 &
+    # setsid, not just nohup: `pnpm dev` spawns the actual server as a further
+    # child process, and nohup's SIGHUP-ignore on the immediate pnpm process
+    # doesn't reliably extend to that child. setsid detaches the whole process
+    # tree into its own session with no controlling terminal, so a session/
+    # terminal hangup elsewhere can't reach it at all.
+    setsid nohup pnpm dev > /tmp/backend.log 2>&1 &
   )
   for _ in $(seq 1 30); do
     # -w '%{http_code}' with no -f: any HTTP response (even 404) counts as "up".
