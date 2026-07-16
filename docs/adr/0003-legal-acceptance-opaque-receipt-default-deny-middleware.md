@@ -11,9 +11,9 @@
 > that any endpoint which should *not* require acceptance must be manually added to an
 > exemption allowlist or it will be wrongly gated.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-16
-- **Deciders:** — (drafted by agent per PR #165 review; pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
@@ -38,8 +38,9 @@ receipt or returns `403 LEGAL_ACCEPTANCE_REQUIRED`.
 
 | Option | Pros | Cons |
 |---|---|---|
-| Opaque bearer receipt + global default-deny middleware (chosen) | One enforcement point for all three client types; new endpoints are protected by default with no per-route work; the receipt is a plain header, so it composes with X402 payment signatures and Privy tokens without interfering with either | A new endpoint that should be public/exempt must be added to the allowlist by hand, or it is wrongly blocked; the allowlist is matched by exact path/procedure string, so a route rename silently drops out of it |
-| Per-procedure opt-in decorator (e.g. a `requireLegalAcceptance()` tRPC middleware wrapper applied at each call site) (rejected) | Explicit and self-documenting at the call site; a genuinely public route can never be accidentally gated | Easy to forget adding the wrapper to a *new protected* route, which is the opposite failure mode and strictly worse: it silently ships a security gap (unprotected activity) instead of a visible one (a wrongly-blocked request that fails loudly in testing) |
+| Opaque bearer receipt + global default-deny middleware (chosen) | One enforcement point for all three client types; new endpoints are protected by default with no per-route work; the receipt is a plain header, so it composes with X402 payment signatures and Privy tokens without interfering with either | A new endpoint that should be public/exempt must be added to the allowlist by hand, or it is wrongly blocked; the allowlist is matched by exact path/procedure string, so a route rename silently drops out of it — but that failure is itself safe: the renamed route falls back to protected-by-default, not exempt, so the mistake costs a wrongly-blocked request, never a silent gap |
+| Per-procedure opt-in decorator (e.g. a `requireLegalAcceptance()` tRPC middleware wrapper applied at each call site) (rejected) | Explicit and self-documenting at the call site; a genuinely public route can never be accidentally gated | Easy to forget adding the wrapper to a *new protected* route, which is the opposite failure mode and strictly worse: it silently ships a security gap (unprotected activity) instead of a visible one (a wrongly-blocked request that fails loudly in testing). To cover the ~150 *existing* procedures safely, the currently-ubiquitous default builder would also need renaming across every router file so the gated one becomes the default — a sweeping, unrelated-file rename comparable in size to the allowlist it would replace, without removing the maintenance burden |
+| Exemption declared as `.meta({ legalExempt: true })` on each tRPC procedure instead of a separate allowlist (rejected for now) | Exemption lives at the route definition itself rather than a separately maintained list, so it can't drift from a rename the way a string-matched list can | REST `/api/...` requests are auto-generated from tRPC procedures via `trpc-to-openapi`, not hand-written Express routes, so the middleware would need new machinery to resolve an incoming REST path back to the originating procedure's meta before it could read `legalExempt` — real new complexity and risk for marginal benefit over the current allowlist, whose only failure mode already fails safe (see above) |
 | Re-derive acceptance status from a signed session/JWT claim instead of an opaque receipt (rejected) | No server-side hash lookup per request | Ties legal-acceptance state to a specific auth/session mechanism; CLI and raw-API wallet callers have no session cookie, so this would need a second, parallel mechanism anyway, defeating the goal of one uniform check |
 
 ## Decision

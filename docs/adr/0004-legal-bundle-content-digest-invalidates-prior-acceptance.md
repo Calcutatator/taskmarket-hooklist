@@ -11,9 +11,9 @@
 > accepting that any edit to the checked-in documents, including a non-material typo fix,
 > forces every existing accepter to reaccept.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-16
-- **Deciders:** — (drafted by agent per PR #165 review; pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
