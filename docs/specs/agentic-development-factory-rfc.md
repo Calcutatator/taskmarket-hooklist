@@ -204,19 +204,50 @@ no Docker and no external services. The pieces:
   and writes a complete `.env` (which the Makefile's `ENV_LOADER` picks up, so every `make`
   target works afterwards). Uses Anvil's deterministic pre-funded dev accounts for every
   role — deployer, server, requester, worker A/B, evaluator — safe strictly because the
-  chain never leaves the sandbox. Status: verified end to end in a real Linux container
+  chain never leaves the sandbox. Status: verified end to end both in a real Linux container
   (`scripts/sandbox.Dockerfile`, `make smoke sandbox`, `.github/workflows/sandbox-smoke.yml`)
-  matching the native-Postgres/no-Docker assumptions a real vendor sandbox makes — including
-  the full bounty + reject-path smoke suite passing. Not yet run inside an actual Claude Code
-  cloud or Codex cloud session specifically, only a container reproducing the same
-  constraints.
+  and inside a genuine Claude Code cloud environment (claude.ai/code) — `make smoke bounty`
+  passing clean, both the happy path and the reject path, triggered automatically by a
+  `SessionStart` hook with no manual setup step. Getting the cloud case working surfaced
+  real, sandbox-specific findings worth keeping as institutional knowledge:
+  a `SessionStart` hook (not the cloud environment's "Setup script" field, which runs before
+  Claude Code launches and has neither `$CLAUDE_PROJECT_DIR` nor a discoverable repo checkout
+  available) is the correct place to invoke it; that sandbox type scopes GitHub API access
+  (`api.github.com`) per-repo, which broke `foundryup`'s default "install latest" behavior
+  (blocked fetching release info for `foundry-rs/foundry`) even though plain
+  `git clone`/`raw.githubusercontent.com` access was unaffected -- pinning a specific version
+  sidesteps the "resolve latest" lookup, and is good practice regardless since an unpinned
+  version can raise the toolchain's MSRV out from under a from-source build with no warning;
+  and that same sandbox's SHA/attestation verification for a pinned release download also
+  needs a blocked GitHub-scoped call, requiring `--force` to skip it (accepted specifically
+  because the version is pinned to a known-good tag, not a bypass for arbitrary versions).
+  Separately, `command -v forge` false-negatives on every non-interactive invocation once
+  Foundry is already installed, since its installer only adds `~/.foundry/bin` to
+  `~/.bashrc` (never sourced by a non-interactive hook shell) -- the script now checks the
+  known install path directly first, so an already-installed toolchain from a prior session
+  is correctly detected instead of triggering a needless reinstall every time.
 - **Vendor environment config**, per vendor, pointing at that script:
   - *Claude*: connect the Claude GitHub app to the repo (claude.ai/code); `AGENTS.md`
-    already makes the repo agent-ready; set the cloud environment's setup to run
-    `scripts/cloud-env-setup.sh`.
-  - *Codex*: connect the Codex GitHub app; create the environment in ChatGPT's Codex
-    settings with the same setup script; `AGENTS.md` already documents the RFC/ADR
-    conventions and the sandbox smoke-test flow.
+    already makes the repo agent-ready; point a `SessionStart` hook in `.claude/settings.json`
+    at `scripts/cloud-env-setup.sh`, guarded on `$CLAUDE_CODE_REMOTE = "true"` so it never
+    fires for a local developer's own session (see `.claude/settings.json` in this repo).
+  - *Codex*: connect the Codex GitHub app; in the Codex cloud environment's own "Setup
+    script" field (ChatGPT UI, not a repo-committed file -- Codex has no equivalent to
+    Claude Code's `.claude/settings.json`), put `./scripts/cloud-env-setup.sh` directly.
+    Unlike Claude Code's "Setup script" field, Codex's genuinely runs *after* the repo is
+    checked out and has full internet access, so this works with no hook indirection needed
+    for the one-time, file-based work (toolchain, submodules, contract deploy, `.env`).
+    But Codex's setup script runs in a genuinely separate bash session from the one the
+    agent actually works in afterwards -- confirmed both in OpenAI's own docs and by direct
+    testing, this is a deliberate security boundary (setup gets full network trust, the
+    agent phase deliberately doesn't), not a bug: `export PATH=...` doesn't carry over, and
+    neither do background processes (Postgres, Anvil, the backend, the facilitator) --
+    a database or chain that was reachable during setup is not reachable once the agent
+    starts, with no documented way around it. `cloud-env-setup.sh` writes its PATH
+    additions to `~/.bashrc` explicitly for the former; for the latter, `AGENTS.md`
+    instructs any cloud agent to run the (idempotent) script itself as its first action,
+    in its own session, rather than assuming the setup phase already brought the stack up.
+    `AGENTS.md` already documents the RFC/ADR conventions and the sandbox smoke-test flow.
 - **Makefile adjustments** as friction surfaces: candidates are a Docker-free `make db`
   path (the setup script currently bypasses `make db start` entirely) and a
   `make sandbox-up` wrapper so an agent can re-run the stack bring-up idempotently

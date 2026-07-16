@@ -38,7 +38,7 @@ help:
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
-	@echo "  make deploy-reward-hook <testnet|mainnet> - Deploy DREAMS token reward hook (testnet uses a mock token)"
+	@echo "  make deploy-reward-hook <testnet|mainnet|preview> - Deploy DREAMS token reward hook (testnet/preview use a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
@@ -177,8 +177,25 @@ deploy-reward-hook:
 			--rpc-url base \
 			--broadcast \
 			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "preview" ]; then \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY=$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_PREVIEW} \
+		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_PREVIEW} \
+		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_PREVIEW} \
+		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_PREVIEW} \
+		FORGE_EPOCH_DURATION=$${FORGE_EPOCH_DURATION:-$$FORGE_EPOCH_DURATION_PREVIEW} \
+		FORGE_GLOBAL_EPOCH_CAP_USD=$${FORGE_GLOBAL_EPOCH_CAP_USD:-$$FORGE_GLOBAL_EPOCH_CAP_USD_PREVIEW} \
+		FORGE_WORKER_CAP_USD=$${FORGE_WORKER_CAP_USD:-$$FORGE_WORKER_CAP_USD_PREVIEW} \
+		FORGE_REQUESTER_CAP_USD=$${FORGE_REQUESTER_CAP_USD:-$$FORGE_REQUESTER_CAP_USD_PREVIEW} \
+		FORGE_MAX_USD_PER_TASK=$${FORGE_MAX_USD_PER_TASK:-$$FORGE_MAX_USD_PER_TASK_PREVIEW} \
+		FORGE_WORKER_SPLIT_BPS=$${FORGE_WORKER_SPLIT_BPS:-$$FORGE_WORKER_SPLIT_BPS_PREVIEW} \
+		FORGE_INITIAL_VAULT_BALANCE=$${FORGE_INITIAL_VAULT_BALANCE:-$$FORGE_INITIAL_VAULT_BALANCE_PREVIEW} \
+		FORGE_PGTR_FORWARDER=$${FORGE_PGTR_FORWARDER:-$$FORGE_PGTR_FORWARDER_PREVIEW} \
+		forge script script/DeployRewardHookTestnet.s.sol:DeployRewardHookTestnet \
+			--rpc-url "$${FORGE_RPC_URL:-$$FORGE_RPC_URL_PREVIEW}" \
+			--broadcast; \
 	else \
-		echo "Usage: make deploy-reward-hook <testnet|mainnet>"; \
+		echo "Usage: make deploy-reward-hook <testnet|mainnet|preview>"; \
 		exit 1; \
 	fi
 
