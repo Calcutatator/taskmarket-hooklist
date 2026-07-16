@@ -132,10 +132,20 @@ jobs:
             echo "anvil service already exists at the project level -- reusing it."
           }
           cd packages/contracts/docker/anvil
-          railway up --service anvil \
-            --environment "$ENV_NAME" \
-            --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
-            --detach --ci
+          # A service that was just created or freshly reused (see above) can 404 on its
+          # very first code upload to a new environment -- confirmed by direct testing:
+          # "Failed to upload code with status code 404 Not Found", immediately after the
+          # service link succeeded. Same class of transient just-came-up-not-ready issue
+          # the RPC calls elsewhere in this workflow already retry around; retry here too
+          # rather than failing the whole job on what clears up within a few seconds.
+          for i in $(seq 1 5); do
+            railway up --service anvil \
+              --environment "$ENV_NAME" \
+              --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
+              --detach --ci && break
+            [ "$i" -lt 5 ] || { echo "railway up --service anvil still failing after 5 attempts" >&2; exit 1; }
+            sleep 5
+          done
 
       - name: Expose anvil RPC and wait for it to be healthy
         id: anvil
