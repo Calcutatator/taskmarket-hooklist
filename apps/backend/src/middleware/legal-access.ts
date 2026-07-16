@@ -200,11 +200,14 @@ export function createLegalAccessMiddleware(context: Pick<Context, 'db'>): Reque
             // The downstream procedure remains responsible for invalid device credentials.
           }
         }
+        // An unpaid X402 probe never mutates state here: x402Middleware (mounted after this
+        // middleware in app.ts) intercepts it and returns 402 with pricing before any router
+        // handler runs. Binding is enforced on the paid retry via the payer check above.
         if (
           deviceWallets.some((wallet) => wallet !== expectedWallet) ||
           (payer
             ? payer !== expectedWallet
-            : !expectsX402Payment(req) && actingWallet && actingWallet !== expectedWallet)
+            : !expectsX402Payment(req) && actingWallet !== expectedWallet)
         ) {
           identity = null;
         }

@@ -1,4 +1,4 @@
-import { createHash, randomBytes, randomUUID } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import {
   CURRENT_LEGAL_BUNDLE,
   LEGAL_BUNDLES,
@@ -14,6 +14,7 @@ import { getAddress, recoverMessageAddress } from 'viem';
 
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
+import { sha256Hex } from '../lib/hash';
 import {
   legalAcceptanceChallenges,
   legalAcceptances,
@@ -41,10 +42,6 @@ export type LegalReceiptIdentity = {
   subjectId: string;
 };
 
-function sha256(value: string): string {
-  return createHash('sha256').update(value, 'utf8').digest('hex');
-}
-
 function normalizeSubjectId(type: LegalSubjectType, value: string): string {
   return type === 'wallet' ? getAddress(value).toLowerCase() : value.trim();
 }
@@ -53,7 +50,7 @@ function legalDocumentEvidence(
   bundle: LegalPolicyBundle = CURRENT_LEGAL_BUNDLE
 ): LegalDocumentEvidence[] {
   return bundle.documents.map((document) => ({
-    contentHash: `sha256:${sha256(document.markdown)}`,
+    contentHash: `sha256:${sha256Hex(document.markdown)}`,
     title: document.title,
     type: document.type,
     version: document.version,
@@ -69,7 +66,7 @@ function currentLegalEvidence(): LegalEvidenceSnapshot {
   });
   return {
     acceptanceStatement: LEGAL_ACCEPTANCE_STATEMENT,
-    bundleDigest: `sha256:${sha256(digestPayload)}`,
+    bundleDigest: `sha256:${sha256Hex(digestPayload)}`,
     documents,
   };
 }
@@ -222,7 +219,7 @@ async function issueLegalReceipt(
     id: randomUUID(),
     subjectId: acceptance.subjectId,
     subjectType: acceptance.subjectType,
-    tokenHash: sha256(receipt),
+    tokenHash: sha256Hex(receipt),
   });
   return receipt;
 }
@@ -367,7 +364,7 @@ export async function verifyLegalReceipt(receipt: string): Promise<LegalReceiptI
     .from(legalAccessReceipts)
     .where(
       and(
-        eq(legalAccessReceipts.tokenHash, sha256(receipt)),
+        eq(legalAccessReceipts.tokenHash, sha256Hex(receipt)),
         eq(legalAccessReceipts.bundleVersion, CURRENT_LEGAL_BUNDLE.version),
         eq(legalAccessReceipts.bundleDigest, currentLegalEvidence().bundleDigest),
         isNull(legalAccessReceipts.revokedAt)

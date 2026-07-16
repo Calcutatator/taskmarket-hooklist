@@ -84,8 +84,7 @@ describe('legal access middleware', () => {
       {
         method: 'POST',
         path: '/taskDrops.subscribe%2CtaskDrops.subscribeOfficial',
-        originalUrl:
-          '/trpc/taskDrops.subscribe%2CtaskDrops.subscribeOfficial?batch=1',
+        originalUrl: '/trpc/taskDrops.subscribe%2CtaskDrops.subscribeOfficial?batch=1',
         headers: {},
       } as never,
       response(),
@@ -246,6 +245,31 @@ describe('legal access middleware', () => {
           'payment-signature': paymentSignature,
           'x-taskmarket-legal-receipt': 'receipt-1',
         },
+      } as never,
+      res,
+      next
+    );
+
+    expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it('rejects a wallet receipt when no acting wallet can be identified on a non-x402 protected write', async () => {
+    verifyLegalReceipt.mockResolvedValueOnce({
+      acceptanceId: 'acceptance-1',
+      subjectId: '0x1111111111111111111111111111111111111111',
+      subjectType: 'wallet',
+    });
+    const res = response();
+    const next = vi.fn();
+
+    await legalAccessMiddleware(
+      {
+        body: {},
+        method: 'POST',
+        path: '/tasks/task-1/cancel-something-else',
+        originalUrl: '/api/tasks/task-1/cancel-something-else',
+        headers: { 'x-taskmarket-legal-receipt': 'receipt-1' },
       } as never,
       res,
       next

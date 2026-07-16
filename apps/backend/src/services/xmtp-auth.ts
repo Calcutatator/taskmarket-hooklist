@@ -1,12 +1,8 @@
-import { createHash } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { devices } from '../db/schema';
 import type { Context } from '../context';
-
-function sha256Hex(value: string): string {
-  return createHash('sha256').update(value).digest('hex');
-}
+import { sha256Hex } from '../lib/hash';
 
 export interface XmtpAuthInput {
   deviceId: string;

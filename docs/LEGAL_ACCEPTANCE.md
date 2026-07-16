@@ -32,7 +32,7 @@ Enforcement must stay disabled until every item is complete:
 10. Apply migration `0026_add_legal_acceptance`, confirm all three legal tables exist in production, rate-limit the public legal challenge endpoint at the edge, and schedule deletion of expired challenge rows after the required diagnostic window.
 11. Set `TRUST_PROXY_HOPS` to the verified Railway proxy-hop count, then confirm a controlled request records the real client IP and that a direct spoofed `X-Forwarded-For` value is not trusted in the deployed topology.
 12. Deploy approved copy with `LEGAL_ENFORCEMENT_ENABLED=false`, verify web and CLI acceptance end to end, and inspect acceptance evidence without logging raw receipts or access tokens. The web gate uses `acceptanceAvailable`, so this pre-enforcement rollout remains testable while protected writes are still allowed.
-13. Enable `LEGAL_ENFORCEMENT_ENABLED=true`, then verify a protected unpaid X402 probe returns 403 before payment and that terminal acceptance, cancellation, refund, appeal, withdrawal, deletion, logout, complaints, rights requests, and public reads remain available as required without a receipt.
+13. Enable `LEGAL_ENFORCEMENT_ENABLED=true`, then verify a protected unpaid X402 probe returns 403 before payment and that terminal acceptance, cancellation, refund, appeal, withdrawal, email deletion, and public reads remain available as required without a receipt (see the exempt routes in `legal-access.ts`). Logout is a client-side Privy action that never calls a legal-gated backend route, so it needs no exemption of its own. Complaints handling and a formal data rights-request procedure do not exist as backend endpoints yet; build and exempt them before claiming this item complete.
 
 ## Policy Updates
 
