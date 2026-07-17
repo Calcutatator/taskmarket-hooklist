@@ -57,8 +57,6 @@ function makeTask(overrides: Record<string, any> = {}) {
     expiryTime: new Date(Date.now() + 86400000),
     status: 'open',
     tags: [],
-    worker: null,
-    rating: null,
     mode: 'pitch',
     stakeRequired: 0,
     stakeBps: 0,

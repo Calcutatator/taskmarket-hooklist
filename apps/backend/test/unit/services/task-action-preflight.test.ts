@@ -21,8 +21,6 @@ function task(overrides: Record<string, unknown> = {}) {
     expiryTime: new Date('2026-07-12T00:00:00.000Z'),
     status: 'open',
     tags: [],
-    worker: null,
-    rating: null,
     mode: 'bounty',
     stakeRequired: 0,
     stakeBps: 0,
@@ -85,7 +83,7 @@ describe('paid task action preflight', () => {
       action: 'appeal',
       task: task({
         status: 'appealing',
-        worker: WORKER,
+        claimedBy: WORKER,
         appealDeadline: new Date('2026-07-11T01:00:00.000Z'),
       }),
       body: {},
@@ -153,6 +151,7 @@ describe('paid task action preflight', () => {
       task: task({ status: 'completed' }),
       body: { worker: WORKER, rating: 100 },
       payer: REQUESTER,
+      followupRows: [[{ workerAddress: WORKER, rating: null }]],
     },
     {
       action: 'refund_expired',
@@ -235,11 +234,75 @@ describe('paid task action preflight', () => {
     ).rejects.toThrow('Active submissions exist');
   });
 
-  it('allows requester cancellation when no active entry exists', async () => {
+  it('rejects duplicate split-acceptance workers before payment settlement', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(makeChain([task()]));
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'accept_submissions',
+        {
+          params: { taskId: '0xtask' },
+          body: {
+            taskId: '0xtask',
+            winners: [
+              { worker: WORKER, submissionId: 'submission-a' },
+              { worker: WORKER.toUpperCase(), submissionId: 'submission-b' },
+            ],
+          },
+        } as never,
+        REQUESTER,
+        NOW
+      )
+    ).rejects.toThrow('Duplicate award worker');
+  });
+
+  it('rejects a non-recipient rating before payment settlement', async () => {
     const ctx = createMockCtx();
     ctx.db.select
-      .mockReturnValueOnce(makeChain([task()]))
-      .mockReturnValueOnce(makeChain([]));
+      .mockReturnValueOnce(makeChain([task({ status: 'completed' })]))
+      .mockReturnValueOnce(
+        makeChain([{ workerAddress: '0x0000000000000000000000000000000000000003', rating: null }])
+      );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'rate',
+        {
+          params: { taskId: '0xtask' },
+          body: { taskId: '0xtask', worker: WORKER, rating: 100 },
+        } as never,
+        REQUESTER,
+        NOW
+      )
+    ).rejects.toThrow('Worker is not an award recipient');
+  });
+
+  it('rejects an already-rated recipient before payment settlement', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([task({ status: 'completed' })]))
+      .mockReturnValueOnce(makeChain([{ workerAddress: WORKER, rating: 90 }]));
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'rate',
+        {
+          params: { taskId: '0xtask' },
+          body: { taskId: '0xtask', worker: WORKER, rating: 80 },
+        } as never,
+        REQUESTER,
+        NOW
+      )
+    ).rejects.toThrow('Award recipient is already rated');
+  });
+
+  it('allows requester cancellation when no active entry exists', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(makeChain([task()])).mockReturnValueOnce(makeChain([]));
 
     await expect(
       validatePaidTaskAction(
@@ -276,9 +339,7 @@ describe('paid task action preflight', () => {
     const ctx = createMockCtx();
     ctx.db.select
       .mockReturnValueOnce(
-        makeChain([
-          task({ mode: 'claim', status: 'pending_approval', worker: WORKER, claimedBy: WORKER }),
-        ])
+        makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
       )
       .mockReturnValueOnce(makeChain([{ id: 'submission' }]));
 
@@ -296,9 +357,7 @@ describe('paid task action preflight', () => {
   it('rejects accepting an address that is not the claimed worker', async () => {
     const ctx = createMockCtx();
     ctx.db.select.mockReturnValueOnce(
-      makeChain([
-        task({ mode: 'claim', status: 'pending_approval', worker: WORKER, claimedBy: WORKER }),
-      ])
+      makeChain([task({ mode: 'claim', status: 'pending_approval', claimedBy: WORKER })])
     );
 
     await expect(

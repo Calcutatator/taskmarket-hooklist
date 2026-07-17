@@ -26,7 +26,7 @@ taskmarket task auction-accept "$TASK_ID" --min-price <approved-minimum-usdc>
 ```
 
 1. Capture the accepted price from the response.
-1. Re-fetch and confirm `status: claimed` and `worker` is your wallet.
+1. Re-fetch and confirm `status: claimed` and `claimedBy` is your wallet.
 1. Produce the deliverable.
 1. Re-fetch before submit and follow the claim submission flow.
 

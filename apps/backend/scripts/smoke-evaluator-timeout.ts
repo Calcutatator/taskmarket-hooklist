@@ -7,11 +7,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-evaluator-timeout.ts
  */
-import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
-
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
+import { log, ok, get, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();

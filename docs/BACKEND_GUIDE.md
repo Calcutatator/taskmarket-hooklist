@@ -277,7 +277,7 @@ One-time Cloudflare setup (only needed on first deploy):
 Deploying the backend:
 
 - Wait for all CI checks to go green, then run `make release`
-- DB migrations run automatically on backend startup — no manual step needed
+- DB migrations and resumable task-award reconciliation run automatically before the API starts; see `docs/DB_GUIDE.md` for replay controls
 
 ## Known pre-existing TypeScript errors (do not fix unless asked)
 

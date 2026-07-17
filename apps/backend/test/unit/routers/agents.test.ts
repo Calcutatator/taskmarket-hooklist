@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
 
 import { agentsRouter } from '../../../src/routers/agents.router';
@@ -154,6 +155,24 @@ describe('agents router', () => {
       });
 
       expect(result[0].rank).toBe(6);
+    });
+  });
+
+  describe('inbox', () => {
+    it('discovers worker tasks through award membership', async () => {
+      const requesterChain = makeChain([]);
+      const workerChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(requesterChain)
+        .mockReturnValueOnce(workerChain);
+
+      await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
+
+      const where = workerChain.where.mock.calls[0]?.[0];
+      const query = new PgDialect().sqlToQuery(where);
+      expect(query.sql).toContain('from "task_awards"');
+      expect(query.sql).toContain('lower("task_awards"."worker_address")');
     });
   });
 });

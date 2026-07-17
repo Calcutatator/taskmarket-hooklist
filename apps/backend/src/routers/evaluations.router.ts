@@ -16,6 +16,8 @@ import {
   contractResolveDispute,
   contractEvaluatorTimeout,
 } from '../services/contract';
+import { recordTaskSettlement } from '../services/settlement-recorder';
+import { getServerConfig } from '../config/env';
 
 const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
@@ -89,10 +91,10 @@ export const evaluationsRouter = router({
           // The contract only reassigns the worker for contest modes
           // (EvaluatorFacet.evaluate); mirror that so locked-worker modes keep
           // the on-chain worker and the appeal window stays usable.
-          worker:
+          claimedBy:
             task.mode === 'bounty' || task.mode === 'benchmark'
-              ? (input.awards[0]?.worker ?? task.worker)
-              : task.worker,
+              ? (input.awards[0]?.worker ?? task.claimedBy)
+              : task.claimedBy,
         })
         .where(eq(tasks.id, input.taskId));
 
@@ -122,7 +124,7 @@ export const evaluationsRouter = router({
       if (taskResult.length === 0) throw new Error('Task not found');
       const task = taskResult[0];
 
-      if (!task.worker || task.worker.toLowerCase() !== payer.toLowerCase()) {
+      if (!task.claimedBy || task.claimedBy.toLowerCase() !== payer.toLowerCase()) {
         throw new Error('Only the task worker can appeal');
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
@@ -157,30 +159,48 @@ export const evaluationsRouter = router({
         throw new Error('Appeal window not yet expired');
       }
 
-      const txHash = await contractFinalizeVerdict(input.taskId as `0x${string}`);
+      const { txHash, settlement, settledAt } = await contractFinalizeVerdict(
+        input.taskId as `0x${string}`
+      );
 
       const rejected = task.verdictType === 'REJECT';
-      // REJECT refunds the (post-evaluator-fee) remainder to the requester and
-      // terminates the task -- it does not reopen it. A worker who claimed a
-      // reopened task would find acceptSubmission reverting on the empty
-      // escrow left behind by the refund (EvaluatorFacet.finalizeVerdict).
-      await ctx.db
-        .update(tasks)
-        .set(
-          rejected
-            ? {
-                status: 'cancelled',
-                worker: null,
-                evaluator: null,
-                evaluatorStake: '0',
-                evaluationWindow: null,
-                appealWindow: null,
-                evaluatorDeadline: null,
-                appealDeadline: null,
-              }
-            : { status: 'completed' }
-        )
-        .where(eq(tasks.id, input.taskId));
+      if (rejected) {
+        // REJECT refunds the (post-evaluator-fee) remainder to the requester and
+        // terminates the task -- it does not reopen it. A worker who claimed a
+        // reopened task would find acceptSubmission reverting on the empty
+        // escrow left behind by the refund (EvaluatorFacet.finalizeVerdict).
+        // The contract emits no TaskCompleted event on this path, so there is
+        // no settlement to record.
+        await ctx.db
+          .update(tasks)
+          .set({
+            status: 'cancelled',
+            claimedBy: null,
+            evaluator: null,
+            evaluatorStake: '0',
+            evaluationWindow: null,
+            appealWindow: null,
+            evaluatorDeadline: null,
+            appealDeadline: null,
+          })
+          .where(eq(tasks.id, input.taskId));
+      } else if (settlement && settledAt != null) {
+        // Record task_awards synchronously from the same receipt this mutation
+        // already waited for, instead of relying solely on the async indexer to
+        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
+        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
+        // processes the same event too.
+        await recordTaskSettlement(ctx.db, {
+          chainId: getServerConfig().CHAIN_ID,
+          settledAt: new Date(settledAt * 1000),
+          settlement,
+        });
+      } else {
+        // All-zero-award verdict: the contract still transitions the task to
+        // Accepted/completed, but emits no TaskCompleted log, so there is no
+        // settlement to record.
+        await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
+      }
 
       return { txHash };
     }),
@@ -219,17 +239,33 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      const txHash = await contractResolveDispute(
+      const { txHash, settlement, settledAt } = await contractResolveDispute(
         input.taskId as `0x${string}`,
         payer as `0x${string}`,
         VERDICT_MAP[input.verdict] ?? 0,
         awards
       );
 
-      await ctx.db
-        .update(tasks)
-        .set({ status: 'completed', worker: input.awards[0].worker })
-        .where(eq(tasks.id, input.taskId));
+      if (settlement && settledAt != null) {
+        // Record task_awards synchronously from the same receipt this mutation
+        // already waited for, instead of relying solely on the async indexer to
+        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
+        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
+        // processes the same event too.
+        await recordTaskSettlement(ctx.db, {
+          chainId: getServerConfig().CHAIN_ID,
+          settledAt: new Date(settledAt * 1000),
+          settlement,
+        });
+      } else {
+        // All-zero-award verdict: the contract still transitions the task to
+        // Accepted/completed, but emits no TaskCompleted log, so there is no
+        // settlement to record.
+        await ctx.db
+          .update(tasks)
+          .set({ status: 'completed', claimedBy: input.awards[0].worker })
+          .where(eq(tasks.id, input.taskId));
+      }
       return { txHash };
     }),
 

@@ -1,4 +1,4 @@
-# 0003 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware
+# 0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware
 
 > **Decision (Y-statement):** In the context of gating new marketplace activity on legal
 > acceptance across web, CLI, and raw-API clients, facing the need for one enforcement point

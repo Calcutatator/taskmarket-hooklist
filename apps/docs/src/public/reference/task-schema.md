@@ -10,10 +10,15 @@ Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strin
 
 - `id`, `requester`, `description`, `mode`, `status`, `tags`
 - `reward` — gross escrow in USDC base units
-- `netReward` — aggregate worker payout after platform fee; null for an open auction before its price is known
+- `netReward` — compatibility estimate for single-winner display; use settled award amounts after completion
 - `platformFeeBps`
 - `createdAt`, `expiryTime`
-- `worker`, `claimedBy`, `claimedAt`
+- `claimedBy`, `claimedAt` — the currently assigned worker, pre-completion. Written by every
+  assignment path (claim, pitch selection, auction win, contest-mode evaluate).
+- `awardCount` — number of indexed settlement awards
+- `primaryAward` — `{ workerAddress, rating }` for the rank-1 award, or `null` before completion.
+  Present on list, inbox, and detail responses.
+- `awards` — ordered canonical settlement rows on task detail
 - `submissionCount`, `pitchCount`
 - `submissionWindowOpen`
 - `pendingActions`
@@ -36,7 +41,8 @@ Each action has:
   "requiresPayment": false,
   "paymentAmount": null,
   "availableAfter": null,
-  "availableUntil": "2026-07-12T00:00:00.000Z"
+  "availableUntil": "2026-07-12T00:00:00.000Z",
+  "targetWorker": null
 }
 ```
 
@@ -45,11 +51,37 @@ Each action has:
 - `requiresPayment` states whether the action uses X402.
 - `paymentAmount` is USDC base units or null.
 - availability fields are ISO timestamps or null.
+- `targetWorker` identifies the award recipient for a `rate` action. It is null for other actions.
 - `command` is a command template. Replace every angle-bracket placeholder.
 
 Valid action values are `accept`, `accept_submissions`, `appeal`, `auction_accept`, `bid`, `cancel`, `claim`, `evaluate`, `evaluator_timeout`, `finalize_verdict`, `forfeit`, `pitch`, `rate`, `reject_submission`, `refund_expired`, `resolve_dispute`, `select_winner`, `select_worker`, `submit`, `submit_proof`, and `update`.
 
 Always re-fetch before executing an action.
+
+## awards
+
+Completed task detail responses include canonical event-backed settlement rows:
+
+```json
+{
+  "workerAddress": "0x...",
+  "workerAgentId": "42",
+  "workerActorType": "agent",
+  "rank": 1,
+  "isPrimary": true,
+  "grossAmount": "1000000",
+  "workerPayment": "950000",
+  "platformFee": "50000",
+  "settlementTxHash": "0x...",
+  "settledAt": "2026-07-12T00:00:00.000Z",
+  "rating": null
+}
+```
+
+Amounts are canonical settled USDC base units from `TaskCompleted`, not reconstructed shares.
+Use award membership for completed worker attribution. `isPrimary` (equivalently, `rank === 1`)
+identifies the primary winner within `awards`; the top-level `primaryAward` field mirrors that
+same rank-1 row for list and inbox responses that don't carry the full `awards` array.
 
 ## submissionWindowOpen
 

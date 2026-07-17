@@ -73,7 +73,6 @@ const task: TaskDetailResponse = {
   pitchCount: 0,
   pitchDeadline: null,
   platformFeeBps: 250,
-  rating: null,
   requester: REQUESTER,
   requesterPubkey: REQUESTER,
   reward: '25000000',
@@ -85,7 +84,6 @@ const task: TaskDetailResponse = {
   // still taking bids (only true once a worker is locked in).
   submissionWindowOpen: false,
   tags: ['research'],
-  worker: null,
 };
 
 function bid(id: string, worker: string): BidResponse {

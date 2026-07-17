@@ -21,7 +21,7 @@
  *     to test scenario B. Scenario C reuses the requester as worker.
  *   - The contract must be the upgraded Diamond with submission hash storage.
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus } from './_x402.ts';
 
 type TaskDetail = { status: string; selfAward?: boolean | null };
 type RequesterStats = {
@@ -36,13 +36,7 @@ type RequesterStats = {
 };
 
 async function pollStatus(taskId: string, target: string, maxWaitMs = 60_000): Promise<TaskDetail> {
-  const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    const t = (await get(`/api/tasks/${taskId}`)) as TaskDetail;
-    if (t.status === target) return t;
-    await new Promise((r) => setTimeout(r, 3_000));
-  }
-  throw new Error(`Timed out waiting for task ${taskId} to reach status "${target}"`);
+  return pollTaskStatus<TaskDetail>(taskId, target, { timeoutMs: maxWaitMs });
 }
 
 async function fetchRequesterStats(address: string): Promise<RequesterStats> {

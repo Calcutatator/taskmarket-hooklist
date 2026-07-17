@@ -1,6 +1,6 @@
 import { and, asc, eq, isNull } from 'drizzle-orm';
 import type { PaidPendingActionNameValue } from '@taskmarket/shared';
-import { bids, proposals, submissions, tasks } from '../db/schema';
+import { bids, proposals, submissions, taskAwards, tasks } from '../db/schema';
 import type { db } from '../db/client';
 import { computeClockPrice } from '../lib/auction';
 
@@ -83,7 +83,7 @@ export async function validatePaidTaskAction(
           fail('Task is not awaiting acceptance');
         }
       }
-      if (!task.worker || task.worker.toLowerCase() !== worker.toLowerCase()) {
+      if (!task.claimedBy || task.claimedBy.toLowerCase() !== worker.toLowerCase()) {
         fail('Selected worker does not match the task worker');
       }
       const delivered = await database
@@ -111,6 +111,12 @@ export async function validatePaidTaskAction(
       }
       const winners = (req.body as { winners?: Array<{ worker: string; submissionId?: string }> })
         .winners;
+      const seenWorkers = new Set<string>();
+      for (const winner of winners ?? []) {
+        const worker = winner.worker.toLowerCase();
+        if (seenWorkers.has(worker)) fail('Duplicate award worker');
+        seenWorkers.add(worker);
+      }
       const active = await database
         .select({ id: submissions.id, workerAddress: submissions.workerAddress })
         .from(submissions)
@@ -125,10 +131,28 @@ export async function validatePaidTaskAction(
       }
       return;
     }
-    case 'rate':
+    case 'rate': {
       requirePayer(payer, task.requester, 'task requester');
       if (task.status !== 'completed') fail('Task is not completed');
+      const worker = bodyString(req, 'worker');
+      const awards = await database
+        .select({ workerAddress: taskAwards.workerAddress, rating: taskAwards.rating })
+        .from(taskAwards)
+        .where(eq(taskAwards.taskId, taskId));
+      const matchingAwards = awards.filter(
+        (award) => award.workerAddress.toLowerCase() === worker.toLowerCase()
+      );
+      if (
+        (awards.length > 0 && matchingAwards.length === 0) ||
+        (awards.length === 0 && task.claimedBy?.toLowerCase() !== worker.toLowerCase())
+      ) {
+        fail('Worker is not an award recipient for this task');
+      }
+      if (matchingAwards.some((award) => award.rating !== null)) {
+        fail('Award recipient is already rated');
+      }
       return;
+    }
     case 'cancel': {
       requirePayer(payer, task.requester, 'task requester');
       if (task.status !== 'open') fail('Task is not open');
@@ -314,7 +338,7 @@ export async function validatePaidTaskAction(
       }
       return;
     case 'appeal':
-      requirePayer(payer, task.worker, 'task worker');
+      requirePayer(payer, task.claimedBy, 'task worker');
       if (task.status !== 'appealing') fail('Task is not appealable');
       if (task.appealDeadline && now >= task.appealDeadline) fail('Appeal deadline has passed');
       return;

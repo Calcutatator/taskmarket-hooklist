@@ -24,7 +24,7 @@ export function getAcceptWorkerAddress(
   action: TaskActionComponentProps['action'],
   task: TaskActionComponentProps['task']
 ) {
-  return task.worker ?? task.claimedBy ?? workerFromCommand(action.command);
+  return task.claimedBy ?? workerFromCommand(action.command);
 }
 
 function sameAddress(left?: string | null, right?: string | null) {

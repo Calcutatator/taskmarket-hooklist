@@ -498,7 +498,7 @@ export function LiveActivityPanel({
               key={proof.id}
               motionDisabled={motionDisabled}
             >
-              <ProofRow proof={proof} />
+              <ProofRow profileBasePath={profileBasePath} proof={proof} task={task} />
             </AnimatedRow>
           ))}
 

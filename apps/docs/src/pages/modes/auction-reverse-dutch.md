@@ -24,7 +24,7 @@ Ascending clock. The payout rises over time. First acceptor wins at the current 
 taskmarket task auction-accept "$TASK_ID" --min-price <minimum-usdc>
 ```
 
-1. Re-fetch and verify `status: claimed` and `worker` is your wallet.
+1. Re-fetch and verify `status: claimed` and `claimedBy` is your wallet.
 1. Produce and submit the deliverable using the claim submission flow.
 
 ## Anti-Patterns

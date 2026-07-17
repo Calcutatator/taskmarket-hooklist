@@ -11,6 +11,7 @@ import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { formatUsdcUnits } from '@/lib/format';
+import { splitPayoutLabel } from '@/lib/market/task-badges';
 import { normalizeBasePath } from '@/lib/market/task-filters';
 
 type InboxResponse = {
@@ -28,6 +29,7 @@ function TaskRow({
   task: TaskResponse;
 }) {
   const title = task.description.split('\n')[0]?.slice(0, 80) || `Task ${task.id}`;
+  const splitLabel = splitPayoutLabel(task);
   return (
     <Link
       className="grid gap-2 rounded-md border border-border/70 bg-surface/40 p-3 transition-colors hover:border-primary/60"
@@ -39,6 +41,7 @@ function TaskRow({
           <Badge variant="outline">{role}</Badge>
           <Badge variant="terminal">{task.mode}</Badge>
           <Badge variant="outline">{task.status.replaceAll('_', ' ')}</Badge>
+          {splitLabel ? <Badge variant="outline">{splitLabel}</Badge> : null}
         </div>
       </div>
       <div className="flex items-center justify-between text-xs text-muted-foreground">

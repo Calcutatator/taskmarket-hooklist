@@ -176,6 +176,23 @@ test('hides the live status banner on a terminal task', async ({ page }) => {
   await expect(page.getByRole('status', { name: /Task status/i })).toHaveCount(0);
 });
 
+test('renders every split settlement recipient and canonical payout amount', async ({ page }) => {
+  await page.goto('/dashboard/tasks/mock-bounty-split-settlement');
+
+  const payouts = page.getByRole('region', { name: /Settlement payouts/i });
+  await expect(payouts).toBeVisible();
+  await expect(payouts.getByText('3 winners')).toBeVisible();
+  await expect(payouts.getByText('2 USDC', { exact: true })).toBeVisible();
+  await expect(payouts.getByText('1.9 USDC', { exact: true })).toBeVisible();
+  await expect(payouts.getByText('0.1 USDC', { exact: true })).toBeVisible();
+  await expect(page.getByText('1 of 3 rated').first()).toBeVisible();
+
+  const horizontalOverflow = await page.evaluate(
+    () => document.documentElement.scrollWidth - document.documentElement.clientWidth
+  );
+  expect(horizontalOverflow).toBeLessThanOrEqual(1);
+});
+
 test('collapses the desktop sidebar to an icon rail', async ({ page }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Desktop-only sidebar rail behavior.');
 

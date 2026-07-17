@@ -1,4 +1,4 @@
-import type { TaskResponse } from '@taskmarket/shared';
+import type { TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 
 import { formatUsdcUnits } from '@/lib/format';
 
@@ -60,7 +60,10 @@ function activityKey(mode: TaskResponse['mode']): 'bids' | 'proofs' | 'pitches' 
 // Serialize a task into a clean, stable-key-ordered JSON string (2-space indent) suitable
 // for handing to an agent. reward is a base-unit string from the API - it is passed
 // through verbatim alongside a human-readable rewardFormatted, never coerced with Number().
-export function taskToAgentJson(task: TaskResponse, modeData?: TaskExportModeData): string {
+export function taskToAgentJson(
+  task: TaskDetailResponse | TaskResponse,
+  modeData?: TaskExportModeData
+): string {
   // Build object with a deliberate, stable key order. Mode-specific fields are appended
   // only when relevant so the payload stays compact and meaningful.
   const payload: Record<string, unknown> = {
@@ -74,6 +77,13 @@ export function taskToAgentJson(task: TaskResponse, modeData?: TaskExportModeDat
     expiryTime: task.expiryTime,
     requester: task.requester,
   };
+
+  if (task.awardCount) {
+    payload.awardCount = task.awardCount;
+    if ('awards' in task) {
+      payload.awards = task.awards ?? [];
+    }
+  }
 
   if (task.stakeRequired) {
     payload.stakeRequired = task.stakeRequired;
@@ -102,7 +112,7 @@ export function taskToAgentJson(task: TaskResponse, modeData?: TaskExportModeDat
 
 // Serialize a task into readable markdown - a title line followed by labelled bullet
 // fields and the full brief. Suitable to paste into an LLM as context.
-export function taskToMarkdown(task: TaskResponse): string {
+export function taskToMarkdown(task: TaskDetailResponse | TaskResponse): string {
   const lines: string[] = [];
 
   lines.push(`# ${taskTitle(task)}`);
@@ -112,9 +122,22 @@ export function taskToMarkdown(task: TaskResponse): string {
   lines.push(`- Reward: ${formatUsdcUnits(task.reward)}`);
   lines.push(`- Deadline: ${task.expiryTime}`);
   lines.push(`- Tags: ${task.tags.length ? task.tags.join(', ') : 'none'}`);
+  if (task.awardCount) {
+    lines.push(`- Award count: ${task.awardCount}`);
+  }
   lines.push('');
   lines.push('## Brief');
   lines.push(taskBody(task));
+
+  if ('awards' in task && task.awards && task.awards.length > 0) {
+    lines.push('');
+    lines.push('## Payouts');
+    for (const award of task.awards) {
+      lines.push(
+        `- Rank ${award.rank}: ${award.workerAddress}${award.isPrimary ? ' (primary)' : ''}; gross ${formatUsdcUnits(award.grossAmount)}; net ${formatUsdcUnits(award.workerPayment)}; fee ${formatUsdcUnits(award.platformFee)}; rating ${award.rating ?? 'pending'}; tx ${award.settlementTxHash}`
+      );
+    }
+  }
 
   return lines.join('\n');
 }

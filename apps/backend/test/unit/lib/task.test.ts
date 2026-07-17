@@ -12,6 +12,7 @@ const FUTURE = new Date('2026-07-12T00:00:00.000Z');
 const PAST = new Date('2026-07-10T00:00:00.000Z');
 const REQUESTER = '0x0000000000000000000000000000000000000001';
 const WORKER = '0x0000000000000000000000000000000000000002';
+const SECOND_WORKER = '0x0000000000000000000000000000000000000003';
 
 function task(overrides: Partial<PendingActionTask> = {}): PendingActionTask {
   return {
@@ -19,7 +20,6 @@ function task(overrides: Partial<PendingActionTask> = {}): PendingActionTask {
     requester: REQUESTER,
     status: 'open',
     mode: 'bounty',
-    rating: null,
     pitchCount: 0,
     bidCount: 0,
     submissionCount: 0,
@@ -27,10 +27,10 @@ function task(overrides: Partial<PendingActionTask> = {}): PendingActionTask {
     pitchDeadline: null,
     bidDeadline: null,
     claimedBy: null,
-    worker: null,
     auctionType: null,
     currentClockPrice: null,
     currentLowestBid: null,
+    awardWorkers: [],
     ...overrides,
   };
 }
@@ -225,7 +225,7 @@ describe('computePendingActions', () => {
       task({
         mode: 'claim',
         status: 'pending_approval',
-        worker: WORKER,
+        claimedBy: WORKER,
         submissionCount: 1,
         expiryTime: PAST,
       }),
@@ -238,6 +238,70 @@ describe('computePendingActions', () => {
         eligibleAddress: REQUESTER,
       }),
     ]);
+  });
+
+  it('offers one rating action per distinct unrated award recipient', () => {
+    const actions = computePendingActions(
+      task({
+        status: 'completed',
+        claimedBy: WORKER,
+        awardWorkers: [
+          { workerAddress: WORKER, rating: 90 },
+          { workerAddress: SECOND_WORKER, rating: null },
+          { workerAddress: SECOND_WORKER.toUpperCase(), rating: null },
+        ],
+      }),
+      NOW
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({
+        action: 'rate',
+        eligibleAddress: REQUESTER,
+        targetWorker: SECOND_WORKER,
+      }),
+    ]);
+    expect(actions[0]?.command).toContain(`--worker ${SECOND_WORKER}`);
+  });
+
+  it('offers a rating action for a single unrated award recipient', () => {
+    const actions = computePendingActions(
+      task({
+        status: 'completed',
+        claimedBy: WORKER,
+        awardWorkers: [{ workerAddress: WORKER, rating: null }],
+      }),
+      NOW
+    );
+
+    expect(actions).toEqual([
+      expect.objectContaining({ action: 'rate', targetWorker: WORKER }),
+    ]);
+  });
+
+  it('offers no rating action when there are no awards yet', () => {
+    const actions = computePendingActions(
+      task({ status: 'completed', claimedBy: WORKER, awardWorkers: [] }),
+      NOW
+    );
+
+    expect(actions).toEqual([]);
+  });
+
+  it('treats duplicate awards as rated when any row for that recipient has a rating', () => {
+    const actions = computePendingActions(
+      task({
+        status: 'completed',
+        claimedBy: WORKER,
+        awardWorkers: [
+          { workerAddress: SECOND_WORKER, rating: 88 },
+          { workerAddress: SECOND_WORKER.toUpperCase(), rating: null },
+        ],
+      }),
+      NOW
+    );
+
+    expect(actions).toEqual([]);
   });
 });
 

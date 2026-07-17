@@ -37,7 +37,9 @@ Do not reject valid work to avoid paying workers.
 
 After acceptance, rate promptly when a requester rating is available. Before choosing a score, load `reference/rating.md`.
 
-For same-worker split acceptance, rate the worker once for the overall accepted work. For multi-worker split acceptance, rate each accepted worker when the task state and API support it.
+For multi-worker split acceptance, rate each accepted worker. Follow the task's `rate`
+`pendingActions`; each action names its recipient in `targetWorker`. Re-fetch between ratings until
+no unrated winner action remains.
 
 ## Approval Text
 

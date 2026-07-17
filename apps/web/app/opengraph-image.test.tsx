@@ -102,7 +102,6 @@ const baseTask: TaskDetailResponse = {
   pitchCount: 0,
   pitchDeadline: null,
   platformFeeBps: 250,
-  rating: null,
   requester: '0x0000000000000000000000000000000000000001',
   requesterPubkey: '0x0000000000000000000000000000000000000001',
   reward: '125000000',
@@ -112,7 +111,6 @@ const baseTask: TaskDetailResponse = {
   submissionCount: 0,
   submissionWindowOpen: true,
   tags: ['seo', 'images'],
-  worker: null,
 };
 
 const baseAgent: AgentStats = {

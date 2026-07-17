@@ -82,8 +82,14 @@ those always pause for a human.
 
 - [0001 — Mainnet contract upgrades stay manual and developer-local](0001-mainnet-upgrades-stay-manual.md)
 - [0002 — Merging to `main` automatically deploys app code to the shared testnet](0002-testnet-auto-deploys-on-merge-to-main.md)
-- [0003 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0003-legal-acceptance-opaque-receipt-default-deny-middleware.md)
-- [0004 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0004-legal-bundle-content-digest-invalidates-prior-acceptance.md)
+- [0003 — Backend boot fails fast on indexer catch-up and task-award reconciliation](0003-backend-boot-fails-fast-on-indexer-and-award-reconciliation.md)
+- [0004 — Split-payout settlement is a separate event-backed `task_awards` ledger table](0004-task-awards-event-backed-ledger-table.md)
+- [0005 — Indexer main event stream blocks on a failed event instead of skipping it](0005-indexer-blocks-on-failed-event-instead-of-skipping.md)
+- [0006 — `task_awards` is the sole post-completion source of truth; `claimedBy` is the sole pre-completion assignment field](0006-task-awards-single-source-of-truth.md)
+- [0007 — Indexer status-transition handlers are guarded by valid prior state](0007-indexer-status-transitions-are-guarded-by-prior-state.md)
+- [0008 — `task_awards` table creation and the `tasks.worker`/`tasks.rating` drop ship in two separate deploys](0008-task-awards-migration-ships-in-two-deploys.md)
+- [0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0009-legal-acceptance-opaque-receipt-default-deny-middleware.md)
+- [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
 
 ## Linting
 

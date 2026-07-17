@@ -21,6 +21,10 @@ describe('formatUsdcUnits', () => {
     expect(formatUsdcUnits('12500000')).toBe('12.5 USDC');
   });
 
+  it('preserves all base units above the JavaScript safe-integer limit', () => {
+    expect(formatUsdcUnits('9007199254740993')).toBe('9,007,199,254.740993 USDC');
+  });
+
   it('returns a zeroed amount for missing or non-finite values', () => {
     expect(formatUsdcUnits(null)).toBe('0 USDC');
     expect(formatUsdcUnits('')).toBe('0 USDC');

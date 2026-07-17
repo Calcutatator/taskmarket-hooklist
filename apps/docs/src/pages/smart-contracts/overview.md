@@ -125,7 +125,7 @@ function acceptSubmissions(
 ) external
 ```
 
-N-winner payout for Bounty and Benchmark tasks. Shares MUST sum to `10000` (basis points); fees are computed per pair (`workerPayment * feeBps / 10000`) and transferred to the fee recipient in a single batched send. One `TaskCompleted` event is emitted per `(worker, share)` pair. `workers[0]` becomes `task.worker` and `deliverables[0]` becomes `task.deliverable` for single-worker-field back-compat. Duplicate worker addresses are allowed. Each per-pair payout must be non-zero (reverts if a share rounds to zero relative to reward). Reverts for Claim, Pitch, or Auction modes.
+N-winner payout for Bounty and Benchmark tasks. Shares MUST sum to `10000` (basis points); fees are computed per pair (`workerPayment * feeBps / 10000`) and transferred to the fee recipient in a single batched send. One `TaskCompleted` event is emitted per `(worker, share)` pair. `workers[0]` becomes `task.worker` and `deliverables[0]` becomes `task.deliverable` for single-worker-field back-compat. Duplicate worker addresses revert with `DuplicateAwardWorker`. Each per-pair payout must be non-zero (reverts if a share rounds to zero relative to reward). Reverts for Claim, Pitch, or Auction modes.
 
 ### rateTask
 
@@ -239,7 +239,7 @@ struct Task {
 | `TaskClaimed(taskId, worker, stakeAmount)` | Claim task is claimed |
 | `TaskWorkerSelected(taskId, worker)` | Pitch or auction worker is selected |
 | `BidSubmitted(taskId, worker, price)` | Auction bid or clock-price acceptance is recorded |
-| `TaskAccepted(taskId, requester, worker, workerPayment, platformFee)` | Submission accepted |
+| `TaskCompleted(taskId, requester, worker, workerPayment, platformFee)` | One settlement payout completed |
 | `TaskRated(taskId, worker, rating, raterAgentId)` | Task rated |
 | `TaskExpired(taskId, requester, refundAmount)` | Expired task refunded |
 | `TaskCancelled(taskId, requester, refundAmount)` | Open task cancelled |

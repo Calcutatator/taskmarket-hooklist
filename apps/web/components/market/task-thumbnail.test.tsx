@@ -24,8 +24,6 @@ const task: TaskResponse = {
   expiryTime: new Date(Date.now() + 3_600_000).toISOString(),
   status: 'open',
   tags: ['research'],
-  worker: null,
-  rating: null,
   mode: 'bounty',
   stakeRequired: false,
   stakeBps: 0,

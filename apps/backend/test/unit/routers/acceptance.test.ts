@@ -22,6 +22,7 @@ import {
   contractAcceptSubmissions,
   contractRateTask,
 } from '../../../src/services/contract';
+import { agents, taskAwards, tasks } from '../../../src/db/schema';
 
 const REQUESTER = '0xRequester0000000000000000000000000000001';
 const WORKER = '0xWorker0000000000000000000000000000000001';
@@ -39,8 +40,6 @@ function makeTask(overrides: Record<string, any> = {}) {
     expiryTime: new Date(Date.now() + 86400000),
     status: 'pending_approval',
     tags: [],
-    worker: WORKER,
-    rating: null,
     mode: 'bounty',
     stakeRequired: 0,
     stakeBps: 0,
@@ -202,6 +201,7 @@ describe('acceptance router', () => {
       const ctx = createMockCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })])) // task lookup
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER, rating: null }])) // awards
         .mockReturnValueOnce(makeChain([])); // worker agent lookup (no agentId)
 
       const caller = acceptanceRouter.createCaller(ctx);
@@ -211,6 +211,70 @@ describe('acceptance router', () => {
       expect(contractRateTask).toHaveBeenCalledOnce();
       expect(ctx.db.update).toHaveBeenCalledTimes(2);
       expect(ctx.db.insert).toHaveBeenCalledTimes(1);
+    });
+
+    it('rejects a rating for a worker who is not an award recipient', async () => {
+      const otherWorker = '0xWorker0000000000000000000000000000000002';
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER, rating: null }]));
+
+      await expect(
+        acceptanceRouter.createCaller(ctx).rate({ ...rateInput, worker: otherWorker })
+      ).rejects.toThrow('Worker is not an award recipient');
+
+      expect(contractRateTask).not.toHaveBeenCalled();
+    });
+
+    it('rejects a duplicate-recipient rating when any matching award is already rated', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
+        .mockReturnValueOnce(
+          makeChain([
+            { workerAddress: WORKER, rating: 91 },
+            { workerAddress: WORKER.toUpperCase(), rating: null },
+          ])
+        );
+
+      await expect(acceptanceRouter.createCaller(ctx).rate(rateInput)).rejects.toThrow(
+        'Award recipient is already rated'
+      );
+
+      expect(contractRateTask).not.toHaveBeenCalled();
+    });
+
+    it('projects a secondary-winner rating onto task_awards only, never the tasks table', async () => {
+      const secondary = '0xWorker0000000000000000000000000000000002';
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'completed' })]))
+        .mockReturnValueOnce(
+          makeChain([
+            { workerAddress: WORKER, rating: null },
+            { workerAddress: secondary, rating: null },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]));
+
+      await acceptanceRouter.createCaller(ctx).rate({ ...rateInput, worker: secondary });
+
+      expect(contractRateTask).toHaveBeenCalledWith(
+        TASK_ID,
+        REQUESTER,
+        secondary,
+        rateInput.rating,
+        0n,
+        0n,
+        expect.any(String),
+        expect.any(String),
+        undefined
+      );
+      const updatedTables = ctx.db.update.mock.calls.map(([table]: [unknown]) => table);
+      expect(updatedTables).toContain(taskAwards);
+      expect(updatedTables).toContain(agents);
+      expect(updatedTables).not.toContain(tasks);
     });
   });
 });

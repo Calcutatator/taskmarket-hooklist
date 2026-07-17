@@ -32,8 +32,6 @@ function makeTask(overrides: Record<string, any> = {}) {
     expiryTime: new Date(Date.now() + 86400000),
     status: 'open',
     tags: [],
-    worker: null,
-    rating: null,
     mode: 'claim',
     stakeRequired: 0,
     stakeBps: 0,
@@ -112,7 +110,9 @@ describe('claims router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = claimsRouter.createCaller(ctx);
-      await expect(caller.claim(claimInput)).rejects.toThrow('Signature does not match worker address');
+      await expect(caller.claim(claimInput)).rejects.toThrow(
+        'Signature does not match worker address'
+      );
     });
   });
 

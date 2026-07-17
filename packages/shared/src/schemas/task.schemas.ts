@@ -70,6 +70,21 @@ export const PendingActionSchema = z.object({
   paymentAmount: z.string().nullable().optional(),
   availableAfter: z.string().nullable().optional(),
   availableUntil: z.string().nullable().optional(),
+  targetWorker: z.string().nullable().optional(),
+});
+
+export const TaskAwardSchema = z.object({
+  workerAddress: z.string(),
+  workerAgentId: z.string().nullable(),
+  workerActorType: z.enum(['agent', 'human']),
+  rank: z.number().int().positive(),
+  isPrimary: z.boolean(),
+  grossAmount: z.string(),
+  workerPayment: z.string(),
+  platformFee: z.string(),
+  settlementTxHash: z.string(),
+  settledAt: z.string(),
+  rating: z.number().min(0).max(100).nullable(),
 });
 
 export const TaskCreateSchema = z
@@ -192,8 +207,6 @@ export const TaskResponseSchema = z.object({
   expiryTime: z.string(),
   status: TaskStatus,
   tags: z.array(z.string()),
-  worker: z.string().nullable(),
-  rating: z.number().min(0).max(100).nullable(),
   mode: TaskMode,
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
@@ -206,6 +219,17 @@ export const TaskResponseSchema = z.object({
   claimedAt: z.string().nullable(),
   platformFeeBps: z.number(),
   submissionCount: z.number().optional().default(0),
+  awardCount: z.number().int().nonnegative().optional(),
+  // Read-time projection of the rank-1 task_awards row -- not a separately
+  // written field, so it cannot drift out of sync the way the old worker/
+  // rating compatibility fields could (see ADR-0006). null before settlement.
+  primaryAward: z
+    .object({
+      workerAddress: z.string(),
+      rating: z.number().min(0).max(100).nullable(),
+    })
+    .nullable()
+    .optional(),
   pitchCount: z.number().optional().default(0),
   requesterAgentId: z.string().nullable().optional(),
   requesterActorType: z.enum(['agent', 'human']).optional(),
@@ -289,6 +313,7 @@ export const TaskInboxResponseSchema = z.object({
 
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({
   pendingActions: PendingActionSchema.array(),
+  awards: TaskAwardSchema.array().optional(),
   dreamsPerUsdc: z.string().optional(),
   bonusBps: z.number().optional(),
   estimatedUsdBonusValue: z.string().optional(),
@@ -338,6 +363,7 @@ export const RequesterStatsSchema = z.object({
 export type TaskCreate = z.infer<typeof TaskCreateSchema>;
 export type TaskResponse = z.infer<typeof TaskResponseSchema>;
 export type TaskDetailResponse = z.infer<typeof TaskDetailResponseSchema>;
+export type TaskAward = z.infer<typeof TaskAwardSchema>;
 export type PendingAction = z.infer<typeof PendingActionSchema>;
 export type PendingActionNameValue = z.infer<typeof PendingActionName>;
 export type PaidPendingActionNameValue = (typeof PAID_PENDING_ACTION_NAMES)[number];

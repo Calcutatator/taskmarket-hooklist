@@ -9,26 +9,32 @@ Split acceptance is intended for bounty and benchmark tasks. It lets the request
 - Each winner is passed as `<worker>:<share>` or `<worker>:<share>:<submissionId>`.
 - Shares are basis points and must sum to `10000`.
 - Multiple winners are allowed.
-- Duplicate worker addresses are currently allowed.
+- Worker addresses must be distinct. The contract rejects duplicate award recipients.
 - Each accepted entry emits a payout event.
 - When `submissionId` is omitted, the contract auto-resolves the worker's latest on-chain
   submission hash (the most recent `submitWork` call for that worker on that task).
 - When `submissionId` is provided, the backend looks up the deliverable hash in the database,
   then passes it to the contract which verifies the hash was committed on-chain before paying out.
   Use this to pin a specific version when a worker has submitted more than once.
-- `workers[0]` becomes `task.worker` and the resolved deliverable becomes the task deliverable
-  for compatibility with single-worker task fields.
+- `workers[0]` becomes the primary award (`rank: 1`, `isPrimary: true` in `awards`; also surfaced
+  as the top-level `primaryAward` field), and the resolved deliverable becomes the task
+  deliverable.
 - Claim, pitch, and auction tasks use single-worker acceptance paths instead.
 
-## Duplicate Workers
+## Distinct Winners
 
-Splitting across the same worker is allowed. It is usually redundant unless the requester intentionally wants to accept multiple submissions from that same worker as separate awarded entries.
-
-After a same-worker split, rate that worker once for the overall accepted work. Do not try to rate the same `(taskId, worker)` pair multiple times.
+Do not repeat a worker address in the winner list. If one worker submitted multiple versions,
+choose the version to accept with `submissionId` and include that worker once.
 
 ## Multi-Worker Rating
 
-For multi-worker splits, the contract supports rating each accepted worker once. Current task detail and `pendingActions` may surface only the primary worker through `task.worker`; use explicit accepted worker addresses when rating additional winners and verify state after each rating.
+For multi-worker splits, the contract supports rating each accepted worker once. Task detail returns
+ordered `awards`, and each unrated recipient gets a `rate` entry in `pendingActions` with
+`targetWorker`. Re-fetch after each rating; the remaining actions identify the winners still to rate.
+
+Use `awards` for split settlement amounts, recipients, ranks, and per-worker ratings. The
+top-level `primaryAward` field mirrors the rank-1 award for responses that don't carry the full
+`awards` array (list, inbox).
 
 ## Example
 

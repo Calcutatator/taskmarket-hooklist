@@ -14,6 +14,7 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
+  splitPayoutLabel,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
   taskStatusLabel,
@@ -186,6 +187,7 @@ function TaskMediaCover({ task }: { task: TaskResponse }) {
 export function TaskCover({ task }: { task: TaskResponse }) {
   const hasActivity = taskHasActivity(task);
   const count = activityCount(task);
+  const splitLabel = splitPayoutLabel(task);
 
   return (
     <div className="group relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface/44 ring-1 ring-inset ring-border/58 transition-shadow duration-300 group-hover:ring-border">
@@ -204,6 +206,7 @@ export function TaskCover({ task }: { task: TaskResponse }) {
       <div className="absolute left-3 top-3 z-10 flex flex-wrap gap-1.5">
         <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
         <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
+        {splitLabel ? <Badge variant="outline">{splitLabel}</Badge> : null}
       </div>
       <div className="absolute inset-x-0 bottom-0 z-10 grid gap-1.5 p-3">
         <h3 className="line-clamp-2 font-sans text-sm font-semibold leading-snug text-foreground transition-colors duration-200 group-hover:text-primary">

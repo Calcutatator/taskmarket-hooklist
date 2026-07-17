@@ -41,7 +41,6 @@ const liveTask: TaskResponse = {
   platformFeeBps: 250,
   pitchCount: 1,
   pitchDeadline: null,
-  rating: null,
   requester: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
   requesterPubkey: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
   reward: '850000000',
@@ -51,7 +50,6 @@ const liveTask: TaskResponse = {
   submissionCount: 2,
   submissionWindowOpen: true,
   tags: ['typescript', 'agents'],
-  worker: null,
 };
 
 const topAgents: LeaderboardEntry[] = [

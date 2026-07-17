@@ -1,4 +1,4 @@
-import type { TaskResponse } from '@taskmarket/shared';
+import type { TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { describe, expect, it } from 'vitest';
 
 import { taskToAgentJson, taskToMarkdown } from './task-export';
@@ -17,8 +17,6 @@ function makeTask(overrides: Partial<TaskResponse> = {}): TaskResponse {
     expiryTime: '2026-06-30T00:00:00.000Z',
     status: 'open',
     tags: ['design', 'logo'],
-    worker: null,
-    rating: null,
     mode: 'bounty',
     stakeRequired: false,
     stakeBps: 0,
@@ -138,6 +136,52 @@ describe('taskToAgentJson', () => {
     expect(withStake.stakeRequired).toBe(true);
     expect(withStake.stakeBps).toBe(500);
   });
+
+  it('omits awardCount from copied JSON for an open task with no awards yet', () => {
+    const parsed = JSON.parse(taskToAgentJson(makeTask({ awardCount: 0 }))) as Record<
+      string,
+      unknown
+    >;
+    expect(parsed.awardCount).toBeUndefined();
+  });
+
+  it('omits awards from copied JSON for an open task even when the detail response carries an empty awards array', () => {
+    const unsettled = {
+      ...makeTask({ awardCount: 0 }),
+      awards: [],
+      pendingActions: [],
+    } satisfies TaskDetailResponse;
+
+    const parsed = JSON.parse(taskToAgentJson(unsettled)) as Record<string, unknown>;
+    expect(parsed.awardCount).toBeUndefined();
+    expect(parsed.awards).toBeUndefined();
+  });
+
+  it('includes canonical split awards in copied JSON', () => {
+    const settled = {
+      ...makeTask({ awardCount: 2, status: 'completed' }),
+      awards: [
+        {
+          workerAddress: '0x2222222222222222222222222222222222222222',
+          workerAgentId: '42',
+          workerActorType: 'agent',
+          rank: 1,
+          isPrimary: true,
+          grossAmount: '1500000',
+          workerPayment: '1425000',
+          platformFee: '75000',
+          settlementTxHash: '0xsettlement',
+          settledAt: '2026-06-15T00:00:00.000Z',
+          rating: 95,
+        },
+      ],
+      pendingActions: [],
+    } satisfies TaskDetailResponse;
+
+    const parsed = JSON.parse(taskToAgentJson(settled)) as Record<string, unknown>;
+    expect(parsed.awardCount).toBe(2);
+    expect(parsed.awards).toEqual(settled.awards);
+  });
 });
 
 describe('taskToMarkdown', () => {
@@ -182,5 +226,37 @@ describe('taskToMarkdown', () => {
   it('renders "none" when there are no tags', () => {
     const md = taskToMarkdown(makeTask({ tags: [] }));
     expect(md).toContain('- Tags: none');
+  });
+
+  it('omits the award count bullet for an open task with no awards yet', () => {
+    const md = taskToMarkdown(makeTask({ awardCount: 0 }));
+    expect(md).not.toContain('Award count');
+  });
+
+  it('includes payout amounts and settlement transaction in markdown', () => {
+    const settled = {
+      ...makeTask({ awardCount: 1, status: 'completed' }),
+      awards: [
+        {
+          workerAddress: '0x2222222222222222222222222222222222222222',
+          workerAgentId: null,
+          workerActorType: 'human',
+          rank: 1,
+          isPrimary: true,
+          grossAmount: '1000000',
+          workerPayment: '950000',
+          platformFee: '50000',
+          settlementTxHash: '0xsettlement',
+          settledAt: '2026-06-15T00:00:00.000Z',
+          rating: null,
+        },
+      ],
+      pendingActions: [],
+    } satisfies TaskDetailResponse;
+
+    const md = taskToMarkdown(settled);
+    expect(md).toContain('## Payouts');
+    expect(md).toContain('gross 1 USDC; net 0.95 USDC; fee 0.05 USDC');
+    expect(md).toContain('tx 0xsettlement');
   });
 });

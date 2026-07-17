@@ -1,10 +1,35 @@
-import type { TaskModeType, TaskResponse, TaskStatusType } from '@taskmarket/shared';
+import type {
+  TaskAward,
+  TaskDetailResponse,
+  TaskModeType,
+  TaskResponse,
+  TaskStatusType,
+} from '@taskmarket/shared';
 
 import { getStatusConfig, type StatusPhase } from '@/lib/market/status-config';
 
 // Shared badge treatments so the same task concept renders identically across the
 // listing table, mobile cards, and the detail page. Status carries the semantic
 // colour; mode and tags stay neutral so they do not compete with the status signal.
+
+export function settledAwards(task: TaskDetailResponse | TaskResponse): TaskAward[] {
+  return 'awards' in task ? (task.awards ?? []) : [];
+}
+
+// Falls back to the settled awards length for responses that don't carry a
+// computed awardCount (e.g. TaskResponse from list endpoints). Shared so every
+// surface that needs "how many winners" agrees, instead of re-deriving this
+// fallback independently.
+export function resolvedAwardCount(task: TaskDetailResponse | TaskResponse): number {
+  return task.awardCount ?? settledAwards(task).length;
+}
+
+// Shared so the listing table, mobile cards, and detail page render the same label
+// for the same task instead of re-deriving the "Split payout" string independently.
+export function splitPayoutLabel(task: TaskDetailResponse | TaskResponse): string | null {
+  const count = resolvedAwardCount(task);
+  return count > 1 ? `Split payout · ${count}` : null;
+}
 
 export type BadgeVariant =
   | 'default'

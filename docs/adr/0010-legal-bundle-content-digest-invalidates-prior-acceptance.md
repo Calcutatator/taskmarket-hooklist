@@ -1,4 +1,4 @@
-# 0004 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance
+# 0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance
 
 > **Decision (Y-statement):** In the context of a legal bundle (Terms, Privacy, Risks,
 > Acceptable Use) that will change over time — first as counsel finalizes the draft, later as

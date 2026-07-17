@@ -10,8 +10,16 @@ import {
   Secp256k1PublicKeySchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
-import { agents, feedbacks, tasks, submissions, proposals, devices } from '../db/schema';
-import { eq, desc, sql, and, or, ilike, gte, inArray, isNull } from 'drizzle-orm';
+import {
+  agents,
+  feedbacks,
+  tasks,
+  taskAwards,
+  submissions,
+  proposals,
+  devices,
+} from '../db/schema';
+import { eq, desc, sql, and, or, ilike, gte, inArray, isNull, getTableColumns } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
@@ -117,15 +125,60 @@ export const agentsRouter = router({
 
       const [requesterRows, workerRows] = await Promise.all([
         ctx.db
-          .select()
+          .select({
+            ...getTableColumns(tasks),
+            awardCount: sql<number>`(
+              select count(*)::int from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+            )`,
+            primaryAwardWorker: sql<string | null>`(
+              select ${taskAwards.workerAddress} from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+              order by ${taskAwards.rank} asc
+              limit 1
+            )`,
+            primaryAwardRating: sql<number | null>`(
+              select ${taskAwards.rating} from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+              order by ${taskAwards.rank} asc
+              limit 1
+            )`,
+          })
           .from(tasks)
           .where(eq(tasks.requester, address))
           .orderBy(desc(tasks.createdAt))
           .limit(50),
         ctx.db
-          .select()
+          .select({
+            ...getTableColumns(tasks),
+            awardCount: sql<number>`(
+              select count(*)::int from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+            )`,
+            primaryAwardWorker: sql<string | null>`(
+              select ${taskAwards.workerAddress} from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+              order by ${taskAwards.rank} asc
+              limit 1
+            )`,
+            primaryAwardRating: sql<number | null>`(
+              select ${taskAwards.rating} from ${taskAwards}
+              where ${taskAwards.taskId} = "tasks"."id"
+              order by ${taskAwards.rank} asc
+              limit 1
+            )`,
+          })
           .from(tasks)
-          .where(or(eq(tasks.worker, address), eq(tasks.claimedBy, address)))
+          .where(
+            or(
+              sql`lower(${tasks.claimedBy}) = lower(${address})`,
+              sql`exists (
+                select 1 from ${taskAwards}
+                where ${taskAwards.taskId} = "tasks"."id"
+                  and lower(${taskAwards.workerAddress}) = lower(${address})
+              )`
+            )
+          )
           .orderBy(desc(tasks.createdAt))
           .limit(50),
       ]);
@@ -161,7 +214,13 @@ export const agentsRouter = router({
       const pitchCountMap = new Map(pitchCounts.map((r) => [r.taskId, Number(r.count)]));
       const requesterKeyMap = new Map(requesterKeys.map((row) => [row.address, row.publicKey]));
 
-      const mapTask = (task: typeof tasks.$inferSelect) => {
+      const mapTask = (
+        task: typeof tasks.$inferSelect & {
+          awardCount?: number;
+          primaryAwardWorker?: string | null;
+          primaryAwardRating?: number | null;
+        }
+      ) => {
         const sCount = submissionCountMap.get(task.id) ?? 0;
         const pCount = pitchCountMap.get(task.id) ?? 0;
         const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
@@ -180,8 +239,9 @@ export const agentsRouter = router({
           expiryTime: task.expiryTime.toISOString(),
           status: task.status as TaskStatusType,
           tags: task.tags,
-          worker: task.worker,
-          rating: task.rating,
+          primaryAward: task.primaryAwardWorker
+            ? { workerAddress: task.primaryAwardWorker, rating: task.primaryAwardRating ?? null }
+            : null,
           mode: task.mode as TaskModeType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
@@ -194,6 +254,7 @@ export const agentsRouter = router({
           claimedAt: task.claimedAt?.toISOString() || null,
           platformFeeBps: task.platformFeeBps,
           submissionCount: sCount,
+          awardCount: Number(task.awardCount ?? 0),
           pitchCount: pCount,
           submissionWindowOpen,
         };
