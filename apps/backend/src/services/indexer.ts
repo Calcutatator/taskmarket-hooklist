@@ -230,12 +230,15 @@ async function markProcessed(log: EventLog): Promise<void> {
     .onConflictDoNothing();
 }
 
-async function processTaskCreatedEvent(log: EventLog): Promise<void> {
+export async function processTaskCreatedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, requester, reward, expiryTime, mode } = log.args;
   const modeKey = (mode as `0x${string}`).toLowerCase();
   const modeString = MODE_BY_SELECTOR[modeKey] || 'bounty';
 
-  await db
+  await database
     .insert(tasks)
     .values({
       id: taskId as string,
@@ -250,12 +253,16 @@ async function processTaskCreatedEvent(log: EventLog): Promise<void> {
       mode: modeString,
       stakeRequired: 0,
       stakeBps: 0,
-      platformFeeBps: 500,
+      platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
+      // task_awards backfill only scans the currently-configured contract; an
+      // unset contract_address makes a task's settlement unrecoverable (ADR-0008).
+      chainId: config.CHAIN_ID,
+      contractAddress: config.CONTRACT_ADDRESS,
     })
     .onConflictDoNothing();
 
   // Ensure the requester has an agent row so they appear in the directory
-  await db
+  await database
     .insert(agents)
     .values({ address: requester as string })
     .onConflictDoNothing();

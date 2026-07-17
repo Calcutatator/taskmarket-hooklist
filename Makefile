@@ -32,7 +32,7 @@ help:
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-contract-address)"
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
@@ -566,8 +566,10 @@ db:
 		cd apps/backend && pnpm db:studio; \
 	elif [ "$(word 1,$(ARGS))" = "backfill-task-awards" ]; then \
 		cd apps/backend && pnpm db:backfill-task-awards; \
+	elif [ "$(word 1,$(ARGS))" = "backfill-contract-address" ]; then \
+		cd apps/backend && pnpm db:backfill-contract-address; \
 	else \
-		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards>"; \
+		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-contract-address>"; \
 		exit 1; \
 	fi
 

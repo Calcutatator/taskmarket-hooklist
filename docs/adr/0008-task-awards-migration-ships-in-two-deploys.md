@@ -11,9 +11,9 @@
 > `0028` deploy that only ever runs against an already-populated `task_awards` table, accepting a
 > slower, two-step rollout and a manual operational step between the two deploys.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-17
-- **Deciders:** (pending — Beau)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
@@ -81,11 +81,47 @@ Rollout:
 **Positive:**
 - `0028` can no longer fail on deploy against any environment, because it never runs until
   `task_awards` is already confirmed fully populated for that environment.
-- No change to either migration's actual SQL or to `0028`'s guard logic — the guard was correct;
-  the bug was in deployment sequencing, not in what it checks.
 - Matches this repo's existing risk posture for a first-ever `DROP COLUMN` migration: prefer a
   slower, verified rollout over a single deploy that could crash-loop the shared testnet (or
   later, production) with no automatic recovery.
+
+**A second, distinct bug found and fixed while verifying this split live:** even with the
+deploy split and a fully-run backfill, `0028`'s guard still failed -- 35 tasks on a long-lived
+local testnet database, 1 task on production. Both were completed tasks with no `task_awards`
+row that the backfill legitimately could never resolve, because they belong to a *different*
+contract deployment than the one currently configured (`contract_address` pointing at a
+retired address, or `NULL` entirely, on a database with multiple historical deployments) --
+the backfill only ever scans the app's currently-configured `CONTRACT_ADDRESS`, so those rows
+were permanently out of its reach regardless of how thoroughly it ran. The guard's original
+`DO $$` block had no contract scoping at all, so it counted every completed task in the table
+irrespective of which contract created it. Fixed by deriving "the active contract" at guard
+runtime from the data itself, rather than trying to hardcode an environment-specific address
+into a migration file shared across environments.
+
+The first version of that derivation picked whichever `contract_address` had the *most* tasks
+-- wrong, and caught by checking a real testnet database rather than trusting the local
+reproduction alone: an actively-redeployed testnet accumulates far more historical volume on
+retired addresses than the current one has had time to collect (real numbers seen: 198
+untracked, 38 on a retired address, only 35 on the actual active contract), so a most-common
+vote confidently picked a retired contract as "active." Fixed by using the *most recently
+created* task's `contract_address` instead -- unambiguously correct, since whichever contract
+is creating new tasks right now is definitionally the active one regardless of accumulated
+historical volume.
+
+A third piece of work, prompted by wanting to actually recover data rather than just silence
+the guard: `apps/backend/scripts/backfill-contract-address.ts` (service:
+`contract-address-backfill.ts`) resolves each untracked task's true `contract_address` from its
+own `escrow_tx_hash` receipt -- ground truth per task, decoding the `TaskCreated` log's emitting
+address, rather than a guess. Run against the real testnet database: 193 of 198 untracked tasks
+recovered (now correctly attributed to the active contract and reachable by the normal
+`task_awards` backfill), 4 unresolved were `status='open'` (irrelevant to the guard), and 1
+unresolved `completed` task turned out to belong to a genuinely different, even older
+pre-architecture contract deployment (from this repo's earliest history) whose event ABI the
+current decoder doesn't recognize -- correctly left alone rather than guessed at, and correctly
+exempted by the guard either way since it isn't the active contract. Production's single
+orphaned row was hand-verified and corrected the same way before this script existed (confirmed
+via its escrow tx receipt that it genuinely belongs to the live contract, not a different
+deployment).
 
 **Negative / trade-offs:**
 - Two deploys instead of one, with a manual verification step in between that is easy to skip
@@ -96,8 +132,9 @@ Rollout:
   but a reader of `schema.ts` alone during that window would not know they are already dead.
 
 **Neutral / follow-up:**
-- This ADR should move to `Accepted` once a human confirms the split; the follow-up PR
-  containing `0028` should not be opened before that.
+- The follow-up PR containing `0028` must not merge until `task_awards` is confirmed fully
+  backfilled against its deploy target (zero `completedWithoutAwards`) — that verification is
+  the actual gate, not just this ADR's acceptance.
 - If a future migration ever needs to both create a table and immediately depend on that table
   being non-trivially populated within the same deploy, this ADR's root cause (drizzle's
   single-transaction-per-boot migration model) applies again — the same split-and-backfill
@@ -111,6 +148,9 @@ Rollout:
 - ADR-0006 (`task_awards` single source of truth — the migration this ADR splits).
 - `apps/backend/drizzle/migrations/0027_add_task_awards.sql`,
   `0028_drop_task_worker_rating.sql` (held for the follow-up PR).
+- `apps/backend/scripts/backfill-contract-address.ts`,
+  `apps/backend/src/services/contract-address-backfill.ts` (the per-task `contract_address`
+  recovery tool; `make db backfill-contract-address`).
 - `apps/backend/src/services/configured-task-awards-backfill.ts`,
   `apps/backend/scripts/backfill-task-awards.ts` (the manual backfill path).
 - `docs/DB_GUIDE.md` (`make db backfill-task-awards` and the reconciliation-on-boot behavior).

@@ -21,6 +21,7 @@ vi.mock('../../../src/config/env', () => ({
     CHAIN_ID: 84532,
     CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
     CONTRACT_DEPLOY_BLOCK: 0,
+    DEFAULT_PLATFORM_FEE_BPS: 750,
     DREAMS_HOOK_ADDRESS: undefined,
     DREAMS_HOOK_SEED_BLOCK: 0,
     ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
@@ -39,6 +40,7 @@ import {
   processTaskAppealedEvent,
   processTaskCancelledEvent,
   processTaskClaimedEvent,
+  processTaskCreatedEvent,
   processTaskEvaluatedEvent,
   processTaskExpiredEvent,
   processTaskReopenedEvent,
@@ -112,6 +114,37 @@ describeWithDatabase('indexer status guard handlers', () => {
     await queryClient.end();
     await adminClient.unsafe(`DROP DATABASE "${testDatabaseName}"`);
     await adminClient.end();
+  });
+
+  it('processTaskCreatedEvent sets contractAddress, chainId, and platformFeeBps from config', async () => {
+    const taskId = `test-guard-${randomUUID()}`;
+    taskIds.push(taskId);
+    await processTaskCreatedEvent(
+      {
+        args: {
+          taskId,
+          requester: '0x0000000000000000000000000000000000000002',
+          reward: 1000n,
+          mode: '0xa81913a5',
+          expiryTime: 1_900_000_000n,
+        },
+        eventName: 'TaskCreated',
+        transactionHash: `0x${'a'.repeat(64)}`,
+      },
+      database
+    );
+    const rows = await database
+      .select({
+        contractAddress: tasks.contractAddress,
+        chainId: tasks.chainId,
+        platformFeeBps: tasks.platformFeeBps,
+      })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+    expect(rows[0]?.contractAddress).toBe('0xD17485087c2d31bf5562ACf0C5295111982A1CBF');
+    expect(rows[0]?.chainId).toBe(84532);
+    expect(rows[0]?.platformFeeBps).toBe(750);
   });
 
   it('processTaskClaimedEvent applies from open, no-ops once already claimed', async () => {
