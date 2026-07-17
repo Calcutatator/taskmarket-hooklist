@@ -61,6 +61,8 @@ Obtain explicit user approval for that exact action.
 
 ## Two-Round Flow
 
+Before either round, the request can return `403 LEGAL_ACCEPTANCE_REQUIRED` instead of proceeding to payment; see [failure-modes.md](failure-modes.md).
+
 The first request receives HTTP 402 and payment requirements. The CLI signs an EIP-712 `TransferWithAuthorization` and retries with `PAYMENT-SIGNATURE`. Before settlement, the backend re-checks current task state and the declared payer for paid task actions. The router and contract repeat authorization and invariant checks after settlement.
 
 Re-fetch and validate `pendingActions` immediately before signing. Preflight cannot eliminate a race with another transaction after the check. Do not blindly retry a paid request: a payment or onchain transaction may have succeeded even if the final API response was lost.
