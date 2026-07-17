@@ -317,14 +317,22 @@ jobs:
           # Smoke tests (and anyone driving the API directly against this PR env) need the
           # requester/worker/etc. accounts to actually hold mock USDC to pay through X402 --
           # DeployMockUSDCPreview only mints to the deployer. mint() is permissionless by
-          # design for exactly this (see MockUSDC.sol).
+          # design for exactly this (see MockUSDC.sol), and has no revert condition at all
+          # -- so a "server returned an error response: execution reverted, data: 0x" here
+          # is the same class of transient Railway-edge inconsistency the forge calls above
+          # already tolerate via run_with_retry, not a real contract-logic failure. This
+          # loop had no retry protection at all; add it, matching the established pattern.
           for ACCOUNT in \
             "0x3C44CdDdB6a900fa2b585dd299e03d12FA4293BC" \
             "0x90F79bf6EB2c4f870365E785982E1f101E93b906" \
             "0x15d34AAf54267DB7D7c367839AAf71A00a2C6A65" \
             "0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"; do
-            cast send "$USDC_ADDRESS" "mint(address,uint256)" "$ACCOUNT" 1000000000000 \
-              --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null
+            for i in $(seq 1 5); do
+              cast send "$USDC_ADDRESS" "mint(address,uint256)" "$ACCOUNT" 1000000000000 \
+                --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null 2>&1 && break
+              [ "$i" -lt 5 ] || { echo "mint to $ACCOUNT still failing after 5 attempts" >&2; exit 1; }
+              sleep 3
+            done
           done
 
           echo "usdc_address=$USDC_ADDRESS" >> "$GITHUB_OUTPUT"
