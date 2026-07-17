@@ -12,6 +12,7 @@ import {
   UpdateTaskInputSchema,
   type TaskStatusType,
   type TaskModeType,
+  type TaskAward,
   type AuctionTypeValue,
   estimateUsdBonusValue,
   estimateWorkerUsdBonusValue,
@@ -22,6 +23,7 @@ import {
 import { z } from 'zod';
 import {
   tasks,
+  taskAwards,
   submissions,
   proposals,
   agents,
@@ -36,12 +38,14 @@ import {
   desc,
   and,
   gt,
+  gte,
   lt,
   lte,
   arrayOverlaps,
   asc,
   inArray,
   isNull,
+  getTableColumns,
 } from 'drizzle-orm';
 import {
   contractCreateTask,
@@ -75,6 +79,13 @@ import {
   reserveTaskDropForCreation,
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
+
+// Tasks created before the ERC-8195 Rev007 submission-integrity upgrade (PR #135,
+// merged 2026-06-30T18:15:06-04:00) predate the current escrow/refund flow. A wave of
+// them are stuck open with expired escrow that can't be resolved on our side (no
+// requester-reject path existed yet, refundExpired wasn't callable the way it is now).
+// Hide them from discovery so agents stop finding tasks they can never win.
+const REV007_LISTING_CUTOFF = new Date('2026-06-30T22:15:06.000Z');
 
 export const tasksRouter = router({
   stats: publicProcedure
@@ -405,6 +416,18 @@ export const tasksRouter = router({
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }
+      // Discovery listings (open, or unfiltered/ALL browsing) should never surface
+      // pre-Rev007 legacy tasks or tasks whose escrow has already expired but whose
+      // status hasn't transitioned yet (expiry only flips status via an on-chain
+      // action, not automatically -- see refundExpired / indexer TaskExpired handler).
+      // Non-open status filters (completed, cancelled, etc.) are left untouched so
+      // historical records stay queryable.
+      if (!input.status || input.status === 'ALL' || input.status === 'open') {
+        conditions.push(gte(tasks.createdAt, REV007_LISTING_CUTOFF));
+      }
+      if (input.status === 'open') {
+        conditions.push(gt(tasks.expiryTime, now));
+      }
       if (input.mode && input.mode !== 'ALL') {
         conditions.push(eq(tasks.mode, input.mode));
       }
@@ -428,7 +451,16 @@ export const tasksRouter = router({
       }
       if (input.worker) {
         const workerLower = input.worker.toLowerCase();
-        conditions.push(or(eq(tasks.worker, workerLower), eq(tasks.claimedBy, workerLower)));
+        conditions.push(
+          or(
+            sql`lower(${tasks.claimedBy}) = ${workerLower}`,
+            sql`exists (
+              select 1 from ${taskAwards}
+              where ${taskAwards.taskId} = ${tasks.id}
+                and lower(${taskAwards.workerAddress}) = ${workerLower}
+            )`
+          )
+        );
       }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
@@ -472,7 +504,29 @@ export const tasksRouter = router({
       }
 
       const results = await ctx.db
-        .select()
+        .select({
+          ...getTableColumns(tasks),
+          awardCount: sql<number>`(
+            select count(*)::int from ${taskAwards}
+            where ${taskAwards.taskId} = "tasks"."id"
+          )`,
+          // rank-1 award, read-time projection over task_awards (not a stored
+          // field, see ADR-0006) -- reuses the idx_task_awards_task_rank index
+          // already backing the (taskId, rank) lookup, same cost class as the
+          // awardCount subquery above.
+          primaryAwardWorker: sql<string | null>`(
+            select ${taskAwards.workerAddress} from ${taskAwards}
+            where ${taskAwards.taskId} = "tasks"."id"
+            order by ${taskAwards.rank} asc
+            limit 1
+          )`,
+          primaryAwardRating: sql<number | null>`(
+            select ${taskAwards.rating} from ${taskAwards}
+            where ${taskAwards.taskId} = "tasks"."id"
+            order by ${taskAwards.rank} asc
+            limit 1
+          )`,
+        })
         .from(tasks)
         .where(conditions.length > 0 ? and(...conditions) : undefined)
         .orderBy(orderBy)
@@ -559,7 +613,7 @@ export const tasksRouter = router({
 
         const grossPayout =
           task.mode === 'auction'
-            ? task.worker
+            ? task.claimedBy
               ? (bidAggMap.get(task.id)?.minPrice ?? null)
               : null
             : task.reward;
@@ -578,8 +632,9 @@ export const tasksRouter = router({
           expiryTime: task.expiryTime.toISOString(),
           status: task.status as TaskStatusType,
           tags: task.tags,
-          worker: task.worker,
-          rating: task.rating,
+          primaryAward: task.primaryAwardWorker
+            ? { workerAddress: task.primaryAwardWorker, rating: task.primaryAwardRating }
+            : null,
           mode: task.mode as TaskModeType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
@@ -592,6 +647,7 @@ export const tasksRouter = router({
           claimedAt: task.claimedAt?.toISOString() || null,
           platformFeeBps: task.platformFeeBps,
           submissionCount: Number(submissionCountMap.get(task.id) ?? 0),
+          awardCount: Number(task.awardCount ?? 0),
           pitchCount: Number(pitchCountMap.get(task.id) ?? 0),
           requesterAgentId: task.requesterAgentId ?? null,
           requesterActorType: actorTypeByAddress.get(task.requester) ?? 'agent',
@@ -635,7 +691,7 @@ export const tasksRouter = router({
       const task = result[0];
       const now = new Date();
 
-      const workerAddress = task.worker ?? task.claimedBy;
+      const workerAddress = task.claimedBy;
       const dreamsHookAddress = getServerConfig().DREAMS_HOOK_ADDRESS;
       const dreamsHookConfigured = Boolean(dreamsHookAddress);
       const [
@@ -647,6 +703,7 @@ export const tasksRouter = router({
         dreamsPerUsdc,
         dreamsWorkerSplitBps,
         dreamsBonusBps,
+        awardRows,
       ] = await Promise.all([
         ctx.db
           .select({ count: sql<number>`count(*)` })
@@ -660,13 +717,13 @@ export const tasksRouter = router({
           ? ctx.db
               .select({ agentId: agents.agentId, registeredVia: agents.registeredVia })
               .from(agents)
-              .where(eq(agents.address, workerAddress))
+              .where(sql`lower(${agents.address}) = lower(${workerAddress})`)
               .limit(1)
           : Promise.resolve([]),
         ctx.db
           .select({ registeredVia: agents.registeredVia, publicKey: agents.publicKey })
           .from(agents)
-          .where(eq(agents.address, task.requester))
+          .where(sql`lower(${agents.address}) = lower(${task.requester})`)
           .limit(1),
         contractGetTaskHooks(task.id as `0x${string}`, task.contractAddress).catch(() => []),
         dreamsHookConfigured ? contractGetDreamsPerUsdc().catch(() => 0n) : Promise.resolve(0n),
@@ -674,7 +731,60 @@ export const tasksRouter = router({
           ? contractGetDreamsWorkerSplitBps().catch(() => 0)
           : Promise.resolve(0),
         dreamsHookConfigured ? contractGetDreamsBonusBps().catch(() => 0) : Promise.resolve(0),
+        ctx.db
+          .select({
+            workerAddress: taskAwards.workerAddress,
+            // A leftJoin on lower(agents.address) = lower(worker_address) fans out to one
+            // row per matching agents row -- agents.address has no case-insensitive
+            // uniqueness constraint, so a legacy mixed-case row and a lowercase row for the
+            // same real address both match and double the award. Correlated scalar
+            // subqueries return exactly one row per award regardless of how many agents
+            // rows exist for that address, preferring the one that completed identity
+            // registration (agent_id set) if there's a choice.
+            workerAgentId: sql<string | null>`(
+              select ${agents.agentId} from ${agents}
+              where lower(${agents.address}) = lower(${taskAwards.workerAddress})
+              order by ${agents.agentId} is not null desc
+              limit 1
+            )`,
+            workerRegisteredVia: sql<string | null>`(
+              select ${agents.registeredVia} from ${agents}
+              where lower(${agents.address}) = lower(${taskAwards.workerAddress})
+              order by ${agents.agentId} is not null desc
+              limit 1
+            )`,
+            rank: taskAwards.rank,
+            workerPayment: taskAwards.workerPayment,
+            platformFee: taskAwards.platformFee,
+            settlementTxHash: taskAwards.settlementTxHash,
+            settledAt: taskAwards.settledAt,
+            rating: taskAwards.rating,
+          })
+          .from(taskAwards)
+          .where(eq(taskAwards.taskId, task.id))
+          .orderBy(asc(taskAwards.rank), asc(taskAwards.logIndex)),
       ]);
+
+      const awards: TaskAward[] = awardRows.map((award) => {
+        // rank 1 is the primary winner -- read-time projection over task_awards,
+        // not a separately stored/written field, so there is nothing to drift
+        // out of sync with (see ADR-0006).
+        const isPrimary = award.rank === 1;
+
+        return {
+          workerAddress: award.workerAddress,
+          workerAgentId: award.workerAgentId ?? null,
+          workerActorType: award.workerRegisteredVia === 'web' ? 'human' : 'agent',
+          rank: award.rank,
+          isPrimary,
+          grossAmount: (BigInt(award.workerPayment) + BigInt(award.platformFee)).toString(),
+          workerPayment: award.workerPayment,
+          platformFee: award.platformFee,
+          settlementTxHash: award.settlementTxHash,
+          settledAt: award.settledAt.toISOString(),
+          rating: award.rating,
+        };
+      });
 
       // Resolve the most recent submitter so the requester's accept command can be
       // pre-filled. Bounty/Benchmark stay `open` while collecting submissions, so
@@ -713,11 +823,11 @@ export const tasksRouter = router({
           .where(eq(bids.taskId, task.id));
         auctionBidCount = Number(bidCountResult[0]?.count ?? 0);
 
-        if (task.worker) {
+        if (task.claimedBy) {
           const winningBid = await ctx.db
             .select({ price: bids.price })
             .from(bids)
-            .where(and(eq(bids.taskId, task.id), eq(bids.workerAddress, task.worker)))
+            .where(and(eq(bids.taskId, task.id), eq(bids.workerAddress, task.claimedBy)))
             .orderBy(desc(bids.createdAt))
             .limit(1);
           auctionWinningPrice = winningBid[0]?.price ?? null;
@@ -819,8 +929,10 @@ export const tasksRouter = router({
         expiryTime: task.expiryTime.toISOString(),
         status: task.status as TaskStatusType,
         tags: task.tags,
-        worker: task.worker,
-        rating: task.rating,
+        primaryAward: (() => {
+          const primary = awards.find((award) => award.isPrimary);
+          return primary ? { workerAddress: primary.workerAddress, rating: primary.rating } : null;
+        })(),
         mode: task.mode as TaskModeType,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
@@ -833,6 +945,7 @@ export const tasksRouter = router({
         claimedAt: task.claimedAt?.toISOString() || null,
         platformFeeBps: task.platformFeeBps,
         submissionCount: Number(submissionCount[0]?.count || 0),
+        awardCount: awards.length,
         pitchCount: pitchCountNum,
         requesterAgentId: task.requesterAgentId ?? null,
         requesterActorType,
@@ -885,7 +998,6 @@ export const tasksRouter = router({
             requester: task.requester,
             status: task.status,
             mode: task.mode,
-            rating: task.rating,
             pitchCount: pitchCountNum,
             bidCount: auctionBidCount ?? 0,
             submissionCount: Number(submissionCount[0]?.count || 0),
@@ -893,7 +1005,6 @@ export const tasksRouter = router({
             pitchDeadline: task.pitchDeadline,
             bidDeadline: task.bidDeadline,
             claimedBy: task.claimedBy,
-            worker: task.worker,
             auctionType: task.auctionType,
             currentClockPrice: clockPrice,
             currentLowestBid,
@@ -902,9 +1013,14 @@ export const tasksRouter = router({
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
             appealDeadline: task.appealDeadline,
+            awardWorkers: awards.map((award) => ({
+              workerAddress: award.workerAddress,
+              rating: award.rating,
+            })),
           },
           now
         ),
+        awards,
       };
     }),
 
@@ -1276,8 +1392,9 @@ export const tasksRouter = router({
         expiryTime: t.expiryTime.toISOString(),
         status: t.status as TaskStatusType,
         tags: t.tags,
-        worker: t.worker,
-        rating: t.rating,
+        // Same open-only invariant as awardWorkers/awards below -- no awards
+        // can exist yet for a task update is allowed to run against.
+        primaryAward: null,
         mode: t.mode as TaskModeType,
         stakeRequired: t.stakeRequired === 1,
         stakeBps: t.stakeBps,
@@ -1290,6 +1407,9 @@ export const tasksRouter = router({
         claimedAt: t.claimedAt?.toISOString() || null,
         platformFeeBps: t.platformFeeBps,
         submissionCount: Number(updatedSubmissionCount[0]?.count || 0),
+        // update only ever runs against status === 'open' tasks (guarded
+        // above), so no task_awards rows can exist yet -- 0 is always correct.
+        awardCount: 0,
         pitchCount: Number(updatedPitchCount[0]?.count || 0),
         requesterAgentId: t.requesterAgentId ?? null,
         auctionType: (t.auctionType as AuctionTypeValue | null) ?? null,
@@ -1308,7 +1428,6 @@ export const tasksRouter = router({
             requester: t.requester,
             status: t.status,
             mode: t.mode,
-            rating: t.rating,
             pitchCount: Number(updatedPitchCount[0]?.count || 0),
             bidCount: auctionBidCount ?? 0,
             submissionCount: Number(updatedSubmissionCount[0]?.count || 0),
@@ -1316,7 +1435,6 @@ export const tasksRouter = router({
             pitchDeadline: t.pitchDeadline,
             bidDeadline: t.bidDeadline,
             claimedBy: t.claimedBy,
-            worker: t.worker,
             auctionType: t.auctionType,
             currentClockPrice:
               updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
@@ -1326,9 +1444,15 @@ export const tasksRouter = router({
             disputeResolver: t.disputeResolver,
             evaluatorDeadline: t.evaluatorDeadline,
             appealDeadline: t.appealDeadline,
+            // update only ever runs against status === 'open' tasks (guarded
+            // above), and no task has task_awards rows pre-completion, so an
+            // empty array here is always correct, not an approximation.
+            awardWorkers: [],
           },
           updateNow
         ),
+        // Same open-only invariant as awardWorkers above -- no awards can exist yet.
+        awards: [],
       };
     }),
 

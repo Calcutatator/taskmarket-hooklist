@@ -8,7 +8,12 @@ vi.mock('../../../src/services/contract', () => ({
 }));
 
 vi.mock('../../../src/services/xmtp-auth', () => ({
-  authenticateXmtpDevice: vi.fn().mockResolvedValue({ deviceId: 'dev-1', walletAddress: '0xWorker0000000000000000000000000000000001' }),
+  authenticateXmtpDevice: vi
+    .fn()
+    .mockResolvedValue({
+      deviceId: 'dev-1',
+      walletAddress: '0xWorker0000000000000000000000000000000001',
+    }),
 }));
 
 vi.mock('viem', async () => {
@@ -20,7 +25,11 @@ vi.mock('viem', async () => {
 });
 
 import { bidsRouter } from '../../../src/routers/bids.router';
-import { contractSubmitBid, contractSelectLowestBidder, contractAcceptAuction } from '../../../src/services/contract';
+import {
+  contractSubmitBid,
+  contractSelectLowestBidder,
+  contractAcceptAuction,
+} from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
@@ -42,8 +51,6 @@ function makeTask(overrides: Record<string, unknown> = {}) {
     expiryTime: new Date(Date.now() + 86400000),
     status: 'open',
     tags: [],
-    worker: null,
-    rating: null,
     mode: 'auction',
     stakeRequired: 0,
     stakeBps: 0,
@@ -143,7 +150,17 @@ describe('bids router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]))
         // Lowest bid is at 3000000 — same price should be rejected
-        .mockReturnValueOnce(makeChain([{ id: 'b1', taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() }]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: 'b1',
+              taskId: TASK_ID,
+              workerAddress: WORKER_B,
+              price: '3000000',
+              createdAt: new Date(),
+            },
+          ])
+        )
         .mockReturnValueOnce(makeChain([])); // existing bid for worker
 
       const caller = bidsRouter.createCaller(ctx);
@@ -155,7 +172,17 @@ describe('bids router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]))
         // Current lowest is 3000000 — new bid at 2000000 should succeed
-        .mockReturnValueOnce(makeChain([{ id: 'b1', taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() }]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: 'b1',
+              taskId: TASK_ID,
+              workerAddress: WORKER_B,
+              price: '3000000',
+              createdAt: new Date(),
+            },
+          ])
+        )
         .mockReturnValueOnce(makeChain([])); // no existing bid for this worker
 
       const caller = bidsRouter.createCaller(ctx);
@@ -171,7 +198,17 @@ describe('bids router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
         // existing bid at 2500000 — same price should be rejected
-        .mockReturnValueOnce(makeChain([{ id: 'b1', taskId: TASK_ID, workerAddress: WORKER, price: '2500000', createdAt: new Date() }]));
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              id: 'b1',
+              taskId: TASK_ID,
+              workerAddress: WORKER,
+              price: '2500000',
+              createdAt: new Date(),
+            },
+          ])
+        );
 
       const caller = bidsRouter.createCaller(ctx);
       await expect(caller.submit({ taskId: TASK_ID, price: '3000000' })).rejects.toThrow(
@@ -214,14 +251,24 @@ describe('bids router', () => {
     it('returns bids sorted by price ascending', async () => {
       const ctx = createMockCtx();
       // task query
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(
-          makeChain([
-            { id: 'bid-2', taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() },
-            { id: 'bid-1', taskId: TASK_ID, workerAddress: WORKER, price: '4000000', createdAt: new Date() },
-          ])
-        );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(
+        makeChain([
+          {
+            id: 'bid-2',
+            taskId: TASK_ID,
+            workerAddress: WORKER_B,
+            price: '3000000',
+            createdAt: new Date(),
+          },
+          {
+            id: 'bid-1',
+            taskId: TASK_ID,
+            workerAddress: WORKER,
+            price: '4000000',
+            createdAt: new Date(),
+          },
+        ])
+      );
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.listByTask({ taskId: TASK_ID });
@@ -233,9 +280,7 @@ describe('bids router', () => {
 
     it('returns empty array when no bids exist', async () => {
       const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([]));
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.listByTask({ taskId: TASK_ID });
@@ -246,12 +291,16 @@ describe('bids router', () => {
     it('seals bids for reverse_english before deadline', async () => {
       const ctx = createMockCtx();
       ctx.db.select
-        .mockReturnValueOnce(
-          makeChain([makeTask({ auctionType: 'reverse_english' })])
-        )
+        .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
         .mockReturnValueOnce(
           makeChain([
-            { id: 'bid-1', taskId: TASK_ID, workerAddress: WORKER, price: '3000000', createdAt: new Date() },
+            {
+              id: 'bid-1',
+              taskId: TASK_ID,
+              workerAddress: WORKER,
+              price: '3000000',
+              createdAt: new Date(),
+            },
           ])
         );
 
@@ -267,11 +316,19 @@ describe('bids router', () => {
       const ctx = createMockCtx();
       ctx.db.select
         .mockReturnValueOnce(
-          makeChain([makeTask({ auctionType: 'reverse_english', bidDeadline: new Date(Date.now() - 1000) })])
+          makeChain([
+            makeTask({ auctionType: 'reverse_english', bidDeadline: new Date(Date.now() - 1000) }),
+          ])
         )
         .mockReturnValueOnce(
           makeChain([
-            { id: 'bid-1', taskId: TASK_ID, workerAddress: WORKER, price: '3000000', createdAt: new Date() },
+            {
+              id: 'bid-1',
+              taskId: TASK_ID,
+              workerAddress: WORKER,
+              price: '3000000',
+              createdAt: new Date(),
+            },
           ])
         )
         // agent lookup
@@ -343,7 +400,13 @@ describe('bids router', () => {
         .mockReturnValueOnce(makeChain([makeTask({ bidDeadline: new Date(Date.now() - 1000) })]))
         .mockReturnValueOnce(
           makeChain([
-            { id: BID_ID, taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() },
+            {
+              id: BID_ID,
+              taskId: TASK_ID,
+              workerAddress: WORKER_B,
+              price: '3000000',
+              createdAt: new Date(),
+            },
           ])
         );
 
@@ -370,7 +433,13 @@ describe('bids router', () => {
           .mockReturnValueOnce(makeChain([taskFromRequester]))
           .mockReturnValueOnce(
             makeChain([
-              { id: BID_ID, taskId: TASK_ID, workerAddress: WORKER_B, price: '3000000', createdAt: new Date() },
+              {
+                id: BID_ID,
+                taskId: TASK_ID,
+                workerAddress: WORKER_B,
+                price: '3000000',
+                createdAt: new Date(),
+              },
             ])
           );
 
@@ -431,7 +500,6 @@ describe('bids router', () => {
   });
 
   describe('auctionAccept', () => {
-
     it('throws when worker address missing', async () => {
       const ctx = createMockCtx(); // no payer
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'dutch' })]));
@@ -450,7 +518,9 @@ describe('bids router', () => {
 
     it('throws when task mode is not auction', async () => {
       const ctx = createMockCtx(WORKER);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', auctionType: null })]));
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ mode: 'bounty', auctionType: null })])
+      );
 
       const caller = bidsRouter.createCaller(ctx);
       await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow('Not an auction task');
@@ -461,7 +531,9 @@ describe('bids router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ auctionType: 'english' })]));
 
       const caller = bidsRouter.createCaller(ctx);
-      await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow('auction-accept is only for dutch');
+      await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow(
+        'auction-accept is only for dutch'
+      );
     });
 
     it('throws when deadline has passed', async () => {
@@ -491,9 +563,9 @@ describe('bids router', () => {
 
       const caller = bidsRouter.createCaller(ctx);
       // minPrice of 4000000 — current price ~2500000 is below minimum
-      await expect(
-        caller.auctionAccept({ taskId: TASK_ID, minPrice: '4000000' })
-      ).rejects.toThrow('below your minimum');
+      await expect(caller.auctionAccept({ taskId: TASK_ID, minPrice: '4000000' })).rejects.toThrow(
+        'below your minimum'
+      );
     });
 
     it('accepts dutch clock auction — sets task to claimed atomically', async () => {
@@ -596,7 +668,7 @@ describe('bids router', () => {
             auctionFloorPrice: '1000000',
             status: 'open',
             createdAt: new Date(Date.now() - 7200000), // 2h ago
-            bidDeadline: new Date(Date.now() + 1000),  // 1s from now
+            bidDeadline: new Date(Date.now() + 1000), // 1s from now
           }),
         ])
       );

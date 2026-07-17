@@ -1,6 +1,10 @@
 import { createPublicClient, http, keccak256, parseAbiItem, slice, toBytes } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { db } from '../db/client';
+// Allows the status-guarded handlers below to run against an injected test
+// database (see test/integration/services/indexer-status-guards.test.ts)
+// while every production call site keeps using the module singleton.
+type Database = typeof db;
 import {
   tasks,
   claims,
@@ -9,24 +13,30 @@ import {
   feedbacks,
   indexerState,
   indexedEvents,
-  platformFees,
   proofs,
   proposals,
   protocolEvents,
   submissions,
-  requesterReputationEvents,
 } from '../db/schema';
-import { and, eq, sql } from 'drizzle-orm';
+import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { shouldStartEvaluatorReview } from './task-evaluator';
-
-type EventLog = {
-  args: Record<string, unknown>;
-  eventName: string;
-  blockNumber?: bigint | null;
-  logIndex?: number | null;
-  transactionHash?: `0x${string}` | null;
-};
+import {
+  projectSettlementLogs,
+  toSettlementCompletionLogs,
+  type EventLog,
+  type ProjectedSettlement,
+  type SettlementChainState,
+  type SettlementCompletionLog,
+} from './settlement-projector';
+import { TASK_COMPLETED_EVENT, TASK_RATED_EVENT } from './settlement-contract';
+import { runCheckpointedRange } from './indexer-checkpoint';
+import { contractGetSettlementChainState } from './contract';
+import { projectSettlementRating } from './settlement-rating';
+import { recordTaskSettlement } from './settlement-recorder';
+import { processIndexedEvent } from './indexer-event';
+import { createSerializedPoll } from './serialized-poll';
+import { recordRequesterReputationEvent } from './requester-reputation-recorder';
 
 const config = getServerConfig();
 
@@ -52,12 +62,6 @@ const TASK_CLAIMED_EVENT = parseAbiItem(
 );
 const TASK_WORKER_SELECTED_EVENT = parseAbiItem(
   'event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)'
-);
-const TASK_COMPLETED_EVENT = parseAbiItem(
-  'event TaskCompleted(bytes32 indexed taskId, address indexed requester, address indexed worker, uint256 workerPayment, uint256 platformFee)'
-);
-const TASK_RATED_EVENT = parseAbiItem(
-  'event TaskRated(bytes32 indexed taskId, address indexed worker, uint8 rating, uint256 raterAgentId)'
 );
 const TASK_SUBMITTED_EVENT = parseAbiItem(
   'event TaskSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 deliverable)'
@@ -259,114 +263,136 @@ async function processTaskCreatedEvent(log: EventLog): Promise<void> {
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
 }
 
-async function processTaskClaimedEvent(log: EventLog): Promise<void> {
+export async function processTaskClaimedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, worker, stakeAmount } = log.args;
 
-  await db
+  // Guarded to only apply from 'open' (the only state claim() accepts from --
+  // see claims.router.ts) so a late-processed event can't regress a task that
+  // has since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({
       status: 'claimed',
       claimedBy: worker as string,
       claimedAt: new Date(),
-      worker: worker as string,
     })
-    .where(eq(tasks.id, taskId as string));
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
 
-  await db
+  await database
     .update(claims)
     .set({ stakeAmount: stakeAmount!.toString() })
     .where(eq(claims.taskId, taskId as string));
 
+  if (updated.length === 0) {
+    console.log(`TaskClaimed event: ${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskClaimed event: ${taskId} by ${worker}, stake: ${stakeAmount}`);
 }
 
-async function processTaskWorkerSelectedEvent(log: EventLog): Promise<void> {
+export async function processTaskWorkerSelectedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, worker } = log.args;
 
-  await db
-    .update(tasks)
-    .set({
-      status: 'worker_selected',
-      worker: worker as string,
-    })
-    .where(eq(tasks.id, taskId as string));
-
-  console.log(`TaskWorkerSelected event: ${taskId} - ${worker}`);
-}
-
-async function processTaskAcceptedEvent(log: EventLog): Promise<void> {
-  const { taskId, worker, workerPayment, platformFee } = log.args;
-
-  await db
-    .update(tasks)
-    .set({
-      status: 'completed',
-      worker: worker as string,
-    })
-    .where(eq(tasks.id, taskId as string));
-
-  if (Number(platformFee) > 0 && log.transactionHash) {
-    await db
-      .insert(platformFees)
-      .values({
-        taskId: taskId as string,
-        amount: (platformFee as bigint).toString(),
-        txHash: log.transactionHash,
-      })
-      .onConflictDoNothing();
-  }
-
-  const taskRow = await db
-    .select({ tags: tasks.tags })
+  // TaskWorkerSelected fires from two different contract functions:
+  // CoreFacet.selectWorker (pitch mode, on-chain status -> WorkerSelected)
+  // and AuctionFacet.selectLowestBidder (auction english/reverse_english
+  // mode, on-chain status -> Claimed, per bids.router.ts's selectWinner).
+  // The event itself carries no mode info, so look up the task's mode to
+  // apply the status this on-chain function actually set, mirroring each
+  // router mutation's own write exactly.
+  const taskRow = await database
+    .select({ mode: tasks.mode })
     .from(tasks)
     .where(eq(tasks.id, taskId as string))
     .limit(1);
-  const tags = taskRow[0]?.tags ?? [];
+  const mode = taskRow[0]?.mode;
+  const status = mode === 'auction' ? 'claimed' : 'worker_selected';
 
-  if (Number(workerPayment) > 0) {
-    // The cumulative `agents.totalEarnings` and `agents.completedTasks` updates
-    // below use SQL `+` aggregation, which would double-count if the indexer
-    // re-processed this event. The idempotency guard at the top of processEvents
-    // prevents that: the event row exists in indexed_events before this handler
-    // runs again, so we never re-enter this branch for the same log.
-    const skillsExpr =
-      tags.length === 0
-        ? sql`ARRAY[]::text[]`
-        : sql`ARRAY(SELECT DISTINCT unnest(ARRAY[${sql.join(
-            tags.map((t) => sql`${t}`),
-            sql`, `
-          )}]))`;
-    await db
-      .insert(agents)
-      .values({
-        address: worker as string,
-        totalEarnings: (workerPayment as bigint).toString(),
-        completedTasks: 1,
-        ratedTasks: 0,
-        totalStars: 0,
-        skills: tags,
-      })
-      .onConflictDoUpdate({
-        target: agents.address,
-        set: {
-          totalEarnings: sql`${agents.totalEarnings} + ${(workerPayment as bigint).toString()}`,
-          completedTasks: sql`${agents.completedTasks} + 1`,
-          skills: sql`ARRAY(SELECT DISTINCT unnest(${agents.skills} || ${skillsExpr}))`,
-          updatedAt: new Date(),
-        },
-      });
+  // Guarded to only apply from 'open' (the only state both selectWorker and
+  // selectLowestBidder accept from) so a late-processed event can't regress
+  // a task that has since advanced further (see ADR-0007).
+  const updated = await database
+    .update(tasks)
+    .set({
+      status,
+      claimedBy: worker as string,
+    })
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
+
+  if (updated.length === 0) {
+    console.log(`TaskWorkerSelected event: ${taskId} skipped -- task status has already advanced`);
+    return;
   }
+  console.log(`TaskWorkerSelected event: ${taskId} - ${worker} (status=${status})`);
+}
 
-  console.log(`TaskCompleted event: ${taskId} - ${worker}, payment: ${workerPayment}`);
+async function readSettlementChainStates(
+  logs: SettlementCompletionLog[]
+): Promise<Map<string, SettlementChainState>> {
+  const contractAddress = config.CONTRACT_ADDRESS as `0x${string}`;
+  const taskIds = [...new Set(logs.map((log) => log.args.taskId))];
+  const entries = await Promise.all(
+    taskIds.map(async (taskId) => {
+      return [
+        taskId,
+        await contractGetSettlementChainState(taskId as `0x${string}`, contractAddress),
+      ] as const;
+    })
+  );
+
+  return new Map(entries);
+}
+
+async function readSettlementTimes(logs: SettlementCompletionLog[]): Promise<Map<bigint, Date>> {
+  const blockNumbers = [...new Set(logs.map((log) => log.blockNumber))];
+  const entries = await Promise.all(
+    blockNumbers.map(async (blockNumber) => {
+      const block = await publicClient.getBlock({ blockNumber });
+      return [blockNumber, new Date(Number(block.timestamp) * 1000)] as const;
+    })
+  );
+  return new Map(entries);
+}
+
+function projectedSettlementKey(settlement: ProjectedSettlement): string {
+  return `${settlement.transactionHash.toLowerCase()}:${settlement.taskId.toLowerCase()}`;
+}
+
+function completionEventKey(log: EventLog): string {
+  return `${String(log.transactionHash).toLowerCase()}:${String(log.args.taskId).toLowerCase()}`;
+}
+
+async function processTaskCompletedSettlement(
+  settlement: ProjectedSettlement,
+  settledAt: Date
+): Promise<void> {
+  await recordTaskSettlement(db, {
+    chainId: config.CHAIN_ID,
+    settledAt,
+    settlement,
+  });
+
+  console.log(
+    `TaskCompleted settlement: ${settlement.taskId} - ${settlement.awards.length} award(s)`
+  );
 }
 
 async function processTaskRatedEvent(log: EventLog): Promise<void> {
   const { taskId, worker, rating, raterAgentId } = log.args;
 
-  await db
-    .update(tasks)
-    .set({ rating: Number(rating) })
-    .where(eq(tasks.id, taskId as string));
+  await projectSettlementRating(db, {
+    rating: Number(rating),
+    taskId: taskId as string,
+    workerAddress: worker as string,
+  });
 
   // Backfill the rater agent id onto any feedback row that the rate route already
   // inserted but didn't populate (e.g. requester wasn't registered at the time of
@@ -378,7 +404,10 @@ async function processTaskRatedEvent(log: EventLog): Promise<void> {
         .update(feedbacks)
         .set({ requesterAgentId: agentIdStr })
         .where(
-          and(eq(feedbacks.taskId, taskId as string), eq(feedbacks.workerAddress, worker as string))
+          and(
+            eq(feedbacks.taskId, taskId as string),
+            sql`lower(${feedbacks.workerAddress}) = lower(${worker as string})`
+          )
         );
     }
   }
@@ -386,10 +415,18 @@ async function processTaskRatedEvent(log: EventLog): Promise<void> {
   console.log(`TaskRated event: ${taskId} - ${rating} stars (raterAgentId=${raterAgentId})`);
 }
 
-async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
+type BlockTimestampReader = {
+  getBlock: (args: { blockNumber: bigint }) => Promise<{ timestamp: bigint }>;
+};
+
+export async function processTaskSubmittedEvent(
+  log: EventLog,
+  database: Database = db,
+  client: BlockTimestampReader = publicClient
+): Promise<void> {
   const { taskId, worker, deliverable } = log.args;
 
-  await db
+  await database
     .update(submissions)
     .set({ deliverableHash: deliverable as string })
     .where(
@@ -399,7 +436,7 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
   // When an evaluator is assigned, acceptSubmission transitions the task to Review
   // and starts the evaluation clock. Set review status and deadline from the DB-stored
   // evaluationWindow (set at task creation or assignEvaluator time).
-  const taskRow = await db
+  const taskRow = await database
     .select({
       evaluator: tasks.evaluator,
       evaluationWindow: tasks.evaluationWindow,
@@ -410,15 +447,28 @@ async function processTaskSubmittedEvent(log: EventLog): Promise<void> {
     .limit(1);
   const task = taskRow[0];
   if (shouldStartEvaluatorReview(task) && log.blockNumber != null) {
-    const block = await publicClient.getBlock({ blockNumber: log.blockNumber });
+    const block = await client.getBlock({ blockNumber: log.blockNumber });
     const submittedAt = Number(block.timestamp);
-    await db
+    // Guarded to the pre-review states submitWork is callable from (see
+    // submissions.router.ts's `submittable` check), plus 'pending_approval'
+    // -- for claim/pitch/auction modes (the only modes this branch applies
+    // to, since shouldStartEvaluatorReview excludes bounty/benchmark), the
+    // same router mutation already flips status to 'pending_approval'
+    // synchronously on submit, before this event is processed, so that is
+    // the state this handler normally finds. So a late-processed event can't
+    // regress a task that has since advanced further (see ADR-0007).
+    await database
       .update(tasks)
       .set({
         status: 'review',
         evaluatorDeadline: new Date((submittedAt + task.evaluationWindow) * 1000),
       })
-      .where(eq(tasks.id, taskId as string));
+      .where(
+        and(
+          eq(tasks.id, taskId as string),
+          inArray(tasks.status, ['open', 'claimed', 'worker_selected', 'pending_approval'])
+        )
+      );
   }
 
   console.log(`TaskSubmitted event: ${taskId} by ${worker}, deliverable: ${deliverable}`);
@@ -490,25 +540,52 @@ async function processStakeReturnedEvent(log: EventLog): Promise<void> {
   console.log(`StakeReturned event: ${taskId} to ${worker}, amount: ${stakeAmount}`);
 }
 
-async function processTaskExpiredEvent(log: EventLog): Promise<void> {
+export async function processTaskExpiredEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId } = log.args;
 
-  await db
+  // Guarded against the terminal states refundExpired() itself already
+  // rejects (see tasks.router.ts) so a late-processed event can't regress a
+  // task that has since reached one of them (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({ status: 'expired' })
-    .where(eq(tasks.id, taskId as string));
+    .where(
+      and(
+        eq(tasks.id, taskId as string),
+        notInArray(tasks.status, ['expired', 'completed', 'cancelled'])
+      )
+    )
+    .returning({ id: tasks.id });
 
+  if (updated.length === 0) {
+    console.log(`TaskExpired event: ${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskExpired event: ${taskId}`);
 }
 
-async function processTaskCancelledEvent(log: EventLog): Promise<void> {
+export async function processTaskCancelledEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId } = log.args;
 
-  await db
+  // Guarded to only apply from 'open' (the only state cancel() accepts from
+  // -- see tasks.router.ts) so a late-processed event can't regress a task
+  // that has since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({ status: 'cancelled', cancelledAt: new Date() })
-    .where(eq(tasks.id, taskId as string));
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
 
+  if (updated.length === 0) {
+    console.log(`TaskCancelled event: ${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskCancelled event: ${taskId}`);
 }
 
@@ -556,19 +633,30 @@ async function processProofSubmittedEvent(log: EventLog): Promise<void> {
   console.log(`ProofSubmitted event: ${taskId} by ${worker}, hash: ${proofHash}`);
 }
 
-async function processAuctionAcceptedEvent(log: EventLog): Promise<void> {
+export async function processAuctionAcceptedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, worker, acceptedPrice } = log.args;
 
   // Idempotent reconciliation: the acceptAuction router already moved the task
   // to status=claimed with this worker; this handler is the on-chain witness.
   // Mostly a no-op DB-wise (state already reflected), but it does ensure the
   // task row is consistent with the chain in cases where the router-side write
-  // failed after the contract call landed.
-  await db
+  // failed after the contract call landed. Guarded to only apply from 'open'
+  // (the only state auction-accept/select-winner accept from -- see
+  // bids.router.ts) so a late-processed event can't regress a task that has
+  // since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
-    .set({ status: 'claimed', worker: worker as string })
-    .where(eq(tasks.id, taskId as string));
+    .set({ status: 'claimed', claimedBy: worker as string })
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'open')))
+    .returning({ id: tasks.id });
 
+  if (updated.length === 0) {
+    console.log(`AuctionAccepted event: ${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`AuctionAccepted event: ${taskId} by ${worker}, price: ${acceptedPrice}`);
 }
 
@@ -601,18 +689,29 @@ async function processProtocolEvent(log: EventLog): Promise<void> {
   console.log(`${log.eventName} event:`, serialisedArgs);
 }
 
-async function processTaskReopenedEvent(log: EventLog): Promise<void> {
+export async function processTaskReopenedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId } = log.args;
 
-  await db
+  // Guarded to only apply from 'claimed' (the only state forfeitAndReopen()
+  // accepts from -- see claims.router.ts) so a late-processed event can't
+  // regress a task that has since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({
       status: 'open',
       claimedBy: null,
       claimedAt: null,
     })
-    .where(eq(tasks.id, taskId as string));
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'claimed')))
+    .returning({ id: tasks.id });
 
+  if (updated.length === 0) {
+    console.log(`TaskReopened event: ${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskReopened event: ${taskId}`);
 }
 
@@ -637,33 +736,70 @@ async function processEvaluatorAssignedEvent(log: EventLog): Promise<void> {
   console.log(`EvaluatorAssigned event: task=${taskId} evaluator=${evaluator}`);
 }
 
-async function processTaskEvaluatedEvent(log: EventLog): Promise<void> {
+export async function processTaskEvaluatedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, verdictType, score } = log.args;
   const VERDICT_TYPES = ['APPROVE', 'REJECT', 'PARTIAL'];
   const verdictStr = VERDICT_TYPES[Number(verdictType)] ?? 'APPROVE';
-  await db
+  // Guarded to the states evaluate() is callable from (see
+  // evaluations.router.ts's isOpenModeEval/isReviewModeEval checks) so a
+  // late-processed event can't regress a task that a synchronous write --
+  // e.g. finalizeVerdict's all-zero-award completion -- has since moved past
+  // (see ADR-0007; this was observed live: the settlement race fixed in
+  // finalizeVerdict/resolveDispute exposed exactly this handler regressing
+  // 'completed' back to 'appealing').
+  const updated = await database
     .update(tasks)
     .set({
       status: 'appealing',
       verdictType: verdictStr,
       verdictScore: Number(score),
     })
-    .where(eq(tasks.id, taskId as string));
+    .where(
+      and(
+        eq(tasks.id, taskId as string),
+        inArray(tasks.status, ['open', 'pending_approval', 'review'])
+      )
+    )
+    .returning({ id: tasks.id });
+  if (updated.length === 0) {
+    console.log(`TaskEvaluated event: task=${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskEvaluated event: task=${taskId} verdict=${verdictStr}`);
 }
 
-async function processTaskAppealedEvent(log: EventLog): Promise<void> {
+export async function processTaskAppealedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId } = log.args;
-  await db
+  // Guarded to only apply from 'appealing' (the only state appeal() accepts
+  // from -- see evaluations.router.ts) so a late-processed event can't
+  // regress a task that has since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({ status: 'disputed' })
-    .where(eq(tasks.id, taskId as string));
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'appealing')))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) {
+    console.log(`TaskAppealed event: task=${taskId} skipped -- task status has already advanced`);
+    return;
+  }
   console.log(`TaskAppealed event: task=${taskId}`);
 }
 
-async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
+export async function processEvaluatorTimedOutEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId } = log.args;
-  await db
+  // Guarded to only apply from 'review' (the only state evaluatorTimeout()
+  // accepts from -- see evaluations.router.ts) so a late-processed event
+  // can't regress a task that has since advanced further (see ADR-0007).
+  const updated = await database
     .update(tasks)
     .set({
       status: 'pending_approval',
@@ -671,7 +807,14 @@ async function processEvaluatorTimedOutEvent(log: EventLog): Promise<void> {
       evaluatorStake: '0',
       evaluatorDeadline: null,
     })
-    .where(eq(tasks.id, taskId as string));
+    .where(and(eq(tasks.id, taskId as string), eq(tasks.status, 'review')))
+    .returning({ id: tasks.id });
+  if (updated.length === 0) {
+    console.log(
+      `EvaluatorTimedOut event: task=${taskId} skipped -- task status has already advanced`
+    );
+    return;
+  }
   console.log(`EvaluatorTimedOut event: task=${taskId}`);
 }
 
@@ -704,7 +847,7 @@ async function processRequesterReputationEvent(log: EventLog): Promise<void> {
     .where(and(eq(submissions.taskId, taskId as string), sql`${submissions.rejectedAt} IS NULL`));
   const uniqueWorkers = Number(uniqueWorkersResult[0]?.count ?? 0);
 
-  await db.insert(requesterReputationEvents).values({
+  await recordRequesterReputationEvent(db, {
     taskId: taskId as string,
     requester: (requester as string).toLowerCase(),
     eventType,
@@ -731,6 +874,98 @@ function processAdminAuditEvent(log: EventLog): void {
       );
       break;
   }
+}
+
+async function dispatchMainEvent(log: EventLog): Promise<boolean> {
+  switch (log.eventName) {
+    case 'TaskCreated':
+      await processTaskCreatedEvent(log);
+      break;
+    case 'TaskClaimed':
+      await processTaskClaimedEvent(log);
+      break;
+    case 'TaskWorkerSelected':
+      await processTaskWorkerSelectedEvent(log);
+      break;
+    case 'TaskRated':
+      await processTaskRatedEvent(log);
+      break;
+    case 'TaskSubmitted':
+      await processTaskSubmittedEvent(log);
+      break;
+    case 'BidSubmitted':
+      await processBidSubmittedEvent(log);
+      break;
+    case 'TaskExpired':
+      await processTaskExpiredEvent(log);
+      break;
+    case 'StakeForfeited':
+      await processStakeForfeitedEvent(log);
+      break;
+    case 'StakeReturned':
+      await processStakeReturnedEvent(log);
+      break;
+    case 'TaskReopened':
+      await processTaskReopenedEvent(log);
+      break;
+    case 'TaskCancelled':
+      await processTaskCancelledEvent(log);
+      break;
+    case 'TaskUpdated':
+      await processTaskUpdatedEvent(log);
+      break;
+    case 'PitchSubmitted':
+      await processPitchSubmittedEvent(log);
+      break;
+    case 'ProofSubmitted':
+      await processProofSubmittedEvent(log);
+      break;
+    case 'AuctionAccepted':
+      await processAuctionAcceptedEvent(log);
+      break;
+    case 'FeesUpdated':
+    case 'FeeRecipientUpdated':
+    case 'ForwarderUpdated':
+    case 'ReputationRegistryUpdated':
+      await processProtocolEvent(log);
+      break;
+    case 'HookRegistered':
+      await processHookRegisteredEvent(log);
+      break;
+    case 'EvaluatorAssigned':
+      await processEvaluatorAssignedEvent(log);
+      break;
+    case 'TaskEvaluated':
+      await processTaskEvaluatedEvent(log);
+      break;
+    case 'TaskAppealed':
+      await processTaskAppealedEvent(log);
+      break;
+    case 'TaskDisputed':
+      // TaskDisputed fires alongside TaskAppealed; no additional DB update is needed.
+      break;
+    case 'EvaluatorTimedOut':
+      await processEvaluatorTimedOutEvent(log);
+      break;
+    case 'SubmissionRejected':
+      await processSubmissionRejectedEvent(log);
+      break;
+    case 'SelfAward':
+      await processSelfAwardEvent(log);
+      break;
+    case 'RequesterReputation':
+      await processRequesterReputationEvent(log);
+      break;
+    case 'Paused':
+    case 'Unpaused':
+    case 'OwnershipTransferStarted':
+      processAdminAuditEvent(log);
+      break;
+    default:
+      return false;
+  }
+
+  return true;
 }
 
 async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
@@ -776,104 +1011,58 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
     ] as any,
   })) as unknown as EventLog[];
 
+  const completionLogs = toSettlementCompletionLogs(logs);
+  const projectedSettlements =
+    completionLogs.length > 0
+      ? projectSettlementLogs(completionLogs, await readSettlementChainStates(completionLogs))
+      : [];
+  const settlementByKey = new Map(
+    projectedSettlements.map((settlement) => [projectedSettlementKey(settlement), settlement])
+  );
+  const settlementTimes =
+    completionLogs.length > 0 ? await readSettlementTimes(completionLogs) : new Map<bigint, Date>();
+  const processedSettlementKeys = new Set<string>();
+
   for (const log of logs) {
     try {
-      if (await isAlreadyProcessed(log)) continue;
+      if (log.eventName === 'TaskCompleted') {
+        const key = completionEventKey(log);
+        if (processedSettlementKeys.has(key)) continue;
+        const settlement = settlementByKey.get(key);
+        if (!settlement) {
+          throw new Error(`Missing settlement projection for TaskCompleted group ${key}`);
+        }
+        const settledAt = settlementTimes.get(settlement.blockNumber);
+        if (!settledAt) {
+          throw new Error(`Missing block timestamp for settlement ${key}`);
+        }
 
-      switch (log.eventName) {
-        case 'TaskCreated':
-          await processTaskCreatedEvent(log);
-          break;
-        case 'TaskClaimed':
-          await processTaskClaimedEvent(log);
-          break;
-        case 'TaskWorkerSelected':
-          await processTaskWorkerSelectedEvent(log);
-          break;
-        case 'TaskCompleted':
-          await processTaskAcceptedEvent(log);
-          break;
-        case 'TaskRated':
-          await processTaskRatedEvent(log);
-          break;
-        case 'TaskSubmitted':
-          await processTaskSubmittedEvent(log);
-          break;
-        case 'BidSubmitted':
-          await processBidSubmittedEvent(log);
-          break;
-        case 'TaskExpired':
-          await processTaskExpiredEvent(log);
-          break;
-        case 'StakeForfeited':
-          await processStakeForfeitedEvent(log);
-          break;
-        case 'StakeReturned':
-          await processStakeReturnedEvent(log);
-          break;
-        case 'TaskReopened':
-          await processTaskReopenedEvent(log);
-          break;
-        case 'TaskCancelled':
-          await processTaskCancelledEvent(log);
-          break;
-        case 'TaskUpdated':
-          await processTaskUpdatedEvent(log);
-          break;
-        case 'PitchSubmitted':
-          await processPitchSubmittedEvent(log);
-          break;
-        case 'ProofSubmitted':
-          await processProofSubmittedEvent(log);
-          break;
-        case 'AuctionAccepted':
-          await processAuctionAcceptedEvent(log);
-          break;
-        case 'FeesUpdated':
-        case 'FeeRecipientUpdated':
-        case 'ForwarderUpdated':
-        case 'ReputationRegistryUpdated':
-          await processProtocolEvent(log);
-          break;
-        case 'HookRegistered':
-          await processHookRegisteredEvent(log);
-          break;
-        case 'EvaluatorAssigned':
-          await processEvaluatorAssignedEvent(log);
-          break;
-        case 'TaskEvaluated':
-          await processTaskEvaluatedEvent(log);
-          break;
-        case 'TaskAppealed':
-          await processTaskAppealedEvent(log);
-          break;
-        case 'TaskDisputed':
-          // TaskDisputed fires alongside TaskAppealed — no additional DB update needed
-          break;
-        case 'EvaluatorTimedOut':
-          await processEvaluatorTimedOutEvent(log);
-          break;
-        case 'SubmissionRejected':
-          await processSubmissionRejectedEvent(log);
-          break;
-        case 'SelfAward':
-          await processSelfAwardEvent(log);
-          break;
-        case 'RequesterReputation':
-          await processRequesterReputationEvent(log);
-          break;
-        case 'Paused':
-        case 'Unpaused':
-        case 'OwnershipTransferStarted':
-          processAdminAuditEvent(log);
-          break;
-        default:
-          continue;
+        // Process every payout event in the transaction as one unit. Any failure
+        // escapes processEvents so the range checkpoint is not advanced.
+        await processTaskCompletedSettlement(settlement, settledAt);
+        processedSettlementKeys.add(key);
+        continue;
       }
 
-      await markProcessed(log);
+      await processIndexedEvent(log, {
+        isAlreadyProcessed,
+        markProcessed,
+        processEvent: dispatchMainEvent,
+      });
     } catch (error) {
-      console.error(`Error processing event ${log.eventName}:`, error);
+      // Main-stream events must apply in order, so a failure here has to block
+      // the range checkpoint rather than skip ahead -- the next poll retries the
+      // same range. Logged with full event context (and re-thrown, not
+      // swallowed) so a stall is diagnosable from logs instead of silent.
+      console.error('[indexer] main stream stalled on event', {
+        eventName: log.eventName,
+        taskId: typeof log.args.taskId === 'string' ? log.args.taskId : undefined,
+        blockNumber: log.blockNumber?.toString(),
+        logIndex: log.logIndex,
+        transactionHash: log.transactionHash,
+        error,
+      });
+      throw error;
     }
   }
 }
@@ -966,41 +1155,49 @@ async function processInChunks(
   }
 }
 
-export async function startIndexer(): Promise<void> {
-  console.log('Starting event indexer...');
+async function pollIndexerOnce(): Promise<void> {
+  const lastBlock = await getLastBlock('main', config.CONTRACT_DEPLOY_BLOCK);
+  const latestBlock = await publicClient.getBlockNumber();
 
-  const poll = async () => {
-    try {
-      const lastBlock = await getLastBlock('main', config.CONTRACT_DEPLOY_BLOCK);
-      const latestBlock = await publicClient.getBlockNumber();
+  if (latestBlock > lastBlock) {
+    console.log(`Indexing blocks ${lastBlock + 1n} to ${latestBlock}`);
+    await runCheckpointedRange(
+      lastBlock + 1n,
+      latestBlock,
+      (fromBlock, toBlock) => processInChunks(fromBlock, toBlock, processEvents),
+      (blockNumber) => setLastBlock('main', blockNumber)
+    );
+  }
 
-      if (latestBlock > lastBlock) {
-        console.log(`Indexing blocks ${lastBlock + 1n} to ${latestBlock}`);
-        await processInChunks(lastBlock + 1n, latestBlock, processEvents);
-        await setLastBlock('main', latestBlock);
-      }
+  const erc8004LastBlock = await getLastBlock('erc8004', ERC8004_SEED_BLOCK);
+  if (latestBlock > erc8004LastBlock) {
+    await processInChunks(erc8004LastBlock + 1n, latestBlock, processIdentityEvents);
+    await setLastBlock('erc8004', latestBlock);
+  }
 
-      const erc8004LastBlock = await getLastBlock('erc8004', ERC8004_SEED_BLOCK);
-      if (latestBlock > erc8004LastBlock) {
-        await processInChunks(erc8004LastBlock + 1n, latestBlock, processIdentityEvents);
-        await setLastBlock('erc8004', latestBlock);
-      }
-
-      if (DREAMS_HOOK_ADDRESS) {
-        const rewardHookLastBlock = await getLastBlock('dreams_hook', DREAMS_HOOK_SEED_BLOCK);
-        if (latestBlock > rewardHookLastBlock) {
-          await processInChunks(rewardHookLastBlock + 1n, latestBlock, processRewardHookEvents);
-          await setLastBlock('dreams_hook', latestBlock);
-        }
-      }
-    } catch (error) {
-      console.error('Indexer error:', error);
+  if (DREAMS_HOOK_ADDRESS) {
+    const rewardHookLastBlock = await getLastBlock('dreams_hook', DREAMS_HOOK_SEED_BLOCK);
+    if (latestBlock > rewardHookLastBlock) {
+      await processInChunks(rewardHookLastBlock + 1n, latestBlock, processRewardHookEvents);
+      await setLastBlock('dreams_hook', latestBlock);
     }
-  };
+  }
+}
 
-  await poll();
+const pollIndexer = createSerializedPoll(pollIndexerOnce);
+let pollingStarted = false;
 
-  setInterval(poll, POLL_INTERVAL);
+/** Catch up every configured indexer and reject if any range remains incomplete. */
+export async function catchUpIndexer(): Promise<void> {
+  await pollIndexer();
+}
 
+/** Begin periodic polling after strict startup reconciliation has succeeded. */
+export function startIndexerPolling(): void {
+  if (pollingStarted) return;
+  pollingStarted = true;
+  setInterval(() => {
+    void pollIndexer().catch((error) => console.error('Indexer error:', error));
+  }, POLL_INTERVAL);
   console.log(`Event indexer started (polling every ${POLL_INTERVAL}ms)`);
 }

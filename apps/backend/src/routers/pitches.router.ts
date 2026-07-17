@@ -265,7 +265,7 @@ export const pitchesRouter = router({
         .update(tasks)
         .set({
           status: 'worker_selected',
-          worker: input.workerAddress,
+          claimedBy: input.workerAddress,
         })
         .where(eq(tasks.id, input.taskId));
 

@@ -1,4 +1,6 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import type { SQL } from 'drizzle-orm';
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/lib/storage', () => ({
@@ -22,14 +24,19 @@ vi.mock('../../../src/services/contract', () => ({
 
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { getStorageBackend } from '../../../src/lib/storage';
+import { taskAwards } from '../../../src/db/schema';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const SUB_ID = '00000000-0000-0000-0000-000000000001';
+const dialect = new PgDialect();
 
 const completedRow = {
   taskId: TASK_ID,
-  completedAt: new Date('2026-06-10T10:00:00Z'),
+  // Raw sql<string> aggregate expressions come back through the postgres.js driver as a
+  // plain string, not a Date -- string here (not `new Date(...)`) so this test would have
+  // caught the `.toISOString is not a function` bug a real driver response triggers.
+  completedAt: '2026-06-10T10:00:00.000Z',
   description: 'Design a logo\nmore details on the next line',
 };
 
@@ -96,11 +103,12 @@ describe('submissions router listByWorker', () => {
     expect(ctx.db.select).toHaveBeenCalledTimes(1);
   });
 
-  it('derives accepted work via the feedbacks join and returns artifacts newest first', async () => {
+  it('derives completed work via awards before rating and returns artifacts newest first', async () => {
     const ctx = createMockCtx();
+    const completedChain = makeChain([completedRow]);
     ctx.db.select
-      // 1: feedbacks -> tasks (accepted/completed work)
-      .mockReturnValueOnce(makeChain([completedRow]))
+      // 1: task awards -> tasks (awarded/completed work)
+      .mockReturnValueOnce(completedChain)
       // 2: worker submissions for those tasks
       .mockReturnValueOnce(makeChain([submissionRow]))
       // 3: artifacts for those submissions
@@ -123,8 +131,37 @@ describe('submissions router listByWorker', () => {
     ]);
     expect(result[0].artifacts[0].workerAgentId).toBe('agent-one');
     expect(result[0].artifacts[0].workerAddress).toBe(WORKER);
+    expect(completedChain.from).toHaveBeenCalledWith(taskAwards);
     // No preview URLs requested.
     expect(JSON.stringify(result)).not.toContain('previewUrl');
+  });
+
+  it('matches submission and agent addresses without checksum casing', async () => {
+    const ctx = createMockCtx();
+    const submissionsChain = makeChain([submissionRow]);
+    const agentsChain = makeChain([agentRow]);
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([completedRow]))
+      .mockReturnValueOnce(submissionsChain)
+      .mockReturnValueOnce(makeChain([imageArtifactRow]))
+      .mockReturnValueOnce(agentsChain);
+
+    const inputAddress = WORKER.toLowerCase();
+    const result = await submissionsRouter
+      .createCaller(ctx)
+      .listByWorker({ address: inputAddress, includePreviewUrls: 'none' });
+
+    expect(result[0].artifacts[0].workerAgentId).toBe('agent-one');
+
+    const submissionsWhere = submissionsChain.where.mock.calls[0][0] as SQL;
+    const submissionsQuery = dialect.sqlToQuery(submissionsWhere);
+    expect(submissionsQuery.sql).toContain('lower("submissions"."worker_address")');
+    expect(submissionsQuery.params).toContain(inputAddress);
+
+    const agentsWhere = agentsChain.where.mock.calls[0][0] as SQL;
+    const agentsQuery = dialect.sqlToQuery(agentsWhere);
+    expect(agentsQuery.sql).toContain('lower("agents"."address")');
+    expect(agentsQuery.params).toContain(inputAddress);
   });
 
   it('includes presigned media preview URLs when requested (default behavior)', async () => {

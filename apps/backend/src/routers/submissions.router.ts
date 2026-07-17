@@ -16,12 +16,12 @@ import {
   agents,
   devices,
   artifacts,
-  feedbacks,
+  taskAwards,
   type Agent,
   type Artifact,
   type NewArtifact,
 } from '../db/schema';
-import { eq, and, desc, inArray } from 'drizzle-orm';
+import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
 import { randomUUID, createHash } from 'crypto';
 import { recoverMessageAddress, keccak256 } from 'viem';
@@ -217,7 +217,7 @@ export const submissionsRouter = router({
         if (task.status !== 'worker_selected') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
         }
-        if (task.worker !== input.workerAddress) {
+        if (task.claimedBy !== input.workerAddress) {
           throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Only selected worker can submit',
@@ -227,7 +227,7 @@ export const submissionsRouter = router({
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
         }
-        if (task.worker !== input.workerAddress) {
+        if (task.claimedBy !== input.workerAddress) {
           throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Only the winning bidder can submit',
@@ -448,7 +448,7 @@ export const submissionsRouter = router({
         if (task.status !== 'worker_selected') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
         }
-        if (task.worker !== input.workerAddress) {
+        if (task.claimedBy !== input.workerAddress) {
           throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Only selected worker can submit',
@@ -458,7 +458,7 @@ export const submissionsRouter = router({
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
         }
-        if (task.worker !== input.workerAddress) {
+        if (task.claimedBy !== input.workerAddress) {
           throw new TRPCError({
             code: 'UNAUTHORIZED',
             message: 'Only the winning bidder can submit',
@@ -694,7 +694,7 @@ export const submissionsRouter = router({
         method: 'GET',
         path: '/agents/{address}/work',
         tags: ['Agents'],
-        summary: 'List a worker accepted/completed work (derived via feedbacks), newest first',
+        summary: 'List a worker awarded/completed work, newest first',
       },
     })
     .input(
@@ -706,19 +706,21 @@ export const submissionsRouter = router({
     )
     .output(AgentWorkResponseSchema)
     .query(async ({ input, ctx }) => {
-      // Acceptance is derived: the feedbacks table marks completed/rated tasks
-      // for a worker. Join feedbacks -> tasks to get the task title and the
-      // completion timestamp, newest first.
+      // Awards are authoritative for completed work, including unrated and
+      // secondary split-payout recipients.
       const completed = await ctx.db
         .select({
-          taskId: feedbacks.taskId,
-          completedAt: feedbacks.createdAt,
+          taskId: taskAwards.taskId,
+          // Raw aggregate expressions come back through the driver as a plain string,
+          // not run through drizzle's column-level Date mapping -- coerce at the call site.
+          completedAt: sql<string>`max(${taskAwards.settledAt})`,
           description: tasks.description,
         })
-        .from(feedbacks)
-        .innerJoin(tasks, eq(tasks.id, feedbacks.taskId))
-        .where(eq(feedbacks.workerAddress, input.address))
-        .orderBy(desc(feedbacks.createdAt))
+        .from(taskAwards)
+        .innerJoin(tasks, eq(tasks.id, taskAwards.taskId))
+        .where(sql`lower(${taskAwards.workerAddress}) = lower(${input.address})`)
+        .groupBy(taskAwards.taskId, tasks.description)
+        .orderBy(desc(sql`max(${taskAwards.settledAt})`))
         .limit(input.limit);
 
       if (completed.length === 0) {
@@ -733,7 +735,10 @@ export const submissionsRouter = router({
         .select()
         .from(submissions)
         .where(
-          and(inArray(submissions.taskId, taskIds), eq(submissions.workerAddress, input.address))
+          and(
+            inArray(submissions.taskId, taskIds),
+            sql`lower(${submissions.workerAddress}) = lower(${input.address})`
+          )
         );
 
       const submissionIds = workerSubmissions.map((sub) => sub.id);
@@ -749,7 +754,7 @@ export const submissionsRouter = router({
       const agentResult = await ctx.db
         .select()
         .from(agents)
-        .where(eq(agents.address, input.address))
+        .where(sql`lower(${agents.address}) = lower(${input.address})`)
         .limit(1);
       const workerAgentId = agentResult[0]?.agentId ?? null;
 
@@ -788,7 +793,7 @@ export const submissionsRouter = router({
       return completed.map((row) => ({
         taskId: row.taskId,
         taskTitle: row.description.split('\n')[0]!.slice(0, 80),
-        completedAt: row.completedAt.toISOString(),
+        completedAt: new Date(row.completedAt).toISOString(),
         artifacts: (artifactsByTask.get(row.taskId) ?? [])
           .slice()
           .sort((a, b) => a.displayOrder - b.displayOrder)

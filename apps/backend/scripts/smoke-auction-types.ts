@@ -11,7 +11,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-auction-types.ts
  */
-import { log, ok, get, x402Post, getAccounts, type Account, API_URL } from './_x402.ts';
+import { log, ok, get, x402Post, getAccounts, type Account, API_URL, sleep } from './_x402.ts';
 
 // How long to wait after the bid deadline before asserting it has passed.
 // Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
@@ -19,10 +19,6 @@ const AUCTION_DEADLINE_BUFFER_MS = parseInt(
   process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000',
   10
 );
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 async function smokeEnglish(requester: Account, worker: Account) {
   console.log('\n--- English Auction ---');
@@ -159,11 +155,11 @@ async function smokeDutch(requester: Account, worker: Account) {
   ok('acceptedPrice', acceptResult.acceptedPrice);
 
   log('4/4', 'Verifying task is now claimed...');
-  const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string; worker: string };
+  const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string; claimedBy: string };
   if (claimedTask.status !== 'claimed') {
     throw new Error(`Expected status=claimed, got ${claimedTask.status}`);
   }
-  ok('status=claimed, worker', claimedTask.worker);
+  ok('status=claimed, worker', claimedTask.claimedBy);
 
   return taskId;
 }
@@ -209,11 +205,11 @@ async function smokeReverseDutch(requester: Account, worker: Account) {
   ok('acceptedPrice', acceptResult.acceptedPrice);
 
   log('4/4', 'Verifying task is now claimed...');
-  const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string; worker: string };
+  const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string; claimedBy: string };
   if (claimedTask.status !== 'claimed') {
     throw new Error(`Expected status=claimed, got ${claimedTask.status}`);
   }
-  ok('status=claimed, worker', claimedTask.worker);
+  ok('status=claimed, worker', claimedTask.claimedBy);
 
   return taskId;
 }

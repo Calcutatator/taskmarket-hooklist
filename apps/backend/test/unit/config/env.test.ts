@@ -115,3 +115,56 @@ describe('getServerConfig DREAMS_HOOK_SEED_BLOCK env parsing', () => {
     expect(config.DREAMS_HOOK_SEED_BLOCK).toBe(12345678);
   });
 });
+
+describe('getServerConfig task award backfill env parsing', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = {
+      ...originalEnv,
+      ...REQUIRED_ENV,
+    };
+    delete process.env.TASK_AWARDS_BACKFILL_FROM_BLOCK;
+    delete process.env.TASK_AWARDS_BACKFILL_TO_BLOCK;
+    delete process.env.TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT;
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('defaults optional bounds to undefined and checkpoint reuse to enabled', () => {
+    const config = getServerConfig();
+
+    expect(config.TASK_AWARDS_BACKFILL_FROM_BLOCK).toBeUndefined();
+    expect(config.TASK_AWARDS_BACKFILL_TO_BLOCK).toBeUndefined();
+    expect(config.TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT).toBe(false);
+  });
+
+  it('parses explicit block bounds and checkpoint override', () => {
+    process.env.TASK_AWARDS_BACKFILL_FROM_BLOCK = '12345678';
+    process.env.TASK_AWARDS_BACKFILL_TO_BLOCK = '12345999';
+    process.env.TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT = 'true';
+
+    const config = getServerConfig();
+
+    expect(config.TASK_AWARDS_BACKFILL_FROM_BLOCK).toBe(12345678);
+    expect(config.TASK_AWARDS_BACKFILL_TO_BLOCK).toBe(12345999);
+    expect(config.TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT).toBe(true);
+  });
+
+  it.each([
+    ['TASK_AWARDS_BACKFILL_FROM_BLOCK', '-1'],
+    ['TASK_AWARDS_BACKFILL_TO_BLOCK', '1.5'],
+    ['TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT', 'yes'],
+  ])('rejects invalid %s values', (name, value) => {
+    process.env[name] = value;
+    const exit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    getServerConfig();
+
+    expect(exit).toHaveBeenCalledWith(1);
+  });
+});

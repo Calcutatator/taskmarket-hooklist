@@ -17,14 +17,12 @@ export type SubmissionWindowTask = {
 export type PendingActionTask = SubmissionWindowTask & {
   id: string;
   requester: string;
-  rating: number | null;
   pitchCount: number;
   bidCount: number;
   submissionCount: number;
   pitchDeadline: Date | null;
   bidDeadline: Date | null;
   claimedBy: string | null;
-  worker: string | null;
   auctionType: string | null;
   currentClockPrice: bigint | null;
   currentLowestBid: string | null;
@@ -33,12 +31,14 @@ export type PendingActionTask = SubmissionWindowTask & {
   disputeResolver?: string | null;
   evaluatorDeadline?: Date | null;
   appealDeadline?: Date | null;
+  awardWorkers: Array<{ workerAddress: string; rating: number | null }>;
 };
 
 type ActionOptions = {
   eligibleAddress?: string | null;
   availableAfter?: Date | null;
   availableUntil?: Date | null;
+  targetWorker?: string | null;
 };
 
 function formatUsdcBaseUnits(value: string | bigint): string {
@@ -64,6 +64,7 @@ function action(
     paymentAmount: requiresPayment ? STANDARD_X402_ACTION_AMOUNT : null,
     availableAfter: options.availableAfter?.toISOString() ?? null,
     availableUntil: options.availableUntil?.toISOString() ?? null,
+    targetWorker: options.targetWorker ?? null,
   };
 }
 
@@ -110,7 +111,7 @@ export function computePendingActions(task: PendingActionTask, now: Date): Pendi
   const id = task.id;
   const expired = task.expiryTime <= now;
   const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
-  const workerAddress = task.worker ?? task.claimedBy ?? task.latestSubmissionWorker ?? null;
+  const workerAddress = task.claimedBy ?? task.latestSubmissionWorker ?? null;
 
   if (task.status === 'open') {
     const auctionHasBids = task.mode === 'auction' && task.bidCount > 0;
@@ -420,15 +421,31 @@ export function computePendingActions(task: PendingActionTask, now: Date): Pendi
     ];
   }
 
-  if (task.status === 'completed' && task.rating === null) {
-    return [
+  if (task.status === 'completed') {
+    const unratedWorkers = Array.from(
+      task.awardWorkers
+        .reduce((workers, award) => {
+          const key = award.workerAddress.toLowerCase();
+          const current = workers.get(key);
+          workers.set(key, {
+            address: current?.address ?? award.workerAddress,
+            rated: Boolean(current?.rated || award.rating !== null),
+          });
+          return workers;
+        }, new Map<string, { address: string; rated: boolean }>())
+        .values()
+    )
+      .filter((worker) => !worker.rated)
+      .map((worker) => worker.address);
+
+    return unratedWorkers.map((targetWorker) =>
       action(
         'requester',
         'rate',
-        `taskmarket task rate ${id} --worker ${workerAddress ?? '<address>'} --rating <0-100>`,
-        { eligibleAddress: task.requester }
-      ),
-    ];
+        `taskmarket task rate ${id} --worker ${targetWorker} --rating <0-100>`,
+        { eligibleAddress: task.requester, targetWorker }
+      )
+    );
   }
 
   return [];

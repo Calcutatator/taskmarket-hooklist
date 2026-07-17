@@ -10,6 +10,6 @@
       "@taskmarket/shared": ["../../packages/shared/src/index.ts"]
     }
   },
-  "include": ["src/**/*", "test/**/*"],
+  "include": ["src/**/*", "scripts/backfill-task-awards.ts", "test/**/*"],
   "exclude": ["node_modules", "dist"]
 }

@@ -92,7 +92,6 @@ function pendingActionTask(
     requester: '0x0000000000000000000000000000000000000001',
     status: 'open',
     mode: 'bounty',
-    rating: null,
     pitchCount: 0,
     bidCount: 0,
     submissionCount: 0,
@@ -100,10 +99,10 @@ function pendingActionTask(
     pitchDeadline: null,
     bidDeadline: null,
     claimedBy: null,
-    worker: null,
     auctionType: null,
     currentClockPrice: null,
     currentLowestBid: null,
+    awardWorkers: [],
     ...overrides,
   };
 }

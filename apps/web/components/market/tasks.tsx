@@ -6,6 +6,7 @@ import type {
   PitchResponse,
   ProofResponse,
   SubmissionResponse,
+  TaskAward,
   TaskDetailResponse,
   TaskModeType,
   TaskResponse,
@@ -73,10 +74,14 @@ import {
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
+import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import { MODE_TOOLTIPS, STATUS_CONFIG } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
+  resolvedAwardCount,
+  settledAwards,
+  splitPayoutLabel,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
   taskStatusLabel,
@@ -416,6 +421,27 @@ function PhaseBadge({ status }: { status: TaskStatusType }) {
   );
 }
 
+function awardRecipientCount(awards: TaskAward[]): number {
+  return new Set(awards.map((award) => award.workerAddress.toLowerCase())).size;
+}
+
+function isAwardRecipient(task: TaskDetailResponse | TaskResponse, address: string): boolean {
+  return settledAwards(task).some(
+    (award) => award.workerAddress.toLowerCase() === address.toLowerCase()
+  );
+}
+
+function ratingProgress(task: TaskDetailResponse | TaskResponse): string | null {
+  const awards = settledAwards(task);
+  const ratingsByWorker = new Map<string, boolean>();
+  for (const award of awards) {
+    const key = award.workerAddress.toLowerCase();
+    ratingsByWorker.set(key, Boolean(ratingsByWorker.get(key) || award.rating !== null));
+  }
+  if (ratingsByWorker.size <= 1) return null;
+  return `${[...ratingsByWorker.values()].filter(Boolean).length} of ${ratingsByWorker.size} rated`;
+}
+
 function statusContext(task: TaskDetailResponse | TaskResponse) {
   const expiry = new Date(task.expiryTime);
   if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
@@ -438,7 +464,10 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
     case 'pending_approval':
       return 'Awaiting requester review';
     case 'completed':
-      return task.rating === null ? 'Completed, rating pending' : 'Completed';
+      return (
+        ratingProgress(task) ??
+        (task.primaryAward?.rating == null ? 'Completed, rating pending' : 'Completed')
+      );
     case 'cancelled':
       return 'Cancelled';
     case 'expired':
@@ -458,9 +487,12 @@ function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
 
   switch (task.status) {
     case 'completed':
-      return task.rating === null
-        ? 'Payment confirmed. The requester can still leave a rating.'
-        : 'This task is complete.';
+      return (
+        ratingProgress(task) ??
+        (task.primaryAward?.rating == null
+          ? 'Payment confirmed. The requester can still leave a rating.'
+          : 'This task is complete.')
+      );
     case 'cancelled':
       return 'This task was cancelled.';
     case 'expired':
@@ -539,6 +571,7 @@ function activityTitle(task: TaskDetailResponse | TaskResponse) {
 
 function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
+  const splitLabel = splitPayoutLabel(task);
 
   return (
     <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
@@ -552,6 +585,7 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
         <div className="flex flex-wrap gap-1.5">
           <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
           <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
+          {splitLabel ? <Badge variant="outline">{splitLabel}</Badge> : null}
           {taskDetailTags(task)
             .slice(0, 2)
             .map((tag) => (
@@ -780,57 +814,64 @@ export function TaskTable({
             </TableRow>
           </TableHeader>
           <TableBody>
-            {tasks.map((task) => (
-              <TableRow key={task.id}>
-                <TableCell className="min-w-72">
-                  <Link
-                    className="font-medium text-foreground hover:text-primary"
-                    href={
-                      `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}` as Route
-                    }
-                  >
-                    {taskTitle(task)}
-                  </Link>
-                  <div className="mt-2 flex flex-wrap gap-1">
-                    {taskDetailTags(task)
-                      .slice(0, 3)
-                      .map((tag) => (
-                        <Badge key={tag} variant={TASK_TAG_BADGE_VARIANT}>
-                          {tag}
-                        </Badge>
-                      ))}
-                  </div>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
-                </TableCell>
-                <TableCell>
-                  <Badge variant={taskStatusBadgeVariant(task)}>
-                    {taskStatusLabel(task.status)}
-                  </Badge>
-                </TableCell>
-                <TableCell>
-                  <span className="flex flex-wrap items-center gap-1.5">
-                    <span
-                      className="font-mono text-xs text-muted-foreground"
-                      title={task.requester}
+            {tasks.map((task) => {
+              const splitLabel = splitPayoutLabel(task);
+
+              return (
+                <TableRow key={task.id}>
+                  <TableCell className="min-w-72">
+                    <Link
+                      className="font-medium text-foreground hover:text-primary"
+                      href={
+                        `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}` as Route
+                      }
                     >
-                      {compactAddress(task.requester)}
+                      {taskTitle(task)}
+                    </Link>
+                    <div className="mt-2 flex flex-wrap gap-1">
+                      {taskDetailTags(task)
+                        .slice(0, 3)
+                        .map((tag) => (
+                          <Badge key={tag} variant={TASK_TAG_BADGE_VARIANT}>
+                            {tag}
+                          </Badge>
+                        ))}
+                    </div>
+                  </TableCell>
+                  <TableCell>
+                    <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
+                  </TableCell>
+                  <TableCell>
+                    <span className="flex flex-wrap gap-1.5">
+                      <Badge variant={taskStatusBadgeVariant(task)}>
+                        {taskStatusLabel(task.status)}
+                      </Badge>
+                      {splitLabel ? <Badge variant="outline">{splitLabel}</Badge> : null}
                     </span>
-                    <ActorTypeBadge actorType={task.requesterActorType} />
-                  </span>
-                </TableCell>
-                <TableCell>
-                  <DeadlineLabel className="text-sm" task={task} />
-                </TableCell>
-                <TableCell className="text-right font-mono text-sm text-muted-foreground">
-                  {activityLabel(task)}
-                </TableCell>
-                <TableCell className="text-right">
-                  <RewardAmount align="end" task={task} />
-                </TableCell>
-              </TableRow>
-            ))}
+                  </TableCell>
+                  <TableCell>
+                    <span className="flex flex-wrap items-center gap-1.5">
+                      <span
+                        className="font-mono text-xs text-muted-foreground"
+                        title={task.requester}
+                      >
+                        {compactAddress(task.requester)}
+                      </span>
+                      <ActorTypeBadge actorType={task.requesterActorType} />
+                    </span>
+                  </TableCell>
+                  <TableCell>
+                    <DeadlineLabel className="text-sm" task={task} />
+                  </TableCell>
+                  <TableCell className="text-right font-mono text-sm text-muted-foreground">
+                    {activityLabel(task)}
+                  </TableCell>
+                  <TableCell className="text-right">
+                    <RewardAmount align="end" task={task} />
+                  </TableCell>
+                </TableRow>
+              );
+            })}
           </TableBody>
         </Table>
       </div>
@@ -1459,6 +1500,7 @@ export function SubmissionCard({
         command: commandForSubmissionWorker(reviewAction.command, worker),
       }
     : null;
+  const awardRecipient = isAwardRecipient(task, worker);
 
   return (
     <article
@@ -1467,7 +1509,10 @@ export function SubmissionCard({
     >
       <div className="grid min-w-0 gap-3">
         <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <Badge variant="outline">{countLabel(mediaArtifacts.length, 'media artifact')}</Badge>
+          <span className="flex flex-wrap gap-1.5">
+            <Badge variant="outline">{countLabel(mediaArtifacts.length, 'media artifact')}</Badge>
+            {awardRecipient ? <Badge variant="success">Award recipient</Badge> : null}
+          </span>
           <RelativeTime className="text-sm text-muted-foreground" value={submission.submittedAt} />
         </div>
         <div className="grid min-w-0 gap-1">
@@ -1532,14 +1577,30 @@ export function PitchRow({
   );
 }
 
-export function ProofRow({ proof }: { proof: ProofResponse }) {
+export function ProofRow({
+  profileBasePath,
+  proof,
+  task,
+}: {
+  profileBasePath: string;
+  proof: ProofResponse;
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  const awardRecipient = isAwardRecipient(task, proof.workerAddress);
   return (
     <div className="rounded-lg border border-border/52 bg-background/30 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <Badge variant="outline">{proof.status}</Badge>
         <Badge variant="terminal">{proof.proofType}</Badge>
+        {awardRecipient ? <Badge variant="success">Award recipient</Badge> : null}
         {proof.metricValue ? <span className="font-mono text-sm">{proof.metricValue}</span> : null}
       </div>
+      <ActorLink
+        address={proof.workerAddress}
+        agentId={proof.workerAgentId}
+        className="mt-2 inline-block font-mono text-sm hover:text-primary"
+        profileBasePath={profileBasePath}
+      />
       <p className="mt-2 break-all text-sm leading-6 text-muted-foreground">{proof.proofData}</p>
     </div>
   );
@@ -1693,6 +1754,96 @@ function SummaryGroup({ children, title }: { children: ReactNode; title: string 
   );
 }
 
+function SettlementPayoutsPanel({
+  profileBasePath,
+  task,
+}: {
+  profileBasePath: string;
+  task: TaskDetailResponse | TaskResponse;
+}) {
+  const awards = settledAwards(task);
+  if (awards.length === 0) return null;
+  const recipientCount = awardRecipientCount(awards);
+
+  return (
+    <section aria-label="Settlement payouts" className="grid gap-4 border-t border-border/58 pt-5">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+          Settlement payouts
+        </h2>
+        {awards.length > 1 ? (
+          <Badge variant="outline">
+            {recipientCount === awards.length
+              ? countLabel(recipientCount, 'winner')
+              : `${countLabel(recipientCount, 'winner')} · ${countLabel(awards.length, 'award')}`}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="divide-y divide-border/52 border-y border-border/52">
+        {awards.map((award, index) => (
+          <article
+            className="grid gap-4 py-4 lg:grid-cols-[minmax(12rem,1fr)_minmax(20rem,1.4fr)] lg:items-center"
+            key={`${award.settlementTxHash}-${award.rank}-${award.workerAddress}-${index}`}
+          >
+            <div className="grid min-w-0 gap-2">
+              <div className="flex flex-wrap items-center gap-1.5">
+                <Badge variant="terminal">Rank {award.rank}</Badge>
+                {award.isPrimary ? <Badge variant="success">Primary</Badge> : null}
+                <ActorTypeBadge actorType={award.workerActorType} />
+              </div>
+              <ActorLink
+                address={award.workerAddress}
+                agentId={award.workerAgentId}
+                className="min-w-0 truncate font-mono text-sm hover:text-primary"
+                profileBasePath={profileBasePath}
+              />
+              <span className="text-xs text-muted-foreground">
+                Settled {formatDateTime(award.settledAt)}
+              </span>
+            </div>
+            <dl className="grid grid-cols-2 gap-x-4 gap-y-3 text-sm sm:grid-cols-4">
+              <div>
+                <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Gross</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {formatUsdcUnits(award.grossAmount)}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Net</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {formatUsdcUnits(award.workerPayment)}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Fee</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {formatUsdcUnits(award.platformFee)}
+                </dd>
+              </div>
+              <div>
+                <dt className="font-mono text-[0.68rem] uppercase text-muted-foreground">Rating</dt>
+                <dd className="mt-1 font-mono text-foreground">
+                  {award.rating === null ? 'Pending' : `${award.rating}/100`}
+                </dd>
+              </div>
+              <div className="col-span-2 sm:col-span-4">
+                <a
+                  className="font-mono text-xs text-muted-foreground underline-offset-4 hover:text-primary hover:underline"
+                  href={explorerTxUrl(award.settlementTxHash) ?? undefined}
+                  rel="noreferrer"
+                  target="_blank"
+                >
+                  Settlement tx {compactAddress(award.settlementTxHash)}
+                </a>
+              </div>
+            </dl>
+          </article>
+        ))}
+      </div>
+    </section>
+  );
+}
+
 function requirementRows(task: TaskDetailResponse | TaskResponse) {
   const rows: Array<{ label: string; labelTooltip?: string; value: ReactNode }> = [];
 
@@ -1787,6 +1938,10 @@ function TaskSummaryRail({
   const showAuctionPricing = Boolean(
     task.maxPrice || task.auctionStartPrice || task.auctionFloorPrice
   );
+  const awards = settledAwards(task);
+  const awardCount = resolvedAwardCount(task);
+  const winnerCount = awards.length > 0 ? awardRecipientCount(awards) : awardCount;
+  const primaryAward = awards.find((award) => award.isPrimary);
 
   return (
     <div className="w-full border-l border-border/58 pl-5">
@@ -1862,14 +2017,29 @@ function TaskSummaryRail({
           ) : null}
         </SummaryGroup>
 
-        {task.worker || task.claimedBy ? (
+        {awardCount > 1 ? (
+          <SummaryGroup title="Winners">
+            <SummaryRow label="Recipients" value={countLabel(winnerCount, 'winner')} />
+            <SummaryRow
+              label="Primary"
+              value={
+                <ActorLink
+                  address={primaryAward?.workerAddress ?? task.claimedBy}
+                  agentId={primaryAward?.workerAgentId ?? task.workerAgentId}
+                  className="min-w-0 truncate hover:text-primary"
+                  profileBasePath={profileBasePath}
+                />
+              }
+            />
+          </SummaryGroup>
+        ) : task.primaryAward?.workerAddress || task.claimedBy ? (
           <SummaryGroup title="Assignment">
             <SummaryRow
               label="Worker"
               value={
                 <span className="flex items-center gap-1.5">
                   <ActorLink
-                    address={task.worker ?? task.claimedBy}
+                    address={task.primaryAward?.workerAddress ?? task.claimedBy}
                     agentId={task.workerAgentId}
                     className="min-w-0 truncate hover:text-primary"
                     profileBasePath={profileBasePath}
@@ -1980,7 +2150,8 @@ export function TaskDetailPanel({
   const taskActivityTitle = activityTitle(task);
   // A finished task's rating is its headline outcome, so surface it in the metric instead of
   // the activity count (and drop the duplicate sidebar Outcome row).
-  const rated = task.rating !== null;
+  const rated = task.primaryAward?.rating != null;
+  const splitRatingProgress = ratingProgress(task);
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -2017,8 +2188,14 @@ export function TaskDetailPanel({
             }
           />
           <DetailMetric
-            footerLabel={rated ? 'Rating' : taskActivityTitle}
-            footerValue={rated ? `${task.rating}/100` : activityLabel(task, modeData)}
+            footerLabel={splitRatingProgress ? 'Ratings' : rated ? 'Rating' : taskActivityTitle}
+            footerValue={
+              splitRatingProgress
+                ? splitRatingProgress
+                : rated
+                  ? `${task.primaryAward?.rating}/100`
+                  : activityLabel(task, modeData)
+            }
             label="Status"
             value={
               <InfoTooltip label={STATUS_CONFIG[task.status]?.description ?? statusContext(task)}>
@@ -2031,6 +2208,7 @@ export function TaskDetailPanel({
             valueClassName="mt-2 flex min-w-0 items-center"
           />
         </section>
+        <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
         <section className="grid gap-3 border-t border-border/58 pt-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div className="flex flex-wrap items-center gap-2">
@@ -2091,7 +2269,7 @@ export function TaskDetailPanel({
             pendingActions={mainNextActions}
             requester={task.requester}
             task={task}
-            worker={task.worker}
+            worker={task.primaryAward?.workerAddress}
           />
         ) : null}
         {cancelActions.length > 0 ? (
@@ -2103,7 +2281,7 @@ export function TaskDetailPanel({
             requester={task.requester}
             task={task}
             title="Task controls"
-            worker={task.worker}
+            worker={task.primaryAward?.workerAddress}
           />
         ) : null}
         {descriptionBody || detailTags.length > 0 ? (

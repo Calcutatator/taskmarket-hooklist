@@ -6,7 +6,7 @@
  *  2. Create a task (requester)
  *  3. Verify requester inbox: asRequester contains taskId, asWorker is empty
  *  4. Worker submits work
- *  5. Requester accepts submission (sets task.worker = worker.address)
+ *  5. Requester accepts submission (records a task_awards row for worker.address)
  *  6. Verify worker inbox: asWorker contains taskId
  *  7. Verify requester inbox again: task still in asRequester (all-status coverage)
  *
@@ -85,7 +85,7 @@ async function main() {
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
-  // 5. Requester accepts (sets task.worker = worker.address)
+  // 5. Requester accepts (records a task_awards row for worker.address)
   log('5/7', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);

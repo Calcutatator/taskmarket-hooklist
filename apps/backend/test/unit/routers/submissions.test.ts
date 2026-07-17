@@ -61,8 +61,6 @@ function makeTask(overrides: Record<string, any> = {}) {
     expiryTime: new Date(Date.now() + 86400000),
     status: 'open',
     tags: [],
-    worker: null,
-    rating: null,
     mode: 'bounty',
     stakeRequired: 0,
     stakeBps: 0,
@@ -286,7 +284,7 @@ describe('submissions router', () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', worker: WORKER })])
+        makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: WORKER })])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -300,7 +298,9 @@ describe('submissions router', () => {
     it('throws when pitch task worker is different', async () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'pitch', status: 'worker_selected', worker: '0xOtherWorker' })])
+        makeChain([
+          makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: '0xOtherWorker' }),
+        ])
       );
 
       const caller = submissionsRouter.createCaller(ctx);
@@ -311,9 +311,7 @@ describe('submissions router', () => {
 
     it('throws when pitch task worker is not yet selected', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ mode: 'pitch', status: 'open', worker: null })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'pitch', status: 'open' })]));
 
       const caller = submissionsRouter.createCaller(ctx);
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Worker not selected');

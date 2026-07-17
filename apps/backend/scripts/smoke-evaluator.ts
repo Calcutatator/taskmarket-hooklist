@@ -9,27 +9,23 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-evaluator.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  API_URL,
+  pollTaskStatus,
+  sleep,
+} from './_x402.ts';
 
-function sleep(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
-async function pollStatus(
-  taskId: string,
-  expected: string[],
-  maxAttempts = 15,
-  intervalMs = 3000
-): Promise<string> {
-  for (let i = 0; i < maxAttempts; i++) {
-    const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
-    if (expected.includes(task.status)) return task.status;
-    await sleep(intervalMs);
-  }
-  const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  throw new Error(
-    `Timed out waiting for status [${expected.join('|')}], got: ${task.status}`
-  );
+async function pollStatus(taskId: string, expected: string[]): Promise<string> {
+  const task = await pollTaskStatus<{ status: string }>(taskId, expected, {
+    timeoutMs: 45_000,
+  });
+  return task.status;
 }
 
 async function runScenario(label: string, fn: () => Promise<void>): Promise<boolean> {

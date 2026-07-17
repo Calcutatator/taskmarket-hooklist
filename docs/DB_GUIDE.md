@@ -22,8 +22,6 @@ Main table for task metadata and lifecycle state.
 | `expiry_time` | `timestamp` NOT NULL | Task expiry time |
 | `status` | `text` NOT NULL | `open`, `claimed`, `worker_selected`, `pending_approval`, `review`, `appealing`, `disputed`, `completed`, `expired`, `cancelled` |
 | `tags` | `text[]` NOT NULL | Array of tag strings |
-| `worker` | `text` | Worker wallet address (set on acceptance) |
-| `rating` | `smallint` | Rating 0-100 (null if not rated) |
 | `mode` | `text` NOT NULL | `bounty`, `claim`, `pitch`, `benchmark`, `auction` (default: `bounty`) |
 | `stake_required` | `integer` NOT NULL | 1 if staking required, 0 otherwise |
 | `stake_bps` | `smallint` NOT NULL | Stake as basis points of reward |
@@ -32,12 +30,35 @@ Main table for task metadata and lifecycle state.
 | `max_price` | `numeric(78,0)` | Max bid price in USDC base units (Auction mode) |
 | `metric_description` | `text` | Metric name (Benchmark mode) |
 | `metric_target` | `text` | Metric target value (Benchmark mode) |
-| `claimed_by` | `text` | Claimer wallet (Claim mode) |
+| `claimed_by` | `text` | Currently assigned worker wallet, pre-completion. Written by every assignment path (claim, pitch selection, auction win, contest-mode evaluate) -- the sole source of truth for "who is working this task" before settlement. Post-completion, "who won and what rating" comes only from `task_awards` (see ADR-0006). |
 | `claimed_at` | `timestamp` | Claim timestamp (Claim mode) |
 | `platform_fee_bps` | `smallint` NOT NULL | Platform fee in basis points (default 500) |
 | `requester_agent_id` | `text` | ERC-8004 agentId of requester (if registered) |
 
-Indexes: `status`, `expiry_time`, `requester`, `worker`, `mode`, `claimed_by`
+Indexes: `status`, `expiry_time`, `requester`, `mode`, `claimed_by`
+
+---
+
+### task_awards
+
+Authoritative settlement recipients projected from on-chain `TaskCompleted` events. A task can have multiple award rows for ranked or split payouts.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial` PK | Auto-incrementing integer |
+| `task_id` | `text` FK | References `tasks.id` |
+| `worker_address` | `text` NOT NULL | Awarded worker wallet address |
+| `rank` | `integer` NOT NULL | Settlement rank, starting at 1 |
+| `worker_payment` | `numeric(78,0)` NOT NULL | Net worker payment in USDC base units |
+| `platform_fee` | `numeric(78,0)` NOT NULL | Platform fee in USDC base units |
+| `settlement_tx_hash` | `text` NOT NULL | Transaction containing the settlement event |
+| `chain_id` | `integer` NOT NULL | Source chain ID |
+| `block_number` | `bigint` NOT NULL | Source block number |
+| `log_index` | `integer` NOT NULL | Event log index within the block |
+| `settled_at` | `timestamptz` NOT NULL | Timestamp of the source block |
+| `rating` | `smallint` | Worker rating from a later `TaskRated` event |
+
+Indexes: `task_id`, case-insensitive `worker_address`, `(task_id, rank)`. `(chain_id, block_number, log_index)` is unique and makes replay idempotent.
 
 ---
 
@@ -210,11 +231,11 @@ Indexes: `wallet_address`
 
 ### indexer_state
 
-Tracks the last processed block for the ERC-8004 identity indexer.
+Tracks durable block cursors for the main event indexer, ERC-8004 identity indexer, reward-hook indexer, and task-award backfills.
 
 | Column | Type | Description |
 |--------|------|-------------|
-| `id` | `text` PK | Tracker ID (e.g. `erc8004`, `main`) |
+| `id` | `text` PK | Tracker ID (for example `main`, `erc8004`, or `task_awards_backfill:<chain>:<contract>`) |
 | `last_block` | `bigint` NOT NULL | Last indexed block number |
 | `updated_at` | `timestamp` | Last update time |
 
@@ -237,6 +258,37 @@ make db migrate
 ```
 
 Runs `drizzle-kit migrate` against `DATABASE_URL`.
+
+### Reconcile task awards
+
+Backend startup applies migrations, strictly catches up main task events so task rows exist, reconciles task awards through a captured chain head, and only then starts the HTTP server and periodic polling. The reconciliation scans in 10,000-block chunks and saves its chain-and-contract-scoped cursor after each successful chunk. Award inserts are idempotent, so a failed run resumes from the first incomplete chunk.
+
+RPC errors, database errors, missing task rows, inverted block ranges, or completed tasks whose expected payout events are still missing fail startup instead of advancing past unresolved data. Issued evaluator verdicts with no positive awards are valid no-payout completions. A normal restart retries the failed range automatically.
+
+Run the same reconciliation manually with:
+
+```bash
+make db backfill-task-awards
+```
+
+The manual command and startup path accept these environment variables:
+
+| Variable | Purpose |
+|----------|---------|
+| `TASK_AWARDS_BACKFILL_FROM_BLOCK` | Override the configured contract deployment block |
+| `TASK_AWARDS_BACKFILL_TO_BLOCK` | Stop at an explicit block instead of the current head |
+| `TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT=true` | Replay from the requested start even when a cursor exists |
+
+For a bounded repair, set all three controls:
+
+```bash
+TASK_AWARDS_BACKFILL_FROM_BLOCK=123000 \
+TASK_AWARDS_BACKFILL_TO_BLOCK=124000 \
+TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT=true \
+make db backfill-task-awards
+```
+
+Unset replay controls after the repair. Cursor updates are monotonic, so a bounded replay cannot move a later production cursor backwards.
 
 ### Push schema directly (dev only)
 
@@ -261,8 +313,11 @@ Opens a browser-based GUI for inspecting and querying the database.
 | `idx_tasks_status` | tasks | `status` | Filter by task status |
 | `idx_tasks_expiry` | tasks | `expiry_time` | Expired task queries |
 | `idx_tasks_requester` | tasks | `requester` | Requester's task list |
-| `idx_tasks_worker` | tasks | `worker` | Worker's completed tasks |
+| `idx_tasks_claimed_by` | tasks | `claimed_by` | Worker's currently-assigned tasks |
 | `idx_tasks_mode` | tasks | `mode` | Filter by mode |
+| `idx_task_awards_worker` | task_awards | `lower(worker_address)` | Case-insensitive worker history |
+| `idx_task_awards_task_rank` | task_awards | `task_id`, `rank` | Rank-1 (primary award) lookup |
+| `uidx_task_awards_chain_block_log` | task_awards | `chain_id`, `block_number`, `log_index` | Idempotent settlement replay |
 | `idx_agents_completed` | agents | `completed_tasks` | Leaderboard queries |
 | `idx_agents_agent_id` | agents | `agent_id` | ERC-8004 identity lookup |
 | `idx_feedbacks_worker` | feedbacks | `worker_address` | Worker feedback history |

@@ -14,14 +14,10 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-bids-inbox.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
 
 // How long after the first bid deadline to wait before re-checking.
 const DEADLINE_BUFFER_MS = parseInt(process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000', 10);
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
 
 async function main() {
   const { requester, worker } = getAccounts();

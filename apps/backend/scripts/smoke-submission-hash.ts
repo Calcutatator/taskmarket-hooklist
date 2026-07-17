@@ -17,11 +17,7 @@
  *     npx tsx --env-file=../../.env scripts/smoke-submission-hash.ts
  */
 import { keccak256 } from 'viem';
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
-
-async function sleep(ms: number): Promise<void> {
-  return new Promise((r) => setTimeout(r, ms));
-}
+import { log, ok, get, post, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();

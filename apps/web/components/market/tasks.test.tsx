@@ -119,8 +119,6 @@ const task: TaskResponse = {
   expiryTime: new Date(Date.now() + 3_600_000).toISOString(),
   status: 'open',
   tags: ['research'],
-  worker: null,
-  rating: null,
   mode: 'auction',
   stakeRequired: false,
   stakeBps: 0,
@@ -1166,7 +1164,6 @@ describe('Task marketplace components', () => {
         {
           ...taskDetail,
           claimedBy: null,
-          worker: null,
         }
       )
     ).toBe(workerAddress);
@@ -1221,9 +1218,11 @@ describe('Task marketplace components', () => {
               role: 'requester',
             },
           ],
-          rating: null,
+          primaryAward: {
+            workerAddress: '0x3333333333333333333333333333333333333333',
+            rating: null,
+          },
           status: 'completed',
-          worker: '0x3333333333333333333333333333333333333333',
         }}
       />
     );
@@ -1234,6 +1233,89 @@ describe('Task marketplace components', () => {
     expect(
       screen.getByPlaceholderText(/accuracy, completeness, communication/i)
     ).toBeInTheDocument();
+  });
+
+  it('renders canonical split payouts, rating progress, and recipient-bound actions', () => {
+    const primary = '0x2222222222222222222222222222222222222222';
+    const secondary = '0x3333333333333333333333333333333333333333';
+    const third = '0x4444444444444444444444444444444444444444';
+    mockAccount.address = task.requester;
+    mockAccount.isConnected = true;
+
+    render(
+      <TaskDetailPanel
+        modeData={{ submissions: [] }}
+        task={{
+          ...taskDetail,
+          awardCount: 3,
+          awards: [
+            {
+              workerAddress: primary,
+              workerAgentId: '101',
+              workerActorType: 'agent',
+              rank: 1,
+              isPrimary: true,
+              grossAmount: '2400000',
+              workerPayment: '2280000',
+              platformFee: '120000',
+              settlementTxHash: '0xsettlement',
+              settledAt: '2026-07-14T00:00:00.000Z',
+              rating: 94,
+            },
+            {
+              workerAddress: secondary,
+              workerAgentId: null,
+              workerActorType: 'human',
+              rank: 2,
+              isPrimary: false,
+              grossAmount: '1000000',
+              workerPayment: '950000',
+              platformFee: '50000',
+              settlementTxHash: '0xsettlement',
+              settledAt: '2026-07-14T00:00:00.000Z',
+              rating: null,
+            },
+            {
+              workerAddress: third,
+              workerAgentId: null,
+              workerActorType: 'agent',
+              rank: 3,
+              isPrimary: false,
+              grossAmount: '600000',
+              workerPayment: '570000',
+              platformFee: '30000',
+              settlementTxHash: '0xsettlement',
+              settledAt: '2026-07-14T00:00:00.000Z',
+              rating: null,
+            },
+          ],
+          auctionBidCount: null,
+          auctionType: null,
+          mode: 'bounty',
+          pendingActions: [secondary, third].map((targetWorker) => ({
+            action: 'rate' as const,
+            command: `taskmarket task rate ${task.id} --worker ${targetWorker} --rating <0-100>`,
+            role: 'requester' as const,
+            targetWorker,
+          })),
+          primaryAward: { workerAddress: primary, rating: 94 },
+          reward: '4000000',
+          status: 'completed',
+        }}
+      />
+    );
+
+    const payouts = screen.getByRole('region', { name: /settlement payouts/i });
+    expect(within(payouts).getByText('3 winners')).toBeInTheDocument();
+    expect(within(payouts).getByText('2.4 USDC')).toBeInTheDocument();
+    expect(within(payouts).getByText('2.28 USDC')).toBeInTheDocument();
+    expect(within(payouts).getByText('0.12 USDC')).toBeInTheDocument();
+    expect(within(payouts).getAllByText('Pending')).toHaveLength(2);
+    expect(screen.getAllByText('1 of 3 rated').length).toBeGreaterThan(0);
+    expect(screen.getAllByText('3 winners').length).toBeGreaterThanOrEqual(2);
+    expect(screen.queryByText('Assignment')).not.toBeInTheDocument();
+    expect(screen.getAllByText(compactAddressLabel(secondary)).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(compactAddressLabel(third)).length).toBeGreaterThan(0);
   });
 
   it('keeps metrics and reference data visible when activity and actions are empty', () => {

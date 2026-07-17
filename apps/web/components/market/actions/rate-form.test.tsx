@@ -64,4 +64,26 @@ describe('RateForm', () => {
     expect(input).toHaveAttribute('aria-invalid', 'false');
     expect(input).not.toHaveAttribute('aria-describedby');
   });
+
+  it('submits the award recipient targeted by the pending action', async () => {
+    const targetWorker = '0x3333333333333333333333333333333333333333';
+    payX402Post.mockResolvedValue({ ok: true, data: {} });
+    const user = userEvent.setup();
+
+    render(
+      <RateForm
+        action={{ ...action, targetWorker }}
+        disabled={false}
+        onSuccess={vi.fn()}
+        task={task}
+      />
+    );
+    expect(screen.getByText(/0x3333.*3333/i)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: /submit rating/i }));
+
+    await waitFor(() => expect(payX402Post).toHaveBeenCalledTimes(1));
+    expect(payX402Post.mock.calls[0]?.[1]).toEqual(
+      expect.objectContaining({ worker: targetWorker })
+    );
+  });
 });

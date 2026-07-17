@@ -3,16 +3,28 @@ export function formatUsdcUnits(value?: string | number | null) {
     return '0 USDC';
   }
 
-  const parsed = Number(value) / 1_000_000;
-  if (!Number.isFinite(parsed)) {
+  let baseUnits: bigint;
+  try {
+    if (typeof value === 'number') {
+      if (!Number.isFinite(value)) return '0 USDC';
+      baseUnits = BigInt(Math.round(value));
+    } else {
+      const normalized = value.trim();
+      if (!/^[+-]?\d+$/.test(normalized)) return '0 USDC';
+      baseUnits = BigInt(normalized);
+    }
+  } catch {
     return '0 USDC';
   }
 
-  // Trim trailing zeros ("8 USDC", not "8.000 USDC" -- which reads as eight thousand
-  // under European conventions) while keeping full USDC precision for sub-cent rewards.
-  return `${new Intl.NumberFormat('en-US', {
-    maximumFractionDigits: 6,
-  }).format(parsed)} USDC`;
+  const negative = baseUnits < 0n;
+  const absolute = negative ? -baseUnits : baseUnits;
+  const wholeUnits = absolute / 1_000_000n;
+  const fractionalUnits = absolute % 1_000_000n;
+  const whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(wholeUnits);
+  const fraction = fractionalUnits.toString().padStart(6, '0').replace(/0+$/, '');
+
+  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''} USDC`;
 }
 
 export function formatNumber(value?: number | null) {

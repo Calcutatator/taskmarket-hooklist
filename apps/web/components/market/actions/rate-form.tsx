@@ -1,7 +1,7 @@
 'use client';
 
 import { CircleCheckIcon } from 'lucide-react';
-import { useState } from 'react';
+import { useId, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
@@ -11,12 +11,13 @@ import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { compactAddress } from '@/lib/format';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
-export function RateForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
+export function RateForm({ action, disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
@@ -26,12 +27,13 @@ export function RateForm({ disabled, onSuccess, task }: TaskActionComponentProps
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [txHash, setTxHash] = useState<string | null>(null);
+  const formId = useId();
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to rate this worker." />;
   }
 
-  const worker = task.worker ?? task.claimedBy;
+  const worker = action.targetWorker ?? task.primaryAward?.workerAddress ?? task.claimedBy;
   const busy = step !== 'idle' && step !== 'done';
 
   async function handleRate(event?: React.FormEvent) {
@@ -114,6 +116,12 @@ export function RateForm({ disabled, onSuccess, task }: TaskActionComponentProps
 
   return (
     <form className="grid gap-3" onSubmit={handleRate}>
+      <div className="flex items-center justify-between gap-3 rounded-lg border border-border/60 bg-background/42 px-3 py-2 text-xs">
+        <span className="text-muted-foreground">Rating recipient</span>
+        <span className="font-mono text-foreground" title={worker ?? undefined}>
+          {worker ? compactAddress(worker) : 'Unavailable'}
+        </span>
+      </div>
       <div className="grid gap-2 rounded-xl border border-border/60 bg-background/42 p-3 text-xs leading-5 text-muted-foreground">
         <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
           Quality guide
@@ -131,11 +139,11 @@ export function RateForm({ disabled, onSuccess, task }: TaskActionComponentProps
         </div>
       </div>
       <div className="grid gap-1">
-        <Label htmlFor="rating">Rating (0-100)</Label>
+        <Label htmlFor={`${formId}-rating`}>Rating (0-100)</Label>
         <Input
-          aria-describedby={fieldErrors.rating ? 'rating-error' : undefined}
+          aria-describedby={fieldErrors.rating ? `${formId}-rating-error` : undefined}
           aria-invalid={Boolean(fieldErrors.rating)}
-          id="rating"
+          id={`${formId}-rating`}
           max={100}
           min={0}
           onChange={(e) => setRating(Number(e.currentTarget.value))}
@@ -143,15 +151,15 @@ export function RateForm({ disabled, onSuccess, task }: TaskActionComponentProps
           value={rating}
         />
         {fieldErrors.rating ? (
-          <p className="text-xs text-destructive" id="rating-error">
+          <p className="text-xs text-destructive" id={`${formId}-rating-error`}>
             {fieldErrors.rating}
           </p>
         ) : null}
       </div>
       <div className="grid gap-1">
-        <Label htmlFor="feedback">Feedback (optional)</Label>
+        <Label htmlFor={`${formId}-feedback`}>Feedback (optional)</Label>
         <Textarea
-          id="feedback"
+          id={`${formId}-feedback`}
           onChange={(e) => setFeedback(e.currentTarget.value)}
           placeholder="Mention accuracy, completeness, communication, and anything the next requester should know."
           rows={3}

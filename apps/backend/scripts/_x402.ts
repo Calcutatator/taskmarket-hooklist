@@ -19,6 +19,10 @@ export function ok(label: string, value: unknown) {
   console.log(`  ✓ ${label}:`, value);
 }
 
+export function sleep(ms: number): Promise<void> {
+  return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
 export function fail(step: string, status: number, body: string): never {
   // Parse body to extract message for a cleaner error string.
   let message = body;
@@ -46,6 +50,53 @@ export async function get(
   const result = await r.json();
   if (!r.ok) fail(path, r.status, JSON.stringify(result, null, 2));
   return result;
+}
+
+/** Poll an arbitrary value until predicate passes, or throw on timeout. */
+export async function pollUntil<T>(
+  fetchValue: () => Promise<T>,
+  predicate: (value: T) => boolean,
+  options?: { intervalMs?: number; timeoutMs?: number; label?: string }
+): Promise<T> {
+  const intervalMs = options?.intervalMs ?? 3000;
+  const timeoutMs = options?.timeoutMs ?? 60_000;
+  const label = options?.label ?? 'condition';
+  const deadline = Date.now() + timeoutMs;
+  let lastValue: T | undefined;
+  while (Date.now() < deadline) {
+    lastValue = await fetchValue();
+    if (predicate(lastValue)) return lastValue;
+    await new Promise((resolve) => setTimeout(resolve, intervalMs));
+  }
+  throw new Error(`Timed out waiting for ${label}, last seen: ${JSON.stringify(lastValue)}`);
+}
+
+/** Poll GET /api/tasks/:id until predicate passes, or throw on timeout. */
+export async function pollTask<T>(
+  taskId: string,
+  predicate: (task: T) => boolean,
+  label: string,
+  options?: { intervalMs?: number; timeoutMs?: number }
+): Promise<T> {
+  return pollUntil(() => get(`/api/tasks/${taskId}`) as Promise<T>, predicate, {
+    ...options,
+    label,
+  });
+}
+
+/** Poll GET /api/tasks/:id until task.status reaches one of the target statuses. */
+export async function pollTaskStatus<T extends { status: string }>(
+  taskId: string,
+  target: string | string[],
+  options?: { intervalMs?: number; timeoutMs?: number }
+): Promise<T> {
+  const targets = Array.isArray(target) ? target : [target];
+  return pollTask<T>(
+    taskId,
+    (task) => targets.includes(task.status),
+    `task ${taskId} to reach status [${targets.join('|')}]`,
+    options
+  );
 }
 
 /** POST without X402. */

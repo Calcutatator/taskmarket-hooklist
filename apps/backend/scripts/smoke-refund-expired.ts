@@ -13,7 +13,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-refund-expired.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL, pollUntil } from './_x402.ts';
 
 type PendingAction = { role: string; action: string; command: string };
 type TaskResponse = {
@@ -21,20 +21,6 @@ type TaskResponse = {
   submissionWindowOpen: boolean;
   pendingActions: PendingAction[];
 };
-
-async function pollUntil<T>(
-  fetch: () => Promise<T>,
-  predicate: (v: T) => boolean,
-  { intervalMs = 2000, timeoutMs = 60000, label = 'condition' } = {}
-): Promise<T> {
-  const deadline = Date.now() + timeoutMs;
-  while (Date.now() < deadline) {
-    const v = await fetch();
-    if (predicate(v)) return v;
-    await new Promise((r) => setTimeout(r, intervalMs));
-  }
-  throw new Error(`Timed out waiting for ${label}`);
-}
 
 async function main() {
   const { requester, worker } = getAccounts();

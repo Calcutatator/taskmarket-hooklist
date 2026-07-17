@@ -318,7 +318,7 @@ export const bidsRouter = router({
         .update(tasks)
         .set({
           status: 'claimed',
-          worker: winner.workerAddress,
+          claimedBy: winner.workerAddress,
         })
         .where(eq(tasks.id, input.taskId));
 
@@ -412,7 +412,6 @@ export const bidsRouter = router({
         .update(tasks)
         .set({
           status: 'claimed',
-          worker: workerAddress,
           claimedBy: workerAddress,
           claimedAt: now,
         })

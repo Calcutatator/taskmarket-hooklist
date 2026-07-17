@@ -1,7 +1,7 @@
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
-import { tasks, agents, feedbacks, submissions } from '../db/schema';
+import { tasks, taskAwards, agents, feedbacks, submissions } from '../db/schema';
 import { and, eq, isNull, sql } from 'drizzle-orm';
 import {
   contractAcceptSubmission,
@@ -362,10 +362,31 @@ export const acceptanceRouter = router({
         });
       }
 
+      const awards = await ctx.db
+        .select({ workerAddress: taskAwards.workerAddress, rating: taskAwards.rating })
+        .from(taskAwards)
+        .where(eq(taskAwards.taskId, input.taskId));
+      const matchingAwards = awards.filter(
+        (award) => award.workerAddress.toLowerCase() === input.worker.toLowerCase()
+      );
+      if (
+        (awards.length > 0 && matchingAwards.length === 0) ||
+        (awards.length === 0 && task.claimedBy?.toLowerCase() !== input.worker.toLowerCase())
+      ) {
+        throw new TRPCError({
+          code: 'BAD_REQUEST',
+          message: 'Worker is not an award recipient for this task',
+        });
+      }
+
+      if (matchingAwards.some((award) => award.rating !== null)) {
+        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Award recipient is already rated' });
+      }
+
       const workerAgentResult = await ctx.db
         .select({ agentId: agents.agentId })
         .from(agents)
-        .where(eq(agents.address, input.worker))
+        .where(sql`lower(${agents.address}) = lower(${input.worker})`)
         .limit(1);
 
       const workerAgentId = workerAgentResult[0]?.agentId
@@ -419,9 +440,9 @@ export const acceptanceRouter = router({
       await ctx.db.insert(feedbacks).values({
         id: feedbackId,
         taskId: input.taskId,
-        workerAddress: input.worker,
+        workerAddress: input.worker.toLowerCase(),
         workerAgentId: workerAgentResult[0]?.agentId ?? null,
-        requesterAddress: payer,
+        requesterAddress: payer.toLowerCase(),
         requesterAgentId: task.requesterAgentId ?? null,
         rating: input.rating,
         feedbackText: input.feedbackText ?? null,
@@ -430,7 +451,15 @@ export const acceptanceRouter = router({
         ratingBlockNumber,
       });
 
-      await ctx.db.update(tasks).set({ rating: input.rating }).where(eq(tasks.id, input.taskId));
+      await ctx.db
+        .update(taskAwards)
+        .set({ rating: input.rating })
+        .where(
+          and(
+            eq(taskAwards.taskId, input.taskId),
+            sql`lower(${taskAwards.workerAddress}) = lower(${input.worker})`
+          )
+        );
 
       await ctx.db
         .update(agents)
@@ -439,7 +468,7 @@ export const acceptanceRouter = router({
           totalStars: sql`${agents.totalStars} + ${input.rating}`,
           updatedAt: new Date(),
         })
-        .where(eq(agents.address, input.worker));
+        .where(sql`lower(${agents.address}) = lower(${input.worker})`);
 
       return { success: true, feedbackId };
     }),

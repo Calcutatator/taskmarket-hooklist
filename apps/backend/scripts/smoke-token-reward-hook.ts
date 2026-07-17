@@ -57,7 +57,7 @@
 import { createPublicClient, createWalletClient, http, parseAbi, getAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus } from './_x402.ts';
 
 const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
 const MOCK_TOKEN_ADDRESS = process.env.MOCK_TOKEN_ADDRESS;
@@ -200,14 +200,9 @@ async function pollStatus(
   target: string,
   maxWaitMs = 90_000
 ): Promise<{ status: string; hooks?: string[] }> {
-  const deadline = Date.now() + maxWaitMs;
-  while (Date.now() < deadline) {
-    const t = (await get(`/api/tasks/${taskId}`)) as { status: string; hooks?: string[] };
-    if (t.status === target) return t;
-    await new Promise((r) => setTimeout(r, 3000));
-  }
-  const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  throw new Error(`Timed out waiting for status=${target}, got: ${t.status}`);
+  return pollTaskStatus<{ status: string; hooks?: string[] }>(taskId, target, {
+    timeoutMs: maxWaitMs,
+  });
 }
 
 async function main() {

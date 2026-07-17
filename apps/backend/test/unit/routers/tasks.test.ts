@@ -99,8 +99,6 @@ const mockTaskRow = {
   expiryTime: new Date('2024-01-08'),
   status: 'open',
   tags: ['test'],
-  worker: null,
-  rating: null,
   mode: 'bounty',
   stakeRequired: 0,
   stakeBps: 0,
@@ -195,9 +193,7 @@ describe('tasks router', () => {
       const dropChain = makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]);
       const reservationInsert = makeChain();
       const taskInsert = makeChain();
-      ctx.db.select
-        .mockReturnValueOnce(dropChain)
-        .mockReturnValueOnce(makeChain([]));
+      ctx.db.select.mockReturnValueOnce(dropChain).mockReturnValueOnce(makeChain([]));
       ctx.db.insert.mockReturnValueOnce(reservationInsert).mockReturnValueOnce(taskInsert);
       const caller = tasksRouter.createCaller(ctx);
 
@@ -363,6 +359,97 @@ describe('tasks router', () => {
       expect(result!.id).toBe(mockTaskRow.id);
       expect(result!.submissionCount).toBe(3);
       expect(result!.pitchCount).toBe(1);
+    });
+
+    it('resolves worker and requester agents without address case sensitivity', async () => {
+      const requester = `0x${'Aa'.repeat(20)}`;
+      const worker = `0x${'Bb'.repeat(20)}`;
+      const workerAgentQuery = makeChain([{ agentId: 'worker-agent', registeredVia: 'cli' }]);
+      const requesterAgentQuery = makeChain([{ registeredVia: 'web', publicKey: null }]);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ ...mockTaskRow, requester, claimedBy: worker }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(workerAgentQuery)
+        .mockReturnValueOnce(requesterAgentQuery)
+        .mockReturnValueOnce(makeChain([]));
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.workerAgentId).toBe('worker-agent');
+      expect(result?.requesterActorType).toBe('human');
+
+      const dialect = new PgDialect();
+      const workerLookup = dialect.sqlToQuery(workerAgentQuery.where.mock.calls[0][0]);
+      const requesterLookup = dialect.sqlToQuery(requesterAgentQuery.where.mock.calls[0][0]);
+      expect(workerLookup.sql).toContain('lower("agents"."address") = lower($1)');
+      expect(requesterLookup.sql).toContain('lower("agents"."address") = lower($1)');
+    });
+
+    it('returns ordered awards and one pending rating action per unrated winner', async () => {
+      const primary = '0x0000000000000000000000000000000000000002';
+      const secondary = '0x0000000000000000000000000000000000000003';
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([{ ...mockTaskRow, status: 'completed', claimedBy: primary }])
+        )
+        .mockReturnValueOnce(makeChain([{ count: 2 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ agentId: 'primary-agent', registeredVia: 'cli' }]))
+        .mockReturnValueOnce(makeChain([{ registeredVia: 'web', publicKey: null }]))
+        .mockReturnValueOnce(
+          makeChain([
+            {
+              workerAddress: primary,
+              workerAgentId: 'primary-agent',
+              workerRegisteredVia: 'cli',
+              rank: 1,
+              workerPayment: '570000',
+              platformFee: '30000',
+              settlementTxHash: '0xsettlement',
+              settledAt: new Date('2026-07-14T00:00:00.000Z'),
+              rating: 92,
+            },
+            {
+              workerAddress: secondary,
+              workerAgentId: null,
+              workerRegisteredVia: null,
+              rank: 2,
+              workerPayment: '380000',
+              platformFee: '20000',
+              settlementTxHash: '0xsettlement',
+              settledAt: new Date('2026-07-14T00:00:00.000Z'),
+              rating: null,
+            },
+          ])
+        );
+
+      const result = await tasksRouter.createCaller(ctx).get({ taskId: '0xabc' });
+
+      expect(result?.awardCount).toBe(2);
+      expect(result?.awards).toEqual([
+        expect.objectContaining({
+          workerAddress: primary,
+          rank: 1,
+          isPrimary: true,
+          grossAmount: '600000',
+          workerPayment: '570000',
+          platformFee: '30000',
+          rating: 92,
+        }),
+        expect.objectContaining({
+          workerAddress: secondary,
+          rank: 2,
+          isPrimary: false,
+          grossAmount: '400000',
+          rating: null,
+        }),
+      ]);
+      expect(result?.pendingActions.filter((action) => action.action === 'rate')).toEqual([
+        expect.objectContaining({ targetWorker: secondary }),
+      ]);
     });
 
     it('emits only forfeit for an expired claimed claim-mode task', async () => {
@@ -821,7 +908,6 @@ describe('tasks router', () => {
             ...mockTaskRow,
             mode: 'claim',
             status: 'pending_approval',
-            worker: '0xworker',
             expiryTime: new Date(Date.now() - 60_000),
           },
         ])
@@ -1022,29 +1108,36 @@ describe('tasks router', () => {
       });
     }
 
-    it('filters by worker matching worker OR claimedBy with exact addresses', async () => {
+    // Default (unset) status resolves to 'ALL', which -- like 'open' -- excludes
+    // pre-Rev007 legacy tasks via a leading createdAt >= cutoff condition (see
+    // REV007_LISTING_CUTOFF in tasks.router.ts), so every filter combination below
+    // carries that cutoff ISO timestamp as its first bound parameter.
+    const REV007_CUTOFF_ISO = '2026-06-30T22:15:06.000Z';
+
+    it('filters by worker matching assignment or award membership', async () => {
       const query = await captureListWhere({ worker: WORKER });
 
-      expect(query.sql).toContain('"tasks"."worker" = ');
-      expect(query.sql).toContain('"tasks"."claimed_by" = ');
-      expect(query.sql).toMatch(/"tasks"."worker" = \$\d+ or "tasks"."claimed_by" = \$\d+/);
-      expect(query.params).toEqual([WORKER.toLowerCase(), WORKER.toLowerCase()]);
+      expect(query.sql).toContain('lower("tasks"."claimed_by")');
+      expect(query.sql).toContain('from "task_awards"');
+      expect(query.sql).toContain('lower("task_awards"."worker_address")');
+      expect(query.params).toEqual([REV007_CUTOFF_ISO, WORKER.toLowerCase(), WORKER.toLowerCase()]);
     });
 
     it('filters by requester with an exact address match', async () => {
       const query = await captureListWhere({ requester: REQUESTER });
 
       expect(query.sql).toContain('"tasks"."requester" = ');
-      expect(query.params).toEqual([REQUESTER.toLowerCase()]);
+      expect(query.params).toEqual([REV007_CUTOFF_ISO, REQUESTER.toLowerCase()]);
     });
 
     it('combines requester and worker filters', async () => {
       const query = await captureListWhere({ requester: REQUESTER, worker: WORKER });
 
       expect(query.sql).toContain('"tasks"."requester" = ');
-      expect(query.sql).toContain('"tasks"."worker" = ');
-      expect(query.sql).toContain('"tasks"."claimed_by" = ');
+      expect(query.sql).toContain('lower("tasks"."claimed_by")');
+      expect(query.sql).toContain('from "task_awards"');
       expect(query.params).toEqual([
+        REV007_CUTOFF_ISO,
         REQUESTER.toLowerCase(),
         WORKER.toLowerCase(),
         WORKER.toLowerCase(),

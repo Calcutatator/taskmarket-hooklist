@@ -66,7 +66,6 @@ const task: TaskResponse = {
   platformFeeBps: 250,
   pitchCount: 1,
   pitchDeadline: null,
-  rating: null,
   requester: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
   requesterPubkey: '0x597b0e7F366D9f985E03C8BdaF014C96a5985e4B',
   reward: '850000000',
@@ -76,7 +75,6 @@ const task: TaskResponse = {
   submissionCount: 3,
   submissionWindowOpen: true,
   tags: ['typescript'],
-  worker: null,
 };
 
 describe('LiveMarketPulseSection reduced motion', () => {

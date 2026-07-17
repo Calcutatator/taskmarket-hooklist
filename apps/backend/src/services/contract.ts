@@ -10,11 +10,20 @@ import {
   encodeFunctionData,
   ContractFunctionRevertedError,
   BaseError,
+  type Log,
 } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { TRPCError } from '@trpc/server';
 import { createServerWallet } from '../lib/wallet';
 import { getServerConfig } from '../config/env';
+import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
+import {
+  projectSettlementLogs,
+  toSettlementCompletionLogs,
+  type EventLog,
+  type ProjectedSettlement,
+  type SettlementChainState,
+} from './settlement-projector';
 
 // Map known 4-byte selectors to human-readable error names
 const KNOWN_ERRORS: Record<string, string> = {
@@ -225,7 +234,51 @@ function assertSuccess(receipt: { status: string }, label: string) {
 type RelayResult = {
   txHash: `0x${string}`;
   blockNumber: bigint;
+  logs: readonly Log[];
 };
+
+/**
+ * Decode TaskCompleted logs out of a transaction receipt. The contract only
+ * emits one per award with amount > 0 (EvaluatorFacet._distributeEvalAwards),
+ * so an all-zero-award verdict legitimately decodes to zero logs here.
+ *
+ * Filters to logs emitted by the TaskMarket contract itself before decoding.
+ * finalizeVerdict/resolveDispute dispatch requester-controlled hook contracts
+ * (LibTaskMarket._dispatchCheckHooks, a raw `.call()`, not staticcall) before
+ * the real TaskCompleted events are emitted -- an untrusted hook can execute
+ * arbitrary code, including emitting a byte-identical forged TaskCompleted
+ * log. Without this filter that forged log would decode successfully and get
+ * merged into the legitimate settlement, crediting fake task_awards/earnings
+ * to an attacker-chosen address. The async indexer is unaffected by this
+ * because it fetches logs via `getLogs({ address: contractAddress })`, which
+ * already filters at the RPC layer.
+ */
+function decodeTaskCompletedLogs(logs: readonly Log[]): EventLog[] {
+  const config = getServerConfig();
+  const contractAddress = (config.CONTRACT_ADDRESS as string).toLowerCase();
+  return logs.flatMap((log) => {
+    if (log.address.toLowerCase() !== contractAddress) return [];
+    try {
+      const decoded = decodeEventLog({
+        abi: [TASK_COMPLETED_EVENT],
+        data: log.data,
+        topics: log.topics,
+      });
+      if (decoded.eventName !== 'TaskCompleted') return [];
+      return [
+        {
+          args: decoded.args as unknown as Record<string, unknown>,
+          eventName: decoded.eventName,
+          blockNumber: log.blockNumber,
+          logIndex: log.logIndex,
+          transactionHash: log.transactionHash,
+        },
+      ];
+    } catch {
+      return [];
+    }
+  });
+}
 
 /**
  * Route a TaskMarket call through the PGTR forwarder (ERC-8194).
@@ -329,7 +382,7 @@ async function relayThroughForwarderResult(
         message: `Contract call rejected: ${revertReason}`,
       });
     }
-    return { txHash: hash, blockNumber: receipt.blockNumber };
+    return { txHash: hash, blockNumber: receipt.blockNumber, logs: receipt.logs };
   }
   throw new TRPCError({
     code: 'BAD_REQUEST',
@@ -494,7 +547,51 @@ export async function contractAppeal(
   return relayThroughForwarder(worker, 0n, data);
 }
 
-export async function contractFinalizeVerdict(taskId: `0x${string}`): Promise<`0x${string}`> {
+export type ResolvedSettlementResult = {
+  txHash: `0x${string}`;
+  settlement: ProjectedSettlement | null;
+  settledAt: number | null;
+};
+
+/**
+ * Decode any TaskCompleted logs out of a relay receipt and project them into
+ * a settlement, so the caller can record task_awards synchronously instead of
+ * waiting on the indexer's next poll. `settlement`/`settledAt` are null when
+ * the verdict awarded nobody a nonzero amount (a valid, existing edge case —
+ * the contract simply emits no TaskCompleted logs in that case).
+ */
+async function projectSettlementFromReceipt(
+  taskId: `0x${string}`,
+  result: RelayResult
+): Promise<{ settlement: ProjectedSettlement | null; settledAt: number | null }> {
+  const completionLogs = toSettlementCompletionLogs(decodeTaskCompletedLogs(result.logs));
+  if (completionLogs.length === 0) {
+    return { settlement: null, settledAt: null };
+  }
+
+  const chainState = await contractGetSettlementChainState(taskId);
+  const [settlement] = projectSettlementLogs(completionLogs, new Map([[taskId, chainState]]));
+
+  // Same load-balanced-RPC-lag concern as contractEvaluate's getBlock call above.
+  try {
+    const block = await retryWithBackoff(
+      () => getPublicClient().getBlock({ blockNumber: result.blockNumber }),
+      5,
+      500
+    );
+    return { settlement, settledAt: Number(block.timestamp) };
+  } catch (error) {
+    const reason = error instanceof Error ? error.message : String(error);
+    throw new TRPCError({
+      code: 'INTERNAL_SERVER_ERROR',
+      message: `Settlement confirmed onchain (${result.txHash}) but block timestamp lookup failed: ${reason}`,
+    });
+  }
+}
+
+export async function contractFinalizeVerdict(
+  taskId: `0x${string}`
+): Promise<ResolvedSettlementResult> {
   // Anyone can call finalizeVerdict — use server wallet as the acting principal
   const { address } = createServerWallet();
   const data = encodeFunctionData({
@@ -502,7 +599,9 @@ export async function contractFinalizeVerdict(taskId: `0x${string}`): Promise<`0
     functionName: 'finalizeVerdict',
     args: [taskId],
   });
-  return relayThroughForwarder(address, 0n, data);
+  const result = await relayThroughForwarderResult(address, 0n, data);
+  const { settlement, settledAt } = await projectSettlementFromReceipt(taskId, result);
+  return { txHash: result.txHash, settlement, settledAt };
 }
 
 export async function contractResolveDispute(
@@ -510,14 +609,16 @@ export async function contractResolveDispute(
   resolver: `0x${string}`,
   verdictType: number,
   awards: readonly { worker: `0x${string}`; amount: bigint; rank: number }[]
-): Promise<`0x${string}`> {
+): Promise<ResolvedSettlementResult> {
   const awardTuples = awards.map((a) => [a.worker, a.amount, a.rank] as const);
   const data = encodeFunctionData({
     abi: MARKET_ABI,
     functionName: 'resolveDispute',
     args: [taskId, verdictType, awardTuples],
   });
-  return relayThroughForwarder(resolver, 0n, data);
+  const result = await relayThroughForwarderResult(resolver, 0n, data);
+  const { settlement, settledAt } = await projectSettlementFromReceipt(taskId, result);
+  return { txHash: result.txHash, settlement, settledAt };
 }
 
 export async function contractEvaluatorTimeout(
@@ -918,6 +1019,39 @@ export async function contractGetTaskHooks(
     functionName: 'getTaskHooks',
     args: [taskId],
   });
+}
+
+export async function contractGetSettlementChainState(
+  taskId: `0x${string}`,
+  contractAddress?: string | null
+): Promise<SettlementChainState> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const address = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+  const [task, verdict] = await Promise.all([
+    publicClient.readContract({
+      address,
+      abi: SETTLEMENT_READ_ABI,
+      functionName: 'getTask',
+      args: [taskId],
+    }),
+    publicClient.readContract({
+      address,
+      abi: SETTLEMENT_READ_ABI,
+      functionName: 'getTaskVerdict',
+      args: [taskId],
+    }),
+  ]);
+
+  return {
+    primaryWorker: task.worker,
+    verdictAwards: verdict.awards.map((award) => ({
+      amount: award.amount,
+      rank: Number(award.rank),
+      worker: award.worker,
+    })),
+    verdictIssued: verdict.issued,
+  };
 }
 
 export async function contractGetDreamsClaimable(wallet: `0x${string}`): Promise<bigint> {

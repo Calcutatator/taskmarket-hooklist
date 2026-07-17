@@ -59,8 +59,6 @@ export const tasks = pgTable(
     expiryTime: timestamp('expiry_time').notNull(),
     status: text('status').notNull(),
     tags: text('tags').array().notNull(),
-    worker: text('worker'),
-    rating: smallint('rating'),
     mode: text('mode').notNull().default('bounty'),
     stakeRequired: integer('stake_required').notNull().default(0),
     stakeBps: smallint('stake_bps').notNull().default(0),
@@ -99,11 +97,40 @@ export const tasks = pgTable(
     statusIdx: index('idx_tasks_status').on(table.status),
     expiryIdx: index('idx_tasks_expiry').on(table.expiryTime),
     requesterIdx: index('idx_tasks_requester').on(table.requester),
-    workerIdx: index('idx_tasks_worker').on(table.worker),
     modeIdx: index('idx_tasks_mode').on(table.mode),
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
     createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
     taskDropIdx: index('idx_tasks_task_drop').on(table.taskDropId),
+  })
+);
+
+export const taskAwards = pgTable(
+  'task_awards',
+  {
+    id: serial('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    rank: integer('rank').notNull(),
+    workerPayment: numeric('worker_payment', { precision: 78, scale: 0 }).notNull(),
+    platformFee: numeric('platform_fee', { precision: 78, scale: 0 }).notNull(),
+    settlementTxHash: text('settlement_tx_hash').notNull(),
+    chainId: integer('chain_id').notNull(),
+    blockNumber: bigint('block_number', { mode: 'bigint' }).notNull(),
+    logIndex: integer('log_index').notNull(),
+    settledAt: timestamp('settled_at', { withTimezone: true }).notNull(),
+    rating: smallint('rating'),
+  },
+  (table) => ({
+    taskIdx: index('idx_task_awards_task').on(table.taskId),
+    workerIdx: index('idx_task_awards_worker').on(sql`lower(${table.workerAddress})`),
+    taskRankIdx: index('idx_task_awards_task_rank').on(table.taskId, table.rank),
+    chainBlockLogUnique: uniqueIndex('uidx_task_awards_chain_block_log').on(
+      table.chainId,
+      table.blockNumber,
+      table.logIndex
+    ),
   })
 );
 
@@ -563,6 +590,8 @@ export const indexedEvents = pgTable(
 
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type TaskAward = typeof taskAwards.$inferSelect;
+export type NewTaskAward = typeof taskAwards.$inferInsert;
 export type TaskDrop = typeof taskDrops.$inferSelect;
 export type NewTaskDrop = typeof taskDrops.$inferInsert;
 export type Submission = typeof submissions.$inferSelect;

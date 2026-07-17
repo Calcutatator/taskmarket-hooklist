@@ -197,6 +197,13 @@
       "when": 1784091337000,
       "tag": "0026_official_task_drop_subscriptions",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1784094432000,
+      "tag": "0027_add_task_awards",
+      "breakpoints": true
     }
   ]
 }

@@ -2,8 +2,12 @@ import { router, publicProcedure } from '../trpc';
 import { RegistrationSource } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { sql } from 'drizzle-orm';
 import { contractRegisterIdentity } from '../services/contract';
+
+function lowerAddressEq(address: string) {
+  return sql`lower(${agents.address}) = lower(${address})`;
+}
 
 export const identityRouter = router({
   register: publicProcedure
@@ -18,18 +22,21 @@ export const identityRouter = router({
     .input(z.object({ source: RegistrationSource.optional() }))
     .output(z.object({ agentId: z.string(), alreadyRegistered: z.boolean() }))
     .mutation(async ({ input, ctx }) => {
-      const payer: string = ctx.res.locals.payer;
+      const payer: string = ctx.res.locals.payer?.toLowerCase();
       if (!payer) {
         throw new Error('Payment required: missing payer');
       }
 
       const registeredVia = input.source ?? 'cli';
 
-      // Idempotent: return existing agentId if already registered
+      // Idempotent: return existing agentId if already registered. Case-insensitive
+      // and preferring a row with agent_id set, to tolerate a legacy mixed-case row
+      // for this same address from before addresses were consistently lowercased here.
       const existing = await ctx.db
-        .select({ agentId: agents.agentId })
+        .select({ address: agents.address, agentId: agents.agentId })
         .from(agents)
-        .where(eq(agents.address, payer))
+        .where(lowerAddressEq(payer))
+        .orderBy(sql`${agents.agentId} is not null desc`)
         .limit(1);
 
       if (existing[0]?.agentId) {
@@ -40,16 +47,23 @@ export const identityRouter = router({
       const agentIdBigInt = await contractRegisterIdentity();
       const agentIdStr = agentIdBigInt.toString();
 
-      // Upsert: associate the new agentId with the paying wallet in our DB.
-      // registeredVia is immutable after first insert: onConflict only updates
-      // agentId, never the channel that registered the original row.
-      await ctx.db
-        .insert(agents)
-        .values({ address: payer, agentId: agentIdStr, registeredVia })
-        .onConflictDoUpdate({
-          target: agents.address,
-          set: { agentId: agentIdStr, updatedAt: new Date() },
-        });
+      if (existing[0]) {
+        // A row already exists for this address under a different casing (e.g. a
+        // public key published before this endpoint consistently lowercased
+        // addresses). agents.address has no case-insensitive uniqueness
+        // constraint, so onConflictDoUpdate below would not match it and would
+        // create a second row instead -- update the row we already found by its
+        // exact stored address rather than inserting a new one.
+        await ctx.db
+          .update(agents)
+          .set({ agentId: agentIdStr, updatedAt: new Date() })
+          .where(sql`${agents.address} = ${existing[0].address}`);
+      } else {
+        await ctx.db
+          .insert(agents)
+          .values({ address: payer, agentId: agentIdStr, registeredVia })
+          .onConflictDoNothing();
+      }
 
       return { agentId: agentIdStr, alreadyRegistered: false };
     }),
@@ -69,7 +83,8 @@ export const identityRouter = router({
       const result = await ctx.db
         .select({ agentId: agents.agentId })
         .from(agents)
-        .where(eq(agents.address, input.address))
+        .where(lowerAddressEq(input.address))
+        .orderBy(sql`${agents.agentId} is not null desc`)
         .limit(1);
 
       const agentId = result[0]?.agentId ?? null;

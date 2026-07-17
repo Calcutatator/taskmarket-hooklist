@@ -195,9 +195,9 @@ async function main() {
   ok('rated', true);
 
   const ratedTask = (await get(`/api/tasks/${taskId}`)) as TaskResponse;
-  if (ratedTask.status !== 'completed' || ratedTask.rating === null) {
+  if (ratedTask.status !== 'completed' || ratedTask.primaryAward?.rating == null) {
     throw new Error(
-      `Expected status=completed with rating set, got status=${ratedTask.status} rating=${ratedTask.rating}`
+      `Expected status=completed with rating set, got status=${ratedTask.status} rating=${ratedTask.primaryAward?.rating}`
     );
   }
   if (ratedTask.pendingActions.length !== 0) {
@@ -207,7 +207,7 @@ async function main() {
   }
 
   ok('rated: status', ratedTask.status);
-  ok('rated: rating', ratedTask.rating);
+  ok('rated: rating', ratedTask.primaryAward?.rating);
   ok('rated: pendingActions empty', ratedTask.pendingActions.length);
 
   console.log('\n=== Pending actions smoke test passed ===');
