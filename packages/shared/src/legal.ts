@@ -39,7 +39,7 @@ export interface LegalPolicyBundle {
 }
 
 export const LEGAL_ENTITY = {
-  registeredName: '[REGISTERED ENTITY NAME]',
+  registeredName: 'Daydreams AI',
   jurisdiction: '[JURISDICTION OF INCORPORATION]',
   registeredAddress: '[REGISTERED ADDRESS]',
   legalNoticeEmail: '[LEGAL NOTICE EMAIL]',
