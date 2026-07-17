@@ -126,10 +126,23 @@ jobs:
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" \
             --workspace "$RAILWAY_WORKSPACE_ID" \
             --environment "$ENV_NAME" --service "@taskmarket/backend" --json
-          ADD_OUTPUT=$(railway add --service "$ANVIL_SERVICE_NAME" --json 2>&1) && echo "$ADD_OUTPUT" || {
-            echo "$ADD_OUTPUT" | grep -q "already exists" || { echo "$ADD_OUTPUT" >&2; exit 1; }
-            echo "$ANVIL_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
-          }
+          # Retries on any failure, not just "already exists" -- confirmed by direct
+          # testing, `railway add` can also hang for a long time against Railway's own
+          # API and then return an unparseable body ("error decoding response body")
+          # instead of a clean error, distinct from the fast "already exists" rejection.
+          # A retry is safe either way: if the stalled call actually succeeded
+          # server-side despite the client giving up, the next attempt just hits
+          # "already exists" and is treated as success below.
+          for i in $(seq 1 3); do
+            ADD_OUTPUT=$(railway add --service "$ANVIL_SERVICE_NAME" --json 2>&1) && { echo "$ADD_OUTPUT"; break; }
+            if echo "$ADD_OUTPUT" | grep -q "already exists"; then
+              echo "$ANVIL_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
+              break
+            fi
+            [ "$i" -lt 3 ] || { echo "$ADD_OUTPUT" >&2; exit 1; }
+            echo "railway add --service $ANVIL_SERVICE_NAME attempt $i failed, retrying: $ADD_OUTPUT" >&2
+            sleep 10
+          done
           cd packages/contracts/docker/anvil
           # A freshly created service can 404 on its first code upload for a few seconds;
           # retry rather than fail the job.
@@ -328,10 +341,19 @@ jobs:
           echo "token=$FACILITATOR_TOKEN" >> "$GITHUB_OUTPUT"
 
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment "$ENV_NAME" --service "@taskmarket/backend" --json
-          ADD_OUTPUT=$(railway add --service "$FACILITATOR_SERVICE_NAME" --repo daydreamsai/facilitator --json 2>&1) && echo "$ADD_OUTPUT" || {
-            echo "$ADD_OUTPUT" | grep -q "already exists" || { echo "$ADD_OUTPUT" >&2; exit 1; }
-            echo "$FACILITATOR_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
-          }
+          # Retries on any failure, not just "already exists" -- railway add can also
+          # hang and return an unparseable body ("error decoding response body")
+          # instead of a clean error; see the anvil step above for confirmed details.
+          for i in $(seq 1 3); do
+            ADD_OUTPUT=$(railway add --service "$FACILITATOR_SERVICE_NAME" --repo daydreamsai/facilitator --json 2>&1) && { echo "$ADD_OUTPUT"; break; }
+            if echo "$ADD_OUTPUT" | grep -q "already exists"; then
+              echo "$FACILITATOR_SERVICE_NAME already exists -- a prior run for this same PR already created it, reusing it."
+              break
+            fi
+            [ "$i" -lt 3 ] || { echo "$ADD_OUTPUT" >&2; exit 1; }
+            echo "railway add --service $FACILITATOR_SERVICE_NAME attempt $i failed, retrying: $ADD_OUTPUT" >&2
+            sleep 10
+          done
           for kv in \
             "EVM_NETWORKS=base-sepolia" \
             "EVM_PRIVATE_KEY=0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e" \
