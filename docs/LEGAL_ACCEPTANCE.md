@@ -2,6 +2,18 @@
 
 Taskmarket has one versioned legal bundle covering web, CLI, and raw API operators. The checked-in bundle is intentionally marked `draft`; the backend refuses to enable enforcement until the status is `approved`, the version and effective date are final, the entity fields are complete, and no counsel or product placeholders remain.
 
+## Blockers to launch
+
+This is not an engineering timeline. Enforcement stays off until all of the following are true, and none of them have a fixed date:
+
+1. **No real entity yet.** The documents need an actual registered business name, incorporation jurisdiction, and address in place of the `[Entity Name]`-style placeholders in `packages/shared/src/legal.ts`.
+2. **No counsel review yet.** A lawyer has to actually determine what Taskmarket is legally required to do — money transmission, sanctions screening, tax reporting, consumer protection — and this varies by launch jurisdiction. That analysis has not happened.
+3. **Unknown build scope.** Depending on what counsel's analysis requires, real features may need to be built first (identity checks, sanctions screening, complaints handling) that don't exist today.
+4. **No privacy program yet.** How user data is collected, stored, and returned on request needs a written, approved program. It does not exist yet.
+5. **The policy text is still a draft.** Every bracketed placeholder needs to become final, counsel-approved wording, not something an engineer fills in unilaterally.
+
+Once 1–5 are actually done (by counsel and the business, not by engineering), the remaining steps — production Privy config, deploying with enforcement still off, testing end to end, then flipping `LEGAL_ENFORCEMENT_ENABLED=true` — are fast. They are not the bottleneck and should not be scheduled against a calendar date; they happen after the legal work is genuinely finished, whenever that is.
+
 ## Evidence Model
 
 Every acceptance row records:
