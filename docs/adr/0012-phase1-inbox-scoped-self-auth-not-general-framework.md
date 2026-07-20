@@ -10,9 +10,9 @@
 > scoped mechanism will likely need replacing or generalizing if Phase 2 (true private
 > tasks) is ever built.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
-- **Deciders:** — (drafted by agent per PR #110 RFC discussion; pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context

@@ -8,9 +8,9 @@
 > marketplace and its users, accepting that a privacy-conscious requester gets no
 > protection unless they actively opt in.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
-- **Deciders:** — (drafted by agent per PR #110 RFC discussion; pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
