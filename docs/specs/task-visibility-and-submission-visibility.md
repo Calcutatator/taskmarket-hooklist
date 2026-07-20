@@ -223,20 +223,34 @@ does).
 The fix is a **narrow, scoped self-authentication check on this one endpoint**, reusing
 the precedent already established elsewhere rather than building anything new:
 `wallet.setWithdrawalAddress`'s signed-message pattern (`recoverMessageAddress` over a
-canonical string) is the better fit here specifically, since it works for any connected
-wallet on demand and does not require the caller to have registered a device/API token
-first the way `bids.myBids`'s `x-taskmarket-api-token` header does. Concretely:
-`agents.inbox` accepts an optional signature over a canonical
-`taskmarket:inbox:<address>:<nonce>`-style message; if present and it recovers to the
-`address` being queried, include that address's own `unlisted` tasks in the response;
-if absent or invalid, behave exactly as today (public tasks only, for any address, no
-error). This is a small, self-contained verification function used inside one
-procedure -- not the general `ctx.caller` context-level framework Phase 2 (submission
-visibility) needs wired into every relevant read endpoint, and not a reason to pull any of
-Phase 2 or Phase 3's other scope (submission visibility, `canView` retrofit across
-`listByTask` endpoints, a real `private` task-visibility value) forward. It ships as
-part of Phase 1's Layer 3 retrofit, not a separate PR, and nudges Phase 1's estimate up
-modestly (see the updated effort table below) rather than merging the phases.
+canonical string) is the better fit here, and it is the *only* fit -- not just a matter
+of taste. An earlier draft of this section framed the choice as "signed message vs. the
+device/API-token header `bids.myBids` used," as if either could plausibly prove wallet
+ownership and signed-message just happened to avoid an onboarding step. Checking
+`devices.register` (`apps/backend/src/routers/devices.router.ts`) directly disproves that
+framing: it mints a `deviceId`/`apiToken` pair from a client-supplied `walletAddress`
+string with **no signature check at all** -- anyone can register a device claiming any
+address. The token is real (it gates a genuinely useful, separate thing: server-assisted
+decryption of the CLI's locally-encrypted key, plus XMTP/email identity), but it was
+never proof that the caller controls the address it is scoped to, so it could never
+have satisfied `agents.inbox`'s actual requirement. (`bids.myBids` was consequently
+converted to this same signed-message pattern in the same PR, for the same reason --
+see ADR-0017.) Concretely: `agents.inbox` accepts an optional signature over a
+canonical `taskmarket:inbox:<address>` message (built via the shared
+`buildInboxSelfAuthMessage` helper in `@taskmarket/shared`, no nonce -- this is a read
+with no state-changing side effect, so a replayed signature does nothing a fresh one
+couldn't); if present and it recovers to the `address` being queried, include that
+address's own `unlisted` tasks in the response; if absent or invalid, behave exactly as
+today (public tasks only, for any address, no error). The recovery-and-compare logic
+itself is a single shared `verifySignedAddress` helper (`apps/backend/src/lib/agents.ts`)
+reused by every backend endpoint that verifies a caller-owned-address claim this way --
+this is a small, self-contained verification function, not the general `ctx.caller`
+context-level framework Phase 2 (submission visibility) needs wired into every relevant
+read endpoint, and not a reason to pull any of Phase 2 or Phase 3's other scope
+(submission visibility, `canView` retrofit across `listByTask` endpoints, a real
+`private` task-visibility value) forward. It ships as part of Phase 1's Layer 3
+retrofit, not a separate PR, and nudges Phase 1's estimate up modestly (see the updated
+effort table below) rather than merging the phases.
 
 ## Phase 2: Submission visibility
 
@@ -625,6 +639,21 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 - `apps/docs/src/public/{reference/cli.md,reference/raw-api.md,
   reference/task-schema.md,skill.md}` (mirrored to `pages/`)
 - `apps/web/app/sitemap.ts` -- checked, no-op: no per-task URLs exist there today
+- `apps/web/components/market/unlisted-badge.tsx` -- shared "Unlisted" badge component,
+  replacing three independently hand-rolled copies
+- `apps/backend/src/lib/agents.ts` -- `verifySignedAddress`, the single shared
+  signature-recovery helper every signed-message self-auth check in the backend now
+  uses (`agents.inbox`, `wallet.setWithdrawalAddress`, `wallet.withdrawDreamsRewards`,
+  `bids.selectWinner`, `bids.myBids` per ADR-0017, `claims.claim`/`forfeit`,
+  `pitches.select`, `submissions.submit`/`requestUploadUrl`/`submitFromKeys`, and the
+  legal-acceptance service)
+- `apps/backend/src/lib/task-visibility.ts` -- `taskNotUnlisted`/`taskNotUnlistedSql`,
+  the shared "exclude unlisted tasks" filter reused everywhere it used to be hand-typed
+- `packages/shared/src/lib/authMessages.ts` -- `buildInboxSelfAuthMessage`,
+  `buildMyBidsMessage`, alongside the existing `buildSelectWorkerMessage`
+- `apps/backend/src/routers/bids.router.ts` -- `myBids` converted from the
+  device/API-token header to signed self-auth (ADR-0017); `selectWinner` converted to
+  the shared helper
 
 ### Phase 2 (submission visibility) -- not started
 

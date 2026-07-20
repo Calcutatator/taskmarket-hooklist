@@ -87,6 +87,38 @@ app.use('/api/tasks', x402Middleware({ getAmount: (req) => getTaskReward(req), d
 
 `res.locals.payer` is the EIP-3009 `from` address (the agent's wallet). This is stored as `requester` in task creation and verified against `task.requester` in accept/rate.
 
+## Signed-message self-authentication
+
+Any endpoint that needs to verify a caller actually controls a given wallet address -- as opposed to X402, which authenticates a payment, not an identity claim -- uses the shared `verifySignedAddress` helper (`src/lib/agents.ts`):
+
+```typescript
+export type SignedAddressVerification =
+  | { verified: true }
+  | { verified: false; reason: 'invalid_signature' | 'address_mismatch' };
+
+export async function verifySignedAddress(
+  message: string,
+  signature: string,
+  expectedAddress: string
+): Promise<SignedAddressVerification>;
+```
+
+It recovers the signer from `message`/`signature` via viem's `recoverMessageAddress` and compares it case-insensitively against `expectedAddress`. It returns a discriminated result rather than a bare boolean so each call site keeps its own precise error per failure reason -- do not collapse `invalid_signature` and `address_mismatch` into one generic message, since several endpoints have distinct, tested copy for each, e.g. `bids.selectWinner`:
+
+```typescript
+const result = await verifySignedAddress(message, signature, task.requester);
+if (!result.verified) {
+  if (result.reason === 'invalid_signature') throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
+  throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature does not match requester address' });
+}
+```
+
+Build the canonical message with one of the shared builders in `@taskmarket/shared`'s `lib/authMessages.ts` (`buildInboxSelfAuthMessage`, `buildMyBidsMessage`, `buildSelectWorkerMessage`) rather than hand-typing a template string -- the CLI, web, and any smoke test that needs to reproduce the same signature all call the same builder, so the message text can never drift between signer and verifier. Add a new builder there for a new call site rather than inlining a string.
+
+Current call sites: `agents.inbox`, `wallet.setWithdrawalAddress`/`withdrawDreamsRewards`, `bids.selectWinner`/`myBids`, `claims.claim`/`forfeit`, `pitches.select`, `submissions.submit`/`requestUploadUrl`/`submitFromKeys`, and the legal-acceptance service.
+
+This is a different mechanism from the device/API-token pattern in the next section: the device token proves "caller holds a previously-issued token" (useful for unlocking a locally-encrypted key, or as a stable messaging/email identity), not "caller controls this wallet address" -- `devices.register` accepts any client-supplied `walletAddress` with no signature check at all, so the token was never valid evidence of address ownership. Anything that needs to know whether the caller genuinely controls an address must use `verifySignedAddress`, not the device token (see ADR-0017 for the concrete case this distinction settled).
+
 ## Devices router
 
 Handles device registration and key retrieval for the CLI.

@@ -51,13 +51,15 @@ authorization across ~8 read endpoints) is decided and built instead.
 ## Decision
 
 `agents.inbox` gets exactly one narrow addition: an optional signed message over a
-canonical `taskmarket:inbox:<address>:<nonce>`-style string, verified the same way
-`wallet.setWithdrawalAddress` verifies its own signed message. When present and valid
-for the `address` being queried, that address's own `'unlisted'` tasks are included in
-the response; when absent or invalid, behavior is unchanged from today (public tasks
-only, for any address, no error). No `ctx.caller`, no context-level auth framework, no
-change to any other read endpoint. The general read-authentication framework remains
-exclusively Phase 2 scope, to be built only if and when Phase 2 is separately decided.
+canonical `taskmarket:inbox:<address>` string (no nonce -- this is a read with no
+state-changing side effect, so a replayed signature does nothing a fresh one couldn't),
+verified the same way `wallet.setWithdrawalAddress` verifies its own signed message.
+When present and valid for the `address` being queried, that address's own `'unlisted'`
+tasks are included in the response; when absent or invalid, behavior is unchanged from
+today (public tasks only, for any address, no error). No `ctx.caller`, no context-level
+auth framework, no change to any other read endpoint. The general read-authentication
+framework remains exclusively Phase 2 scope, to be built only if and when Phase 2 is
+separately decided.
 
 ## Consequences
 
@@ -74,13 +76,17 @@ exclusively Phase 2 scope, to be built only if and when Phase 2 is separately de
 - If Phase 2 (or Phase 3) ships, this scoped check likely gets superseded by the general
   framework rather than extended — accepted as a reasonable amount of throwaway work in
   exchange for not over-building now.
-- `agents.inbox` becomes the one read endpoint in the whole backend with any notion of
-  caller identity, which is an inconsistency future readers should not mistake for the
-  start of a broader pattern without reading this ADR.
 
 **Neutral / follow-up:**
 - This ADR does not decide whether Phase 3 (true private tasks) is ever built — that
   remains an open product question per PR #110's "Risks and open questions" section.
+- The signature-recovery logic behind this check was later extracted into a single
+  shared `verifySignedAddress` helper (`apps/backend/src/lib/agents.ts`), reused by
+  every backend endpoint that verifies a caller-owned-address claim this way (see
+  ADR-0017 for `bids.myBids`'s conversion onto the same pattern). `agents.inbox` is
+  therefore no longer the only read endpoint with a notion of caller identity, though it
+  remains true that this ADR did not build a general, context-level auth framework --
+  each such endpoint still runs its own narrow, self-contained check.
 
 ## References
 
