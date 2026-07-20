@@ -11,9 +11,9 @@
 > (versus gemforge's structural auto-discovery from compiled bytecode) and requires a
 > selector-set-parity test to fully close the gap.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
-- **Deciders:** (pending — awaiting Beau's review)
+- **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
 
 ## Context
