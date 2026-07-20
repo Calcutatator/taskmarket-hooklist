@@ -9,6 +9,7 @@ import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
 import { FundingGuard, type FundingStatus } from '@/components/market/fund-wallet-button';
+import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -553,9 +554,7 @@ export function StepPublish({
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="terminal">{selectedTemplate.label}</Badge>
               <Badge variant="secondary">{currentMode.label}</Badge>
-              {values.taskVisibility === 'unlisted' ? (
-                <Badge variant="warning">Unlisted</Badge>
-              ) : null}
+              {values.taskVisibility === 'unlisted' ? <UnlistedBadge /> : null}
             </div>
 
             <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">

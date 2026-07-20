@@ -5,7 +5,7 @@ import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractClaimTask, contractForfeitAndReopen } from '../services/contract';
-import { recoverMessageAddress } from 'viem';
+import { verifySignedAddress } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 
 export const claimsRouter = router({
@@ -42,20 +42,13 @@ export const claimsRouter = router({
       }
 
       const message = `taskmarket:claim:${input.taskId}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
-      }
-      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Signature does not match worker address',
-        });
+      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
+      if (!result.verified) {
+        throw new TRPCError(
+          result.reason === 'invalid_signature'
+            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
+        );
       }
 
       const stakeTxHash = await contractClaimTask(
@@ -131,20 +124,16 @@ export const claimsRouter = router({
       }
 
       const message = `taskmarket:forfeit:${input.taskId}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
-      }
-      if (signer.toLowerCase() !== input.requesterAddress.toLowerCase()) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Signature does not match requester address',
-        });
+      const result = await verifySignedAddress(message, input.signature, input.requesterAddress);
+      if (!result.verified) {
+        throw new TRPCError(
+          result.reason === 'invalid_signature'
+            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+            : {
+                code: 'UNAUTHORIZED',
+                message: 'Signature does not match requester address',
+              }
+        );
       }
 
       const txHash = await contractForfeitAndReopen(

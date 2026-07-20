@@ -70,10 +70,7 @@ describeWithDatabase('official Task Drop migration against PostgreSQL', () => {
     vi.clearAllMocks();
   });
 
-  async function enforceFromIndependentConnection(input: {
-    clientAddress: string;
-    email: string;
-  }) {
+  async function enforceFromIndependentConnection(input: { clientAddress: string; email: string }) {
     const isolatedSql = postgres(databaseUrl!, { max: 1 });
     try {
       await isolatedSql.unsafe(`SET search_path TO "${schemaName}"`);

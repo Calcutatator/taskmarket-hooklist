@@ -108,10 +108,10 @@ describe('wallet router', () => {
           withdrawalAddress: WITHDRAWAL,
           signature: '0x' + 'aa'.repeat(65),
         })
-      ).rejects.toThrow('Signature verification failed');
+      ).rejects.toThrow('Signature does not match wallet address');
     });
 
-    it('throws UNAUTHORIZED when recoverMessageAddress throws', async () => {
+    it('throws BAD_REQUEST when recoverMessageAddress throws', async () => {
       vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
       const ctx = createMockCtx();
 
@@ -122,15 +122,13 @@ describe('wallet router', () => {
           withdrawalAddress: WITHDRAWAL,
           signature: '0xinvalid',
         })
-      ).rejects.toThrow('Signature verification failed');
+      ).rejects.toThrow('Invalid signature');
     });
 
     it('throws CONFLICT when withdrawal address is already set', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -158,9 +156,7 @@ describe('wallet router', () => {
 
     it('returns set withdrawalAddress when agent has one', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.getWithdrawalAddress({ address: WALLET });
@@ -219,9 +215,7 @@ describe('wallet router', () => {
 
     it('throws when authorization.to does not match registered withdrawal address', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -236,9 +230,7 @@ describe('wallet router', () => {
 
     it('throws when authorization.value does not match amountBaseUnits', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -253,9 +245,7 @@ describe('wallet router', () => {
 
     it('throws when authorization has expired', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       const pastValidBefore = String(Math.floor(Date.now() / 1000) - 10);
@@ -272,9 +262,7 @@ describe('wallet router', () => {
 
     it('executes transfer and returns txHash when all inputs are valid', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.withdraw({
@@ -355,7 +343,22 @@ describe('wallet router', () => {
           validBefore,
           signature: '0x' + 'aa'.repeat(65),
         })
-      ).rejects.toThrow('Signature verification failed');
+      ).rejects.toThrow('Signature does not match worker address');
+    });
+
+    it('throws BAD_REQUEST when recoverMessageAddress throws', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
+      const ctx = createMockCtx();
+      const caller = walletRouter.createCaller(ctx);
+      await expect(
+        caller.withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore,
+          signature: '0xinvalid',
+        })
+      ).rejects.toThrow('Invalid signature');
     });
 
     it('throws BAD_REQUEST when claimable is zero', async () => {

@@ -1,10 +1,10 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createPublicClient, http, parseAbi, recoverMessageAddress } from 'viem';
+import { createPublicClient, http, parseAbi } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { agents, dreamsWithdrawNonces } from '../db/schema';
-import { lowerAddressEq } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
 import { getServerConfig } from '../config/env';
 import {
   contractTransferWithAuthorization,
@@ -72,18 +72,13 @@ export const walletRouter = router({
     .mutation(async ({ input, ctx }) => {
       // Verify the signature: message must be signed by walletAddress
       const message = `taskmarket:set-withdrawal-address:${input.withdrawalAddress}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
-      }
-
-      if (signer.toLowerCase() !== input.walletAddress.toLowerCase()) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      const result = await verifySignedAddress(message, input.signature, input.walletAddress);
+      if (!result.verified) {
+        throw new TRPCError(
+          result.reason === 'invalid_signature'
+            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+            : { code: 'UNAUTHORIZED', message: 'Signature does not match wallet address' }
+        );
       }
 
       // Check if agent already has a withdrawal address set
@@ -276,17 +271,13 @@ export const walletRouter = router({
       }
 
       const message = `taskmarket:withdraw-dreams:${input.destination}:${input.nonce}:${input.validBefore}`;
-      let signer: string;
-      try {
-        signer = await recoverMessageAddress({
-          message,
-          signature: input.signature as `0x${string}`,
-        });
-      } catch {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
-      }
-      if (signer.toLowerCase() !== input.workerAddress.toLowerCase()) {
-        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature verification failed' });
+      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
+      if (!result.verified) {
+        throw new TRPCError(
+          result.reason === 'invalid_signature'
+            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
+        );
       }
 
       // Atomically claim the nonce — onConflictDoNothing means a replayed nonce

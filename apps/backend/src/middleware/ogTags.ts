@@ -1,8 +1,9 @@
 import type { Request, Response, NextFunction } from 'express';
 import { db } from '../db/client';
 import { tasks, agents } from '../db/schema';
-import { and, eq, ne, desc } from 'drizzle-orm';
+import { and, eq, desc } from 'drizzle-orm';
 import { getAgentName } from '@taskmarket/shared';
+import { taskNotUnlisted } from '../lib/task-visibility';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
 
@@ -134,7 +135,7 @@ async function buildHomepageBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibility, 'unlisted')))
+    .where(and(eq(tasks.status, 'open'), taskNotUnlisted))
     .orderBy(desc(tasks.createdAt))
     .limit(5);
 
@@ -162,7 +163,7 @@ async function buildTasksBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibility, 'unlisted')))
+    .where(and(eq(tasks.status, 'open'), taskNotUnlisted))
     .orderBy(desc(tasks.createdAt))
     .limit(20);
 

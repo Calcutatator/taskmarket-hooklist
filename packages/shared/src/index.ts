@@ -10,7 +10,11 @@ export {
   dreamsToUsd,
   formatDreams,
 } from './lib/dreams';
-export { buildSelectWorkerMessage } from './lib/authMessages';
+export {
+  buildSelectWorkerMessage,
+  buildInboxSelfAuthMessage,
+  buildMyBidsMessage,
+} from './lib/authMessages';
 export {
   CURRENT_LEGAL_BUNDLE,
   LEGAL_BUNDLES,

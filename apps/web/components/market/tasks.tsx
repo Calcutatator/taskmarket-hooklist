@@ -31,6 +31,7 @@ import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
+import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
@@ -76,11 +77,7 @@ import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
-import {
-  MODE_TOOLTIPS,
-  STATUS_CONFIG,
-  TASK_VISIBILITY_DISCLAIMER,
-} from '@/lib/market/status-config';
+import { MODE_TOOLTIPS, STATUS_CONFIG } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
   resolvedAwardCount,
@@ -2233,11 +2230,7 @@ export function TaskDetailPanel({
                   </Badge>
                 </Link>
               ) : null}
-              {task.taskVisibility === 'unlisted' ? (
-                <InfoTooltip label={TASK_VISIBILITY_DISCLAIMER}>
-                  <Badge variant="warning">Unlisted</Badge>
-                </InfoTooltip>
-              ) : null}
+              {task.taskVisibility === 'unlisted' ? <UnlistedBadge withTooltip /> : null}
               <PhaseBadge status={task.status} />
               {taskTypesHref ? (
                 <Link

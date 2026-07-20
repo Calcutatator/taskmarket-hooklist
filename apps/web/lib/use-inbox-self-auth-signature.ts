@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { useSignMessage } from 'wagmi';
+import { buildInboxSelfAuthMessage } from '@taskmarket/shared';
 
 // Proves ownership of the connected wallet so agents.inbox also returns this
 // wallet's own unlisted tasks (ADR-0015). Signs taskmarket:inbox:<address> once
@@ -22,7 +23,7 @@ export function useInboxSelfAuthSignature(address: `0x${string}` | undefined) {
       return;
     }
     attemptedForRef.current = address;
-    signMessageAsync({ message: `taskmarket:inbox:${address}` })
+    signMessageAsync({ message: buildInboxSelfAuthMessage(address) })
       .then((sig) => setSignature(sig))
       .catch(() => setSignature(undefined));
   }, [address, signMessageAsync]);

@@ -194,11 +194,11 @@ describe('agents router', () => {
 
       const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
       const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
-      expect(requesterQuery.sql).toContain("!= 'unlisted'");
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
 
       const workerWhere = workerChain.where.mock.calls[0]?.[0];
       const workerQuery = new PgDialect().sqlToQuery(workerWhere);
-      expect(workerQuery.sql).toContain("!= 'unlisted'");
+      expect(workerQuery.sql).toContain('"tasks"."task_visibility" <>');
     });
 
     it('includes unlisted tasks when the caller proves ownership of the queried address', async () => {
@@ -243,7 +243,7 @@ describe('agents router', () => {
 
       const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
       const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
-      expect(requesterQuery.sql).toContain("!= 'unlisted'");
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
     });
 
     it('does not unlock unlisted tasks when signature verification throws', async () => {
@@ -260,7 +260,7 @@ describe('agents router', () => {
 
       const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
       const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
-      expect(requesterQuery.sql).toContain("!= 'unlisted'");
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
     });
   });
 });

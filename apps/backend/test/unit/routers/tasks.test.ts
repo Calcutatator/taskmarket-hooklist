@@ -1141,8 +1141,10 @@ describe('tasks router', () => {
 
     // Default (unset) status resolves to 'ALL', which -- like 'open' -- excludes
     // pre-Rev007 legacy tasks via a leading createdAt >= cutoff condition (see
-    // REV007_LISTING_CUTOFF in tasks.router.ts), so every filter combination below
-    // carries that cutoff ISO timestamp as its first bound parameter.
+    // REV007_LISTING_CUTOFF in tasks.router.ts). The shared taskNotUnlisted filter
+    // is pushed before that cutoff condition, so every filter combination below
+    // carries 'unlisted' (bound via Drizzle's `ne()`) as its first parameter,
+    // followed by the cutoff ISO timestamp.
     const REV007_CUTOFF_ISO = '2026-06-30T22:15:06.000Z';
 
     it('filters by worker matching assignment or award membership', async () => {
@@ -1151,14 +1153,19 @@ describe('tasks router', () => {
       expect(query.sql).toContain('lower("tasks"."claimed_by")');
       expect(query.sql).toContain('from "task_awards"');
       expect(query.sql).toContain('lower("task_awards"."worker_address")');
-      expect(query.params).toEqual([REV007_CUTOFF_ISO, WORKER.toLowerCase(), WORKER.toLowerCase()]);
+      expect(query.params).toEqual([
+        'unlisted',
+        REV007_CUTOFF_ISO,
+        WORKER.toLowerCase(),
+        WORKER.toLowerCase(),
+      ]);
     });
 
     it('filters by requester with an exact address match', async () => {
       const query = await captureListWhere({ requester: REQUESTER });
 
       expect(query.sql).toContain('"tasks"."requester" = ');
-      expect(query.params).toEqual([REV007_CUTOFF_ISO, REQUESTER.toLowerCase()]);
+      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, REQUESTER.toLowerCase()]);
     });
 
     it('combines requester and worker filters', async () => {
@@ -1168,6 +1175,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('lower("tasks"."claimed_by")');
       expect(query.sql).toContain('from "task_awards"');
       expect(query.params).toEqual([
+        'unlisted',
         REV007_CUTOFF_ISO,
         REQUESTER.toLowerCase(),
         WORKER.toLowerCase(),
@@ -1178,7 +1186,8 @@ describe('tasks router', () => {
     it('always excludes unlisted tasks from discovery listings (ADR-0014)', async () => {
       const query = await captureListWhere({});
 
-      expect(query.sql).toContain("!= 'unlisted'");
+      expect(query.sql).toContain('"tasks"."task_visibility" <>');
+      expect(query.params).toContain('unlisted');
     });
   });
 });

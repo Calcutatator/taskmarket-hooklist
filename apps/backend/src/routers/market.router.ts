@@ -1,7 +1,8 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { agents, tasks } from '../db/schema';
-import { sql } from 'drizzle-orm';
+import { and, eq, sql } from 'drizzle-orm';
+import { taskNotUnlisted } from '../lib/task-visibility';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -34,7 +35,7 @@ export const marketRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)::int` })
           .from(tasks)
-          .where(sql`${tasks.status} = 'open' and ${tasks.taskVisibility} != 'unlisted'`),
+          .where(and(eq(tasks.status, 'open'), taskNotUnlisted)),
         ctx.db
           .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
           .from(

@@ -21,6 +21,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-visibility.ts
  */
+import { buildInboxSelfAuthMessage } from '@taskmarket/shared';
 import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
 
 type TaskListResponse = {
@@ -107,7 +108,7 @@ async function main() {
   // 5. Requester's own inbox, with a valid self-auth signature (ADR-0015).
   log('5/6', 'Checking inbox with a valid taskmarket:inbox self-auth signature...');
   const validSig = await requester.signMessage({
-    message: `taskmarket:inbox:${requester.address}`,
+    message: buildInboxSelfAuthMessage(requester.address),
   });
   const inboxAuthed = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(requester.address)}&signature=${encodeURIComponent(validSig)}`
@@ -121,7 +122,7 @@ async function main() {
   // 6. A signature from a different account must not unlock it.
   log('6/6', 'Checking inbox with a mismatched signature (signed by worker, not requester)...');
   const mismatchedSig = await worker.signMessage({
-    message: `taskmarket:inbox:${requester.address}`,
+    message: buildInboxSelfAuthMessage(requester.address),
   });
   const inboxMismatched = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(requester.address)}&signature=${encodeURIComponent(mismatchedSig)}`

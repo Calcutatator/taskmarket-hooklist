@@ -10,11 +10,12 @@ import {
   type LegalPolicyBundle,
 } from '@taskmarket/shared';
 import { and, eq, isNull } from 'drizzle-orm';
-import { getAddress, recoverMessageAddress } from 'viem';
+import { getAddress } from 'viem';
 
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
 import { sha256Hex } from '../lib/hash';
+import { verifySignedAddress } from '../lib/agents';
 import {
   legalAcceptanceChallenges,
   legalAcceptances,
@@ -305,12 +306,13 @@ export async function acceptWalletLegalTerms(
     throw new Error('Legal acceptance challenge is invalid or expired');
   }
 
-  const recovered = await recoverMessageAddress({
-    message: challenge.message,
-    signature: input.signature,
-  });
-  if (recovered.toLowerCase() !== walletAddress) {
-    throw new Error('Legal acceptance signature does not match the wallet');
+  const result = await verifySignedAddress(challenge.message, input.signature, walletAddress);
+  if (!result.verified) {
+    throw new Error(
+      result.reason === 'invalid_signature'
+        ? 'Invalid legal acceptance signature'
+        : 'Legal acceptance signature does not match the wallet'
+    );
   }
 
   return database.transaction(async (tx) => {

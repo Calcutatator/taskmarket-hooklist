@@ -167,7 +167,7 @@ describe('market router', () => {
 
       expect(openTasksWhereSql).toBeDefined();
       const { sql: whereSql } = renderSql(openTasksWhereSql!);
-      expect(whereSql).toContain("!= 'unlisted'");
+      expect(whereSql).toContain('"tasks"."task_visibility" <>');
     });
 
     it('excludes activity older than 7 days via a recent cutoff bound parameter', async () => {

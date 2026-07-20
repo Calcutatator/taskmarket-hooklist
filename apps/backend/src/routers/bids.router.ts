@@ -9,16 +9,10 @@ import {
   contractSelectLowestBidder,
   contractAcceptAuction,
 } from '../services/contract';
-import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { computeClockPrice } from '../lib/auction';
-import { lowerAddressEq } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
-import { recoverMessageAddress } from 'viem';
-
-function headerValue(v: string | string[] | undefined): string | undefined {
-  if (Array.isArray(v)) return v[0];
-  return v;
-}
+import { buildMyBidsMessage } from '@taskmarket/shared';
 
 export const bidsRouter = router({
   submit: publicProcedure
@@ -257,20 +251,16 @@ export const bidsRouter = router({
           });
         }
         const message = `taskmarket:select-winner:${input.taskId}`;
-        let signer: string;
-        try {
-          signer = await recoverMessageAddress({
-            message,
-            signature: input.signature as `0x${string}`,
-          });
-        } catch {
-          throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' });
-        }
-        if (signer.toLowerCase() !== input.requesterAddress.toLowerCase()) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Signature does not match requester address',
-          });
+        const result = await verifySignedAddress(message, input.signature, input.requesterAddress);
+        if (!result.verified) {
+          throw new TRPCError(
+            result.reason === 'invalid_signature'
+              ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+              : {
+                  code: 'UNAUTHORIZED',
+                  message: 'Signature does not match requester address',
+                }
+          );
         }
         if (task.requester.toLowerCase() !== input.requesterAddress.toLowerCase()) {
           throw new TRPCError({
@@ -452,7 +442,8 @@ export const bidsRouter = router({
     })
     .input(
       z.object({
-        deviceId: z.string(),
+        address: z.string(),
+        signature: z.string(),
       })
     )
     .output(
@@ -469,17 +460,23 @@ export const bidsRouter = router({
       )
     )
     .query(async ({ input, ctx }) => {
-      const apiToken = headerValue(ctx.req.headers['x-taskmarket-api-token']);
-      if (!apiToken) {
-        throw new TRPCError({
-          code: 'UNAUTHORIZED',
-          message: 'Missing x-taskmarket-api-token header',
-        });
+      // Proof that the caller owns `address` -- same signed-message pattern as
+      // agents.inbox and wallet.setWithdrawalAddress. Unlike agents.inbox there
+      // is no public fallback view: "my bids" has no meaning without a verified
+      // caller, so a missing/invalid signature is a hard failure, not a
+      // narrower response.
+      const result = await verifySignedAddress(
+        buildMyBidsMessage(input.address),
+        input.signature,
+        input.address
+      );
+      if (!result.verified) {
+        throw new TRPCError(
+          result.reason === 'invalid_signature'
+            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
+            : { code: 'UNAUTHORIZED', message: 'Signature does not match address' }
+        );
       }
-      const device = await authenticateXmtpDevice(ctx, {
-        deviceId: input.deviceId,
-        apiToken,
-      });
 
       const now = new Date();
 
@@ -500,7 +497,7 @@ export const bidsRouter = router({
         .innerJoin(tasks, eq(bids.taskId, tasks.id))
         .where(
           and(
-            eq(bids.workerAddress, device.walletAddress),
+            eq(bids.workerAddress, input.address),
             eq(tasks.status, 'open'),
             gt(tasks.bidDeadline, now)
           )

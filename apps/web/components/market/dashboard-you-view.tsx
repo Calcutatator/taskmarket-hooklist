@@ -8,6 +8,7 @@ import { useAccount } from 'wagmi';
 
 import { ChartCard, MetricStat, StatusBreakdown, TrendAreaChart } from '@/components/charts';
 import { RelativeTime } from '@/components/market/motion/relative-time';
+import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -87,11 +88,7 @@ function YouFeedRow({ entry }: { entry: FeedEntry }) {
             <span className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
               {role}
             </span>
-            {task.taskVisibility === 'unlisted' ? (
-              <Badge className="px-1.5 py-0 text-[0.55rem]" variant="warning">
-                Unlisted
-              </Badge>
-            ) : null}
+            {task.taskVisibility === 'unlisted' ? <UnlistedBadge compact /> : null}
           </span>
           <RelativeTime
             className="font-mono text-[0.65rem] text-muted-foreground"

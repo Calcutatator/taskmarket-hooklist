@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { buildInboxSelfAuthMessage, buildMyBidsMessage } from '@taskmarket/shared';
 import { apiGet } from '../lib/api.js';
 import { signMessage } from '../lib/signer.js';
 import { loadKeystore } from '../lib/keystore.js';
@@ -47,7 +48,7 @@ export const inboxCommand = new Command('inbox')
     // the inbox still loads, just without unlisted tasks, same as before.
     let signature: string | undefined;
     try {
-      signature = await signMessage(`taskmarket:inbox:${address}`, keystore);
+      signature = await signMessage(buildInboxSelfAuthMessage(address), keystore);
     } catch {
       // Non-fatal: fall back to the unauthenticated (public-only) view.
     }
@@ -57,15 +58,13 @@ export const inboxCommand = new Command('inbox')
 
     const taskResult = (await apiGet(`/api/agents/inbox?${inboxParams.toString()}`)) as InboxResult;
 
-    // Fetch pending bids if device auth is available
+    // Fetch pending bids, same signed-message self-auth as the inbox above --
+    // "my bids" has no public view, so this is skipped entirely if signing fails.
     let pendingBids: PendingBid[] = [];
     try {
-      if (keystore.deviceId && keystore.apiToken) {
-        const bidParams = new URLSearchParams({ deviceId: keystore.deviceId });
-        pendingBids = (await apiGet(`/api/bids/my?${bidParams.toString()}`, {
-          headers: { 'x-taskmarket-api-token': keystore.apiToken },
-        })) as PendingBid[];
-      }
+      const bidsSignature = await signMessage(buildMyBidsMessage(address), keystore);
+      const bidParams = new URLSearchParams({ address, signature: bidsSignature });
+      pendingBids = (await apiGet(`/api/bids/my?${bidParams.toString()}`)) as PendingBid[];
     } catch {
       // Non-fatal: include inbox tasks without pending bids
     }
