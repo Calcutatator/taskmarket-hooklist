@@ -38,6 +38,7 @@ help:
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
+	@echo "  make upgrade-rev012 <testnet|mainnet> - Apply the rev012 versioned upgrade step (requires diamond at rev011)"
 	@echo "  make deploy-reward-hook <testnet|mainnet|preview> - Deploy DREAMS token reward hook (testnet/preview use a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
@@ -121,6 +122,23 @@ upgrade:
 			--verify; \
 	else \
 		echo "Usage: make upgrade <testnet|mainnet>"; \
+		exit 1; \
+	fi
+
+upgrade-rev012:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && forge script script/upgrades/Rev012Upgrade.s.sol:Rev012Upgrade \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && forge script script/upgrades/Rev012Upgrade.s.sol:Rev012Upgrade \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make upgrade-rev012 <testnet|mainnet>"; \
 		exit 1; \
 	fi
 
