@@ -7,15 +7,28 @@
  *   2. Create bounty task
  *   3. Verify task.requesterAgentId is non-null
  *   4. Worker submits work
- *   5. Requester accepts (X402)
- *   6. Requester rates (X402)
- *   7. Verify feedback file has correct value
+ *   5. Requester accepts (X402) — triggers AcceptanceFacet's giveFeedback() try/catch
+ *      against the real (cloned) ERC-8004 reputation registry
+ *   6. Verify ReputationFeedbackFailed was NOT emitted -- proves the reputation
+ *      registry the sandbox wired in actually works end to end, not just that the
+ *      try/catch swallows failures gracefully (see the Solidity unit tests in
+ *      packages/contracts/test/TaskMarket.t.sol for that side of the coverage)
+ *   7. Requester rates (X402)
+ *   8. Verify feedback file has correct value
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-rater-agent-id.ts
  */
+import { createPublicClient, http, parseAbiItem } from 'viem';
+import { baseSepolia } from 'viem/chains';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+
+const RPC_URL = process.env.FORGE_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
+const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS as `0x${string}` | undefined;
+const reputationFeedbackFailedEvent = parseAbiItem(
+  'event ReputationFeedbackFailed(bytes32 indexed taskId, uint256 indexed agentId)'
+);
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -95,8 +108,15 @@ async function main() {
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
-  // 6. Requester accepts
-  log('6/7', 'Requester accepting submission (X402)...');
+  // 6. Requester accepts — this is what actually triggers AcceptanceFacet's
+  //    giveFeedback() try/catch against the configured reputation registry
+  //    (requesterAgentId is non-zero, so the path isn't skipped).
+  log('6/8', 'Requester accepting submission (X402)...');
+  if (!CONTRACT_ADDRESS) {
+    throw new Error('Missing CONTRACT_ADDRESS (needed to check for ReputationFeedbackFailed)');
+  }
+  const client = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
+  const blockBeforeAccept = await client.getBlockNumber();
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
 
@@ -107,8 +127,27 @@ async function main() {
     await new Promise((r) => setTimeout(r, 3000));
   }
 
-  // 7. Requester rates — raterAgentId is derived server-side from task.requesterAgentId
-  log('7/7', 'Requester rating 90/100 (X402) — raterAgentId used server-side...');
+  // 7. Verify the reputation registry actually worked -- ReputationFeedbackFailed must
+  //    NOT have been emitted for this taskId. A silent catch with no event is exactly
+  //    what let the real mainnet misconfiguration (reputationRegistry pointed at the
+  //    wrong ERC-8004 registry) go unnoticed for the diamond's entire mainnet lifetime.
+  log('7/8', 'Verifying ReputationFeedbackFailed was not emitted...');
+  const failureLogs = await client.getLogs({
+    address: CONTRACT_ADDRESS,
+    event: reputationFeedbackFailedEvent,
+    args: { taskId: taskId as `0x${string}` },
+    fromBlock: blockBeforeAccept,
+    toBlock: 'latest',
+  });
+  if (failureLogs.length > 0) {
+    throw new Error(
+      `ReputationFeedbackFailed fired for this task -- the reputation registry rejected giveFeedback(): ${JSON.stringify(failureLogs)}`
+    );
+  }
+  ok('ReputationFeedbackFailed not emitted', true);
+
+  // 8. Requester rates — raterAgentId is derived server-side from task.requesterAgentId
+  log('8/8', 'Requester rating 90/100 (X402) — raterAgentId used server-side...');
   const { feedbackId } = (await x402Post(
     `/api/tasks/${taskId}/rate`,
     {

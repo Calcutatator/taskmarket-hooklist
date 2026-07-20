@@ -65,6 +65,7 @@ import {
 import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
+import { lowerAddressEq } from '../lib/agents';
 import {
   computeNetReward,
   computePendingActions,
@@ -286,7 +287,7 @@ export const tasksRouter = router({
       const requesterAgent = await ctx.db
         .select({ agentId: agents.agentId, publicKey: agents.publicKey })
         .from(agents)
-        .where(eq(agents.address, payer))
+        .where(lowerAddressEq(payer))
         .limit(1);
 
       const evaluatorAssignment: {
@@ -1361,7 +1362,7 @@ export const tasksRouter = router({
         ctx.db
           .select({ publicKey: agents.publicKey })
           .from(agents)
-          .where(eq(agents.address, t.requester))
+          .where(lowerAddressEq(t.requester))
           .limit(1),
       ]);
 

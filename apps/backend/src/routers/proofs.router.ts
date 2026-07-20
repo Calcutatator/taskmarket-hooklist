@@ -8,6 +8,7 @@ import { keccak256, toBytes } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitProof, contractSubmitWork } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
+import { lowerAddressEq } from '../lib/agents';
 
 export const proofsRouter = router({
   submit: publicProcedure
@@ -163,7 +164,7 @@ export const proofsRouter = router({
       return Promise.all(
         results.map(async (proof) => {
           const [agentResult, submissionResult] = await Promise.all([
-            ctx.db.select().from(agents).where(eq(agents.address, proof.workerAddress)).limit(1),
+            ctx.db.select().from(agents).where(lowerAddressEq(proof.workerAddress)).limit(1),
             ctx.db
               .select({ id: submissions.id })
               .from(submissions)
