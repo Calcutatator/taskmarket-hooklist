@@ -148,7 +148,7 @@ describe('market router', () => {
       expect(countSql.toLowerCase()).toContain('count(distinct');
     });
 
-    it('excludes unlisted tasks from the openTasks count (ADR-0011)', async () => {
+    it('excludes unlisted tasks from the openTasks count (ADR-0014)', async () => {
       const ctx = createMockCtx();
 
       let openTasksWhereSql: SQL | undefined;

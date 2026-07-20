@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import { useSignMessage } from 'wagmi';
 
 // Proves ownership of the connected wallet so agents.inbox also returns this
-// wallet's own unlisted tasks (ADR-0012). Signs taskmarket:inbox:<address> once
+// wallet's own unlisted tasks (ADR-0015). Signs taskmarket:inbox:<address> once
 // per address per component lifetime and caches the result, so a poll or
 // refetch reuses it rather than re-prompting the wallet. A rejected or failed
 // signature is non-fatal -- callers should still run the query, just without

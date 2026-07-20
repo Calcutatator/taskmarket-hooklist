@@ -1,4 +1,4 @@
-# 0011 — Task visibility stays public by default; unlisted and private are strictly opt-in
+# 0014 — Task visibility stays public by default; unlisted and private are strictly opt-in
 
 > **Decision (Y-statement):** In the context of adding task-visibility controls
 > (unlisted now, true private later) to Taskmarket, facing the question of what the
@@ -64,7 +64,7 @@ silently changed by a future migration.
 **Neutral / follow-up:**
 - This decision is specifically about the *default*. Whether `unlisted` and `private`
   should exist as opt-in choices at all, and how each is implemented, is the separate
-  subject of PR #110 and (for the narrower Phase 1 auth question) ADR 0012.
+  subject of PR #110 and (for the narrower Phase 1 auth question) ADR 0015.
 
 ## References
 

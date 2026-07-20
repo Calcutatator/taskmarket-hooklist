@@ -225,7 +225,7 @@ const tasks: TaskDetailResponse[] = [
     tags: ['bounty', 'open'],
   }),
   task({
-    description: 'Bounty - unlisted task, reachable by direct link only (ADR-0011).',
+    description: 'Bounty - unlisted task, reachable by direct link only (ADR-0014).',
     id: 'mock-bounty-unlisted',
     mode: 'bounty',
     pendingActions: [

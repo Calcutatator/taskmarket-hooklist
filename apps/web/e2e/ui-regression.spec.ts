@@ -176,7 +176,7 @@ test('hides the live status banner on a terminal task', async ({ page }) => {
   await expect(page.getByRole('status', { name: /Task status/i })).toHaveCount(0);
 });
 
-test('shows the Unlisted badge and stays reachable by direct link (ADR-0011)', async ({ page }) => {
+test('shows the Unlisted badge and stays reachable by direct link (ADR-0014)', async ({ page }) => {
   await page.goto('/tasks/mock-bounty-unlisted');
 
   await expect(page.getByRole('heading', { name: /Bounty - unlisted task/i })).toBeVisible();

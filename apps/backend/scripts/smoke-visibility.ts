@@ -1,5 +1,5 @@
 /**
- * Task visibility smoke test (ADR-0011, ADR-0012): verifies an 'unlisted'
+ * Task visibility smoke test (ADR-0014, ADR-0015): verifies an 'unlisted'
  * task is hidden from Taskmarket's own discovery surfaces while staying
  * reachable by direct link, and that only the owner -- proven via the
  * agents.inbox self-auth signature -- can see it in their own inbox.
@@ -104,7 +104,7 @@ async function main() {
     inboxNoAuth.asRequester.some((t) => t.id === publicId)
   );
 
-  // 5. Requester's own inbox, with a valid self-auth signature (ADR-0012).
+  // 5. Requester's own inbox, with a valid self-auth signature (ADR-0015).
   log('5/6', 'Checking inbox with a valid taskmarket:inbox self-auth signature...');
   const validSig = await requester.signMessage({
     message: `taskmarket:inbox:${requester.address}`,

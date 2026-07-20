@@ -6,7 +6,7 @@ export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auctio
 
 // 'private' is deliberately not a value here yet -- it would behave identically to
 // 'unlisted' with no real access control until read-authentication exists across the
-// read surface (ADR-0011, ADR-0012). Add it only once that enforcement is real.
+// read surface (ADR-0014, ADR-0015). Add it only once that enforcement is real.
 export const TaskVisibility = z.enum(['unlisted', 'public']);
 
 export const TaskStatus = z.enum([
@@ -312,7 +312,7 @@ export const TaskListResponseSchema = z.object({
 export const TaskInboxInputSchema = z.object({
   address: z.string(),
   // Optional proof that the caller owns `address`: a signature over
-  // `taskmarket:inbox:<address>` (see ADR-0012). When present and valid, the
+  // `taskmarket:inbox:<address>` (see ADR-0015). When present and valid, the
   // response additionally includes that address's own unlisted tasks; otherwise
   // behavior is unchanged (public tasks only, same as today, for any address).
   signature: z.string().optional(),

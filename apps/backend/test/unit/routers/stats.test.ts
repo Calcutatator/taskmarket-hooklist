@@ -160,7 +160,7 @@ describe('stats router', () => {
       expect(norm).toContain("date_trunc('week'");
     });
 
-    it('excludes unlisted tasks from tasksCreated and rewardVolume (ADR-0011)', async () => {
+    it('excludes unlisted tasks from tasksCreated and rewardVolume (ADR-0014)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
       const { sql: q } = renderSql(executeCalls[0]);
@@ -322,7 +322,7 @@ describe('stats router', () => {
       expect(norm).toContain('group by mode');
     });
 
-    it('excludes unlisted tasks from the status/mode counts (ADR-0011)', async () => {
+    it('excludes unlisted tasks from the status/mode counts (ADR-0014)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).breakdowns({});
       const { sql: q } = renderSql(executeCalls[0]);
@@ -439,7 +439,7 @@ describe('stats router', () => {
       expect(norm).toContain('80');
     });
 
-    it('excludes unlisted tasks from every activity source (ADR-0011)', async () => {
+    it('excludes unlisted tasks from every activity source (ADR-0014)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).activityFeed({ limit: 20 });
       const { sql: q } = renderSql(executeCalls[0]);

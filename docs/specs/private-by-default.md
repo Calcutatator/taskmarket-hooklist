@@ -285,7 +285,7 @@ closed, not a binary):
 | `never` | hidden | stays hidden indefinitely (requester + submitting worker only) |
 
 Defaulting to `public` matches today's exact behavior and this RFC's established
-opt-in-only philosophy (the same reasoning ADR 0011 already settled for task
+opt-in-only philosophy (the same reasoning ADR 0014 already settled for task
 visibility) -- a requester gets no submission protection unless they explicitly choose
 one of the other three modes at creation time.
 
@@ -550,7 +550,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 - The `visibility` column defaults to `'public'`, and the `submissionVisibilityMode` column
   defaults to `'public'` too -- both match every existing task's already-established
   behavior exactly, so neither needs a separate backfill statement. This is a direct
-  consequence of keeping both fields opt-in-only (ADR 0011's reasoning, extended to
+  consequence of keeping both fields opt-in-only (ADR 0014's reasoning, extended to
   submission visibility mode): a plain `DEFAULT 'public'` on the `ALTER TABLE ADD COLUMN` is
   safe precisely because `'public'` is what every row already behaves like.
 - Schema is additive and append-only -- safe.

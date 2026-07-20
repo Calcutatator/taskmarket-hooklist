@@ -129,7 +129,7 @@ describe('stats router activityHeatmap', () => {
       expect(norm).toContain('yyyy-mm-dd');
     });
 
-    it('excludes unlisted tasks from the mode heatmap (ADR-0011)', async () => {
+    it('excludes unlisted tasks from the mode heatmap (ADR-0014)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).activityHeatmap({ range: '30d', dimension: 'mode' });
       const { sql: q } = renderSql(executeCalls[0]);

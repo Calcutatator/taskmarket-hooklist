@@ -96,7 +96,7 @@ describe('official Task Drop announcements', () => {
     expect(sendOfficialTaskDropAnnouncement).toHaveBeenCalledTimes(2);
   });
 
-  it('excludes unlisted tasks from the announcement snippet query (ADR-0011)', async () => {
+  it('excludes unlisted tasks from the announcement snippet query (ADR-0014)', async () => {
     const ctx = createMockCtx();
     let taskWhereSql: SQL | undefined;
     const taskChain = makeChain([]);

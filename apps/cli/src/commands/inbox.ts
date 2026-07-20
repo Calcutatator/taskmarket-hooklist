@@ -43,7 +43,7 @@ export const inboxCommand = new Command('inbox')
     const address = keystore.walletAddress;
 
     // Proves ownership of `address` so the response also includes this
-    // wallet's own unlisted tasks (ADR-0012). A signing failure is non-fatal --
+    // wallet's own unlisted tasks (ADR-0015). A signing failure is non-fatal --
     // the inbox still loads, just without unlisted tasks, same as before.
     let signature: string | undefined;
     try {

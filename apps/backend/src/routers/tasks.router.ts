@@ -367,7 +367,7 @@ export const tasksRouter = router({
         await ctx.db.update(tasks).set(evaluatorAssignment).where(eq(tasks.id, taskId));
       }
 
-      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0011) --
+      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014) --
       // that includes outbound notifications, not just browse/search, since actively
       // emailing/pinging worker agents about an "unlisted" task would defeat the point.
       if ((input.visibility ?? 'public') !== 'unlisted') {
@@ -419,7 +419,7 @@ export const tasksRouter = router({
       const now = new Date();
 
       const conditions = [];
-      // Discovery listings never surface unlisted tasks (ADR-0011). Fetching a
+      // Discovery listings never surface unlisted tasks (ADR-0014). Fetching a
       // specific task by ID is unaffected -- this only gates the browse/search path.
       conditions.push(sql`${tasks.visibility} != 'unlisted'`);
       if (input.status && input.status !== 'ALL') {

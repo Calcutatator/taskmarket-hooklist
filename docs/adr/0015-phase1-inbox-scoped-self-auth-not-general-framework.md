@@ -1,4 +1,4 @@
-# 0012 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework
+# 0015 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework
 
 > **Decision (Y-statement):** In the context of Phase 1 (opt-in unlisted tasks) needing
 > some way for a wallet's own owner to see their own unlisted tasks via `agents.inbox`,
@@ -7,8 +7,8 @@
 > self-authentication check on `agents.inbox` alone, reusing the existing
 > `wallet.setWithdrawalAddress` precedent, to achieve the minimum real fix without
 > pulling forward any of Phase 2's broader read-auth investment, accepting that this
-> scoped mechanism will likely need replacing or generalizing if Phase 2 (true private
-> tasks) is ever built.
+> scoped mechanism will likely need replacing or generalizing once Phase 2 (or Phase 3,
+> true private tasks) is built.
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
@@ -35,16 +35,17 @@ a specific action: `wallet.setWithdrawalAddress` verifies a signed canonical mes
 (a reusable `ctx.caller`, `optionalAuthProcedure`/`protectedProcedure` wired into
 `apps/backend/src/context.ts` and `trpc.ts`, per PR #110's Layer 2) is a separate,
 much larger piece of work — the same document estimates it at 4-6 days on its own, the
-single largest line item in Phase 2's 1.5-3 week total — and only pays for itself if
-Phase 2 (true private tasks, requiring `canView` authorization across ~8 read
-endpoints) is actually decided and built.
+single largest line item across Phase 2 and Phase 3's combined 1.5-3 week total — and
+only pays for itself once Phase 2 (submission visibility mode) is actually decided and
+built, or (failing that) if Phase 3 (true private tasks, requiring `canView`
+authorization across ~8 read endpoints) is decided and built instead.
 
 ## Considered options
 
 | Option | Pros | Cons |
 |---|---|---|
-| Narrow, scoped self-auth check on `agents.inbox` only (chosen) | Small and bounded (part of Phase 1's ~1-1.5 day Layer 3 budget, not Phase 2's 4-6 day Layer 2); reuses proven precedent (`wallet.setWithdrawalAddress`'s signed-message pattern) rather than inventing a new mechanism; does not commit the codebase to general auth infrastructure before Phase 2 is actually decided | One-off, endpoint-specific mechanism; does not solve "who is asking" for any other endpoint; will likely need replacing or generalizing if Phase 2 ever ships |
-| Build the general `ctx.caller`/`optionalAuthProcedure` framework now, as part of Phase 1 (rejected) | Solves the underlying problem once, properly, instead of twice; avoids potentially throwaway scoped work if Phase 2 later ships | Pulls 4-6 days of Phase-2-scale infrastructure work into what is supposed to be the cheap first ship, speculatively, before Phase 2 is even decided; risks building general auth infrastructure for a feature (true private tasks) that may never ship, per the RFC's own open product question about whether Phase 2 is worth its cost |
+| Narrow, scoped self-auth check on `agents.inbox` only (chosen) | Small and bounded (part of Phase 1's ~1-1.5 day Layer 3 budget, not Phase 2's 4-6 day Layer 2); reuses proven precedent (`wallet.setWithdrawalAddress`'s signed-message pattern) rather than inventing a new mechanism; does not commit the codebase to general auth infrastructure before Phase 2 is actually decided | One-off, endpoint-specific mechanism; does not solve "who is asking" for any other endpoint; will likely need replacing or generalizing once Phase 2 (or Phase 3) ships |
+| Build the general `ctx.caller`/`optionalAuthProcedure` framework now, as part of Phase 1 (rejected) | Solves the underlying problem once, properly, instead of twice; avoids potentially throwaway scoped work if Phase 2 or Phase 3 later ships | Pulls 4-6 days of Phase-2-scale infrastructure work into what is supposed to be the cheap first ship, speculatively, before Phase 2 is even decided; risks building general auth infrastructure for a feature (true private tasks) that may never ship, per the RFC's own open product question about whether Phase 3 is worth its cost |
 | Client-side local tracking of a wallet's own task IDs, no backend auth at all (rejected) | Zero backend change; already fully covers the CLI/agent case | Does not survive a cleared browser or a new device for the web dashboard case, which was the actual gap being closed; explicitly considered and rejected in favor of a server-side fix that survives device changes |
 
 ## Decision
@@ -61,23 +62,24 @@ exclusively Phase 2 scope, to be built only if and when Phase 2 is separately de
 ## Consequences
 
 **Positive:**
-- Phase 1 stays meaningfully cheaper than Phase 2 (~5.5-6.5 days vs. ~1.5-3 weeks)
-  rather than absorbing Phase 2's largest cost speculatively.
-- No premature investment in general read-auth infrastructure that Phase 2 might end up
-  needing built differently once its own scope (worker-invite discovery, `canView`
-  semantics for multi-worker `task_awards` rows, etc.) is actually worked out.
+- Phase 1 stays meaningfully cheaper than Phase 2 and Phase 3 combined (~5.5-6.5 days
+  vs. ~1.5-3 weeks total) rather than absorbing that cost speculatively.
+- No premature investment in general read-auth infrastructure that Phase 2 or Phase 3
+  might end up needing built differently once each phase's own scope (the submission
+  role-check truth table in Phase 2; worker-invite discovery and `canView` semantics for
+  multi-worker `task_awards` rows in Phase 3) is actually worked out.
 - Reuses an existing, proven verification pattern instead of inventing a new one.
 
 **Negative / trade-offs:**
-- If Phase 2 ships, this scoped check likely gets superseded by the general framework
-  rather than extended — accepted as a reasonable amount of throwaway work in exchange
-  for not over-building now.
+- If Phase 2 (or Phase 3) ships, this scoped check likely gets superseded by the general
+  framework rather than extended — accepted as a reasonable amount of throwaway work in
+  exchange for not over-building now.
 - `agents.inbox` becomes the one read endpoint in the whole backend with any notion of
   caller identity, which is an inconsistency future readers should not mistake for the
   start of a broader pattern without reading this ADR.
 
 **Neutral / follow-up:**
-- This ADR does not decide whether Phase 2 (true private tasks) is ever built — that
+- This ADR does not decide whether Phase 3 (true private tasks) is ever built — that
   remains an open product question per PR #110's "Risks and open questions" section.
 
 ## References
@@ -85,4 +87,4 @@ exclusively Phase 2 scope, to be built only if and when Phase 2 is separately de
 - PR #110 — `docs/specs/private-by-default.md`, "What `agents.inbox` actually needs"
   section
 - Issue #183 — Phase 1 implementation tracker
-- ADR 0011 — the related decision that visibility stays public-by-default/opt-in
+- ADR 0014 — the related decision that visibility stays public-by-default/opt-in

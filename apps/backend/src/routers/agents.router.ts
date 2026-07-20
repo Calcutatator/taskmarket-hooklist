@@ -125,7 +125,7 @@ export const agentsRouter = router({
     .query(async ({ input, ctx }) => {
       const { address, signature } = input;
 
-      // Proof that the caller owns `address` (ADR-0012): a signature over a
+      // Proof that the caller owns `address` (ADR-0015): a signature over a
       // canonical message, verified the same way as wallet.setWithdrawalAddress.
       // No nonce -- this is a read with no state-changing side effect to replay.
       let selfAuthed = false;

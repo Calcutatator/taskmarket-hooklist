@@ -60,7 +60,7 @@ export const tasks = pgTable(
     status: text('status').notNull(),
     tags: text('tags').array().notNull(),
     mode: text('mode').notNull().default('bounty'),
-    // 'unlisted' | 'public' only for now -- see ADR-0011/0012 for why 'private' is
+    // 'unlisted' | 'public' only for now -- see ADR-0014/0015 for why 'private' is
     // deliberately not a value here yet.
     visibility: text('visibility').notNull().default('public'),
     stakeRequired: integer('stake_required').notNull().default(0),

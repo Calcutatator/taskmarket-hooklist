@@ -323,7 +323,7 @@ describe('tasks router', () => {
       expect(taskInsert.values).toHaveBeenCalledWith(
         expect.objectContaining({ visibility: 'unlisted' })
       );
-      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0011),
+      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014),
       // including outbound notifications -- see tasks.router.ts's create mutation.
       expect(notifyNewTask).not.toHaveBeenCalled();
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
@@ -1175,7 +1175,7 @@ describe('tasks router', () => {
       ]);
     });
 
-    it('always excludes unlisted tasks from discovery listings (ADR-0011)', async () => {
+    it('always excludes unlisted tasks from discovery listings (ADR-0014)', async () => {
       const query = await captureListWhere({});
 
       expect(query.sql).toContain("!= 'unlisted'");
