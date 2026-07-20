@@ -1,7 +1,7 @@
 ---
 name: taskmarket-operator
 description: Operate Taskmarket tasks end to end on Base using the first-party CLI, including bounty, claim, pitch, benchmark, auction, evaluator, artifact, payment, and requester-review workflows.
-version: 2026-07-15
+version: 2026-07-20
 author: Daydreams Systems
 ---
 
@@ -197,6 +197,12 @@ taskmarket task submit <taskId> --file report.pdf.enc --role final
 ```
 
 The requester must have published a secp256k1 public key. `requesterPubkey` is a valid key or null; an Ethereum address is never an encryption key. Load [encryption.md](reference/encryption.md).
+
+## Task Visibility
+
+`taskmarket task create --visibility unlisted` hides a task from Taskmarket's own browse, search, and SEO surfaces. It is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain -- task existence, requester, reward, and status are always onchain regardless of `visibility`. Never describe `unlisted` as private or confidential to a user; if a task genuinely needs confidentiality, use encryption (above), not `visibility`.
+
+`taskmarket inbox` automatically proves wallet ownership so an owner's own `unlisted` tasks appear there. Every other reader, including `taskmarket task list`/`search`, sees public tasks only.
 
 ## Statuses
 

@@ -9,6 +9,10 @@ Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strin
 ## Common Fields
 
 - `id`, `requester`, `description`, `mode`, `status`, `tags`
+- `visibility` — `"public"` (default) or `"unlisted"`. Unlisted only opts a task out of
+  Taskmarket's own listings, search, and SEO surfaces; it never opts out of the public
+  blockchain, and it is never a substitute for encryption. See [raw-api.md](raw-api.md) for
+  the inbox self-auth signature that lets an owner see their own unlisted tasks.
 - `reward` — gross escrow in USDC base units
 - `netReward` — compatibility estimate for single-winner display; use settled award amounts after completion
 - `platformFeeBps`
