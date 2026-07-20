@@ -173,22 +173,22 @@
     {
       "idx": 24,
       "version": "7",
-      "when": 1784057224001,
-      "tag": "0024_add_task_drop_subscriptions",
+      "when": 1783690068000,
+      "tag": "0024_add_dreams_withdraw_nonces",
       "breakpoints": true
     },
     {
       "idx": 25,
       "version": "7",
-      "when": 1784057224002,
-      "tag": "0025_task_drops_lean_v1",
+      "when": 1784057224001,
+      "tag": "0024_add_task_drop_subscriptions",
       "breakpoints": true
     },
     {
       "idx": 26,
       "version": "7",
-      "when": 1783690068000,
-      "tag": "0024_add_dreams_withdraw_nonces",
+      "when": 1784057224002,
+      "tag": "0025_task_drops_lean_v1",
       "breakpoints": true
     },
     {
@@ -217,6 +217,13 @@
       "version": "7",
       "when": 1784331127000,
       "tag": "0029_add_legal_acceptance",
+      "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784562943000,
+      "tag": "0030_add_task_visibility",
       "breakpoints": true
     }
   ]

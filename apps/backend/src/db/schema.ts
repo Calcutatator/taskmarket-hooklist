@@ -60,6 +60,9 @@ export const tasks = pgTable(
     status: text('status').notNull(),
     tags: text('tags').array().notNull(),
     mode: text('mode').notNull().default('bounty'),
+    // 'unlisted' | 'public' only for now -- see ADR-0011/0012 for why 'private' is
+    // deliberately not a value here yet.
+    visibility: text('visibility').notNull().default('public'),
     stakeRequired: integer('stake_required').notNull().default(0),
     stakeBps: smallint('stake_bps').notNull().default(0),
     pitchDeadline: timestamp('pitch_deadline'),
@@ -98,6 +101,7 @@ export const tasks = pgTable(
     expiryIdx: index('idx_tasks_expiry').on(table.expiryTime),
     requesterIdx: index('idx_tasks_requester').on(table.requester),
     modeIdx: index('idx_tasks_mode').on(table.mode),
+    visibilityIdx: index('idx_tasks_visibility').on(table.visibility),
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
     createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
     taskDropIdx: index('idx_tasks_task_drop').on(table.taskDropId),

@@ -6,7 +6,7 @@
 --
 -- submit_tx_hash records the transaction that anchored the hash. Both columns
 -- are nullable to preserve pre-v2 rows (no anchor exists for those).
-ALTER TABLE "proposals" ADD COLUMN "pitch_hash" text;
-ALTER TABLE "proposals" ADD COLUMN "submit_tx_hash" text;
-ALTER TABLE "proofs" ADD COLUMN "proof_hash" text;
-ALTER TABLE "proofs" ADD COLUMN "submit_tx_hash" text;
+ALTER TABLE "proposals" ADD COLUMN IF NOT EXISTS "pitch_hash" text;
+ALTER TABLE "proposals" ADD COLUMN IF NOT EXISTS "submit_tx_hash" text;
+ALTER TABLE "proofs" ADD COLUMN IF NOT EXISTS "proof_hash" text;
+ALTER TABLE "proofs" ADD COLUMN IF NOT EXISTS "submit_tx_hash" text;

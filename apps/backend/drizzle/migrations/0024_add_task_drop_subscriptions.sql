@@ -1,4 +1,4 @@
-CREATE TABLE "task_drop_subscriptions" (
+CREATE TABLE IF NOT EXISTS "task_drop_subscriptions" (
   "id" text PRIMARY KEY,
   "email" text NOT NULL,
   "wallet_address" text,
@@ -10,11 +10,11 @@ CREATE TABLE "task_drop_subscriptions" (
   "unsubscribed_at" timestamp
 );
 
-CREATE UNIQUE INDEX "uidx_task_drop_subscriptions_email"
+CREATE UNIQUE INDEX IF NOT EXISTS "uidx_task_drop_subscriptions_email"
   ON "task_drop_subscriptions" (lower("email"));
 
-CREATE INDEX "idx_task_drop_subscriptions_wallet"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_subscriptions_wallet"
   ON "task_drop_subscriptions" ("wallet_address");
 
-CREATE INDEX "idx_task_drop_subscriptions_status"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_subscriptions_status"
   ON "task_drop_subscriptions" ("status");

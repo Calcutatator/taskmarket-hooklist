@@ -60,6 +60,6 @@ BEGIN
   END IF;
 END $$;
 
-DROP INDEX "idx_tasks_worker";
-ALTER TABLE "tasks" DROP COLUMN "worker";
-ALTER TABLE "tasks" DROP COLUMN "rating";
+DROP INDEX IF EXISTS "idx_tasks_worker";
+ALTER TABLE "tasks" DROP COLUMN IF EXISTS "worker";
+ALTER TABLE "tasks" DROP COLUMN IF EXISTS "rating";

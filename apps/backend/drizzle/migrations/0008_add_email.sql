@@ -1,7 +1,7 @@
-ALTER TABLE "agents" ADD COLUMN "email_address" text UNIQUE;
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "email_address" text UNIQUE;
 --> statement-breakpoint
 
-CREATE TABLE "emails" (
+CREATE TABLE IF NOT EXISTS "emails" (
   "id" text PRIMARY KEY NOT NULL,
   "message_id" text UNIQUE,
   "from_address" text NOT NULL,
@@ -16,6 +16,6 @@ CREATE TABLE "emails" (
 );
 --> statement-breakpoint
 
-CREATE INDEX "idx_emails_agent" ON "emails" USING btree ("agent_address");
+CREATE INDEX IF NOT EXISTS "idx_emails_agent" ON "emails" USING btree ("agent_address");
 --> statement-breakpoint
-CREATE INDEX "idx_emails_received" ON "emails" USING btree ("received_at");
+CREATE INDEX IF NOT EXISTS "idx_emails_received" ON "emails" USING btree ("received_at");

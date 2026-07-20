@@ -1,4 +1,4 @@
-CREATE TABLE "agents" (
+CREATE TABLE IF NOT EXISTS "agents" (
 	"address" text PRIMARY KEY NOT NULL,
 	"agent_id" text,
 	"completed_tasks" integer DEFAULT 0 NOT NULL,
@@ -8,7 +8,7 @@ CREATE TABLE "agents" (
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "claims" (
+CREATE TABLE IF NOT EXISTS "claims" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -18,7 +18,7 @@ CREATE TABLE "claims" (
 	"status" text DEFAULT 'active' NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "feedbacks" (
+CREATE TABLE IF NOT EXISTS "feedbacks" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -33,13 +33,13 @@ CREATE TABLE "feedbacks" (
 	"created_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "indexer_state" (
+CREATE TABLE IF NOT EXISTS "indexer_state" (
 	"id" text PRIMARY KEY DEFAULT 'main' NOT NULL,
 	"last_block" bigint DEFAULT 0 NOT NULL,
 	"updated_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "platform_fees" (
+CREATE TABLE IF NOT EXISTS "platform_fees" (
 	"id" serial PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"amount" numeric(78, 0) NOT NULL,
@@ -47,7 +47,7 @@ CREATE TABLE "platform_fees" (
 	"collected_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "proofs" (
+CREATE TABLE IF NOT EXISTS "proofs" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -59,7 +59,7 @@ CREATE TABLE "proofs" (
 	"submitted_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "proposals" (
+CREATE TABLE IF NOT EXISTS "proposals" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -70,7 +70,7 @@ CREATE TABLE "proposals" (
 	"submitted_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "submissions" (
+CREATE TABLE IF NOT EXISTS "submissions" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -79,7 +79,7 @@ CREATE TABLE "submissions" (
 	"submitted_at" timestamp DEFAULT now() NOT NULL
 );
 --> statement-breakpoint
-CREATE TABLE "tasks" (
+CREATE TABLE IF NOT EXISTS "tasks" (
 	"id" text PRIMARY KEY NOT NULL,
 	"requester" text NOT NULL,
 	"requester_pubkey" text NOT NULL,
@@ -105,29 +105,47 @@ CREATE TABLE "tasks" (
 	CONSTRAINT "tasks_escrow_tx_hash_unique" UNIQUE("escrow_tx_hash")
 );
 --> statement-breakpoint
-ALTER TABLE "claims" ADD CONSTRAINT "claims_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "feedbacks" ADD CONSTRAINT "feedbacks_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "platform_fees" ADD CONSTRAINT "platform_fees_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "proofs" ADD CONSTRAINT "proofs_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "proposals" ADD CONSTRAINT "proposals_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-ALTER TABLE "submissions" ADD CONSTRAINT "submissions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;--> statement-breakpoint
-CREATE INDEX "idx_agents_completed" ON "agents" USING btree ("completed_tasks");--> statement-breakpoint
-CREATE INDEX "idx_agents_agent_id" ON "agents" USING btree ("agent_id");--> statement-breakpoint
-CREATE INDEX "idx_claims_task" ON "claims" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_claims_worker" ON "claims" USING btree ("worker_address");--> statement-breakpoint
-CREATE INDEX "idx_feedbacks_task" ON "feedbacks" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_feedbacks_worker" ON "feedbacks" USING btree ("worker_address");--> statement-breakpoint
-CREATE INDEX "idx_platform_fees_task" ON "platform_fees" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_proofs_task" ON "proofs" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_proofs_worker" ON "proofs" USING btree ("worker_address");--> statement-breakpoint
-CREATE INDEX "idx_proposals_task" ON "proposals" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_proposals_worker" ON "proposals" USING btree ("worker_address");--> statement-breakpoint
-CREATE INDEX "idx_proposals_status" ON "proposals" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_submissions_task" ON "submissions" USING btree ("task_id");--> statement-breakpoint
-CREATE INDEX "idx_submissions_worker" ON "submissions" USING btree ("worker_address");--> statement-breakpoint
-CREATE INDEX "idx_tasks_status" ON "tasks" USING btree ("status");--> statement-breakpoint
-CREATE INDEX "idx_tasks_expiry" ON "tasks" USING btree ("expiry_time");--> statement-breakpoint
-CREATE INDEX "idx_tasks_requester" ON "tasks" USING btree ("requester");--> statement-breakpoint
-CREATE INDEX "idx_tasks_worker" ON "tasks" USING btree ("worker");--> statement-breakpoint
-CREATE INDEX "idx_tasks_mode" ON "tasks" USING btree ("mode");--> statement-breakpoint
-CREATE INDEX "idx_tasks_claimed_by" ON "tasks" USING btree ("claimed_by");
+DO $$ BEGIN
+  ALTER TABLE "claims" ADD CONSTRAINT "claims_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "feedbacks" ADD CONSTRAINT "feedbacks_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "platform_fees" ADD CONSTRAINT "platform_fees_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "proofs" ADD CONSTRAINT "proofs_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "proposals" ADD CONSTRAINT "proposals_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+DO $$ BEGIN
+  ALTER TABLE "submissions" ADD CONSTRAINT "submissions_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_agents_completed" ON "agents" USING btree ("completed_tasks");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_agents_agent_id" ON "agents" USING btree ("agent_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_claims_task" ON "claims" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_claims_worker" ON "claims" USING btree ("worker_address");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedbacks_task" ON "feedbacks" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_feedbacks_worker" ON "feedbacks" USING btree ("worker_address");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_platform_fees_task" ON "platform_fees" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_proofs_task" ON "proofs" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_proofs_worker" ON "proofs" USING btree ("worker_address");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_proposals_task" ON "proposals" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_proposals_worker" ON "proposals" USING btree ("worker_address");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_proposals_status" ON "proposals" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_submissions_task" ON "submissions" USING btree ("task_id");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_submissions_worker" ON "submissions" USING btree ("worker_address");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_status" ON "tasks" USING btree ("status");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_expiry" ON "tasks" USING btree ("expiry_time");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_requester" ON "tasks" USING btree ("requester");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_worker" ON "tasks" USING btree ("worker");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_mode" ON "tasks" USING btree ("mode");--> statement-breakpoint
+CREATE INDEX IF NOT EXISTS "idx_tasks_claimed_by" ON "tasks" USING btree ("claimed_by");

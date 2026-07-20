@@ -1,4 +1,4 @@
-CREATE TABLE "devices" (
+CREATE TABLE IF NOT EXISTS "devices" (
 	"id" text PRIMARY KEY NOT NULL,
 	"api_token_hash" text NOT NULL,
 	"wallet_address" text NOT NULL,
@@ -7,4 +7,4 @@ CREATE TABLE "devices" (
 	CONSTRAINT "devices_api_token_hash_unique" UNIQUE("api_token_hash")
 );
 --> statement-breakpoint
-CREATE INDEX "devices_wallet_idx" ON "devices" USING btree ("wallet_address");
+CREATE INDEX IF NOT EXISTS "devices_wallet_idx" ON "devices" USING btree ("wallet_address");

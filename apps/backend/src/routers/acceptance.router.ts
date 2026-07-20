@@ -7,7 +7,6 @@ import {
   contractAcceptSubmission,
   contractAcceptSubmissions,
   contractRateTask,
-  contractSubmitWork,
 } from '../services/contract';
 import { getServerConfig } from '../config/env';
 import { randomUUID } from 'crypto';
@@ -101,44 +100,14 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      // MIGRATION: submissions made before the submission-integrity upgrade (PR #135)
-      // were not recorded in taskSubmissionHashExists on-chain. Catch SubmissionNotFound,
-      // replay submitWork to register the hash from the DB, then retry once.
-      // TODO: remove this migration path by 2026-09-01 once all pre-upgrade
-      // bounty/benchmark tasks have reached a terminal state (accepted or expired).
-      try {
-        await contractAcceptSubmission(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          input.worker as `0x${string}`,
-          deliverable,
-          requesterOnChainId,
-          task.contractAddress
-        );
-      } catch (err) {
-        if (
-          (task.mode === 'bounty' || task.mode === 'benchmark') &&
-          err instanceof TRPCError &&
-          err.message.includes('SubmissionNotFound')
-        ) {
-          await contractSubmitWork(
-            input.taskId as `0x${string}`,
-            input.worker as `0x${string}`,
-            deliverable,
-            task.contractAddress
-          );
-          await contractAcceptSubmission(
-            input.taskId as `0x${string}`,
-            payer as `0x${string}`,
-            input.worker as `0x${string}`,
-            deliverable,
-            requesterOnChainId,
-            task.contractAddress
-          );
-        } else {
-          throw err;
-        }
-      }
+      await contractAcceptSubmission(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        input.worker as `0x${string}`,
+        deliverable,
+        requesterOnChainId,
+        task.contractAddress
+      );
 
       // Detect self-award: same address OR same ERC-8004 agentId (sybil case).
       const workerAgentRow = await ctx.db
@@ -253,69 +222,15 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      // MIGRATION: same pre-upgrade migration as single accept above — replay submitWork
-      // for each worker whose hash is missing from taskSubmissionHashExists on-chain.
-      // For workers with no pinned deliverable (zero hash), look up the latest from DB.
-      // TODO: remove this migration path by 2026-09-01.
-      try {
-        await contractAcceptSubmissions(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          workers,
-          shares,
-          deliverables,
-          requesterAgentId,
-          task.contractAddress
-        );
-      } catch (err) {
-        if (
-          (task.mode === 'bounty' || task.mode === 'benchmark') &&
-          err instanceof TRPCError &&
-          err.message.includes('SubmissionNotFound')
-        ) {
-          const ZERO_HASH = `0x${'00'.repeat(32)}` as `0x${string}`;
-          const replayDeliverables = await Promise.all(
-            workers.map(async (worker, i) => {
-              let hash = deliverables[i];
-              if (!hash || hash === ZERO_HASH) {
-                const row = await ctx.db
-                  .select({ deliverableHash: submissions.deliverableHash })
-                  .from(submissions)
-                  .where(
-                    and(
-                      eq(submissions.taskId, input.taskId),
-                      sql`lower(${submissions.workerAddress}) = lower(${worker})`,
-                      isNull(submissions.rejectedAt)
-                    )
-                  )
-                  .orderBy(sql`${submissions.submittedAt} DESC`)
-                  .limit(1);
-                hash = (row[0]?.deliverableHash ?? ZERO_HASH) as `0x${string}`;
-              }
-              if (hash && hash !== ZERO_HASH) {
-                await contractSubmitWork(
-                  input.taskId as `0x${string}`,
-                  worker,
-                  hash,
-                  task.contractAddress
-                );
-              }
-              return hash;
-            })
-          );
-          await contractAcceptSubmissions(
-            input.taskId as `0x${string}`,
-            payer as `0x${string}`,
-            workers,
-            shares,
-            replayDeliverables,
-            requesterAgentId,
-            task.contractAddress
-          );
-        } else {
-          throw err;
-        }
-      }
+      await contractAcceptSubmissions(
+        input.taskId as `0x${string}`,
+        payer as `0x${string}`,
+        workers,
+        shares,
+        deliverables,
+        requesterAgentId,
+        task.contractAddress
+      );
 
       return { success: true };
     }),

@@ -322,6 +322,7 @@ export const tasksRouter = router({
           status: 'open',
           tags: input.tags,
           mode: input.mode ?? 'bounty',
+          visibility: input.visibility ?? 'public',
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
