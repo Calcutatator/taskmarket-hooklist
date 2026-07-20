@@ -20,14 +20,16 @@ proposes is an **opt-in**, per-task visibility choice: `unlisted` now (cheap), a
 later, true `private` (expensive) -- never a change to the default.
 
 Short answer: **the data-model and UI work for the opt-in `unlisted` value is small
-(2-3 days); the real cost, if `private` is ever pursued, is a foundational piece the
-codebase does not have today -- read-time authentication.** Every task read endpoint is
-currently an unauthenticated `publicProcedure`. To let an opted-in-private task actually
-restrict who can read it, you must first be able to answer "who is asking?" on a GET
-request, and right now the backend cannot. Building that, retrofitting it across ~8 read
-endpoints, and reckoning with the fact that core task data is already public on-chain
-forever, is what turns a one-column change into a **1.5-3 week** effort depending on
-scope -- and it is why `private` is deferred rather than shipped alongside `unlisted`.
+(~5.5-6.5 days, including one narrow self-authentication check -- see below); the much
+bigger cost, if `private` is ever pursued, is a foundational piece the codebase does not
+have today -- general read-time authentication.** Every task read endpoint is currently
+an unauthenticated `publicProcedure`. To let an opted-in-private task actually restrict
+who can read it, you must be able to answer "who is asking?" on every relevant GET
+request, and right now the backend can only answer that narrowly, for one endpoint, not
+generally. Building the general version, retrofitting it across ~8 read endpoints, and
+reckoning with the fact that core task data is already public on-chain forever, is what
+turns a one-column change into a **1.5-3 week** effort depending on scope -- and it is
+why `private` is deferred rather than shipped alongside `unlisted`.
 
 This document scopes the work, names the blocker, and offers two delivery phases. In
 practice the primary driver is **submission/result privacy**, not task descriptions --
@@ -38,8 +40,8 @@ reveal model. Client-side (platform-blind) encryption is an explicit non-goal fo
 
 | Scope | What you get | Estimate |
 |---|---|---|
-| **Phase 1 -- Unlisted** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. No read-auth required. | **2-3 days** |
-| **Phase 2 -- True private (recommended target)** | Tasks visible only to requester + invited/assigned workers. Requires read authentication. | **1.5-3 weeks** |
+| **Phase 1 -- Unlisted** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. One narrow self-auth check (see `agents.inbox` below); no general read-auth. | **~5.5-6.5 days** |
+| **Phase 2 -- True private (recommended target)** | Tasks visible only to requester + invited/assigned workers. Requires general read authentication. | **1.5-3 weeks** |
 
 The honest recommendation: ship **Phase 1 first** (it removes the loudest privacy
 leak -- the public firehose, for anyone who opts in to `unlisted` -- cheaply), then
@@ -143,9 +145,11 @@ reusable `optionalAuth`/`protectedProcedure` that populates `ctx.caller` on read
 | `/tasks` (bot prerender) | `middleware/ogTags.ts` `buildTasksBody` ~L155 | middleware | description+reward of all tasks in list |
 | `/tasks/:taskId` (bot prerender) | `middleware/ogTags.ts` ~L289 | middleware | description in OG tags |
 
-**`agents.inbox` is not a bug on its own**, and does not need caller authentication --
-see the note right after the worker-identity correction below for why, and "What
-`agents.inbox` actually needs" for the (small) change it does need as part of Phase 1.
+**`agents.inbox` is not a bug on its own** for third-party lookups -- see the note right
+after the worker-identity correction below for why -- but it does need one narrow,
+scoped self-authentication check as part of Phase 1, so an address's own owner can see
+their own `unlisted` tasks. See "What `agents.inbox` actually needs" below; this is
+smaller than it sounds and does not require Phase 2's general read-auth framework.
 
 ### On worker identity: `tasks.worker` no longer exists
 
@@ -179,18 +183,34 @@ relying on it (a requester checking a worker's track record before selecting the
 tool building agent reputation lookups), which is a real product decision, not a bug fix
 -- out of scope for this proposal.
 
-The only thing actually justified: once `unlisted` visibility exists, `agents.inbox`
-should exclude `unlisted` tasks from its results, unconditionally, the same as every
-other public listing endpoint. This needs no caller authentication -- `agents.inbox`
-has no way to know who is calling today, only which address was asked about, so it
-cannot distinguish "the owner asking about themselves" from anyone else asking about
-them. Without read-auth (Phase 2), there is no way to special-case the owner here, so
-the honest Phase 1 behavior is that `agents.inbox` shows only public tasks for any
-address, full stop -- an owner who wants to see their own unlisted tasks does so by
-already knowing the task ID (they created it) and fetching it directly, or via
-whatever already-authenticated view the web dashboard uses, not through this public,
-unauthenticated endpoint. This ships as one more line item in Phase 1's Layer 3
-retrofit, not a separate PR.
+By default, once `unlisted` visibility exists, `agents.inbox` should exclude `unlisted`
+tasks from its results -- the same as every other public listing endpoint. But
+`agents.inbox` has no way to know who is calling today, only which address was asked
+about, so without something more it cannot distinguish "the owner asking about
+themselves" from anyone else asking about them -- which would leave an address's own
+owner unable to find their own unlisted tasks anywhere except a saved direct link. That
+is a real gap for the web dashboard's "my tasks" view specifically (a CLI/agent already
+has the task ID the moment it creates, claims, bids, pitches on, or submits to a task,
+so it does not depend on `inbox` to rediscover its own tasks -- but the web dashboard
+does).
+
+The fix is a **narrow, scoped self-authentication check on this one endpoint**, reusing
+the precedent already established elsewhere rather than building anything new:
+`wallet.setWithdrawalAddress`'s signed-message pattern (`recoverMessageAddress` over a
+canonical string) is the better fit here specifically, since it works for any connected
+wallet on demand and does not require the caller to have registered a device/API token
+first the way `bids.myBids`'s `x-taskmarket-api-token` header does. Concretely:
+`agents.inbox` accepts an optional signature over a canonical
+`taskmarket:inbox:<address>:<nonce>`-style message; if present and it recovers to the
+`address` being queried, include that address's own `unlisted` tasks in the response;
+if absent or invalid, behave exactly as today (public tasks only, for any address, no
+error). This is a small, self-contained verification function used inside one
+procedure -- not the general `ctx.caller` context-level framework Phase 2 needs wired
+into every read endpoint, and not a reason to pull any of Phase 2's other scope
+(`canView` retrofit across `listByTask` endpoints, submission reveal, a real `private`
+visibility value) forward. It ships as part of Phase 1's Layer 3 retrofit, not a
+separate PR, and nudges Phase 1's estimate up modestly (see the updated effort table
+below) rather than merging the two phases.
 
 ## Submission visibility and reveal (the primary driver)
 
@@ -320,13 +340,17 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 - Decide token issuance/storage. Agents already have device/API-token concepts (email +
   xmtp routers); extend that rather than invent a new one.
 
-### Layer 3 -- Authorization helper + endpoint retrofit (~3-4 days for Phase 2; ~0.5 day for Phase 1)
+### Layer 3 -- Authorization helper + endpoint retrofit (~3-4 days for Phase 2; ~1-1.5 days for Phase 1)
 
-- Phase 1 only needs to exclude `'unlisted'` rows from `tasks.list`, `market` search,
-  stats/leaderboards, task-drop broadcasts, `agents.inbox` (see "What `agents.inbox`
-  actually needs" above -- a plain filter, no auth), and the two `ogTags.ts` prerender
-  branches. Direct `tasks.get(taskId)` stays open to everyone -- that is what makes
-  Phase 1 not need read-auth.
+- Phase 1 needs to exclude `'unlisted'` rows from `tasks.list`, `market` search,
+  stats/leaderboards, task-drop broadcasts, and the two `ogTags.ts` prerender branches --
+  a plain filter, no auth, on all of those. Direct `tasks.get(taskId)` stays open to
+  everyone.
+- Phase 1 additionally needs the narrow signed-message self-authentication check on
+  `agents.inbox` described in "What `agents.inbox` actually needs" above, so an
+  address's own owner can see their own `unlisted` tasks there. This is the one place
+  in Phase 1 that touches authentication -- a single scoped check, not the general
+  `ctx.caller` framework below, which stays Phase 2-only.
 - Phase 2 additionally needs `canView(task, caller?)`: `true` if
   `task.visibility === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
@@ -356,16 +380,22 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 - This is a new CLI capability and needs a changeset per this repo's rules (only
   `apps/cli` needs one): single file, `minor` bump.
 
-### Layer 6 -- Web app (~1-1.5 days for Phase 1)
+### Layer 6 -- Web app (~1.5-2 days for Phase 1)
 
 - `apps/web/components/market/wizard/`: add a visibility toggle to the create flow.
 - `apps/web/app/(public)/tasks/[taskId]/page.tsx` and dashboard views: badge showing
   unlisted status.
-- Phase 1 needs no change to `apps/web/lib/api/server.ts`'s fetch helpers -- reads stay
-  unauthenticated, only the listing/search results are filtered server-side. Phase 2
-  would additionally require the web app to gain a notion of a logged-in reader for
-  gated fetches, which it largely lacks today; budget that separately if Phase 2 is
-  pursued.
+- The dashboard's "my tasks" view needs to request the connected wallet's signature
+  over the `agents.inbox` self-auth message (see "What `agents.inbox` actually needs")
+  and attach it when fetching the current user's own inbox, so their own `unlisted`
+  tasks appear there. This reuses the same "prompt the connected wallet to sign a
+  canonical message" pattern `wallet.setWithdrawalAddress` already uses in this app --
+  not new client-side signing infrastructure, just a new call site for it. Every other
+  read (`list`, `search`, a third party's `inbox`) stays exactly as unauthenticated as
+  it is today.
+- Phase 2 would additionally require the web app to gain a notion of a logged-in reader
+  for *every* gated fetch, which it largely lacks today; budget that separately if
+  Phase 2 is pursued -- this Phase 1 item only covers the one `inbox` call site.
 
 ### Layer 7 -- Tests (~1 day for Phase 1; ~2-3 days for Phase 2)
 
@@ -386,18 +416,26 @@ No contract change. On-chain data stays public (see constraint above). We explic
 | Layer | Phase 1 (unlisted) | Phase 2 (true private) |
 |---|---|---|
 | 1. Data model | 0.5d | 0.5d |
-| 2. Read auth | -- (not needed) | 4-6d |
-| 3. Authz + retrofit | 0.5d (list/search/SEO only) | 3-4d |
+| 2. General read-auth framework | -- (not needed) | 4-6d |
+| 3. Authz + retrofit (incl. scoped `agents.inbox` self-auth for Phase 1) | 1-1.5d | 3-4d |
 | 4. SEO/crawler | 0.5d | 0.5d |
 | 5. CLI | 1d | 1d |
-| 6. Web | 1-1.5d | 1.5-2d |
+| 6. Web (incl. inbox self-auth call site for Phase 1) | 1.5-2d | 1.5-2d |
 | 7. Tests | 1d | 2-3d |
-| **Total** | **~2-3 days** | **~1.5-3 weeks** |
+| **Total** | **~5.5-6.5 days** | **~1.5-3 weeks** |
 
-Phase 1 needs no read-auth because "unlisted" only requires *omitting* rows from
-list/search/SEO/inbox -- direct `get(taskId)` stays open, so no caller identity is
-needed anywhere in this phase. That is why it is an order of magnitude cheaper, and why
-it is the natural first ship.
+Phase 1 does not need the *general* read-auth framework (Layer 2) -- `unlisted` mostly
+requires *omitting* rows from list/search/SEO, and direct `get(taskId)` stays open, so
+no caller identity is needed for those. The one exception is `agents.inbox`, which needs
+a narrow, scoped self-authentication check so an address's own owner can find their own
+unlisted tasks (see "What `agents.inbox` actually needs" above) -- a single verification
+function reused from existing precedent, not new infrastructure. That keeps Phase 1
+roughly a third of Phase 2's low end rather than the original back-of-envelope "order of
+magnitude cheaper," but the gap that matters is still real: Phase 1 never touches
+`canView`, the `listByTask` retrofit, submission reveal, or a general notion of a
+logged-in reader across the whole app, which is what actually makes Phase 2 a multi-week
+project. Rolling Phase 2's remaining scope into Phase 1 to "avoid two efforts" would not
+actually save time -- it would just mean Phase 1 stops being the cheap first ship.
 
 ## Migration & backward compatibility
 
@@ -426,8 +464,9 @@ it is the natural first ship.
 
 1. Ship **Phase 1 (unlisted, opt-in -- the default stays `public`)** first: add the
    column (`'unlisted' | 'public'`, default `'public'`), exclude unlisted tasks from
-   `list`/`search`/SEO/`agents.inbox`, add the CLI flag and web toggle. ~2-3 days,
-   removes the public firehose for anyone who opts in, no architectural change, no
+   `list`/`search`/SEO, add the scoped `agents.inbox` self-auth check, add the CLI flag
+   and web toggle. ~5.5-6.5 days, removes the public firehose for anyone who opts in
+   (including from their own inbox lookup), no general architectural change, no
    default-behavior change for existing tasks, and does not expose a `'private'` value
    that would not actually be enforced.
 2. Treat **Phase 2 (true private, also opt-in)** as a scoped follow-up gated on a
@@ -452,11 +491,14 @@ it is the natural first ship.
 - `apps/backend/src/services/task-drop-announcements.ts` (or equivalent) -- exclude
   unlisted tasks from Task Drop broadcasts
 - `apps/backend/src/routers/agents.router.ts` -- exclude `unlisted` tasks from `inbox`
-  results (plain filter, no auth change)
+  results by default, plus the narrow signed-message self-auth check for the address's
+  own owner (new small verification helper, not the general `ctx.caller` framework)
 - `apps/backend/src/middleware/ogTags.ts` -- SEO visibility check, both branches
 - `apps/web/app/sitemap.ts` -- exclude unlisted tasks
 - `apps/cli/src/commands/task/{create,search}.ts` -- `--visibility`, plus a changeset
 - `apps/web/components/market/wizard/**` -- toggle, disclaimer copy
+- `apps/web/lib/` (wherever the `wallet.setWithdrawalAddress` signing helper lives) --
+  reuse for the `agents.inbox` self-auth call site on the dashboard
 - `apps/backend/scripts/smoke-visibility.ts` -- smoke test
 - Phase 2 only: `apps/backend/src/trpc.ts`, `context.ts` (`optionalAuth`/
   `protectedProcedure`); `apps/backend/src/routers/{bids,submissions,pitches,proofs,
