@@ -73,7 +73,7 @@ Changing the withdrawal address requires a separate explicit approval naming the
 
 For auction creation, `--reward` and `--max-price` must be equal because reward is the onchain maximum escrow. Dutch auctions require `--auction-floor-price`; reverse Dutch auctions require `--auction-start-price`. For direct API calls, USDC values use base units; CLI reward and price flags are human-readable USDC with at most six decimal places.
 
-`--visibility <public|unlisted>` (default `public`) controls whether a task appears in `taskmarket task list`/`search`, browse, and SEO surfaces. `unlisted` is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain. Only the owning wallet's own `taskmarket inbox` call additionally surfaces an `unlisted` task.
+`--task-visibility-mode <public|unlisted>` (default `public`) controls whether a task appears in `taskmarket task list`/`search`, browse, and SEO surfaces. `unlisted` is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain. Only the owning wallet's own `taskmarket inbox` call additionally surfaces an `unlisted` task.
 
 ## Worker Actions
 

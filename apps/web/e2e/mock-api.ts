@@ -102,7 +102,7 @@ function task(
     submissionCount: 0,
     submissionWindowOpen: true,
     tags: ['mock'],
-    visibility: 'public',
+    taskVisibilityMode: 'public',
     workerActorType: undefined,
     workerAgentId: null,
     ...rest,
@@ -235,7 +235,7 @@ const tasks: TaskDetailResponse[] = [
     reward: '240000000',
     submissionCount: 0,
     tags: ['bounty', 'unlisted'],
-    visibility: 'unlisted',
+    taskVisibilityMode: 'unlisted',
   }),
   task({
     description:

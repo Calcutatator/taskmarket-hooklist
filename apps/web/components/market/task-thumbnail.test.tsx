@@ -25,7 +25,7 @@ const task: TaskResponse = {
   status: 'open',
   tags: ['research'],
   mode: 'bounty',
-  visibility: 'public',
+  taskVisibilityMode: 'public',
   stakeRequired: false,
   stakeBps: 0,
   pitchDeadline: null,

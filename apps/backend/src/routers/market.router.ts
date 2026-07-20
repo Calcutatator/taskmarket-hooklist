@@ -34,7 +34,7 @@ export const marketRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)::int` })
           .from(tasks)
-          .where(sql`${tasks.status} = 'open' and ${tasks.visibility} != 'unlisted'`),
+          .where(sql`${tasks.status} = 'open' and ${tasks.taskVisibilityMode} != 'unlisted'`),
         ctx.db
           .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
           .from(

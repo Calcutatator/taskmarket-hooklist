@@ -40,7 +40,7 @@ that explicitly ask for something different.
 
 ## Decision
 
-`tasks.visibility` defaults to `'public'` for both new and existing rows. This is the
+`tasks.taskVisibilityMode` defaults to `'public'` for both new and existing rows. This is the
 settled product decision, not a placeholder or an implementation detail: making a task
 `'unlisted'` (Phase 1) or `'private'` (Phase 3, once it exists) is always an explicit,
 per-task action taken by the requester, never inferred, never defaulted, and never

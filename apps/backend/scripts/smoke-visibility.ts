@@ -28,7 +28,7 @@ type TaskListResponse = {
 };
 
 type InboxResponse = {
-  asRequester: Array<{ id: string; visibility?: string }>;
+  asRequester: Array<{ id: string; taskVisibilityMode?: string }>;
   asWorker: Array<{ id: string }>;
 };
 
@@ -49,7 +49,7 @@ async function main() {
       reward: '1000',
       duration: 1,
       mode: 'bounty',
-      visibility: 'unlisted',
+      taskVisibilityMode: 'unlisted',
       tags: ['smoke-visibility'],
     },
     requester

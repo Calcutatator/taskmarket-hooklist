@@ -437,7 +437,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   Narrower than Phase 3's general `canView`: it only needs to answer "can this caller
   see *this* submission," not "can this caller see the task at all."
 - **Phase 3:** the general `canView(task, caller?)`: `true` if
-  `task.visibility === 'public'`, or `caller.address === task.requester`, or caller's
+  `task.taskVisibilityMode === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
   worker-identity correction above), or in an `allowedViewers` list. `tasks.get` throws
   `NOT_FOUND` (not `FORBIDDEN`, to avoid confirming existence) when `!canView`.
@@ -456,7 +456,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 
 ### Layer 5 -- CLI (~1 day for Phase 1, shipped; ~1-1.5 days for Phase 2)
 
-- **Phase 1 (shipped):** `task create --visibility <unlisted|public>` (default
+- **Phase 1 (shipped):** `task create --task-visibility-mode <unlisted|public>` (default
   `public`); `taskmarket inbox` signs its self-auth message automatically. `task
   search`/`list` deliberately left unchanged -- `tasks.list` has no per-call override to
   reveal unlisted tasks, so a flag there would filter nothing.
@@ -554,7 +554,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   submission visibility mode): a plain `DEFAULT 'public'` on the `ALTER TABLE ADD COLUMN` is
   safe precisely because `'public'` is what every row already behaves like.
 - Schema is additive and append-only -- safe.
-- Old CLI/clients that omit `--visibility`/`--submission-visibility-mode` on create keep
+- Old CLI/clients that omit `--task-visibility-mode`/`--submission-visibility-mode` on create keep
   getting today's fully-open behavior for whichever field they omit -- no behavior
   change for existing scripted integrations.
 - `submissionVisibilityMode` has no update path once set -- there is no migration concern
@@ -600,8 +600,8 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 
 ### Phase 1 (unlisted tasks) -- shipped
 
-- `apps/backend/src/db/schema.ts` -- `visibility` column + index
-- `apps/backend/drizzle/migrations/0030_add_task_visibility.sql`
+- `apps/backend/src/db/schema.ts` -- `taskVisibilityMode` column + index
+- `apps/backend/drizzle/migrations/0030_add_task_visibility_mode.sql`
 - `packages/shared/src/schemas/task.schemas.ts` -- create/response schema fields
 - `apps/backend/src/routers/tasks.router.ts` -- list/create gating; `get` stays open
 - `apps/backend/src/routers/market.router.ts`, `apps/backend/src/services/stats.ts` --
@@ -614,7 +614,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   own owner
 - `apps/backend/src/middleware/ogTags.ts` -- SEO visibility check, both bot-prerender
   list bodies (the single-task OG card stays open, matching direct-fetch)
-- `apps/cli/src/commands/task/create.ts` -- `--visibility`, plus a changeset
+- `apps/cli/src/commands/task/create.ts` -- `--task-visibility-mode`, plus a changeset
 - `apps/cli/src/commands/inbox.ts` -- signs the self-auth message automatically
 - `apps/web/components/market/wizard/step-brief.tsx`, `step-publish.tsx` -- toggle,
   disclaimer copy

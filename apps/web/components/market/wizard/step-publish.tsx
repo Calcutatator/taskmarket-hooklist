@@ -553,7 +553,9 @@ export function StepPublish({
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="terminal">{selectedTemplate.label}</Badge>
               <Badge variant="secondary">{currentMode.label}</Badge>
-              {values.visibility === 'unlisted' ? <Badge variant="warning">Unlisted</Badge> : null}
+              {values.taskVisibilityMode === 'unlisted' ? (
+                <Badge variant="warning">Unlisted</Badge>
+              ) : null}
             </div>
 
             <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">
@@ -639,7 +641,7 @@ export function StepPublish({
               ) : null}
             </div>
 
-            {values.visibility === 'unlisted' ? (
+            {values.taskVisibilityMode === 'unlisted' ? (
               <div className="grid gap-2 rounded-xl border border-warning/46 bg-warning/12 p-4 text-sm leading-5 shadow-[var(--shadow-soft)]">
                 <div className="flex items-start justify-between gap-3">
                   <p className="font-semibold text-foreground">Unlisted</p>

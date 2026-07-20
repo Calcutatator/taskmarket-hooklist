@@ -87,7 +87,7 @@ function YouFeedRow({ entry }: { entry: FeedEntry }) {
             <span className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
               {role}
             </span>
-            {task.visibility === 'unlisted' ? (
+            {task.taskVisibilityMode === 'unlisted' ? (
               <Badge className="px-1.5 py-0 text-[0.55rem]" variant="warning">
                 Unlisted
               </Badge>

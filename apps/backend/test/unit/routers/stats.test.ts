@@ -164,7 +164,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("visibility != 'unlisted'");
+      expect(q).toContain("task_visibility_mode != 'unlisted'");
     });
   });
 
@@ -326,7 +326,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).breakdowns({});
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("visibility != 'unlisted'");
+      expect(q).toContain("task_visibility_mode != 'unlisted'");
     });
   });
 
@@ -446,7 +446,7 @@ describe('stats router', () => {
       // One join/select per activity type (task_created, task_submitted,
       // task_claimed, task_pitched, bid_placed, task_rated) -- all six must
       // filter unlisted tasks out of this public feed.
-      const occurrences = q.split("visibility != 'unlisted'").length - 1;
+      const occurrences = q.split("task_visibility_mode != 'unlisted'").length - 1;
       expect(occurrences).toBe(6);
     });
 

@@ -403,7 +403,7 @@ export function StepBrief({
 
           <Controller
             control={control}
-            name="visibility"
+            name="taskVisibilityMode"
             render={({ field }) => {
               const unlisted = field.value === 'unlisted';
               return (

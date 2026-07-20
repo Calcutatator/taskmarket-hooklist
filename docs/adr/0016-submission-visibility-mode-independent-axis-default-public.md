@@ -15,9 +15,9 @@
 > exists gets no submission protection and that changing a task's mode after creation
 > is out of scope for now.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
-- **Deciders:** (awaiting human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
@@ -76,7 +76,7 @@ exactly, so no backfill is needed, and it matches the same opt-in-only philosoph
 
 ## Decision
 
-Submission visibility mode is governed by its own field, independent of `tasks.visibility`:
+Submission visibility mode is governed by its own field, independent of `tasks.taskVisibilityMode`:
 
 - `tasks.submissionVisibilityMode`: `'public'` (**default**), `'reveal_all'`,
   `'winner_only'`, or `'never'` — chosen once at task creation and **locked in
@@ -90,7 +90,7 @@ Submission visibility mode is governed by its own field, independent of `tasks.v
   pre-chosen mode takes effect automatically (all revealed / only the `task_awards`-linked
   winner(s) revealed / nothing ever revealed beyond the requester and each submitting
   worker) — a deterministic lifecycle transition, not a fresh discretionary action.
-- This applies regardless of `tasks.visibility` — a `public`/listed task can choose any
+- This applies regardless of `tasks.taskVisibilityMode` — a `public`/listed task can choose any
   visibility mode exactly the same as an `unlisted` one; a `private` (Phase 3) task's
   visibility mode still governs among whichever invited workers can view it.
 - Because the default (`'public'`) matches every existing row's already-established

@@ -117,7 +117,7 @@ describe('official Task Drop announcements', () => {
 
     expect(taskWhereSql).toBeDefined();
     const { sql: whereSql, params } = dialect.sqlToQuery(taskWhereSql!);
-    expect(whereSql).toContain('"visibility" <>');
+    expect(whereSql).toContain('"task_visibility_mode" <>');
     expect(params).toContain('unlisted');
   });
 
