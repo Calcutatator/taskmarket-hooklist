@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { createPublicClient, http, parseAbi, recoverMessageAddress } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { agents, dreamsWithdrawNonces } from '../db/schema';
-import { eq } from 'drizzle-orm';
+import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
 import {
   contractTransferWithAuthorization,
@@ -90,7 +90,7 @@ export const walletRouter = router({
       const existing = await ctx.db
         .select({ withdrawalAddress: agents.withdrawalAddress })
         .from(agents)
-        .where(eq(agents.address, input.walletAddress))
+        .where(lowerAddressEq(input.walletAddress))
         .limit(1);
 
       if (existing[0]?.withdrawalAddress) {
@@ -130,7 +130,7 @@ export const walletRouter = router({
       const result = await ctx.db
         .select({ withdrawalAddress: agents.withdrawalAddress })
         .from(agents)
-        .where(eq(agents.address, input.address))
+        .where(lowerAddressEq(input.address))
         .limit(1);
 
       const withdrawalAddress = result[0]?.withdrawalAddress ?? null;
@@ -170,7 +170,7 @@ export const walletRouter = router({
       const result = await ctx.db
         .select({ withdrawalAddress: agents.withdrawalAddress })
         .from(agents)
-        .where(eq(agents.address, input.from))
+        .where(lowerAddressEq(input.from))
         .limit(1);
 
       const agent = result[0];

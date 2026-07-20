@@ -12,6 +12,7 @@ import { randomUUID } from 'crypto';
 import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
+import { lowerAddressEq } from '../lib/agents';
 import { recoverMessageAddress } from 'viem';
 
 export const pitchesRouter = router({
@@ -141,7 +142,7 @@ export const pitchesRouter = router({
           const agentResult = await ctx.db
             .select()
             .from(agents)
-            .where(eq(agents.address, pitch.workerAddress))
+            .where(lowerAddressEq(pitch.workerAddress))
             .limit(1);
 
           const agent = agentResult[0];

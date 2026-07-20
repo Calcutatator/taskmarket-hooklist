@@ -11,6 +11,7 @@ import {
 } from '../services/contract';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { computeClockPrice } from '../lib/auction';
+import { lowerAddressEq } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 import { recoverMessageAddress } from 'viem';
 
@@ -199,7 +200,7 @@ export const bidsRouter = router({
           const agentResult = await ctx.db
             .select()
             .from(agents)
-            .where(eq(agents.address, bid.workerAddress))
+            .where(lowerAddressEq(bid.workerAddress))
             .limit(1);
 
           return {

@@ -206,10 +206,12 @@ jobs:
 
           # Railway's edge can 404 ("Application not found") on the very first request or two
           # right after a service comes up, even once the earlier health-check curl succeeds --
-          # retry a few times before giving up.
+          # retry before giving up. 15 attempts at 2s (30s) rather than the original 5 (10s):
+          # observed in practice to still 404 past 10s on a slow edge-propagation day, even
+          # though the anvil health-check immediately before this step already passed.
           cast_rpc_local() {
             local i
-            for i in $(seq 1 5); do
+            for i in $(seq 1 15); do
               if OUTPUT=$(cast rpc "$@" --rpc-url "$LOCAL_RPC" 2>&1); then
                 echo "$OUTPUT"
                 return 0

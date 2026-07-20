@@ -23,6 +23,7 @@ import {
   findStaleInstallations,
 } from '../services/xmtp-status';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
+import { lowerAddressEq } from '../lib/agents';
 import { getPolicyMode } from '../services/xmtp-policy';
 import { publicProcedure, router } from '../trpc';
 
@@ -106,7 +107,7 @@ export const xmtpRouter = router({
         })
         .where(
           and(
-            eq(agents.address, auth.walletAddress),
+            lowerAddressEq(auth.walletAddress),
             or(isNull(agents.xmtpInboxId), eq(agents.xmtpInboxId, input.inboxId))
           )
         )
@@ -193,7 +194,7 @@ export const xmtpRouter = router({
           xmtpLastSeenAt: agents.xmtpLastSeenAt,
         })
         .from(agents)
-        .where(eq(agents.address, auth.walletAddress))
+        .where(lowerAddressEq(auth.walletAddress))
         .limit(1);
 
       const installations = await listAgentInstallations(ctx.db, auth.walletAddress);
@@ -243,7 +244,7 @@ export const xmtpRouter = router({
       await ctx.db
         .update(agents)
         .set({ xmtpLastSeenAt: new Date(), updatedAt: new Date() })
-        .where(eq(agents.address, auth.walletAddress));
+        .where(lowerAddressEq(auth.walletAddress));
 
       return { ok: true };
     }),
@@ -343,7 +344,7 @@ export const xmtpRouter = router({
       requireXmtpEnabled();
 
       const whereClause = input.address
-        ? and(eq(agents.address, input.address), eq(agents.xmtpEnabled, 1))
+        ? and(lowerAddressEq(input.address!), eq(agents.xmtpEnabled, 1))
         : and(eq(agents.agentId, input.agentId!), eq(agents.xmtpEnabled, 1));
 
       const rows = await ctx.db

@@ -8,6 +8,7 @@ import { sendEmail } from '../services/mailer';
 import { selectTargetAgents } from '../services/agent-targeting';
 import { getServerConfig } from '../config/env';
 import { EmailSchema, BroadcastInputSchema, BroadcastResultSchema } from '@taskmarket/shared';
+import { lowerAddressEq } from '../lib/agents';
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
@@ -97,7 +98,7 @@ export const emailsRouter = router({
       const existing = await ctx.db
         .select({ emailAddress: agents.emailAddress })
         .from(agents)
-        .where(eq(agents.address, auth.walletAddress))
+        .where(lowerAddressEq(auth.walletAddress))
         .limit(1);
 
       if (existing[0]?.emailAddress) {
@@ -253,7 +254,7 @@ export const emailsRouter = router({
       const agentRows = await ctx.db
         .select({ emailAddress: agents.emailAddress })
         .from(agents)
-        .where(eq(agents.address, auth.walletAddress))
+        .where(lowerAddressEq(auth.walletAddress))
         .limit(1);
 
       const fromAddress = agentRows[0]?.emailAddress;

@@ -13,12 +13,15 @@ import "./mocks/MockPGTRForwarder.sol";
 import "./mocks/MockTaskHook.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import "./mocks/MockReputationRegistry.sol";
+import "./mocks/MockRevertingReputationRegistry.sol";
+import "../src/interfaces/ITMPReputation.sol";
 import "./helpers/DiamondTestHelper.sol";
 import "../src/interfaces/ITMPDiamond.sol";
 import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
 import { CoreFacet } from "../src/facets/CoreFacet.sol";
 import { AdminFacet } from "../src/facets/AdminFacet.sol";
 import { Diamond } from "../src/Diamond.sol";
+import { FacetSelectors } from "../script/lib/FacetSelectors.sol";
 
 contract MockERC20 is ERC20 {
     constructor() ERC20("Mock USDC", "USDC") {
@@ -738,7 +741,9 @@ contract TaskMarketTest is DiamondTestHelper {
         // Build the cuts array using the same selectors as setUp.
         AdminFacet adminFacet = new AdminFacet();
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
-        cuts[0] = IDiamondCut.FacetCut(address(adminFacet), IDiamondCut.FacetCutAction.Add, _adminSelectors());
+        cuts[0] = IDiamondCut.FacetCut(
+            address(adminFacet), IDiamondCut.FacetCutAction.Add, FacetSelectors.adminFacetSelectors()
+        );
         bytes memory badInit = abi.encodeCall(AdminFacet.initialize, (address(usdc), address(0), defaultFeeBps));
         vm.expectRevert(ITMPCore.InvalidFeeRecipient.selector);
         new Diamond(owner, cuts, address(adminFacet), badInit);
@@ -747,7 +752,9 @@ contract TaskMarketTest is DiamondTestHelper {
     function test_RevertWhen_Constructor_FeeBpsTooHigh() public {
         AdminFacet adminFacet = new AdminFacet();
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
-        cuts[0] = IDiamondCut.FacetCut(address(adminFacet), IDiamondCut.FacetCutAction.Add, _adminSelectors());
+        cuts[0] = IDiamondCut.FacetCut(
+            address(adminFacet), IDiamondCut.FacetCutAction.Add, FacetSelectors.adminFacetSelectors()
+        );
         bytes memory badInit = abi.encodeCall(AdminFacet.initialize, (address(usdc), feeRecipient, 10001));
         vm.expectRevert(ITMPCore.FeeBpsTooHigh.selector);
         new Diamond(owner, cuts, address(adminFacet), badInit);
@@ -4534,6 +4541,25 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(reg.lastTag2(), "tmp.mode.benchmark");
     }
 
+    function test_AcceptSubmission_WithRevertingRegistry_EmitsFailureEvent() public {
+        MockRevertingReputationRegistry reg = new MockRevertingReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        bytes32 hash = keccak256("work");
+        _submitWork(taskId, worker1, hash);
+
+        vm.expectEmit(true, true, false, true);
+        emit ITMPReputation.ReputationFeedbackFailed(taskId, 42);
+        forwarder.relay(
+            address(market), requester, 0, abi.encodeCall(market.acceptSubmission, (taskId, worker1, hash, 42))
+        );
+
+        // Settlement itself must succeed regardless of the reputation registry reverting.
+        assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Accepted));
+    }
+
     function test_AcceptSubmissions_WithRegistry() public {
         MockReputationRegistry reg = new MockReputationRegistry();
         vm.prank(owner);
@@ -4555,6 +4581,33 @@ contract TaskMarketTest is DiamondTestHelper {
             abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, new bytes32[](0), 42))
         );
         assertEq(reg.calls(), 1);
+    }
+
+    function test_AcceptSubmissions_WithRevertingRegistry_EmitsFailureEvent() public {
+        MockRevertingReputationRegistry reg = new MockRevertingReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _submitWork(taskId, worker1, keccak256("w1"));
+        _submitWork(taskId, worker2, keccak256("w2"));
+        address[] memory workers = new address[](2);
+        workers[0] = worker1;
+        workers[1] = worker2;
+        uint16[] memory shares = new uint16[](2);
+        shares[0] = 6000;
+        shares[1] = 4000;
+
+        vm.expectEmit(true, true, false, true);
+        emit ITMPReputation.ReputationFeedbackFailed(taskId, 42);
+        forwarder.relay(
+            address(market),
+            requester,
+            0,
+            abi.encodeCall(market.acceptSubmissions, (taskId, workers, shares, new bytes32[](0), 42))
+        );
+
+        assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Accepted));
     }
 
     function test_AcceptSubmissions_WithHook_CheckComplete() public {
@@ -4604,6 +4657,23 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(reg.lastTag2(), "tmp.mode.benchmark");
     }
 
+    function test_CancelTask_WithRevertingRegistry_EmitsFailureEvent() public {
+        MockRevertingReputationRegistry reg = new MockRevertingReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _submitWork(taskId, worker1, keccak256("work"));
+        _rejectSubmission(taskId, requester, worker1);
+
+        vm.expectEmit(true, true, false, true);
+        emit ITMPReputation.ReputationFeedbackFailed(taskId, 42);
+        forwarder.relay(address(market), requester, 0, abi.encodeCall(market.cancelTask, (taskId, 42)));
+
+        // Fund recovery must succeed regardless of the reputation registry reverting.
+        assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Cancelled));
+    }
+
     // --- CoreFacet: refundExpired with registry ---
 
     function test_RefundExpired_WithRegistry_Bounty() public {
@@ -4615,5 +4685,21 @@ contract TaskMarketTest is DiamondTestHelper {
         vm.warp(block.timestamp + DURATION + 1);
         market.refundExpired(taskId, 42);
         assertEq(reg.calls(), 1);
+    }
+
+    function test_RefundExpired_WithRevertingRegistry_EmitsFailureEvent() public {
+        MockRevertingReputationRegistry reg = new MockRevertingReputationRegistry();
+        vm.prank(owner);
+        market.setReputationRegistry(address(reg));
+
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        vm.warp(block.timestamp + DURATION + 1);
+
+        vm.expectEmit(true, true, false, true);
+        emit ITMPReputation.ReputationFeedbackFailed(taskId, 42);
+        market.refundExpired(taskId, 42);
+
+        // Fund recovery must succeed regardless of the reputation registry reverting.
+        assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Expired));
     }
 }

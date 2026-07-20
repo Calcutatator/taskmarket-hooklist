@@ -37,7 +37,7 @@ help:
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
 	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
-	@echo "  make upgrade <testnet|mainnet> - Upgrade contract implementation (proxy address unchanged)"
+	@echo "  make upgrade <testnet|mainnet> [revNNN] - Upgrade contract implementation; applies every pending step in sequence, or one explicit step (e.g. rev012)"
 	@echo "  make deploy-reward-hook <testnet|mainnet|preview> - Deploy DREAMS token reward hook (testnet/preview use a mock token)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
@@ -109,18 +109,10 @@ deploy:
 
 upgrade:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
-		cd packages/contracts && forge script script/DiamondFullUpgrade.s.sol:DiamondFullUpgrade \
-			--rpc-url base_sepolia \
-			--broadcast \
-			--verify; \
-	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && forge script script/DiamondFullUpgrade.s.sol:DiamondFullUpgrade \
-			--rpc-url base \
-			--broadcast \
-			--verify; \
+	if [ "$(word 1,$(ARGS))" = "testnet" ] || [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && ./script/upgrade.sh "$(word 1,$(ARGS))" "$(word 2,$(ARGS))"; \
 	else \
-		echo "Usage: make upgrade <testnet|mainnet>"; \
+		echo "Usage: make upgrade <testnet|mainnet> [revNNN]"; \
 		exit 1; \
 	fi
 

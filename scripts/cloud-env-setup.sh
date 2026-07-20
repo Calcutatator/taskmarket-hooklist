@@ -268,6 +268,7 @@ run_with_retry /tmp/diamond-deploy.log "Diamond deployed at:" \
   FORGE_USDC_TOKEN_ADDRESS="$USDC_ADDRESS" \
   FORGE_FEE_RECIPIENT_ADDRESS="$FORGE_FEE_RECIPIENT_ADDRESS_PREVIEW" \
   FORGE_DEFAULT_PLATFORM_FEE_BPS="$FORGE_DEFAULT_PLATFORM_FEE_BPS_PREVIEW" \
+  FORGE_ERC8004_REPUTATION_REGISTRY="$ERC8004_REPUTATION_REGISTRY" \
   make deploy preview
 DIAMOND_ADDRESS="$(grep 'Diamond deployed at:' /tmp/diamond-deploy.log | tail -1 | awk '{print $NF}')"
 

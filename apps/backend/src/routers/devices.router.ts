@@ -5,6 +5,7 @@ import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
+import { lowerAddressEq } from '../lib/agents';
 import { Secp256k1PublicKeySchema } from '@taskmarket/shared';
 import { sha256Hex } from '../lib/hash';
 
@@ -52,7 +53,7 @@ export const devicesRouter = router({
       const existing = await ctx.db
         .select({ agentId: agents.agentId })
         .from(agents)
-        .where(eq(agents.address, input.walletAddress))
+        .where(lowerAddressEq(input.walletAddress))
         .limit(1);
 
       const agentId: string | null = existing[0]?.agentId ?? null;
@@ -63,7 +64,7 @@ export const devicesRouter = router({
           await ctx.db
             .update(agents)
             .set({ publicKey: input.publicKey, updatedAt: new Date() })
-            .where(eq(agents.address, input.walletAddress));
+            .where(lowerAddressEq(input.walletAddress));
         }
         return { deviceId, apiToken, deviceEncryptionKey, agentId };
       }

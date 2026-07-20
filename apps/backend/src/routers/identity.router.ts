@@ -4,10 +4,7 @@ import { z } from 'zod';
 import { agents } from '../db/schema';
 import { sql } from 'drizzle-orm';
 import { contractRegisterIdentity } from '../services/contract';
-
-function lowerAddressEq(address: string) {
-  return sql`lower(${agents.address}) = lower(${address})`;
-}
+import { lowerAddressEq } from '../lib/agents';
 
 export const identityRouter = router({
   register: publicProcedure
