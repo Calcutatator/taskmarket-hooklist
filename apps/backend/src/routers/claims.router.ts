@@ -1,11 +1,16 @@
 import { router, publicProcedure } from '../trpc';
-import { ClaimCreateSchema, ClaimResponseSchema } from '@taskmarket/shared';
+import {
+  ClaimCreateSchema,
+  ClaimResponseSchema,
+  buildClaimMessage,
+  buildForfeitMessage,
+} from '@taskmarket/shared';
 import { z } from 'zod';
 import { claims, tasks } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { contractClaimTask, contractForfeitAndReopen } from '../services/contract';
-import { verifySignedAddress } from '../lib/agents';
+import { verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 
 export const claimsRouter = router({
@@ -41,15 +46,16 @@ export const claimsRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not available for claiming' });
       }
 
-      const message = `taskmarket:claim:${input.taskId}`;
-      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
-        );
-      }
+      const message = buildClaimMessage(input.taskId);
+      await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match worker address',
+          }),
+      });
 
       const stakeTxHash = await contractClaimTask(
         input.taskId as `0x${string}`,
@@ -123,18 +129,16 @@ export const claimsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the task requester can forfeit' });
       }
 
-      const message = `taskmarket:forfeit:${input.taskId}`;
-      const result = await verifySignedAddress(message, input.signature, input.requesterAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : {
-                code: 'UNAUTHORIZED',
-                message: 'Signature does not match requester address',
-              }
-        );
-      }
+      const message = buildForfeitMessage(input.taskId);
+      await verifySignedAddressOrThrow(message, input.signature, input.requesterAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match requester address',
+          }),
+      });
 
       const txHash = await contractForfeitAndReopen(
         input.taskId as `0x${string}`,

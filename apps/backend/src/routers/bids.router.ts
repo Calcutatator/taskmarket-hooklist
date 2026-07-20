@@ -10,7 +10,7 @@ import {
   contractAcceptAuction,
 } from '../services/contract';
 import { computeClockPrice } from '../lib/auction';
-import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 import { buildMyBidsMessage } from '@taskmarket/shared';
 
@@ -251,17 +251,15 @@ export const bidsRouter = router({
           });
         }
         const message = `taskmarket:select-winner:${input.taskId}`;
-        const result = await verifySignedAddress(message, input.signature, input.requesterAddress);
-        if (!result.verified) {
-          throw new TRPCError(
-            result.reason === 'invalid_signature'
-              ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-              : {
-                  code: 'UNAUTHORIZED',
-                  message: 'Signature does not match requester address',
-                }
-          );
-        }
+        await verifySignedAddressOrThrow(message, input.signature, input.requesterAddress, {
+          invalid_signature: () =>
+            new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+          address_mismatch: () =>
+            new TRPCError({
+              code: 'UNAUTHORIZED',
+              message: 'Signature does not match requester address',
+            }),
+        });
         if (task.requester.toLowerCase() !== input.requesterAddress.toLowerCase()) {
           throw new TRPCError({
             code: 'FORBIDDEN',
@@ -465,18 +463,17 @@ export const bidsRouter = router({
       // is no public fallback view: "my bids" has no meaning without a verified
       // caller, so a missing/invalid signature is a hard failure, not a
       // narrower response.
-      const result = await verifySignedAddress(
+      await verifySignedAddressOrThrow(
         buildMyBidsMessage(input.address),
         input.signature,
-        input.address
+        input.address,
+        {
+          invalid_signature: () =>
+            new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+          address_mismatch: () =>
+            new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature does not match address' }),
+        }
       );
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match address' }
-        );
-      }
 
       const now = new Date();
 
@@ -497,7 +494,7 @@ export const bidsRouter = router({
         .innerJoin(tasks, eq(bids.taskId, tasks.id))
         .where(
           and(
-            eq(bids.workerAddress, input.address),
+            sql`lower(${bids.workerAddress}) = lower(${input.address})`,
             eq(tasks.status, 'open'),
             gt(tasks.bidDeadline, now)
           )

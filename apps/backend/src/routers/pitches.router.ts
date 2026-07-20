@@ -12,7 +12,7 @@ import { randomUUID } from 'crypto';
 import { contractSelectWorker, contractSubmitPitch } from '../services/contract';
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
-import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -227,17 +227,15 @@ export const pitchesRouter = router({
       }
 
       const message = buildSelectWorkerMessage(input.taskId, input.pitchId, input.workerAddress);
-      const result = await verifySignedAddress(message, input.signature, task.requester);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid selection signature' }
-            : {
-                code: 'FORBIDDEN',
-                message: 'Selection signature must be from the task requester',
-              }
-        );
-      }
+      await verifySignedAddressOrThrow(message, input.signature, task.requester, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid selection signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Selection signature must be from the task requester',
+          }),
+      });
 
       await contractSelectWorker(
         input.taskId as `0x${string}`,

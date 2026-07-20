@@ -15,7 +15,7 @@ import { getAddress } from 'viem';
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
 import { sha256Hex } from '../lib/hash';
-import { verifySignedAddress } from '../lib/agents';
+import { verifySignedAddressOrThrow } from '../lib/agents';
 import {
   legalAcceptanceChallenges,
   legalAcceptances,
@@ -306,14 +306,10 @@ export async function acceptWalletLegalTerms(
     throw new Error('Legal acceptance challenge is invalid or expired');
   }
 
-  const result = await verifySignedAddress(challenge.message, input.signature, walletAddress);
-  if (!result.verified) {
-    throw new Error(
-      result.reason === 'invalid_signature'
-        ? 'Invalid legal acceptance signature'
-        : 'Legal acceptance signature does not match the wallet'
-    );
-  }
+  await verifySignedAddressOrThrow(challenge.message, input.signature, walletAddress, {
+    invalid_signature: () => new Error('Invalid legal acceptance signature'),
+    address_mismatch: () => new Error('Legal acceptance signature does not match the wallet'),
+  });
 
   return database.transaction(async (tx) => {
     const consumed = await tx

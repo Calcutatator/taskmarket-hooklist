@@ -160,11 +160,15 @@ describe('stats router', () => {
       expect(norm).toContain("date_trunc('week'");
     });
 
-    it('excludes unlisted tasks from tasksCreated and rewardVolume (ADR-0014)', async () => {
+    it('excludes unlisted tasks from tasksCreated, rewardVolume, and completedTasks (ADR-0014)', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("task_visibility != 'unlisted'");
+      // tasks_created, reward_volume, and completed all filter unlisted tasks.
+      const occurrences = q.split("task_visibility != 'unlisted'").length - 1;
+      expect(occurrences).toBe(3);
+      // completed now joins feedbacks -> tasks so the filter can apply.
+      expect(q.toLowerCase()).toContain('join tasks t on t.id = f.task_id');
     });
   });
 
@@ -280,6 +284,15 @@ describe('stats router', () => {
       expect(params).toContain('0xWORKER');
       // earnings join feedbacks -> tasks for the reward sum.
       expect(q.toLowerCase()).toContain('coalesce(sum(t.reward), 0)::text');
+    });
+
+    it('excludes unlisted tasks from earnings (ADR-0014)', async () => {
+      const { ctx, executeCalls } = createStatsCtx([[]]);
+      await statsRouter
+        .createCaller(ctx)
+        .agentTimeSeries({ address: '0xWORKER', range: '90d', bucket: 'week' });
+      const { sql: q } = renderSql(executeCalls[0]);
+      expect(q).toContain("task_visibility != 'unlisted'");
     });
   });
 

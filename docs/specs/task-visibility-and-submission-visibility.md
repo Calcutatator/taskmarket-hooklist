@@ -615,7 +615,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 ### Phase 1 (unlisted tasks) -- shipped
 
 - `apps/backend/src/db/schema.ts` -- `taskVisibility` column + index
-- `apps/backend/drizzle/migrations/0030_add_task_visibility.sql`
+- `apps/backend/drizzle/migrations/0031_add_task_visibility.sql`
 - `packages/shared/src/schemas/task.schemas.ts` -- create/response schema fields
 - `apps/backend/src/routers/tasks.router.ts` -- list/create gating; `get` stays open
 - `apps/backend/src/routers/market.router.ts`, `apps/backend/src/services/stats.ts` --

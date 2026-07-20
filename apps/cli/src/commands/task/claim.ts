@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { buildClaimMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -9,7 +10,7 @@ export const claimCmd = new Command('claim')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
     const keystore = await loadKeystore();
-    const message = `taskmarket:claim:${taskId}`;
+    const message = buildClaimMessage(taskId);
     const signature = await signMessage(message, keystore);
 
     const result = (await apiPost(`/api/tasks/${taskId}/claim`, {

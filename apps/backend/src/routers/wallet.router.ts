@@ -4,7 +4,7 @@ import { TRPCError } from '@trpc/server';
 import { createPublicClient, http, parseAbi } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { agents, dreamsWithdrawNonces } from '../db/schema';
-import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { getServerConfig } from '../config/env';
 import {
   contractTransferWithAuthorization,
@@ -25,6 +25,8 @@ import {
   WithdrawDreamsOutputSchema,
   ExchangeRateOutputSchema,
   dreamsToUsd,
+  buildSetWithdrawalAddressMessage,
+  buildWithdrawDreamsMessage,
 } from '@taskmarket/shared';
 
 const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -71,15 +73,16 @@ export const walletRouter = router({
     .output(SetWithdrawalAddressOutputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verify the signature: message must be signed by walletAddress
-      const message = `taskmarket:set-withdrawal-address:${input.withdrawalAddress}`;
-      const result = await verifySignedAddress(message, input.signature, input.walletAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match wallet address' }
-        );
-      }
+      const message = buildSetWithdrawalAddressMessage(input.withdrawalAddress);
+      await verifySignedAddressOrThrow(message, input.signature, input.walletAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match wallet address',
+          }),
+      });
 
       // Check if agent already has a withdrawal address set
       const existing = await ctx.db
@@ -270,15 +273,16 @@ export const walletRouter = router({
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Authorization has expired' });
       }
 
-      const message = `taskmarket:withdraw-dreams:${input.destination}:${input.nonce}:${input.validBefore}`;
-      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
-        );
-      }
+      const message = buildWithdrawDreamsMessage(input.destination, input.nonce, input.validBefore);
+      await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match worker address',
+          }),
+      });
 
       // Atomically claim the nonce — onConflictDoNothing means a replayed nonce
       // inserts zero rows, which we detect and reject rather than racing a

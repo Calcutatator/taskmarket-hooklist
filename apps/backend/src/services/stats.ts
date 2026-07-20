@@ -117,8 +117,11 @@ export async function getPlatformTimeSeries(
       from tasks where ${taskNotUnlistedSql} group by 1
     ),
     completed as (
-      select ${bucketTruncExpr('created_at', bucket)} as bucket, count(*)::int as c
-      from feedbacks group by 1
+      select ${bucketTruncExpr('f.created_at', bucket)} as bucket, count(*)::int as c
+      from feedbacks f
+      join tasks t on t.id = f.task_id
+      where ${taskNotUnlistedSql}
+      group by 1
     ),
     new_agents as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket, count(*)::int as c
@@ -235,7 +238,7 @@ export async function getAgentTimeSeries(
              coalesce(sum(t.reward), 0)::text as v
       from feedbacks f
       join tasks t on t.id = f.task_id
-      where f.worker_address = ${address}
+      where f.worker_address = ${address} and ${taskNotUnlistedSql}
       group by 1
     ),
     completed as (

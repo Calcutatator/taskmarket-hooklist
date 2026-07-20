@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { buildForfeitMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -10,7 +11,7 @@ export const forfeitCmd = new Command('forfeit')
   .action(async (taskId: string) => {
     try {
       const keystore = await loadKeystore();
-      const message = `taskmarket:forfeit:${taskId}`;
+      const message = buildForfeitMessage(taskId);
       const signature = await signMessage(message, keystore);
 
       const result = (await apiPost(`/api/tasks/${taskId}/forfeit`, {

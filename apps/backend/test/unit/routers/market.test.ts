@@ -170,6 +170,34 @@ describe('market router', () => {
       expect(whereSql).toContain('"tasks"."task_visibility" <>');
     });
 
+    it('excludes unlisted-task activity from activeWorkers7d (ADR-0014)', async () => {
+      const ctx = createMockCtx();
+
+      let activeWorkersFromSql: SQL | undefined;
+      const activeWorkersChain = makeChain([{ count: 5 }]);
+      activeWorkersChain.from = vi.fn((arg: SQL) => {
+        activeWorkersFromSql = arg;
+        return activeWorkersChain;
+      });
+
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(activeWorkersChain);
+
+      await marketRouter.createCaller(ctx).stats({});
+
+      expect(activeWorkersFromSql).toBeDefined();
+      const { sql: fromSql } = renderSql(activeWorkersFromSql!);
+      const normalized = fromSql.toLowerCase();
+
+      // Every engagement table is now joined back to tasks so unlisted-task
+      // activity can't count toward the public active-workers figure.
+      expect(normalized).toContain("task_visibility != 'unlisted'");
+      const joinCount = (normalized.match(/join tasks t on t\.id/g) ?? []).length;
+      expect(joinCount).toBe(5);
+    });
+
     it('excludes activity older than 7 days via a recent cutoff bound parameter', async () => {
       const ctx = createMockCtx();
 

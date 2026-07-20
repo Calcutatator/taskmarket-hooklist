@@ -1,5 +1,13 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { createMockCtx, makeChain } from '../helpers';
+
+const dialect = new PgDialect();
+function renderSql(query: SQL): { sql: string; params: unknown[] } {
+  const built = dialect.sqlToQuery(query);
+  return { sql: built.sql, params: built.params };
+}
 
 vi.mock('../../../src/services/contract', () => ({
   contractSubmitBid: vi.fn().mockResolvedValue('0xbidtx'),
@@ -702,6 +710,26 @@ describe('bids router', () => {
           taskStatus: 'open',
         },
       ]);
+    });
+
+    it('matches bids.workerAddress case-insensitively against the authenticated address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createMockCtx();
+
+      let whereSql: SQL | undefined;
+      const chain = makeChain([]);
+      chain.where = vi.fn((arg: SQL) => {
+        whereSql = arg;
+        return chain;
+      });
+      ctx.db.select.mockReturnValueOnce(chain);
+
+      const caller = bidsRouter.createCaller(ctx);
+      await caller.myBids({ address: WORKER, signature: '0xsig' });
+
+      expect(whereSql).toBeDefined();
+      const { sql: q } = renderSql(whereSql!);
+      expect(q.toLowerCase()).toContain('lower(');
     });
 
     it('rejects with BAD_REQUEST when the signature is invalid', async () => {

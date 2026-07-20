@@ -25,8 +25,9 @@ export type SignedAddressVerification =
  * endpoints distinguish "signature didn't parse" from "signature is from the
  * wrong address" -- e.g. submissions.submit's BAD_REQUEST 'Invalid
  * signature' vs. UNAUTHORIZED 'Signature does not match worker address').
- * Callers that never made that distinction (wallet.setWithdrawalAddress,
- * agents.inbox) can just check `.verified` and ignore `.reason`.
+ * Callers that never made that distinction (agents.inbox, which has no error
+ * path at all -- an invalid signature just falls back to the public view)
+ * can just check `.verified` and ignore `.reason`.
  */
 export async function verifySignedAddress(
   message: string,
@@ -42,4 +43,27 @@ export async function verifySignedAddress(
   return signer.toLowerCase() === expectedAddress.toLowerCase()
     ? { verified: true }
     : { verified: false, reason: 'address_mismatch' };
+}
+
+type SignedAddressFailureReason = Extract<SignedAddressVerification, { verified: false }>['reason'];
+
+/**
+ * `verifySignedAddress`, but throws the caller's own error per failure reason
+ * instead of returning a result to branch on. `onFailure` is a `Record`
+ * keyed by every literal in `SignedAddressFailureReason`, not a switch/ternary
+ * -- if a third reason is ever added to `SignedAddressVerification`, every
+ * call site's object literal fails to compile until it adds that key, so a
+ * new reason can't silently fall through to the wrong branch the way a
+ * ternary would.
+ */
+export async function verifySignedAddressOrThrow(
+  message: string,
+  signature: string,
+  expectedAddress: string,
+  onFailure: Record<SignedAddressFailureReason, () => Error>
+): Promise<void> {
+  const result = await verifySignedAddress(message, signature, expectedAddress);
+  if (!result.verified) {
+    throw onFailure[result.reason]();
+  }
 }

@@ -2,7 +2,7 @@ import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { agents, tasks } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskNotUnlisted, taskNotUnlistedSql } from '../lib/task-visibility';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -40,15 +40,20 @@ export const marketRouter = router({
           .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
           .from(
             sql`(
-            select worker_address from submissions where submitted_at >= ${since}
+            select s.worker_address from submissions s join tasks t on t.id = s.task_id
+              where s.submitted_at >= ${since} and ${taskNotUnlistedSql}
             union
-            select worker_address from proposals where submitted_at >= ${since}
+            select p.worker_address from proposals p join tasks t on t.id = p.task_id
+              where p.submitted_at >= ${since} and ${taskNotUnlistedSql}
             union
-            select worker_address from proofs where submitted_at >= ${since}
+            select pr.worker_address from proofs pr join tasks t on t.id = pr.task_id
+              where pr.submitted_at >= ${since} and ${taskNotUnlistedSql}
             union
-            select worker_address from claims where claimed_at >= ${since}
+            select c.worker_address from claims c join tasks t on t.id = c.task_id
+              where c.claimed_at >= ${since} and ${taskNotUnlistedSql}
             union
-            select worker_address from bids where created_at >= ${since}
+            select b.worker_address from bids b join tasks t on t.id = b.task_id
+              where b.created_at >= ${since} and ${taskNotUnlistedSql}
           ) as active_workers`
           ),
       ]);

@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { buildInboxSelfAuthMessage, buildMyBidsMessage } from '@taskmarket/shared';
 import { apiGet } from '../lib/api.js';
-import { signMessage } from '../lib/signer.js';
+import { createWalletAccountFromKeystore } from '../lib/signer.js';
 import { loadKeystore } from '../lib/keystore.js';
 import { printResult, printError } from '../lib/output.js';
 
@@ -43,31 +43,41 @@ export const inboxCommand = new Command('inbox')
 
     const address = keystore.walletAddress;
 
-    // Proves ownership of `address` so the response also includes this
-    // wallet's own unlisted tasks (ADR-0015). A signing failure is non-fatal --
-    // the inbox still loads, just without unlisted tasks, same as before.
-    let signature: string | undefined;
+    // Both self-auth checks (ADR-0015, ADR-0017) sign off the same locally
+    // decrypted account, so the device key is only fetched from the key
+    // server once per run rather than once per signature.
+    let account: Awaited<ReturnType<typeof createWalletAccountFromKeystore>> | undefined;
     try {
-      signature = await signMessage(buildInboxSelfAuthMessage(address), keystore);
+      account = await createWalletAccountFromKeystore(keystore);
     } catch {
-      // Non-fatal: fall back to the unauthenticated (public-only) view.
+      // Non-fatal: both signatures fall back to unsigned, public-only views.
     }
+
+    // Proves ownership of `address` so the inbox response also includes this
+    // wallet's own unlisted tasks (ADR-0015), and so "my bids" (which has no
+    // public view) can be scoped to this address (ADR-0017). Neither
+    // signature depends on the other, so sign both concurrently.
+    const [signature, bidsSignature] = await Promise.all([
+      account?.signMessage({ message: buildInboxSelfAuthMessage(address) }).catch(() => undefined),
+      account?.signMessage({ message: buildMyBidsMessage(address) }).catch(() => undefined),
+    ]);
 
     const inboxParams = new URLSearchParams({ address });
     if (signature) inboxParams.set('signature', signature);
 
-    const taskResult = (await apiGet(`/api/agents/inbox?${inboxParams.toString()}`)) as InboxResult;
+    const bidParams = new URLSearchParams({ address });
+    if (bidsSignature) bidParams.set('signature', bidsSignature);
 
-    // Fetch pending bids, same signed-message self-auth as the inbox above --
-    // "my bids" has no public view, so this is skipped entirely if signing fails.
-    let pendingBids: PendingBid[] = [];
-    try {
-      const bidsSignature = await signMessage(buildMyBidsMessage(address), keystore);
-      const bidParams = new URLSearchParams({ address, signature: bidsSignature });
-      pendingBids = (await apiGet(`/api/bids/my?${bidParams.toString()}`)) as PendingBid[];
-    } catch {
-      // Non-fatal: include inbox tasks without pending bids
-    }
+    // Independent endpoints -- fetch both concurrently. A missing or failed
+    // my-bids signature/fetch is non-fatal and just yields an empty list.
+    const [taskResult, pendingBids] = await Promise.all([
+      apiGet(`/api/agents/inbox?${inboxParams.toString()}`) as Promise<InboxResult>,
+      bidsSignature
+        ? (apiGet(`/api/bids/my?${bidParams.toString()}`) as Promise<PendingBid[]>).catch(
+            () => [] as PendingBid[]
+          )
+        : Promise.resolve([] as PendingBid[]),
+    ]);
 
     printResult({ ...taskResult, pendingBids });
   });

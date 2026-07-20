@@ -6,6 +6,7 @@ import {
   RequestUploadUrlOutputSchema,
   SubmissionResponseSchema,
   AgentWorkResponseSchema,
+  buildSubmitMessage,
   type ArtifactMediaKindValue,
   type ArtifactRoleValue,
 } from '@taskmarket/shared';
@@ -29,7 +30,7 @@ import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
-import { verifySignedAddress } from '../lib/agents';
+import { verifySignedAddressOrThrow } from '../lib/agents';
 
 type ArtifactInsertRow = Omit<
   NewArtifact,
@@ -244,15 +245,16 @@ export const submissionsRouter = router({
         }
       }
 
-      const message = `taskmarket:submit:${input.taskId}`;
-      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
-        );
-      }
+      const message = buildSubmitMessage(input.taskId);
+      await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match worker address',
+          }),
+      });
 
       const storage = getStorageBackend();
       const submissionId = randomUUID();
@@ -349,15 +351,16 @@ export const submissionsRouter = router({
     .output(RequestUploadUrlOutputSchema)
     .mutation(async ({ input, ctx }) => {
       // Verify signature before issuing any URL
-      const message = `taskmarket:submit:${input.taskId}`;
-      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
-        );
-      }
+      const message = buildSubmitMessage(input.taskId);
+      await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match worker address',
+          }),
+      });
 
       // Guard against storage abuse: only issue URLs for tasks that are
       // actively accepting submissions. Full worker eligibility is enforced
@@ -461,15 +464,16 @@ export const submissionsRouter = router({
         }
       }
 
-      const message = `taskmarket:submit:${input.taskId}`;
-      const result = await verifySignedAddress(message, input.signature, input.workerAddress);
-      if (!result.verified) {
-        throw new TRPCError(
-          result.reason === 'invalid_signature'
-            ? { code: 'BAD_REQUEST', message: 'Invalid signature' }
-            : { code: 'UNAUTHORIZED', message: 'Signature does not match worker address' }
-        );
-      }
+      const message = buildSubmitMessage(input.taskId);
+      await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match worker address',
+          }),
+      });
 
       const storage = getStorageBackend();
       const submissionId = randomUUID();

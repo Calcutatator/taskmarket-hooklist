@@ -14,6 +14,11 @@ export {
   buildSelectWorkerMessage,
   buildInboxSelfAuthMessage,
   buildMyBidsMessage,
+  buildSubmitMessage,
+  buildClaimMessage,
+  buildForfeitMessage,
+  buildSetWithdrawalAddressMessage,
+  buildWithdrawDreamsMessage,
 } from './lib/authMessages';
 export {
   CURRENT_LEGAL_BUNDLE,
