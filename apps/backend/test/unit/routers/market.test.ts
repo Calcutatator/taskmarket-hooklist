@@ -148,6 +148,28 @@ describe('market router', () => {
       expect(countSql.toLowerCase()).toContain('count(distinct');
     });
 
+    it('excludes unlisted tasks from the openTasks count (ADR-0011)', async () => {
+      const ctx = createMockCtx();
+
+      let openTasksWhereSql: SQL | undefined;
+      const openTasksChain = makeChain([{ count: 7 }]);
+      openTasksChain.where = vi.fn((arg: SQL) => {
+        openTasksWhereSql = arg;
+        return openTasksChain;
+      });
+
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(openTasksChain)
+        .mockReturnValueOnce(makeChain([{ count: 1 }]));
+
+      await marketRouter.createCaller(ctx).stats({});
+
+      expect(openTasksWhereSql).toBeDefined();
+      const { sql: whereSql } = renderSql(openTasksWhereSql!);
+      expect(whereSql).toContain("!= 'unlisted'");
+    });
+
     it('excludes activity older than 7 days via a recent cutoff bound parameter', async () => {
       const ctx = createMockCtx();
 

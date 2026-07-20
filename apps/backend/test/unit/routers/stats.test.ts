@@ -124,9 +124,7 @@ describe('stats router', () => {
     it('builds a generate_series spine, UTC date_trunc buckets, and the 5-table active union', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
-      await statsRouter
-        .createCaller(ctx)
-        .platformTimeSeries({ range: '30d', bucket: 'day' });
+      await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
 
       expect(executeCalls).toHaveLength(1);
       const { sql: q } = renderSql(executeCalls[0]);
@@ -138,7 +136,7 @@ describe('stats router', () => {
       expect(norm).toContain("date_trunc('day'");
       expect(norm).toContain("at time zone 'utc'");
       // Bucket output format.
-      expect(norm).toContain("to_char");
+      expect(norm).toContain('to_char');
       expect(norm).toContain('yyyy-mm-dd');
       // All five engagement tables for activeAgents.
       expect(norm).toContain('submissions');
@@ -154,14 +152,19 @@ describe('stats router', () => {
 
     it("for range='all' derives the spine start from the earliest timestamp (no explosion)", async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
-      await statsRouter
-        .createCaller(ctx)
-        .platformTimeSeries({ range: 'all', bucket: 'week' });
+      await statsRouter.createCaller(ctx).platformTimeSeries({ range: 'all', bucket: 'week' });
       const { sql: q } = renderSql(executeCalls[0]);
       const norm = q.toLowerCase();
       // 'all' computes min() over the source timestamp columns for the start.
       expect(norm).toContain('min(');
       expect(norm).toContain("date_trunc('week'");
+    });
+
+    it('excludes unlisted tasks from tasksCreated and rewardVolume (ADR-0011)', async () => {
+      const { ctx, executeCalls } = createStatsCtx([[]]);
+      await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
+      const { sql: q } = renderSql(executeCalls[0]);
+      expect(q).toContain("visibility != 'unlisted'");
     });
   });
 
@@ -259,11 +262,9 @@ describe('stats router', () => {
       await expect(
         statsRouter
           .createCaller(ctx)
-          .agentTimeSeries(
-            { range: '90d', bucket: 'week' } as unknown as Parameters<
-              ReturnType<typeof statsRouter.createCaller>['agentTimeSeries']
-            >[0]
-          )
+          .agentTimeSeries({ range: '90d', bucket: 'week' } as unknown as Parameters<
+            ReturnType<typeof statsRouter.createCaller>['agentTimeSeries']
+          >[0])
       ).rejects.toThrow();
     });
 
@@ -319,6 +320,13 @@ describe('stats router', () => {
       expect(norm).toContain("'web'");
       expect(norm).toContain('group by status');
       expect(norm).toContain('group by mode');
+    });
+
+    it('excludes unlisted tasks from the status/mode counts (ADR-0011)', async () => {
+      const { ctx, executeCalls } = createStatsCtx([[]]);
+      await statsRouter.createCaller(ctx).breakdowns({});
+      const { sql: q } = renderSql(executeCalls[0]);
+      expect(q).toContain("visibility != 'unlisted'");
     });
   });
 
@@ -429,6 +437,17 @@ describe('stats router', () => {
       expect(norm).toContain('split_part');
       expect(norm).toContain('left(');
       expect(norm).toContain('80');
+    });
+
+    it('excludes unlisted tasks from every activity source (ADR-0011)', async () => {
+      const { ctx, executeCalls } = createStatsCtx([[]]);
+      await statsRouter.createCaller(ctx).activityFeed({ limit: 20 });
+      const { sql: q } = renderSql(executeCalls[0]);
+      // One join/select per activity type (task_created, task_submitted,
+      // task_claimed, task_pitched, bid_placed, task_rated) -- all six must
+      // filter unlisted tasks out of this public feed.
+      const occurrences = q.split("visibility != 'unlisted'").length - 1;
+      expect(occurrences).toBe(6);
     });
 
     it('produces a valid SQL wrapper for the default (all types) feed', async () => {

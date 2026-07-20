@@ -298,6 +298,37 @@ describe('tasks router', () => {
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
 
+    it('persists visibility from input, defaulting to public', async () => {
+      const ctx = createMockCtx(PAYER);
+      const taskInsert = makeChain();
+      ctx.db.insert.mockReturnValueOnce(taskInsert);
+      const caller = tasksRouter.createCaller(ctx);
+
+      await caller.create(baseTaskInput);
+
+      expect(taskInsert.values).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: 'public' })
+      );
+    });
+
+    it('persists an unlisted visibility choice and skips outbound notifications', async () => {
+      const ctx = createMockCtx(PAYER);
+      const taskInsert = makeChain();
+      ctx.db.insert.mockReturnValueOnce(taskInsert);
+      const caller = tasksRouter.createCaller(ctx);
+
+      const result = await caller.create({ ...baseTaskInput, visibility: 'unlisted' });
+
+      expect(result.success).toBe(true);
+      expect(taskInsert.values).toHaveBeenCalledWith(
+        expect.objectContaining({ visibility: 'unlisted' })
+      );
+      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0011),
+      // including outbound notifications -- see tasks.router.ts's create mutation.
+      expect(notifyNewTask).not.toHaveBeenCalled();
+      expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
+    });
+
     it('still returns success when the notification send fails (fire-and-forget)', async () => {
       vi.mocked(notifyNewTask).mockRejectedValueOnce(new Error('mailer down'));
       const ctx = createMockCtx(PAYER);
@@ -1142,6 +1173,12 @@ describe('tasks router', () => {
         WORKER.toLowerCase(),
         WORKER.toLowerCase(),
       ]);
+    });
+
+    it('always excludes unlisted tasks from discovery listings (ADR-0011)', async () => {
+      const query = await captureListWhere({});
+
+      expect(query.sql).toContain("!= 'unlisted'");
     });
   });
 });

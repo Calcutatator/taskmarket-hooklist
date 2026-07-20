@@ -367,27 +367,16 @@ export const tasksRouter = router({
         await ctx.db.update(tasks).set(evaluatorAssignment).where(eq(tasks.id, taskId));
       }
 
-      // Fire-and-forget targeted "new task" notification to eligible worker agents.
-      // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
-      // task creation. Idempotent by taskId (embedded in the body); the daemon's
-      // task poll remains the fallback if a send fails. Never awaited.
-      void notifyNewTask({
-        db: ctx.db,
-        taskId,
-        description: input.description,
-        reward: input.reward,
-        mode: input.mode ?? 'bounty',
-        tags: input.tags,
-      }).catch((err: unknown) => {
-        logger.warn(
-          `notifyNewTask failed for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`
-        );
-      });
-
-      if (resolvedTaskDropId) {
-        void notifyTaskDropSubscribers({
+      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0011) --
+      // that includes outbound notifications, not just browse/search, since actively
+      // emailing/pinging worker agents about an "unlisted" task would defeat the point.
+      if ((input.visibility ?? 'public') !== 'unlisted') {
+        // Fire-and-forget targeted "new task" notification to eligible worker agents.
+        // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
+        // task creation. Idempotent by taskId (embedded in the body); the daemon's
+        // task poll remains the fallback if a send fails. Never awaited.
+        void notifyNewTask({
           db: ctx.db,
-          taskDropId: resolvedTaskDropId,
           taskId,
           description: input.description,
           reward: input.reward,
@@ -395,11 +384,27 @@ export const tasksRouter = router({
           tags: input.tags,
         }).catch((err: unknown) => {
           logger.warn(
-            `notifyTaskDropSubscribers failed for task ${taskId}: ${
-              err instanceof Error ? err.message : String(err)
-            }`
+            `notifyNewTask failed for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`
           );
         });
+
+        if (resolvedTaskDropId) {
+          void notifyTaskDropSubscribers({
+            db: ctx.db,
+            taskDropId: resolvedTaskDropId,
+            taskId,
+            description: input.description,
+            reward: input.reward,
+            mode: input.mode ?? 'bounty',
+            tags: input.tags,
+          }).catch((err: unknown) => {
+            logger.warn(
+              `notifyTaskDropSubscribers failed for task ${taskId}: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            );
+          });
+        }
       }
 
       return { success: true, taskId, taskDropId: resolvedTaskDropId };
@@ -414,6 +419,9 @@ export const tasksRouter = router({
       const now = new Date();
 
       const conditions = [];
+      // Discovery listings never surface unlisted tasks (ADR-0011). Fetching a
+      // specific task by ID is unaffected -- this only gates the browse/search path.
+      conditions.push(sql`${tasks.visibility} != 'unlisted'`);
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }

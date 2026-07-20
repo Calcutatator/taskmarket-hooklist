@@ -1,5 +1,5 @@
 import { randomUUID } from 'crypto';
-import { and, eq, inArray, isNull, lt, lte, not, or, sql } from 'drizzle-orm';
+import { and, eq, inArray, isNull, lt, lte, ne, not, or, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
 import {
@@ -109,7 +109,7 @@ export async function announceOfficialTaskDrop(input: {
     db
       .select({ description: tasks.description, mode: tasks.mode, reward: tasks.reward })
       .from(tasks)
-      .where(eq(tasks.taskDropId, taskDropId)),
+      .where(and(eq(tasks.taskDropId, taskDropId), ne(tasks.visibility, 'unlisted'))),
     db
       .select({
         attempts: taskDropAnnouncementDeliveries.attempts,
