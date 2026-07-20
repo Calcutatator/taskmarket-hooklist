@@ -218,6 +218,13 @@
       "when": 1784331127000,
       "tag": "0029_add_legal_acceptance",
       "breakpoints": true
+    },
+    {
+      "idx": 31,
+      "version": "7",
+      "when": 1784562943000,
+      "tag": "0030_add_task_visibility",
+      "breakpoints": true
     }
   ]
 }
