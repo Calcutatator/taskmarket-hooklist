@@ -1,4 +1,4 @@
-# Private-by-Default Tasks RFC
+# Task Visibility RFC: Unlisted and Private Tasks (Opt-In)
 
 Status: Draft, no decision recorded yet
 Owner: Taskmarket
@@ -11,17 +11,25 @@ This document should not be read as already-approved.
 
 ## Question this answers
 
-> If we made everything private by default, how much effort would it be?
+> How much effort is it to let a requester make a task not-publicly-listed?
 
-Short answer: **the data-model and UI work is small (2-3 days); the real cost is a
-foundational piece the codebase does not have today -- read-time authentication.**
-Every task read endpoint is currently an unauthenticated `publicProcedure`. To make a
-task private you must first be able to answer "who is asking?" on a GET request, and
-right now the backend cannot. Building that, retrofitting it across ~8 read endpoints,
-and reckoning with the fact that core task data is already public on-chain forever, is
-what turns a one-column change into a **1.5-3 week** effort depending on scope.
+**Tasks stay public by default -- that is the product decision, not up for revisiting
+in this document.** Every existing task, and every new task unless a requester
+explicitly opts in otherwise, is discoverable exactly as it is today. What this
+proposes is an **opt-in**, per-task visibility choice: `unlisted` now (cheap), and,
+later, true `private` (expensive) -- never a change to the default.
 
-This document scopes the work, names the blocker, and offers two delivery options. In
+Short answer: **the data-model and UI work for the opt-in `unlisted` value is small
+(2-3 days); the real cost, if `private` is ever pursued, is a foundational piece the
+codebase does not have today -- read-time authentication.** Every task read endpoint is
+currently an unauthenticated `publicProcedure`. To let an opted-in-private task actually
+restrict who can read it, you must first be able to answer "who is asking?" on a GET
+request, and right now the backend cannot. Building that, retrofitting it across ~8 read
+endpoints, and reckoning with the fact that core task data is already public on-chain
+forever, is what turns a one-column change into a **1.5-3 week** effort depending on
+scope -- and it is why `private` is deferred rather than shipped alongside `unlisted`.
+
+This document scopes the work, names the blocker, and offers two delivery phases. In
 practice the primary driver is **submission/result privacy**, not task descriptions --
 see "Submission visibility and reveal" below for the time-gated, requester-controlled
 reveal model. Client-side (platform-blind) encryption is an explicit non-goal for now.
@@ -34,8 +42,10 @@ reveal model. Client-side (platform-blind) encryption is an explicit non-goal fo
 | **Phase 2 -- True private (recommended target)** | Tasks visible only to requester + invited/assigned workers. Requires read authentication. | **1.5-3 weeks** |
 
 The honest recommendation: ship **Phase 1 first** (it removes the loudest privacy
-leak -- the public firehose -- cheaply), then decide whether the marketplace product
-can tolerate Phase 2, which inverts the core "open marketplace" value proposition.
+leak -- the public firehose, for anyone who opts in to `unlisted` -- cheaply), then
+decide whether the read-authentication investment for Phase 2 is worth it. Both phases
+are strictly opt-in; the default stays `public` in either case, so neither phase changes
+what today's users already experience unless they explicitly choose otherwise.
 
 **On the word "private":** Phase 1 does not build any real access control, so the
 recommended near-term implementation exposes only two values -- `unlisted` and
@@ -67,9 +77,10 @@ table) and is therefore the only thing we can actually gate:
 - feedback / rating text, including the post-completion `rating` recorded per award in
   `task_awards`
 
-So "private by default" precisely means: **the off-chain content and the convenience
-discovery surface (list, search, SEO previews, inbox) are gated; the on-chain
-existence, reward, and metadata of a task remain publicly observable.** This is an
+So opting a task into `unlisted` (and, later, `private`) precisely means: **the
+off-chain content and the convenience discovery surface (list, search, SEO previews,
+inbox lookups of a third party's tasks) are gated for that one task; the on-chain
+existence, reward, and metadata remain publicly observable regardless.** This is an
 acceptable and common Web3 privacy posture, but it must be stated plainly in product
 copy so we do not over-promise confidentiality.
 
@@ -128,13 +139,13 @@ reusable `optionalAuth`/`protectedProcedure` that populates `ctx.caller` on read
 | `pitches.listByTask` | `pitches.router.ts` ~L122 | public | proposal text |
 | `proofs.listByTask` | `proofs.router.ts` ~L149 | public | benchmark proofs |
 | `feedbacks.list` | `feedbacks.router.ts` ~L7 | public | ratings/feedback text |
-| `agents.inbox?address=` | `agents.router.ts` ~L112 | public | **any** address's tasks |
+| `agents.inbox?address=` | `agents.router.ts` ~L112 | public | any address's `unlisted`/private tasks, once those exist |
 | `/tasks` (bot prerender) | `middleware/ogTags.ts` `buildTasksBody` ~L155 | middleware | description+reward of all tasks in list |
 | `/tasks/:taskId` (bot prerender) | `middleware/ogTags.ts` ~L289 | middleware | description in OG tags |
 
-Note `agents.inbox` is a pre-existing privacy bug independent of this proposal: anyone
-can enumerate any wallet's tasks by passing its address. Worth fixing regardless, and it
-does not require the full Phase 2 investment -- see "Fixing `agents.inbox` now" below.
+**`agents.inbox` is not a bug on its own**, and does not need caller authentication --
+see the note right after the worker-identity correction below for why, and "What
+`agents.inbox` actually needs" for the (small) change it does need as part of Phase 1.
 
 ### On worker identity: `tasks.worker` no longer exists
 
@@ -149,20 +160,42 @@ post-completion workers -- a task can have more than one row in `task_awards` un
 ranked-payout settlement, so "the worker" is no longer a single address once a task has
 settled.
 
-## Fixing `agents.inbox` now (independent of Phase 1/2)
+## What `agents.inbox` actually needs
 
-The `agents.inbox` enumeration bug does not need the general Phase 2 read-auth
-framework to fix -- it needs the caller to prove they *are* the address they're asking
-about, which is a narrower, self-contained check. The same precedent cited above
-(`bids.myBids`'s `x-taskmarket-api-token` header, or a signed
-`recoverMessageAddress` check) can be reused directly on this one endpoint without
-building the general `ctx.caller` framework first. This should ship as its own small,
-independent fix, not bundled into either Phase 1 or Phase 2.
+An earlier draft of this proposal called `agents.inbox` a "pre-existing privacy bug"
+and proposed requiring the caller to prove they *are* the address they're asking about
+before returning anything -- i.e., turning it into an authenticated "my inbox only"
+endpoint. That was wrong, and worth recording so it isn't re-proposed.
+
+`agents.stats` (`apps/backend/src/routers/agents.router.ts`) and `agents.leaderboard`
+sit right next to `inbox` in the same router, are equally `publicProcedure`, and return
+a wallet's aggregate reputation (completed tasks, ratings, earnings, rank) for *any*
+address, no auth, by design. Looking up any wallet's public history and reputation is
+already a deliberate, consistent feature of this marketplace -- the same idea as
+checking an address's history on a block explorer before dealing with it. `agents.inbox`
+is just the detailed version of that same already-intentional pattern, not an anomaly.
+Requiring self-authentication would break that existing, intentional feature for anyone
+relying on it (a requester checking a worker's track record before selecting them, a
+tool building agent reputation lookups), which is a real product decision, not a bug fix
+-- out of scope for this proposal.
+
+The only thing actually justified: once `unlisted` visibility exists, `agents.inbox`
+should exclude `unlisted` tasks from its results, unconditionally, the same as every
+other public listing endpoint. This needs no caller authentication -- `agents.inbox`
+has no way to know who is calling today, only which address was asked about, so it
+cannot distinguish "the owner asking about themselves" from anyone else asking about
+them. Without read-auth (Phase 2), there is no way to special-case the owner here, so
+the honest Phase 1 behavior is that `agents.inbox` shows only public tasks for any
+address, full stop -- an owner who wants to see their own unlisted tasks does so by
+already knowing the task ID (they created it) and fetching it directly, or via
+whatever already-authenticated view the web dashboard uses, not through this public,
+unauthenticated endpoint. This ships as one more line item in Phase 1's Layer 3
+retrofit, not a separate PR.
 
 ## Submission visibility and reveal (the primary driver)
 
-In practice the "private by default" ask is mostly about **submitted results**, not task
-descriptions. Two distinct harms come from today's always-public submissions:
+In practice the demand for task-level privacy is mostly about **submitted results**, not
+task descriptions. Two distinct harms come from today's always-public submissions:
 
 - **Requester side**: some tasks are commercially sensitive (companies, organisations).
   The results should not be world-readable, and the requester should decide if and when
@@ -268,9 +301,9 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `'private'` until Phase 2 actually enforces it (see the note under "TL;DR effort
   verdict" above).
 - Add `visibility` to `TaskCreateSchema` and the task response schema
-  (`packages/shared/src/schemas/task.schemas.ts`), default `'public'`. Defaulting to
-  `'public'` matches today's behavior exactly and avoids the "product inversion" risk
-  noted below -- new tasks are not silently hidden unless a requester opts in.
+  (`packages/shared/src/schemas/task.schemas.ts`), default `'public'`. This is not a
+  choice made here so much as a restatement of the settled product decision at the top
+  of this document -- new tasks are never silently hidden unless a requester opts in.
 - Drizzle migration. Existing rows already default to `'public'` under this scheme, so
   no separate backfill statement is needed the way it would be if the default were
   `'private'`/`'unlisted'` -- but write the migration to set the column explicitly for
@@ -290,9 +323,10 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 ### Layer 3 -- Authorization helper + endpoint retrofit (~3-4 days for Phase 2; ~0.5 day for Phase 1)
 
 - Phase 1 only needs to exclude `'unlisted'` rows from `tasks.list`, `market` search,
-  stats/leaderboards, task-drop broadcasts, and the two `ogTags.ts` prerender branches.
-  Direct `tasks.get(taskId)` stays open to everyone -- that is what makes Phase 1 not
-  need read-auth.
+  stats/leaderboards, task-drop broadcasts, `agents.inbox` (see "What `agents.inbox`
+  actually needs" above -- a plain filter, no auth), and the two `ogTags.ts` prerender
+  branches. Direct `tasks.get(taskId)` stays open to everyone -- that is what makes
+  Phase 1 not need read-auth.
 - Phase 2 additionally needs `canView(task, caller?)`: `true` if
   `task.visibility === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
@@ -301,7 +335,6 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `!canView`, once Phase 2 lands.
 - Retrofit `canView` into all `listByTask` endpoints (bids, submissions, pitches,
   proofs, feedbacks) -- load the parent task, gate on it. Phase 2 only.
-- The `agents.inbox` fix (see above) ships independently of both options.
 
 ### Layer 4 -- SEO / crawler (~0.5 day)
 
@@ -362,10 +395,9 @@ No contract change. On-chain data stays public (see constraint above). We explic
 | **Total** | **~2-3 days** | **~1.5-3 weeks** |
 
 Phase 1 needs no read-auth because "unlisted" only requires *omitting* rows from
-list/search/SEO -- direct `get(taskId)` stays open, so no caller identity is needed.
-That is why it is an order of magnitude cheaper, and why it is the natural first ship.
-The `agents.inbox` fix and the SEO leak fix should ship alongside Phase 1 regardless,
-since they are independent, small, and close real gaps.
+list/search/SEO/inbox -- direct `get(taskId)` stays open, so no caller identity is
+needed anywhere in this phase. That is why it is an order of magnitude cheaper, and why
+it is the natural first ship.
 
 ## Migration & backward compatibility
 
@@ -389,22 +421,20 @@ since they are independent, small, and close real gaps.
 - **Worker discovery for a future true-private task.** If Phase 2 ships and a task is
   restricted to invited workers, how does an invited worker learn of it? Needs an
   invite/`allowedViewers` mechanism (deferred; `canView` is written to accommodate it).
-- **`agents.inbox` leak** should be fixed now regardless of which option ships, and does
-  not require Phase 2's general read-auth framework -- see "Fixing `agents.inbox` now."
 
 ## Recommendation
 
-1. Ship **Phase 1 (unlisted)** first: add the column (`'unlisted' | 'public'`, default
-   `'public'`), exclude unlisted tasks from `list`/`search`/SEO, add the CLI flag and web
-   toggle. ~2-3 days, removes the public firehose, no architectural change, and does not
-   expose a `'private'` value that would not actually be enforced.
-2. Separately and immediately, fix the `agents.inbox` enumeration bug -- it is small,
-   independent, and does not need the general Phase 2 read-auth framework.
-3. Treat **Phase 2 (true private)** as a scoped follow-up gated on a product decision
-   about the default, and on accepting the read-authentication investment. Budget
-   1.5-3 weeks. Only introduce a `'private'` visibility value as part of this work, once
-   it is genuinely enforced.
-4. Within Phase 2, the highest-value piece is **submission reveal** (time + role gated,
+1. Ship **Phase 1 (unlisted, opt-in -- the default stays `public`)** first: add the
+   column (`'unlisted' | 'public'`, default `'public'`), exclude unlisted tasks from
+   `list`/`search`/SEO/`agents.inbox`, add the CLI flag and web toggle. ~2-3 days,
+   removes the public firehose for anyone who opts in, no architectural change, no
+   default-behavior change for existing tasks, and does not expose a `'private'` value
+   that would not actually be enforced.
+2. Treat **Phase 2 (true private, also opt-in)** as a scoped follow-up gated on a
+   product decision about whether to build it at all, and on accepting the
+   read-authentication investment. Budget 1.5-3 weeks. Only introduce a `'private'`
+   visibility value as part of this work, once it is genuinely enforced.
+3. Within Phase 2, the highest-value piece is **submission reveal** (time + role gated,
    requester-controlled) -- prioritise it, as it directly answers the copying/
    homogenisation and requester-confidentiality complaints. **Client-side encryption is a
    non-goal** for now: we do not need to hide submissions from the platform, and it would
@@ -421,7 +451,8 @@ since they are independent, small, and close real gaps.
   tasks from search/leaderboards
 - `apps/backend/src/services/task-drop-announcements.ts` (or equivalent) -- exclude
   unlisted tasks from Task Drop broadcasts
-- `apps/backend/src/routers/agents.router.ts` -- independent `inbox` auth fix
+- `apps/backend/src/routers/agents.router.ts` -- exclude `unlisted` tasks from `inbox`
+  results (plain filter, no auth change)
 - `apps/backend/src/middleware/ogTags.ts` -- SEO visibility check, both branches
 - `apps/web/app/sitemap.ts` -- exclude unlisted tasks
 - `apps/cli/src/commands/task/{create,search}.ts` -- `--visibility`, plus a changeset
