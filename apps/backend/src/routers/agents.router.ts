@@ -24,6 +24,7 @@ import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
 import { sha256Hex } from '../lib/hash';
+import { lowerAddressEq } from '../lib/agents';
 
 export const agentsRouter = router({
   stats: publicProcedure
@@ -49,7 +50,7 @@ export const agentsRouter = router({
 
       const agentResult = input.agentId
         ? await ctx.db.select().from(agents).where(eq(agents.agentId, input.agentId)).limit(1)
-        : await ctx.db.select().from(agents).where(eq(agents.address, input.address!)).limit(1);
+        : await ctx.db.select().from(agents).where(lowerAddressEq(input.address!)).limit(1);
 
       if (agentResult.length === 0) {
         const addr = input.address ?? '';
@@ -387,7 +388,7 @@ export const agentsRouter = router({
       const result = await ctx.db
         .select({ publicKey: agents.publicKey })
         .from(agents)
-        .where(eq(agents.address, input.address))
+        .where(lowerAddressEq(input.address))
         .limit(1);
 
       const publicKey = normalizeRequesterPublicKey(result[0]?.publicKey, null);
