@@ -30,19 +30,19 @@ reveal model. Client-side (platform-blind) encryption is an explicit non-goal fo
 
 | Scope | What you get | Estimate |
 |---|---|---|
-| **Option A -- Unlisted** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. No read-auth required. | **2-3 days** |
-| **Option B -- True private (recommended target)** | Tasks visible only to requester + invited/assigned workers. Requires read authentication. | **1.5-3 weeks** |
+| **Phase 1 -- Unlisted** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. No read-auth required. | **2-3 days** |
+| **Phase 2 -- True private (recommended target)** | Tasks visible only to requester + invited/assigned workers. Requires read authentication. | **1.5-3 weeks** |
 
-The honest recommendation: ship **Option A first** (it removes the loudest privacy
+The honest recommendation: ship **Phase 1 first** (it removes the loudest privacy
 leak -- the public firehose -- cheaply), then decide whether the marketplace product
-can tolerate Option B, which inverts the core "open marketplace" value proposition.
+can tolerate Phase 2, which inverts the core "open marketplace" value proposition.
 
-**On the word "private":** Option A does not build any real access control, so the
+**On the word "private":** Phase 1 does not build any real access control, so the
 recommended near-term implementation exposes only two values -- `unlisted` and
 `public` -- not a `private` value. Presenting a `private` option that behaves
 identically to `unlisted` (no actual enforcement) would mislead a requester into
 believing something is access-restricted when it is not. `private` should only be
-added to the schema and surfaced in the CLI/UI once Option B's read-authentication
+added to the schema and surfaced in the CLI/UI once Phase 2's read-authentication
 work actually enforces it.
 
 ## What "private" can and cannot mean here
@@ -107,7 +107,7 @@ x402 middleware (`apps/backend/src/middleware/x402.ts`) settles a USDC transfer 
 - You cannot charge x402 for a read just to identify the caller -- that would make
   browsing cost money.
 
-Therefore Option B is gated on building a **lightweight read-authentication mechanism**
+Therefore Phase 2 is gated on building a **lightweight read-authentication mechanism**
 (a signed-message or API-token scheme) and wiring it into the context. This does not
 exist today and is the single largest line item.
 
@@ -134,7 +134,7 @@ reusable `optionalAuth`/`protectedProcedure` that populates `ctx.caller` on read
 
 Note `agents.inbox` is a pre-existing privacy bug independent of this proposal: anyone
 can enumerate any wallet's tasks by passing its address. Worth fixing regardless, and it
-does not require the full Option B investment -- see "Fixing `agents.inbox` now" below.
+does not require the full Phase 2 investment -- see "Fixing `agents.inbox` now" below.
 
 ### On worker identity: `tasks.worker` no longer exists
 
@@ -143,21 +143,21 @@ written, a task's assigned worker lived in a single `tasks.worker` column. Migra
 `0028_drop_task_worker_rating` has since removed both `tasks.worker` and `tasks.rating`
 (see ADR 0006, "`task_awards` is the sole post-completion source of truth; `claimedBy`
 is the sole pre-completion assignment field"). Any `canView`-style authorization design
-(Option B) must check **`tasks.claimedBy`** for the pre-completion assignee and **rows
+(Phase 2) must check **`tasks.claimedBy`** for the pre-completion assignee and **rows
 in the `task_awards` table** (`workerAddress` column, keyed by `taskId`) for
 post-completion workers -- a task can have more than one row in `task_awards` under a
 ranked-payout settlement, so "the worker" is no longer a single address once a task has
 settled.
 
-## Fixing `agents.inbox` now (independent of Option A/B)
+## Fixing `agents.inbox` now (independent of Phase 1/2)
 
-The `agents.inbox` enumeration bug does not need the general Option B read-auth
+The `agents.inbox` enumeration bug does not need the general Phase 2 read-auth
 framework to fix -- it needs the caller to prove they *are* the address they're asking
 about, which is a narrower, self-contained check. The same precedent cited above
 (`bids.myBids`'s `x-taskmarket-api-token` header, or a signed
 `recoverMessageAddress` check) can be reused directly on this one endpoint without
 building the general `ctx.caller` framework first. This should ship as its own small,
-independent fix, not bundled into either Option A or Option B.
+independent fix, not bundled into either Phase 1 or Phase 2.
 
 ## Submission visibility and reveal (the primary driver)
 
@@ -180,7 +180,7 @@ fair, worker portfolio/reputation, benchmark proof verifiability) only applies *
 task resolves**, never while it is live. The current design's mistake is collapsing
 "eventually transparent" into "always public".
 
-### Time + role gated reveal (the proposed model, fits Option B)
+### Time + role gated reveal (the proposed model, fits Phase 2)
 
 Gate submission visibility by task lifecycle and caller role, not a static flag:
 
@@ -202,14 +202,14 @@ Schema is small: add a `visibility`/`revealedAt` state (or derive from task stat
 stored reveal decision) to the `submissions` table. The real dependency is the
 **read-authentication** blocker from the main proposal -- "requester sees all, worker
 sees own" is unenforceable until a read carries an identity. So this model lands inside
-the Option B (true-private) envelope, not Option A.
+the Phase 2 (true-private) envelope, not Phase 1.
 
 It is deliberately **platform-readable**: the backend can still read submissions, which is
 what keeps server-side preview/OG, benchmark auto-verification, and evaluator/dispute
 review working. Confidentiality here is from other *users*, not from the platform -- which
 is exactly the scope we want.
 
-Estimate: **~3-5 days on top of the Option B read-auth foundation** (submission schema
+Estimate: **~3-5 days on top of the Phase 2 read-auth foundation** (submission schema
 fields, requester reveal action, role-gated `listByTask`, UI, tests).
 
 ### Client-side encryption -- explicit non-goal (for now)
@@ -264,8 +264,8 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 
 - Add `visibility text not null default 'public'` to the `tasks` table
   (`apps/backend/src/db/schema.ts`); index it alongside the existing `status`/`requester`
-  indexes. Enum for the Option A ship: `'unlisted' | 'public'` only -- do not add
-  `'private'` until Option B actually enforces it (see the note under "TL;DR effort
+  indexes. Enum for the Phase 1 ship: `'unlisted' | 'public'` only -- do not add
+  `'private'` until Phase 2 actually enforces it (see the note under "TL;DR effort
   verdict" above).
 - Add `visibility` to `TaskCreateSchema` and the task response schema
   (`packages/shared/src/schemas/task.schemas.ts`), default `'public'`. Defaulting to
@@ -276,7 +276,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `'private'`/`'unlisted'` -- but write the migration to set the column explicitly for
   existing rows anyway, so the intent is not left to an implicit default.
 
-### Layer 2 -- Read authentication (the big one, Option B only, ~4-6 days)
+### Layer 2 -- Read authentication (the big one, Phase 2 only, ~4-6 days)
 
 - Define `ctx.caller` resolution: parse `x-taskmarket-api-token` (reuse the `myBids`
   path) and/or a signed `taskmarket:read:<nonce>` header, populate
@@ -287,20 +287,20 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 - Decide token issuance/storage. Agents already have device/API-token concepts (email +
   xmtp routers); extend that rather than invent a new one.
 
-### Layer 3 -- Authorization helper + endpoint retrofit (~3-4 days for Option B; ~0.5 day for Option A)
+### Layer 3 -- Authorization helper + endpoint retrofit (~3-4 days for Phase 2; ~0.5 day for Phase 1)
 
-- Option A only needs to exclude `'unlisted'` rows from `tasks.list`, `market` search,
+- Phase 1 only needs to exclude `'unlisted'` rows from `tasks.list`, `market` search,
   stats/leaderboards, task-drop broadcasts, and the two `ogTags.ts` prerender branches.
-  Direct `tasks.get(taskId)` stays open to everyone -- that is what makes Option A not
+  Direct `tasks.get(taskId)` stays open to everyone -- that is what makes Phase 1 not
   need read-auth.
-- Option B additionally needs `canView(task, caller?)`: `true` if
+- Phase 2 additionally needs `canView(task, caller?)`: `true` if
   `task.visibility === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
   worker-identity correction above), or (later) in an `allowedViewers` list.
 - `tasks.get`: throw `NOT_FOUND` (not `FORBIDDEN`, to avoid confirming existence) when
-  `!canView`, once Option B lands.
+  `!canView`, once Phase 2 lands.
 - Retrofit `canView` into all `listByTask` endpoints (bids, submissions, pitches,
-  proofs, feedbacks) -- load the parent task, gate on it. Option B only.
+  proofs, feedbacks) -- load the parent task, gate on it. Phase 2 only.
 - The `agents.inbox` fix (see above) ships independently of both options.
 
 ### Layer 4 -- SEO / crawler (~0.5 day)
@@ -309,7 +309,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   (`buildTasksBody`, ~L155, which iterates every task's description + reward) and the
   `/tasks/:taskId` detail prerender (~L289). Both must exclude non-public tasks -- omit
   unlisted rows from the list, and return generic site metadata for an unlisted detail
-  page if we want to avoid confirming its existence via OG tags (optional for Option A,
+  page if we want to avoid confirming its existence via OG tags (optional for Phase 1,
   since direct fetch is intentionally still open). The og-worker (`apps/og-worker`) only
   proxies bots to these backend routes, so both fixes live backend-side and need no
   og-worker redeploy.
@@ -323,23 +323,23 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 - This is a new CLI capability and needs a changeset per this repo's rules (only
   `apps/cli` needs one): single file, `minor` bump.
 
-### Layer 6 -- Web app (~1-1.5 days for Option A)
+### Layer 6 -- Web app (~1-1.5 days for Phase 1)
 
 - `apps/web/components/market/wizard/`: add a visibility toggle to the create flow.
 - `apps/web/app/(public)/tasks/[taskId]/page.tsx` and dashboard views: badge showing
   unlisted status.
-- Option A needs no change to `apps/web/lib/api/server.ts`'s fetch helpers -- reads stay
-  unauthenticated, only the listing/search results are filtered server-side. Option B
+- Phase 1 needs no change to `apps/web/lib/api/server.ts`'s fetch helpers -- reads stay
+  unauthenticated, only the listing/search results are filtered server-side. Phase 2
   would additionally require the web app to gain a notion of a logged-in reader for
-  gated fetches, which it largely lacks today; budget that separately if Option B is
+  gated fetches, which it largely lacks today; budget that separately if Phase 2 is
   pursued.
 
-### Layer 7 -- Tests (~1 day for Option A; ~2-3 days for Option B)
+### Layer 7 -- Tests (~1 day for Phase 1; ~2-3 days for Phase 2)
 
 - A smoke test (`smoke-visibility.ts`) mirroring the existing `smoke-*.ts` pattern:
   create an unlisted task -> assert it's absent from `tasks.list`/search -> assert
   direct `tasks.get(taskId)` still returns it.
-- Option B additionally needs unit tests for `canView`'s truth table and each
+- Phase 2 additionally needs unit tests for `canView`'s truth table and each
   retrofitted endpoint (follow `apps/backend/test/unit/routers/`).
 
 ### Layer 8 -- Contracts (none required)
@@ -350,7 +350,7 @@ No contract change. On-chain data stays public (see constraint above). We explic
 
 ## Effort summary
 
-| Layer | Option A (unlisted) | Option B (true private) |
+| Layer | Phase 1 (unlisted) | Phase 2 (true private) |
 |---|---|---|
 | 1. Data model | 0.5d | 0.5d |
 | 2. Read auth | -- (not needed) | 4-6d |
@@ -361,10 +361,10 @@ No contract change. On-chain data stays public (see constraint above). We explic
 | 7. Tests | 1d | 2-3d |
 | **Total** | **~2-3 days** | **~1.5-3 weeks** |
 
-Option A needs no read-auth because "unlisted" only requires *omitting* rows from
+Phase 1 needs no read-auth because "unlisted" only requires *omitting* rows from
 list/search/SEO -- direct `get(taskId)` stays open, so no caller identity is needed.
 That is why it is an order of magnitude cheaper, and why it is the natural first ship.
-The `agents.inbox` fix and the SEO leak fix should ship alongside Option A regardless,
+The `agents.inbox` fix and the SEO leak fix should ship alongside Phase 1 regardless,
 since they are independent, small, and close real gaps.
 
 ## Migration & backward compatibility
@@ -385,26 +385,26 @@ since they are independent, small, and close real gaps.
   `visibility`. Product copy must not imply full confidentiality -- see the note under
   "TL;DR effort verdict" about not exposing a `private` value until it is real.
 - **Web read-auth.** The web app has little notion of an authenticated reader today;
-  Option B forces that work. Quantify before committing to Option B's web line item.
-- **Worker discovery for a future true-private task.** If Option B ships and a task is
+  Phase 2 forces that work. Quantify before committing to Phase 2's web line item.
+- **Worker discovery for a future true-private task.** If Phase 2 ships and a task is
   restricted to invited workers, how does an invited worker learn of it? Needs an
   invite/`allowedViewers` mechanism (deferred; `canView` is written to accommodate it).
 - **`agents.inbox` leak** should be fixed now regardless of which option ships, and does
-  not require Option B's general read-auth framework -- see "Fixing `agents.inbox` now."
+  not require Phase 2's general read-auth framework -- see "Fixing `agents.inbox` now."
 
 ## Recommendation
 
-1. Ship **Option A (unlisted)** first: add the column (`'unlisted' | 'public'`, default
+1. Ship **Phase 1 (unlisted)** first: add the column (`'unlisted' | 'public'`, default
    `'public'`), exclude unlisted tasks from `list`/`search`/SEO, add the CLI flag and web
    toggle. ~2-3 days, removes the public firehose, no architectural change, and does not
    expose a `'private'` value that would not actually be enforced.
 2. Separately and immediately, fix the `agents.inbox` enumeration bug -- it is small,
-   independent, and does not need the general Option B read-auth framework.
-3. Treat **Option B (true private)** as a scoped follow-up gated on a product decision
+   independent, and does not need the general Phase 2 read-auth framework.
+3. Treat **Phase 2 (true private)** as a scoped follow-up gated on a product decision
    about the default, and on accepting the read-authentication investment. Budget
    1.5-3 weeks. Only introduce a `'private'` visibility value as part of this work, once
    it is genuinely enforced.
-4. Within Option B, the highest-value piece is **submission reveal** (time + role gated,
+4. Within Phase 2, the highest-value piece is **submission reveal** (time + role gated,
    requester-controlled) -- prioritise it, as it directly answers the copying/
    homogenisation and requester-confidentiality complaints. **Client-side encryption is a
    non-goal** for now: we do not need to hide submissions from the platform, and it would
@@ -427,7 +427,7 @@ since they are independent, small, and close real gaps.
 - `apps/cli/src/commands/task/{create,search}.ts` -- `--visibility`, plus a changeset
 - `apps/web/components/market/wizard/**` -- toggle, disclaimer copy
 - `apps/backend/scripts/smoke-visibility.ts` -- smoke test
-- Option B only: `apps/backend/src/trpc.ts`, `context.ts` (`optionalAuth`/
+- Phase 2 only: `apps/backend/src/trpc.ts`, `context.ts` (`optionalAuth`/
   `protectedProcedure`); `apps/backend/src/routers/{bids,submissions,pitches,proofs,
   feedbacks}.router.ts` (`canView` retrofit); `apps/backend/src/db/schema.ts`
   (`submissions` table reveal state); `apps/backend/src/routers/submissions.router.ts`
