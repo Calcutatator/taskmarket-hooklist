@@ -13,9 +13,9 @@
 > shape (`deviceId` to `address` + `signature`) with no backward-compatible dual-mode,
 > requiring the CLI (its only caller) to be updated in the same change.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-20
-- **Deciders:** (awaiting human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
