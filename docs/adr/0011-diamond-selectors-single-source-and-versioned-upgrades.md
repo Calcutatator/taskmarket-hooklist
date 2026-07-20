@@ -99,6 +99,31 @@ Two external tools were researched as alternatives to fixing this in-house:
    guarantees it cannot silently reoccur even if a future edit re-introduces a second list by
    mistake.
 
+## Implementation notes
+
+- **Revision numbering, not ADR numbering, in the contracts package.** `packages/contracts/`
+  has a public mirror, so its comments use this codebase's existing `rev00N` convention
+  (`rev007`, `rev008`, ...) exclusively — never `ADR-NNNN`. ADR cross-references stay inside
+  `docs/adr/`, which is not mirrored. This upgrade is **rev011** (rev010 was already taken by
+  the `setDefaultHooks`/hooks work).
+- **`diamondVersion` is seeded at 11, not 1.** Since each diamond upgrade already corresponds to
+  one of this codebase's numbered revisions, the counter is backfilled to match that existing
+  numbering on its first write (`AdminFacet.initialize()` for a fresh deploy; `setDiamondVersion`
+  for every `DiamondFullUpgrade.s.sol` path) rather than starting a parallel "version 1" scheme.
+  The next real upgrade after this one lands — the first to exercise the new tracked-version
+  flow end to end — will be rev012, bumping `diamondVersion` from 11 to 12.
+- **Item 3 shipped as an explicit version guard on the existing three paths, not a physical
+  split into separate per-revision script files.** `DiamondFullUpgrade.s.sol` still auto-detects
+  Path A/B/C via the existing loupe-based selector-presence checks (that detection logic is
+  itself historical and out of scope for this change — it is what gets a diamond to rev011 in
+  the first place). What changed: all three paths now also add
+  `AdminFacet.diamondVersion()`/`setDiamondVersion()` and call `setDiamondVersion(11)` once their
+  cut lands, so from rev011 onward a diamond's version is an explicit on-chain fact instead of
+  something inferred. There is no rev012 content yet to decompose into a separate step script —
+  the "one script per future revision, applied in sequence" shape described above is what the
+  *next* upgrade will exercise for the first time, not something this PR needed to build ahead of
+  having a second version to apply.
+
 ## Consequences
 
 **Positive:**
