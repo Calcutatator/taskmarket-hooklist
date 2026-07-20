@@ -1,4 +1,4 @@
-CREATE TABLE "requester_reputation_events" (
+CREATE TABLE IF NOT EXISTS "requester_reputation_events" (
   "id" serial PRIMARY KEY,
   "task_id" text NOT NULL,
   "requester" text NOT NULL,

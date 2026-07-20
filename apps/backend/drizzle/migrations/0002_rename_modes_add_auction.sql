@@ -8,9 +8,9 @@ ALTER TABLE "tasks" RENAME COLUMN "proposal_deadline" TO "pitch_deadline";
 --> statement-breakpoint
 
 -- 2. Add auction-specific columns
-ALTER TABLE "tasks" ADD COLUMN "bid_deadline" timestamp;
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "bid_deadline" timestamp;
 --> statement-breakpoint
-ALTER TABLE "tasks" ADD COLUMN "max_price" numeric(78, 0);
+ALTER TABLE "tasks" ADD COLUMN IF NOT EXISTS "max_price" numeric(78, 0);
 --> statement-breakpoint
 
 -- 3. Change default mode to 'bounty'
@@ -28,7 +28,7 @@ END;
 --> statement-breakpoint
 
 -- 5. Create bids table for auction mode
-CREATE TABLE "bids" (
+CREATE TABLE IF NOT EXISTS "bids" (
 	"id" text PRIMARY KEY NOT NULL,
 	"task_id" text NOT NULL,
 	"worker_address" text NOT NULL,
@@ -37,11 +37,14 @@ CREATE TABLE "bids" (
 );
 --> statement-breakpoint
 
-ALTER TABLE "bids" ADD CONSTRAINT "bids_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+DO $$ BEGIN
+  ALTER TABLE "bids" ADD CONSTRAINT "bids_task_id_tasks_id_fk" FOREIGN KEY ("task_id") REFERENCES "public"."tasks"("id") ON DELETE no action ON UPDATE no action;
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 --> statement-breakpoint
 
-CREATE INDEX "idx_bids_task" ON "bids" USING btree ("task_id");
+CREATE INDEX IF NOT EXISTS "idx_bids_task" ON "bids" USING btree ("task_id");
 --> statement-breakpoint
-CREATE INDEX "idx_bids_worker" ON "bids" USING btree ("worker_address");
+CREATE INDEX IF NOT EXISTS "idx_bids_worker" ON "bids" USING btree ("worker_address");
 --> statement-breakpoint
-CREATE INDEX "idx_bids_price" ON "bids" USING btree ("price");
+CREATE INDEX IF NOT EXISTS "idx_bids_price" ON "bids" USING btree ("price");

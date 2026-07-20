@@ -6,7 +6,7 @@
 -- args is JSONB so we can store each event's payload generically (e.g.
 -- `{"newFeeBps": 500}` or `{"forwarder": "0x...", "trusted": true}`) without
 -- needing a column per event type.
-CREATE TABLE "protocol_events" (
+CREATE TABLE IF NOT EXISTS "protocol_events" (
   "id" serial PRIMARY KEY,
   "event_name" text NOT NULL,
   "chain_id" integer NOT NULL,
@@ -16,7 +16,7 @@ CREATE TABLE "protocol_events" (
   "args" jsonb NOT NULL,
   "emitted_at" timestamptz NOT NULL DEFAULT now()
 );
-CREATE UNIQUE INDEX "protocol_events_chain_block_log_unique"
+CREATE UNIQUE INDEX IF NOT EXISTS "protocol_events_chain_block_log_unique"
   ON "protocol_events" ("chain_id", "block_number", "log_index");
-CREATE INDEX "idx_protocol_events_name" ON "protocol_events" ("event_name");
-CREATE INDEX "idx_protocol_events_block" ON "protocol_events" ("block_number");
+CREATE INDEX IF NOT EXISTS "idx_protocol_events_name" ON "protocol_events" ("event_name");
+CREATE INDEX IF NOT EXISTS "idx_protocol_events_block" ON "protocol_events" ("block_number");

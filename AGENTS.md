@@ -149,6 +149,28 @@ Before merging or deploying any branch that adds new migration files:
 - If your branch was cut before other migrations landed on `main`, re-timestamp your entries with a fresh `date +%s000` right before merging, don't reuse timestamps generated when the branch was created.
 - After deploying, check the backend boot logs for migration errors, and independently confirm the new tables/columns actually exist in the target database (e.g. `\d tasks` in psql) — don't infer success just from an absence of errors, since a skipped migration fails silently.
 
+`apps/backend/test/unit/config/migrations-journal.test.ts` runs these ordering checks (sequential `idx`, strictly increasing `when`, `.sql`-file/journal-entry count parity) automatically on every test run — it would have caught the `task_drop_id` incident above without anyone needing to remember the manual checklist.
+
+### Migration SQL must be idempotent
+
+Write every migration statement so that re-running it against a database where it already applied is a safe no-op, not an error:
+
+- `CREATE TABLE "x"` → `CREATE TABLE IF NOT EXISTS "x"`
+- `ALTER TABLE "x" ADD COLUMN "y" ...` → `ALTER TABLE "x" ADD COLUMN IF NOT EXISTS "y" ...`
+- `CREATE INDEX "x"` / `CREATE UNIQUE INDEX "x"` → add `IF NOT EXISTS`
+- `DROP TABLE|INDEX|COLUMN "x"` → add `IF EXISTS`
+- `ALTER TABLE "x" ADD CONSTRAINT "y" ...` has no portable `IF NOT EXISTS` form in this Postgres version — wrap it instead:
+  ```sql
+  DO $$ BEGIN
+    ALTER TABLE "bids" ADD CONSTRAINT "bids_task_worker_unique" UNIQUE ("task_id", "worker_address");
+  EXCEPTION WHEN duplicate_object THEN NULL;
+  END $$;
+  ```
+
+`pnpm db:generate` (`drizzle-kit generate`) never adds any of these guards itself — add them by hand after generating, before committing.
+
+This matters because the migrator's gating logic (above) only ever compares a migration's `"when"` against the database's last-applied timestamp — an already-applied migration is skipped purely because its `"when"` is old, not because the migrator remembers having run that specific file. If a `"when"` value for an already-applied migration is ever mistakenly retimed forward (the exact class of mistake the `task_drop_id` incident was, one step removed), a non-idempotent statement re-running will throw (`relation`/`column`/`constraint already exists`) and crash-loop the backend on every subsequent boot, since `server.ts` calls `process.exit(1)` on migration failure. Idempotency guards turn that failure mode into a no-op instead of an outage. `migrations-journal.test.ts` (above) also fails CI if any migration file introduces an unguarded statement, so this is enforced automatically, not just documented here.
+
 ## Changesets
 
 Changesets only apply to the CLI package (`apps/cli`, `@lucid-agents/taskmarket`). Do not add a changeset file for changes to any other app or package (backend, web, docs, contracts, shared, etc.) -- only PRs that touch `apps/cli` need one.
