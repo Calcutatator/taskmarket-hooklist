@@ -90,6 +90,7 @@ those always pause for a human.
 - [0008 — `task_awards` table creation and the `tasks.worker`/`tasks.rating` drop ship in two separate deploys](0008-task-awards-migration-ships-in-two-deploys.md)
 - [0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0009-legal-acceptance-opaque-receipt-default-deny-middleware.md)
 - [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
+- [0011 — Diamond facet selectors get one shared source of truth, and upgrades become explicit versioned steps](0011-diamond-selectors-single-source-and-versioned-upgrades.md)
 
 ## Linting
 
