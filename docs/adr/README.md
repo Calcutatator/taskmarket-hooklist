@@ -90,6 +90,8 @@ those always pause for a human.
 - [0008 — `task_awards` table creation and the `tasks.worker`/`tasks.rating` drop ship in two separate deploys](0008-task-awards-migration-ships-in-two-deploys.md)
 - [0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0009-legal-acceptance-opaque-receipt-default-deny-middleware.md)
 - [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
+- [0011 — Task visibility stays public by default; unlisted and private are strictly opt-in](0011-task-visibility-public-by-default-opt-in.md)
+- [0012 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework](0012-phase1-inbox-scoped-self-auth-not-general-framework.md)
 
 ## Linting
 
