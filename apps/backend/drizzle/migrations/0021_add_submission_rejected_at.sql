@@ -1,1 +1,1 @@
-ALTER TABLE "submissions" ADD COLUMN "rejected_at" timestamptz;
+ALTER TABLE "submissions" ADD COLUMN IF NOT EXISTS "rejected_at" timestamptz;

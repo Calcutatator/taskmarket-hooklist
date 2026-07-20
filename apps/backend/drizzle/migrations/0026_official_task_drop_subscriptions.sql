@@ -1,6 +1,6 @@
-ALTER TABLE "task_drops" ADD COLUMN "announced_at" timestamptz(3);
+ALTER TABLE "task_drops" ADD COLUMN IF NOT EXISTS "announced_at" timestamptz(3);
 
-CREATE TABLE "task_drop_task_reservations" (
+CREATE TABLE IF NOT EXISTS "task_drop_task_reservations" (
   "reservation_id" text PRIMARY KEY,
   "task_drop_id" text NOT NULL,
   "created_at" timestamptz(3) NOT NULL DEFAULT now(),
@@ -8,10 +8,10 @@ CREATE TABLE "task_drop_task_reservations" (
     FOREIGN KEY ("task_drop_id") REFERENCES "task_drops"("id") ON DELETE CASCADE
 );
 
-CREATE INDEX "idx_task_drop_task_reservations_drop"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_task_reservations_drop"
   ON "task_drop_task_reservations" ("task_drop_id");
 
-ALTER TABLE "task_drop_subscriptions" ADD COLUMN "subscription_scope" text;
+ALTER TABLE "task_drop_subscriptions" ADD COLUMN IF NOT EXISTS "subscription_scope" text;
 
 UPDATE "task_drop_subscriptions"
 SET "subscription_scope" = CASE
@@ -25,7 +25,7 @@ ALTER TABLE "task_drop_subscriptions"
 ALTER TABLE "task_drop_subscriptions"
   ALTER COLUMN "subscription_scope" SET DEFAULT 'drop';
 
-ALTER TABLE "task_drop_subscriptions" ADD COLUMN "consented_at" timestamptz(3);
+ALTER TABLE "task_drop_subscriptions" ADD COLUMN IF NOT EXISTS "consented_at" timestamptz(3);
 
 UPDATE "task_drop_subscriptions"
 SET "consented_at" = "created_at";
@@ -36,29 +36,32 @@ ALTER TABLE "task_drop_subscriptions"
 ALTER TABLE "task_drop_subscriptions"
   ALTER COLUMN "consented_at" SET DEFAULT now();
 
-ALTER TABLE "task_drop_subscriptions"
+DO $$ BEGIN
+  ALTER TABLE "task_drop_subscriptions"
   ADD CONSTRAINT "task_drop_subscriptions_scope_drop_check"
   CHECK (
     ("subscription_scope" = 'drop' AND "task_drop_id" IS NOT NULL)
     OR
     ("subscription_scope" IN ('official', 'legacy') AND "task_drop_id" IS NULL)
   );
+EXCEPTION WHEN duplicate_object THEN NULL;
+END $$;
 
-CREATE UNIQUE INDEX "uidx_task_drop_subscriptions_official_email"
+CREATE UNIQUE INDEX IF NOT EXISTS "uidx_task_drop_subscriptions_official_email"
   ON "task_drop_subscriptions" (lower("email"))
   WHERE "subscription_scope" = 'official';
 
-CREATE INDEX "idx_task_drop_subscriptions_scope"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_subscriptions_scope"
   ON "task_drop_subscriptions" ("subscription_scope");
 
-CREATE TABLE "task_drop_subscribe_rate_limits" (
+CREATE TABLE IF NOT EXISTS "task_drop_subscribe_rate_limits" (
   "rate_limit_key" text PRIMARY KEY,
   "window_started_at" timestamptz(3) NOT NULL,
   "attempts" integer NOT NULL,
   "updated_at" timestamptz(3) NOT NULL DEFAULT now()
 );
 
-CREATE TABLE "task_drop_announcement_deliveries" (
+CREATE TABLE IF NOT EXISTS "task_drop_announcement_deliveries" (
   "id" text PRIMARY KEY,
   "task_drop_id" text NOT NULL,
   "subscription_id" text NOT NULL,
@@ -78,11 +81,11 @@ CREATE TABLE "task_drop_announcement_deliveries" (
     CHECK ("status" IN ('pending', 'processing', 'sent', 'failed', 'skipped'))
 );
 
-CREATE UNIQUE INDEX "uidx_task_drop_announcement_delivery_subscription"
+CREATE UNIQUE INDEX IF NOT EXISTS "uidx_task_drop_announcement_delivery_subscription"
   ON "task_drop_announcement_deliveries" ("task_drop_id", "subscription_id");
 
-CREATE INDEX "idx_task_drop_announcement_deliveries_drop"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_announcement_deliveries_drop"
   ON "task_drop_announcement_deliveries" ("task_drop_id");
 
-CREATE INDEX "idx_task_drop_announcement_deliveries_status"
+CREATE INDEX IF NOT EXISTS "idx_task_drop_announcement_deliveries_status"
   ON "task_drop_announcement_deliveries" ("status");

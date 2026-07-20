@@ -8,7 +8,7 @@
 --
 -- Primary key is the natural (chain_id, block_number, log_index) tuple. tx_hash is
 -- a non-key column kept for diagnostics ("why was this event processed/missed?").
-CREATE TABLE "indexed_events" (
+CREATE TABLE IF NOT EXISTS "indexed_events" (
   "chain_id" integer NOT NULL,
   "block_number" bigint NOT NULL,
   "log_index" integer NOT NULL,
