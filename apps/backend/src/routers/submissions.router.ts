@@ -23,19 +23,12 @@ import {
 } from '../db/schema';
 import { eq, and, desc, inArray, sql } from 'drizzle-orm';
 import { getStorageBackend } from '../lib/storage';
-import { randomUUID, createHash } from 'crypto';
+import { randomUUID } from 'crypto';
 import { recoverMessageAddress, keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
-
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data).digest('hex');
-}
-
-function sha256Buffer(data: Buffer): string {
-  return createHash('sha256').update(data).digest('hex');
-}
+import { sha256Hex } from '../lib/hash';
 
 type ArtifactInsertRow = Omit<
   NewArtifact,
@@ -285,7 +278,7 @@ export const submissionsRouter = router({
           artifactInput.mimeType ?? detectedMimeType(fileBytes) ?? 'application/octet-stream';
         const fileName = artifactInput.fileName ?? `submission${extensionForMimeType(mimeType)}`;
         const keccak256Hash = keccak256(new Uint8Array(fileBytes));
-        const sha256Hash = sha256Buffer(fileBytes);
+        const sha256Hash = sha256Hex(fileBytes);
         const mediaKind = mediaKindFor(mimeType, fileName);
         const fileKey = `submissions/${input.taskId}/${submissionId}/${artifactInput.displayOrder}-${safeFileName(
           fileName

@@ -50,6 +50,6 @@ export function createMockCtx(payer?: string) {
   return {
     db,
     req: {} as any,
-    res: { locals: { payer: payer ?? undefined } } as any,
+    res: { locals: { payer: payer ?? undefined }, setHeader: vi.fn(), vary: vi.fn() } as any,
   };
 }

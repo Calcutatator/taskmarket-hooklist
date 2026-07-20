@@ -1,5 +1,9 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 
+vi.mock('@privy-io/react-auth', () => ({
+  getAccessToken: vi.fn().mockResolvedValue('privy-token'),
+}));
+
 import { payX402Post, type X402Deps } from './x402-client';
 
 const fetchMock = vi.fn();
@@ -61,9 +65,11 @@ function paymentChallenge() {
 describe('payX402Post', () => {
   beforeEach(() => {
     fetchMock.mockReset();
+    localStorage.clear();
   });
 
   it('completes the probe → sign → retry flow on success', async () => {
+    localStorage.setItem('taskmarket:legal-receipt', 'receipt-1');
     fetchMock
       .mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() })
       .mockResolvedValueOnce({
@@ -87,6 +93,12 @@ describe('payX402Post', () => {
 
     const retryHeaders = (fetchMock.mock.calls[1][1] as { headers: Record<string, string> })
       .headers;
+    const probeHeaders = (fetchMock.mock.calls[0][1] as { headers: Record<string, string> })
+      .headers;
+    expect(probeHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
+    expect(probeHeaders.Authorization).toBe('Bearer privy-token');
+    expect(retryHeaders['X-Taskmarket-Legal-Receipt']).toBe('receipt-1');
+    expect(retryHeaders.Authorization).toBe('Bearer privy-token');
     expect(retryHeaders['payment-signature']).toBeTruthy();
   });
 

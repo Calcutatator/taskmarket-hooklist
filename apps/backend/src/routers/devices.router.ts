@@ -3,13 +3,10 @@ import { z } from 'zod';
 import { devices, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
-import { createHash, hkdfSync, randomBytes, randomUUID } from 'crypto';
+import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
 import { Secp256k1PublicKeySchema } from '@taskmarket/shared';
-
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data).digest('hex');
-}
+import { sha256Hex } from '../lib/hash';
 
 function deriveDeviceEncryptionKey(masterKeyHex: string, deviceId: string): string {
   const ikm = Buffer.from(masterKeyHex, 'hex');

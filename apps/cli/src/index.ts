@@ -17,6 +17,7 @@ import { xmtpCommand } from './commands/xmtp.js';
 import { daemonCommand } from './commands/daemon.js';
 import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
+import { legalCommand } from './commands/legal/index.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -41,6 +42,7 @@ program.addCommand(xmtpCommand);
 program.addCommand(daemonCommand);
 program.addCommand(emailCommand);
 program.addCommand(requesterCmd);
+program.addCommand(legalCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   process.stderr.write(JSON.stringify({ ok: false, error: err.message }) + '\n');

@@ -17,6 +17,9 @@ export interface Keystore {
   xmtpInboxId?: string;
   xmtpInstallationId?: string;
   xmtpDbPath?: string;
+  legalAcceptanceReceipt?: string;
+  legalAcceptanceBundleVersion?: string;
+  legalAcceptanceApiOrigin?: string;
 }
 
 export function getKeystorePath(): string {

@@ -49,6 +49,8 @@ import { taskActionPreflight } from './middleware/taskActionPreflight';
 import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
 import { emailInboundHandler } from './middleware/emailInbound';
+import { createLegalAccessMiddleware } from './middleware/legal-access';
+import { getCurrentLegalDocument } from './services/legal';
 import { db } from './db/client';
 import { feedbacks, submissions, artifacts, proposals, proofs } from './db/schema';
 import {
@@ -72,8 +74,14 @@ export const app = express();
 
 const config = getServerConfig();
 
-if (config.NODE_ENV === 'production') {
-  app.set('trust proxy', 1);
+const trustProxyHops =
+  typeof config.TRUST_PROXY_HOPS === 'number'
+    ? config.TRUST_PROXY_HOPS
+    : config.NODE_ENV === 'production'
+      ? 1
+      : 0;
+if (trustProxyHops > 0) {
+  app.set('trust proxy', trustProxyHops);
 }
 
 function escapeHtml(value: string) {
@@ -180,6 +188,22 @@ app.use(
 );
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
+
+app.get('/legal-documents/:version/:slug/:contentHash', (req, res) => {
+  const document = getCurrentLegalDocument(
+    req.params.version,
+    req.params.slug,
+    req.params.contentHash
+  );
+  if (!document) {
+    res.status(404).type('text/plain').send('Legal document version not found.');
+    return;
+  }
+
+  res.setHeader('Cache-Control', 'public, max-age=31536000, immutable');
+  res.setHeader('X-Taskmarket-Legal-Hash', document.contentHash);
+  res.type('text/markdown').send(document.markdown);
+});
 
 if (config.NODE_ENV !== 'production') {
   app.use('/uploads', express.static(path.resolve(process.cwd(), 'uploads')));
@@ -301,6 +325,10 @@ app.post('/task-drops/unsubscribe', async (req, res) => {
 if (process.env.SERVE_FRONTEND === 'true') {
   app.use(ogTagsMiddleware);
 }
+
+// Enforce versioned legal assent before any paid middleware can settle a payment.
+// Public reads and designated exit/recovery routes are exempted inside the guard.
+app.use(createLegalAccessMiddleware({ db }));
 
 // tRPC X402 guards
 app.post(

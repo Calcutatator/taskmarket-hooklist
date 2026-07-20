@@ -533,13 +533,24 @@ contract:
 
 ui-ci:
 	$(ENV_LOADER) && \
+	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
+	MOCK_WEB_PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" && \
 	pnpm --filter @taskmarket/web lint:check && \
 	pnpm --filter @taskmarket/web format:check && \
 	pnpm --filter @taskmarket/shared build && \
 	pnpm --filter @taskmarket/web type-check && \
 	pnpm --filter @taskmarket/web test && \
-	pnpm --filter @taskmarket/web build && \
-	pnpm --filter @taskmarket/web test:e2e
+	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	NEXT_PUBLIC_PRIVY_APP_ID= \
+		pnpm --filter @taskmarket/web build && \
+	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	NEXT_PUBLIC_PRIVY_APP_ID= \
+	CI=1 \
+	NODE_ENV=production \
+	TASKMARKET_MOCK_WEB_PORT="$$MOCK_WEB_PORT" \
+		pnpm --filter @taskmarket/web test:e2e
 
 ui-ci-install-browsers:
 	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps chromium

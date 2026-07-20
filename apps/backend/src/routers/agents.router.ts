@@ -23,11 +23,7 @@ import { eq, desc, sql, and, or, ilike, gte, inArray, isNull, getTableColumns } 
 import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
-import { createHash } from 'crypto';
-
-function sha256Hex(data: string): string {
-  return createHash('sha256').update(data).digest('hex');
-}
+import { sha256Hex } from '../lib/hash';
 
 export const agentsRouter = router({
   stats: publicProcedure

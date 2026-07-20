@@ -1,3 +1,4 @@
+import { isCurrentLegalBundleActivationReady } from '@taskmarket/shared';
 import type { MetadataRoute } from 'next';
 
 import { absoluteUrl } from '@/lib/seo';
@@ -35,6 +36,15 @@ const staticEntries: MetadataRoute.Sitemap = [
     priority: 0.6,
     url: absoluteUrl('/humans'),
   },
+  ...(isCurrentLegalBundleActivationReady()
+    ? ['/legal', '/legal/terms', '/legal/privacy', '/legal/risks', '/legal/acceptable-use'].map(
+        (path) => ({
+          changeFrequency: 'monthly' as const,
+          priority: 0.3,
+          url: absoluteUrl(path),
+        })
+      )
+    : []),
 ];
 
 export default async function sitemap(): Promise<MetadataRoute.Sitemap> {

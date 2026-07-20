@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { getCurrentLegalBundleActivationIssues } from '@taskmarket/shared';
 
 const strictBooleanFromEnv = z.preprocess((value) => {
   if (typeof value === 'boolean') {
@@ -68,6 +69,7 @@ const envSchema = z
     X402_FACILITATOR_TOKEN: z.string().optional(),
     BACKEND_URL: z.string().url().default('http://localhost:3000'),
     WEB_APP_URL: z.string().url().default('http://localhost:3001'),
+    TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),
@@ -91,8 +93,55 @@ const envSchema = z
       .regex(/^0x[a-fA-F0-9]{40}$/)
       .optional(),
     DREAMS_HOOK_SEED_BLOCK: z.coerce.number().default(0),
+    LEGAL_ENFORCEMENT_ENABLED: strictBooleanFromEnv.default(false),
+    PRIVY_APP_ID: z.string().optional(),
+    PRIVY_APP_SECRET: z.string().optional(),
+    PRIVY_JWT_VERIFICATION_KEY: z.string().optional(),
+    NEXT_PUBLIC_PRIVY_APP_ID: z.string().optional(),
   })
   .superRefine((data, ctx) => {
+    if (data.LEGAL_ENFORCEMENT_ENABLED) {
+      const activationIssues = getCurrentLegalBundleActivationIssues();
+      if (activationIssues.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: `LEGAL_ENFORCEMENT_ENABLED requires final legal copy: ${activationIssues.join('; ')}`,
+          path: ['LEGAL_ENFORCEMENT_ENABLED'],
+        });
+      }
+
+      if (!data.PRIVY_APP_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'PRIVY_APP_ID is required when legal enforcement is enabled',
+          path: ['PRIVY_APP_ID'],
+        });
+      }
+
+      if (!data.PRIVY_APP_SECRET) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'PRIVY_APP_SECRET is required when legal enforcement is enabled',
+          path: ['PRIVY_APP_SECRET'],
+        });
+      }
+
+      if (!data.NEXT_PUBLIC_PRIVY_APP_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message: 'NEXT_PUBLIC_PRIVY_APP_ID is required when legal enforcement is enabled',
+          path: ['NEXT_PUBLIC_PRIVY_APP_ID'],
+        });
+      } else if (data.PRIVY_APP_ID && data.NEXT_PUBLIC_PRIVY_APP_ID !== data.PRIVY_APP_ID) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          message:
+            'NEXT_PUBLIC_PRIVY_APP_ID must match PRIVY_APP_ID when legal enforcement is enabled',
+          path: ['NEXT_PUBLIC_PRIVY_APP_ID'],
+        });
+      }
+    }
+
     if (data.NODE_ENV === 'production') {
       const s3Vars = [
         'AWS_REGION',

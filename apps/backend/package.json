@@ -60,6 +60,7 @@
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",
     "@aws-sdk/s3-request-presigner": "^3.0.0",
+    "@privy-io/node": "^0.25.0",
     "@taskmarket/shared": "workspace:*",
     "@trpc/server": "^11.4.4",
     "compression": "^1.7.4",

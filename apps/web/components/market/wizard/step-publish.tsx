@@ -26,6 +26,7 @@ import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-conf
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 import {
   estimateWorkerDreamsBonus,
   estimateRequesterDreamsBonus,
@@ -265,7 +266,7 @@ export function StepPublish({
       setPhase('payment');
       const probeRes = await fetch(`${apiUrl}/api/tasks`, {
         body: JSON.stringify(body),
-        headers: { 'Content-Type': 'application/json' },
+        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
         method: 'POST',
       });
       if (probeRes.status !== 402) {
@@ -348,6 +349,7 @@ export function StepPublish({
         body: JSON.stringify(body),
         headers: {
           'Content-Type': 'application/json',
+          ...(await getLegalRequestHeaders()),
           'payment-signature': btoa(JSON.stringify(paymentPayload)),
         },
         method: 'POST',

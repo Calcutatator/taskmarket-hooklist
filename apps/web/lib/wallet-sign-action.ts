@@ -8,6 +8,7 @@
 // addressField to control that.
 
 import type { useSignMessage } from 'wagmi';
+import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 export type WalletSignDeps = {
   address: `0x${string}`;
@@ -60,7 +61,7 @@ export async function signAndPost<T = unknown>(args: {
   try {
     const res = await fetch(`${args.deps.apiUrl}${args.path}`, {
       body: JSON.stringify(body),
-      headers: { 'Content-Type': 'application/json' },
+      headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
       method: 'POST',
     });
     if (!res.ok) {

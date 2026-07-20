@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { LegalBundleSchema } from '@taskmarket/shared';
 import { createInterface } from 'readline';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
@@ -7,10 +8,12 @@ import {
   keystoreExists,
   loadKeystore,
 } from '../../lib/keystore.js';
-import { API_URL } from '../../lib/api.js';
+import { API_ORIGIN, API_URL, apiGet } from '../../lib/api.js';
+import { registerDevice } from '../../lib/device-registration.js';
 import { printResult } from '../../lib/output.js';
 import { pollAgentId } from '../../lib/agent.js';
 import { deriveCompressedPublicKey } from '../../lib/encryption.js';
+import { acceptLegalBundle } from '../legal/index.js';
 
 function normalizePrivateKey(raw: string): `0x${string}` {
   const hex = raw.startsWith('0x') ? raw.slice(2) : raw;
@@ -53,7 +56,11 @@ function promptHiddenInput(prompt: string): Promise<string> {
 export const walletImportCommand = new Command('import')
   .description('Import an existing private key as the agent wallet')
   .option('--key <privateKey>', 'Private key to import (64 hex chars, with or without 0x prefix)')
-  .action(async (opts: { key?: string }) => {
+  .option(
+    '--yes',
+    'Confirm legal acceptance non-interactively after reviewing every current policy'
+  )
+  .action(async (opts: { key?: string; yes?: boolean }) => {
     if (await keystoreExists()) {
       const keystore = await loadKeystore();
       printResult({ address: keystore.walletAddress, agentId: keystore.agentId });
@@ -79,30 +86,26 @@ export const walletImportCommand = new Command('import')
     const account = privateKeyToAccount(privateKey);
     const address = account.address;
     const publicKey = deriveCompressedPublicKey(privateKey);
-
-    // Register device with backend
-    const res = await fetch(`${API_URL}/api/devices`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({ walletAddress: address, publicKey }),
-    });
-
-    if (!res.ok) {
-      const text = await res.text().catch(() => '');
-      throw new Error(`Device registration failed (${res.status}): ${text}`);
-    }
+    const legalBundle = LegalBundleSchema.parse(await apiGet('/api/legal/current'));
+    const legalAcceptance = legalBundle.enforcementEnabled
+      ? await acceptLegalBundle({
+          assumeYes: Boolean(opts.yes),
+          bundle: legalBundle,
+          signMessage: (message) => account.signMessage({ message }),
+          walletAddress: address,
+        })
+      : undefined;
 
     const {
       deviceId,
       apiToken,
       deviceEncryptionKey,
       agentId: initialAgentId,
-    } = (await res.json()) as {
-      deviceId: string;
-      apiToken: string;
-      deviceEncryptionKey: string;
-      agentId: string | null;
-    };
+    } = await registerDevice({
+      legalReceipt: legalAcceptance?.receipt,
+      publicKey,
+      walletAddress: address,
+    });
 
     const encryptedKey = encryptPrivateKey(deviceEncryptionKey, privateKey);
 
@@ -115,6 +118,13 @@ export const walletImportCommand = new Command('import')
       apiToken,
       agentId,
       keyServerUrl: API_URL,
+      ...(legalAcceptance
+        ? {
+            legalAcceptanceApiOrigin: API_ORIGIN,
+            legalAcceptanceBundleVersion: legalAcceptance.bundleVersion,
+            legalAcceptanceReceipt: legalAcceptance.receipt,
+          }
+        : {}),
     });
 
     if (!agentId) {

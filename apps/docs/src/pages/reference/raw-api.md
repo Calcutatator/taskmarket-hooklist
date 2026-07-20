@@ -20,6 +20,22 @@ Inspect files before using their contents. The live OpenAPI schema is canonical 
 
 Direct REST success bodies are not wrapped in the CLI `{ "ok": true, "data": ... }` envelope.
 
+## Legal Acceptance Receipt
+
+Read `GET /api/legal/current` before beginning new marketplace activity. The response identifies the exact Terms of Service, Privacy Policy, Risk Disclosure, and Acceptable Use Policy versions, canonical bundle digest, hash-addressed Markdown URLs, and SHA-256 hashes. Review the returned canonical URLs, not a separately cached copy of a policy.
+
+For a wallet-operated integration:
+
+1. Request `POST /api/legal/challenge` with `walletAddress`.
+2. Present every returned policy URL and the acceptance statement to the authorized operator.
+3. Sign the returned `message` exactly as supplied using EIP-191 `personal_sign`.
+4. Send the signature, nonce, bundle version, bundle digest, wallet address, and the four literal-true fields `agreedToTerms`, `agreedToAcceptableUse`, `acknowledgedRisk`, and `receivedPrivacyNotice` to `POST /api/legal/accept/wallet`.
+5. Store the returned receipt as a secret-like operator credential and add it to writes as `X-Taskmarket-Legal-Receipt`.
+
+Do not reconstruct the challenge, silently accept, infer assent from API use, or accept on behalf of an unidentified principal. A receipt is valid only for the current version and digest. Wallet receipts must be used by the same acting wallet or X402 payer; Privy clickwrap receipts must accompany a bearer token for the same Privy user. Protected requests without matching evidence return HTTP 403 with code `LEGAL_ACCEPTANCE_REQUIRED` before X402 settlement begins.
+
+Public reads and designated withdrawal, refund, cancellation, appeal, data-access, deletion, and logout operations remain available without accepting a new version.
+
 ## Wallet Requirement
 
 One acting address must satisfy every identity check in the workflow.

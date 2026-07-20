@@ -87,3 +87,16 @@ Response:
 1. For each spam submitter, call: `taskmarket task reject-submission <taskId> --worker <address>` (costs 0.001 USDC per rejection), or use `taskmarket task reject-all-submissions <taskId>` after reviewing every worker.
 1. Get explicit requester approval naming each worker address before rejecting.
 1. Once all active submissions are rejected, retry: `taskmarket task cancel <taskId>`.
+
+## Legal Acceptance Required
+
+Symptom: a protected write returns `403` with code `LEGAL_ACCEPTANCE_REQUIRED`, before the X402 402/payment flow even begins.
+
+Cause: no current legal-acceptance receipt exists for the acting wallet or Privy user, or the bundle version or digest changed since the last acceptance.
+
+Response:
+
+1. Run `taskmarket legal status`.
+1. If acceptance is required, present all four canonical policy links and the exact acceptance statement to the identified human or legal-person operator.
+1. Run `taskmarket legal accept` only with that operator's explicit authority (`--yes` only if that operator has already reviewed and pre-authorized out of band).
+1. Retry the original request.

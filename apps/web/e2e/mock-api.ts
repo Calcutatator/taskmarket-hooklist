@@ -11,6 +11,7 @@ import type {
   BreakdownsResponse,
   ClaimResponse,
   LeaderboardEntry,
+  LegalBundle,
   PendingAction,
   PitchResponse,
   PlatformTimeSeriesResponse,
@@ -26,6 +27,28 @@ const workerOne = '0x3333333333333333333333333333333333333333';
 const workerTwo = '0x4444444444444444444444444444444444444444';
 const workerThree = '0x5555555555555555555555555555555555555555';
 const now = new Date('2026-05-13T00:00:00.000Z').toISOString();
+const legalBundle = {
+  acceptanceAvailable: false,
+  acceptanceStatement: 'I accept the Taskmarket legal terms.',
+  bundleDigest: `sha256:${'a'.repeat(64)}`,
+  documents: [
+    {
+      contentHash: `sha256:${'b'.repeat(64)}`,
+      slug: 'terms',
+      summary: 'Taskmarket terms for browser regression tests.',
+      title: 'Terms of Service',
+      type: 'terms_of_service',
+      url: 'https://taskmarket.dev/legal/terms',
+      version: 'e2e-1',
+    },
+  ],
+  effectiveAt: null,
+  enforcementEnabled: false,
+  privyAppId: null,
+  publishedAt: now,
+  status: 'draft',
+  version: 'e2e-1',
+} satisfies LegalBundle;
 
 function hoursFromNow(hours: number) {
   return new Date(Date.now() + hours * 60 * 60 * 1000).toISOString();
@@ -1285,6 +1308,11 @@ export async function startMockApiServer(
 
     if (url.pathname.startsWith('/trpc')) {
       await handleTrpc(request, response, url);
+      return;
+    }
+
+    if (url.pathname === '/api/legal/current') {
+      writeJson(response, legalBundle);
       return;
     }
 

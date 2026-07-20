@@ -16,6 +16,11 @@ describe('generated OpenAPI routes', () => {
     ['/tasks/{taskId}/resolve-dispute', 'post'],
     ['/tasks/{taskId}/evaluator-timeout', 'post'],
     ['/tasks/{taskId}/finalize-verdict', 'post'],
+    ['/legal/current', 'get'],
+    ['/legal/status', 'get'],
+    ['/legal/challenge', 'post'],
+    ['/legal/accept/wallet', 'post'],
+    ['/legal/accept/web', 'post'],
   ])('exposes %s %s', (path, method) => {
     const document = generateOpenAPI();
     expect(document.paths?.[path]?.[method as 'get' | 'post']).toBeDefined();

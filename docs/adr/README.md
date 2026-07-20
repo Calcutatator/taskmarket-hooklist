@@ -88,6 +88,8 @@ those always pause for a human.
 - [0006 — `task_awards` is the sole post-completion source of truth; `claimedBy` is the sole pre-completion assignment field](0006-task-awards-single-source-of-truth.md)
 - [0007 — Indexer status-transition handlers are guarded by valid prior state](0007-indexer-status-transitions-are-guarded-by-prior-state.md)
 - [0008 — `task_awards` table creation and the `tasks.worker`/`tasks.rating` drop ship in two separate deploys](0008-task-awards-migration-ships-in-two-deploys.md)
+- [0009 — Legal acceptance is enforced by an opaque bearer receipt checked by default-deny middleware](0009-legal-acceptance-opaque-receipt-default-deny-middleware.md)
+- [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
 
 ## Linting
 
