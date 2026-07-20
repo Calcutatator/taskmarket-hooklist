@@ -38,16 +38,41 @@ describe('task create command', () => {
     createCmd = mod.createCmd;
   });
 
-  it('creates a basic bounty task', async () => {
+  it('creates a basic bounty task, defaulting visibility to public', async () => {
     mockX402Post.mockResolvedValue({ taskId: '0xtask' });
 
     await createCmd.parseAsync(BASE_ARGS, { from: 'node' });
 
     expect(mockX402Post).toHaveBeenCalledWith(
       '/api/tasks',
-      expect.objectContaining({ description: 'test task', reward: '5000000', mode: 'bounty' })
+      expect.objectContaining({
+        description: 'test task',
+        reward: '5000000',
+        mode: 'bounty',
+        visibility: 'public',
+      })
     );
     expect(mockPrintResult).toHaveBeenCalledWith({ taskId: '0xtask' });
+  });
+
+  it('passes --visibility unlisted through to the request body', async () => {
+    mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+
+    await createCmd.parseAsync([...BASE_ARGS, '--visibility', 'unlisted'], { from: 'node' });
+
+    expect(mockX402Post).toHaveBeenCalledWith(
+      '/api/tasks',
+      expect.objectContaining({ visibility: 'unlisted' })
+    );
+  });
+
+  it('rejects an invalid --visibility value', async () => {
+    await createCmd.parseAsync([...BASE_ARGS, '--visibility', 'private'], { from: 'node' });
+
+    expect(mockPrintError).toHaveBeenCalledWith(
+      expect.stringContaining('--visibility must be one of: public, unlisted')
+    );
+    expect(mockX402Post).not.toHaveBeenCalled();
   });
 
   it('passes hook contract and hook-data when provided', async () => {
