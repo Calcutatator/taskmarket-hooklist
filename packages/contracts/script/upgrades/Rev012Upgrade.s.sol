@@ -18,9 +18,10 @@ import { FacetSelectors } from "../lib/FacetSelectors.sol";
 ///      FORGE_DIAMOND_ADDRESS_TESTNET  — Diamond proxy on Base Sepolia (chain 84532)
 ///      FORGE_DIAMOND_ADDRESS_MAINNET  — Diamond proxy on Base Mainnet (chain 8453)
 ///
-/// @dev Usage:
-///      make upgrade-rev012 testnet
-///      make upgrade-rev012 mainnet
+/// @dev Usage (normally applied automatically by `make upgrade <testnet|mainnet>` as part of the
+///      pending-steps sequence; direct single-step invocation):
+///      make upgrade testnet rev012
+///      make upgrade mainnet rev012
 contract Rev012Upgrade is Script {
     uint256 private constant EXPECTED_PRE_VERSION = 11;
     uint256 private constant TARGET_VERSION = 12;

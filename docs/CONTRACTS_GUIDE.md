@@ -251,9 +251,22 @@ make upgrade testnet
 make upgrade mainnet
 ```
 
-`DiamondUpgrade.s.sol` reads `DIAMOND_ADDRESS`, `FACET_NAME`, and `ACTION` (`Add`/`Replace`/`Remove`,
-default `Replace`) from the environment, deploys a new facet implementation, and calls `diamondCut`.
-Only the contract owner may upgrade.
+`packages/contracts/script/upgrade.sh` applies every pending upgrade step in sequence: it first
+runs `DiamondFullUpgrade.s.sol` (a one-time legacy bootstrap for any diamond whose `diamondVersion`
+is not yet tracked), then applies each `script/upgrades/RevNNNUpgrade.s.sol` step whose target
+revision is greater than the diamond's current `AdminFacet.diamondVersion()`, in order. Only the
+contract owner may upgrade.
+
+To apply one specific step directly instead of the full pending sequence, pass its revision:
+
+```bash
+make upgrade testnet rev012
+```
+
+Adding a new revision requires no Makefile changes -- drop a new
+`script/upgrades/RevNNNUpgrade.s.sol` file (contract name `RevNNNUpgrade`) that asserts the
+diamond is at the expected prior version, applies its `diamondCut`, and calls
+`AdminFacet.setDiamondVersion(NNN)`; the next `make upgrade` run picks it up automatically.
 
 ## Admin Operations
 
