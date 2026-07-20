@@ -307,7 +307,7 @@ describe('tasks router', () => {
       await caller.create(baseTaskInput);
 
       expect(taskInsert.values).toHaveBeenCalledWith(
-        expect.objectContaining({ taskVisibilityMode: 'public' })
+        expect.objectContaining({ taskVisibility: 'public' })
       );
     });
 
@@ -317,11 +317,11 @@ describe('tasks router', () => {
       ctx.db.insert.mockReturnValueOnce(taskInsert);
       const caller = tasksRouter.createCaller(ctx);
 
-      const result = await caller.create({ ...baseTaskInput, taskVisibilityMode: 'unlisted' });
+      const result = await caller.create({ ...baseTaskInput, taskVisibility: 'unlisted' });
 
       expect(result.success).toBe(true);
       expect(taskInsert.values).toHaveBeenCalledWith(
-        expect.objectContaining({ taskVisibilityMode: 'unlisted' })
+        expect.objectContaining({ taskVisibility: 'unlisted' })
       );
       // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014),
       // including outbound notifications -- see tasks.router.ts's create mutation.

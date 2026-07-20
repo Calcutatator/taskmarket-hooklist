@@ -134,7 +134,7 @@ async function buildHomepageBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibilityMode, 'unlisted')))
+    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibility, 'unlisted')))
     .orderBy(desc(tasks.createdAt))
     .limit(5);
 
@@ -162,7 +162,7 @@ async function buildTasksBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibilityMode, 'unlisted')))
+    .where(and(eq(tasks.status, 'open'), ne(tasks.taskVisibility, 'unlisted')))
     .orderBy(desc(tasks.createdAt))
     .limit(20);
 

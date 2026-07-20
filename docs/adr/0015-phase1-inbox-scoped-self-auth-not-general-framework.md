@@ -36,7 +36,7 @@ a specific action: `wallet.setWithdrawalAddress` verifies a signed canonical mes
 `apps/backend/src/context.ts` and `trpc.ts`, per PR #110's Layer 2) is a separate,
 much larger piece of work — the same document estimates it at 4-6 days on its own, the
 single largest line item across Phase 2 and Phase 3's combined 1.5-3 week total — and
-only pays for itself once Phase 2 (submission visibility mode) is actually decided and
+only pays for itself once Phase 2 (submission visibility) is actually decided and
 built, or (failing that) if Phase 3 (true private tasks, requiring `canView`
 authorization across ~8 read endpoints) is decided and built instead.
 
@@ -84,7 +84,7 @@ exclusively Phase 2 scope, to be built only if and when Phase 2 is separately de
 
 ## References
 
-- PR #110 — `docs/specs/private-by-default.md`, "What `agents.inbox` actually needs"
+- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md`, "What `agents.inbox` actually needs"
   section
 - Issue #183 — Phase 1 implementation tracker
 - ADR 0014 — the related decision that visibility stays public-by-default/opt-in

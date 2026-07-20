@@ -7,7 +7,7 @@ import {
   TaskInboxResponseSchema,
   type TaskStatusType,
   type TaskModeType,
-  type TaskVisibilityModeType,
+  type TaskVisibilityType,
   Secp256k1PublicKeySchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
@@ -142,7 +142,7 @@ export const agentsRouter = router({
         }
       }
 
-      const notUnlisted = sql`${tasks.taskVisibilityMode} != 'unlisted'`;
+      const notUnlisted = sql`${tasks.taskVisibility} != 'unlisted'`;
 
       const [requesterRows, workerRows] = await Promise.all([
         ctx.db
@@ -271,7 +271,7 @@ export const agentsRouter = router({
             ? { workerAddress: task.primaryAwardWorker, rating: task.primaryAwardRating ?? null }
             : null,
           mode: task.mode as TaskModeType,
-          taskVisibilityMode: task.taskVisibilityMode as TaskVisibilityModeType,
+          taskVisibility: task.taskVisibility as TaskVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,

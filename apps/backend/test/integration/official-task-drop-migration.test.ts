@@ -54,7 +54,7 @@ describeWithDatabase('official Task Drop migration against PostgreSQL', () => {
         description text NOT NULL,
         mode text NOT NULL,
         reward numeric(78, 0) NOT NULL,
-        task_visibility_mode text NOT NULL DEFAULT 'public'
+        task_visibility text NOT NULL DEFAULT 'public'
       );
       INSERT INTO task_drops (id, owner_address, name)
       VALUES ('drop-1', '0x1111111111111111111111111111111111111111', 'Drop One');

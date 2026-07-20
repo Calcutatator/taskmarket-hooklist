@@ -111,7 +111,7 @@ const baseTask: TaskDetailResponse = {
   submissionCount: 0,
   submissionWindowOpen: true,
   tags: ['seo', 'images'],
-  taskVisibilityMode: 'public',
+  taskVisibility: 'public',
 };
 
 const baseAgent: AgentStats = {

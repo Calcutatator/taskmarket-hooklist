@@ -109,7 +109,7 @@ export async function announceOfficialTaskDrop(input: {
     db
       .select({ description: tasks.description, mode: tasks.mode, reward: tasks.reward })
       .from(tasks)
-      .where(and(eq(tasks.taskDropId, taskDropId), ne(tasks.taskVisibilityMode, 'unlisted'))),
+      .where(and(eq(tasks.taskDropId, taskDropId), ne(tasks.taskVisibility, 'unlisted'))),
     db
       .select({
         attempts: taskDropAnnouncementDeliveries.attempts,

@@ -1,10 +1,10 @@
-# 0016 — Submission visibility mode is an independent axis from task visibility, defaulting to public and locked in at creation
+# 0016 — Submission visibility is an independent axis from task visibility, defaulting to public and locked in at creation
 
-> **Decision (Y-statement):** In the context of scoping Phase 2 (submission visibility mode)
+> **Decision (Y-statement):** In the context of scoping Phase 2 (submission visibility)
 > of Taskmarket's visibility work, facing the question of whether submission-level
 > disclosure should be modeled as a sub-feature nested inside Phase 3's true-private
 > tasks or as its own independent, task-visibility-agnostic setting, and what its
-> default and mutability should be, we decided to make `submissionVisibilityMode` a
+> default and mutability should be, we decided to make `submissionVisibility` a
 > separate four-value field (`public` / `reveal_all` / `winner_only` / `never`) that
 > applies regardless of whether the task itself is `public`, `unlisted`, or (later)
 > `private`, chosen once at task creation and locked in permanently, defaulting new
@@ -22,7 +22,7 @@
 
 ## Context
 
-PR #110 (`docs/specs/private-by-default.md`) originally nested "submission visibility
+PR #110 (`docs/specs/task-visibility-and-submission-visibility.md`) originally nested "submission visibility
 mode" inside a single "Phase 2: true private tasks" bucket, reasoning that both needed
 the same general read-authentication foundation and so belonged together, and originally
 modeled it as a two-step process: a `public`/`private` choice at creation, plus a
@@ -31,7 +31,7 @@ separate discretionary reveal decision the requester would make after the task e
 corrections:
 
 1. **Task visibility** (can this task be found/viewed at all) and **submission
-   visibility mode** (once a task is viewed, can its submitted work also be seen) are different
+   visibility** (once a task is viewed, can its submitted work also be seen) are different
    questions. The reveal mechanism does not reference the task's own `visibility` value
    at all — a fully `public`, fully listed task can, and under this decision will be
    free to, still hide its submissions from other workers; conversely a task's
@@ -40,8 +40,8 @@ corrections:
    on a read, which the codebase cannot do today — see PR #110, "Current state: zero
    visibility controls, zero read auth"). Sharing that dependency justifies sequencing
    the read-authentication build inside whichever phase ships first; it does not justify
-   treating submission visibility mode as a feature of true-private tasks. This decision splits
-   what PR #110 called "Phase 2" into two: **Phase 2 = submission visibility mode** (this
+   treating submission visibility as a feature of true-private tasks. This decision splits
+   what PR #110 called "Phase 2" into two: **Phase 2 = submission visibility** (this
    ADR) and **Phase 3 = true private tasks**, with Phase 2 building the shared read-auth
    foundation and Phase 3 reusing it.
 2. **The reveal outcome is better modeled as one locked-in enum than a two-step
@@ -68,17 +68,17 @@ exactly, so no backfill is needed, and it matches the same opt-in-only philosoph
 
 | Option | Pros | Cons |
 |---|---|---|
-| Independent `submissionVisibilityMode` field (`public` default, opt-in `reveal_all`/`winner_only`/`never`), chosen once at creation and locked in permanently (chosen) | Closes the actual complaint (copying/homogenisation while a task is live, requester confidentiality) for any task that opts in, regardless of its `visibility`; zero default-behavior change and zero migration-backfill risk, matching ADR 0014's established pattern; workers know the disclosure outcome before deciding whether to submit; no reveal state machine to build, test, or explain | A requester who does not discover the setting gets no submission protection by default, same trade-off ADR 0014 already accepted for task visibility; locked-in-permanently means a requester who picks the wrong mode at creation cannot correct it without a separate future feature |
-| Default `submissionVisibilityMode` to a hiding mode (e.g. `reveal_all`), matching the actual complaint the feature exists to fix (rejected — an earlier draft of this decision) | Every task gets some protection without the requester needing to know about the setting | Real default-behavior change for every newly created task; a bare column default would retroactively backfill *existing* rows too (Postgres fills a new column's default into every existing row), silently gating submissions on tasks already created and already treated as unrestricted — exactly the failure mode ADR 0014 avoided for `visibility`; breaks the "every phase is strictly opt-in, default never changes what today's users experience" principle this whole initiative has held to since ADR 0014 |
+| Independent `submissionVisibility` field (`public` default, opt-in `reveal_all`/`winner_only`/`never`), chosen once at creation and locked in permanently (chosen) | Closes the actual complaint (copying/homogenisation while a task is live, requester confidentiality) for any task that opts in, regardless of its `visibility`; zero default-behavior change and zero migration-backfill risk, matching ADR 0014's established pattern; workers know the disclosure outcome before deciding whether to submit; no reveal state machine to build, test, or explain | A requester who does not discover the setting gets no submission protection by default, same trade-off ADR 0014 already accepted for task visibility; locked-in-permanently means a requester who picks the wrong mode at creation cannot correct it without a separate future feature |
+| Default `submissionVisibility` to a hiding mode (e.g. `reveal_all`), matching the actual complaint the feature exists to fix (rejected — an earlier draft of this decision) | Every task gets some protection without the requester needing to know about the setting | Real default-behavior change for every newly created task; a bare column default would retroactively backfill *existing* rows too (Postgres fills a new column's default into every existing row), silently gating submissions on tasks already created and already treated as unrestricted — exactly the failure mode ADR 0014 avoided for `visibility`; breaks the "every phase is strictly opt-in, default never changes what today's users experience" principle this whole initiative has held to since ADR 0014 |
 | Two-step model: a `public`/`private` choice at creation, plus a separate discretionary reveal decision (all/winner-only/never) the requester makes after the task ends (rejected — an earlier draft of this decision) | Gives the requester maximum flexibility, decided with the benefit of hindsight after seeing the actual submissions | Adds a reveal state machine (a discretionary action, a new authorization check for "can this caller trigger reveal now," UI for it) that the four-mode enum accomplishes without; a worker deciding whether to submit cannot know upfront whether their work will ever be revealed, since the requester has not committed to an outcome yet |
-| Nest submission visibility mode inside Phase 3 (true-private tasks only) (rejected — the original PR #110 framing) | Keeps all read-auth-dependent work in one phase/PR | Conflates two independent questions (can you view the task vs. can you view what was submitted to it); makes the fix for the most commonly cited complaint (public submissions) wait on a separate, larger, not-yet-decided product question (should true-private tasks exist at all); a fully public task would get no submission protection until/unless Phase 3 is ever built |
-| Allow the visibility mode to be changed after creation (rejected for now) | More flexible for a requester who changes their mind | Real complexity regardless of when it's built: a task that already collected submissions under `never` and later flips to `public` raises unresolved questions (do prior submissions retroactively reveal? does it need re-consent from workers who submitted expecting privacy?) that are not simplified by deciding them before there is a concrete implementation to hang them on; deferred as explicit future follow-up work, not solved speculatively now |
+| Nest submission visibility inside Phase 3 (true-private tasks only) (rejected — the original PR #110 framing) | Keeps all read-auth-dependent work in one phase/PR | Conflates two independent questions (can you view the task vs. can you view what was submitted to it); makes the fix for the most commonly cited complaint (public submissions) wait on a separate, larger, not-yet-decided product question (should true-private tasks exist at all); a fully public task would get no submission protection until/unless Phase 3 is ever built |
+| Allow submission visibility to be changed after creation (rejected for now) | More flexible for a requester who changes their mind | Real complexity regardless of when it's built: a task that already collected submissions under `never` and later flips to `public` raises unresolved questions (do prior submissions retroactively reveal? does it need re-consent from workers who submitted expecting privacy?) that are not simplified by deciding them before there is a concrete implementation to hang them on; deferred as explicit future follow-up work, not solved speculatively now |
 
 ## Decision
 
-Submission visibility mode is governed by its own field, independent of `tasks.taskVisibilityMode`:
+Submission visibility is governed by its own field, independent of `tasks.taskVisibility`:
 
-- `tasks.submissionVisibilityMode`: `'public'` (**default**), `'reveal_all'`,
+- `tasks.submissionVisibility`: `'public'` (**default**), `'reveal_all'`,
   `'winner_only'`, or `'never'` — chosen once at task creation and **locked in
   permanently**. There is no update path; changing a task's mode after creation is
   explicitly out of scope for this decision and left as potential future follow-up work
@@ -90,9 +90,9 @@ Submission visibility mode is governed by its own field, independent of `tasks.t
   pre-chosen mode takes effect automatically (all revealed / only the `task_awards`-linked
   winner(s) revealed / nothing ever revealed beyond the requester and each submitting
   worker) — a deterministic lifecycle transition, not a fresh discretionary action.
-- This applies regardless of `tasks.taskVisibilityMode` — a `public`/listed task can choose any
-  visibility mode exactly the same as an `unlisted` one; a `private` (Phase 3) task's
-  visibility mode still governs among whichever invited workers can view it.
+- This applies regardless of `tasks.taskVisibility` — a `public`/listed task can choose any
+  submission visibility exactly the same as an `unlisted` one; a `private` (Phase 3) task's
+  submission visibility still governs among whichever invited workers can view it.
 - Because the default (`'public'`) matches every existing row's already-established
   behavior exactly, the migration needs no explicit backfill — a plain column default
   is safe here, unlike the rejected `'private'`-by-default alternative above.
@@ -135,21 +135,21 @@ Submission visibility mode is governed by its own field, independent of `tasks.t
 - This ADR does not decide whether Phase 3 (true private tasks) is ever built — that
   remains a separate, open product question per PR #110's "Risks and open questions"
   section.
-- Whether `submissionVisibilityMode` should ever become mutable is explicitly deferred, not
+- Whether `submissionVisibility` should ever become mutable is explicitly deferred, not
   rejected outright — a future ADR would need to resolve the already-collected-
   submissions question above before that could ship.
-- CLI, web, and docs/skill coverage for `submissionVisibilityMode` are Phase 2
+- CLI, web, and docs/skill coverage for `submissionVisibility` are Phase 2
   implementation scope (PR #110's Layer 5/6/7), not decided by this ADR beyond
   confirming they must exist — a setting a requester cannot discover or control from the
   surfaces they actually use is not really opt-in.
 
 ## References
 
-- PR #110 — `docs/specs/private-by-default.md`, "Phase 2: Submission visibility mode"
+- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md`, "Phase 2: Submission visibility"
   section
 - Issue #183 — Phase 1/2/3 implementation tracker
 - ADR 0014 — task visibility stays public by default (the separate, related axis this
   ADR is explicitly not changing, and whose opt-in-only reasoning this ADR extends to
-  submission visibility mode)
+  submission visibility)
 - ADR 0015 — Phase 1's `agents.inbox` scoped self-auth (the precedent this phase's
   read-authentication work builds on and generalizes)

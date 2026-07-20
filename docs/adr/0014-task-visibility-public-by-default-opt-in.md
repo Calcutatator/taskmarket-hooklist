@@ -15,7 +15,7 @@
 
 ## Context
 
-PR #110 (`docs/specs/private-by-default.md`) scopes work to let a requester make a task
+PR #110 (`docs/specs/task-visibility-and-submission-visibility.md`) scopes work to let a requester make a task
 not-publicly-listed. An early draft of that RFC was titled and framed around
 "private-by-default" — i.e., new tasks would default to hidden, with `public` as an
 opt-out. That framing directly contradicted the RFC's own concrete schema
@@ -40,7 +40,7 @@ that explicitly ask for something different.
 
 ## Decision
 
-`tasks.taskVisibilityMode` defaults to `'public'` for both new and existing rows. This is the
+`tasks.taskVisibility` defaults to `'public'` for both new and existing rows. This is the
 settled product decision, not a placeholder or an implementation detail: making a task
 `'unlisted'` (Phase 1) or `'private'` (Phase 3, once it exists) is always an explicit,
 per-task action taken by the requester, never inferred, never defaulted, and never
@@ -68,5 +68,5 @@ silently changed by a future migration.
 
 ## References
 
-- PR #110 — `docs/specs/private-by-default.md` (the RFC this decision was extracted from)
+- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md` (the RFC this decision was extracted from)
 - Issue #183 — Phase 1 implementation tracker

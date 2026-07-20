@@ -108,12 +108,12 @@ export async function getPlatformTimeSeries(
     ),
     tasks_created as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket, count(*)::int as c
-      from tasks where task_visibility_mode != 'unlisted' group by 1
+      from tasks where task_visibility != 'unlisted' group by 1
     ),
     reward_volume as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket,
              coalesce(sum(reward), 0)::text as v
-      from tasks where task_visibility_mode != 'unlisted' group by 1
+      from tasks where task_visibility != 'unlisted' group by 1
     ),
     completed as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket, count(*)::int as c
@@ -300,10 +300,10 @@ export async function getAgentTimeSeries(
 export async function getBreakdowns(db: DB): Promise<BreakdownsResponse> {
   const query = sql`
     select 'status' as kind, status as key, count(*)::int as c
-    from tasks where task_visibility_mode != 'unlisted' group by status
+    from tasks where task_visibility != 'unlisted' group by status
     union all
     select 'mode' as kind, mode as key, count(*)::int as c
-    from tasks where task_visibility_mode != 'unlisted' group by mode
+    from tasks where task_visibility != 'unlisted' group by mode
     union all
     select 'actorType' as kind,
            case when registered_via = 'web' then 'human' else 'agent' end as key,
@@ -361,7 +361,7 @@ export async function getActivityFeed(
   // split_part + left). actorType resolves via a left join to agents.
   const sources: { type: ActivityType; sql: ReturnType<typeof sql> }[] = [];
 
-  // Every source below joins tasks and is filtered to task_visibility_mode != 'unlisted' --
+  // Every source below joins tasks and is filtered to task_visibility != 'unlisted' --
   // this feed streams per-task description/reward/actor to the public, a bigger
   // per-task leak than a browse listing, so it must respect visibility too.
   if (typeSet.has('task_created')) {
@@ -371,7 +371,7 @@ export async function getActivityFeed(
         select 'task_created' as type, t.created_at as ts, t.id as task_id,
                t.description as descr, t.requester as actor,
                t.reward::text as amount, null::int as rating
-        from tasks t where t.task_visibility_mode != 'unlisted'`,
+        from tasks t where t.task_visibility != 'unlisted'`,
     });
   }
   if (typeSet.has('task_submitted')) {
@@ -382,7 +382,7 @@ export async function getActivityFeed(
                t.description as descr, s.worker_address as actor,
                null::text as amount, null::int as rating
         from submissions s join tasks t on t.id = s.task_id
-        where t.task_visibility_mode != 'unlisted'`,
+        where t.task_visibility != 'unlisted'`,
     });
   }
   if (typeSet.has('task_claimed')) {
@@ -393,7 +393,7 @@ export async function getActivityFeed(
                t.description as descr, c.worker_address as actor,
                c.stake_amount::text as amount, null::int as rating
         from claims c join tasks t on t.id = c.task_id
-        where t.task_visibility_mode != 'unlisted'`,
+        where t.task_visibility != 'unlisted'`,
     });
   }
   if (typeSet.has('task_pitched')) {
@@ -404,7 +404,7 @@ export async function getActivityFeed(
                t.description as descr, p.worker_address as actor,
                null::text as amount, null::int as rating
         from proposals p join tasks t on t.id = p.task_id
-        where t.task_visibility_mode != 'unlisted'`,
+        where t.task_visibility != 'unlisted'`,
     });
   }
   if (typeSet.has('bid_placed')) {
@@ -415,7 +415,7 @@ export async function getActivityFeed(
                t.description as descr, b.worker_address as actor,
                b.price::text as amount, null::int as rating
         from bids b join tasks t on t.id = b.task_id
-        where t.task_visibility_mode != 'unlisted'`,
+        where t.task_visibility != 'unlisted'`,
     });
   }
   if (typeSet.has('task_rated')) {
@@ -426,7 +426,7 @@ export async function getActivityFeed(
                t.description as descr, f.requester_address as actor,
                null::text as amount, f.rating::int as rating
         from feedbacks f join tasks t on t.id = f.task_id
-        where t.task_visibility_mode != 'unlisted'`,
+        where t.task_visibility != 'unlisted'`,
     });
   }
 
@@ -593,7 +593,7 @@ export async function getActivityHeatmap(
         count(*)::int as c,
         coalesce(sum(reward), 0)::text as v
       from tasks
-      where created_at is not null and task_visibility_mode != 'unlisted'
+      where created_at is not null and task_visibility != 'unlisted'
       ${rangeClause}
       group by 1, 2
     )

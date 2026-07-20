@@ -2233,7 +2233,7 @@ export function TaskDetailPanel({
                   </Badge>
                 </Link>
               ) : null}
-              {task.taskVisibilityMode === 'unlisted' ? (
+              {task.taskVisibility === 'unlisted' ? (
                 <InfoTooltip label={TASK_VISIBILITY_DISCLAIMER}>
                   <Badge variant="warning">Unlisted</Badge>
                 </InfoTooltip>

@@ -1,4 +1,4 @@
-# Task Visibility RFC: Unlisted Tasks, Submission Visibility Mode, and Private Tasks (Opt-In)
+# Task Visibility and Submission Visibility
 
 Status: Draft, no decision recorded yet
 Owner: Taskmarket
@@ -24,7 +24,7 @@ more expensive:
 - **Task visibility** -- can other people find/view this task at all: `public` (default)
   or `unlisted` now; `private` (invite-only -- password-protected or scoped to an
   explicit wallet allowlist), later.
-- **Submission visibility mode** -- once someone can view the task, can they also see what
+- **Submission visibility** -- once someone can view the task, can they also see what
   workers submitted to it: a **four-value enum, chosen at task creation and locked in
   permanently** (changing it later is explicitly out of scope for now -- future
   follow-up work if ever needed) -- **independent of the task's own visibility.** A
@@ -38,7 +38,7 @@ more expensive:
 
 Short answer: **the data-model and UI work for the opt-in `unlisted` task-visibility
 value is small (~5.5-6.5 days, including one narrow self-authentication check -- see
-below, already shipped); submission visibility mode is a moderate follow-up (~7-11 days) that
+below, already shipped); submission visibility is a moderate follow-up (~7-11 days) that
 pays for a foundational piece the codebase does not have today -- general read-time
 authentication -- which then makes true-private tasks meaningfully cheaper as a further
 follow-up (~1-1.5 weeks on top) rather than a second multi-week outlay.** Every task and
@@ -49,7 +49,7 @@ relevant GET requests, and right now the backend can only answer that narrowly, 
 endpoint, not generally.
 
 This document scopes the work, names the blocker, and offers three delivery phases:
-**Phase 1 (unlisted tasks, shipped)**, **Phase 2 (submission visibility mode, opt-in --
+**Phase 1 (unlisted tasks, shipped)**, **Phase 2 (submission visibility, opt-in --
 default `public`, matching today exactly)**, and **Phase 3 (true private tasks)**.
 Client-side (platform-blind) encryption is an explicit non-goal for now, for any phase.
 
@@ -58,7 +58,7 @@ Client-side (platform-blind) encryption is an explicit non-goal for now, for any
 | Phase | What you get | Estimate |
 |---|---|---|
 | **Phase 1 -- Unlisted tasks (shipped)** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. One narrow self-auth check (see `agents.inbox` below); no general read-auth. | **~5.5-6.5 days** |
-| **Phase 2 -- Submission visibility mode** | A `submissionVisibilityMode` choice at task creation (`public` default, or opt-in `reveal_all` / `winner_only` / `never`), locked in permanently, independent of the task's own visibility. Builds the general read-authentication foundation this and Phase 3 both need. | **~7-11 days** |
+| **Phase 2 -- Submission visibility** | A `submissionVisibility` choice at task creation (`public` default, or opt-in `reveal_all` / `winner_only` / `never`), locked in permanently, independent of the task's own visibility. Builds the general read-authentication foundation this and Phase 3 both need. | **~7-11 days** |
 | **Phase 3 -- True private tasks** | Tasks visible only to requester + invited/assigned workers (password-protected or wallet-scoped). Reuses Phase 2's read-auth foundation, so it is now an incremental follow-up rather than its own multi-week foundation-plus-feature cost. | **~1-1.5 weeks on top of Phase 2** |
 
 The honest recommendation: **Phase 1 is done.** Ship **Phase 2 next** -- it closes the
@@ -76,8 +76,8 @@ shipped implementation exposes only two task-visibility values -- `unlisted` and
 behaves identically to `unlisted` (no actual enforcement) would mislead a requester into
 believing something is access-restricted when it is not. A `private` **task-visibility**
 value should only be added once Phase 3's read-authentication work actually enforces
-it. This does not apply to submission visibility mode, which is a different field: Phase
-2's `submissionVisibilityMode` is real, enforced access control for any non-`public` value
+it. This does not apply to submission visibility, which is a different field: Phase
+2's `submissionVisibility` is real, enforced access control for any non-`public` value
 from the moment it ships (gated on the read-auth foundation Phase 2 itself builds), so
 exposing `reveal_all`/`winner_only`/`never` there is honest from day one.
 
@@ -144,7 +144,7 @@ x402 middleware (`apps/backend/src/middleware/x402.ts`) settles a USDC transfer 
 - You cannot charge x402 for a read just to identify the caller -- that would make
   browsing cost money.
 
-Therefore Phase 2 (submission visibility mode) is what actually builds a **lightweight
+Therefore Phase 2 (submission visibility) is what actually builds a **lightweight
 read-authentication mechanism** (a signed-message or API-token scheme) and wires it into
 the context, as part of its own scope -- not a separate prerequisite phase. This does
 not exist today and is the single largest line item in Phase 2's cost, and Phase 3
@@ -232,13 +232,13 @@ first the way `bids.myBids`'s `x-taskmarket-api-token` header does. Concretely:
 if absent or invalid, behave exactly as today (public tasks only, for any address, no
 error). This is a small, self-contained verification function used inside one
 procedure -- not the general `ctx.caller` context-level framework Phase 2 (submission
-visibility mode) needs wired into every relevant read endpoint, and not a reason to pull any of
-Phase 2 or Phase 3's other scope (submission visibility mode, `canView` retrofit across
+visibility) needs wired into every relevant read endpoint, and not a reason to pull any of
+Phase 2 or Phase 3's other scope (submission visibility, `canView` retrofit across
 `listByTask` endpoints, a real `private` task-visibility value) forward. It ships as
 part of Phase 1's Layer 3 retrofit, not a separate PR, and nudges Phase 1's estimate up
 modestly (see the updated effort table below) rather than merging the phases.
 
-## Phase 2: Submission visibility mode
+## Phase 2: Submission visibility
 
 In practice the demand for task-level privacy is mostly about **submitted results**, not
 task descriptions -- this is a genuinely different axis from task visibility (above),
@@ -265,14 +265,14 @@ public".
 
 ### One field, chosen at creation, locked in permanently
 
-Submission visibility mode is a single `submissionVisibilityMode` field on the task, set once
+Submission visibility is a single `submissionVisibility` field on the task, set once
 at creation time and **locked in permanently** -- there is no mechanism to change it
 after the task is created. (Adding one later, e.g. before any submissions exist, is
 plausible future follow-up work, but is explicitly out of scope here; this RFC scopes
 the simpler, immutable-after-creation version.) This mirrors the task-level `visibility`
 field's shape -- an opt-in enum decided upfront -- and is independent of `visibility`
-itself: a fully `public`, fully listed task can choose any visibility mode; an `unlisted`
-task can equally choose any visibility mode.
+itself: a fully `public`, fully listed task can choose any submission visibility; an `unlisted`
+task can equally choose any submission visibility.
 
 Four values, matching the actual product need (a spectrum from fully open to fully
 closed, not a binary):
@@ -309,12 +309,12 @@ role while the task is active, not a static flag:
 - **Precedent exists**: `reverse_english` auctions already seal bids until the deadline
   (`bids.router.ts` `listByTask` ~L149 hides address/price pre-deadline). That mechanism
   is purely time-gated (hidden from literally everyone pre-deadline, no caller identity
-  needed); submission visibility mode's "requester sees all, worker sees own" while active
+  needed); submission visibility's "requester sees all, worker sees own" while active
   additionally needs to distinguish *which* caller is asking, which is exactly why it
   needs the read-authentication foundation below rather than reusing the bid-sealing
   mechanism as-is.
 
-Schema is small: add `submissionVisibilityMode` (`'public' | 'reveal_all' | 'winner_only' |
+Schema is small: add `submissionVisibility` (`'public' | 'reveal_all' | 'winner_only' |
 'never'`, default `'public'`) to the `tasks` table. Because the default matches today's
 exact behavior, this carries the same zero-migration-risk property as `visibility` in
 Phase 1 -- no backfill needed, no existing task's behavior changes. The real dependency
@@ -328,8 +328,8 @@ what keeps server-side preview/OG, benchmark auto-verification, and evaluator/di
 review working. Confidentiality here is from other *users*, not from the platform -- which
 is exactly the scope we want.
 
-The visibility mode needs to be settable from every task-creation surface, not just the
-API: the CLI (`task create --submission-visibility-mode <public|reveal_all|winner_only|
+The submission visibility setting needs to be settable from every task-creation surface, not just the
+API: the CLI (`task create --submission-visibility <public|reveal_all|winner_only|
 never>`, default `public`) and the web app (a control in the create wizard next to the
 task-visibility toggle, locked/read-only once the task exists). Both surfaces' docs and
 the agent skill bundle (`apps/docs/src/public/skill.md` and `reference/cli.md`) need the
@@ -397,9 +397,9 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   until Phase 3 actually enforces it (see the note under "TL;DR effort verdict" above).
   Added to `TaskCreateSchema` and the task response schema
   (`packages/shared/src/schemas/task.schemas.ts`), default `'public'`.
-- **Phase 2:** `submissionVisibilityMode text not null default 'public'` on the `tasks`
+- **Phase 2:** `submissionVisibility text not null default 'public'` on the `tasks`
   table (`'public' | 'reveal_all' | 'winner_only' | 'never'`) -- see "Phase 2:
-  Submission visibility mode" above. Independent field from `visibility`, chosen once at
+  Submission visibility" above. Independent field from `visibility`, chosen once at
   creation and immutable thereafter (no update path). Because the default (`'public'`)
   matches existing rows' already-established behavior exactly, this carries the same
   zero-backfill-risk property `visibility` had in Phase 1.
@@ -416,7 +416,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `createContext` (`apps/backend/src/context.ts`).
 - Decide token issuance/storage. Agents already have device/API-token concepts (email +
   xmtp routers); extend that rather than invent a new one.
-- This is Phase 2's foundation, not Phase 3's: submission visibility mode needs "is this caller
+- This is Phase 2's foundation, not Phase 3's: submission visibility needs "is this caller
   the requester / this specific submitting worker" the moment it ships. Phase 3 reuses
   this framework rather than building its own, which is why Phase 3's own cost is
   smaller than the original single "true private" estimate.
@@ -431,13 +431,13 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   authentication, a single scoped check, not the general `ctx.caller` framework below.
 - **Phase 2:** a submission-specific role check -- `isRequester(caller, task)` /
   `isSubmittingWorker(caller, submission)` -- applied inside `submissions.listByTask`
-  whenever `task.submissionVisibilityMode !== 'public'`, plus a deterministic post-resolution
+  whenever `task.submissionVisibility !== 'public'`, plus a deterministic post-resolution
   branch per mode (`reveal_all`: show everything once ended; `winner_only`: show only
   `task_awards`-linked rows once ended; `never`: keep the role-gated view forever).
   Narrower than Phase 3's general `canView`: it only needs to answer "can this caller
   see *this* submission," not "can this caller see the task at all."
 - **Phase 3:** the general `canView(task, caller?)`: `true` if
-  `task.taskVisibilityMode === 'public'`, or `caller.address === task.requester`, or caller's
+  `task.taskVisibility === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
   worker-identity correction above), or in an `allowedViewers` list. `tasks.get` throws
   `NOT_FOUND` (not `FORBIDDEN`, to avoid confirming existence) when `!canView`.
@@ -456,11 +456,11 @@ The system already supports both, so this is a policy/UX choice, not a missing c
 
 ### Layer 5 -- CLI (~1 day for Phase 1, shipped; ~1-1.5 days for Phase 2)
 
-- **Phase 1 (shipped):** `task create --task-visibility-mode <unlisted|public>` (default
+- **Phase 1 (shipped):** `task create --task-visibility <unlisted|public>` (default
   `public`); `taskmarket inbox` signs its self-auth message automatically. `task
   search`/`list` deliberately left unchanged -- `tasks.list` has no per-call override to
   reveal unlisted tasks, so a flag there would filter nothing.
-- **Phase 2:** `task create --submission-visibility-mode <public|reveal_all|winner_only|
+- **Phase 2:** `task create --submission-visibility <public|reveal_all|winner_only|
   never>` (default `public`), set once at creation with no update command -- there is
   nothing to change later since the mode is locked in permanently. All output stays
   JSON per `apps/cli/src/lib/output.ts`.
@@ -475,7 +475,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `agents.inbox` actually needs") so the owner's own unlisted tasks show up there too.
   Every other read (`list`, `search`, a third party's `inbox`) stays exactly as
   unauthenticated as it is today.
-- **Phase 2:** a `submissionVisibilityMode` control (four options) in the create wizard next
+- **Phase 2:** a `submissionVisibility` control (four options) in the create wizard next
   to the task-visibility toggle, sharing the same disclaimer-copy pattern, shown as
   read-only/locked once the task exists (no edit UI, since there is no update path); the
   submissions list view respects whatever the backend now returns (already gated
@@ -493,7 +493,7 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   including explicit agent guidance that unlisted is not confidentiality. Mirrored to
   `pages/`.
 - **Phase 2:** the same four files need the equivalent treatment for
-  `submissionVisibilityMode` -- this is new agent-facing behavior (a new CLI flag, a new
+  `submissionVisibility` -- this is new agent-facing behavior (a new CLI flag, a new
   response field, and critically, agent guidance that the mode is locked in permanently
   once chosen) -- so it needs the same doc/skill coverage Phase 1 got, not an
   afterthought.
@@ -518,7 +518,7 @@ No contract change. On-chain data stays public (see constraint above). We explic
 
 ## Effort summary
 
-| Layer | Phase 1 (unlisted, shipped) | Phase 2 (submission visibility mode) | Phase 3 (true private) |
+| Layer | Phase 1 (unlisted, shipped) | Phase 2 (submission visibility) | Phase 3 (true private) |
 |---|---|---|---|
 | 1. Data model | 0.5d | 0.5d | 0.5d |
 | 2. General read-auth framework | -- (not needed) | 4-6d (built here) | -- (reuses Phase 2's) |
@@ -547,17 +547,17 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 
 ## Migration & backward compatibility
 
-- The `visibility` column defaults to `'public'`, and the `submissionVisibilityMode` column
+- The `visibility` column defaults to `'public'`, and the `submissionVisibility` column
   defaults to `'public'` too -- both match every existing task's already-established
   behavior exactly, so neither needs a separate backfill statement. This is a direct
   consequence of keeping both fields opt-in-only (ADR 0014's reasoning, extended to
-  submission visibility mode): a plain `DEFAULT 'public'` on the `ALTER TABLE ADD COLUMN` is
+  submission visibility): a plain `DEFAULT 'public'` on the `ALTER TABLE ADD COLUMN` is
   safe precisely because `'public'` is what every row already behaves like.
 - Schema is additive and append-only -- safe.
-- Old CLI/clients that omit `--task-visibility-mode`/`--submission-visibility-mode` on create keep
+- Old CLI/clients that omit `--task-visibility`/`--submission-visibility` on create keep
   getting today's fully-open behavior for whichever field they omit -- no behavior
   change for existing scripted integrations.
-- `submissionVisibilityMode` has no update path once set -- there is no migration concern
+- `submissionVisibility` has no update path once set -- there is no migration concern
   about a value changing after the fact, since it structurally cannot.
 
 ## Risks and open questions
@@ -581,7 +581,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
    inbox lookup), no general architectural change, no default-behavior change for
    existing tasks, and does not expose a `'private'` task-visibility value that would
    not actually be enforced.
-2. Ship **Phase 2 (submission visibility mode -- default `public`, opt-in
+2. Ship **Phase 2 (submission visibility -- default `public`, opt-in
    `reveal_all`/`winner_only`/`never`, locked in at creation)** next -- prioritise it
    over Phase 3, since it directly answers the copying/homogenisation and
    requester-confidentiality complaints, which in practice matter more than task-level
@@ -600,8 +600,8 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 
 ### Phase 1 (unlisted tasks) -- shipped
 
-- `apps/backend/src/db/schema.ts` -- `taskVisibilityMode` column + index
-- `apps/backend/drizzle/migrations/0030_add_task_visibility_mode.sql`
+- `apps/backend/src/db/schema.ts` -- `taskVisibility` column + index
+- `apps/backend/drizzle/migrations/0030_add_task_visibility.sql`
 - `packages/shared/src/schemas/task.schemas.ts` -- create/response schema fields
 - `apps/backend/src/routers/tasks.router.ts` -- list/create gating; `get` stays open
 - `apps/backend/src/routers/market.router.ts`, `apps/backend/src/services/stats.ts` --
@@ -614,7 +614,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   own owner
 - `apps/backend/src/middleware/ogTags.ts` -- SEO visibility check, both bot-prerender
   list bodies (the single-task OG card stays open, matching direct-fetch)
-- `apps/cli/src/commands/task/create.ts` -- `--task-visibility-mode`, plus a changeset
+- `apps/cli/src/commands/task/create.ts` -- `--task-visibility`, plus a changeset
 - `apps/cli/src/commands/inbox.ts` -- signs the self-auth message automatically
 - `apps/web/components/market/wizard/step-brief.tsx`, `step-publish.tsx` -- toggle,
   disclaimer copy
@@ -626,21 +626,21 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   reference/task-schema.md,skill.md}` (mirrored to `pages/`)
 - `apps/web/app/sitemap.ts` -- checked, no-op: no per-task URLs exist there today
 
-### Phase 2 (submission visibility mode) -- not started
+### Phase 2 (submission visibility) -- not started
 
 - `apps/backend/src/trpc.ts`, `context.ts` -- `optionalAuthProcedure`/
   `protectedProcedure`, `ctx.caller` resolution (the shared read-auth foundation)
-- `apps/backend/src/db/schema.ts` -- `submissionVisibilityMode` column on `tasks`
+- `apps/backend/src/db/schema.ts` -- `submissionVisibility` column on `tasks`
   (`'public' | 'reveal_all' | 'winner_only' | 'never'`, default `'public'`)
 - `apps/backend/src/routers/submissions.router.ts` -- mode-aware role-gated
   `listByTask` (active-state role check; deterministic post-resolution branch per mode)
-- `apps/cli/src/commands/task/create.ts` -- `--submission-visibility-mode`; no separate
+- `apps/cli/src/commands/task/create.ts` -- `--submission-visibility`; no separate
   reveal/update command, since the mode is locked in permanently at creation
-- `apps/web/components/market/wizard/**` -- `submissionVisibilityMode` control, sharing the
+- `apps/web/components/market/wizard/**` -- `submissionVisibility` control, sharing the
   Phase 1 disclaimer pattern, read-only once the task exists
 - `apps/backend/scripts/smoke-submission-visibility.ts` -- new smoke test
 - `apps/docs/src/public/{reference/cli.md,reference/raw-api.md,
-  reference/task-schema.md,skill.md}` (mirrored to `pages/`) -- `submissionVisibilityMode`
+  reference/task-schema.md,skill.md}` (mirrored to `pages/`) -- `submissionVisibility`
   is new agent-facing behavior and needs the same coverage Phase 1 got, not an
   afterthought
 

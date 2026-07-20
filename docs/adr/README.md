@@ -93,7 +93,7 @@ those always pause for a human.
 - [0011 — Diamond facet selectors get one shared source of truth, and upgrades become explicit versioned steps](0011-diamond-selectors-single-source-and-versioned-upgrades.md)
 - [0014 — Task visibility stays public by default; unlisted and private are strictly opt-in](0014-task-visibility-public-by-default-opt-in.md)
 - [0015 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework](0015-phase1-inbox-scoped-self-auth-not-general-framework.md)
-- [0016 — Submission visibility mode is an independent axis from task visibility, defaulting to public and locked in at creation](0016-submission-visibility-mode-independent-axis-default-public.md)
+- [0016 — Submission visibility is an independent axis from task visibility, defaulting to public and locked in at creation](0016-submission-visibility-independent-axis-default-public.md)
 
 ## Linting
 

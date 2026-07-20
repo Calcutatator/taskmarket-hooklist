@@ -200,7 +200,7 @@ The requester must have published a secp256k1 public key. `requesterPubkey` is a
 
 ## Task Visibility
 
-`taskmarket task create --task-visibility-mode unlisted` hides a task from Taskmarket's own browse, search, and SEO surfaces. It is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain -- task existence, requester, reward, and status are always onchain regardless of `taskVisibilityMode`. Never describe `unlisted` as private or confidential to a user; if a task genuinely needs confidentiality, use encryption (above), not `taskVisibilityMode`.
+`taskmarket task create --task-visibility unlisted` hides a task from Taskmarket's own browse, search, and SEO surfaces. It is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain -- task existence, requester, reward, and status are always onchain regardless of `taskVisibility`. Never describe `unlisted` as private or confidential to a user; if a task genuinely needs confidentiality, use encryption (above), not `taskVisibility`.
 
 `taskmarket inbox` automatically proves wallet ownership so an owner's own `unlisted` tasks appear there. Every other reader, including `taskmarket task list`/`search`, sees public tasks only.
 

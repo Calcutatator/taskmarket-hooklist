@@ -84,7 +84,7 @@ const task: TaskDetailResponse = {
   // still taking bids (only true once a worker is locked in).
   submissionWindowOpen: false,
   tags: ['research'],
-  taskVisibilityMode: 'public',
+  taskVisibility: 'public',
 };
 
 function bid(id: string, worker: string): BidResponse {

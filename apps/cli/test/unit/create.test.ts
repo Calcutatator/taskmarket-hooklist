@@ -49,32 +49,32 @@ describe('task create command', () => {
         description: 'test task',
         reward: '5000000',
         mode: 'bounty',
-        taskVisibilityMode: 'public',
+        taskVisibility: 'public',
       })
     );
     expect(mockPrintResult).toHaveBeenCalledWith({ taskId: '0xtask' });
   });
 
-  it('passes --task-visibility-mode unlisted through to the request body', async () => {
+  it('passes --task-visibility unlisted through to the request body', async () => {
     mockX402Post.mockResolvedValue({ taskId: '0xtask' });
 
-    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility-mode', 'unlisted'], {
+    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'unlisted'], {
       from: 'node',
     });
 
     expect(mockX402Post).toHaveBeenCalledWith(
       '/api/tasks',
-      expect.objectContaining({ taskVisibilityMode: 'unlisted' })
+      expect.objectContaining({ taskVisibility: 'unlisted' })
     );
   });
 
-  it('rejects an invalid --task-visibility-mode value', async () => {
-    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility-mode', 'private'], {
+  it('rejects an invalid --task-visibility value', async () => {
+    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'private'], {
       from: 'node',
     });
 
     expect(mockPrintError).toHaveBeenCalledWith(
-      expect.stringContaining('--task-visibility-mode must be one of: public, unlisted')
+      expect.stringContaining('--task-visibility must be one of: public, unlisted')
     );
     expect(mockX402Post).not.toHaveBeenCalled();
   });

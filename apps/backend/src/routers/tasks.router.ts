@@ -323,7 +323,7 @@ export const tasksRouter = router({
           status: 'open',
           tags: input.tags,
           mode: input.mode ?? 'bounty',
-          taskVisibilityMode: input.taskVisibilityMode ?? 'public',
+          taskVisibility: input.taskVisibility ?? 'public',
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
@@ -371,7 +371,7 @@ export const tasksRouter = router({
       // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014) --
       // that includes outbound notifications, not just browse/search, since actively
       // emailing/pinging worker agents about an "unlisted" task would defeat the point.
-      if ((input.taskVisibilityMode ?? 'public') !== 'unlisted') {
+      if ((input.taskVisibility ?? 'public') !== 'unlisted') {
         // Fire-and-forget targeted "new task" notification to eligible worker agents.
         // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
         // task creation. Idempotent by taskId (embedded in the body); the daemon's
@@ -422,7 +422,7 @@ export const tasksRouter = router({
       const conditions = [];
       // Discovery listings never surface unlisted tasks (ADR-0014). Fetching a
       // specific task by ID is unaffected -- this only gates the browse/search path.
-      conditions.push(sql`${tasks.taskVisibilityMode} != 'unlisted'`);
+      conditions.push(sql`${tasks.taskVisibility} != 'unlisted'`);
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }

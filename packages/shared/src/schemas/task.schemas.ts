@@ -7,7 +7,7 @@ export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auctio
 // 'private' is deliberately not a value here yet -- it would behave identically to
 // 'unlisted' with no real access control until read-authentication exists across the
 // read surface (ADR-0014, ADR-0015). Add it only once that enforcement is real.
-export const TaskVisibilityMode = z.enum(['unlisted', 'public']);
+export const TaskVisibility = z.enum(['unlisted', 'public']);
 
 export const TaskStatus = z.enum([
   'open',
@@ -99,7 +99,7 @@ export const TaskCreateSchema = z
     duration: z.number().positive('Duration must be positive'),
     tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
     mode: TaskMode.optional().default('bounty'),
-    taskVisibilityMode: TaskVisibilityMode.optional().default('public'),
+    taskVisibility: TaskVisibility.optional().default('public'),
     stakeRequired: z.boolean().optional().default(false),
     stakeBps: z.number().min(0).max(10000).optional().default(0),
     pitchDeadline: z.number().positive().optional(),
@@ -214,7 +214,7 @@ export const TaskResponseSchema = z.object({
   status: TaskStatus,
   tags: z.array(z.string()),
   mode: TaskMode,
-  taskVisibilityMode: TaskVisibilityMode.optional().default('public'),
+  taskVisibility: TaskVisibility.optional().default('public'),
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
   pitchDeadline: z.string().nullable(),
@@ -383,7 +383,7 @@ export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
 export type TaskModeType = z.infer<typeof TaskMode>;
-export type TaskVisibilityModeType = z.infer<typeof TaskVisibilityMode>;
+export type TaskVisibilityType = z.infer<typeof TaskVisibility>;
 export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

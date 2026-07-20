@@ -75,7 +75,7 @@ const task: TaskResponse = {
   submissionCount: 3,
   submissionWindowOpen: true,
   tags: ['typescript'],
-  taskVisibilityMode: 'public',
+  taskVisibility: 'public',
 };
 
 describe('LiveMarketPulseSection reduced motion', () => {

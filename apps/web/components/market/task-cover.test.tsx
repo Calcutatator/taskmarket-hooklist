@@ -75,7 +75,7 @@ function makeTask(overrides: Partial<TaskResponse>): TaskResponse {
     auctionType: null,
     auctionBidCount: 0,
     submissionWindowOpen: true,
-    taskVisibilityMode: 'public',
+    taskVisibility: 'public',
     ...overrides,
   };
 }
