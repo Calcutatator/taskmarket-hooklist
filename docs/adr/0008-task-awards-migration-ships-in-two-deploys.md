@@ -139,6 +139,11 @@ deployment).
   being non-trivially populated within the same deploy, this ADR's root cause (drizzle's
   single-transaction-per-boot migration model) applies again — the same split-and-backfill
   pattern should be used rather than trying to work around it inside one migration file.
+- `backfill-contract-address.ts` and its service were removed once `processTaskCreatedEvent` was
+  fixed to set `contractAddress`/`chainId` at insert time (the actual root cause) and both
+  testnet and production were confirmed clean via a final run. Unlike `backfill-task-awards.ts`
+  (a permanent tool — see `docs/DB_GUIDE.md`), this one repaired a specific historical gap that
+  the source fix prevents from recurring, so it had no ongoing purpose left.
 
 ## References
 
