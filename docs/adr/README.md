@@ -92,6 +92,7 @@ those always pause for a human.
 - [0010 — Legal bundle changes are versioned by content digest and invalidate all prior acceptance](0010-legal-bundle-content-digest-invalidates-prior-acceptance.md)
 - [0011 — Task visibility stays public by default; unlisted and private are strictly opt-in](0011-task-visibility-public-by-default-opt-in.md)
 - [0012 — Phase 1's `agents.inbox` gets a scoped self-auth check, not a general read-auth framework](0012-phase1-inbox-scoped-self-auth-not-general-framework.md)
+- [0013 — Submission visibility mode is an independent axis from task visibility, defaulting to public and locked in at creation](0013-submission-visibility-mode-independent-axis-default-public.md)
 
 ## Linting
 
