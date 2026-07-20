@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 1.4.0
+
+### Minor Changes
+
+- 06c92af: Add versioned legal-policy review, wallet-signed acceptance, status checks, and automatic acceptance receipts for CLI API and X402 requests.
+
 ## 1.3.0
 
 ### Minor Changes
