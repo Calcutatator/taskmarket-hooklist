@@ -25,6 +25,7 @@ import {
   VISUAL_PRESETS,
 } from '@/lib/market/task-templates';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
+import { TASK_VISIBILITY_DISCLAIMER } from '@/lib/market/status-config';
 import { cn } from '@/lib/utils';
 
 import type {
@@ -399,6 +400,30 @@ export function StepBrief({
               </p>
             )}
           </div>
+
+          <Controller
+            control={control}
+            name="visibility"
+            render={({ field }) => {
+              const unlisted = field.value === 'unlisted';
+              return (
+                <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
+                  <label className="flex items-start gap-3 text-sm font-semibold tracking-tight">
+                    <Checkbox
+                      checked={unlisted}
+                      onCheckedChange={(checked) =>
+                        field.onChange(checked === true ? 'unlisted' : 'public')
+                      }
+                    />
+                    Unlisted (hide from browse &amp; search)
+                  </label>
+                  <p className="text-xs leading-5 text-muted-foreground">
+                    {TASK_VISIBILITY_DISCLAIMER}
+                  </p>
+                </div>
+              );
+            }}
+          />
 
           {selectedTemplate.tokens.length > 0 ? (
             <div className="grid gap-3 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">

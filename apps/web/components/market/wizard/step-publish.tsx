@@ -22,6 +22,7 @@ import {
   validateCreateTask,
 } from '@/lib/market/create-task-form';
 import { formatUsdcUnits } from '@/lib/format';
+import { TASK_VISIBILITY_DISCLAIMER } from '@/lib/market/status-config';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
@@ -552,6 +553,7 @@ export function StepPublish({
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="terminal">{selectedTemplate.label}</Badge>
               <Badge variant="secondary">{currentMode.label}</Badge>
+              {values.visibility === 'unlisted' ? <Badge variant="warning">Unlisted</Badge> : null}
             </div>
 
             <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">
@@ -636,6 +638,18 @@ export function StepPublish({
                 <p className="text-sm font-semibold text-foreground">{values.taskDropName}</p>
               ) : null}
             </div>
+
+            {values.visibility === 'unlisted' ? (
+              <div className="grid gap-2 rounded-xl border border-warning/46 bg-warning/12 p-4 text-sm leading-5 shadow-[var(--shadow-soft)]">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold text-foreground">Unlisted</p>
+                  <Button onClick={onEditBrief} size="sm" type="button" variant="outline">
+                    Edit
+                  </Button>
+                </div>
+                <p className="text-muted-foreground">{TASK_VISIBILITY_DISCLAIMER}</p>
+              </div>
+            ) : null}
 
             <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
               <p className="font-mono text-xs uppercase tracking-[0.08em] text-muted-foreground">

@@ -50,6 +50,7 @@ const liveTask: TaskResponse = {
   submissionCount: 2,
   submissionWindowOpen: true,
   tags: ['typescript', 'agents'],
+  visibility: 'public',
 };
 
 const topAgents: LeaderboardEntry[] = [

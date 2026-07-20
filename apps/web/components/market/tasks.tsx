@@ -76,7 +76,11 @@ import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
-import { MODE_TOOLTIPS, STATUS_CONFIG } from '@/lib/market/status-config';
+import {
+  MODE_TOOLTIPS,
+  STATUS_CONFIG,
+  TASK_VISIBILITY_DISCLAIMER,
+} from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
   resolvedAwardCount,
@@ -2228,6 +2232,11 @@ export function TaskDetailPanel({
                     {task.taskDrop.name}
                   </Badge>
                 </Link>
+              ) : null}
+              {task.visibility === 'unlisted' ? (
+                <InfoTooltip label={TASK_VISIBILITY_DISCLAIMER}>
+                  <Badge variant="warning">Unlisted</Badge>
+                </InfoTooltip>
               ) : null}
               <PhaseBadge status={task.status} />
               {taskTypesHref ? (
