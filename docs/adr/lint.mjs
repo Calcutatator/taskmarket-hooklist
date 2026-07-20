@@ -115,30 +115,50 @@ for (const file of adrFiles) {
   }
 }
 
-// Supersession symmetry + direction
+// Supersession symmetry + direction. An ADR can carry more than one supersession
+// relationship on the same line (semicolon-separated) — e.g. an ADR that fully
+// supersedes an earlier one while itself being partially superseded by a later ADR
+// that only overrides one section of it. Each segment is checked independently, so
+// this stays backward-compatible with every existing single-relationship line
+// ("Supersedes ADR-NNNN", "Superseded by ADR-NNNN", or "—").
+function detectDirection(segment) {
+  // "supersed(es|ed) ... by" (e.g. "superseded by", "superseded in part by") →
+  // superseded-by; anything else referencing an ADR (including plain "supersedes") →
+  // supersedes.
+  return /supersed(?:ed|es)\b[\s\S]*?\bby\b/i.test(segment) ? 'superseded-by' : 'supersedes';
+}
+
 const supersessionMap = new Map();
 for (const file of adrFiles) {
   const content = contentsByFile.get(file);
   const lineMatch = SUPERSEDES_LINE_RE.exec(content);
-  if (lineMatch) {
-    const line = lineMatch[1].toLowerCase();
-    const numMatch = ADR_NUM_RE.exec(lineMatch[1]);
+  if (!lineMatch) continue;
+
+  const entries = [];
+  for (const segment of lineMatch[1].split(';')) {
+    const numMatch = ADR_NUM_RE.exec(segment);
     ADR_NUM_RE.lastIndex = 0;
-    if (numMatch) {
-      const direction = line.includes('superseded by') ? 'superseded-by' : 'supersedes';
-      supersessionMap.set(file.slice(0, 4), { refNum: numMatch[1], direction });
-    }
+    if (!numMatch) continue;
+    entries.push({ refNum: numMatch[1], direction: detectDirection(segment) });
+  }
+  if (entries.length > 0) {
+    supersessionMap.set(file.slice(0, 4), entries);
   }
 }
-for (const [num, { refNum, direction }] of supersessionMap) {
-  const refFile = adrFiles.find((f) => f.startsWith(refNum));
-  if (!refFile) continue;
+
+for (const [num, entries] of supersessionMap) {
   const srcFile = adrFiles.find((f) => f.startsWith(num));
-  const peer = supersessionMap.get(refNum);
-  if (!peer || peer.refNum !== num) {
-    err(srcFile, `supersession link to ADR-${refNum} is not symmetric — ADR-${refNum} must also reference ADR-${num}`);
-  } else if (direction === peer.direction) {
-    err(srcFile, `supersession direction mismatch with ADR-${refNum} — one must say "Supersedes" and the other "Superseded by"`);
+  for (const { refNum, direction } of entries) {
+    const refFile = adrFiles.find((f) => f.startsWith(refNum));
+    if (!refFile) continue; // dangling ref already caught below
+
+    const peerEntries = supersessionMap.get(refNum) ?? [];
+    const reciprocal = peerEntries.find((e) => e.refNum === num);
+    if (!reciprocal) {
+      err(srcFile, `supersession link to ADR-${refNum} is not symmetric — ADR-${refNum} must also reference ADR-${num}`);
+    } else if (direction === reciprocal.direction) {
+      err(srcFile, `supersession direction mismatch with ADR-${refNum} — one must say "Supersedes" and the other "Superseded by"`);
+    }
   }
 }
 
