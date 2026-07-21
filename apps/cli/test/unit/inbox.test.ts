@@ -46,7 +46,9 @@ describe('inbox command', () => {
 
     await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
 
-    expect(mockSignMessage).toHaveBeenCalledWith({ message: `taskmarket:inbox:${ADDRESS}` });
+    expect(mockSignMessage).toHaveBeenCalledWith({
+      message: `taskmarket:inbox:${ADDRESS.toLowerCase()}`,
+    });
     const [inboxUrl] = vi.mocked(apiGet).mock.calls[0];
     expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
     expect(inboxUrl).toContain('signature=0xsignature');
@@ -87,7 +89,9 @@ describe('inbox command', () => {
 
     await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
 
-    expect(mockSignMessage).toHaveBeenCalledWith({ message: `taskmarket:my-bids:${ADDRESS}` });
+    expect(mockSignMessage).toHaveBeenCalledWith({
+      message: `taskmarket:my-bids:${ADDRESS.toLowerCase()}`,
+    });
     const [bidsUrl] = vi.mocked(apiGet).mock.calls[1];
     expect(bidsUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
     expect(bidsUrl).toContain('signature=0xsignature');

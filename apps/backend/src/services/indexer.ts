@@ -1,5 +1,6 @@
 import { createPublicClient, http, keccak256, parseAbiItem, slice, toBytes } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
+import { normalizeAddress } from '@taskmarket/shared';
 import { db } from '../db/client';
 // Allows the status-guarded handlers below to run against an injected test
 // database (see test/integration/services/indexer-status-guards.test.ts)
@@ -264,7 +265,7 @@ export async function processTaskCreatedEvent(
   // Ensure the requester has an agent row so they appear in the directory
   await database
     .insert(agents)
-    .values({ address: requester as string })
+    .values({ address: normalizeAddress(requester as string) })
     .onConflictDoNothing();
 
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
@@ -1096,7 +1097,9 @@ async function processIdentityEvents(fromBlock: bigint, toBlock: bigint): Promis
           .where(eq(agents.agentId, agentIdStr));
       } else {
         // abi.encodePacked(address) = 20 raw bytes; first 40 hex chars after '0x'
-        const wallet = ('0x' + (metadataValue as string).slice(2, 42)) as `0x${string}`;
+        const wallet = normalizeAddress(
+          '0x' + (metadataValue as string).slice(2, 42)
+        ) as `0x${string}`;
         // onConflictDoNothing: a wallet can own multiple agentIds (ERC-721 allows it).
         // We keep the FIRST agentId associated with each wallet address.
         await db

@@ -91,7 +91,7 @@ describe('wallet router', () => {
         signature: '0x' + 'aa'.repeat(65),
       });
 
-      expect(result.withdrawalAddress).toBe(WITHDRAWAL);
+      expect(result.withdrawalAddress).toBe(WITHDRAWAL.toLowerCase());
       expect(ctx.db.insert).toHaveBeenCalledOnce();
     });
 

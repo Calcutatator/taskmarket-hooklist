@@ -52,11 +52,11 @@ function runCli(args: string, env: Record<string, string> = {}): RunResult {
 
 function runCliCaptureStderr(args: string, env: Record<string, string> = {}): RunResult {
   try {
-    const stderr = execSync(`tsx ${CLI_ENTRY} ${args} 2>&1 1>/dev/null`, {
+    const stdout = execSync(`tsx ${CLI_ENTRY} ${args}`, {
       env: { ...process.env, ...env },
       encoding: 'utf8',
     });
-    return { stdout: '', stderr, code: 0 };
+    return { stdout, stderr: '', code: 0 };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
     return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', code: e.status ?? 1 };

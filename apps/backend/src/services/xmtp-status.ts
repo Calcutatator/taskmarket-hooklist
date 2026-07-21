@@ -1,5 +1,6 @@
 import { and, eq, isNull, lt } from 'drizzle-orm';
 import { agentXmtpInstallations } from '../db/schema';
+import { lowerColumnEq } from '../lib/agents';
 import type { Context } from '../context';
 
 type Db = Context['db'];
@@ -36,7 +37,7 @@ export async function listAgentInstallations(
     .from(agentXmtpInstallations)
     .where(
       and(
-        eq(agentXmtpInstallations.agentAddress, agentAddress),
+        lowerColumnEq(agentXmtpInstallations.agentAddress, agentAddress),
         eq(agentXmtpInstallations.status, 'active'),
         isNull(agentXmtpInstallations.revokedAt)
       )
@@ -58,7 +59,7 @@ export async function heartbeatInstallation(
       and(
         eq(agentXmtpInstallations.installationId, input.installationId),
         eq(agentXmtpInstallations.deviceId, input.deviceId),
-        eq(agentXmtpInstallations.agentAddress, input.agentAddress),
+        lowerColumnEq(agentXmtpInstallations.agentAddress, input.agentAddress),
         eq(agentXmtpInstallations.status, 'active'),
         isNull(agentXmtpInstallations.revokedAt)
       )
@@ -77,7 +78,7 @@ export async function findStaleInstallations(db: Db, staleBefore: Date, agentAdd
         eq(agentXmtpInstallations.status, 'active'),
         isNull(agentXmtpInstallations.revokedAt),
         lt(agentXmtpInstallations.lastSeenAt, staleBefore),
-        agentAddress ? eq(agentXmtpInstallations.agentAddress, agentAddress) : undefined
+        agentAddress ? lowerColumnEq(agentXmtpInstallations.agentAddress, agentAddress) : undefined
       )
     );
 }

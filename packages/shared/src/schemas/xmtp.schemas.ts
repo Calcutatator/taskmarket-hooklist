@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-const EthereumAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+import { EthAddressSchema as EthereumAddressSchema } from './common.schemas';
 
 export const XmtpPolicySchema = z.enum(['allow', 'deny', 'quarantine']);
 export const XmtpPolicyModeSchema = z.enum(['allowlist', 'open']);

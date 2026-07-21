@@ -10,6 +10,7 @@ import {
   type TaskModeType,
   type TaskVisibilityType,
   Secp256k1PublicKeySchema,
+  normalizeAddress,
 } from '@taskmarket/shared';
 import { z } from 'zod';
 import {
@@ -459,7 +460,7 @@ export const agentsRouter = router({
 
       await ctx.db
         .insert(agents)
-        .values({ address: device.walletAddress, publicKey: input.publicKey })
+        .values({ address: normalizeAddress(device.walletAddress), publicKey: input.publicKey })
         .onConflictDoUpdate({
           target: agents.address,
           set: { publicKey: input.publicKey, updatedAt: new Date() },

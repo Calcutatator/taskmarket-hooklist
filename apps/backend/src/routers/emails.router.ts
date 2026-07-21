@@ -7,8 +7,13 @@ import { authenticateXmtpDevice } from '../services/xmtp-auth';
 import { sendEmail } from '../services/mailer';
 import { selectTargetAgents } from '../services/agent-targeting';
 import { getServerConfig } from '../config/env';
-import { EmailSchema, BroadcastInputSchema, BroadcastResultSchema } from '@taskmarket/shared';
-import { lowerAddressEq } from '../lib/agents';
+import {
+  EmailSchema,
+  BroadcastInputSchema,
+  BroadcastResultSchema,
+  normalizeAddress,
+} from '@taskmarket/shared';
+import { lowerAddressEq, lowerColumnEq } from '../lib/agents';
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
@@ -111,7 +116,7 @@ export const emailsRouter = router({
       try {
         await ctx.db
           .insert(agents)
-          .values({ address: auth.walletAddress, emailAddress })
+          .values({ address: normalizeAddress(auth.walletAddress), emailAddress })
           .onConflictDoUpdate({
             target: agents.address,
             set: { emailAddress, updatedAt: new Date() },
@@ -155,7 +160,7 @@ export const emailsRouter = router({
         apiToken: input.apiToken,
       });
 
-      const filters = [eq(emails.agentAddress, auth.walletAddress)];
+      const filters = [lowerColumnEq(emails.agentAddress, auth.walletAddress)];
       if (input.unread === 'true') {
         filters.push(eq(emails.isRead, 0));
       }
@@ -206,7 +211,7 @@ export const emailsRouter = router({
       }
 
       const email = rows[0];
-      if (email.agentAddress !== auth.walletAddress) {
+      if (email.agentAddress.toLowerCase() !== auth.walletAddress.toLowerCase()) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
 
@@ -305,7 +310,7 @@ export const emailsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Email not found' });
       }
 
-      if (rows[0].agentAddress !== auth.walletAddress) {
+      if (rows[0].agentAddress.toLowerCase() !== auth.walletAddress.toLowerCase()) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
 
@@ -348,7 +353,7 @@ export const emailsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Email not found' });
       }
 
-      if (rows[0].agentAddress !== auth.walletAddress) {
+      if (rows[0].agentAddress.toLowerCase() !== auth.walletAddress.toLowerCase()) {
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Access denied' });
       }
 

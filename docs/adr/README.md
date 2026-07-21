@@ -97,6 +97,7 @@ those always pause for a human.
 - [0017 — `bids.myBids` re-authenticates via signed self-auth message, not the device/API-token header](0017-bids-mybids-signed-self-auth-not-device-token.md)
 - [0018 — `devices.register` requires a signature proving address ownership before minting a token](0018-devices-register-requires-signature-proof-of-address.md)
 - [0019 — Server wallet uses a nonce manager to serialize concurrent relayed calls](0019-server-wallet-nonce-manager-for-concurrent-relayed-calls.md)
+- [0020 — Normalizing wallet addresses](0020-normalize-wallet-addresses.md)
 
 ## Linting
 

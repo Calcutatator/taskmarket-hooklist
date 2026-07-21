@@ -57,6 +57,7 @@
 import { createPublicClient, createWalletClient, http, parseAbi, getAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
+import { buildWithdrawDreamsMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus } from './_x402.ts';
 
 const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
@@ -456,7 +457,11 @@ async function main() {
       nonce: withdrawNonce,
       validBefore: withdrawValidBefore,
       signature: await worker.signMessage({
-        message: `taskmarket:withdraw-dreams:${WORKER_WITHDRAWAL_ADDRESS}:${withdrawNonce}:${withdrawValidBefore}`,
+        message: buildWithdrawDreamsMessage(
+          WORKER_WITHDRAWAL_ADDRESS,
+          withdrawNonce,
+          withdrawValidBefore
+        ),
       }),
     })) as {
       txHash: string;

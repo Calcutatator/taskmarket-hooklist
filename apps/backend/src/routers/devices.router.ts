@@ -7,7 +7,11 @@ import { getServerConfig } from '../config/env';
 import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
-import { Secp256k1PublicKeySchema, buildDeviceRegisterMessage } from '@taskmarket/shared';
+import {
+  Secp256k1PublicKeySchema,
+  buildDeviceRegisterMessage,
+  normalizeAddress,
+} from '@taskmarket/shared';
 import { sha256Hex } from '../lib/hash';
 
 function deriveDeviceEncryptionKey(masterKeyHex: string, deviceId: string): string {
@@ -60,11 +64,12 @@ export const devicesRouter = router({
       const apiToken = randomBytes(32).toString('hex');
       const apiTokenHash = sha256Hex(apiToken);
       const deviceEncryptionKey = deriveDeviceEncryptionKey(config.PLATFORM_MASTER_KEY, deviceId);
+      const walletAddress = normalizeAddress(input.walletAddress);
 
       await ctx.db.insert(devices).values({
         id: deviceId,
         apiTokenHash,
-        walletAddress: input.walletAddress,
+        walletAddress,
       });
 
       // Check if agent already has an on-chain identity registered.
@@ -91,7 +96,7 @@ export const devicesRouter = router({
       await ctx.db
         .insert(agents)
         .values({
-          address: input.walletAddress,
+          address: walletAddress,
           agentId: null,
           ...(input.publicKey ? { publicKey: input.publicKey } : {}),
         })
@@ -110,7 +115,7 @@ export const devicesRouter = router({
           const id = agentIdBigInt.toString();
           await ctx.db
             .insert(agents)
-            .values({ address: input.walletAddress, agentId: id })
+            .values({ address: walletAddress, agentId: id })
             .onConflictDoUpdate({
               target: agents.address,
               set: { agentId: id, updatedAt: new Date() },

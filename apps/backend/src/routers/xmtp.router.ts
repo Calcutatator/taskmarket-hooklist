@@ -23,7 +23,8 @@ import {
   findStaleInstallations,
 } from '../services/xmtp-status';
 import { authenticateXmtpDevice } from '../services/xmtp-auth';
-import { lowerAddressEq } from '../lib/agents';
+import { lowerAddressEq, lowerColumnEq } from '../lib/agents';
+import { normalizeAddress } from '@taskmarket/shared';
 import { getPolicyMode } from '../services/xmtp-policy';
 import { publicProcedure, router } from '../trpc';
 
@@ -93,7 +94,7 @@ export const xmtpRouter = router({
       await ctx.db
         .insert(agents)
         .values({
-          address: auth.walletAddress,
+          address: normalizeAddress(auth.walletAddress),
         })
         .onConflictDoNothing();
 
@@ -130,7 +131,7 @@ export const xmtpRouter = router({
       const existingInstallation = existingInstallationRows[0];
       if (existingInstallation) {
         const isOwnerMatch =
-          existingInstallation.agentAddress === auth.walletAddress &&
+          existingInstallation.agentAddress.toLowerCase() === auth.walletAddress.toLowerCase() &&
           existingInstallation.deviceId === input.deviceId &&
           existingInstallation.inboxId === input.inboxId;
 
@@ -317,7 +318,7 @@ export const xmtpRouter = router({
           updatedAt: agentXmtpPeerPolicies.updatedAt,
         })
         .from(agentXmtpPeerPolicies)
-        .where(eq(agentXmtpPeerPolicies.ownerAgentAddress, auth.walletAddress));
+        .where(lowerColumnEq(agentXmtpPeerPolicies.ownerAgentAddress, auth.walletAddress));
 
       return {
         policies: rows.map((row) => ({

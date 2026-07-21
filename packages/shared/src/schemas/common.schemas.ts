@@ -1,5 +1,23 @@
 import { z } from 'zod';
 
+// Canonical Ethereum address schema. Validates shape only -- does NOT
+// normalize casing at parse time. Several callers (device registration,
+// withdrawal-address signing) embed the raw address string verbatim into a
+// message the client signs (see `buildDeviceRegisterMessage`); the server
+// must reconstruct that exact string, in the exact casing the client used,
+// before recovering the signer -- normalizing here would silently break
+// every one of those signature checks. Normalize with `normalizeAddress`
+// below at the point of DB persistence instead, once any signature
+// verification against the original casing has already happened.
+export const EthAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
+
+// Apply at the point of writing to `agents`/`devices` (or any other
+// address-keyed storage) -- never before a signed message is reconstructed
+// or verified against this value.
+export function normalizeAddress(address: string): string {
+  return address.toLowerCase();
+}
+
 export const UsdcBaseUnitsSchema = z
   .string()
   .regex(/^[0-9]+$/, 'Amount must be a non-negative integer in USDC base units');

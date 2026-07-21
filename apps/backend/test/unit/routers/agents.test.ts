@@ -214,7 +214,7 @@ describe('agents router', () => {
       });
 
       expect(recoverMessageAddress).toHaveBeenCalledWith({
-        message: `taskmarket:inbox:${ADDR}`,
+        message: `taskmarket:inbox:${ADDR.toLowerCase()}`,
         signature: '0x' + 'aa'.repeat(65),
       });
 

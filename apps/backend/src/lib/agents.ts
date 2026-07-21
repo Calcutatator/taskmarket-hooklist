@@ -1,4 +1,4 @@
-import { sql } from 'drizzle-orm';
+import { sql, type AnyColumn } from 'drizzle-orm';
 import { recoverMessageAddress } from 'viem';
 import { agents } from '../db/schema';
 
@@ -11,6 +11,18 @@ import { agents } from '../db/schema';
  */
 export function lowerAddressEq(address: string) {
   return sql`lower(${agents.address}) = lower(${address})`;
+}
+
+/**
+ * Case-insensitive equality for any other address-holding column (e.g.
+ * agent_xmtp_installations.agent_address, emails.agent_address). Same
+ * rationale as lowerAddressEq -- prefer this over a plain eq() any time the
+ * column's normalization isn't enforced by a database constraint, so a
+ * future regression in the write-side guarantee fails safe instead of
+ * silently rejecting valid requests.
+ */
+export function lowerColumnEq(column: AnyColumn, value: string) {
+  return sql`lower(${column}) = lower(${value})`;
 }
 
 export type SignedAddressVerification =

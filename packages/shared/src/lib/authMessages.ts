@@ -7,11 +7,11 @@ export function buildSelectWorkerMessage(
 }
 
 export function buildInboxSelfAuthMessage(address: string): string {
-  return `taskmarket:inbox:${address}`;
+  return `taskmarket:inbox:${address.toLowerCase()}`;
 }
 
 export function buildMyBidsMessage(address: string): string {
-  return `taskmarket:my-bids:${address}`;
+  return `taskmarket:my-bids:${address.toLowerCase()}`;
 }
 
 export function buildSubmitMessage(taskId: string): string {
@@ -27,7 +27,7 @@ export function buildForfeitMessage(taskId: string): string {
 }
 
 export function buildSetWithdrawalAddressMessage(withdrawalAddress: string): string {
-  return `taskmarket:set-withdrawal-address:${withdrawalAddress}`;
+  return `taskmarket:set-withdrawal-address:${withdrawalAddress.toLowerCase()}`;
 }
 
 export function buildWithdrawDreamsMessage(
@@ -35,9 +35,9 @@ export function buildWithdrawDreamsMessage(
   nonce: string,
   validBefore: string
 ): string {
-  return `taskmarket:withdraw-dreams:${destination}:${nonce}:${validBefore}`;
+  return `taskmarket:withdraw-dreams:${destination.toLowerCase()}:${nonce}:${validBefore}`;
 }
 
 export function buildDeviceRegisterMessage(walletAddress: string): string {
-  return `taskmarket:device-register:${walletAddress}`;
+  return `taskmarket:device-register:${walletAddress.toLowerCase()}`;
 }

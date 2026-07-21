@@ -1,6 +1,7 @@
 import { and, eq } from 'drizzle-orm';
 import { agentXmtpPeerPolicies } from '../db/schema';
 import { getServerConfig } from '../config/env';
+import { lowerColumnEq } from '../lib/agents';
 import type { Context } from '../context';
 
 export type PeerPolicy = 'allow' | 'deny' | 'quarantine';
@@ -20,7 +21,7 @@ export async function resolveEffectivePeerPolicy(
     .from(agentXmtpPeerPolicies)
     .where(
       and(
-        eq(agentXmtpPeerPolicies.ownerAgentAddress, ownerAgentAddress),
+        lowerColumnEq(agentXmtpPeerPolicies.ownerAgentAddress, ownerAgentAddress),
         eq(agentXmtpPeerPolicies.peerInboxId, peerInboxId)
       )
     )

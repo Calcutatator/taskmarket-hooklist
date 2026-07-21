@@ -1,6 +1,5 @@
 import { z } from 'zod';
-
-const EthAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
+import { EthAddressSchema as EthAddress } from './common.schemas';
 
 export const SetWithdrawalAddressInputSchema = z.object({
   walletAddress: EthAddress,

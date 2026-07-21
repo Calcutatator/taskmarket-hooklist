@@ -346,6 +346,48 @@ what keeps server-side preview/OG, benchmark auto-verification, and evaluator/di
 review working. Confidentiality here is from other *users*, not from the platform -- which
 is exactly the scope we want.
 
+**Three public read-paths for artifact content exist today, not just `listByTask` --
+Phase 2 must gate all three or the feature doesn't actually do what it says:**
+
+- `submissions.listByTask` (`apps/backend/src/routers/submissions.router.ts` ~L561) --
+  already named above. Returns every submission's raw `fileUrl` unconditionally, and
+  (when `includePreviewUrls=media`) also generates and returns presigned S3 URLs for
+  media artifacts inline. `publicProcedure`, no caller identity.
+- `submissions.previewArtifact` (`GET /api/tasks/{taskId}/artifacts/{artifactId}/preview`,
+  ~L901) -- a second, independent `publicProcedure` that hands back a presigned S3 URL
+  to an artifact's raw content given only its `taskId`/`artifactId`. No caller identity,
+  no role check, no task-state check at all. A separate code path from `listByTask`;
+  gating `listByTask` alone would not close this one -- a caller who already has (or
+  scrapes, since `listByTask` hands out every `artifactId` for every task) an
+  `artifactId` could still fetch full content through `previewArtifact` regardless of
+  the task's `submissionVisibility` mode.
+- `submissions.download` (~L991) -- also `publicProcedure`. Its only gate is
+  `task.status === 'completed'`; it takes `acceptanceTxHash` as a required input but
+  never actually validates it against anything (dead/decorative parameter, not a real
+  check). Critically, it has no knowledge of `submissionVisibility` at all -- once that
+  field exists, a task set to `winner_only` or `never` would still have any of its
+  submissions fetchable via `download` by anyone who knows the `submissionId`, since
+  this endpoint doesn't check the mode. This is a distinct gap from `previewArtifact`
+  (pre-completion vs. post-completion) and needs separate handling in Phase 2's
+  role/mode-gating work.
+
+`submissions.preview` (~L788) is unrelated to this list -- it's already properly gated
+today (requester or submitting worker only, device-token authenticated) for the
+pre-acceptance review flow the CLI uses, and doesn't need Phase 2 changes.
+
+A fifth surface has the same gap as `download`: `submissions.listByWorker`
+(`GET /agents/{address}/work`, ~L668) -- the public agent-portfolio endpoint. It's scoped
+via `task_awards` to completed/awarded work and defaults `includePreviewUrls` to
+`'media'`, so it already surfaces presigned media URLs for a worker's finished tasks with
+no `submissionVisibility` awareness. Once that field exists, a `winner_only`/`never`
+task's awarded work would still show up in the worker's public portfolio unless this
+endpoint is also updated to respect the mode.
+
+(Confirmed via a full-backend sweep for every `getPresignedUrl` call site --
+`listByTask`, `previewArtifact`, `preview`, `download`, and `listByWorker` in
+`submissions.router.ts` are the only five; no other router exposes file content this
+way.)
+
 The submission visibility setting needs to be settable from every task-creation surface, not just the
 API: the CLI (`task create --submission-visibility <public|reveal_all|winner_only|
 never>`, default `public`) and the web app (a control in the create wizard next to the
@@ -356,8 +398,8 @@ internal-only change: a worker deciding whether to submit needs to know upfront 
 their work will ever become visible to competitors.
 
 Estimate: **~7-11 days total** (4-6d general read-authentication foundation + 3-5d
-submission schema field, mode-aware role-gated `listByTask`, CLI, web, docs/skill, and
-tests).
+submission schema field, mode-aware role-gated `listByTask`, `previewArtifact`,
+`download`, and `listByWorker`, CLI, web, docs/skill, and tests).
 
 ### Client-side encryption -- explicit non-goal (for now)
 

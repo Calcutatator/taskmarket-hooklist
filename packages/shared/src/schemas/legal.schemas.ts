@@ -1,4 +1,5 @@
 import { z } from 'zod';
+import { EthAddressSchema } from './common.schemas';
 
 export const LegalDocumentTypeSchema = z.enum([
   'terms_of_service',
@@ -43,7 +44,7 @@ export const LegalStatusResponseSchema = z.object({
   subjectType: LegalSubjectTypeSchema.optional(),
 });
 
-const LegalWalletAddressSchema = z.string().regex(/^0x[a-fA-F0-9]{40}$/);
+const LegalWalletAddressSchema = EthAddressSchema;
 
 export const LegalAffirmationsSchema = z.object({
   acknowledgedRisk: z.literal(true),

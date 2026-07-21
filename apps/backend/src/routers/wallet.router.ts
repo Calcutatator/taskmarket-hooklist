@@ -27,6 +27,7 @@ import {
   dreamsToUsd,
   buildSetWithdrawalAddressMessage,
   buildWithdrawDreamsMessage,
+  normalizeAddress,
 } from '@taskmarket/shared';
 
 const USDC_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
@@ -100,15 +101,19 @@ export const walletRouter = router({
       }
 
       // Upsert agent row with withdrawal address
+      const withdrawalAddress = normalizeAddress(input.withdrawalAddress);
       await ctx.db
         .insert(agents)
-        .values({ address: input.walletAddress, withdrawalAddress: input.withdrawalAddress })
+        .values({
+          address: normalizeAddress(input.walletAddress),
+          withdrawalAddress,
+        })
         .onConflictDoUpdate({
           target: agents.address,
-          set: { withdrawalAddress: input.withdrawalAddress, updatedAt: new Date() },
+          set: { withdrawalAddress, updatedAt: new Date() },
         });
 
-      return { withdrawalAddress: input.withdrawalAddress };
+      return { withdrawalAddress };
     }),
 
   getWithdrawalAddress: publicProcedure
