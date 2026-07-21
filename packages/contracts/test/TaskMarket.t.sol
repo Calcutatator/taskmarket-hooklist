@@ -1468,6 +1468,7 @@ contract TaskMarketTest is DiamondTestHelper {
         uint256 acceptPrice = 40 * 10 ** 6;
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, acceptPrice);
+        _submitWork(taskId, worker1, keccak256("work"));
 
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -1497,6 +1498,7 @@ contract TaskMarketTest is DiamondTestHelper {
         uint256 acceptPrice = REWARD;
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
         _acceptAuction(taskId, worker1, acceptPrice);
+        _submitWork(taskId, worker1, keccak256("work"));
 
         vm.warp(block.timestamp + DURATION + 1);
 
@@ -1513,6 +1515,28 @@ contract TaskMarketTest is DiamondTestHelper {
 
         ITMPCore.Task memory task = market.getTask(taskId);
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Accepted));
+    }
+
+    function test_RefundExpired_Auction_ClaimedNoDeliverable_FullRefundNoWorkerPayment() public {
+        // Worker claims the auction but never submits any deliverable. On expiry,
+        // refundExpired must NOT auto-pay the claimed stake -- it must fully refund
+        // the requester instead, matching the non-auction expiry path.
+        uint256 acceptPrice = 40 * 10 ** 6;
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
+        _acceptAuction(taskId, worker1, acceptPrice);
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 worker1BalanceBefore = usdc.balanceOf(worker1);
+        uint256 requesterBalanceBefore = usdc.balanceOf(requester);
+
+        market.refundExpired(taskId, 0);
+
+        assertEq(usdc.balanceOf(worker1), worker1BalanceBefore, "worker must not be paid without a deliverable");
+        assertEq(usdc.balanceOf(requester), requesterBalanceBefore + REWARD, "requester must get the full reward back");
+
+        ITMPCore.Task memory task = market.getTask(taskId);
+        assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Expired));
     }
 
     // -----------------------------------------------------------------------
@@ -2864,6 +2888,7 @@ contract TaskMarketTest is DiamondTestHelper {
             (bytes32)
         );
         _acceptAuction(taskId, worker1, acceptPrice);
+        _submitWork(taskId, worker1, keccak256("work"));
 
         vm.warp(block.timestamp + DURATION + 1);
         assertEq(hook.onCompleteCalls(), 0);

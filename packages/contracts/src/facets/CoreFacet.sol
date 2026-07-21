@@ -518,6 +518,19 @@ contract CoreFacet {
     }
 
     function _refundAuctionClaimed(bytes32 taskId, ITMPCore.Task storage task, AppStorage storage s) private {
+        if (task.deliverable == bytes32(0)) {
+            // Worker claimed but never submitted a deliverable -- treat expiry as a full
+            // refund to the requester, matching the non-auction _refundExpiredNormal path,
+            // instead of auto-paying the claimed stake for work that was never delivered.
+            task.status = ITMPCore.TaskStatus.Expired;
+            uint256 refundAmount = task.reward;
+            address requesterAddr = task.requester;
+            if (!s.usdcToken.transfer(requesterAddr, refundAmount)) revert ITMPCore.RefundFailed();
+            emit ITMPCore.TaskExpired(taskId, requesterAddr, refundAmount);
+            LibTaskMarket._onExpireHooks(taskId, s);
+            return;
+        }
+
         uint256 fee = (task.stakeAmount * task.feeBps) / 10000;
         uint256 workerPayment = task.stakeAmount - fee;
         task.status = ITMPCore.TaskStatus.Accepted;
