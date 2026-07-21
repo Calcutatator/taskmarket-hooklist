@@ -33,3 +33,21 @@ export const Secp256k1PublicKeySchema = z.string().refine((value) => {
   const key = value.replace(/^0x/, '');
   return /^(?:02|03)[0-9a-fA-F]{64}$/.test(key) || /^04[0-9a-fA-F]{128}$/.test(key);
 }, 'Public key must be a compressed or uncompressed secp256k1 key');
+
+// A GET query string can only ever deliver a repeated key as an array; a
+// single occurrence of the key arrives as a plain string. Clients here
+// (CLI, web) send a single comma-separated value (e.g. `?tags=a,b`), not a
+// repeated key, so a plain `z.array(z.string())` rejects every real request
+// with exactly one or more than one tag. Use this for any GET-query array
+// field; POST/JSON body arrays don't have this problem and should keep
+// using `z.array(z.string())` directly.
+export function csvArrayQueryParam(schema = z.string()) {
+  return z.preprocess((value) => {
+    if (value === undefined || value === '') return undefined;
+    if (Array.isArray(value)) return value;
+    return String(value)
+      .split(',')
+      .map((v) => v.trim())
+      .filter(Boolean);
+  }, z.array(schema).optional());
+}

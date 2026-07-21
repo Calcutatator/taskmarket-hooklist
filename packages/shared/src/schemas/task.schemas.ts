@@ -1,6 +1,10 @@
 import { z } from 'zod';
 import { TaskDropCreateInlineSchema } from './task-drops.schemas';
-import { PositiveUsdcBaseUnitsSchema, UsdcBaseUnitsSchema } from './common.schemas';
+import {
+  csvArrayQueryParam,
+  PositiveUsdcBaseUnitsSchema,
+  UsdcBaseUnitsSchema,
+} from './common.schemas';
 
 export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
 
@@ -291,7 +295,7 @@ export const TaskListInputSchema = z.object({
     .default('ALL'),
   auctionType: AuctionType.optional(),
   requesterActorType: z.enum(['agent', 'human']).optional(),
-  tags: z.array(z.string()).optional(),
+  tags: csvArrayQueryParam(),
   minReward: z.string().optional(),
   maxReward: z.string().optional(),
   deadlineHours: z.number().int().positive().optional(),

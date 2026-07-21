@@ -1133,6 +1133,39 @@ describe('tasks router', () => {
       expect(result.hasMore).toBe(true);
       expect(result.nextCursor).toBe(mockTaskRow.createdAt.toISOString());
     });
+
+    // Regression: a GET query string only ever delivers a repeated key as an
+    // array -- a single `?tags=creative` arrives as the plain string
+    // 'creative', not ['creative']. Both CLI and web send tags as one
+    // comma-separated value, never a repeated key, so this must parse.
+    it('accepts a single tags value as a bare string (as a GET query string delivers it)', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.list({ limit: 20, tags: 'creative' as unknown as string[] });
+
+      expect(result.tasks).toHaveLength(1);
+    });
+
+    it('accepts a comma-separated tags value and splits/trims it', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([mockTaskRow]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.list({
+        limit: 20,
+        tags: 'creative, dev ,ai' as unknown as string[],
+      });
+
+      expect(result.tasks).toHaveLength(1);
+    });
   });
 
   describe('list filters', () => {
@@ -1201,6 +1234,20 @@ describe('tasks router', () => {
         WORKER.toLowerCase(),
         WORKER.toLowerCase(),
       ]);
+    });
+
+    it('filters by a single tags value delivered as a bare string, matching arrayOverlaps', async () => {
+      const query = await captureListWhere({ tags: 'creative' as unknown as string[] });
+
+      expect(query.sql).toContain('&&');
+      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, '{"creative"}']);
+    });
+
+    it('filters by a comma-separated tags value, splitting into an array before arrayOverlaps', async () => {
+      const query = await captureListWhere({ tags: 'creative,dev' as unknown as string[] });
+
+      expect(query.sql).toContain('&&');
+      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, '{"creative","dev"}']);
     });
 
     it('always excludes unlisted tasks from discovery listings (ADR-0014)', async () => {
