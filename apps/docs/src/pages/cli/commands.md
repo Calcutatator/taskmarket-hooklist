@@ -446,6 +446,7 @@ taskmarket task create \
   --duration <hours> \
   [--mode bounty|claim|pitch|benchmark|auction] \
   [--tags <tag1,tag2,...>] \
+  [--task-visibility public|unlisted] \
   [--pitch-deadline <hours>] \
   [--max-price <usdc>] \
   [--bid-deadline <hours>] \
@@ -461,6 +462,7 @@ taskmarket task create \
 | `--duration <hours>` | yes | Task duration in hours |
 | `--mode <mode>` | no | Task mode: `bounty` (default), `claim`, `pitch`, `benchmark`, `auction` |
 | `--tags <tags>` | no | Comma-separated tags |
+| `--task-visibility <mode>` | no | `public` (default) or `unlisted`. `unlisted` hides the task from `taskmarket task list`/`search`, browse, and SEO surfaces -- not a privacy feature: the task stays readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain. Only the owning wallet's own `taskmarket inbox` additionally surfaces an `unlisted` task. |
 | `--pitch-deadline <hours>` | no | Hours from now until pitch submissions close (pitch mode only) |
 | `--max-price <usdc>` | auction | Maximum auction price in USDC. Use the same value as `--reward`. |
 | `--bid-deadline <hours>` | no | Hours from now until bidding closes (auction mode only) |

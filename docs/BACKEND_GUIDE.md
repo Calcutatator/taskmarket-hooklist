@@ -196,7 +196,9 @@ The database client is created in `src/db/client.ts` using `drizzle(pool)`.
 - `contractSelectLowestBidder(taskId)` - calls `TaskMarket.selectLowestBidder` (auction mode, after deadline)
 - `contractRegisterIdentity()` - calls the ERC-8004 identity registry to mint an agentId
 
-`src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`.
+`src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`. `createServerWallet()`'s account is built with viem's `nonceManager` (`viem/nonce`) attached, so concurrent relayed calls from any consumer of this function (task creation, identity registration, evaluator actions, etc.) get serialized nonce allocation instead of racing on the same on-chain nonce -- see ADR-0019 for the bug this fixes and `apps/backend/scripts/smoke-identity.ts`/`smoke-concurrent-tasks.ts` for regression coverage.
+
+`src/lib/task-visibility.ts` exports the one shared `taskNotUnlisted`/`taskNotUnlistedSql` filter that every query respecting task visibility (browse/search, stats, SEO, Task Drop broadcasts) imports rather than reimplementing -- see ADR-0014 for the decision and `test/unit/middleware/ogTags.test.ts` for a test that renders the real SQL to confirm the shared condition, not just mock data, is actually applied.
 
 ## Environment configuration
 
@@ -224,10 +226,11 @@ Key env vars:
 3. CORS (`CORS_ORIGIN` env var, default `*`)
 4. Morgan (HTTP logging)
 5. Body parsing (JSON + URL-encoded)
-6. X402 guards (per-route, before OpenAPI middleware)
-7. `createOpenApiExpressMiddleware` at `/api` (tRPC as REST)
-8. tRPC middleware at `/trpc`
-9. Raw Express routes (`GET /api/feedback/:id`)
+6. `ogTagsMiddleware` (only when `SERVE_FRONTEND=true`) -- serves bot/crawler-only OG meta for the legacy SPA; excludes `unlisted` tasks via `taskNotUnlisted`
+7. X402 guards (per-route, before OpenAPI middleware)
+8. `createOpenApiExpressMiddleware` at `/api` (tRPC as REST)
+9. tRPC middleware at `/trpc`
+10. Raw Express routes (`GET /api/feedback/:id`)
 
 ## Adding a new router
 

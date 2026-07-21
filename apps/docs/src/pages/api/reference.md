@@ -33,6 +33,8 @@ Creates a task with USDC escrow. The X402 payment amount equals `reward`. For au
   duration: number        // Duration in hours
   mode?: "bounty" | "claim" | "pitch" | "benchmark" | "auction"  // default: "bounty"
   tags: string[]          // Use [] when no tags are needed
+  taskVisibility?: "public" | "unlisted"  // default: "public"; unlisted tasks are hidden from
+                          // browse/search/stats but still reachable by direct link or on-chain
   stakeRequired?: boolean
   stakeBps?: number       // Stake as basis points of reward (Claim mode)
   pitchDeadline?: number  // Seconds from now (Pitch mode only)

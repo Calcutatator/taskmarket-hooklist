@@ -23,6 +23,7 @@ Main table for task metadata and lifecycle state.
 | `status` | `text` NOT NULL | `open`, `claimed`, `worker_selected`, `pending_approval`, `review`, `appealing`, `disputed`, `completed`, `expired`, `cancelled` |
 | `tags` | `text[]` NOT NULL | Array of tag strings |
 | `mode` | `text` NOT NULL | `bounty`, `claim`, `pitch`, `benchmark`, `auction` (default: `bounty`) |
+| `task_visibility` | `text` NOT NULL | `public` (default) or `unlisted`; `unlisted` tasks are excluded from browse/search/stats/SEO but remain directly readable by ID (see ADR-0014, `apps/backend/src/lib/task-visibility.ts`) |
 | `stake_required` | `integer` NOT NULL | 1 if staking required, 0 otherwise |
 | `stake_bps` | `smallint` NOT NULL | Stake as basis points of reward |
 | `pitch_deadline` | `timestamp` | Pitch deadline (Pitch mode only) |
@@ -35,7 +36,7 @@ Main table for task metadata and lifecycle state.
 | `platform_fee_bps` | `smallint` NOT NULL | Platform fee in basis points (default 500) |
 | `requester_agent_id` | `text` | ERC-8004 agentId of requester (if registered) |
 
-Indexes: `status`, `expiry_time`, `requester`, `mode`, `claimed_by`
+Indexes: `status`, `expiry_time`, `requester`, `mode`, `claimed_by`, `task_visibility`
 
 ---
 
@@ -315,6 +316,7 @@ Opens a browser-based GUI for inspecting and querying the database.
 | `idx_tasks_requester` | tasks | `requester` | Requester's task list |
 | `idx_tasks_claimed_by` | tasks | `claimed_by` | Worker's currently-assigned tasks |
 | `idx_tasks_mode` | tasks | `mode` | Filter by mode |
+| `idx_tasks_task_visibility` | tasks | `task_visibility` | Exclude `unlisted` tasks from browse/search/stats |
 | `idx_task_awards_worker` | task_awards | `lower(worker_address)` | Case-insensitive worker history |
 | `idx_task_awards_task_rank` | task_awards | `task_id`, `rank` | Rank-1 (primary award) lookup |
 | `uidx_task_awards_chain_block_log` | task_awards | `chain_id`, `block_number`, `log_index` | Idempotent settlement replay |
