@@ -225,11 +225,16 @@ describe('market router', () => {
 
       // The cutoff is supplied as a bound parameter (one per table) equal to
       // "now minus 7 days", so any activity before that window is excluded.
+      // Passed as an ISO string, not a raw Date -- a bare Date interpolated
+      // where the placeholder only appears inside nested UNION branches (as
+      // it does here) crashes postgres.js's type inference (see
+      // market.router.ts's comment on `since`); an ISO string sidesteps that
+      // and round-trips through Postgres's own timestamptz parsing.
       const sevenDaysMs = 7 * 24 * 60 * 60 * 1000;
-      const cutoffParams = params.filter((p): p is Date => p instanceof Date);
+      const cutoffParams = params.filter((p): p is string => typeof p === 'string');
       expect(cutoffParams.length).toBeGreaterThan(0);
       for (const cutoff of cutoffParams) {
-        const cutoffMs = cutoff.getTime();
+        const cutoffMs = new Date(cutoff).getTime();
         expect(cutoffMs).toBeGreaterThanOrEqual(before - sevenDaysMs - 1000);
         expect(cutoffMs).toBeLessThanOrEqual(after - sevenDaysMs + 1000);
       }
@@ -237,7 +242,7 @@ describe('market router', () => {
       // A timestamp from 8 days ago falls before the cutoff and is excluded.
       const eightDaysAgo = after - 8 * 24 * 60 * 60 * 1000;
       for (const cutoff of cutoffParams) {
-        expect(eightDaysAgo).toBeLessThan(cutoff.getTime());
+        expect(eightDaysAgo).toBeLessThan(new Date(cutoff).getTime());
       }
     });
   });

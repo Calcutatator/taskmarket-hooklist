@@ -411,7 +411,7 @@ describe('stats router', () => {
       expect(result.nextCursor).toBeNull();
     });
 
-    it('applies a keyset cursor (ts < cursor) bound as a Date parameter', async () => {
+    it('applies a keyset cursor (ts < cursor) bound as an ISO string parameter', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       const cursor = '2026-06-10T09:00:00.000Z';
 
@@ -421,9 +421,11 @@ describe('stats router', () => {
       const norm = q.toLowerCase();
       expect(norm).toContain('e.ts <');
       expect(norm).toContain('order by e.ts desc');
-      // The cursor is bound as a Date param.
-      const dateParams = params.filter((p): p is Date => p instanceof Date);
-      expect(dateParams.some((d) => d.toISOString() === cursor)).toBe(true);
+      // Bound as the cursor's own ISO string, not a re-wrapped Date -- e.ts is
+      // a UNION-derived virtual column, and a bare Date interpolated there
+      // crashes postgres.js's parameter-type inference (see stats.ts's
+      // comment on cursorClause).
+      expect(params).toContain(cursor);
     });
 
     it('only unions the requested activity types', async () => {

@@ -445,8 +445,16 @@ export async function getActivityFeed(
   );
 
   // Keyset pagination on timestamp (same style as tasks.list createdAt cursor):
-  // WHERE ts < cursor, fetch limit + 1 to compute nextCursor.
-  const cursorClause = cursor ? sql`where e.ts < ${new Date(cursor)}` : sql``;
+  // WHERE ts < cursor, fetch limit + 1 to compute nextCursor. cursor is
+  // already an ISO string (nextCursor is generated via .toISOString()) --
+  // interpolate it directly rather than round-tripping through `new Date()`.
+  // When a parameter only appears against a UNION-derived virtual column
+  // like e.ts (not a directly-typed physical column), postgres.js/drizzle
+  // can't infer a concrete bind type from context and crashes on a bare
+  // Date ("Received an instance of Date") the same way market.router.ts's
+  // stats query did -- an ISO string round-trips through Postgres's own
+  // timestamptz parsing instead of relying on that inference.
+  const cursorClause = cursor ? sql`where e.ts < ${cursor}` : sql``;
 
   const query = sql`
     with events as (${unionAll})

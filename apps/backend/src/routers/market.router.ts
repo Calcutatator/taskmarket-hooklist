@@ -25,7 +25,14 @@ export const marketRouter = router({
       })
     )
     .query(async ({ ctx }) => {
-      const since = new Date(Date.now() - SEVEN_DAYS_MS);
+      // Interpolated as an ISO string, not a raw Date -- when a parameter only
+      // appears inside nested UNION branches of a raw sql`(...)` FROM-clause
+      // fragment like this, postgres.js/drizzle can't infer a concrete bind
+      // type from context and falls back to a path that requires a string or
+      // Buffer, crashing on a bare Date with "Received an instance of Date".
+      // An ISO string round-trips through Postgres's own timestamptz parsing
+      // instead of relying on that inference.
+      const since = new Date(Date.now() - SEVEN_DAYS_MS).toISOString();
 
       // Count distinct worker addresses active in the last 7 days across all five
       // engagement tables. UNION dedupes addresses that appear in more than one
