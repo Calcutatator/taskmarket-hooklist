@@ -7,7 +7,17 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-evaluator-timeout.ts
  */
-import { log, ok, get, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  API_URL,
+  pollTaskStatus,
+  sleep,
+} from './_x402.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -37,28 +47,41 @@ async function main() {
 
   // 2. Worker claims the task.
   log('2/7', 'Worker claiming task...');
-  await x402Post(`/api/tasks/${taskId}/claim`, { taskId }, worker);
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
   const claimed = (await get(`/api/tasks/${taskId}`)) as { status: string };
   if (claimed.status !== 'claimed') throw new Error(`Expected claimed, got ${claimed.status}`);
   ok('status', claimed.status);
 
   // 3. Worker submits work.
   log('3/7', 'Worker submitting work...');
-  await x402Post(
-    `/api/tasks/${taskId}/submit`,
-    { taskId, deliverable: `0x${'ab'.repeat(32)}` },
-    worker
-  );
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('evaluator-timeout-smoke-payload').toString('base64'),
+      },
+    ],
+  });
   ok('submitted');
 
-  // 4. Requester accepts submission — task should enter review state.
-  log('4/7', 'Requester accepting submission (→ review)...');
-  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
-
-  // Give indexer a moment to process.
-  await sleep(3000);
-  const reviewTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
-  ok('status after accept', reviewTask.status);
+  // 4. Task auto-transitions to review once submitted -- evaluator-mode tasks skip the
+  // requester accept step (that's for bounty/auction/claim tasks with no evaluator).
+  log('4/7', 'Waiting for auto-transition to review (indexer poll)...');
+  const reviewTask = await pollTaskStatus<{ status: string }>(taskId, ['review'], {
+    timeoutMs: 45_000,
+  });
+  ok('status after submit', reviewTask.status);
 
   // 5. Wait for evaluation window to expire (~5 seconds).
   log('5/7', 'Waiting 7s for evaluation window to expire...');
