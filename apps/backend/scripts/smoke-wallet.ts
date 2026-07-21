@@ -64,7 +64,10 @@ function runCliCaptureStderr(args: string, env: Record<string, string> = {}): Ru
     return { stdout: '', stderr, code: 0 };
   } catch (err: unknown) {
     const e = err as { stdout?: string; stderr?: string; status?: number };
-    return { stdout: e.stdout ?? '', stderr: e.stderr ?? '', code: e.status ?? 1 };
+    // The `2>&1 1>/dev/null` trick above sends the CLI's stderr into the stream
+    // execSync treats as stdout, so on a thrown (non-zero exit) error the captured
+    // text lands in e.stdout, not e.stderr -- map it back to this function's stderr.
+    return { stdout: '', stderr: e.stdout ?? '', code: e.status ?? 1 };
   }
 }
 
@@ -150,7 +153,11 @@ async function main() {
     ok('idempotent re-run address', parsed6.data.address);
 
     // 7. Invalid key should exit 1 with ok:false
-    log('7', 'Testing invalid key (should fail)...');
+    // wallet import short-circuits and returns the existing address whenever a keystore
+    // is already present (see step 6), so it must be removed first to actually exercise
+    // key validation instead of the keystore-exists fast path.
+    log('7', 'Removing keystore; testing invalid key (should fail)...');
+    await fs.rm(KEYSTORE_PATH, { force: true });
     const r7 = runCliCaptureStderr('wallet import --key 0x1234');
     if (r7.code === 0) throw new Error('Expected non-zero exit for invalid key');
     const stderrOut = r7.stderr;
