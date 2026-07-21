@@ -12,10 +12,15 @@ export type DeviceRegistration = {
 export async function registerDevice(input: {
   legalReceipt?: string;
   publicKey: string;
+  signature: string;
   walletAddress: string;
 }): Promise<DeviceRegistration> {
   const response = await fetch(`${API_URL}/api/devices`, {
-    body: JSON.stringify({ publicKey: input.publicKey, walletAddress: input.walletAddress }),
+    body: JSON.stringify({
+      publicKey: input.publicKey,
+      signature: input.signature,
+      walletAddress: input.walletAddress,
+    }),
     headers: {
       'Content-Type': 'application/json',
       ...buildLegalReceiptHeaders(input.legalReceipt),

@@ -1,12 +1,13 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
+import { TRPCError } from '@trpc/server';
 import { devices, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
-import { lowerAddressEq } from '../lib/agents';
-import { Secp256k1PublicKeySchema } from '@taskmarket/shared';
+import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
+import { Secp256k1PublicKeySchema, buildDeviceRegisterMessage } from '@taskmarket/shared';
 import { sha256Hex } from '../lib/hash';
 
 function deriveDeviceEncryptionKey(masterKeyHex: string, deviceId: string): string {
@@ -27,7 +28,13 @@ export const devicesRouter = router({
         summary: 'Register a device, create agent wallet, and register ERC-8004 identity (free)',
       },
     })
-    .input(z.object({ walletAddress: z.string(), publicKey: Secp256k1PublicKeySchema.optional() }))
+    .input(
+      z.object({
+        walletAddress: z.string(),
+        publicKey: Secp256k1PublicKeySchema.optional(),
+        signature: z.string(),
+      })
+    )
     .output(
       z.object({
         deviceId: z.string(),
@@ -37,6 +44,17 @@ export const devicesRouter = router({
       })
     )
     .mutation(async ({ input, ctx }) => {
+      const message = buildDeviceRegisterMessage(input.walletAddress);
+      await verifySignedAddressOrThrow(message, input.signature, input.walletAddress, {
+        invalid_signature: () =>
+          new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
+        address_mismatch: () =>
+          new TRPCError({
+            code: 'UNAUTHORIZED',
+            message: 'Signature does not match wallet address',
+          }),
+      });
+
       const config = getServerConfig();
       const deviceId = randomUUID();
       const apiToken = randomBytes(32).toString('hex');

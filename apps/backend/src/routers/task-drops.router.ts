@@ -22,6 +22,7 @@ import { getServerConfig } from '../config/env';
 import { taskDrops, taskDropSubscriptions, tasks } from '../db/schema';
 import { logger } from '../lib/logger';
 import { isOfficialTaskDropOwner } from '../lib/task-drops';
+import { taskNotUnlisted } from '../lib/task-visibility';
 import { announceOfficialTaskDrop } from '../services/task-drop-announcements';
 import { enforceTaskDropSubscribeRateLimit } from '../services/task-drop-subscribe-rate-limit';
 import { sendOfficialTaskDropsWelcome, sendTaskDropsWelcome } from '../services/task-drops-email';
@@ -109,7 +110,7 @@ export const taskDropsRouter = router({
           expiryTime: tasks.expiryTime,
         })
         .from(tasks)
-        .where(eq(tasks.taskDropId, input.taskDropId))
+        .where(and(eq(tasks.taskDropId, input.taskDropId), taskNotUnlisted))
         .orderBy(desc(tasks.createdAt));
 
       return {

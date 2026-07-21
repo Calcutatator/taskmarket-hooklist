@@ -14,6 +14,8 @@ import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 import { buildMyBidsMessage } from '@taskmarket/shared';
 
+const EthAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
+
 export const bidsRouter = router({
   submit: publicProcedure
     .meta({
@@ -440,7 +442,7 @@ export const bidsRouter = router({
     })
     .input(
       z.object({
-        address: z.string(),
+        address: EthAddress,
         signature: z.string(),
       })
     )

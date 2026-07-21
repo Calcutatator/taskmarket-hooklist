@@ -292,7 +292,11 @@ export async function ogTagsMiddleware(
   if (taskMatch) {
     const taskId = taskMatch[1];
     try {
-      const rows = await db.select().from(tasks).where(eq(tasks.id, taskId)).limit(1);
+      const rows = await db
+        .select()
+        .from(tasks)
+        .where(and(eq(tasks.id, taskId), taskNotUnlisted))
+        .limit(1);
       if (rows.length > 0) {
         const task = rows[0];
         const title = `${task.description.slice(0, 60)} - Taskmarket`;

@@ -19,6 +19,7 @@ export {
   buildForfeitMessage,
   buildSetWithdrawalAddressMessage,
   buildWithdrawDreamsMessage,
+  buildDeviceRegisterMessage,
 } from './lib/authMessages';
 export {
   CURRENT_LEGAL_BUNDLE,

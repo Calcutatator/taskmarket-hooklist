@@ -108,7 +108,8 @@ export const tasksRouter = router({
           count: sql<number>`count(*)::int`,
           totalRewards: sql<string>`coalesce(sum(${tasks.reward}::numeric), 0)::text`,
         })
-        .from(tasks);
+        .from(tasks)
+        .where(taskNotUnlisted);
       return {
         count: result[0]?.count ?? 0,
         totalRewards: result[0]?.totalRewards ?? '0',

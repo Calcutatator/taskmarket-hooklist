@@ -100,6 +100,7 @@ const mockTaskRow = {
   status: 'open',
   tags: ['test'],
   mode: 'bounty',
+  taskVisibility: 'unlisted',
   stakeRequired: 0,
   stakeBps: 0,
   pitchDeadline: null,
@@ -390,6 +391,8 @@ describe('tasks router', () => {
       expect(result!.id).toBe(mockTaskRow.id);
       expect(result!.submissionCount).toBe(3);
       expect(result!.pitchCount).toBe(1);
+      // Regression: get() must return the stored visibility, not silently drop it.
+      expect(result!.taskVisibility).toBe('unlisted');
     });
 
     it('resolves worker and requester agents without address case sensitivity', async () => {
@@ -749,6 +752,21 @@ describe('tasks router', () => {
       expect(result!.reward).toBe('5000000');
     });
 
+    it('returns the stored taskVisibility after an unrelated field update', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(makeChain([{ ...openBountyRow, description: 'fixed title' }]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }]))
+        .mockReturnValueOnce(makeChain([{ count: 0 }]));
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc', description: 'fixed title' });
+
+      // Regression: update() must return the stored visibility, not silently drop it.
+      expect(result!.taskVisibility).toBe('unlisted');
+    });
+
     it('rejects update once a task has left open', async () => {
       const ctx = createMockCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
@@ -1095,6 +1113,8 @@ describe('tasks router', () => {
 
       expect(result.tasks).toHaveLength(1);
       expect(result.hasMore).toBe(false);
+      // Regression: list() must return the stored visibility, not silently drop it.
+      expect(result.tasks[0]!.taskVisibility).toBe('unlisted');
     });
 
     it('returns hasMore=true when results exceed limit', async () => {

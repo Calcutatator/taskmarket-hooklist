@@ -1,5 +1,5 @@
 import { Command } from 'commander';
-import { LegalBundleSchema } from '@taskmarket/shared';
+import { LegalBundleSchema, buildDeviceRegisterMessage } from '@taskmarket/shared';
 import { privateKeyToAccount } from 'viem/accounts';
 import {
   generateKeypair,
@@ -159,6 +159,10 @@ export const initCommand = new Command('init')
         })
       : undefined;
 
+    const deviceRegisterSignature = await privateKeyToAccount(
+      privateKey as `0x${string}`
+    ).signMessage({ message: buildDeviceRegisterMessage(address) });
+
     const {
       deviceId,
       apiToken,
@@ -167,6 +171,7 @@ export const initCommand = new Command('init')
     } = await registerDevice({
       legalReceipt: legalAcceptance?.receipt,
       publicKey,
+      signature: deviceRegisterSignature,
       walletAddress: address,
     });
 

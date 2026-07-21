@@ -13,14 +13,28 @@ vi.mock('../../../src/config/env', () => ({
   }),
 }));
 
+vi.mock('viem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('viem')>();
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { devicesRouter } from '../../../src/routers/devices.router';
 import { contractRegisterIdentity } from '../../../src/services/contract';
+import { recoverMessageAddress } from 'viem';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
 }
 
 const WALLET = '0xWallet0000000000000000000000000000000001';
+const SIGNATURE = '0xsignature';
+
+function mockValidSignature() {
+  vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+}
 
 function makeDevice(overrides: Record<string, unknown> = {}) {
   return {
@@ -39,13 +53,36 @@ describe('devices router', () => {
   });
 
   describe('register', () => {
+    it('throws when signature is invalid', async () => {
+      const ctx = createMockCtx();
+      const caller = devicesRouter.createCaller(ctx);
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
+
+      await expect(
+        caller.register({ walletAddress: WALLET, signature: SIGNATURE })
+      ).rejects.toThrow('Invalid signature');
+    });
+
+    it('throws when signature is from a different address', async () => {
+      const ctx = createMockCtx();
+      const caller = devicesRouter.createCaller(ctx);
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0xSomeoneElse0000000000000000000000000001' as `0x${string}`
+      );
+
+      await expect(
+        caller.register({ walletAddress: WALLET, signature: SIGNATURE })
+      ).rejects.toThrow('Signature does not match wallet address');
+    });
+
     it('returns deviceId, apiToken, deviceEncryptionKey, and null agentId (registration is async)', async () => {
       const ctx = createMockCtx();
       // agents lookup returns empty (new wallet)
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
+      mockValidSignature();
 
-      const result = await caller.register({ walletAddress: WALLET });
+      const result = await caller.register({ walletAddress: WALLET, signature: SIGNATURE });
 
       expect(typeof result.deviceId).toBe('string');
       expect(result.deviceId).toHaveLength(36);
@@ -61,8 +98,9 @@ describe('devices router', () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
+      mockValidSignature();
 
-      await caller.register({ walletAddress: WALLET });
+      await caller.register({ walletAddress: WALLET, signature: SIGNATURE });
       // Flush microtasks so the background .then() completes
       await Promise.resolve();
 
@@ -76,8 +114,9 @@ describe('devices router', () => {
       // agents lookup returns existing agent
       ctx.db.select.mockReturnValueOnce(makeChain([{ agentId: '99' }]));
       const caller = devicesRouter.createCaller(ctx);
+      mockValidSignature();
 
-      const result = await caller.register({ walletAddress: WALLET });
+      const result = await caller.register({ walletAddress: WALLET, signature: SIGNATURE });
 
       expect(result.agentId).toBe('99');
       expect(contractRegisterIdentity).not.toHaveBeenCalled();
@@ -86,11 +125,11 @@ describe('devices router', () => {
 
     it('generates unique deviceId and apiToken on each call', async () => {
       const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([]))
-        .mockReturnValueOnce(makeChain([]));
+      ctx.db.select.mockReturnValueOnce(makeChain([])).mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
-      const input = { walletAddress: WALLET };
+      const input = { walletAddress: WALLET, signature: SIGNATURE };
+      mockValidSignature();
+      mockValidSignature();
 
       const r1 = await caller.register(input);
       const r2 = await caller.register(input);
@@ -106,9 +145,9 @@ describe('devices router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = devicesRouter.createCaller(ctx);
 
-      await expect(
-        caller.key({ deviceId: 'missing-id', apiToken: 'any-token' })
-      ).rejects.toThrow('Device not found');
+      await expect(caller.key({ deviceId: 'missing-id', apiToken: 'any-token' })).rejects.toThrow(
+        'Device not found'
+      );
     });
 
     it('throws when apiToken hash does not match', async () => {
@@ -123,9 +162,7 @@ describe('devices router', () => {
 
     it('throws when device is revoked', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeDevice({ revokedAt: new Date() })])
-      );
+      ctx.db.select.mockReturnValueOnce(makeChain([makeDevice({ revokedAt: new Date() })]));
       const caller = devicesRouter.createCaller(ctx);
 
       await expect(
@@ -152,8 +189,12 @@ describe('devices router', () => {
       const deviceId = 'test-device-id';
       const ctx1 = createMockCtx();
       const ctx2 = createMockCtx();
-      ctx1.db.select.mockReturnValueOnce(makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })]));
-      ctx2.db.select.mockReturnValueOnce(makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })]));
+      ctx1.db.select.mockReturnValueOnce(
+        makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
+      );
+      ctx2.db.select.mockReturnValueOnce(
+        makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
+      );
 
       const r1 = await devicesRouter.createCaller(ctx1).key({ deviceId, apiToken: token });
       const r2 = await devicesRouter.createCaller(ctx2).key({ deviceId, apiToken: token });

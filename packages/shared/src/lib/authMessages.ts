@@ -37,3 +37,7 @@ export function buildWithdrawDreamsMessage(
 ): string {
   return `taskmarket:withdraw-dreams:${destination}:${nonce}:${validBefore}`;
 }
+
+export function buildDeviceRegisterMessage(walletAddress: string): string {
+  return `taskmarket:device-register:${walletAddress}`;
+}
