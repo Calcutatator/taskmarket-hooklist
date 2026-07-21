@@ -18,6 +18,7 @@
  */
 import { keccak256 } from 'viem';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
+import { buildArtifactManifestHash } from '../src/lib/canonical-hashes.ts';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -63,10 +64,15 @@ async function main() {
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: fileBase64,
-    fileName: 'submission-hash-smoke.txt',
-    mimeType: 'text/plain',
     signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission-hash-smoke.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: fileBase64,
+      },
+    ],
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
@@ -77,11 +83,15 @@ async function main() {
     deliverableHash: string | null;
     submitTxHash: string | null;
     artifacts?: Array<{
+      role: 'preview' | 'source' | 'final' | 'attachment';
       fileName: string;
       mimeType: string;
-      mediaKind: string;
+      mediaKind: 'image' | 'video' | 'audio' | 'pdf' | 'text' | 'archive' | 'unknown';
       storageUri: string;
-      keccak256Hash: string;
+      sizeBytes: number;
+      sha256Hash: string;
+      keccak256Hash: `0x${string}`;
+      displayOrder: number;
     }>;
   }>;
 
@@ -104,12 +114,21 @@ async function main() {
       `Expected deliverableHash to be 0x-prefixed, got: ${submission.deliverableHash}`
     );
   }
-  if (submission.deliverableHash.toLowerCase() !== expectedHash.toLowerCase()) {
+  // deliverableHash is a manifest hash over every artifact's metadata (canonical-hashes.ts's
+  // buildArtifactManifestHash), not a bare content hash -- recompute it from the artifact rows
+  // the API actually returned rather than comparing against keccak256 of the raw file alone.
+  if (!submission.artifacts || submission.artifacts.length === 0) {
     throw new Error(
-      `deliverableHash mismatch: got ${submission.deliverableHash}, expected ${expectedHash}`
+      'Expected submission to include artifact metadata to recompute the manifest hash'
     );
   }
-  ok('deliverableHash matches keccak256 of file', submission.deliverableHash);
+  const expectedManifestHash = buildArtifactManifestHash(submission.artifacts);
+  if (submission.deliverableHash.toLowerCase() !== expectedManifestHash.toLowerCase()) {
+    throw new Error(
+      `deliverableHash mismatch: got ${submission.deliverableHash}, expected ${expectedManifestHash}`
+    );
+  }
+  ok('deliverableHash matches artifact manifest hash', submission.deliverableHash);
 
   const artifact = submission.artifacts?.[0];
   if (!artifact) {
