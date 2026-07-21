@@ -15,6 +15,18 @@ import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 
 type WithdrawState = 'idle' | 'signing' | 'submitting';
 
+// Authorization window: long enough to cover signing latency, short enough to bound
+// the replay risk of a captured signature (the nonce itself prevents reuse even
+// within this window, but a short window limits the exposure of a leaked signature).
+// Mirrors the CLI's equivalent constant in apps/cli/src/commands/wallet/withdraw-dreams.ts.
+const AUTHORIZATION_VALIDITY_SECONDS = 300;
+
+function randomNonce(): string {
+  return `0x${Array.from(crypto.getRandomValues(new Uint8Array(32)))
+    .map((b) => b.toString(16).padStart(2, '0'))
+    .join('')}`;
+}
+
 export function DreamsRewardsCard() {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
@@ -55,7 +67,9 @@ export function DreamsRewardsCard() {
     setResult(null);
     setState('signing');
 
-    const message = `taskmarket:withdraw-dreams:${destination}`;
+    const nonce = randomNonce();
+    const validBefore = String(Math.floor(Date.now() / 1000) + AUTHORIZATION_VALIDITY_SECONDS);
+    const message = `taskmarket:withdraw-dreams:${destination}:${nonce}:${validBefore}`;
     let signature: string;
     try {
       signature = await signMessageAsync({ message });
@@ -72,7 +86,13 @@ export function DreamsRewardsCard() {
     setState('submitting');
     try {
       const res = await fetch(`${getBrowserApiBaseUrl()}/api/wallet/withdraw-dreams`, {
-        body: JSON.stringify({ workerAddress: address, destination, signature }),
+        body: JSON.stringify({
+          workerAddress: address,
+          destination,
+          nonce,
+          validBefore,
+          signature,
+        }),
         headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
         method: 'POST',
       });

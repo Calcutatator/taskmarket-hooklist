@@ -100,25 +100,51 @@ describe('DreamsRewardsCard', () => {
     balanceData.current = { claimableBaseUnits: (500n * 10n ** 18n).toString() };
     rateData.current = { dreamsPerUsdc: (10n * 10n ** 18n).toString(), workerSplitBps: 8000 };
     signMessageAsync.mockResolvedValue('0xsignature');
-    vi.stubGlobal(
-      'fetch',
-      vi.fn().mockResolvedValue({
-        json: async () => ({
-          txHash: '0xtxhash',
-          claimedBaseUnits: (500n * 10n ** 18n).toString(),
-        }),
-        ok: true,
-      })
-    );
+    const fetchMock = vi.fn().mockResolvedValue({
+      json: async () => ({
+        txHash: '0xtxhash',
+        claimedBaseUnits: (500n * 10n ** 18n).toString(),
+      }),
+      ok: true,
+    });
+    vi.stubGlobal('fetch', fetchMock);
 
     const user = userEvent.setup();
     render(<DreamsRewardsCard />);
 
+    const before = Math.floor(Date.now() / 1000);
     await user.click(screen.getByRole('button', { name: /withdraw dreams/i }));
+    const after = Math.floor(Date.now() / 1000);
 
-    expect(signMessageAsync).toHaveBeenCalledWith({
-      message: `taskmarket:withdraw-dreams:${ADDRESS}`,
-    });
+    // The signed message and the request body must carry the same nonce and
+    // validBefore -- the backend's WithdrawDreamsInputSchema requires both as
+    // non-empty strings and verifies the signature over exactly this message.
+    expect(signMessageAsync).toHaveBeenCalledTimes(1);
+    const signedMessage = signMessageAsync.mock.calls[0][0].message as string;
+    const match = signedMessage.match(
+      /^taskmarket:withdraw-dreams:(0x[a-fA-F0-9]{40}):(0x[a-fA-F0-9]{64}):(\d+)$/
+    );
+    expect(match).not.toBeNull();
+    const [, signedDestination, signedNonce, signedValidBefore] = match!;
+    expect(signedDestination.toLowerCase()).toBe(ADDRESS.toLowerCase());
+    // validBefore is ~300s in the future (AUTHORIZATION_VALIDITY_SECONDS).
+    expect(Number(signedValidBefore)).toBeGreaterThanOrEqual(before + 300);
+    expect(Number(signedValidBefore)).toBeLessThanOrEqual(after + 300);
+
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    const [, requestInit] = fetchMock.mock.calls[0] as [string, { body: string }];
+    const requestBody = JSON.parse(requestInit.body) as {
+      workerAddress: string;
+      destination: string;
+      nonce: string;
+      validBefore: string;
+      signature: string;
+    };
+    expect(requestBody.nonce).toBe(signedNonce);
+    expect(requestBody.validBefore).toBe(signedValidBefore);
+    expect(requestBody.destination).toBe(ADDRESS);
+    expect(requestBody.signature).toBe('0xsignature');
+
     expect(await screen.findByText(/withdrew 500 dreams/i)).toBeInTheDocument();
   });
 });
