@@ -239,6 +239,13 @@ ERC8004_SEED_BLOCK_PREVIEW=0 # our own fresh chain, not the real testnet's seed 
 # ADMIN_SECRET.
 PLATFORM_MASTER_KEY_GENERATED="$(openssl rand -hex 32)"
 
+# Same rationale as PLATFORM_MASTER_KEY_GENERATED above -- ADMIN_SECRET gates the
+# broadcast endpoint (see .env.example) and was previously left unset here, which
+# silently failed every `make smoke broadcast` run in the sandbox (the backend
+# rejects all requests when ADMIN_SECRET is unconfigured, so there was no valid
+# secret to send). Generated the same way .env.example documents.
+ADMIN_SECRET_GENERATED="$(openssl rand -hex 32)"
+
 # Retries the whole invocation on a transient RPC-connection failure -- nothing has broadcast
 # yet at that point, so a full retry is safe. Same helper preview.yml uses against Railway's
 # anvil; kept here too so a freshly-started local anvil gets the same protection.
@@ -366,6 +373,13 @@ USDC_DOMAIN_NAME="USD Coin"
 CORS_ORIGIN=http://localhost:5173
 SERVER_PRIVATE_KEY=$SERVER_KEY
 PLATFORM_MASTER_KEY=$PLATFORM_MASTER_KEY_GENERATED
+ADMIN_SECRET=$ADMIN_SECRET_GENERATED
+# Defaults to false (apps/backend/src/config/env.ts), which makes xmtp.router.ts
+# reject every request outright -- smoke-xmtp.ts only exercises the control-plane
+# bookkeeping (bootstrap metadata, peer policy, status/heartbeat) against this
+# sandbox's own Postgres, no real XMTP network connectivity needed, so this is
+# safe to turn on unconditionally here.
+XMTP_ENABLED=true
 
 # Contract deploy scripts (packages/contracts/script/*.s.sol) -- FORGE_ prefix,
 # every one suffixed _PREVIEW. Unlike the backend section above, \`make deploy
