@@ -1,20 +1,22 @@
-# 0021 — `updateTask` reward-increase funding stays forwarder-trusted, pending a decision
+# 0021 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change
 
 > **Decision (Y-statement):** In the context of `CoreFacet.updateTask` (tracked as issue #203)
 > allowing a requester to raise `task.reward` with no on-chain verification that the increase
-> was actually funded, facing a live production dependency — `POST /tasks/{taskId}/update` in
-> `apps/backend/src/routers/tasks.router.ts` already funds reward increases via X402 payment
-> collected off-chain and relayed on-chain as the forwarder's `paymentAmount` (see
-> `contractUpdateTask` in `apps/backend/src/services/contract.ts`), not via a direct on-chain
-> requester approval — we decided to draft this ADR and withhold implementation rather than
-> pick a fix unilaterally, to achieve an explicit, human-approved choice between a
-> direct-pull contract fix with a coordinated backend change, a weaker non-breaking
-> balance-sufficiency check, or a broader per-task liability refactor, accepting that issue
-> #203 stays open and unpatched until that choice is made.
+> was actually funded, facing the fact that this is exploitable only if the backend's own
+> trusted relayer sends a mismatched `paymentAmount` — external requesters cannot reach
+> `updateTask` at all except through the forwarder's single fixed `authorizedRelayer`, and the
+> backend already computes the correct funding amount for its one live caller
+> (`tasks.router.ts`) — we decided to add a cheap balance-sufficiency check to `updateTask`
+> (reverting a reward increase if the Diamond's USDC balance can't cover the new reward) rather
+> than pursue a direct-pull contract fix with a coordinated backend change or a broader
+> per-task liability refactor, to achieve defense-in-depth against a future backend bug (e.g. a
+> stale-read race miscalculating the funding delta) without touching the live X402-funded
+> reward-increase flow, accepting that this does not fully close the pooled-escrow accounting
+> gap shared with issue #198.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-21
-- **Deciders:** (pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
@@ -76,6 +78,25 @@ promised reward, not just this one) needs a running aggregate-liability counter 
 and decremented correctly across every payout/refund/cancel/expire path in every facet — a
 protocol-wide invariant, not a local patch to one function.
 
+### Re-assessed exploitability: this is not externally attacker-triggerable
+
+Unlike issues #198–#202, `updateTask` requires `LibTaskMarket._requireForwarder(s)`, and the
+only forwarder in production (`TaskMarketForwarder`) only accepts `relay()` calls from a single
+fixed `authorizedRelayer` address — the backend's own server wallet. There is no sequence of
+ordinary, individually-legitimate user actions (the pattern behind #198, #199, #200, and #201)
+that lets an external requester or worker reach `updateTask` with a mismatched funding amount:
+the only party that ever supplies `paymentAmount` is the backend itself, via
+`contractUpdateTask`, which already computes `additionalPayment = newReward - currentReward`
+correctly for its one live call site. A mismatch can only happen if the backend's own
+relayer logic has a bug (e.g. a race between reading `currentReward` and the relay actually
+landing on-chain) or its private key is compromised — in the latter case, `updateTask` funding
+is a minor concern next to the much larger blast radius of a compromised relayer.
+
+This reclassifies #203 from "externally exploitable drain" to "missing defense-in-depth against
+our own backend." That changes the cost/benefit of each option below: a breaking change to a
+live feature, or a protocol-wide refactor, is hard to justify against a risk that only
+materializes if the trusted relayer itself misbehaves.
+
 ## Considered options
 
 | Option | Pros | Cons |
@@ -87,42 +108,50 @@ protocol-wide invariant, not a local patch to one function.
 
 ## Decision
 
-Not yet made. Per this repo's ADR policy (`docs/adr/README.md`): this is a hard-to-reverse,
-cross-cutting architectural tradeoff (breaking a live user-facing flow vs. shipping a
-weaker-than-advertised security fix vs. taking on a protocol-wide liability-accounting
-refactor), so it is not being decided unilaterally by the agent that found it. The other five
-findings from the same security review (issues #198, #199, #200, #201, #202) are pure
-internal-accounting fixes with no such cross-stack dependency and are proceeding as normal PRs
-independent of this one.
+`CoreFacet.updateTask` adds a balance-sufficiency check for reward increases: before applying
+an increase, it reverts (`RewardIncreaseNotFunded`) unless `usdcToken.balanceOf(address(this))
+>= newReward`. No `transferFrom` pull, no requester approval, no backend change — the existing
+X402-funded, forwarder-relayed flow in `tasks.router.ts` is untouched and continues to fund
+increases exactly as it does today; the check simply confirms that funding actually happened
+before the Diamond commits to the higher reward, instead of trusting the caller blindly.
 
-Until a human sets `Status: Accepted` here (recording the chosen option and their name under
-`Deciders`), `CoreFacet.updateTask` is left as-is and issue #203 stays open, referenced by this
-ADR rather than closed by a PR.
+Given the re-assessed exploitability above (backend-bug-only, not externally attacker-facing),
+neither the direct-pull option (real product work, breaks a live feature, to guard against a
+risk only the backend itself can trigger) nor the full per-task liability refactor (protocol-
+wide scope, same disproportionate-effort problem) is justified right now. This is deliberately
+the cheaper, partial option: it is understood to not fully close the pooled-escrow gap (the
+balance can look sufficient due to *other* tasks' escrow), and is tracked as such rather than
+presented as a complete fix.
+
+The other five findings from the same security review (issues #198, #199, #200, #201, #202)
+are genuinely externally exploitable through ordinary, permissionless or forwarder-relayed user
+actions with no backend bug required, and were fixed independently of this decision.
 
 ## Consequences
 
 **Positive:**
-- No risk of shipping a contract change that silently breaks the live X402-funded
-  reward-increase flow in `tasks.router.ts`.
-- No risk of shipping a fix that is weaker than it appears (the balance-sufficiency option)
-  under the banner of "issue #203 is fixed."
-- The tradeoff and the concrete blocking dependency (`tasks.router.ts` / `contractUpdateTask`)
-  are documented once, so this doesn't need to be re-discovered by whoever picks it up next.
+- Closes the acute, most-likely failure mode (a relay call that funds nothing at all, e.g. a
+  bug that produces `paymentAmount = 0` or an incorrect delta) with a one-line check, no
+  behavior change to the live reward-increase feature.
+- No backend, CLI, or web changes required; `tasks.router.ts`'s existing X402 flow keeps
+  working unmodified.
+- No protocol-wide refactor risk introduced under time pressure.
 
 **Negative / trade-offs:**
-- Issue #203 remains open and the underlying gap remains unpatched until this ADR is decided.
-- Whichever option is chosen, it will need its own follow-up implementation pass (contract
-  change, backend change, or both) after acceptance — this ADR does not include that work.
+- Does not fully close the underlying gap: pooled escrow means the balance can appear
+  sufficient because of *other* tasks' funds while this specific increase was never actually
+  funded. This is the same root cause as issue #198 and remains open in that broader form.
+- Provides no protection against a sophisticated or sustained backend bug that keeps the
+  balance topping up unrelated tasks while under-funding this one specifically — only against
+  the straightforward "funded nothing at all" case.
 
 **Neutral / follow-up:**
-- If the "direct pull + backend change" option is chosen, the backend work should also decide
-  how a gas-sponsored requester (no on-chain ETH/USDC/approvals in the general case) grants an
-  ERC-20 approval to the Diamond at all — e.g. an EIP-2612 `permit`-style signature relayed by
-  the backend, mirroring how other actions are already gasless for requesters. That question is
-  out of scope for this ADR and would need its own design pass.
-- If the "weaker balance check" option is chosen, it should be tracked against the same
-  root-cause umbrella as issue #198 (pooled escrow, no per-task liability accounting) rather
-  than treated as a closed, independent finding.
+- If per-task liability accounting is ever undertaken (following up on issue #198's same root
+  cause), this check should be revisited and can likely be replaced with a precise per-task
+  comparison instead of a whole-balance one.
+- Issue #203 is downgraded from "payable security-review finding" to "defense-in-depth
+  correctness improvement, not externally exploitable" — see the issue for the disqualification
+  note.
 
 ## References
 

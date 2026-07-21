@@ -432,7 +432,20 @@ contract CoreFacet {
 
         uint256 refund = 0;
         if (newReward != 0 && newReward != task.reward) {
-            refund = newReward < task.reward ? task.reward - newReward : 0;
+            if (newReward < task.reward) {
+                refund = task.reward - newReward;
+            } else {
+                // Defense-in-depth: the forwarder is expected to have funded this increase
+                // via paymentAmount before this call executes (mirroring createTask's
+                // funding model). This does not prove this specific increase was funded --
+                // escrow is one pooled balance across every task -- but it catches the
+                // acute failure mode where no funding transfer happened at all (e.g. a
+                // relayed paymentAmount of 0 due to a backend bug), instead of silently
+                // promising a reward the Diamond cannot pay. See ADR 0021.
+                if (s.usdcToken.balanceOf(address(this)) < newReward) {
+                    revert ITMPCore.RewardIncreaseNotFunded();
+                }
+            }
             task.reward = newReward;
             if (task.mode == AUCTION) s.taskAuctionConfigs[taskId].maxPrice = newReward;
         }
