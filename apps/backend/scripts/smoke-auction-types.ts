@@ -11,7 +11,17 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-auction-types.ts
  */
-import { log, ok, get, x402Post, getAccounts, type Account, API_URL, sleep } from './_x402.ts';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  type Account,
+  API_URL,
+  sleep,
+} from './_x402.ts';
 
 // How long to wait after the bid deadline before asserting it has passed.
 // Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
@@ -20,7 +30,7 @@ const AUCTION_DEADLINE_BUFFER_MS = parseInt(process.env.AUCTION_DEADLINE_BUFFER_
 async function smokeEnglish(requester: Account, worker: Account) {
   console.log('\n--- English Auction ---');
 
-  log('1/4', 'Creating english auction (max 0.001 USDC, 30s bid window)...');
+  log('1/6', 'Creating english auction (max 0.001 USDC, 30s bid window)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
     {
@@ -37,25 +47,72 @@ async function smokeEnglish(requester: Account, worker: Account) {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  log('2/4', 'Worker bids at 0.0008 USDC...');
+  log('2/6', 'Worker bids at 0.0008 USDC...');
   await x402Post(`/api/tasks/${taskId}/bids`, { taskId, price: '800' }, worker);
   ok('bid submitted', true);
 
-  log('3/4', 'Worker re-bids lower at 0.0006 USDC...');
+  log('3/6', 'Worker re-bids lower at 0.0006 USDC...');
   await x402Post(`/api/tasks/${taskId}/bids`, { taskId, price: '600' }, worker);
   ok('re-bid submitted', true);
 
-  log('4/4', 'Verifying bid list...');
+  log('4/6', 'Verifying bid list...');
   const bids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{ price: string }>;
   ok(`bid count`, bids.length >= 1);
 
-  console.log(
-    `  (Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline — not selecting winner in smoke to save gas)`
-  );
+  console.log(`  (Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline)`);
   await sleep(AUCTION_DEADLINE_BUFFER_MS);
 
   const taskDetail = (await get(`/api/tasks/${taskId}`)) as { bidDeadline: string };
   ok('bidDeadline passed', new Date(taskDetail.bidDeadline) < new Date());
+
+  // Regression coverage for the re-bid above: a worker re-bidding on the same task emits a
+  // second BidSubmitted event for the same (taskId, worker) pair, which the event indexer's
+  // reconciliation handler used to mis-key (see processBidSubmittedEvent in indexer.ts) and
+  // throw on a duplicate-key insert -- permanently wedging the indexer's poll loop and
+  // silently breaking every task-completion transition afterward. Running this task through
+  // to completion (which depends entirely on the indexer processing later on-chain events)
+  // is what actually catches that regression; verifying the bid list alone does not, since
+  // that reads the router's own synchronous write, not indexer state.
+  log('5/6', 'Selecting winner and completing the task...');
+  const { workerAddress: winner } = (await post(`/api/tasks/${taskId}/bids/select-winner`, {
+    taskId,
+  })) as { workerAddress: string };
+  if (winner.toLowerCase() !== worker.address.toLowerCase()) {
+    throw new Error(`Expected winner ${worker.address}, got ${winner}`);
+  }
+  ok('winner', winner);
+
+  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('english-auction-rebid-smoke-payload').toString('base64'),
+      },
+    ],
+  });
+
+  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
+
+  log('6/6', 'Polling for completed status (proves the indexer survived the re-bid)...');
+  let completedStatus: string | null = null;
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') {
+      completedStatus = t.status;
+      break;
+    }
+    await sleep(3000);
+  }
+  if (completedStatus !== 'completed') {
+    throw new Error(`Expected task to reach completed status after re-bid, got ${completedStatus}`);
+  }
+  ok('status=completed after re-bid', true);
 
   return taskId;
 }

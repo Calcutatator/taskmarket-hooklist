@@ -496,21 +496,20 @@ async function processBidSubmittedEvent(log: EventLog): Promise<void> {
   const { taskId, worker, price } = log.args;
 
   // The bids router writes the canonical row at submission time via
-  // contractSubmitBid. This handler is reconciliation only: if no matching row
-  // exists yet for (taskId, worker, price), insert one keyed on tx hash so the
-  // DB and chain are eventually consistent.
+  // contractSubmitBid, keyed on (taskId, worker) per the bids_task_worker_unique
+  // constraint -- a re-bid updates that same row's price rather than adding a new
+  // one. This handler is reconciliation only, for a bid placed on-chain without
+  // going through the router: if no row exists yet for (taskId, worker), insert
+  // one keyed on tx hash so the DB and chain are eventually consistent. The
+  // existence check must match the same (taskId, worker) key as the constraint --
+  // checking price too would find no match on a re-bid (the router already moved
+  // the row to the new price) and then fail the insert on the unique constraint.
   if (!log.transactionHash) return;
 
   const existing = await db
     .select({ id: bids.id })
     .from(bids)
-    .where(
-      and(
-        eq(bids.taskId, taskId as string),
-        eq(bids.workerAddress, worker as string),
-        eq(bids.price, (price as bigint).toString())
-      )
-    )
+    .where(and(eq(bids.taskId, taskId as string), eq(bids.workerAddress, worker as string)))
     .limit(1);
 
   if (existing.length === 0) {
