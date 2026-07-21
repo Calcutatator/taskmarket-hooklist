@@ -58,14 +58,28 @@ async function smokeDutchFull(requester: Account, worker: Account) {
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: Buffer.from('dutch-auction-full-smoke-payload').toString('base64'),
     signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'dutch-auction-full-smoke.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('dutch-auction-full-smoke-payload').toString('base64'),
+      },
+    ],
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
   log('4/6', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
+
+  // Wait for indexer to process TaskCompleted event before rating
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
 
   log('5/6', 'Requester rating 80/100 (X402)...');
   const { feedbackId } = (await x402Post(
@@ -86,12 +100,12 @@ async function smokeDutchFull(requester: Account, worker: Account) {
     status: string;
     primaryAward: { workerAddress: string; rating: number | null } | null;
   };
-  if (finalTask.status !== 'accepted' || finalTask.primaryAward?.rating == null) {
+  if (finalTask.status !== 'completed' || finalTask.primaryAward?.rating == null) {
     throw new Error(
-      `Expected status=accepted with rating set, got status=${finalTask.status} rating=${finalTask.primaryAward?.rating}`
+      `Expected status=completed with rating set, got status=${finalTask.status} rating=${finalTask.primaryAward?.rating}`
     );
   }
-  ok('final status=accepted with rating', true);
+  ok('final status=completed with rating', true);
 
   return taskId;
 }
@@ -132,7 +146,7 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   try {
     await x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId, minPrice: '2000' }, worker);
   } catch (err) {
-    if (err instanceof Error && err.message.includes('below your minimum')) {
+    if (err instanceof Error && err.message.includes('below minPrice')) {
       rejectionCaught = true;
       ok('minPrice guard rejected correctly', err.message);
     } else {
@@ -171,14 +185,28 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    file: Buffer.from('reverse-dutch-full-smoke-payload').toString('base64'),
     signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'reverse-dutch-auction-full-smoke.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('reverse-dutch-full-smoke-payload').toString('base64'),
+      },
+    ],
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 
   log('7/8', 'Requester accepting submission (X402)...');
   await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
   ok('accepted', true);
+
+  // Wait for indexer to process TaskCompleted event before rating
+  for (let i = 0; i < 20; i++) {
+    const t = (await get(`/api/tasks/${taskId}`)) as { status: string };
+    if (t.status === 'completed') break;
+    await new Promise((r) => setTimeout(r, 3000));
+  }
 
   log('8/8', 'Requester rating 85/100 (X402) and verifying final status...');
   const { feedbackId } = (await x402Post(
@@ -198,12 +226,12 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
     status: string;
     primaryAward: { workerAddress: string; rating: number | null } | null;
   };
-  if (finalTask.status !== 'accepted' || finalTask.primaryAward?.rating == null) {
+  if (finalTask.status !== 'completed' || finalTask.primaryAward?.rating == null) {
     throw new Error(
-      `Expected status=accepted with rating set, got status=${finalTask.status} rating=${finalTask.primaryAward?.rating}`
+      `Expected status=completed with rating set, got status=${finalTask.status} rating=${finalTask.primaryAward?.rating}`
     );
   }
-  ok('final status=accepted with rating', true);
+  ok('final status=completed with rating', true);
 
   return taskId;
 }
