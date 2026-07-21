@@ -109,6 +109,22 @@ for LINE in \
   'export PATH="$HOME/.foundry/bin:$PATH"'; do
   grep -qxF "$LINE" "$HOME/.bashrc" 2>/dev/null || echo "$LINE" >> "$HOME/.bashrc"
 done
+# ~/.bashrc only helps interactive shells (it starts with `[ -z "$PS1" ] && return`, which
+# bails before the PATH lines above on every non-interactive invocation). Claude Code cloud
+# agent tool calls run each command as a fresh non-interactive, non-login `bash -c`, which
+# sources neither ~/.bashrc nor /etc/profile.d -- confirmed empirically: even a freshly
+# written /etc/profile.d/foundry.sh was not picked up by a plain `bash -c`. What those agent
+# shells DO inherit is a fixed baseline PATH that already includes /usr/local/bin (that's how
+# /etc/profile.d/bun.sh's install location ends up reachable without sourcing anything -- bun
+# itself is not on that fixed baseline, but nothing here depends on that, only on
+# /usr/local/bin being present, which it always is on a standard Debian PATH). Symlinking the
+# foundry binaries there makes `forge`/`cast`/`anvil`/`chisel` resolve in every subsequent
+# agent tool call for the rest of this container's life, with no export needed.
+for bin in forge cast anvil chisel; do
+  if [ -x "$HOME/.foundry/bin/$bin" ]; then
+    ln -sf "$HOME/.foundry/bin/$bin" "/usr/local/bin/$bin"
+  fi
+done
 
 echo "==> [2/12] Git submodules (contracts dependencies)"
 git submodule update --init --recursive

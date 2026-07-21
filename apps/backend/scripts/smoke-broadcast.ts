@@ -58,11 +58,14 @@ async function broadcastRaw(
     headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
     body: JSON.stringify({ subject, body, filters }),
   });
-  return r.json() as Promise<{
-    ok: boolean;
-    data?: { sent: number; failed: number; total: number };
-    error?: unknown;
-  }>;
+  const json = await r.json();
+  // The endpoint returns its result body directly on success ({sent, failed, total}) and a
+  // tRPC error object on failure -- neither is wrapped in an {ok, data} envelope, so success
+  // must be read off the HTTP status rather than a field in the parsed body.
+  if (!r.ok) {
+    return { ok: false, error: json };
+  }
+  return { ok: true, data: json as { sent: number; failed: number; total: number } };
 }
 
 async function broadcast(
