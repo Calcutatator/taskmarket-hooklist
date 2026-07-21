@@ -5,8 +5,10 @@ import {
   LeaderboardInputSchema,
   TaskInboxInputSchema,
   TaskInboxResponseSchema,
+  buildInboxSelfAuthMessage,
   type TaskStatusType,
   type TaskModeType,
+  type TaskVisibilityType,
   Secp256k1PublicKeySchema,
 } from '@taskmarket/shared';
 import { z } from 'zod';
@@ -24,7 +26,8 @@ import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
 import { sha256Hex } from '../lib/hash';
-import { lowerAddressEq } from '../lib/agents';
+import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
+import { taskNotUnlisted } from '../lib/task-visibility';
 
 export const agentsRouter = router({
   stats: publicProcedure
@@ -122,7 +125,24 @@ export const agentsRouter = router({
     .input(TaskInboxInputSchema)
     .output(TaskInboxResponseSchema)
     .query(async ({ input, ctx }) => {
-      const { address } = input;
+      const { address, signature } = input;
+
+      // Proof that the caller owns `address` (ADR-0015): a signature over a
+      // canonical message, verified the same way as wallet.setWithdrawalAddress.
+      // No nonce -- this is a read with no state-changing side effect to replay.
+      const selfAuthed = signature
+        ? (await verifySignedAddress(buildInboxSelfAuthMessage(address), signature, address))
+            .verified
+        : false;
+
+      const isWorker = or(
+        sql`lower(${tasks.claimedBy}) = lower(${address})`,
+        sql`exists (
+          select 1 from ${taskAwards}
+          where ${taskAwards.taskId} = "tasks"."id"
+            and lower(${taskAwards.workerAddress}) = lower(${address})
+        )`
+      );
 
       const [requesterRows, workerRows] = await Promise.all([
         ctx.db
@@ -146,7 +166,11 @@ export const agentsRouter = router({
             )`,
           })
           .from(tasks)
-          .where(eq(tasks.requester, address))
+          .where(
+            selfAuthed
+              ? eq(tasks.requester, address)
+              : and(eq(tasks.requester, address), taskNotUnlisted)
+          )
           .orderBy(desc(tasks.createdAt))
           .limit(50),
         ctx.db
@@ -170,16 +194,7 @@ export const agentsRouter = router({
             )`,
           })
           .from(tasks)
-          .where(
-            or(
-              sql`lower(${tasks.claimedBy}) = lower(${address})`,
-              sql`exists (
-                select 1 from ${taskAwards}
-                where ${taskAwards.taskId} = "tasks"."id"
-                  and lower(${taskAwards.workerAddress}) = lower(${address})
-              )`
-            )
-          )
+          .where(selfAuthed ? isWorker : and(isWorker, taskNotUnlisted))
           .orderBy(desc(tasks.createdAt))
           .limit(50),
       ]);
@@ -244,6 +259,7 @@ export const agentsRouter = router({
             ? { workerAddress: task.primaryAwardWorker, rating: task.primaryAwardRating ?? null }
             : null,
           mode: task.mode as TaskModeType,
+          taskVisibility: task.taskVisibility as TaskVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,

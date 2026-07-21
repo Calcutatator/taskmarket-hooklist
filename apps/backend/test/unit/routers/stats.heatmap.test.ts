@@ -41,7 +41,11 @@ function createStatsCtx(executeResults: unknown[][]) {
   };
   type StatsCtx = Parameters<typeof statsRouter.createCaller>[0];
   return {
-    ctx: { db, req: {} as Record<string, unknown>, res: { locals: {} as Record<string, unknown> } } as unknown as StatsCtx,
+    ctx: {
+      db,
+      req: {} as Record<string, unknown>,
+      res: { locals: {} as Record<string, unknown> },
+    } as unknown as StatsCtx,
     executeCalls,
   };
 }
@@ -109,9 +113,7 @@ describe('stats router activityHeatmap', () => {
     it('builds a generate_series spine, UTC day buckets, guards null created_at, and sums reward as text', async () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
 
-      await statsRouter
-        .createCaller(ctx)
-        .activityHeatmap({ range: '30d', dimension: 'mode' });
+      await statsRouter.createCaller(ctx).activityHeatmap({ range: '30d', dimension: 'mode' });
 
       expect(executeCalls).toHaveLength(1);
       const { sql: q } = renderSql(executeCalls[0]);
@@ -125,6 +127,13 @@ describe('stats router activityHeatmap', () => {
       expect(norm).toContain('coalesce(sum(reward), 0)::text');
       // day-bucket col output format.
       expect(norm).toContain('yyyy-mm-dd');
+    });
+
+    it('excludes unlisted tasks from the mode heatmap (ADR-0014)', async () => {
+      const { ctx, executeCalls } = createStatsCtx([[]]);
+      await statsRouter.createCaller(ctx).activityHeatmap({ range: '30d', dimension: 'mode' });
+      const { sql: q } = renderSql(executeCalls[0]);
+      expect(q).toContain("task_visibility != 'unlisted'");
     });
   });
 

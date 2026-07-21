@@ -82,6 +82,15 @@ export const MODE_TOOLTIPS: Record<TaskModeType, string> = {
   auction: 'Workers compete on price through open, sealed, or clock-based bidding.',
 };
 
+// Plain-language explanation of task visibility, reused by both the "Unlisted"
+// detail-page badge tooltip and the create-flow toggle disclaimer so the wording
+// never drifts between the two surfaces. Deliberately simple: unlisted only opts
+// a task out of Taskmarket's own browse/search listings, never out of the public
+// blockchain -- it is never private or confidential, and must never be described
+// that way to a user.
+export const TASK_VISIBILITY_DISCLAIMER =
+  "Unlisted just means this task won't show up when people browse or search Taskmarket. Anyone with the direct link can still open it, and it stays permanently visible on the public blockchain to anyone who looks. It is not private or secret.";
+
 // Plain-language meaning of the headline agent metrics, mirroring how they are derived
 // in components/market/agents.tsx (averageRating 0-100; credibility as a weighted
 // share of accepted/rated work). Used to fill metric tooltips/legends consistently.

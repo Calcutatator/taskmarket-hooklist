@@ -1,4 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 
 vi.mock('../../../src/services/task-drops-email', () => ({
   sendOfficialTaskDropAnnouncement: vi.fn().mockResolvedValue(undefined),
@@ -7,6 +9,8 @@ vi.mock('../../../src/services/task-drops-email', () => ({
 import { announceOfficialTaskDrop } from '../../../src/services/task-drop-announcements';
 import { sendOfficialTaskDropAnnouncement } from '../../../src/services/task-drops-email';
 import { createMockCtx, makeChain } from '../helpers';
+
+const dialect = new PgDialect();
 
 const ANNOUNCED_AT = new Date('2026-07-15T00:00:00.000Z');
 const CONSENTED_AT = new Date('2026-07-14T00:00:00.000Z');
@@ -40,9 +44,7 @@ function delivery(overrides: Record<string, unknown> = {}) {
 
 function mockClaimedDeliveryUpdates(ctx: ReturnType<typeof createMockCtx>, ids: string[]) {
   for (const id of ids) {
-    ctx.db.update
-      .mockReturnValueOnce(makeChain([{ id }]))
-      .mockReturnValueOnce(makeChain([]));
+    ctx.db.update.mockReturnValueOnce(makeChain([{ id }])).mockReturnValueOnce(makeChain([]));
   }
 }
 
@@ -94,6 +96,31 @@ describe('official Task Drop announcements', () => {
     expect(sendOfficialTaskDropAnnouncement).toHaveBeenCalledTimes(2);
   });
 
+  it('excludes unlisted tasks from the announcement snippet query (ADR-0014)', async () => {
+    const ctx = createMockCtx();
+    let taskWhereSql: SQL | undefined;
+    const taskChain = makeChain([]);
+    taskChain.where = vi.fn((arg: SQL) => {
+      taskWhereSql = arg;
+      return taskChain;
+    });
+    ctx.db.select
+      .mockReturnValueOnce(makeChain([{ announcedAt: null, id: DROP_ID }]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([]))
+      .mockReturnValueOnce(makeChain([drop]))
+      .mockReturnValueOnce(taskChain)
+      .mockReturnValueOnce(makeChain([]));
+    ctx.db.update.mockReturnValueOnce(makeChain([{ announcedAt: ANNOUNCED_AT }]));
+
+    await announceOfficialTaskDrop({ db: ctx.db, taskDropId: DROP_ID });
+
+    expect(taskWhereSql).toBeDefined();
+    const { sql: whereSql, params } = dialect.sqlToQuery(taskWhereSql!);
+    expect(whereSql).toContain('"task_visibility" <>');
+    expect(params).toContain('unlisted');
+  });
+
   it('does not freeze a drop while a task creation is reserved', async () => {
     const ctx = createMockCtx();
     ctx.db.select
@@ -101,9 +128,9 @@ describe('official Task Drop announcements', () => {
       .mockReturnValueOnce(makeChain([{ reservationId: 'reservation-pending' }]));
     ctx.db.update.mockReturnValueOnce(makeChain([{ announcedAt: ANNOUNCED_AT }]));
 
-    await expect(
-      announceOfficialTaskDrop({ db: ctx.db, taskDropId: DROP_ID })
-    ).rejects.toThrow('Task drop has task creation in progress');
+    await expect(announceOfficialTaskDrop({ db: ctx.db, taskDropId: DROP_ID })).rejects.toThrow(
+      'Task drop has task creation in progress'
+    );
 
     expect(sendOfficialTaskDropAnnouncement).not.toHaveBeenCalled();
   });

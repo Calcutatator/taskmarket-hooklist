@@ -649,6 +649,8 @@ smoke:
 		pnpm smoke:token-reward-hook; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator; \
+	elif [ "$(word 1,$(ARGS))" = "visibility" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:visibility; \
 	elif [ "$(word 1,$(ARGS))" = "sandbox" ]; then \
 		if [ -f .git ]; then \
 			echo "Linked git worktree detected -- its .git file points at the main repo's" ; \
@@ -666,7 +668,7 @@ smoke:
 			docker run --rm taskmarket-sandbox-test; \
 		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|sandbox>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|sandbox>"; \
 		exit 1; \
 	fi
 

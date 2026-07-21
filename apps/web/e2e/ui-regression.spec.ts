@@ -176,6 +176,15 @@ test('hides the live status banner on a terminal task', async ({ page }) => {
   await expect(page.getByRole('status', { name: /Task status/i })).toHaveCount(0);
 });
 
+test('shows the Unlisted badge and stays reachable by direct link (ADR-0014)', async ({ page }) => {
+  await page.goto('/tasks/mock-bounty-unlisted');
+
+  await expect(page.getByRole('heading', { name: /Bounty - unlisted task/i })).toBeVisible();
+  await expect(page.getByText('Unlisted', { exact: true })).toBeVisible();
+
+  await expectNoHorizontalOverflow(page);
+});
+
 test('renders every split settlement recipient and canonical payout amount', async ({ page }) => {
   await page.goto('/dashboard/tasks/mock-bounty-split-settlement');
 

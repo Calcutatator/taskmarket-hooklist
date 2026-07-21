@@ -8,6 +8,7 @@ import { useAccount } from 'wagmi';
 
 import { ChartCard, MetricStat, StatusBreakdown, TrendAreaChart } from '@/components/charts';
 import { RelativeTime } from '@/components/market/motion/relative-time';
+import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -19,6 +20,7 @@ import {
   taskStatusDistribution,
 } from '@/lib/charts/inbox-aggregations';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
+import { useInboxSelfAuthSignature } from '@/lib/use-inbox-self-auth-signature';
 
 // Counts only. Reward volume (USDC) never shares this axis; your spend lives in a
 // KPI sparkline and its own card, mirroring the marketplace activity chart.
@@ -82,8 +84,11 @@ function YouFeedRow({ entry }: { entry: FeedEntry }) {
         href={`/dashboard/tasks/${task.id}`}
       >
         <div className="flex items-center justify-between gap-3">
-          <span className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
-            {role}
+          <span className="flex items-center gap-2">
+            <span className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
+              {role}
+            </span>
+            {task.taskVisibility === 'unlisted' ? <UnlistedBadge compact /> : null}
           </span>
           <RelativeTime
             className="font-mono text-[0.65rem] text-muted-foreground"
@@ -122,9 +127,10 @@ function YouMetricCard({ children }: { children: React.ReactNode }) {
 // not flat zero-lines.
 export function DashboardYouView() {
   const { address, isConnected } = useAccount();
+  const inboxSignature = useInboxSelfAuthSignature(address);
 
   const inboxQuery = trpc.agents.inbox.useQuery(
-    { address: address ?? '' },
+    { address: address ?? '', signature: inboxSignature },
     {
       enabled: Boolean(isConnected && address),
       refetchInterval: 30_000,

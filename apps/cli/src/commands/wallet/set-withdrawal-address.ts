@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { buildSetWithdrawalAddressMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -24,7 +25,7 @@ export const setWithdrawalAddressCommand = new Command('set-withdrawal-address')
     }
 
     const walletAddress = keystore.walletAddress;
-    const message = `taskmarket:set-withdrawal-address:${address}`;
+    const message = buildSetWithdrawalAddressMessage(address);
     const signature = await signMessage(message, keystore);
 
     const result = (await apiPost('/api/wallet/set-withdrawal-address', {

@@ -12,6 +12,7 @@ import {
   UpdateTaskInputSchema,
   type TaskStatusType,
   type TaskModeType,
+  type TaskVisibilityType,
   type TaskAward,
   type AuctionTypeValue,
   estimateUsdBonusValue,
@@ -66,6 +67,7 @@ import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 import { lowerAddressEq } from '../lib/agents';
+import { taskNotUnlisted } from '../lib/task-visibility';
 import {
   computeNetReward,
   computePendingActions,
@@ -283,6 +285,7 @@ export const tasksRouter = router({
       }
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
+      const taskVisibility = input.taskVisibility ?? 'public';
 
       const requesterAgent = await ctx.db
         .select({ agentId: agents.agentId, publicKey: agents.publicKey })
@@ -323,6 +326,7 @@ export const tasksRouter = router({
           status: 'open',
           tags: input.tags,
           mode: input.mode ?? 'bounty',
+          taskVisibility,
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
@@ -367,27 +371,16 @@ export const tasksRouter = router({
         await ctx.db.update(tasks).set(evaluatorAssignment).where(eq(tasks.id, taskId));
       }
 
-      // Fire-and-forget targeted "new task" notification to eligible worker agents.
-      // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
-      // task creation. Idempotent by taskId (embedded in the body); the daemon's
-      // task poll remains the fallback if a send fails. Never awaited.
-      void notifyNewTask({
-        db: ctx.db,
-        taskId,
-        description: input.description,
-        reward: input.reward,
-        mode: input.mode ?? 'bounty',
-        tags: input.tags,
-      }).catch((err: unknown) => {
-        logger.warn(
-          `notifyNewTask failed for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`
-        );
-      });
-
-      if (resolvedTaskDropId) {
-        void notifyTaskDropSubscribers({
+      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014) --
+      // that includes outbound notifications, not just browse/search, since actively
+      // emailing/pinging worker agents about an "unlisted" task would defeat the point.
+      if (taskVisibility !== 'unlisted') {
+        // Fire-and-forget targeted "new task" notification to eligible worker agents.
+        // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
+        // task creation. Idempotent by taskId (embedded in the body); the daemon's
+        // task poll remains the fallback if a send fails. Never awaited.
+        void notifyNewTask({
           db: ctx.db,
-          taskDropId: resolvedTaskDropId,
           taskId,
           description: input.description,
           reward: input.reward,
@@ -395,11 +388,27 @@ export const tasksRouter = router({
           tags: input.tags,
         }).catch((err: unknown) => {
           logger.warn(
-            `notifyTaskDropSubscribers failed for task ${taskId}: ${
-              err instanceof Error ? err.message : String(err)
-            }`
+            `notifyNewTask failed for task ${taskId}: ${err instanceof Error ? err.message : String(err)}`
           );
         });
+
+        if (resolvedTaskDropId) {
+          void notifyTaskDropSubscribers({
+            db: ctx.db,
+            taskDropId: resolvedTaskDropId,
+            taskId,
+            description: input.description,
+            reward: input.reward,
+            mode: input.mode ?? 'bounty',
+            tags: input.tags,
+          }).catch((err: unknown) => {
+            logger.warn(
+              `notifyTaskDropSubscribers failed for task ${taskId}: ${
+                err instanceof Error ? err.message : String(err)
+              }`
+            );
+          });
+        }
       }
 
       return { success: true, taskId, taskDropId: resolvedTaskDropId };
@@ -414,6 +423,9 @@ export const tasksRouter = router({
       const now = new Date();
 
       const conditions = [];
+      // Discovery listings never surface unlisted tasks (ADR-0014). Fetching a
+      // specific task by ID is unaffected -- this only gates the browse/search path.
+      conditions.push(taskNotUnlisted);
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }
@@ -637,6 +649,7 @@ export const tasksRouter = router({
             ? { workerAddress: task.primaryAwardWorker, rating: task.primaryAwardRating }
             : null,
           mode: task.mode as TaskModeType,
+          taskVisibility: task.taskVisibility as TaskVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -935,6 +948,7 @@ export const tasksRouter = router({
           return primary ? { workerAddress: primary.workerAddress, rating: primary.rating } : null;
         })(),
         mode: task.mode as TaskModeType,
+        taskVisibility: task.taskVisibility as TaskVisibilityType,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
         pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -1397,6 +1411,7 @@ export const tasksRouter = router({
         // can exist yet for a task update is allowed to run against.
         primaryAward: null,
         mode: t.mode as TaskModeType,
+        taskVisibility: t.taskVisibility as TaskVisibilityType,
         stakeRequired: t.stakeRequired === 1,
         stakeBps: t.stakeBps,
         pitchDeadline: t.pitchDeadline?.toISOString() || null,

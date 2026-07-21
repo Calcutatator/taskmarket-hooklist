@@ -102,6 +102,7 @@ function task(
     submissionCount: 0,
     submissionWindowOpen: true,
     tags: ['mock'],
+    taskVisibility: 'public',
     workerActorType: undefined,
     workerAgentId: null,
     ...rest,
@@ -222,6 +223,19 @@ const tasks: TaskDetailResponse[] = [
     reward: '240000000',
     submissionCount: 0,
     tags: ['bounty', 'open'],
+  }),
+  task({
+    description: 'Bounty - unlisted task, reachable by direct link only (ADR-0014).',
+    id: 'mock-bounty-unlisted',
+    mode: 'bounty',
+    pendingActions: [
+      action('mock-bounty-unlisted', 'requester', 'cancel'),
+      action('mock-bounty-unlisted', 'requester', 'update'),
+    ],
+    reward: '240000000',
+    submissionCount: 0,
+    tags: ['bounty', 'unlisted'],
+    taskVisibility: 'unlisted',
   }),
   task({
     description:

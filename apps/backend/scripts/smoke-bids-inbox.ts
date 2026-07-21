@@ -3,21 +3,37 @@
  * and filters out tasks whose bid deadline has passed.
  *
  * Flow:
- *   1. Register worker device (POST /api/devices)
- *   2. Create two English auction tasks with short bid windows (requester, X402)
- *   3. Worker bids on both tasks (X402)
- *   4. GET /api/bids/my — assert two entries with correct fields
- *   5. Wait for the first task's bid deadline to expire
- *   6. Re-fetch /api/bids/my — assert only one entry remains (the live deadline)
+ *   1. Create two English auction tasks with short bid windows (requester, X402)
+ *   2. Worker bids on both tasks (X402)
+ *   3. Worker signs the canonical my-bids self-auth message and calls GET /api/bids/my —
+ *      assert two entries with correct fields
+ *   4. Wait for the first task's bid deadline to expire
+ *   5. Re-sign and re-fetch /api/bids/my — assert only one entry remains (the live deadline)
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-bids-inbox.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL, sleep } from './_x402.ts';
+import { buildMyBidsMessage } from '@taskmarket/shared';
+import { log, ok, get, x402Post, getAccounts, API_URL, sleep, type Account } from './_x402.ts';
 
 // How long after the first bid deadline to wait before re-checking.
 const DEADLINE_BUFFER_MS = parseInt(process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000', 10);
+
+async function fetchMyBids(worker: Account) {
+  const signature = await worker.signMessage({ message: buildMyBidsMessage(worker.address) });
+  return (await get(
+    `/api/bids/my?address=${encodeURIComponent(worker.address)}&signature=${encodeURIComponent(signature)}`
+  )) as Array<{
+    taskId: string;
+    auctionType: string | null;
+    myBidPrice: string;
+    currentLowestBid: string | null;
+    bidDeadline: string | null;
+    bidCount: number;
+    taskStatus: string;
+  }>;
+}
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -27,16 +43,8 @@ async function main() {
   console.log('worker:   ', worker.address);
   console.log('api:      ', API_URL);
 
-  // 1. Register a device for the worker so we can call /api/bids/my
-  log('1/6', 'Registering worker device...');
-  const device = (await post('/api/devices', { walletAddress: worker.address })) as {
-    deviceId: string;
-    apiToken: string;
-  };
-  ok('deviceId', device.deviceId);
-
-  // 2. Create first English auction task — short bid window (35s) so it expires soon
-  log('2a/6', 'Creating first English auction task (35s bid window)...');
+  // 1a. Create first English auction task — short bid window (35s) so it expires soon
+  log('1a/5', 'Creating first English auction task (35s bid window)...');
   const { taskId: task1 } = (await x402Post(
     '/api/tasks',
     {
@@ -53,8 +61,8 @@ async function main() {
   )) as { taskId: string };
   ok('task1', task1);
 
-  // 2b. Create second English auction task — longer bid window (2h) stays alive
-  log('2b/6', 'Creating second English auction task (2h bid window)...');
+  // 1b. Create second English auction task — longer bid window (2h) stays alive
+  log('1b/5', 'Creating second English auction task (2h bid window)...');
   const { taskId: task2 } = (await x402Post(
     '/api/tasks',
     {
@@ -71,28 +79,18 @@ async function main() {
   )) as { taskId: string };
   ok('task2', task2);
 
-  // 3. Worker bids on both tasks
-  log('3a/6', 'Worker bidding on task1 (0.0008 USDC)...');
+  // 2. Worker bids on both tasks
+  log('2a/5', 'Worker bidding on task1 (0.0008 USDC)...');
   await x402Post(`/api/tasks/${task1}/bids`, { taskId: task1, price: '800' }, worker);
   ok('bid on task1', true);
 
-  log('3b/6', 'Worker bidding on task2 (0.0008 USDC)...');
+  log('2b/5', 'Worker bidding on task2 (0.0008 USDC)...');
   await x402Post(`/api/tasks/${task2}/bids`, { taskId: task2, price: '800' }, worker);
   ok('bid on task2', true);
 
-  // 4. Fetch /api/bids/my — should have two entries
-  log('4/6', 'Fetching /api/bids/my (expect 2 entries)...');
-  const bids1 = (await get(`/api/bids/my?deviceId=${encodeURIComponent(device.deviceId)}`, {
-    headers: { 'x-taskmarket-api-token': device.apiToken },
-  })) as Array<{
-    taskId: string;
-    auctionType: string | null;
-    myBidPrice: string;
-    currentLowestBid: string | null;
-    bidDeadline: string | null;
-    bidCount: number;
-    taskStatus: string;
-  }>;
+  // 3. Sign the canonical my-bids self-auth message and fetch /api/bids/my — should have two entries
+  log('3/5', 'Fetching /api/bids/my (expect 2 entries)...');
+  const bids1 = await fetchMyBids(worker);
 
   const entry1 = bids1.find((b) => b.taskId === task1);
   const entry2 = bids1.find((b) => b.taskId === task2);
@@ -110,21 +108,21 @@ async function main() {
   ok('entry2.myBidPrice', entry2.myBidPrice === '800');
   ok('entry2.taskStatus', entry2.taskStatus === 'open');
 
-  // 5. Wait for task1's bid deadline to pass
-  log('5/6', `Waiting ${DEADLINE_BUFFER_MS}ms for task1 bid deadline to pass...`);
+  // 4. Wait for task1's bid deadline to pass
+  log('4/5', `Waiting ${DEADLINE_BUFFER_MS}ms for task1 bid deadline to pass...`);
   await sleep(DEADLINE_BUFFER_MS);
 
-  // 6. Re-fetch — task1 should no longer appear (deadline passed, task no longer open+active)
-  log('6/6', 'Re-fetching /api/bids/my (expect task1 gone, task2 still present)...');
-  const bids2 = (await get(`/api/bids/my?deviceId=${encodeURIComponent(device.deviceId)}`, {
-    headers: { 'x-taskmarket-api-token': device.apiToken },
-  })) as Array<{ taskId: string }>;
+  // 5. Re-sign and re-fetch — task1 should no longer appear (deadline passed, task no longer open+active)
+  log('5/5', 'Re-fetching /api/bids/my (expect task1 gone, task2 still present)...');
+  const bids2 = await fetchMyBids(worker);
 
   const stillHasTask1 = bids2.some((b) => b.taskId === task1);
   const stillHasTask2 = bids2.some((b) => b.taskId === task2);
 
   if (stillHasTask1) {
-    throw new Error(`task1 should be gone after bid deadline passed, but still appears in /api/bids/my`);
+    throw new Error(
+      `task1 should be gone after bid deadline passed, but still appears in /api/bids/my`
+    );
   }
   if (!stillHasTask2) {
     throw new Error(`task2 should still appear in /api/bids/my (deadline not passed)`);

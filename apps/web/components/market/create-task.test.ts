@@ -1,5 +1,9 @@
 import { describe, expect, it } from 'vitest';
-import { buildCreateTaskPayload, validateCreateTask } from '@/lib/market/create-task-form';
+import {
+  buildCreateTaskPayload,
+  validateCreateTask,
+  type CreateTaskFormValues,
+} from '@/lib/market/create-task-form';
 
 describe('buildCreateTaskPayload', () => {
   it('converts human task form values into backend task create payload', () => {
@@ -20,6 +24,7 @@ describe('buildCreateTaskPayload', () => {
         stakeBps: '12.5',
         stakeRequired: true,
         tags: 'scrape, data',
+        taskVisibility: 'public',
         hookContract: '',
         evaluator: '',
         evaluatorFeeBps: '',
@@ -44,11 +49,12 @@ describe('buildCreateTaskPayload', () => {
       stakeBps: 1250,
       stakeRequired: true,
       tags: ['scrape', 'data'],
+      taskVisibility: 'public',
     });
   });
 });
 
-function validValues() {
+function validValues(): CreateTaskFormValues {
   return {
     auctionFloorPrice: '',
     auctionStartPrice: '',
@@ -65,6 +71,7 @@ function validValues() {
     stakeBps: '0',
     stakeRequired: false,
     tags: 'scrape, data',
+    taskVisibility: 'public',
     hookContract: '',
     evaluator: '',
     evaluatorFeeBps: '',

@@ -225,6 +225,13 @@
       "when": 1784571324000,
       "tag": "0030_requester_reputation_events_task_id_unique",
       "breakpoints": true
+    },
+    {
+      "idx": 32,
+      "version": "7",
+      "when": 1784577268000,
+      "tag": "0031_add_task_visibility",
+      "breakpoints": true
     }
   ]
 }

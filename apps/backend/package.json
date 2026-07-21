@@ -54,7 +54,8 @@
     "smoke:refund-expired": "tsx scripts/smoke-refund-expired.ts",
     "smoke:submission-integrity": "tsx scripts/smoke-submission-integrity.ts",
     "smoke:token-reward-hook": "tsx scripts/smoke-token-reward-hook.ts",
-    "smoke:evaluator": "tsx scripts/smoke-evaluator.ts"
+    "smoke:evaluator": "tsx scripts/smoke-evaluator.ts",
+    "smoke:visibility": "tsx scripts/smoke-visibility.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

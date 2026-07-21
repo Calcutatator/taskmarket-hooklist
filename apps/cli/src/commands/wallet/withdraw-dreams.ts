@@ -4,7 +4,7 @@ import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiGet, apiPost } from '../../lib/api.js';
 import { printResult, printError } from '../../lib/output.js';
-import { formatDreams } from '@taskmarket/shared';
+import { formatDreams, buildWithdrawDreamsMessage } from '@taskmarket/shared';
 
 // Authorization window: long enough to cover signing latency, short enough to bound
 // the replay risk of a captured signature (the nonce itself prevents reuse even
@@ -60,7 +60,7 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
 
     const nonce = toHex(crypto.getRandomValues(new Uint8Array(32)));
     const validBefore = String(Math.floor(Date.now() / 1000) + AUTHORIZATION_VALIDITY_SECONDS);
-    const message = `taskmarket:withdraw-dreams:${destination}:${nonce}:${validBefore}`;
+    const message = buildWithdrawDreamsMessage(destination, nonce, validBefore);
     const signature = await signMessage(message, keystore);
 
     const result = (await apiPost('/api/wallet/withdraw-dreams', {

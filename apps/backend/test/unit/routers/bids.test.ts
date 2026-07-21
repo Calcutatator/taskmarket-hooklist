@@ -1,19 +1,18 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { PgDialect } from 'drizzle-orm/pg-core';
+import type { SQL } from 'drizzle-orm';
 import { createMockCtx, makeChain } from '../helpers';
+
+const dialect = new PgDialect();
+function renderSql(query: SQL): { sql: string; params: unknown[] } {
+  const built = dialect.sqlToQuery(query);
+  return { sql: built.sql, params: built.params };
+}
 
 vi.mock('../../../src/services/contract', () => ({
   contractSubmitBid: vi.fn().mockResolvedValue('0xbidtx'),
   contractSelectLowestBidder: vi.fn().mockResolvedValue('0xselecttx'),
   contractAcceptAuction: vi.fn().mockResolvedValue('0xaccepttx'),
-}));
-
-vi.mock('../../../src/services/xmtp-auth', () => ({
-  authenticateXmtpDevice: vi
-    .fn()
-    .mockResolvedValue({
-      deviceId: 'dev-1',
-      walletAddress: '0xWorker0000000000000000000000000000000001',
-    }),
 }));
 
 vi.mock('viem', async () => {
@@ -429,19 +428,17 @@ describe('bids router', () => {
       it('succeeds when signature recovers to the task requester', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(REQUESTER as `0x${string}`);
         const ctx = createMockCtx();
-        ctx.db.select
-          .mockReturnValueOnce(makeChain([taskFromRequester]))
-          .mockReturnValueOnce(
-            makeChain([
-              {
-                id: BID_ID,
-                taskId: TASK_ID,
-                workerAddress: WORKER_B,
-                price: '3000000',
-                createdAt: new Date(),
-              },
-            ])
-          );
+        ctx.db.select.mockReturnValueOnce(makeChain([taskFromRequester])).mockReturnValueOnce(
+          makeChain([
+            {
+              id: BID_ID,
+              taskId: TASK_ID,
+              workerAddress: WORKER_B,
+              price: '3000000',
+              createdAt: new Date(),
+            },
+          ])
+        );
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.selectWinner({
@@ -678,6 +675,81 @@ describe('bids router', () => {
       const result = await caller.auctionAccept(ACCEPT_INPUT);
       // ~99.99% elapsed: price is near or at floorPrice; clamped to minimum 1000000
       expect(Number(result.acceptedPrice)).toBeGreaterThanOrEqual(1000000);
+    });
+  });
+
+  describe('myBids', () => {
+    it('returns pending bids for the signed-in address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          {
+            taskId: TASK_ID,
+            auctionType: 'english',
+            bidDeadline: new Date('2026-01-01T00:00:00.000Z'),
+            taskStatus: 'open',
+            myBidPrice: '4000000',
+            bidCount: 2,
+            lowestBid: '3500000',
+          },
+        ])
+      );
+
+      const caller = bidsRouter.createCaller(ctx);
+      const result = await caller.myBids({ address: WORKER, signature: '0xsig' });
+
+      expect(result).toEqual([
+        {
+          taskId: TASK_ID,
+          auctionType: 'english',
+          myBidPrice: '4000000',
+          currentLowestBid: '3500000',
+          bidDeadline: '2026-01-01T00:00:00.000Z',
+          bidCount: 2,
+          taskStatus: 'open',
+        },
+      ]);
+    });
+
+    it('matches bids.workerAddress case-insensitively against the authenticated address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createMockCtx();
+
+      let whereSql: SQL | undefined;
+      const chain = makeChain([]);
+      chain.where = vi.fn((arg: SQL) => {
+        whereSql = arg;
+        return chain;
+      });
+      ctx.db.select.mockReturnValueOnce(chain);
+
+      const caller = bidsRouter.createCaller(ctx);
+      await caller.myBids({ address: WORKER, signature: '0xsig' });
+
+      expect(whereSql).toBeDefined();
+      const { sql: q } = renderSql(whereSql!);
+      expect(q.toLowerCase()).toContain('lower(');
+    });
+
+    it('rejects with BAD_REQUEST when the signature is invalid', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+      const ctx = createMockCtx();
+
+      const caller = bidsRouter.createCaller(ctx);
+      await expect(caller.myBids({ address: WORKER, signature: '0xinvalid' })).rejects.toThrow(
+        'Invalid signature'
+      );
+    });
+
+    it('rejects with UNAUTHORIZED when the signature is from a different address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER_B as `0x${string}`);
+      const ctx = createMockCtx();
+
+      const caller = bidsRouter.createCaller(ctx);
+      await expect(caller.myBids({ address: WORKER, signature: '0xsig' })).rejects.toThrow(
+        'Signature does not match address'
+      );
     });
   });
 });

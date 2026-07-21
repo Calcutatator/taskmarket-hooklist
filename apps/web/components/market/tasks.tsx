@@ -31,6 +31,7 @@ import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
+import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
@@ -2229,6 +2230,7 @@ export function TaskDetailPanel({
                   </Badge>
                 </Link>
               ) : null}
+              {task.taskVisibility === 'unlisted' ? <UnlistedBadge withTooltip /> : null}
               <PhaseBadge status={task.status} />
               {taskTypesHref ? (
                 <Link

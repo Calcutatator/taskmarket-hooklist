@@ -9,6 +9,14 @@ export const createCmd = new Command('create')
   .requiredOption('--reward <usdc>', 'Reward in USDC (e.g. 5 for 5 USDC)')
   .requiredOption('--duration <hours>', 'Task duration in hours')
   .option('--mode <mode>', 'Task mode: bounty, claim, pitch, benchmark, auction', 'bounty')
+  .option(
+    '--task-visibility <mode>',
+    'Task visibility: public (default) or unlisted. Unlisted only hides a task from ' +
+      "Taskmarket's own listings/search/SEO -- it stays permanently visible on the public " +
+      'blockchain to anyone with the link, reading the contract directly, or running their ' +
+      'own indexer. Not a privacy feature.',
+    'public'
+  )
   .option('--tags <tags>', 'Comma-separated tags')
   .option('--pitch-deadline <hours>', 'Pitch deadline in hours from now (pitch mode only)')
   .option('--bid-deadline <hours>', 'Bid deadline in hours from now (auction mode only)')
@@ -41,6 +49,7 @@ export const createCmd = new Command('create')
       reward: string;
       duration: string;
       mode: string;
+      taskVisibility: string;
       tags?: string;
       pitchDeadline?: string;
       bidDeadline?: string;
@@ -68,6 +77,10 @@ export const createCmd = new Command('create')
       const duration = Number(opts.duration);
       if (!Number.isFinite(duration) || duration <= 0) {
         return void printError('--duration must be a positive number of hours');
+      }
+
+      if (opts.taskVisibility !== 'public' && opts.taskVisibility !== 'unlisted') {
+        return void printError('--task-visibility must be one of: public, unlisted');
       }
 
       if (opts.mode === 'auction') {
@@ -116,6 +129,7 @@ export const createCmd = new Command('create')
         reward: rewardBaseUnits,
         duration,
         mode: opts.mode,
+        taskVisibility: opts.taskVisibility,
         tags,
         stakeRequired: false,
         stakeBps: 0,

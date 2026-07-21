@@ -2,7 +2,16 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
 
+vi.mock('viem', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('viem')>();
+  return {
+    ...actual,
+    recoverMessageAddress: vi.fn(),
+  };
+});
+
 import { agentsRouter } from '../../../src/routers/agents.router';
+import { recoverMessageAddress } from 'viem';
 
 const ADDR = '0xAgent00000000000000000000000000000000001';
 const AGENT_ID = 'agent-001';
@@ -163,9 +172,7 @@ describe('agents router', () => {
       const requesterChain = makeChain([]);
       const workerChain = makeChain([]);
       const ctx = createMockCtx();
-      ctx.db.select
-        .mockReturnValueOnce(requesterChain)
-        .mockReturnValueOnce(workerChain);
+      ctx.db.select.mockReturnValueOnce(requesterChain).mockReturnValueOnce(workerChain);
 
       await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
 
@@ -173,6 +180,87 @@ describe('agents router', () => {
       const query = new PgDialect().sqlToQuery(where);
       expect(query.sql).toContain('from "task_awards"');
       expect(query.sql).toContain('lower("task_awards"."worker_address")');
+    });
+
+    it('excludes unlisted tasks by default (no signature)', async () => {
+      const requesterChain = makeChain([]);
+      const workerChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(requesterChain).mockReturnValueOnce(workerChain);
+
+      await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
+
+      expect(recoverMessageAddress).not.toHaveBeenCalled();
+
+      const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
+      const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
+
+      const workerWhere = workerChain.where.mock.calls[0]?.[0];
+      const workerQuery = new PgDialect().sqlToQuery(workerWhere);
+      expect(workerQuery.sql).toContain('"tasks"."task_visibility" <>');
+    });
+
+    it('includes unlisted tasks when the caller proves ownership of the queried address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ADDR as `0x${string}`);
+      const requesterChain = makeChain([]);
+      const workerChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(requesterChain).mockReturnValueOnce(workerChain);
+
+      await agentsRouter.createCaller(ctx).inbox({
+        address: ADDR,
+        signature: '0x' + 'aa'.repeat(65),
+      });
+
+      expect(recoverMessageAddress).toHaveBeenCalledWith({
+        message: `taskmarket:inbox:${ADDR}`,
+        signature: '0x' + 'aa'.repeat(65),
+      });
+
+      const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
+      const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
+      expect(requesterQuery.sql).not.toContain('visibility');
+
+      const workerWhere = workerChain.where.mock.calls[0]?.[0];
+      const workerQuery = new PgDialect().sqlToQuery(workerWhere);
+      expect(workerQuery.sql).not.toContain('visibility');
+    });
+
+    it('does not unlock unlisted tasks when the signature is for a different address', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
+        '0x0000000000000000000000000000000000000001' as `0x${string}`
+      );
+      const requesterChain = makeChain([]);
+      const workerChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(requesterChain).mockReturnValueOnce(workerChain);
+
+      await agentsRouter.createCaller(ctx).inbox({
+        address: ADDR,
+        signature: '0x' + 'aa'.repeat(65),
+      });
+
+      const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
+      const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
+    });
+
+    it('does not unlock unlisted tasks when signature verification throws', async () => {
+      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
+      const requesterChain = makeChain([]);
+      const workerChain = makeChain([]);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(requesterChain).mockReturnValueOnce(workerChain);
+
+      await agentsRouter.createCaller(ctx).inbox({
+        address: ADDR,
+        signature: '0xinvalid',
+      });
+
+      const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
+      const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
     });
   });
 });

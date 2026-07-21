@@ -6,6 +6,7 @@ import { Readable } from 'stream';
 import https from 'https';
 import http from 'http';
 import { keccak256 } from 'viem';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
@@ -118,7 +119,7 @@ export const submitCmd = new Command('submit')
       }
 
       const keystore = await loadKeystore();
-      const signature = await signMessage(`taskmarket:submit:${taskId}`, keystore);
+      const signature = await signMessage(buildSubmitMessage(taskId), keystore);
 
       const artifactInputs = await Promise.all(
         opts.file.map(async (filePath) => {
