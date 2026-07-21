@@ -434,6 +434,14 @@ REWARD_HOOK_ADDRESS=$REWARD_HOOK_ADDRESS
 MOCK_TOKEN_ADDRESS=$MOCK_TOKEN_ADDRESS
 VAULT_ADDRESS=$VAULT_ADDRESS
 
+# DREAMS_HOOK_ADDRESS is the backend server's own config var (getServerConfig(),
+# apps/backend/src/config/env.ts) for reading the reward hook's on-chain state --
+# distinct from REWARD_HOOK_ADDRESS above, which only the smoke-token-reward-hook.ts
+# script itself reads. Without this, contractGetDreamsPerUsdc() and friends
+# (apps/backend/src/services/contract.ts) silently short-circuit to zero, and
+# `make smoke token-reward-hook` fails on the exchange-rate check.
+DREAMS_HOOK_ADDRESS=$REWARD_HOOK_ADDRESS
+
 # Web app (apps/web, Next.js -- NEXT_PUBLIC_ prefix)
 NEXT_PUBLIC_SITE_URL=http://localhost:3001
 NEXT_PUBLIC_PLATFORM_FEE_BPS=750

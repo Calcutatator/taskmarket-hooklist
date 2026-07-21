@@ -578,8 +578,14 @@ smoke:
 	@$(ENV_LOADER) && \
 	if [ "$(word 2,$(ARGS))" = "testnet" ]; then \
 		SMOKE_API_URL="$$TESTNET_API_URL"; \
+		SMOKE_REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET"; \
+		SMOKE_MOCK_TOKEN_ADDRESS="$$FORGE_MOCK_TOKEN_ADDRESS_TESTNET"; \
+		SMOKE_VAULT_ADDRESS="$$FORGE_VAULT_ADDRESS_TESTNET"; \
 	else \
 		SMOKE_API_URL="$$API_URL"; \
+		SMOKE_REWARD_HOOK_ADDRESS="$$REWARD_HOOK_ADDRESS"; \
+		SMOKE_MOCK_TOKEN_ADDRESS="$$MOCK_TOKEN_ADDRESS"; \
+		SMOKE_VAULT_ADDRESS="$$VAULT_ADDRESS"; \
 	fi && \
 	if [ "$(word 1,$(ARGS))" = "bounty" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:bounty; \
@@ -643,9 +649,9 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-integrity; \
 	elif [ "$(word 1,$(ARGS))" = "token-reward-hook" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" \
-		REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET" \
-		MOCK_TOKEN_ADDRESS="$$FORGE_MOCK_TOKEN_ADDRESS_TESTNET" \
-		VAULT_ADDRESS="$$FORGE_VAULT_ADDRESS_TESTNET" \
+		REWARD_HOOK_ADDRESS="$$SMOKE_REWARD_HOOK_ADDRESS" \
+		MOCK_TOKEN_ADDRESS="$$SMOKE_MOCK_TOKEN_ADDRESS" \
+		VAULT_ADDRESS="$$SMOKE_VAULT_ADDRESS" \
 		pnpm smoke:token-reward-hook; \
 	elif [ "$(word 1,$(ARGS))" = "evaluator" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:evaluator; \
