@@ -63,8 +63,9 @@ const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
 const MOCK_TOKEN_ADDRESS = process.env.MOCK_TOKEN_ADDRESS;
 const VAULT_ADDRESS = process.env.VAULT_ADDRESS;
 // Derive withdrawal address from worker key if not explicitly set
-const WORKER_WITHDRAWAL_ADDRESS = process.env.WORKER_WITHDRAWAL_ADDRESS
-  ?? (process.env.WORKER_PRIVATE_KEY
+const WORKER_WITHDRAWAL_ADDRESS =
+  process.env.WORKER_WITHDRAWAL_ADDRESS ??
+  (process.env.WORKER_PRIVATE_KEY
     ? privateKeyToAccount(process.env.WORKER_PRIVATE_KEY as `0x${string}`).address
     : undefined);
 const RPC_URL = process.env.FORGE_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
@@ -114,7 +115,11 @@ const hookAbi = parseAbi([
 
 const client = createPublicClient({ chain: baseSepolia, transport: http(RPC_URL) });
 const deployer = privateKeyToAccount(DEPLOYER_PRIVATE_KEY as `0x${string}`);
-const deployerWallet = createWalletClient({ account: deployer, chain: baseSepolia, transport: http(RPC_URL) });
+const deployerWallet = createWalletClient({
+  account: deployer,
+  chain: baseSepolia,
+  transport: http(RPC_URL),
+});
 
 // Mirrors the mainnet funding flow exactly: DeployRewardHookTestnet.s.sol mints mock
 // DREAMS to the deployer, not the vault, so this plain ERC20 transfer is the same
@@ -241,7 +246,13 @@ async function main() {
   log('C1/2', 'Creating probe task to verify default hook registration...');
   const { taskId: probeTaskId } = (await x402Post(
     '/api/tasks',
-    { description: 'Hook wiring probe', reward: '1000', duration: 60, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Hook wiring probe',
+      reward: '1000',
+      duration: 60,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('probeTaskId', probeTaskId);
@@ -303,7 +314,13 @@ async function main() {
   log('A1/6', 'Creating bounty task (X402)...');
   const { taskId } = (await x402Post(
     '/api/tasks',
-    { description: 'Write a haiku about Base L2 (hook smoke test)', reward: '5000', duration: 60, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Write a haiku about Base L2 (hook smoke test)',
+      reward: '5000',
+      duration: 60,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('taskId', taskId);
@@ -348,7 +365,8 @@ async function main() {
   const expectedEstimateTotalDreams = (expectedEstimateUsdBonusValue * onChainRate) / 1_000_000n;
   const expectedEstimateWorkerDreams =
     (expectedEstimateTotalDreams * BigInt(workerSplitBps)) / 10_000n;
-  const expectedEstimateRequesterDreams = expectedEstimateTotalDreams - expectedEstimateWorkerDreams;
+  const expectedEstimateRequesterDreams =
+    expectedEstimateTotalDreams - expectedEstimateWorkerDreams;
   if (taskDetail.estimatedWorkerDreamsBonus !== expectedEstimateWorkerDreams.toString()) {
     throw new Error(
       `task.get estimatedWorkerDreamsBonus (${taskDetail.estimatedWorkerDreamsBonus}) does not match expected ${expectedEstimateWorkerDreams}`
@@ -367,7 +385,14 @@ async function main() {
     taskId,
     workerAddress: worker.address,
     signature: submitSigA,
-    artifacts: [{ fileName: 'haiku.txt', mimeType: 'text/plain', role: 'attachment', file: Buffer.from('old pond / a frog jumps in / sound of water').toString('base64') }],
+    artifacts: [
+      {
+        fileName: 'haiku.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('old pond / a frog jumps in / sound of water').toString('base64'),
+      },
+    ],
   });
   ok('submitted', true);
 
@@ -392,7 +417,8 @@ async function main() {
   // sets how much of the task's USD value becomes a bonus, dreamsPerUsdc then
   // converts that USD amount to tokens. Bounty-mode reads both fresh at
   // completion time (no lock), so this uses the current bonusBps/rate.
-  const expectedBountyUsdBonusValue = (stateAfterCreate.rewardUsd * BigInt(onChainBonusBps)) / 10_000n;
+  const expectedBountyUsdBonusValue =
+    (stateAfterCreate.rewardUsd * BigInt(onChainBonusBps)) / 10_000n;
   const expectedBountyTokenReward =
     (((expectedBountyUsdBonusValue * onChainRate) / 1_000_000n) * BigInt(workerSplitBps)) / 10_000n;
   const bountyDelta = claimableAfter - claimableBeforeAcceptA;
@@ -476,7 +502,13 @@ async function main() {
   log('B1/7', 'Creating claim task (X402)...');
   const { taskId: claimTaskId } = (await x402Post(
     '/api/tasks',
-    { description: 'Write a limerick about smart contracts (hook smoke test)', reward: '3000', duration: 300, mode: 'claim', tags: ['smoke-test'] },
+    {
+      description: 'Write a limerick about smart contracts (hook smoke test)',
+      reward: '3000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('claimTaskId', claimTaskId);
@@ -543,7 +575,14 @@ async function main() {
     taskId: claimTaskId,
     workerAddress: worker.address,
     signature: claimSig,
-    artifacts: [{ fileName: 'limerick.txt', mimeType: 'text/plain', role: 'attachment', file: Buffer.from('A contract once written in Solidity...').toString('base64') }],
+    artifacts: [
+      {
+        fileName: 'limerick.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from('A contract once written in Solidity...').toString('base64'),
+      },
+    ],
   })) as { deliverableHash: string };
   ok('deliverableHash', deliverableHash);
 
@@ -582,7 +621,13 @@ async function main() {
   log('D1/3', 'Creating claim task for cancel test...');
   const { taskId: cancelTaskId } = (await x402Post(
     '/api/tasks',
-    { description: 'Cancel hook test task', reward: '2000', duration: 300, mode: 'claim', tags: ['smoke-test'] },
+    {
+      description: 'Cancel hook test task',
+      reward: '2000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('cancelTaskId', cancelTaskId);

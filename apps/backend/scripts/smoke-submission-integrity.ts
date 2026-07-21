@@ -67,7 +67,13 @@ async function main() {
   log('A1', 'Creating bounty task (X402)...');
   const { taskId: taskA } = (await x402Post(
     '/api/tasks',
-    { description: 'Smoke test A — no submission', reward: '1000', duration: 1, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Smoke test A — no submission',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('taskId', taskA);
@@ -75,7 +81,11 @@ async function main() {
   log('A2', 'Attempting accept with no prior submission — expecting 400...');
   let caught = false;
   try {
-    await x402Post(`/api/tasks/${taskA}/accept`, { taskId: taskA, worker: worker.address }, requester);
+    await x402Post(
+      `/api/tasks/${taskA}/accept`,
+      { taskId: taskA, worker: worker.address },
+      requester
+    );
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
     if (!msg.includes('400') && !msg.includes('No active submission')) {
@@ -94,7 +104,13 @@ async function main() {
   log('B1', 'Creating bounty task (X402)...');
   const { taskId: taskB } = (await x402Post(
     '/api/tasks',
-    { description: 'Smoke test B — valid submission', reward: '1000', duration: 1, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Smoke test B — valid submission',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('taskId', taskB);
@@ -117,14 +133,24 @@ async function main() {
   ok('submissionId', subB);
 
   log('B3', 'Requester accepting without --deliverable flag (backend derives from DB)...');
-  await x402Post(`/api/tasks/${taskB}/accept`, { taskId: taskB, worker: worker.address }, requester);
+  await x402Post(
+    `/api/tasks/${taskB}/accept`,
+    { taskId: taskB, worker: worker.address },
+    requester
+  );
   ok('accepted', true);
 
   log('B4', 'Polling for completed status...');
   const completedB = await pollStatus(taskB, 'completed');
   ok('status', completedB.status);
-  if (completedB.selfAward !== false && completedB.selfAward !== null && completedB.selfAward !== undefined) {
-    throw new Error(`Expected selfAward to be null/false for normal acceptance, got: ${completedB.selfAward}`);
+  if (
+    completedB.selfAward !== false &&
+    completedB.selfAward !== null &&
+    completedB.selfAward !== undefined
+  ) {
+    throw new Error(
+      `Expected selfAward to be null/false for normal acceptance, got: ${completedB.selfAward}`
+    );
   }
   ok('selfAward', completedB.selfAward ?? null);
 
@@ -136,7 +162,13 @@ async function main() {
   log('C1', 'Creating bounty task (X402)...');
   const { taskId: taskC } = (await x402Post(
     '/api/tasks',
-    { description: 'Smoke test C — self-award', reward: '1000', duration: 1, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Smoke test C — self-award',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('taskId', taskC);
@@ -179,19 +211,29 @@ async function main() {
     selfAwardSet = t.selfAward === true;
   }
   if (!selfAwardSet) {
-    throw new Error('Expected task.selfAward to be true after requester accepted their own submission');
+    throw new Error(
+      'Expected task.selfAward to be true after requester accepted their own submission'
+    );
   }
   ok('selfAward', true);
 
   // -----------------------------------------------------------------------
   // Scenario D: RequesterReputation event — cancel after submission
   // -----------------------------------------------------------------------
-  console.log('\n--- Scenario D: RequesterReputation event indexed after cancel with submissions ---');
+  console.log(
+    '\n--- Scenario D: RequesterReputation event indexed after cancel with submissions ---'
+  );
 
   log('D1', 'Creating bounty task (X402)...');
   const { taskId: taskD } = (await x402Post(
     '/api/tasks',
-    { description: 'Smoke test D — cancel after submission', reward: '1000', duration: 1, mode: 'bounty', tags: ['smoke-test'] },
+    {
+      description: 'Smoke test D — cancel after submission',
+      reward: '1000',
+      duration: 1,
+      mode: 'bounty',
+      tags: ['smoke-test'],
+    },
     requester
   )) as { taskId: string };
   ok('taskId', taskD);

@@ -15,10 +15,7 @@ import { log, ok, get, x402Post, getAccounts, type Account, API_URL, sleep } fro
 
 // How long to wait after the bid deadline before asserting it has passed.
 // Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
-const AUCTION_DEADLINE_BUFFER_MS = parseInt(
-  process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000',
-  10
-);
+const AUCTION_DEADLINE_BUFFER_MS = parseInt(process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000', 10);
 
 async function smokeEnglish(requester: Account, worker: Account) {
   console.log('\n--- English Auction ---');
@@ -52,7 +49,9 @@ async function smokeEnglish(requester: Account, worker: Account) {
   const bids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{ price: string }>;
   ok(`bid count`, bids.length >= 1);
 
-  console.log(`  (Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline — not selecting winner in smoke to save gas)`);
+  console.log(
+    `  (Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline — not selecting winner in smoke to save gas)`
+  );
   await sleep(AUCTION_DEADLINE_BUFFER_MS);
 
   const taskDetail = (await get(`/api/tasks/${taskId}`)) as { bidDeadline: string };
@@ -97,7 +96,10 @@ async function smokeReverseEnglish(requester: Account, worker: Account) {
   }
   ok('bid is sealed (price=null)', true);
 
-  log('4/4', `Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline, then verifying bids are revealed...`);
+  log(
+    '4/4',
+    `Waiting ${AUCTION_DEADLINE_BUFFER_MS}ms for deadline, then verifying bids are revealed...`
+  );
   await sleep(AUCTION_DEADLINE_BUFFER_MS);
 
   const revealedBids = (await get(`/api/tasks/${taskId}/bids`)) as Array<{
@@ -147,11 +149,10 @@ async function smokeDutch(requester: Account, worker: Account) {
   console.log('  current clock price:', task.currentAuctionPrice, 'base units');
 
   log('3/4', 'Worker accepts current clock price...');
-  const acceptResult = (await x402Post(
-    `/api/tasks/${taskId}/bids/accept`,
-    { taskId },
-    worker
-  )) as { acceptedPrice: string; workerAddress: string };
+  const acceptResult = (await x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId }, worker)) as {
+    acceptedPrice: string;
+    workerAddress: string;
+  };
   ok('acceptedPrice', acceptResult.acceptedPrice);
 
   log('4/4', 'Verifying task is now claimed...');

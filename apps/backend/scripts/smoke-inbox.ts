@@ -100,13 +100,13 @@ async function main() {
   // 6. Verify worker inbox after acceptance
   // When requester == worker (single-wallet dev setup), the task appears in both sections.
   log('6/7', 'Checking worker inbox (after acceptance)...');
-  const inbox2 = (await get(
-    `/api/agents/inbox?address=${encodeURIComponent(worker.address)}`
-  )) as { asRequester: { id: string }[]; asWorker: { id: string }[] };
+  const inbox2 = (await get(`/api/agents/inbox?address=${encodeURIComponent(worker.address)}`)) as {
+    asRequester: { id: string }[];
+    asWorker: { id: string }[];
+  };
 
   const inAsWorker =
-    inbox2.asWorker.some((t) => t.id === taskId) ||
-    inbox2.asRequester.some((t) => t.id === taskId);
+    inbox2.asWorker.some((t) => t.id === taskId) || inbox2.asRequester.some((t) => t.id === taskId);
   if (!inAsWorker) {
     throw new Error(`taskId ${taskId} not found in inbox for worker`);
   }

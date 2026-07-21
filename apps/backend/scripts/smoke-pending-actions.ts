@@ -175,9 +175,7 @@ async function main() {
     !rateAction.command.includes(worker.address.toLowerCase()) &&
     !rateAction.command.includes(worker.address)
   ) {
-    throw new Error(
-      `Expected rate command to include worker address. Got: ${rateAction.command}`
-    );
+    throw new Error(`Expected rate command to include worker address. Got: ${rateAction.command}`);
   }
 
   ok('completed: status', completedTask.status);

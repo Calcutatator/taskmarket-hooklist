@@ -160,9 +160,7 @@ async function main() {
 
   // 10. Verify stats by agentId
   log('10/10', 'Verifying stats lookup by agentId...');
-  const stats = (await get(
-    `/api/agents/stats?agentId=${encodeURIComponent(workerAgentId)}`
-  )) as {
+  const stats = (await get(`/api/agents/stats?agentId=${encodeURIComponent(workerAgentId)}`)) as {
     address: string;
     agentId: string | null;
     completedTasks: number;

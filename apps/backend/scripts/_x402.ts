@@ -1,15 +1,23 @@
 /**
  * Shared helpers for smoke test scripts.
  */
+import { randomBytes } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
+import { buildDeviceRegisterMessage } from '@taskmarket/shared';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
+
+/** Fresh ephemeral keypair, for smoke tests that need a throwaway agent identity. */
+export function randomAccount(): Account {
+  return privateKeyToAccount(`0x${randomBytes(32).toString('hex')}`);
+}
 
 // TASKMARKET_API_URL is the same var apps/cli/src/lib/api.ts reads -- one var
 // for both the CLI and smoke tests, rather than keeping two in sync. API_URL
 // stays as a fallback for anyone already using it directly.
-export const API_URL = process.env.TASKMARKET_API_URL || process.env.API_URL || 'http://localhost:3000';
+export const API_URL =
+  process.env.TASKMARKET_API_URL || process.env.API_URL || 'http://localhost:3000';
 
 export function log(step: string, msg: string) {
   console.log(`\n[${step}] ${msg}`);
@@ -196,6 +204,19 @@ export async function x402Post(
   const result = await r2.json();
   if (!r2.ok) fail(path, r2.status, JSON.stringify(result, null, 2));
   return result;
+}
+
+/** Register a device for `account`, signing the required ownership-proof challenge. */
+export async function registerDevice(
+  account: Account
+): Promise<{ deviceId: string; apiToken: string }> {
+  const signature = await account.signMessage({
+    message: buildDeviceRegisterMessage(account.address),
+  });
+  return (await post('/api/devices', { walletAddress: account.address, signature })) as {
+    deviceId: string;
+    apiToken: string;
+  };
 }
 
 export function getAccounts() {

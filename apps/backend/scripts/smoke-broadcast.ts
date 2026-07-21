@@ -13,7 +13,7 @@
  *   ADMIN_SECRET=your-secret API_URL=http://localhost:3000 npx tsx scripts/smoke-broadcast.ts
  */
 import { randomBytes } from 'crypto';
-import { log, ok, get, post, API_URL } from './_x402';
+import { log, ok, get, post, registerDevice, randomAccount, API_URL } from './_x402';
 
 const ADMIN_SECRET = process.env.ADMIN_SECRET;
 if (!ADMIN_SECRET) {
@@ -21,23 +21,15 @@ if (!ADMIN_SECRET) {
   process.exit(1);
 }
 
-function randomAddress(): string {
-  return '0x' + randomBytes(20).toString('hex');
-}
-
 function randomUsername(): string {
   return 'smoke-' + randomBytes(4).toString('hex');
 }
 
-async function registerDevice(walletAddress: string): Promise<{ deviceId: string; apiToken: string }> {
-  const result = (await post('/api/devices', { walletAddress })) as {
-    deviceId: string;
-    apiToken: string;
-  };
-  return result;
-}
-
-async function registerEmail(deviceId: string, apiToken: string, username: string): Promise<string> {
+async function registerEmail(
+  deviceId: string,
+  apiToken: string,
+  username: string
+): Promise<string> {
   const result = (await post('/api/emails/register', { deviceId, apiToken, username })) as {
     emailAddress: string;
   };
@@ -56,13 +48,21 @@ async function broadcastRaw(
   subject: string,
   body: string,
   filters?: Record<string, unknown>
-): Promise<{ ok: boolean; data?: { sent: number; failed: number; total: number }; error?: unknown }> {
+): Promise<{
+  ok: boolean;
+  data?: { sent: number; failed: number; total: number };
+  error?: unknown;
+}> {
   const r = await fetch(`${API_URL}/api/emails/broadcast`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', 'x-admin-secret': secret },
     body: JSON.stringify({ subject, body, filters }),
   });
-  return r.json() as Promise<{ ok: boolean; data?: { sent: number; failed: number; total: number }; error?: unknown }>;
+  return r.json() as Promise<{
+    ok: boolean;
+    data?: { sent: number; failed: number; total: number };
+    error?: unknown;
+  }>;
 }
 
 async function broadcast(
@@ -79,11 +79,11 @@ log('=== smoke-broadcast ===');
 log(`API_URL: ${API_URL}`);
 
 // Step 1: Register two agents
-const addrA = randomAddress();
-const addrB = randomAddress();
-log(`\n[1] Registering agents ${addrA.slice(0, 10)} and ${addrB.slice(0, 10)}`);
-const deviceA = await registerDevice(addrA);
-const deviceB = await registerDevice(addrB);
+const agentA = randomAccount();
+const agentB = randomAccount();
+log(`\n[1] Registering agents ${agentA.address.slice(0, 10)} and ${agentB.address.slice(0, 10)}`);
+const deviceA = await registerDevice(agentA);
+const deviceB = await registerDevice(agentB);
 const usernameA = randomUsername();
 const usernameB = randomUsername();
 const emailA = await registerEmail(deviceA.deviceId, deviceA.apiToken, usernameA);

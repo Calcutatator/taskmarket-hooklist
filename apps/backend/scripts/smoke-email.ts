@@ -16,31 +16,19 @@
  *   API_URL=http://localhost:3000 npx tsx --env-file=../../.env scripts/smoke-email.ts
  */
 import { randomBytes } from 'crypto';
-import { log, ok, get, post, API_URL } from './_x402';
-
-function randomAddress(): string {
-  return '0x' + randomBytes(20).toString('hex');
-}
-
-async function registerDevice(walletAddress: string): Promise<{ deviceId: string; apiToken: string }> {
-  const result = (await post('/api/devices', { walletAddress })) as {
-    deviceId: string;
-    apiToken: string;
-  };
-  return result;
-}
+import { log, ok, get, post, registerDevice, randomAccount, API_URL } from './_x402';
 
 async function main() {
   console.log('=== Taskmarket Smoke Test — Email ===');
   console.log('api:', API_URL);
 
-  const addrA = randomAddress();
-  const addrB = randomAddress();
+  const agentA = randomAccount();
+  const agentB = randomAccount();
 
   // 1. Register devices
   log('1', 'Registering devices for agents A and B...');
-  const devA = await registerDevice(addrA);
-  const devB = await registerDevice(addrB);
+  const devA = await registerDevice(agentA);
+  const devB = await registerDevice(agentB);
   ok('device A', devA.deviceId);
   ok('device B', devB.deviceId);
 
@@ -116,9 +104,10 @@ async function main() {
     apiToken: devB.apiToken,
     id: email.id,
   });
-  const readResult = (await get(
-    `/api/emails/get?${readParams}`
-  )) as { isRead: boolean; bodyText: string };
+  const readResult = (await get(`/api/emails/get?${readParams}`)) as {
+    isRead: boolean;
+    bodyText: string;
+  };
   if (!readResult.isRead) throw new Error('Expected isRead: true after read');
   ok('isRead after get', readResult.isRead);
   ok('bodyText', readResult.bodyText);

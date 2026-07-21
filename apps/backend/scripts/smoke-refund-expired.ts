@@ -66,7 +66,9 @@ async function main() {
     throw new Error(`Expected refund_expired role=requester, got ${refundAction.role}`);
   }
   if (!refundAction.command.includes(taskA)) {
-    throw new Error(`Expected refund_expired command to include taskId. Got: ${refundAction.command}`);
+    throw new Error(
+      `Expected refund_expired command to include taskId. Got: ${refundAction.command}`
+    );
   }
   ok('refund_expired action present', true);
   ok('refund_expired role', refundAction.role);
@@ -79,7 +81,9 @@ async function main() {
     requester
   )) as { txHash?: string };
   if (!refundResult.txHash) {
-    throw new Error(`Expected txHash in refundExpired response. Got: ${JSON.stringify(refundResult)}`);
+    throw new Error(
+      `Expected txHash in refundExpired response. Got: ${JSON.stringify(refundResult)}`
+    );
   }
   ok('txHash', refundResult.txHash);
 
@@ -101,7 +105,10 @@ async function main() {
 
   // --- Scenario B: bounty with a submission → refund_expired must NOT appear ---
 
-  log('B1/3', 'Creating second bounty task (30s window — submit immediately, then wait for expiry)...');
+  log(
+    'B1/3',
+    'Creating second bounty task (30s window — submit immediately, then wait for expiry)...'
+  );
   const { taskId: taskB } = (await x402Post(
     '/api/tasks',
     {

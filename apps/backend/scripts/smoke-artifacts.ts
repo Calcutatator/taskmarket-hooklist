@@ -8,7 +8,7 @@
  */
 import { createHash } from 'crypto';
 import { keccak256, toBytes } from 'viem';
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402.ts';
+import { log, ok, get, post, x402Post, getAccounts, registerDevice, API_URL } from './_x402.ts';
 
 type ArtifactListing = {
   id: string;
@@ -261,9 +261,7 @@ async function main() {
   ok('manifest deliverableHash', submission.deliverableHash);
 
   log('4/7', 'Verifying device-authenticated artifact preview...');
-  const device = (await post('/api/devices', {
-    walletAddress: worker.address,
-  })) as { deviceId: string; apiToken: string };
+  const device = await registerDevice(worker);
   await expectDevicePreviewDenied(taskId, submissionId, device.deviceId, device.apiToken);
   const devicePreviewUrl = await requestDevicePreview(
     taskId,

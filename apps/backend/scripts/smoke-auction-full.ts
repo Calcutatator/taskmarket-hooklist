@@ -41,11 +41,10 @@ async function smokeDutchFull(requester: Account, worker: Account) {
   ok('taskId', taskId);
 
   log('2/6', 'Worker accepts current clock price (auction-accept)...');
-  const acceptResult = (await x402Post(
-    `/api/tasks/${taskId}/bids/accept`,
-    { taskId },
-    worker
-  )) as { acceptedPrice: string; workerAddress: string };
+  const acceptResult = (await x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId }, worker)) as {
+    acceptedPrice: string;
+    workerAddress: string;
+  };
   ok('acceptedPrice', acceptResult.acceptedPrice);
 
   const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string };
@@ -131,11 +130,7 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   log('3/8', 'Testing --min-price rejection (minPrice=2000 > maxPrice=1000)...');
   let rejectionCaught = false;
   try {
-    await x402Post(
-      `/api/tasks/${taskId}/bids/accept`,
-      { taskId, minPrice: '2000' },
-      worker
-    );
+    await x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId, minPrice: '2000' }, worker);
   } catch (err) {
     if (err instanceof Error && err.message.includes('below your minimum')) {
       rejectionCaught = true;
@@ -152,16 +147,17 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   log('4/8', 'Verifying task is still open after rejected auction-accept...');
   const stillOpen = (await get(`/api/tasks/${taskId}`)) as { status: string };
   if (stillOpen.status !== 'open') {
-    throw new Error(`Task should still be open after rejected auction-accept, got ${stillOpen.status}`);
+    throw new Error(
+      `Task should still be open after rejected auction-accept, got ${stillOpen.status}`
+    );
   }
   ok('task still open', true);
 
   log('5/8', 'Worker accepts clock price without minPrice guard...');
-  const acceptResult = (await x402Post(
-    `/api/tasks/${taskId}/bids/accept`,
-    { taskId },
-    worker
-  )) as { acceptedPrice: string; workerAddress: string };
+  const acceptResult = (await x402Post(`/api/tasks/${taskId}/bids/accept`, { taskId }, worker)) as {
+    acceptedPrice: string;
+    workerAddress: string;
+  };
   ok('acceptedPrice', acceptResult.acceptedPrice);
 
   const claimedTask = (await get(`/api/tasks/${taskId}`)) as { status: string };

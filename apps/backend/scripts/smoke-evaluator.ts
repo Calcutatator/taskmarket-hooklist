@@ -283,8 +283,9 @@ async function main() {
   );
 
   results.push(
-    await runScenario('C — APPROVE verdict, worker appeals, dispute resolver settles → completed', () =>
-      scenarioC(requester, worker)
+    await runScenario(
+      'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
+      () => scenarioC(requester, worker)
     )
   );
 

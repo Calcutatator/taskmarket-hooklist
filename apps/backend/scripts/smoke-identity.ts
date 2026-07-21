@@ -17,9 +17,10 @@ async function main() {
 
   // ── Step 1: initial status ──────────────────────────────────────────────────
   log('1/5', 'Check initial identity status');
-  const status1 = (await get(
-    `/api/identity/status?address=${requester.address}`
-  )) as { registered: boolean; agentId: string | null };
+  const status1 = (await get(`/api/identity/status?address=${requester.address}`)) as {
+    registered: boolean;
+    agentId: string | null;
+  };
   ok('registered', status1.registered);
   ok('agentId', status1.agentId);
 
@@ -48,9 +49,10 @@ async function main() {
 
   // ── Step 4: status should now show registered ───────────────────────────────
   log('4/5', 'Check status after registration');
-  const status2 = (await get(
-    `/api/identity/status?address=${requester.address}`
-  )) as { registered: boolean; agentId: string | null };
+  const status2 = (await get(`/api/identity/status?address=${requester.address}`)) as {
+    registered: boolean;
+    agentId: string | null;
+  };
   ok('registered', status2.registered);
   ok('agentId', status2.agentId);
 

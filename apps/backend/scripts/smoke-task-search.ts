@@ -146,7 +146,9 @@ async function main() {
 
   // 4. Filter by reverse_dutch and reverse_english
   log('4/6', 'Filtering by reverse_dutch and reverse_english...');
-  const revDutchList = (await get('/api/tasks?auctionType=reverse_dutch&limit=100')) as TaskListResponse;
+  const revDutchList = (await get(
+    '/api/tasks?auctionType=reverse_dutch&limit=100'
+  )) as TaskListResponse;
   if (!revDutchList.tasks.some((t) => t.id === revDutchId)) {
     throw new Error(`reverse_dutch task not found in reverse_dutch-filtered list`);
   }
@@ -184,7 +186,10 @@ async function main() {
 
   const revDutchTask = revDutchList.tasks.find((t) => t.id === revDutchId);
   if (!revDutchTask) throw new Error('reverse_dutch task not in filtered list for field check');
-  ok('reverse_dutch: currentAuctionPrice field present', revDutchTask.currentAuctionPrice !== undefined);
+  ok(
+    'reverse_dutch: currentAuctionPrice field present',
+    revDutchTask.currentAuctionPrice !== undefined
+  );
 
   // English and reverse_english should have auctionBidCount
   const englishTask = englishList.tasks.find((t) => t.id === englishId);
@@ -193,7 +198,10 @@ async function main() {
 
   const revEnglishTask = revEnglishList.tasks.find((t) => t.id === revEnglishId);
   if (!revEnglishTask) throw new Error('reverse_english task not in filtered list for field check');
-  ok('reverse_english: auctionBidCount field present', typeof revEnglishTask.auctionBidCount === 'number');
+  ok(
+    'reverse_english: auctionBidCount field present',
+    typeof revEnglishTask.auctionBidCount === 'number'
+  );
 
   console.log('\n=== Task search smoke test passed ===');
 }

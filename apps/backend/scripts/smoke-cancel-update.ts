@@ -31,7 +31,11 @@ async function main() {
   ok('taskId', task1);
 
   log('1/7', 'Cancelling task...');
-  const cancelResult = (await x402Post(`/api/tasks/${task1}/cancel`, { taskId: task1 }, requester)) as {
+  const cancelResult = (await x402Post(
+    `/api/tasks/${task1}/cancel`,
+    { taskId: task1 },
+    requester
+  )) as {
     txHash: string;
   };
   ok('txHash', cancelResult.txHash);

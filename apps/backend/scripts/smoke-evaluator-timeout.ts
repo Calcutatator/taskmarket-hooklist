@@ -44,16 +44,16 @@ async function main() {
 
   // 3. Worker submits work.
   log('3/7', 'Worker submitting work...');
-  await x402Post(`/api/tasks/${taskId}/submit`, { taskId, deliverable: `0x${'ab'.repeat(32)}` }, worker);
+  await x402Post(
+    `/api/tasks/${taskId}/submit`,
+    { taskId, deliverable: `0x${'ab'.repeat(32)}` },
+    worker
+  );
   ok('submitted');
 
   // 4. Requester accepts submission — task should enter review state.
   log('4/7', 'Requester accepting submission (→ review)...');
-  await x402Post(
-    `/api/tasks/${taskId}/accept`,
-    { taskId, worker: worker.address },
-    requester
-  );
+  await x402Post(`/api/tasks/${taskId}/accept`, { taskId, worker: worker.address }, requester);
 
   // Give indexer a moment to process.
   await sleep(3000);

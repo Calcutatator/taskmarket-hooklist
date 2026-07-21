@@ -116,9 +116,7 @@ async function main() {
     await fs.rm(KEYSTORE_PATH, { force: true });
     const r4 = runCli('wallet import', { TASKMARKET_IMPORT_KEY: devKey });
     if (r4.code !== 0) {
-      throw new Error(
-        `wallet import (env var) exited ${r4.code}:\n${r4.stdout}\n${r4.stderr}`
-      );
+      throw new Error(`wallet import (env var) exited ${r4.code}:\n${r4.stdout}\n${r4.stderr}`);
     }
     const parsed4 = JSON.parse(r4.stdout.trim()) as {
       ok: boolean;

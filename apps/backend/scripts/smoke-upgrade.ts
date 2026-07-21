@@ -19,13 +19,7 @@
  *   SMOKE_UPGRADE=1 UPGRADE_OWNER_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-upgrade.ts
  */
-import {
-  createPublicClient,
-  createWalletClient,
-  http,
-  encodeFunctionData,
-  parseAbi,
-} from 'viem';
+import { createPublicClient, createWalletClient, http, encodeFunctionData, parseAbi } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia, anvil } from 'viem/chains';
 import { log, ok, get, x402Post, getAccounts, API_URL } from './_x402.ts';
@@ -50,10 +44,9 @@ async function main() {
     process.exit(0);
   }
 
-  const ownerKey = (
-    process.env.UPGRADE_OWNER_KEY ??
-    process.env.FORGE_DEV_PRIVATE_KEY
-  ) as `0x${string}` | undefined;
+  const ownerKey = (process.env.UPGRADE_OWNER_KEY ?? process.env.FORGE_DEV_PRIVATE_KEY) as
+    | `0x${string}`
+    | undefined;
 
   if (!ownerKey) {
     console.error('Set UPGRADE_OWNER_KEY or FORGE_DEV_PRIVATE_KEY (Diamond owner)');
@@ -119,7 +112,13 @@ async function main() {
       abi: DIAMOND_ABI,
       functionName: 'diamondCut',
       args: [
-        [{ facetAddress: ZERO_ADDRESS, action: ACTION_REMOVE, functionSelectors: [GET_TASK_SELECTOR] }],
+        [
+          {
+            facetAddress: ZERO_ADDRESS,
+            action: ACTION_REMOVE,
+            functionSelectors: [GET_TASK_SELECTOR],
+          },
+        ],
         ZERO_ADDRESS,
         '0x',
       ],
@@ -149,7 +148,13 @@ async function main() {
       abi: DIAMOND_ABI,
       functionName: 'diamondCut',
       args: [
-        [{ facetAddress: currentFacet, action: ACTION_ADD, functionSelectors: [GET_TASK_SELECTOR] }],
+        [
+          {
+            facetAddress: currentFacet,
+            action: ACTION_ADD,
+            functionSelectors: [GET_TASK_SELECTOR],
+          },
+        ],
         ZERO_ADDRESS,
         '0x',
       ],

@@ -145,7 +145,8 @@ async function main() {
     await fs.rm(altDecFile, { force: true });
     // Encrypt to a path with no .enc extension, then decrypt without --output → triggers .dec path
     const r4b = runCli(`encrypt ${plainFile} --output ${altEncFile}`);
-    if (r4b.code !== 0) throw new Error(`encrypt to alt path failed:\n${r4b.stdout}\n${r4b.stderr}`);
+    if (r4b.code !== 0)
+      throw new Error(`encrypt to alt path failed:\n${r4b.stdout}\n${r4b.stderr}`);
     const r4c = runCli(`decrypt ${altEncFile}`);
     if (r4c.code !== 0) throw new Error(`decrypt alt path failed:\n${r4c.stdout}\n${r4c.stderr}`);
     const p4c = parseResult(r4c.stdout);
@@ -204,7 +205,8 @@ async function main() {
     ok('recipient encrypt output', p8.data?.output);
 
     const r8d = runCli(`decrypt ${recipientEncFile} --output ${recipientDecFile}`);
-    if (r8d.code !== 0) throw new Error(`decrypt (recipient) failed:\n${r8d.stdout}\n${r8d.stderr}`);
+    if (r8d.code !== 0)
+      throw new Error(`decrypt (recipient) failed:\n${r8d.stdout}\n${r8d.stderr}`);
     const recipientDecrypted = await fs.readFile(recipientDecFile, 'utf8');
     if (recipientDecrypted !== PLAINTEXT) {
       throw new Error(`Recipient round-trip mismatch: "${recipientDecrypted}"`);
@@ -225,8 +227,13 @@ async function main() {
   } finally {
     // Cleanup temp files
     for (const f of [
-      plainFile, encFile, altEncFile, altDecFile, customOut,
-      recipientEncFile, recipientDecFile,
+      plainFile,
+      encFile,
+      altEncFile,
+      altDecFile,
+      customOut,
+      recipientEncFile,
+      recipientDecFile,
       path.join(tmpDir, 'tm-smoke-corrupted.enc'),
       path.join(tmpDir, 'tm-smoke-noext.dec'),
     ]) {

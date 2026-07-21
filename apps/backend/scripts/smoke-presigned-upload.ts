@@ -151,8 +151,7 @@ async function main() {
       throw new Error(`sha256Hash mismatch for ${artifact.fileName}`);
     if (artifact.keccak256Hash.toLowerCase() !== expected.keccak256Hash.toLowerCase())
       throw new Error(`keccak256Hash mismatch for ${artifact.fileName}`);
-    if (!artifact.storageUri)
-      throw new Error(`storageUri missing for ${artifact.fileName}`);
+    if (!artifact.storageUri) throw new Error(`storageUri missing for ${artifact.fileName}`);
     ok(`artifact metadata (${artifact.fileName})`, artifact.storageUri);
   }
 

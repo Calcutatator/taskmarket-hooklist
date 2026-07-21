@@ -100,7 +100,9 @@ async function main() {
     throw new Error(`Expected deliverableHash to be set, got: ${submission.deliverableHash}`);
   }
   if (!submission.deliverableHash.startsWith('0x')) {
-    throw new Error(`Expected deliverableHash to be 0x-prefixed, got: ${submission.deliverableHash}`);
+    throw new Error(
+      `Expected deliverableHash to be 0x-prefixed, got: ${submission.deliverableHash}`
+    );
   }
   if (submission.deliverableHash.toLowerCase() !== expectedHash.toLowerCase()) {
     throw new Error(
@@ -114,7 +116,9 @@ async function main() {
     throw new Error('Expected submission to include one artifact');
   }
   if (artifact.fileName !== 'submission-hash-smoke.txt') {
-    throw new Error(`Expected artifact fileName submission-hash-smoke.txt, got ${artifact.fileName}`);
+    throw new Error(
+      `Expected artifact fileName submission-hash-smoke.txt, got ${artifact.fileName}`
+    );
   }
   if (artifact.mimeType !== 'text/plain' || artifact.mediaKind !== 'text') {
     throw new Error(

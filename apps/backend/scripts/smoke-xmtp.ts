@@ -9,25 +9,13 @@
  * 5. Check status and send heartbeat
  * 6. Purge stale installations
  */
-import { randomUUID, randomBytes } from 'crypto';
-import { privateKeyToAccount } from 'viem/accounts';
-import { API_URL, get, log, ok, post } from './_x402';
-
-function randomPrivateKey(): `0x${string}` {
-  return `0x${randomBytes(32).toString('hex')}`;
-}
-
-async function registerDevice(walletAddress: string) {
-  return (await post('/api/devices', { walletAddress })) as {
-    deviceId: string;
-    apiToken: string;
-  };
-}
+import { randomUUID } from 'crypto';
+import { API_URL, get, log, ok, post, registerDevice, randomAccount } from './_x402';
 
 async function main() {
   // Use ephemeral wallets so there is no stale xmtpInboxId from a prior run
-  const agentA = privateKeyToAccount(randomPrivateKey());
-  const agentB = privateKeyToAccount(randomPrivateKey());
+  const agentA = randomAccount();
+  const agentB = randomAccount();
 
   console.log('=== Taskmarket Smoke Test - XMTP Control Plane ===');
   console.log('api:', API_URL);
@@ -35,8 +23,8 @@ async function main() {
   console.log('agentB:', agentB.address);
 
   log('1/6', 'Registering devices...');
-  const deviceA = await registerDevice(agentA.address);
-  const deviceB = await registerDevice(agentB.address);
+  const deviceA = await registerDevice(agentA);
+  const deviceB = await registerDevice(agentB);
   ok('deviceA', deviceA.deviceId);
   ok('deviceB', deviceB.deviceId);
 
@@ -69,16 +57,15 @@ async function main() {
     reason: 'smoke test peer',
   });
 
-  const policies = (await get(
-    `/api/xmtp/peers?deviceId=${encodeURIComponent(deviceA.deviceId)}`,
-    {
-      headers: { 'x-taskmarket-api-token': deviceA.apiToken },
-    }
-  )) as {
+  const policies = (await get(`/api/xmtp/peers?deviceId=${encodeURIComponent(deviceA.deviceId)}`, {
+    headers: { 'x-taskmarket-api-token': deviceA.apiToken },
+  })) as {
     policies: Array<{ peerInboxId: string; policy: string }>;
   };
 
-  if (!policies.policies.some((entry) => entry.peerInboxId === inboxB && entry.policy === 'allow')) {
+  if (
+    !policies.policies.some((entry) => entry.peerInboxId === inboxB && entry.policy === 'allow')
+  ) {
     throw new Error('Peer policy not found in list response');
   }
   ok('policy rows', policies.policies.length);
@@ -96,12 +83,9 @@ async function main() {
   ok('resolved inbox', resolved.inboxId);
 
   log('5/6', 'Checking status and heartbeat...');
-  const status = (await get(
-    `/api/xmtp/status?deviceId=${encodeURIComponent(deviceA.deviceId)}`,
-    {
-      headers: { 'x-taskmarket-api-token': deviceA.apiToken },
-    }
-  )) as {
+  const status = (await get(`/api/xmtp/status?deviceId=${encodeURIComponent(deviceA.deviceId)}`, {
+    headers: { 'x-taskmarket-api-token': deviceA.apiToken },
+  })) as {
     enabled: boolean;
     inboxId: string | null;
   };
