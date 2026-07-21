@@ -1,8 +1,12 @@
 # Task Visibility and Submission Visibility
 
-Status: Draft, no decision recorded yet
+Status: Phase 1 decided and shipped -- see ADR-0014 (task visibility, public-by-default
+  opt-in), ADR-0015 (Phase 1's scoped inbox self-auth), ADR-0016 (submission visibility as
+  an independent axis), ADR-0017 (`bids.myBids` signed self-auth), and ADR-0018
+  (`devices.register` signature proof), all Accepted. Phase 2 (submission visibility) and
+  Phase 3 (true private tasks) below are still open proposals, not decided.
 Owner: Taskmarket
-Last updated: 2026-07-20
+Last updated: 2026-07-21
 
 This is an RFC: a design proposal for discussion, not a decision record. Once a direction is
 chosen, the decision itself belongs in an ADR under `docs/adr/` (see `docs/adr/README.md`
@@ -443,13 +447,28 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   narrow signed-message self-authentication check on `agents.inbox` described in "What
   `agents.inbox` actually needs" above -- the one place in Phase 1 that touches
   authentication, a single scoped check, not the general `ctx.caller` framework below.
+  The filter itself lives in one shared module, `apps/backend/src/lib/task-visibility.ts`
+  (exports `taskNotUnlisted`, a drizzle `SQL` condition), imported by every query site
+  above rather than each one inlining its own `ne(tasks.taskVisibility, 'unlisted')` --
+  this is what keeps "what counts as excluded" defined once instead of drifting per
+  call site. See `apps/backend/test/unit/middleware/ogTags.test.ts` for unit coverage
+  that asserts the real shared condition (not just mock data) is present in a query's
+  rendered SQL.
 - **Phase 2:** a submission-specific role check -- `isRequester(caller, task)` /
   `isSubmittingWorker(caller, submission)` -- applied inside `submissions.listByTask`
   whenever `task.submissionVisibility !== 'public'`, plus a deterministic post-resolution
   branch per mode (`reveal_all`: show everything once ended; `winner_only`: show only
   `task_awards`-linked rows once ended; `never`: keep the role-gated view forever).
   Narrower than Phase 3's general `canView`: it only needs to answer "can this caller
-  see *this* submission," not "can this caller see the task at all."
+  see *this* submission," not "can this caller see the task at all." Follow the same
+  shared-module shape Phase 1 established: put these predicates in one place (e.g.
+  `apps/backend/src/lib/submission-visibility.ts`) rather than inlining the role/mode
+  branching inside `submissions.listByTask` itself, so any second call site Phase 2 or
+  Phase 3 adds imports the same predicate instead of re-deriving it. Task visibility and
+  submission visibility are independent axes with different shapes (a single boolean-ish
+  exclusion vs. a four-value, time-and-role-gated enum) -- there is no single predicate
+  that covers both, so the right reuse here is the *pattern* (one shared, tested module
+  per axis), not a shared function.
 - **Phase 3:** the general `canView(task, caller?)`: `true` if
   `task.taskVisibility === 'public'`, or `caller.address === task.requester`, or caller's
   address is `task.claimedBy` or appears in a `task_awards` row for this task (see the
