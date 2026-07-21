@@ -7,8 +7,20 @@
  *  3. Verify agentId returned
  *  4. Check status again — registered, same agentId
  *  5. Re-register — idempotent (alreadyRegistered: true, same agentId, no duplicate NFT)
+ *  6. Concurrent registration race: several devices registering at once must each land
+ *     on a distinct, non-null agentId
  */
-import { getAccounts, x402Post, get, log, ok, fail } from './_x402';
+import {
+  getAccounts,
+  x402Post,
+  get,
+  log,
+  ok,
+  fail,
+  randomAccount,
+  registerDevice,
+  sleep,
+} from './_x402';
 
 async function main() {
   const { requester } = getAccounts();
@@ -16,7 +28,7 @@ async function main() {
   console.log('wallet:', requester.address);
 
   // ── Step 1: initial status ──────────────────────────────────────────────────
-  log('1/5', 'Check initial identity status');
+  log('1/6', 'Check initial identity status');
   const status1 = (await get(`/api/identity/status?address=${requester.address}`)) as {
     registered: boolean;
     agentId: string | null;
@@ -29,7 +41,7 @@ async function main() {
   }
 
   // ── Step 2: register ────────────────────────────────────────────────────────
-  log('2/5', 'Register ERC-8004 identity (X402 0.001 USDC)');
+  log('2/6', 'Register ERC-8004 identity (X402 0.001 USDC)');
   const regResult = (await x402Post('/api/identity/register', {}, requester)) as {
     agentId: string;
     alreadyRegistered: boolean;
@@ -40,7 +52,7 @@ async function main() {
   if (!regResult.agentId) fail('register', 200, 'Missing agentId in response');
 
   // ── Step 3: verify agentId is a non-zero numeric string ───────────────────
-  log('3/5', 'Validate agentId format');
+  log('3/6', 'Validate agentId format');
   const agentIdNum = Number(regResult.agentId);
   if (!Number.isInteger(agentIdNum) || agentIdNum <= 0) {
     fail('agentId format', 200, `Expected positive integer, got: ${regResult.agentId}`);
@@ -48,7 +60,7 @@ async function main() {
   ok('agentId is valid', regResult.agentId);
 
   // ── Step 4: status should now show registered ───────────────────────────────
-  log('4/5', 'Check status after registration');
+  log('4/6', 'Check status after registration');
   const status2 = (await get(`/api/identity/status?address=${requester.address}`)) as {
     registered: boolean;
     agentId: string | null;
@@ -62,7 +74,7 @@ async function main() {
   }
 
   // ── Step 5: idempotency ─────────────────────────────────────────────────────
-  log('5/5', 'Re-register — should be idempotent');
+  log('5/6', 'Re-register — should be idempotent');
   const regResult2 = (await x402Post('/api/identity/register', {}, requester)) as {
     agentId: string;
     alreadyRegistered: boolean;
@@ -76,6 +88,52 @@ async function main() {
   if (regResult2.agentId !== regResult.agentId) {
     fail('agentId changed', 200, `Expected ${regResult.agentId}, got ${regResult2.agentId}`);
   }
+
+  // ── Step 6: concurrent registration race ────────────────────────────────────
+  // Regression coverage for a bug in createServerWallet() (apps/backend/src/lib/wallet.ts):
+  // the server wallet signs on-chain calls for many concurrent requests from this one
+  // address, and without a nonce manager, concurrent calls could read the same pending
+  // nonce -- only one landed, the rest failed with "Nonce provided for the transaction is
+  // lower than the current nonce of the account" and their device's background identity
+  // registration (devices.router.ts) silently failed forever (agentId stuck null).
+  // Reproduced with 5 concurrent registrations, all but one failing this way.
+  log('6/6', 'Concurrent registration race: 5 devices registering at once');
+  const CONCURRENCY = 5;
+  const accounts = Array.from({ length: CONCURRENCY }, () => randomAccount());
+  await Promise.all(accounts.map((account) => registerDevice(account)));
+
+  const agentIds = new Map<string, string>();
+  for (let attempt = 0; attempt < 15 && agentIds.size < CONCURRENCY; attempt++) {
+    if (attempt > 0) await sleep(2000);
+    for (const account of accounts) {
+      if (agentIds.has(account.address)) continue;
+      const raceStatus = (await get(`/api/identity/status?address=${account.address}`)) as {
+        agentId: string | null;
+      };
+      if (raceStatus.agentId) agentIds.set(account.address, raceStatus.agentId);
+    }
+  }
+
+  const missing = accounts.filter((a) => !agentIds.has(a.address));
+  if (missing.length > 0) {
+    fail(
+      'concurrent registration',
+      200,
+      `${missing.length}/${CONCURRENCY} accounts never got an agentId (stuck null): ` +
+        missing.map((a) => a.address).join(', ')
+    );
+  }
+  ok('every concurrent account got an agentId', Object.fromEntries(agentIds));
+
+  const raceValues = [...agentIds.values()];
+  if (new Set(raceValues).size !== raceValues.length) {
+    fail(
+      'concurrent registration',
+      200,
+      `Expected ${raceValues.length} distinct agentIds, got duplicates: ${raceValues.join(', ')}`
+    );
+  }
+  ok('all concurrent agentIds distinct', raceValues);
 
   console.log('\n✓ Identity smoke test passed\n');
 }
