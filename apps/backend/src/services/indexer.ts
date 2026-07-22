@@ -1104,7 +1104,12 @@ async function processIdentityEvents(fromBlock: bigint, toBlock: bigint): Promis
         // We keep the FIRST agentId associated with each wallet address.
         await db
           .insert(agents)
-          .values({ address: wallet, agentId: agentIdStr })
+          .values({
+            address: wallet,
+            agentId: agentIdStr,
+            identityRegistryAddress: IDENTITY_REGISTRY_ADDRESS.toLowerCase(),
+            chainId: config.CHAIN_ID,
+          })
           .onConflictDoNothing();
       }
     } catch (error) {
