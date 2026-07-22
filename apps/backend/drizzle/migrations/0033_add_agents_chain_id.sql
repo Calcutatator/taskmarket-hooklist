@@ -1,0 +1,15 @@
+-- Tracks which CHAIN_ID an agent's identity_registry_address (see migration 0032)
+-- was configured for. ERC-8004 identity registries are commonly deployed at the
+-- SAME address on every chain (a deterministic/CREATE2 deployment), so the
+-- registry address alone cannot distinguish "same registry, same chain" from
+-- "same address, different chain" -- identity.router.ts's register() endpoint
+-- now requires both to match before trusting a cached agentId.
+--
+-- IMPORTANT: this column (and identity_registry_address from migration 0032)
+-- will be NULL for every pre-existing row after this migration runs. Run
+-- `pnpm db:backfill-agent-registry-chain` (or `make db backfill-agent-registry-chain`)
+-- immediately after migrating and before serving real /identity/register
+-- traffic, or every existing agent's next registration call will look "stale"
+-- and mint a brand-new on-chain agentId, orphaning their original one and any
+-- reputation/feedback history tied to it.
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "chain_id" integer;

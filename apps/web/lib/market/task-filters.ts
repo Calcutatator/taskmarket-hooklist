@@ -1,3 +1,5 @@
+import { TaskStatus } from '@taskmarket/shared';
+
 import { compactAddress } from '@/lib/format';
 
 export const TASK_SORT_OPTIONS = [
@@ -19,6 +21,16 @@ function parseSort(value?: string): TaskSortValue {
   return TASK_SORT_VALUES.includes(value as TaskSortValue)
     ? (value as TaskSortValue)
     : DEFAULT_TASK_SORT;
+}
+
+// Query params are untrusted -- a stale bookmark, crafted URL, or crawler can put
+// anything in ?status=. Validate against the real TaskStatus enum (the backend's
+// tasks.list rejects anything else with a ZodError) and fall back to 'ALL' rather
+// than forwarding an invalid value through to the API.
+function parseStatus(value: string | undefined, fallback: string): string {
+  const candidate = value ?? fallback;
+  if (candidate === 'ALL') return 'ALL';
+  return TaskStatus.safeParse(candidate).success ? candidate : 'ALL';
 }
 
 export type TaskSearchParams = {
@@ -89,7 +101,7 @@ export function parseTaskFilters(
   params: TaskSearchParams,
   { defaultStatus = 'ALL' }: { defaultStatus?: string } = {}
 ): ParsedTaskFilters {
-  const status = params.status ?? defaultStatus;
+  const status = parseStatus(params.status, defaultStatus);
   const taskDropId = params.taskDropId?.trim() || undefined;
   const activeFilters: ActiveFilter[] = [];
 

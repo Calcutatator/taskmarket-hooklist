@@ -13,6 +13,7 @@
     "db:seed": "tsx drizzle/seed.ts",
     "db:studio": "drizzle-kit studio",
     "db:backfill-task-awards": "tsx scripts/backfill-task-awards.ts",
+    "db:backfill-agent-registry-chain": "tsx scripts/backfill-agent-registry-chain.ts",
     "clean": "rm -rf dist",
     "lint:check": "eslint src/",
     "lint:write": "eslint src/ --fix",
