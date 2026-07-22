@@ -1,0 +1,23 @@
+-- Fixes #208: agents.agent_id has no uniqueness guarantee, so a corrupted row can
+-- silently shadow a real agent's stats/reputation lookups. The known corruption
+-- mechanism (see indexer.ts's processIdentityEvents(), fixed in the same commit as
+-- this migration): the backend's own relayer wallet always ends up as the on-chain
+-- registry's agentWallet metadata for every identity it registers (register() is
+-- called with no arguments, signed by that relayer), so the indexer previously
+-- created a bogus agents row for the server's own address, permanently squatting on
+-- whichever agent_id was minted first and colliding with the real owner's row.
+--
+-- IMPORTANT: this CREATE UNIQUE INDEX fails outright if any duplicate, non-null
+-- agent_id values still exist in this database. Run
+-- `pnpm db:cleanup-agent-id-collisions` (or `make db cleanup-agent-id-collisions`,
+-- with a `dry-run` variant to preview first) BEFORE this migration applies --
+-- it nulls out agent_id specifically for the row matching this server's own
+-- relayer address, the one and only known source of this collision. A generic
+-- heuristic (e.g. "keep whichever row was updated first/last") was deliberately
+-- NOT used here: verified live that both the real and the bogus row can show
+-- identical all-default column values (a real registration with no task activity
+-- yet looks byte-for-byte like the bogus one), so guessing wrong risks silently
+-- nulling out a real user's legitimate agentId -- the same failure mode this fix
+-- exists to prevent. Targeting the server's own address by exact match has no
+-- such ambiguity: no real end user can ever be that address.
+CREATE UNIQUE INDEX IF NOT EXISTS idx_agents_agent_id_unique ON agents (agent_id) WHERE agent_id IS NOT NULL;

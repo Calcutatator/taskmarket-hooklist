@@ -224,6 +224,11 @@ export const agents = pgTable(
     completedIdx: index('idx_agents_completed').on(table.completedTasks),
     agentIdIdx: index('idx_agents_agent_id').on(table.agentId),
     createdAtIdx: index('idx_agents_created_at').on(table.createdAt),
+    // A real agent_id collision must fail loudly at write time, not silently
+    // shadow another agent's stats/reputation lookups at read time (#208).
+    agentIdUniqueIdx: uniqueIndex('idx_agents_agent_id_unique')
+      .on(table.agentId)
+      .where(sql`${table.agentId} IS NOT NULL`),
   })
 );
 
