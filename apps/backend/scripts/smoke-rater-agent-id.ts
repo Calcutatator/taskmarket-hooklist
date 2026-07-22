@@ -140,8 +140,13 @@ async function main() {
     toBlock: 'latest',
   });
   if (failureLogs.length > 0) {
+    // viem getLogs results carry bigint fields (blockNumber, etc.) that JSON.stringify
+    // throws on by default -- stringify with a replacer that renders them as strings.
+    const serializableLogs = JSON.stringify(failureLogs, (_key, value) =>
+      typeof value === 'bigint' ? value.toString() : value
+    );
     throw new Error(
-      `ReputationFeedbackFailed fired for this task -- the reputation registry rejected giveFeedback(): ${JSON.stringify(failureLogs)}`
+      `ReputationFeedbackFailed fired for this task -- the reputation registry rejected giveFeedback(): ${serializableLogs}`
     );
   }
   ok('ReputationFeedbackFailed not emitted', true);
