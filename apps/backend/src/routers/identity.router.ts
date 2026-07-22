@@ -26,7 +26,9 @@ export const identityRouter = router({
       }
 
       const registeredVia = input.source ?? 'cli';
-      const registryAddress = getServerConfig().ERC8004_IDENTITY_REGISTRY.toLowerCase();
+      const config = getServerConfig();
+      const registryAddress = config.ERC8004_IDENTITY_REGISTRY.toLowerCase();
+      const chainId = config.CHAIN_ID;
 
       // Idempotent: return existing agentId if already registered. Case-insensitive
       // and preferring a row with agent_id set, to tolerate a legacy mixed-case row
@@ -36,6 +38,7 @@ export const identityRouter = router({
           address: agents.address,
           agentId: agents.agentId,
           identityRegistryAddress: agents.identityRegistryAddress,
+          chainId: agents.chainId,
         })
         .from(agents)
         .where(lowerAddressEq(payer))
@@ -43,11 +46,18 @@ export const identityRouter = router({
         .limit(1);
 
       // Only trust the cached agentId if it was minted against the currently
-      // configured registry contract. A cached agentId from a different (e.g.
-      // since-redeployed) registry is not just stale -- it may not resolve to
-      // this address, or to any agent, on the live registry at all -- so it
-      // must not be served as if it were still valid.
-      const cacheIsFresh = existing[0]?.identityRegistryAddress?.toLowerCase() === registryAddress;
+      // configured registry contract AND chain. A cached agentId from a
+      // different (e.g. since-redeployed) registry is not just stale -- it may
+      // not resolve to this address, or to any agent, on the live registry at
+      // all -- so it must not be served as if it were still valid. Registry
+      // address alone isn't enough: ERC-8004 identity registries are commonly
+      // deployed at the SAME address on every chain (a deterministic/CREATE2
+      // deployment), so a database ever repointed from one chain to another
+      // without a fresh DB would otherwise pass an address-only check despite
+      // the cached agentId belonging to a completely different chain.
+      const cacheIsFresh =
+        existing[0]?.identityRegistryAddress?.toLowerCase() === registryAddress &&
+        existing[0]?.chainId === chainId;
 
       if (existing[0]?.agentId && cacheIsFresh) {
         return { agentId: existing[0].agentId, alreadyRegistered: true };
@@ -69,6 +79,7 @@ export const identityRouter = router({
           .set({
             agentId: agentIdStr,
             identityRegistryAddress: registryAddress,
+            chainId,
             updatedAt: new Date(),
           })
           .where(sql`${agents.address} = ${existing[0].address}`);
@@ -79,6 +90,7 @@ export const identityRouter = router({
             address: payer,
             agentId: agentIdStr,
             identityRegistryAddress: registryAddress,
+            chainId,
             registeredVia,
           })
           .onConflictDoNothing();

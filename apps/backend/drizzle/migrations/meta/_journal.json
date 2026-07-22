@@ -239,6 +239,13 @@
       "when": 1784690001000,
       "tag": "0032_add_agents_identity_registry_address",
       "breakpoints": true
+    },
+    {
+      "idx": 34,
+      "version": "7",
+      "when": 1784733393000,
+      "tag": "0033_add_agents_chain_id",
+      "breakpoints": true
     }
   ]
 }

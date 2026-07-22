@@ -32,7 +32,7 @@ help:
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain)"
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
@@ -569,8 +569,14 @@ db:
 		cd apps/backend && pnpm db:studio; \
 	elif [ "$(word 1,$(ARGS))" = "backfill-task-awards" ]; then \
 		cd apps/backend && pnpm db:backfill-task-awards; \
+	elif [ "$(word 1,$(ARGS))" = "backfill-agent-registry-chain" ]; then \
+		if [ "$(word 2,$(ARGS))" = "dry-run" ]; then \
+			cd apps/backend && pnpm db:backfill-agent-registry-chain:dry-run; \
+		else \
+			cd apps/backend && pnpm db:backfill-agent-registry-chain; \
+		fi; \
 	else \
-		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards>"; \
+		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain [dry-run]>"; \
 		exit 1; \
 	fi
 

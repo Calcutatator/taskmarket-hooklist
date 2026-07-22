@@ -197,6 +197,14 @@ export const agents = pgTable(
     // has since changed (e.g. a redeployed registry) and re-register instead of
     // silently trusting a no-longer-valid cache.
     identityRegistryAddress: text('identity_registry_address'),
+    // The CHAIN_ID the registry above was configured for. ERC-8004 identity
+    // registries are commonly deployed at the SAME address on every chain (a
+    // deterministic/CREATE2 deployment), so identityRegistryAddress alone
+    // cannot distinguish "same registry, same chain" from "same address,
+    // different chain" -- e.g. a database ever repointed from testnet to
+    // mainnet without a fresh DB. Both fields must match for a cached
+    // agentId to be trusted.
+    chainId: integer('chain_id'),
     completedTasks: integer('completed_tasks').notNull().default(0),
     ratedTasks: integer('rated_tasks').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
