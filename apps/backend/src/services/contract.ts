@@ -959,7 +959,12 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   const fromReceipt = extractAgentId(receipt.logs);
   if (fromReceipt !== null) return fromReceipt;
 
-  // Logs missing from receipt — RPC lag. Re-fetch via getLogs for the specific block.
+  // Logs missing from receipt — RPC lag. Re-fetch via getLogs for the specific block, then
+  // filter down to this transaction's own logs before scanning. Without the transactionHash
+  // filter, a concurrent registerIdentity() call landing in the same block would return every
+  // Registered event in the block, and extractAgentId would happily return the FIRST one it
+  // finds -- which can belong to a different caller's transaction, silently handing back the
+  // wrong agentId.
   for (let attempt = 0; attempt < 5; attempt++) {
     await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
     const logs = await publicClient.getLogs({
@@ -967,7 +972,8 @@ export async function contractRegisterIdentity(): Promise<bigint> {
       fromBlock: receipt.blockNumber,
       toBlock: receipt.blockNumber,
     });
-    const found = extractAgentId(logs);
+    const ownLogs = logs.filter((log) => log.transactionHash === hash);
+    const found = extractAgentId(ownLogs);
     if (found !== null) return found;
   }
 
