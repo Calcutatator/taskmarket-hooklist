@@ -77,3 +77,4 @@ apps/web/test-results/
 # Tool-generated config snapshots
 *.timestamp-*.mjs
 *.bundled_*.mjs
+.claude/worktrees/
