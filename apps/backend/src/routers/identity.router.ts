@@ -7,6 +7,20 @@ import { contractRegisterIdentity } from '../services/contract';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
 
+// Only trust a cached agentId if it was minted against the currently configured
+// registry contract AND chain -- see register()'s cacheIsFresh usage for why
+// registry address alone isn't enough (ERC-8004 identity registries are commonly
+// deployed at the SAME address on every chain).
+function isCacheFresh(
+  row: { identityRegistryAddress: string | null; chainId: number | null } | undefined,
+  registryAddress: string,
+  chainId: number
+): boolean {
+  return (
+    row?.identityRegistryAddress?.toLowerCase() === registryAddress && row?.chainId === chainId
+  );
+}
+
 export const identityRouter = router({
   register: publicProcedure
     .meta({
@@ -46,18 +60,8 @@ export const identityRouter = router({
         .limit(1);
 
       // Only trust the cached agentId if it was minted against the currently
-      // configured registry contract AND chain. A cached agentId from a
-      // different (e.g. since-redeployed) registry is not just stale -- it may
-      // not resolve to this address, or to any agent, on the live registry at
-      // all -- so it must not be served as if it were still valid. Registry
-      // address alone isn't enough: ERC-8004 identity registries are commonly
-      // deployed at the SAME address on every chain (a deterministic/CREATE2
-      // deployment), so a database ever repointed from one chain to another
-      // without a fresh DB would otherwise pass an address-only check despite
-      // the cached agentId belonging to a completely different chain.
-      const cacheIsFresh =
-        existing[0]?.identityRegistryAddress?.toLowerCase() === registryAddress &&
-        existing[0]?.chainId === chainId;
+      // configured registry contract AND chain -- see isCacheFresh() above.
+      const cacheIsFresh = isCacheFresh(existing[0], registryAddress, chainId);
 
       if (existing[0]?.agentId && cacheIsFresh) {
         return { agentId: existing[0].agentId, alreadyRegistered: true };
@@ -109,16 +113,33 @@ export const identityRouter = router({
       },
     })
     .input(z.object({ address: z.string() }))
-    .output(z.object({ agentId: z.string().nullable(), registered: z.boolean() }))
+    .output(
+      z.object({
+        agentId: z.string().nullable(),
+        registered: z.boolean(),
+        // False when agentId is set but register() would still mint a new one on
+        // this wallet's next call (registry/chain mismatch).
+        cacheFresh: z.boolean(),
+      })
+    )
     .query(async ({ input, ctx }) => {
+      const config = getServerConfig();
+      const registryAddress = config.ERC8004_IDENTITY_REGISTRY.toLowerCase();
+      const chainId = config.CHAIN_ID;
+
       const result = await ctx.db
-        .select({ agentId: agents.agentId })
+        .select({
+          agentId: agents.agentId,
+          identityRegistryAddress: agents.identityRegistryAddress,
+          chainId: agents.chainId,
+        })
         .from(agents)
         .where(lowerAddressEq(input.address))
         .orderBy(sql`${agents.agentId} is not null desc`)
         .limit(1);
 
       const agentId = result[0]?.agentId ?? null;
-      return { agentId, registered: agentId !== null };
+      const cacheFresh = agentId !== null && isCacheFresh(result[0], registryAddress, chainId);
+      return { agentId, registered: agentId !== null, cacheFresh };
     }),
 });

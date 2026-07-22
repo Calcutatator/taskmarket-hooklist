@@ -116,9 +116,7 @@ describe('identity router', () => {
     it('re-registers when the cached row has an agentId but no identityRegistryAddress or chainId at all (pre-migration row)', async () => {
       const ctx = createMockCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
-        makeChain([
-          { address: PAYER, agentId: '7', identityRegistryAddress: null, chainId: null },
-        ])
+        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: null, chainId: null }])
       );
       const updateChain = makeChain();
       ctx.db.update.mockReturnValueOnce(updateChain);
@@ -161,7 +159,7 @@ describe('identity router', () => {
 
       const result = await caller.status({ address: PAYER.toUpperCase() });
 
-      expect(result).toEqual({ agentId: '5', registered: true });
+      expect(result).toEqual({ agentId: '5', registered: true, cacheFresh: false });
     });
 
     it('reports unregistered when no row matches', async () => {
@@ -171,7 +169,19 @@ describe('identity router', () => {
 
       const result = await caller.status({ address: PAYER });
 
-      expect(result).toEqual({ agentId: null, registered: false });
+      expect(result).toEqual({ agentId: null, registered: false, cacheFresh: false });
+    });
+
+    it('reports cacheFresh: true when identityRegistryAddress/chainId match', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ agentId: '5', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID }])
+      );
+      const caller = identityRouter.createCaller(ctx);
+
+      const result = await caller.status({ address: PAYER });
+
+      expect(result).toEqual({ agentId: '5', registered: true, cacheFresh: true });
     });
   });
 });
