@@ -21,6 +21,7 @@ import {
 } from '../db/schema';
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
+import { createServerWallet } from '../lib/wallet';
 import { shouldStartEvaluatorReview } from './task-evaluator';
 import {
   projectSettlementLogs,
@@ -51,6 +52,12 @@ const MAX_BLOCK_RANGE = 10_000n;
 
 const IDENTITY_REGISTRY_ADDRESS = config.ERC8004_IDENTITY_REGISTRY as `0x${string}`;
 const ERC8004_SEED_BLOCK = config.ERC8004_SEED_BLOCK;
+
+// This server's own relayer address -- every on-chain identity registration is
+// signed by this wallet (see contractRegisterIdentity()), so the registry's
+// agentWallet metadata always defaults to it, never the real end user's
+// address. See the usage in processIdentityEvents() below (issue #208).
+const serverAddress = normalizeAddress(createServerWallet().address);
 
 const DREAMS_HOOK_ADDRESS = config.DREAMS_HOOK_ADDRESS as `0x${string}` | undefined;
 const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
@@ -1100,11 +1107,30 @@ async function processIdentityEvents(fromBlock: bigint, toBlock: bigint): Promis
         const wallet = normalizeAddress(
           '0x' + (metadataValue as string).slice(2, 42)
         ) as `0x${string}`;
+
+        // identity.router.ts's register() calls the registry's register() with no
+        // arguments, signed by this server's own relayer wallet (createServerWallet())
+        // -- so the registry defaults agentWallet metadata to msg.sender, which is
+        // ALWAYS this server's own address, never the real end user's. The real
+        // requester/worker <-> agentId association is tracked purely off-chain, by
+        // identity.router.ts's own insert/update using the actual payer address.
+        // Treating this MetadataSet event as authoritative for the server's own
+        // address would create a bogus agents row that then permanently squats on
+        // whichever agentId happened to be minted first -- colliding with the real
+        // owner's row the moment that same agentId gets legitimately assigned
+        // through identity.router.ts (see issue #208).
+        if (wallet === serverAddress) continue;
+
         // onConflictDoNothing: a wallet can own multiple agentIds (ERC-721 allows it).
         // We keep the FIRST agentId associated with each wallet address.
         await db
           .insert(agents)
-          .values({ address: wallet, agentId: agentIdStr })
+          .values({
+            address: wallet,
+            agentId: agentIdStr,
+            identityRegistryAddress: IDENTITY_REGISTRY_ADDRESS.toLowerCase(),
+            chainId: config.CHAIN_ID,
+          })
           .onConflictDoNothing();
       }
     } catch (error) {
