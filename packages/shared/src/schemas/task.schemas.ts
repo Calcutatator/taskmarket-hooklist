@@ -301,6 +301,7 @@ export const TaskListInputSchema = z.object({
   deadlineHours: z.number().int().positive().optional(),
   requester: z.string().optional(),
   worker: z.string().optional(),
+  taskDropId: z.string().trim().min(1).optional(),
   sort: z
     .enum(['newest', 'reward_desc', 'reward_asc', 'deadline_asc'])
     .optional()

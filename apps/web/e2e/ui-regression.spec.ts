@@ -249,7 +249,9 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
 }, testInfo) => {
   test.skip(!testInfo.project.name.includes('mobile'), 'Mobile-only task browse layout.');
 
-  await page.goto('/dashboard/tasks');
+  await page.goto(
+    '/dashboard/tasks?taskDropId=launch-drop&cursor=2026-07-21T00%3A00%3A00.000Z&cursorStack=2026-07-22T00%3A00%3A00.000Z'
+  );
 
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
@@ -264,10 +266,35 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
   expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
 
   await filterButton.click();
-  await expect(page.getByRole('dialog', { name: /Task filters/i })).toBeVisible();
+  const filterDialog = page.getByRole('dialog', { name: /Task filters/i });
+  await expect(filterDialog).toBeVisible();
 
-  await page.getByRole('link', { name: /^auction$/i }).click();
-  await expect(page).toHaveURL(/\/dashboard\/tasks\?mode=auction/);
+  const taskDropInput = filterDialog.getByLabel(/Task Drop ID/i);
+  await expect(taskDropInput).toHaveValue('launch-drop');
+  await expect(filterDialog.getByRole('link', { name: /^auction$/i })).toHaveAttribute(
+    'href',
+    '/dashboard/tasks?mode=auction&taskDropId=launch-drop'
+  );
+  await filterDialog.getByRole('button', { name: /Apply filters/i }).click();
+  await expect
+    .poll(() => {
+      const currentUrl = new URL(page.url());
+      return {
+        cursor: currentUrl.searchParams.get('cursor'),
+        cursorStack: currentUrl.searchParams.get('cursorStack'),
+        pathname: currentUrl.pathname,
+        taskDropId: currentUrl.searchParams.get('taskDropId'),
+      };
+    })
+    .toEqual({
+      cursor: null,
+      cursorStack: null,
+      pathname: '/dashboard/tasks',
+      taskDropId: 'launch-drop',
+    });
+  const taskList = page.getByRole('list', { name: /Task (cards|gallery)/i });
+  await expect(taskList.getByText(/Bounty - open submission pool/i)).toBeVisible();
+  await expect(taskList.getByText(/Claim - first worker reserves/i)).toHaveCount(0);
 
   await expectNoHorizontalOverflow(page);
 });

@@ -333,14 +333,19 @@ describe('Task marketplace components', () => {
     render(
       <TaskListPageContent
         activeFilters={[]}
-        filterParams={{ selectedMode: 'auction', selectedSort: 'newest', selectedStatus: 'ALL' }}
+        filterParams={{
+          selectedMode: 'auction',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+          taskDropId: 'launch-drop',
+        }}
         tasks={[task]}
       />
     );
 
     expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&sort=reward_desc'
+      '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc'
     );
   });
 
@@ -352,6 +357,7 @@ describe('Task marketplace components', () => {
           selectedMode: 'auction',
           selectedSort: 'newest',
           selectedStatus: 'open',
+          taskDropId: 'launch-drop',
         }}
         pagination={{
           currentCursor: '2026-06-10T09:00:00.000Z',
@@ -370,15 +376,15 @@ describe('Task marketplace components', () => {
     );
     expect(within(pagination).getByRole('link', { name: /go to previous page/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&cursor=2026-06-11T09%3A00%3A00.000Z'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&cursor=2026-06-11T09%3A00%3A00.000Z'
     );
     expect(within(pagination).getByRole('link', { name: /go to next page/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
     );
     expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&sort=reward_desc'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&sort=reward_desc'
     );
   });
 
@@ -411,17 +417,23 @@ describe('Task marketplace components', () => {
         selectedMode="auction"
         selectedStatus="open"
         tags="react"
+        taskDropId="launch-drop"
       />
     );
     expect(screen.getByRole('link', { name: /all modes/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?status=open&tags=react&minReward=2&maxReward=20&deadlineHours=72'
+      '/dashboard/tasks?status=open&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72'
     );
     expect(screen.getByRole('link', { name: /all statuses/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&tags=react&minReward=2&maxReward=20&deadlineHours=72'
+      '/dashboard/tasks?mode=auction&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72'
+    );
+    expect(screen.getByRole('link', { name: /^human$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&status=open&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72&actor=human'
     );
     expect(screen.getByLabelText(/tags/i)).toHaveValue('react');
+    expect(screen.getByLabelText(/task drop id/i)).toHaveValue('launch-drop');
     expect(screen.getByLabelText(/min reward/i)).toHaveValue(2);
     expect(screen.getByLabelText(/max reward/i)).toHaveValue(20);
     expect(screen.getByRole('link', { name: /clear filters/i })).toHaveAttribute(

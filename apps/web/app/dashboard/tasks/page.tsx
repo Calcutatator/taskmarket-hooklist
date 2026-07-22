@@ -2,7 +2,7 @@ import type { Metadata } from 'next';
 
 import { TaskListPageContent } from '@/components/market/tasks';
 import { ApiConnectionError, fetchTasks } from '@/lib/api/server';
-import { parseTaskFilters } from '@/lib/market/task-filters';
+import { parseTaskFilters, type TaskSearchParams } from '@/lib/market/task-filters';
 import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
@@ -13,20 +13,7 @@ export const metadata: Metadata = buildDashboardPageMetadata({
 });
 
 type TasksPageProps = {
-  searchParams: Promise<{
-    actor?: string;
-    cursor?: string;
-    cursorStack?: string;
-    deadlineHours?: string;
-    maxReward?: string;
-    minReward?: string;
-    mode?: string;
-    requester?: string;
-    sort?: string;
-    status?: string;
-    tags?: string;
-    worker?: string;
-  }>;
+  searchParams: Promise<TaskSearchParams>;
 };
 
 export default async function TasksPage({ searchParams }: TasksPageProps) {
@@ -52,6 +39,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
       sort: filters.sort,
       status: filters.status,
       tags: filters.tags,
+      taskDropId: filters.taskDropId,
       worker: filters.worker,
     });
   } catch (error) {
@@ -74,6 +62,7 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         selectedSort: filters.selectedSort,
         selectedStatus: filters.selectedStatus,
         tags: params.tags,
+        taskDropId: filters.taskDropId,
       }}
       pagination={{
         currentCursor: params.cursor,

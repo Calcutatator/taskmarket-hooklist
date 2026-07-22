@@ -41,11 +41,24 @@ const officialTaskDropOwnerAddresses = z
     return uniqueAddresses;
   });
 
+const databaseUrlSchema = z
+  .string()
+  .trim()
+  .min(1, 'DATABASE_URL is required')
+  .url('DATABASE_URL must be a valid URL')
+  .refine((value) => ['postgres:', 'postgresql:'].includes(new URL(value).protocol), {
+    message: 'DATABASE_URL must use the postgres or postgresql protocol',
+  });
+
+const optionalDatabaseEnvironmentSchema = z.object({
+  DATABASE_URL: databaseUrlSchema.optional(),
+});
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
     PORT: z.coerce.number().default(3000),
-    DATABASE_URL: z.string().min(1, 'DATABASE_URL is required'),
+    DATABASE_URL: databaseUrlSchema,
     BASE_RPC_URL: z.string().url('BASE_RPC_URL must be a valid URL'),
     CONTRACT_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid contract address'),
     CONTRACT_DEPLOY_BLOCK: z.coerce.number().default(0),
@@ -219,6 +232,20 @@ const envSchema = z
   });
 
 export type Env = z.infer<typeof envSchema>;
+
+/**
+ * Returns the validated database URL for integration harnesses that need to
+ * skip safely when PostgreSQL is not provisioned. Application code must use
+ * getServerConfig() so the complete server environment is validated.
+ */
+export function getOptionalDatabaseUrl(): string | undefined {
+  const result = optionalDatabaseEnvironmentSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new Error(`Invalid optional database configuration: ${result.error.message}`);
+  }
+
+  return result.data.DATABASE_URL;
+}
 
 export function getServerConfig(): Env {
   const result = envSchema.safeParse(process.env);

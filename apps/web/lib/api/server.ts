@@ -148,6 +148,7 @@ export async function fetchTasks(searchParams?: {
   maxReward?: string;
   deadlineHours?: number;
   requester?: string;
+  taskDropId?: string;
   worker?: string;
   sort?: string;
 }) {
@@ -187,6 +188,9 @@ export async function fetchTasks(searchParams?: {
   }
   if (searchParams?.requester) {
     params.set('requester', searchParams.requester);
+  }
+  if (searchParams?.taskDropId) {
+    params.set('taskDropId', searchParams.taskDropId);
   }
   if (searchParams?.worker) {
     params.set('worker', searchParams.worker);

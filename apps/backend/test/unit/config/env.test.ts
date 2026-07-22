@@ -1,5 +1,5 @@
 import { describe, it, expect, beforeEach, afterEach, vi } from 'vitest';
-import { getServerConfig } from '../../../src/config/env';
+import { getOptionalDatabaseUrl, getServerConfig } from '../../../src/config/env';
 
 const REQUIRED_ENV = {
   DATABASE_URL: 'postgres://postgres:postgres@localhost:5432/taskmarket',
@@ -9,6 +9,36 @@ const REQUIRED_ENV = {
   USDC_TOKEN_ADDRESS: '0x2222222222222222222222222222222222222222',
   SERVER_PRIVATE_KEY: '0x1111111111111111111111111111111111111111111111111111111111111111',
 };
+
+describe('getOptionalDatabaseUrl', () => {
+  const originalEnv = { ...process.env };
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+  });
+
+  it('returns undefined when integration PostgreSQL is not provisioned', () => {
+    delete process.env.DATABASE_URL;
+
+    expect(getOptionalDatabaseUrl()).toBeUndefined();
+  });
+
+  it('normalizes a configured PostgreSQL URL', () => {
+    process.env.DATABASE_URL = '  postgresql://taskmarket:taskmarket@localhost:5432/test  ';
+
+    expect(getOptionalDatabaseUrl()).toBe(
+      'postgresql://taskmarket:taskmarket@localhost:5432/test'
+    );
+  });
+
+  it('rejects a non-PostgreSQL URL', () => {
+    process.env.DATABASE_URL = 'https://example.com/database';
+
+    expect(() => getOptionalDatabaseUrl()).toThrow(
+      'DATABASE_URL must use the postgres or postgresql protocol'
+    );
+  });
+});
 
 describe('getServerConfig XMTP env parsing', () => {
   const originalEnv = { ...process.env };

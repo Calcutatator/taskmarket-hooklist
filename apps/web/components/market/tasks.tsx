@@ -893,6 +893,7 @@ type TaskFilterControlsProps = {
   selectedSort?: string;
   selectedStatus?: 'ALL' | TaskStatusType | string;
   tags?: string;
+  taskDropId?: string;
 };
 
 // Filter options are radio-group facts, not actions: quiet text rows keep the rail
@@ -918,6 +919,7 @@ function TaskFilterControls({
   selectedSort = 'newest',
   selectedStatus = 'ALL',
   tags = '',
+  taskDropId = '',
 }: TaskFilterControlsProps) {
   const currentFilters: TaskSearchParams = {
     actor: selectedActor,
@@ -928,6 +930,7 @@ function TaskFilterControls({
     sort: selectedSort,
     status: selectedStatus,
     tags,
+    taskDropId,
   };
 
   return (
@@ -988,6 +991,15 @@ function TaskFilterControls({
         {selectedSort !== 'newest' ? (
           <input name="sort" type="hidden" value={selectedSort} />
         ) : null}
+        <div className="grid gap-2">
+          <Label htmlFor={`task-filter-${idPrefix}-task-drop`}>Task Drop ID</Label>
+          <Input
+            defaultValue={taskDropId}
+            id={`task-filter-${idPrefix}-task-drop`}
+            name="taskDropId"
+            placeholder="drop_..."
+          />
+        </div>
         <div className="grid gap-2">
           <Label htmlFor={`task-filter-${idPrefix}-tags`}>Tags</Label>
           <Input
@@ -1079,7 +1091,7 @@ function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>
         <DrawerHeader>
           <DrawerTitle>Task filters</DrawerTitle>
           <DrawerDescription id="mobile-task-filter-description">
-            Narrow open tasks by mode, status, actor, reward, and deadline.
+            Narrow open tasks by Task Drop, mode, status, actor, reward, and deadline.
           </DrawerDescription>
         </DrawerHeader>
         <div className="overflow-y-auto px-4 pb-4">
@@ -1223,6 +1235,7 @@ export function TaskListPageContent({
     selectedSort: TaskSortValue;
     selectedStatus: string;
     tags?: string;
+    taskDropId?: string;
   };
   listHref?: string;
   pagination?: TaskPaginationState;
@@ -1236,6 +1249,7 @@ export function TaskListPageContent({
     mode: filterParams.selectedMode,
     status: filterParams.selectedStatus,
     tags: filterParams.tags,
+    taskDropId: filterParams.taskDropId,
   };
   const paginationFilters: TaskSearchParams = {
     ...sortFilters,
@@ -1261,6 +1275,7 @@ export function TaskListPageContent({
         selectedSort={filterParams.selectedSort}
         selectedStatus={filterParams.selectedStatus}
         tags={filterParams.tags}
+        taskDropId={filterParams.taskDropId}
       />
       <section
         aria-label="Task list"
@@ -1280,6 +1295,7 @@ export function TaskListPageContent({
                 selectedSort={filterParams.selectedSort}
                 selectedStatus={filterParams.selectedStatus}
                 tags={filterParams.tags}
+                taskDropId={filterParams.taskDropId}
               />
             </div>
             <Button asChild>

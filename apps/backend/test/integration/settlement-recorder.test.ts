@@ -1,11 +1,6 @@
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, describe, expect, it } from 'vitest';
-import * as schema from '../../src/db/schema';
 import {
   agents,
   indexedEvents,
@@ -17,20 +12,11 @@ import {
 import { processIndexedEvent } from '../../src/services/indexer-event';
 import { recordRequesterReputationEvent } from '../../src/services/requester-reputation-recorder';
 import { recordTaskSettlement } from '../../src/services/settlement-recorder';
+import { createIsolatedMigratedDatabase } from '../helpers/integration-database';
 
-const connectionString = process.env.DATABASE_URL;
-const describeWithDatabase = connectionString ? describe : describe.skip;
-
-const testDatabaseName = `settlement_${randomUUID().replaceAll('-', '').slice(0, 20)}`;
-// Falls back to a placeholder URL when DATABASE_URL is unset so client
-// construction never throws during describe.skip's synchronous collection
-// pass -- the clients are never connected to since every test is skipped.
-const testDatabaseUrl = new URL(connectionString ?? 'postgres://localhost:5432/placeholder');
-testDatabaseUrl.pathname = `/${testDatabaseName}`;
-const adminClient = postgres(connectionString ?? testDatabaseUrl.toString(), { max: 1 });
-const queryClient = postgres(testDatabaseUrl.toString(), { max: 12 });
-const database = drizzle(queryClient, { schema });
-const migrationsFolder = fileURLToPath(new URL('../../drizzle/migrations', import.meta.url));
+const isolatedDatabase = createIsolatedMigratedDatabase('settlement', { maxConnections: 12 });
+const describeWithDatabase = isolatedDatabase.isAvailable ? describe : describe.skip;
+const { database } = isolatedDatabase;
 
 const taskIds: string[] = [];
 const workerAddresses: string[] = [];
@@ -38,8 +24,7 @@ const reputationTaskIds: string[] = [];
 
 describeWithDatabase('settlement recorder', () => {
   beforeAll(async () => {
-    await adminClient.unsafe(`CREATE DATABASE "${testDatabaseName}"`);
-    await migrate(database, { migrationsFolder });
+    await isolatedDatabase.start();
   });
 
   afterEach(async () => {
@@ -60,9 +45,7 @@ describeWithDatabase('settlement recorder', () => {
   });
 
   afterAll(async () => {
-    await queryClient.end();
-    await adminClient.unsafe(`DROP DATABASE "${testDatabaseName}"`);
-    await adminClient.end();
+    await isolatedDatabase.stop();
   });
 
   it('records every duplicate-recipient award exactly once under concurrent replay', async () => {

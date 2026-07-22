@@ -204,6 +204,11 @@ The database client is created in `src/db/client.ts` using `drizzle(pool)`.
 
 All environment variables are validated in `src/config/env.ts` using a Zod schema. Import `getServerConfig()` wherever env vars are needed; never read `process.env` directly.
 
+The sole exception is an integration test that must skip safely when PostgreSQL is
+not provisioned. Those tests use the shared `test/helpers/integration-database.ts`
+fixture, which obtains the optional URL through `getOptionalDatabaseUrl()` in
+`src/config/env.ts`. Test files and helpers must not inspect `process.env` directly.
+
 Key env vars:
 
 | Variable | Default | Description |

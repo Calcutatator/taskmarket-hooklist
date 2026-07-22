@@ -1,9 +1,5 @@
 import { randomUUID } from 'node:crypto';
-import { fileURLToPath } from 'node:url';
 import { eq } from 'drizzle-orm';
-import { drizzle } from 'drizzle-orm/postgres-js';
-import { migrate } from 'drizzle-orm/postgres-js/migrator';
-import postgres from 'postgres';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
 // indexer.ts reads getServerConfig() eagerly at module scope (for the public
@@ -15,24 +11,28 @@ import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest
 // test job only provisions DATABASE_URL (no live chain), so mock it here the
 // same way acceptance.test.ts/evaluations.test.ts already do for the same
 // reason. None of these values are read by the handlers under test.
-vi.mock('../../../src/config/env', () => ({
-  getServerConfig: vi.fn().mockReturnValue({
-    BASE_RPC_URL: 'http://127.0.0.1:8545',
-    CHAIN_ID: 84532,
-    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
-    CONTRACT_DEPLOY_BLOCK: 0,
-    DEFAULT_PLATFORM_FEE_BPS: 750,
-    DREAMS_HOOK_ADDRESS: undefined,
-    DREAMS_HOOK_SEED_BLOCK: 0,
-    ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
-    ERC8004_SEED_BLOCK: 0,
-    FORWARDER_ADDRESS: '0xF07de5510087c7a3E01d977c6392e14C0Aa10dF7',
-    SERVER_PRIVATE_KEY: `0x${'1'.repeat(64)}`,
-    USDC_TOKEN_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
-  }),
-}));
+vi.mock('../../../src/config/env', async (importOriginal) => {
+  const actual = await importOriginal<typeof import('../../../src/config/env')>();
 
-import * as schema from '../../../src/db/schema';
+  return {
+    ...actual,
+    getServerConfig: vi.fn().mockReturnValue({
+      BASE_RPC_URL: 'http://127.0.0.1:8545',
+      CHAIN_ID: 84532,
+      CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+      CONTRACT_DEPLOY_BLOCK: 0,
+      DEFAULT_PLATFORM_FEE_BPS: 750,
+      DREAMS_HOOK_ADDRESS: undefined,
+      DREAMS_HOOK_SEED_BLOCK: 0,
+      ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+      ERC8004_SEED_BLOCK: 0,
+      FORWARDER_ADDRESS: '0xF07de5510087c7a3E01d977c6392e14C0Aa10dF7',
+      SERVER_PRIVATE_KEY: `0x${'1'.repeat(64)}`,
+      USDC_TOKEN_ADDRESS: '0x5FbDB2315678afecb367f032d93F642f64180aa3',
+    }),
+  };
+});
+
 import { tasks } from '../../../src/db/schema';
 import {
   processAuctionAcceptedEvent,
@@ -47,6 +47,7 @@ import {
   processTaskSubmittedEvent,
   processTaskWorkerSelectedEvent,
 } from '../../../src/services/indexer';
+import { createIsolatedMigratedDatabase } from '../../helpers/integration-database';
 
 // Covers ADR-0007's guarded indexer status handlers: each guarded UPDATE
 // must apply from its documented valid prior state(s) and must silently
@@ -54,16 +55,9 @@ import {
 // isolated test database -- the live-observed bug this ADR closes (a stale
 // TaskEvaluated event regressing a 'completed' task back to 'appealing').
 
-const connectionString = process.env.DATABASE_URL;
-const describeWithDatabase = connectionString ? describe : describe.skip;
-
-const testDatabaseName = `indexer_guards_${randomUUID().replaceAll('-', '').slice(0, 16)}`;
-const testDatabaseUrl = new URL(connectionString ?? 'postgres://localhost:5432/placeholder');
-testDatabaseUrl.pathname = `/${testDatabaseName}`;
-const adminClient = postgres(connectionString ?? testDatabaseUrl.toString(), { max: 1 });
-const queryClient = postgres(testDatabaseUrl.toString(), { max: 12 });
-const database = drizzle(queryClient, { schema });
-const migrationsFolder = fileURLToPath(new URL('../../../drizzle/migrations', import.meta.url));
+const isolatedDatabase = createIsolatedMigratedDatabase('indexer_guards', { maxConnections: 12 });
+const describeWithDatabase = isolatedDatabase.isAvailable ? describe : describe.skip;
+const { database } = isolatedDatabase;
 
 const WORKER = '0x1111111111111111111111111111111111111111';
 const fakeBlockClient = { getBlock: async () => ({ timestamp: 1_700_000_000n }) };
@@ -100,8 +94,7 @@ async function statusOf(taskId: string): Promise<string> {
 
 describeWithDatabase('indexer status guard handlers', () => {
   beforeAll(async () => {
-    await adminClient.unsafe(`CREATE DATABASE "${testDatabaseName}"`);
-    await migrate(database, { migrationsFolder });
+    await isolatedDatabase.start();
   });
 
   afterEach(async () => {
@@ -111,9 +104,7 @@ describeWithDatabase('indexer status guard handlers', () => {
   });
 
   afterAll(async () => {
-    await queryClient.end();
-    await adminClient.unsafe(`DROP DATABASE "${testDatabaseName}"`);
-    await adminClient.end();
+    await isolatedDatabase.stop();
   });
 
   it('processTaskCreatedEvent sets contractAddress, chainId, and platformFeeBps from config', async () => {

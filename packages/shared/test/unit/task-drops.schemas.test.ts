@@ -10,9 +10,14 @@ import {
   TaskDropStatusInputSchema,
   TaskDropSubscribeInputSchema,
 } from '../../src/schemas/task-drops.schemas';
-import { TaskCreateSchema } from '../../src/schemas/task.schemas';
+import { TaskCreateSchema, TaskListInputSchema } from '../../src/schemas/task.schemas';
 
 describe('Task Drops schemas', () => {
+  it('normalizes an exact Task Drop filter for task listings', () => {
+    expect(TaskListInputSchema.parse({ taskDropId: '  drop-1  ' }).taskDropId).toBe('drop-1');
+    expect(() => TaskListInputSchema.parse({ taskDropId: '   ' })).toThrow();
+  });
+
   it('normalizes subscriber email and defaults the source to the drop page', () => {
     const parsed = TaskDropSubscribeInputSchema.parse({
       taskDropId: 'drop-1',

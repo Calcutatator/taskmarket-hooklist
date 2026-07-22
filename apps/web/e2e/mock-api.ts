@@ -223,6 +223,7 @@ const tasks: TaskDetailResponse[] = [
     reward: '240000000',
     submissionCount: 0,
     tags: ['bounty', 'open'],
+    taskDropId: 'launch-drop',
   }),
   task({
     description: 'Bounty - unlisted task, reachable by direct link only (ADR-0014).',
@@ -1084,6 +1085,7 @@ function filteredTasks(url: URL) {
   const minReward = url.searchParams.get('minReward');
   const maxReward = url.searchParams.get('maxReward');
   const deadlineHours = url.searchParams.get('deadlineHours');
+  const taskDropId = url.searchParams.get('taskDropId');
 
   if (status && status !== 'ALL') {
     filtered = filtered.filter((taskItem) => taskItem.status === status);
@@ -1099,6 +1101,9 @@ function filteredTasks(url: URL) {
   }
   if (tags.length > 0) {
     filtered = filtered.filter((taskItem) => tags.every((tag) => taskItem.tags.includes(tag)));
+  }
+  if (taskDropId) {
+    filtered = filtered.filter((taskItem) => taskItem.taskDropId === taskDropId);
   }
   if (minReward) {
     filtered = filtered.filter((taskItem) => BigInt(taskItem.reward) >= BigInt(minReward));

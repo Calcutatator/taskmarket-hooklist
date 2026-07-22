@@ -12,8 +12,9 @@ import * as schema from '../../src/db/schema';
 import { announceOfficialTaskDrop } from '../../src/services/task-drop-announcements';
 import { enforceTaskDropSubscribeRateLimit } from '../../src/services/task-drop-subscribe-rate-limit';
 import { sendOfficialTaskDropAnnouncement } from '../../src/services/task-drops-email';
+import { getIntegrationDatabaseUrl } from '../helpers/integration-database';
 
-const databaseUrl = process.env.DATABASE_URL;
+const databaseUrl = getIntegrationDatabaseUrl();
 const describeWithDatabase = databaseUrl ? describe : describe.skip;
 const schemaName = `official_drop_migration_${randomUUID().replaceAll('-', '')}`;
 const migration = readFileSync(

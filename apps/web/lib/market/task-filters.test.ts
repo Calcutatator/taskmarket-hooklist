@@ -41,4 +41,27 @@ describe('task filters', () => {
 
     expect(href).not.toContain('worker=');
   });
+
+  it('parses, labels, and serializes an exact Task Drop filter', () => {
+    const filters = parseTaskFilters({ taskDropId: '  launch-drop  ' });
+
+    expect(filters.taskDropId).toBe('launch-drop');
+    expect(filters.activeFilters).toContainEqual({
+      label: 'Task Drop',
+      value: 'launch-drop',
+    });
+    expect(taskFiltersHref('/tasks', { taskDropId: 'launch-drop' })).toBe(
+      '/tasks?taskDropId=launch-drop'
+    );
+  });
+
+  it('clears the Task Drop param when overridden to an empty string', () => {
+    const href = taskFiltersHref(
+      '/tasks',
+      { status: 'open', taskDropId: 'launch-drop' },
+      { taskDropId: '' }
+    );
+
+    expect(href).toBe('/tasks?status=open');
+  });
 });

@@ -476,6 +476,9 @@ export const tasksRouter = router({
           )
         );
       }
+      if (input.taskDropId) {
+        conditions.push(eq(tasks.taskDropId, input.taskDropId));
+      }
       if (input.tags && input.tags.length > 0) {
         conditions.push(arrayOverlaps(tasks.tags, input.tags));
       }

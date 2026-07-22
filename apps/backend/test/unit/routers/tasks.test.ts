@@ -1236,6 +1236,13 @@ describe('tasks router', () => {
       ]);
     });
 
+    it('filters by exact Task Drop membership and composes with status', async () => {
+      const query = await captureListWhere({ status: 'completed', taskDropId: DROP_ID });
+
+      expect(query.sql).toContain('"tasks"."task_drop_id" = ');
+      expect(query.params).toEqual(['unlisted', 'completed', DROP_ID]);
+    });
+
     it('filters by a single tags value delivered as a bare string, matching arrayOverlaps', async () => {
       const query = await captureListWhere({ tags: 'creative' as unknown as string[] });
 

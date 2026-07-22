@@ -33,6 +33,7 @@ export type TaskSearchParams = {
   sort?: string;
   status?: string;
   tags?: string;
+  taskDropId?: string;
   worker?: string;
 };
 
@@ -56,6 +57,7 @@ export type ParsedTaskFilters = {
   sort?: TaskSortValue;
   status?: string;
   tags?: string[];
+  taskDropId?: string;
   worker?: string;
 };
 
@@ -88,6 +90,7 @@ export function parseTaskFilters(
   { defaultStatus = 'ALL' }: { defaultStatus?: string } = {}
 ): ParsedTaskFilters {
   const status = params.status ?? defaultStatus;
+  const taskDropId = params.taskDropId?.trim() || undefined;
   const activeFilters: ActiveFilter[] = [];
 
   if (params.mode && params.mode !== 'ALL') {
@@ -98,6 +101,9 @@ export function parseTaskFilters(
   }
   if (params.tags) {
     activeFilters.push({ label: 'Tags', value: params.tags });
+  }
+  if (taskDropId) {
+    activeFilters.push({ label: 'Task Drop', value: taskDropId });
   }
   if (params.minReward) {
     activeFilters.push({ label: 'Min', value: `${params.minReward} USDC` });
@@ -136,6 +142,7 @@ export function parseTaskFilters(
     sort: selectedSort === DEFAULT_TASK_SORT ? undefined : selectedSort,
     status: status === 'ALL' ? undefined : status,
     tags: parseTags(params.tags),
+    taskDropId,
     worker: params.worker,
   };
 }
@@ -156,6 +163,10 @@ export function taskFiltersHref(
   }
   if (next.tags) {
     params.set('tags', next.tags);
+  }
+  const taskDropId = next.taskDropId?.trim();
+  if (taskDropId) {
+    params.set('taskDropId', taskDropId);
   }
   if (next.minReward) {
     params.set('minReward', next.minReward);
