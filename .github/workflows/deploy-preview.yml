@@ -173,17 +173,18 @@ jobs:
           # `railway up --detach` above only triggers the build/deploy, it doesn't wait
           # for it to finish -- a brand-new service's first deploy has to pull the base
           # image (ghcr.io/foundry-rs/foundry:latest) with no layer cache yet, which can
-          # take longer than a warm redeploy of an already-existing service. 90 attempts
-          # at 2s (3 minutes) covers a cold pull; this loop still exits the moment the
-          # health check succeeds either way, so it costs nothing in the common case.
-          for i in $(seq 1 90); do
+          # take longer than a warm redeploy of an already-existing service, especially
+          # under Railway-side infra slowdowns. 20 attempts at 30s (10 minutes) covers a
+          # slow cold pull; this loop still exits the moment the health check succeeds
+          # either way, so it costs nothing in the common case.
+          for i in $(seq 1 20); do
             if curl -sf -X POST "$RPC_URL" \
               -H 'Content-Type: application/json' \
               -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null; then
               echo "anvil is up at $RPC_URL"
               exit 0
             fi
-            sleep 2
+            sleep 30
           done
           echo "anvil never became healthy at $RPC_URL" >&2
           exit 1
@@ -399,6 +400,7 @@ jobs:
             "CHAIN_ID=84532" \
             "BASE_RPC_URL=${{ steps.anvil.outputs.rpc_url }}" \
             "CONTRACT_ADDRESS=${{ steps.contracts.outputs.diamond_address }}" \
+            "CONTRACT_DEPLOY_BLOCK=0" \
             "FORWARDER_ADDRESS=${{ steps.contracts.outputs.forwarder_address }}" \
             "USDC_TOKEN_ADDRESS=${{ steps.contracts.outputs.usdc_address }}" \
             "ERC8004_IDENTITY_REGISTRY=${{ steps.erc8004.outputs.identity_registry }}" \

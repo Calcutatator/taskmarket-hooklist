@@ -5,10 +5,11 @@
  *  1. Check initial status (no identity yet)
  *  2. Register identity via X402 (0.001 USDC)
  *  3. Verify agentId returned
- *  4. Check status again — registered, same agentId
+ *  4. Check status again — registered, same agentId, cache fresh
  *  5. Re-register — idempotent (alreadyRegistered: true, same agentId, no duplicate NFT)
  *  6. Concurrent registration race: several devices registering at once must each land
  *     on a distinct, non-null agentId
+ *  7. Every device-registered agentId's cache must be fresh, not just non-null
  */
 import {
   getAccounts,
@@ -28,7 +29,7 @@ async function main() {
   console.log('wallet:', requester.address);
 
   // ── Step 1: initial status ──────────────────────────────────────────────────
-  log('1/6', 'Check initial identity status');
+  log('1/7', 'Check initial identity status');
   const status1 = (await get(`/api/identity/status?address=${requester.address}`)) as {
     registered: boolean;
     agentId: string | null;
@@ -41,7 +42,7 @@ async function main() {
   }
 
   // ── Step 2: register ────────────────────────────────────────────────────────
-  log('2/6', 'Register ERC-8004 identity (X402 0.001 USDC)');
+  log('2/7', 'Register ERC-8004 identity (X402 0.001 USDC)');
   const regResult = (await x402Post('/api/identity/register', {}, requester)) as {
     agentId: string;
     alreadyRegistered: boolean;
@@ -51,30 +52,37 @@ async function main() {
 
   if (!regResult.agentId) fail('register', 200, 'Missing agentId in response');
 
-  // ── Step 3: verify agentId is a non-zero numeric string ───────────────────
-  log('3/6', 'Validate agentId format');
+  // ── Step 3: verify agentId is a non-negative numeric string ───────────────
+  // agentId 0 is a legitimate value -- the first-ever registration on a freshly
+  // deployed/reset registry gets it, not an error condition.
+  log('3/7', 'Validate agentId format');
   const agentIdNum = Number(regResult.agentId);
-  if (!Number.isInteger(agentIdNum) || agentIdNum <= 0) {
-    fail('agentId format', 200, `Expected positive integer, got: ${regResult.agentId}`);
+  if (!Number.isInteger(agentIdNum) || agentIdNum < 0) {
+    fail('agentId format', 200, `Expected non-negative integer, got: ${regResult.agentId}`);
   }
   ok('agentId is valid', regResult.agentId);
 
   // ── Step 4: status should now show registered ───────────────────────────────
-  log('4/6', 'Check status after registration');
+  log('4/7', 'Check status after registration');
   const status2 = (await get(`/api/identity/status?address=${requester.address}`)) as {
     registered: boolean;
     agentId: string | null;
+    cacheFresh: boolean;
   };
   ok('registered', status2.registered);
   ok('agentId', status2.agentId);
+  ok('cacheFresh', status2.cacheFresh);
 
   if (!status2.registered) fail('status check', 200, 'Still not registered after registration');
   if (status2.agentId !== regResult.agentId) {
     fail('agentId mismatch', 200, `Expected ${regResult.agentId}, got ${status2.agentId}`);
   }
+  if (!status2.cacheFresh) {
+    fail('cache freshness', 200, 'Expected cacheFresh: true immediately after registration');
+  }
 
   // ── Step 5: idempotency ─────────────────────────────────────────────────────
-  log('5/6', 'Re-register — should be idempotent');
+  log('5/7', 'Re-register — should be idempotent');
   const regResult2 = (await x402Post('/api/identity/register', {}, requester)) as {
     agentId: string;
     alreadyRegistered: boolean;
@@ -90,14 +98,20 @@ async function main() {
   }
 
   // ── Step 6: concurrent registration race ────────────────────────────────────
-  // Regression coverage for a bug in createServerWallet() (apps/backend/src/lib/wallet.ts):
-  // the server wallet signs on-chain calls for many concurrent requests from this one
-  // address, and without a nonce manager, concurrent calls could read the same pending
-  // nonce -- only one landed, the rest failed with "Nonce provided for the transaction is
-  // lower than the current nonce of the account" and their device's background identity
-  // registration (devices.router.ts) silently failed forever (agentId stuck null).
-  // Reproduced with 5 concurrent registrations, all but one failing this way.
-  log('6/6', 'Concurrent registration race: 5 devices registering at once');
+  // Regression coverage for two related bugs surfaced by concurrent registration:
+  //  - createServerWallet() (apps/backend/src/lib/wallet.ts): the server wallet signs
+  //    on-chain calls for many concurrent requests from this one address, and without a
+  //    nonce manager, concurrent calls could read the same pending nonce -- only one
+  //    landed, the rest failed with "Nonce provided for the transaction is lower than the
+  //    current nonce of the account" and their device's background identity registration
+  //    (devices.router.ts) silently failed forever (agentId stuck null).
+  //  - contractRegisterIdentity() (apps/backend/src/services/contract.ts): its RPC-lag
+  //    fallback re-fetched every log in the block instead of filtering to this call's own
+  //    transaction hash, so two registrations landing in the same block could each read
+  //    back the OTHER call's Registered event and silently get handed the wrong agentId.
+  // Reproduced with 5 concurrent registrations: the first bug left most accounts stuck with
+  // no agentId at all; the second (if hit) would give two accounts the SAME agentId instead.
+  log('6/7', 'Concurrent registration race: 5 devices registering at once');
   const CONCURRENCY = 5;
   const accounts = Array.from({ length: CONCURRENCY }, () => randomAccount());
   await Promise.all(accounts.map((account) => registerDevice(account)));
@@ -134,6 +148,29 @@ async function main() {
     );
   }
   ok('all concurrent agentIds distinct', raceValues);
+
+  // ── Step 7: every device-registered agentId's cache must be fresh ──────────
+  // Regression coverage for devices.router.ts setting agentId but not
+  // identityRegistryAddress/chainId -- passes step 6's agentId-non-null check but
+  // register() would still silently re-mint on this wallet's next call.
+  log('7/7', 'Every device-registered agentId must have a fresh cache');
+  const staleAccounts: string[] = [];
+  for (const account of accounts) {
+    const freshnessStatus = (await get(`/api/identity/status?address=${account.address}`)) as {
+      cacheFresh: boolean;
+    };
+    if (!freshnessStatus.cacheFresh) staleAccounts.push(account.address);
+  }
+
+  if (staleAccounts.length > 0) {
+    fail(
+      'device registration cache freshness',
+      200,
+      `${staleAccounts.length}/${CONCURRENCY} device-registered agentIds have a stale cache ` +
+        `(agentId set but identityRegistryAddress/chainId missing): ${staleAccounts.join(', ')}`
+    );
+  }
+  ok('every device-registered agentId has a fresh cache', accounts.length);
 
   console.log('\n✓ Identity smoke test passed\n');
 }

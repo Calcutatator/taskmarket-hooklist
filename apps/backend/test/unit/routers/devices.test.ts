@@ -10,6 +10,8 @@ vi.mock('../../../src/config/env', () => ({
   getServerConfig: vi.fn().mockReturnValue({
     PLATFORM_MASTER_KEY: 'a'.repeat(64),
     NODE_ENV: 'test',
+    ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+    CHAIN_ID: 84532,
   }),
 }));
 
