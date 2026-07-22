@@ -64,4 +64,22 @@ describe('task filters', () => {
 
     expect(href).toBe('/tasks?status=open');
   });
+
+  it('falls back to ALL for a status value that is not a real TaskStatus', () => {
+    // e.g. a stale bookmark, crafted URL, or crawler hitting ?status=submitted --
+    // 'submitted' is a real enum value, just for ClaimStatus, not TaskStatus. The
+    // backend's tasks.list rejects it outright; the web app should never forward it.
+    const filters = parseTaskFilters({ status: 'submitted' });
+
+    expect(filters.selectedStatus).toBe('ALL');
+    expect(filters.status).toBeUndefined();
+    expect(filters.activeFilters.find((entry) => entry.label === 'Status')).toBeUndefined();
+  });
+
+  it('accepts a real TaskStatus value unchanged', () => {
+    const filters = parseTaskFilters({ status: 'open' });
+
+    expect(filters.selectedStatus).toBe('open');
+    expect(filters.status).toBe('open');
+  });
 });

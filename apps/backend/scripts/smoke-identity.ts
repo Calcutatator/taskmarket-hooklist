@@ -51,11 +51,13 @@ async function main() {
 
   if (!regResult.agentId) fail('register', 200, 'Missing agentId in response');
 
-  // ── Step 3: verify agentId is a non-zero numeric string ───────────────────
+  // ── Step 3: verify agentId is a non-negative numeric string ───────────────
+  // agentId 0 is a legitimate value -- the first-ever registration on a freshly
+  // deployed/reset registry gets it, not an error condition.
   log('3/6', 'Validate agentId format');
   const agentIdNum = Number(regResult.agentId);
-  if (!Number.isInteger(agentIdNum) || agentIdNum <= 0) {
-    fail('agentId format', 200, `Expected positive integer, got: ${regResult.agentId}`);
+  if (!Number.isInteger(agentIdNum) || agentIdNum < 0) {
+    fail('agentId format', 200, `Expected non-negative integer, got: ${regResult.agentId}`);
   }
   ok('agentId is valid', regResult.agentId);
 
@@ -90,13 +92,19 @@ async function main() {
   }
 
   // ── Step 6: concurrent registration race ────────────────────────────────────
-  // Regression coverage for a bug in createServerWallet() (apps/backend/src/lib/wallet.ts):
-  // the server wallet signs on-chain calls for many concurrent requests from this one
-  // address, and without a nonce manager, concurrent calls could read the same pending
-  // nonce -- only one landed, the rest failed with "Nonce provided for the transaction is
-  // lower than the current nonce of the account" and their device's background identity
-  // registration (devices.router.ts) silently failed forever (agentId stuck null).
-  // Reproduced with 5 concurrent registrations, all but one failing this way.
+  // Regression coverage for two related bugs surfaced by concurrent registration:
+  //  - createServerWallet() (apps/backend/src/lib/wallet.ts): the server wallet signs
+  //    on-chain calls for many concurrent requests from this one address, and without a
+  //    nonce manager, concurrent calls could read the same pending nonce -- only one
+  //    landed, the rest failed with "Nonce provided for the transaction is lower than the
+  //    current nonce of the account" and their device's background identity registration
+  //    (devices.router.ts) silently failed forever (agentId stuck null).
+  //  - contractRegisterIdentity() (apps/backend/src/services/contract.ts): its RPC-lag
+  //    fallback re-fetched every log in the block instead of filtering to this call's own
+  //    transaction hash, so two registrations landing in the same block could each read
+  //    back the OTHER call's Registered event and silently get handed the wrong agentId.
+  // Reproduced with 5 concurrent registrations: the first bug left most accounts stuck with
+  // no agentId at all; the second (if hit) would give two accounts the SAME agentId instead.
   log('6/6', 'Concurrent registration race: 5 devices registering at once');
   const CONCURRENCY = 5;
   const accounts = Array.from({ length: CONCURRENCY }, () => randomAccount());

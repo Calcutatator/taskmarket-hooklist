@@ -6,8 +6,9 @@ vi.mock('../../../src/services/contract', () => ({
 }));
 
 const REGISTRY = '0xRegistryCurrent000000000000000000000000';
+const CHAIN_ID = 84532;
 vi.mock('../../../src/config/env', () => ({
-  getServerConfig: vi.fn(() => ({ ERC8004_IDENTITY_REGISTRY: REGISTRY })),
+  getServerConfig: vi.fn(() => ({ ERC8004_IDENTITY_REGISTRY: REGISTRY, CHAIN_ID })),
 }));
 
 import { identityRouter } from '../../../src/routers/identity.router';
@@ -42,7 +43,9 @@ describe('identity router', () => {
     it('returns the existing agentId without minting when already registered under any casing', async () => {
       const ctx = createMockCtx(PAYER.toUpperCase());
       ctx.db.select.mockReturnValueOnce(
-        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY }])
+        makeChain([
+          { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID },
+        ])
       );
       const caller = identityRouter.createCaller(ctx);
 
@@ -64,6 +67,7 @@ describe('identity router', () => {
             address: PAYER,
             agentId: '7',
             identityRegistryAddress: '0xRegistryOld00000000000000000000000000',
+            chainId: CHAIN_ID,
           },
         ])
       );
@@ -77,14 +81,44 @@ describe('identity router', () => {
       expect(contractRegisterIdentity).toHaveBeenCalledOnce();
       expect(ctx.db.update).toHaveBeenCalledOnce();
       expect(updateChain.set).toHaveBeenCalledWith(
-        expect.objectContaining({ agentId: '42', identityRegistryAddress: REGISTRY.toLowerCase() })
+        expect.objectContaining({
+          agentId: '42',
+          identityRegistryAddress: REGISTRY.toLowerCase(),
+          chainId: CHAIN_ID,
+        })
       );
     });
 
-    it('re-registers when the cached row has an agentId but no identityRegistryAddress at all (pre-migration row)', async () => {
+    it('re-registers instead of trusting a cached agentId minted on a different chain, even with a matching registry address', async () => {
+      // ERC-8004 identity registries are commonly deployed at the SAME address
+      // on every chain (deterministic/CREATE2 deployment), so registry address
+      // alone cannot tell a genuinely fresh cache apart from one minted on a
+      // different chain the database was previously pointed at.
       const ctx = createMockCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
-        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: null }])
+        makeChain([
+          { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: 8453 },
+        ])
+      );
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+      const caller = identityRouter.createCaller(ctx);
+
+      const result = await caller.register({});
+
+      expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
+      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: '42', chainId: CHAIN_ID })
+      );
+    });
+
+    it('re-registers when the cached row has an agentId but no identityRegistryAddress or chainId at all (pre-migration row)', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          { address: PAYER, agentId: '7', identityRegistryAddress: null, chainId: null },
+        ])
       );
       const updateChain = makeChain();
       ctx.db.update.mockReturnValueOnce(updateChain);

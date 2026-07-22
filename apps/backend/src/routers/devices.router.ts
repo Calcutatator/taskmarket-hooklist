@@ -113,12 +113,23 @@ export const devicesRouter = router({
       contractRegisterIdentity()
         .then(async (agentIdBigInt) => {
           const id = agentIdBigInt.toString();
+          const registryAddress = config.ERC8004_IDENTITY_REGISTRY.toLowerCase();
           await ctx.db
             .insert(agents)
-            .values({ address: walletAddress, agentId: id })
+            .values({
+              address: walletAddress,
+              agentId: id,
+              identityRegistryAddress: registryAddress,
+              chainId: config.CHAIN_ID,
+            })
             .onConflictDoUpdate({
               target: agents.address,
-              set: { agentId: id, updatedAt: new Date() },
+              set: {
+                agentId: id,
+                identityRegistryAddress: registryAddress,
+                chainId: config.CHAIN_ID,
+                updatedAt: new Date(),
+              },
             });
         })
         .catch((err) => {
