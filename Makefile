@@ -570,10 +570,14 @@ db:
 	elif [ "$(word 1,$(ARGS))" = "backfill-task-awards" ]; then \
 		cd apps/backend && pnpm db:backfill-task-awards; \
 	elif [ "$(word 1,$(ARGS))" = "backfill-agent-registry-chain" ]; then \
+		if [ -z "$$REGISTRY" ] || [ -z "$$CHAIN_ID" ]; then \
+			echo "Usage: REGISTRY=0x... CHAIN_ID=<n> make db backfill-agent-registry-chain [dry-run]"; \
+			exit 1; \
+		fi; \
 		if [ "$(word 2,$(ARGS))" = "dry-run" ]; then \
-			cd apps/backend && pnpm db:backfill-agent-registry-chain:dry-run; \
+			cd apps/backend && pnpm db:backfill-agent-registry-chain -- --registry "$$REGISTRY" --chain-id "$$CHAIN_ID" --dry-run; \
 		else \
-			cd apps/backend && pnpm db:backfill-agent-registry-chain; \
+			cd apps/backend && pnpm db:backfill-agent-registry-chain -- --registry "$$REGISTRY" --chain-id "$$CHAIN_ID"; \
 		fi; \
 	else \
 		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain [dry-run]>"; \
