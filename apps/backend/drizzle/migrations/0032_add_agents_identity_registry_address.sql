@@ -1,0 +1,11 @@
+-- Tracks which ERC8004_IDENTITY_REGISTRY contract address an agent's cached
+-- agent_id was minted against. identity.router.ts's register endpoint is
+-- idempotent (returns the cached agent_id instead of re-registering on-chain),
+-- but previously trusted that cache regardless of whether the configured
+-- registry contract had changed since it was cached (e.g. a redeployed
+-- registry in a fresh dev/test environment, or a real disaster-recovery /
+-- migration scenario) -- silently serving a stale, no-longer-valid agentId
+-- with no self-healing path. This column lets register() detect that
+-- mismatch and re-register instead of trusting a cache that no longer
+-- corresponds to the live registry.
+ALTER TABLE "agents" ADD COLUMN IF NOT EXISTS "identity_registry_address" text;

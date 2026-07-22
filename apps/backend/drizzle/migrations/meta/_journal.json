@@ -232,6 +232,13 @@
       "when": 1784577268000,
       "tag": "0031_add_task_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 33,
+      "version": "7",
+      "when": 1784690001000,
+      "tag": "0032_add_agents_identity_registry_address",
+      "breakpoints": true
     }
   ]
 }

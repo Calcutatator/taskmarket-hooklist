@@ -5,6 +5,7 @@ import { agents } from '../db/schema';
 import { sql } from 'drizzle-orm';
 import { contractRegisterIdentity } from '../services/contract';
 import { lowerAddressEq } from '../lib/agents';
+import { getServerConfig } from '../config/env';
 
 export const identityRouter = router({
   register: publicProcedure
@@ -25,18 +26,30 @@ export const identityRouter = router({
       }
 
       const registeredVia = input.source ?? 'cli';
+      const registryAddress = getServerConfig().ERC8004_IDENTITY_REGISTRY.toLowerCase();
 
       // Idempotent: return existing agentId if already registered. Case-insensitive
       // and preferring a row with agent_id set, to tolerate a legacy mixed-case row
       // for this same address from before addresses were consistently lowercased here.
       const existing = await ctx.db
-        .select({ address: agents.address, agentId: agents.agentId })
+        .select({
+          address: agents.address,
+          agentId: agents.agentId,
+          identityRegistryAddress: agents.identityRegistryAddress,
+        })
         .from(agents)
         .where(lowerAddressEq(payer))
         .orderBy(sql`${agents.agentId} is not null desc`)
         .limit(1);
 
-      if (existing[0]?.agentId) {
+      // Only trust the cached agentId if it was minted against the currently
+      // configured registry contract. A cached agentId from a different (e.g.
+      // since-redeployed) registry is not just stale -- it may not resolve to
+      // this address, or to any agent, on the live registry at all -- so it
+      // must not be served as if it were still valid.
+      const cacheIsFresh = existing[0]?.identityRegistryAddress?.toLowerCase() === registryAddress;
+
+      if (existing[0]?.agentId && cacheIsFresh) {
         return { agentId: existing[0].agentId, alreadyRegistered: true };
       }
 
@@ -53,12 +66,21 @@ export const identityRouter = router({
         // exact stored address rather than inserting a new one.
         await ctx.db
           .update(agents)
-          .set({ agentId: agentIdStr, updatedAt: new Date() })
+          .set({
+            agentId: agentIdStr,
+            identityRegistryAddress: registryAddress,
+            updatedAt: new Date(),
+          })
           .where(sql`${agents.address} = ${existing[0].address}`);
       } else {
         await ctx.db
           .insert(agents)
-          .values({ address: payer, agentId: agentIdStr, registeredVia })
+          .values({
+            address: payer,
+            agentId: agentIdStr,
+            identityRegistryAddress: registryAddress,
+            registeredVia,
+          })
           .onConflictDoNothing();
       }
 

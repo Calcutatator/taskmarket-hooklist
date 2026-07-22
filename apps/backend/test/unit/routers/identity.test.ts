@@ -5,6 +5,11 @@ vi.mock('../../../src/services/contract', () => ({
   contractRegisterIdentity: vi.fn().mockResolvedValue(42n),
 }));
 
+const REGISTRY = '0xRegistryCurrent000000000000000000000000';
+vi.mock('../../../src/config/env', () => ({
+  getServerConfig: vi.fn(() => ({ ERC8004_IDENTITY_REGISTRY: REGISTRY })),
+}));
+
 import { identityRouter } from '../../../src/routers/identity.router';
 import { contractRegisterIdentity } from '../../../src/services/contract';
 
@@ -36,7 +41,9 @@ describe('identity router', () => {
 
     it('returns the existing agentId without minting when already registered under any casing', async () => {
       const ctx = createMockCtx(PAYER.toUpperCase());
-      ctx.db.select.mockReturnValueOnce(makeChain([{ address: PAYER, agentId: '7' }]));
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY }])
+      );
       const caller = identityRouter.createCaller(ctx);
 
       const result = await caller.register({});
@@ -44,6 +51,49 @@ describe('identity router', () => {
       expect(result).toEqual({ agentId: '7', alreadyRegistered: true });
       expect(contractRegisterIdentity).not.toHaveBeenCalled();
       expect(ctx.db.insert).not.toHaveBeenCalled();
+    });
+
+    it('re-registers instead of trusting a cached agentId minted against a different (e.g. redeployed) registry', async () => {
+      // The cached agentId is for a registry contract that is no longer the
+      // one configured -- it may not even resolve to this address on the
+      // live registry, so it must not be served as if it were still valid.
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          {
+            address: PAYER,
+            agentId: '7',
+            identityRegistryAddress: '0xRegistryOld00000000000000000000000000',
+          },
+        ])
+      );
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+      const caller = identityRouter.createCaller(ctx);
+
+      const result = await caller.register({});
+
+      expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
+      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
+      expect(ctx.db.update).toHaveBeenCalledOnce();
+      expect(updateChain.set).toHaveBeenCalledWith(
+        expect.objectContaining({ agentId: '42', identityRegistryAddress: REGISTRY.toLowerCase() })
+      );
+    });
+
+    it('re-registers when the cached row has an agentId but no identityRegistryAddress at all (pre-migration row)', async () => {
+      const ctx = createMockCtx(PAYER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ address: PAYER, agentId: '7', identityRegistryAddress: null }])
+      );
+      const updateChain = makeChain();
+      ctx.db.update.mockReturnValueOnce(updateChain);
+      const caller = identityRouter.createCaller(ctx);
+
+      const result = await caller.register({});
+
+      expect(result).toEqual({ agentId: '42', alreadyRegistered: false });
+      expect(contractRegisterIdentity).toHaveBeenCalledOnce();
     });
 
     it('updates the existing row in place by its stored address instead of inserting a duplicate when a legacy differently-cased row has no agentId yet', async () => {

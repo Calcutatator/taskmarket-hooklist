@@ -192,6 +192,11 @@ export const agents = pgTable(
   {
     address: text('address').primaryKey(),
     agentId: text('agent_id'),
+    // The ERC8004_IDENTITY_REGISTRY contract address agentId was minted against.
+    // Lets register() detect a stale cached agentId if the configured registry
+    // has since changed (e.g. a redeployed registry) and re-register instead of
+    // silently trusting a no-longer-valid cache.
+    identityRegistryAddress: text('identity_registry_address'),
     completedTasks: integer('completed_tasks').notNull().default(0),
     ratedTasks: integer('rated_tasks').notNull().default(0),
     totalStars: integer('total_stars').notNull().default(0),
