@@ -114,8 +114,15 @@ Blocking checks: filename format (`NNNN-kebab-slug.md`), valid `Status`, `Date: 
 all four required sections present, no duplicate ADR numbers, Y-statement structural keywords,
 at least one rejected alternative in Considered options, supersession-link symmetry and
 direction, no dangling `ADR-NNNN` cross-references. Warn-only (never fails the build): README
-index completeness, and relevant source changes (contracts, backend, RFC specs) without a
-corresponding ADR change.
+index completeness, relevant source changes (contracts, backend, RFC specs) without a
+corresponding ADR change, and gaps in ADR numbering.
+
+Gaps are warn-only, not blocking, on purpose: concurrent branches each drafting their own next
+ADR number legitimately merge out of order (e.g. ADR 0022 shipping before 0021, which was
+already drafted on a separate, still-open PR at the time) — blocking on a gap would force
+serializing every ADR-touching PR or manually renumbering right before merge, which is exactly
+the kind of easy-to-get-wrong manual step that caused the migrations-journal `task_drop_id`
+incident this repo already learned from.
 
 The source-changed-without-an-ADR check only activates when the linter is given the changed
 file list. CI passes it automatically on pull requests (via `ADR_LINT_BASE`, diffing against

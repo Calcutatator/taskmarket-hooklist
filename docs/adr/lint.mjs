@@ -9,7 +9,7 @@
 //
 // Warn-only (does not fail the build): README index completeness, relevant
 // source changes without a corresponding ADR change (pass changed paths as
-// argv, e.g. from `git diff --name-only`).
+// argv, e.g. from `git diff --name-only`), gaps in ADR numbering.
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -170,6 +170,29 @@ for (const file of adrFiles) {
   while ((match = refRe.exec(content)) !== null) {
     if (!seenNumbers.has(match[1])) {
       err(file, `dangling reference to ADR-${match[1]} (not found in docs/adr/)`);
+    }
+  }
+}
+
+// Warn-only: gaps in ADR numbering. Not blocking -- concurrent branches each
+// drafting their own next ADR number legitimately merge out of order (e.g. ADR
+// 0022 shipping before 0021, which is already drafted on a separate PR still
+// open at the time), and blocking on that would force serializing ADR-touching
+// PRs or manually renumbering right before merge, the same class of mistake
+// that caused the migrations-journal task_drop_id incident this repo already
+// learned from. This just surfaces a gap for a human to notice, not fail on.
+const numericNumbers = [...seenNumbers].map(Number).sort((a, b) => a - b);
+if (numericNumbers.length > 0) {
+  const min = numericNumbers[0];
+  const max = numericNumbers[numericNumbers.length - 1];
+  const present = new Set(numericNumbers);
+  for (let n = min; n <= max; n++) {
+    if (!present.has(n)) {
+      const gapNum = String(n).padStart(4, '0');
+      warn(
+        '(numbering)',
+        `ADR ${gapNum} is missing between existing ADRs ${String(min).padStart(4, '0')} and ${String(max).padStart(4, '0')} -- fine if a PR reserving it just hasn't merged yet, otherwise confirm it wasn't silently skipped`,
+      );
     }
   }
 }
