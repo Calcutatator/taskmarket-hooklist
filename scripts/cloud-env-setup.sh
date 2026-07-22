@@ -58,6 +58,9 @@ EVALUATOR_ADDRESS="0x9965507D1a55bcC2695C58ba16FB37d819B0A4dc"
 FACILITATOR_KEY="0x92db14e403b83dfe3df233f83dfa3a0d7096f21ca9b0d6d6b8d88b2b4ec1564e"
 FEE_RECIPIENT_KEY="0x4bbbf85ce3377467afe5d46f804f221813b2bb87f24d81f60f1fcdbf7cbf4356"
 FEE_RECIPIENT_ADDRESS="0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
+# smoke-withdraw.ts's destination address -- just needs to be a valid address, nothing
+# ever signs on its behalf, so no matching private key is needed.
+WITHDRAWAL_ADDRESS="0x23618e81E3f5cdA7203161e132bB542BBc7A5A9F"
 
 echo "==> [1/12] Toolchain (Node, pnpm, bun, Foundry)"
 # Match the Makefile's own ENV_LOADER (`nvm install && nvm use`, reading .nvmrc) before
@@ -120,9 +123,24 @@ done
 # /usr/local/bin being present, which it always is on a standard Debian PATH). Symlinking the
 # foundry binaries there makes `forge`/`cast`/`anvil`/`chisel` resolve in every subsequent
 # agent tool call for the rest of this container's life, with no export needed.
+#
+# /usr/local/bin is root-owned on a standard Debian/Ubuntu image, so this symlink
+# only succeeds unmodified when the current user already owns it or runs as root --
+# true for the real cloud agent sandboxes this script targets, but not for this
+# repo's own Docker sandbox test (scripts/sandbox.Dockerfile), which deliberately
+# runs as a non-root user to mirror a properly locked-down container. A plain `ln`
+# there fails with EACCES and, under `set -e`, aborted the entire script before
+# Postgres/Anvil/the backend ever started. Fall back to passwordless sudo (which
+# that Dockerfile provisions for exactly this) and, failing that, skip with a
+# warning rather than dying -- this symlink only matters for *later, separate*
+# shell invocations (e.g. a cloud agent's own subsequent tool calls, per the
+# comment above); the PATH exports earlier in this script already cover
+# everything this run itself still needs to do.
 for bin in forge cast anvil chisel; do
   if [ -x "$HOME/.foundry/bin/$bin" ]; then
-    ln -sf "$HOME/.foundry/bin/$bin" "/usr/local/bin/$bin"
+    ln -sf "$HOME/.foundry/bin/$bin" "/usr/local/bin/$bin" 2>/dev/null \
+      || sudo -n ln -sf "$HOME/.foundry/bin/$bin" "/usr/local/bin/$bin" 2>/dev/null \
+      || echo "  (skipping /usr/local/bin/$bin symlink -- no write access; only affects separate later shells, not this run)"
   fi
 done
 
@@ -179,36 +197,53 @@ FACILITATOR_PORT=8402
 # (not /supported) -- the backend must present the same token as
 # X402_FACILITATOR_TOKEN or its real verify/settle calls get rejected with 401.
 FACILITATOR_TOKEN="$(openssl rand -hex 32)"
-if ! curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1; then
-  if [ ! -d /tmp/facilitator ]; then
-    git clone --depth 1 https://github.com/daydreamsai/facilitator /tmp/facilitator
-  fi
-  cd /tmp/facilitator
-  bun install
-  # The example server imports the built @daydreamsai/facilitator package, not
-  # its source -- bun install alone does not build it.
-  cd packages/core
-  bun run build
-  cd ../../examples/facilitator-server
-  # setsid, not just nohup: `bun run dev` spawns the actual server as a further
-  # child process, and nohup's SIGHUP-ignore on the immediate bun process doesn't
-  # reliably extend to that child -- confirmed by direct testing, the underlying
-  # process was killed by SIGHUP ("Terminal hung up") despite nohup. setsid
-  # detaches the whole process tree into its own session with no controlling
-  # terminal, so a session/terminal hangup elsewhere can't reach it at all.
-  PORT="$FACILITATOR_PORT" \
-    EVM_NETWORKS="base-sepolia" \
-    EVM_RPC_URL_BASE_SEPOLIA="$ANVIL_RPC_URL" \
-    EVM_PRIVATE_KEY="$FACILITATOR_KEY" \
-    TRACKING_ALLOW_IN_MEMORY_FALLBACK="true" \
-    BEARER_TOKEN="$FACILITATOR_TOKEN" \
-    setsid nohup bun run dev > /tmp/facilitator.log 2>&1 &
-  for _ in $(seq 1 30); do
-    curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 && break
-    sleep 1
-  done
-  cd "$REPO_ROOT"
+# Always restart: a facilitator process left running from a prior run of this
+# script was started with a DIFFERENT token baked into its environment, and
+# skipping the restart just because /supported responds leaves the backend
+# presenting this run's freshly generated token to a process still checking
+# requests against the old one -- every real verify/settle call then fails
+# with 401 "Valid Bearer token is required". The facilitator only tracks
+# state in-memory (no DB), so killing and restarting it is safe and cheap.
+#
+# Gating the kill behind "does /supported currently respond" is itself
+# unreliable under load (this script is doing plenty of other CPU/network work
+# concurrently): a transient false negative on that curl skips the kill
+# entirely, and the stale process silently keeps serving the old token for the
+# rest of this run. fuser -k on a port nothing is listening on is already a
+# harmless no-op (confirmed via `|| true` below), so just always attempt it.
+fuser -k "$FACILITATOR_PORT/tcp" > /dev/null 2>&1 || true
+for _ in $(seq 1 10); do
+  curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 || break
+  sleep 1
+done
+if [ ! -d /tmp/facilitator ]; then
+  git clone --depth 1 https://github.com/daydreamsai/facilitator /tmp/facilitator
 fi
+cd /tmp/facilitator
+bun install
+# The example server imports the built @daydreamsai/facilitator package, not
+# its source -- bun install alone does not build it.
+cd packages/core
+bun run build
+cd ../../examples/facilitator-server
+# setsid, not just nohup: `bun run dev` spawns the actual server as a further
+# child process, and nohup's SIGHUP-ignore on the immediate bun process doesn't
+# reliably extend to that child -- confirmed by direct testing, the underlying
+# process was killed by SIGHUP ("Terminal hung up") despite nohup. setsid
+# detaches the whole process tree into its own session with no controlling
+# terminal, so a session/terminal hangup elsewhere can't reach it at all.
+PORT="$FACILITATOR_PORT" \
+  EVM_NETWORKS="base-sepolia" \
+  EVM_RPC_URL_BASE_SEPOLIA="$ANVIL_RPC_URL" \
+  EVM_PRIVATE_KEY="$FACILITATOR_KEY" \
+  TRACKING_ALLOW_IN_MEMORY_FALLBACK="true" \
+  BEARER_TOKEN="$FACILITATOR_TOKEN" \
+  setsid nohup bun run dev > /tmp/facilitator.log 2>&1 &
+for _ in $(seq 1 30); do
+  curl -sf "http://127.0.0.1:$FACILITATOR_PORT/supported" > /dev/null 2>&1 && break
+  sleep 1
+done
+cd "$REPO_ROOT"
 
 # Clones a live EIP-1967 proxy contract (code + implementation-slot + implementation
 # code) from a source chain onto this local Anvil, at the SAME address -- the actual
@@ -423,6 +458,7 @@ REQUESTER_PRIVATE_KEY=$REQUESTER_KEY
 WORKER_PRIVATE_KEY=$WORKER_KEY
 WORKER_B_PRIVATE_KEY=$WORKER_B_KEY
 EVALUATOR_PRIVATE_KEY=$EVALUATOR_KEY
+WITHDRAWAL_ADDRESS=$WITHDRAWAL_ADDRESS
 
 # smoke-token-reward-hook.ts specifically -- step 9 above deploys a mock DREAMS
 # token, vault, and hook onto this same local Anvil, so this smoke test can run
@@ -439,7 +475,7 @@ VAULT_ADDRESS=$VAULT_ADDRESS
 # distinct from REWARD_HOOK_ADDRESS above, which only the smoke-token-reward-hook.ts
 # script itself reads. Without this, contractGetDreamsPerUsdc() and friends
 # (apps/backend/src/services/contract.ts) silently short-circuit to zero, and
-# `make smoke token-reward-hook` fails on the exchange-rate check.
+# \`make smoke token-reward-hook\` fails on the exchange-rate check.
 DREAMS_HOOK_ADDRESS=$REWARD_HOOK_ADDRESS
 
 # Web app (apps/web, Next.js -- NEXT_PUBLIC_ prefix)
@@ -449,40 +485,109 @@ NEXT_PUBLIC_CHAIN_ID=84532
 NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=$ANVIL_RPC_URL
 EOF
 
-echo "==> [10/12] Build the CLI"
+echo "==> [10/13] Build the CLI"
 make cli
 
-echo "==> [11/12] Start the backend"
+echo "==> [11/13] Start the backend"
 # The whole point of this script is that the sandbox is ready to use the
 # moment it finishes -- not "ready after one more manual step". Migrations
 # run on boot; nohup keeps it alive after this script exits.
 # The backend has no dotenv loading of its own -- it expects its process environment
 # to already have .env's values (matching the Makefile's ENV_LOADER convention), so
 # source it explicitly here rather than relying on whatever this shell inherited.
-if ! curl -sf http://127.0.0.1:3000 > /dev/null 2>&1; then
-  (
-    set -a
-    source "$REPO_ROOT/.env"
-    set +a
-    cd apps/backend
-    # setsid, not just nohup: `pnpm dev` spawns the actual server as a further
-    # child process, and nohup's SIGHUP-ignore on the immediate pnpm process
-    # doesn't reliably extend to that child. setsid detaches the whole process
-    # tree into its own session with no controlling terminal, so a session/
-    # terminal hangup elsewhere can't reach it at all.
-    setsid nohup pnpm dev > /tmp/backend.log 2>&1 &
-  )
-  for _ in $(seq 1 30); do
-    # -w '%{http_code}' with no -f: any HTTP response (even 404) counts as "up".
-    # "000" means curl couldn't connect at all. `|| true` keeps this safe under
-    # `set -e` -- a bare failing curl here would otherwise abort the whole script.
-    code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000 2>/dev/null || true)"
-    [ "$code" != "000" ] && break
-    sleep 1
-  done
-fi
+#
+# Always restart: a backend left running from a prior run of this script sourced
+# THAT run's .env at launch time (old contract addresses, old X402_FACILITATOR_TOKEN,
+# etc.) and never picks up this run's freshly deployed values -- every real
+# request then fails against a stale facilitator token or a contract address this
+# Anvil no longer has code at. Skipping the restart just because something
+# answers on :3000 leaves that mismatch in place silently.
+#
+# Gating the kill behind "does :3000 currently respond" is itself unreliable
+# under load (this script is doing plenty of other CPU/network work
+# concurrently, e.g. contract redeploys): a transient false negative on that
+# curl skips the kill entirely, the new backend below then fails to bind with
+# EADDRINUSE, and the stale process silently keeps serving the rest of this
+# run against a chain and facilitator token it no longer matches -- confirmed
+# directly by triggering it (two cloud-env-setup.sh runs back to back). fuser
+# -k on a port nothing is listening on is already a harmless no-op (confirmed
+# via `|| true` below), so just always attempt it.
+fuser -k 3000/tcp > /dev/null 2>&1 || true
+for _ in $(seq 1 10); do
+  curl -sf http://127.0.0.1:3000 > /dev/null 2>&1 || break
+  sleep 1
+done
+# Postgres is a native install and its data directory survives a container
+# resume; Anvil does not (no persisted chain state -- see the smoke-test
+# guidance in AGENTS.md), so the redeploy above always starts a genuinely
+# fresh chain back at block 0. Every ID this stack hands out is derived
+# deterministically from that chain state:
+#   taskId = keccak256(chainid, diamond address, requester, requesterNonce)
+# (CoreFacet.createTask) -- and chainid, the diamond's address (same deployer
+# key + nonce sequence every run), and the requester (the smoke suite's fixed
+# REQUESTER_PRIVATE_KEY) are ALL identical across sessions, with
+# requesterNonce resetting to 0 on the fresh chain. So the Nth task the smoke
+# suite's requester creates gets the exact same taskId (and escrow_tx_hash)
+# as the Nth task it created in any prior session, and a stale row still
+# sitting in Postgres from that prior session collides on the very first
+# insert. Wipe every application data table (everything except
+# __drizzle_migrations, which must not be replayed) unconditionally before
+# every fresh backend start -- deliberately NOT gated behind the "only if
+# nothing answered on :3000" check above, since a stale backend surviving
+# across runs (exactly the case that check-and-kill logic exists for) would
+# otherwise skip this reset too, leaving old rows in place even though the
+# chain underneath just got reset to block 0.
+truncate_output="$(PGPASSWORD="$DB_PASSWORD" psql -h 127.0.0.1 -p "$DB_PORT" -U "$DB_USER" -d "$DB_NAME" -v ON_ERROR_STOP=1 -c "
+  DO \$\$
+  DECLARE r RECORD;
+  BEGIN
+    FOR r IN SELECT tablename FROM pg_tables WHERE schemaname = 'public' AND tablename <> '__drizzle_migrations' LOOP
+      EXECUTE 'TRUNCATE TABLE public.' || quote_ident(r.tablename) || ' CASCADE';
+    END LOOP;
+  END \$\$;
+" 2>&1)" || echo "Warning: failed to reset DB state before fresh backend start -- smoke tests may fail on stale-row ID collisions: $truncate_output" >&2
+(
+  set -a
+  source "$REPO_ROOT/.env"
+  set +a
+  cd apps/backend
+  # setsid, not just nohup: `pnpm dev` spawns the actual server as a further
+  # child process, and nohup's SIGHUP-ignore on the immediate pnpm process
+  # doesn't reliably extend to that child. setsid detaches the whole process
+  # tree into its own session with no controlling terminal, so a session/
+  # terminal hangup elsewhere can't reach it at all.
+  setsid nohup pnpm dev > /tmp/backend.log 2>&1 &
+)
+for _ in $(seq 1 30); do
+  # -w '%{http_code}' with no -f: any HTTP response (even 404) counts as "up".
+  # "000" means curl couldn't connect at all. `|| true` keeps this safe under
+  # `set -e` -- a bare failing curl here would otherwise abort the whole script.
+  code="$(curl -s -o /dev/null -w '%{http_code}' http://127.0.0.1:3000 2>/dev/null || true)"
+  [ "$code" != "000" ] && break
+  sleep 1
+done
 
-echo "==> [12/12] Done"
+echo "==> [12/13] Provision CLI keystore for smoke-withdraw.ts"
+# smoke-withdraw.ts drives `taskmarket wallet set-withdrawal-address` and
+# `taskmarket withdraw` for DEV_PRIVATE_KEY's wallet, and both commands call
+# loadKeystore() and hard-fail ("No keystore found. Run `taskmarket init` first.")
+# if none exists yet. `wallet import` is the right command here, not `init` --
+# `init` always generates a brand new wallet, whereas `import` seeds the keystore
+# from an existing private key. It's idempotent (keystoreExists() short-circuits
+# and just prints the existing address), so safe to run unconditionally on every
+# rerun of this script.
+(
+  set -a
+  source "$REPO_ROOT/.env"
+  set +a
+  # Matches the Makefile's own convention (e.g. the mock-api target) for running a
+  # workspace package's tsx-based scripts: `pnpm --filter <pkg> exec tsx`, not a bare
+  # `tsx` invocation, which only resolves if some other step happened to put
+  # node_modules/.bin on PATH first.
+  TASKMARKET_IMPORT_KEY="$DEPLOYER_KEY" pnpm --filter @lucid-agents/taskmarket exec tsx src/index.ts wallet import --yes > /dev/null
+)
+
+echo "==> [13/13] Done"
 echo "Diamond:     $DIAMOND_ADDRESS"
 echo "Mock USDC:   $USDC_ADDRESS"
 echo "Forwarder:   $FORWARDER_ADDRESS"
