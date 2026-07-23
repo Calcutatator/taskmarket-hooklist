@@ -90,6 +90,7 @@ describe('TryExperience', () => {
     ).toBeInTheDocument();
     expect(screen.getByText('Made on Taskmarket')).toBeInTheDocument();
     expect(screen.getByText(/no account needed to start/i)).toBeInTheDocument();
+    expect(screen.getByText('$0.925')).toBeInTheDocument();
 
     await user.click(screen.getAllByRole('button', { name: /build my brief/i })[0]!);
 

@@ -1,6 +1,10 @@
+'use client';
+
+import { usePrivy } from '@privy-io/react-auth';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
+import { isPrivyConfigured } from '@/lib/privy-config';
 
 const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
@@ -8,6 +12,44 @@ const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 // sign-in for returning users. Deliberately lighter than PublicSiteHeader so a
 // cold visitor has no full nav to escape through.
 export function TryHeader() {
+  if (!isPrivyConfigured()) {
+    return (
+      <TryHeaderContent
+        authenticated={false}
+        login={() => undefined}
+        ready={false}
+        walletConfigurationAvailable={false}
+      />
+    );
+  }
+
+  return <TryHeaderWithPrivy />;
+}
+
+function TryHeaderWithPrivy() {
+  const { authenticated, login, ready } = usePrivy();
+
+  return (
+    <TryHeaderContent
+      authenticated={authenticated}
+      login={login}
+      ready={ready}
+      walletConfigurationAvailable
+    />
+  );
+}
+
+function TryHeaderContent({
+  authenticated,
+  login,
+  ready,
+  walletConfigurationAvailable,
+}: {
+  authenticated: boolean;
+  login: () => void;
+  ready: boolean;
+  walletConfigurationAvailable: boolean;
+}) {
   return (
     <header className="absolute inset-x-0 top-0 z-30 w-full border-b border-white/10 bg-background/18 backdrop-blur-xl">
       <div className="mx-auto flex w-full max-w-7xl items-center justify-between gap-4 px-4 py-3 sm:px-6 lg:px-8">
@@ -28,9 +70,21 @@ export function TryHeader() {
           <Button asChild size="sm" variant="ghost">
             <a href="#how-it-works">How it works</a>
           </Button>
-          <Button asChild size="sm" variant="terminal">
-            <Link href="/dashboard">Sign in</Link>
-          </Button>
+          {authenticated ? (
+            <Button asChild size="sm" variant="terminal">
+              <a href="#try-builder">Continue brief</a>
+            </Button>
+          ) : (
+            <Button
+              disabled={!walletConfigurationAvailable || !ready}
+              onClick={() => login()}
+              size="sm"
+              type="button"
+              variant="terminal"
+            >
+              {walletConfigurationAvailable ? 'Sign in' : 'Sign in unavailable'}
+            </Button>
+          )}
         </div>
       </div>
     </header>

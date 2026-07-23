@@ -7,6 +7,7 @@ import {
   type WizardFunnelEvent,
   type WizardLockConfig,
 } from '@/components/market/create-task-wizard';
+import { formatUsdcUnits } from '@/lib/format';
 import type { TryDrop } from '@/lib/try/drops';
 import { emitTryFunnelEvent, type TryFunnelEventName } from '@/lib/try/events';
 
@@ -16,6 +17,11 @@ import { TryHero } from './try-hero';
 import { TryHowItWorks } from './try-how-it-works';
 
 const TRY_REWARD_USD = '1';
+const TRY_PLATFORM_FEE_BPS = BigInt(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS ?? 750);
+const TRY_REWARD_BASE_UNITS = 1_000_000n;
+const TRY_WORKER_PAYOUT_USD = formatUsdcUnits(
+  ((TRY_REWARD_BASE_UNITS * (10_000n - TRY_PLATFORM_FEE_BPS)) / 10_000n).toString()
+).replace(/ USDC$/, '');
 
 type TryExperienceProps = {
   drops: readonly TryDrop[];
@@ -197,7 +203,7 @@ export function TryExperience({ drops }: TryExperienceProps) {
               <dt className="font-mono text-[0.7rem] font-semibold uppercase text-muted-foreground">
                 Worker payout
               </dt>
-              <dd className="text-sm font-semibold text-foreground">$0.95</dd>
+              <dd className="text-sm font-semibold text-foreground">${TRY_WORKER_PAYOUT_USD}</dd>
             </div>
             <div className="grid gap-1 bg-background p-4">
               <dt className="font-mono text-[0.7rem] font-semibold uppercase text-muted-foreground">
