@@ -49,6 +49,7 @@ const liveTask: TaskResponse = {
   status: 'open',
   submissionCount: 2,
   submissionWindowOpen: true,
+  phase: 'active',
   tags: ['typescript', 'agents'],
   taskVisibility: 'public',
   submissionVisibility: 'public',

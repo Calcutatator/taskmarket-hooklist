@@ -3,6 +3,7 @@ import {
   computeNetReward,
   computePendingActions,
   computeSubmissionWindowOpen,
+  computeTaskPhase,
   normalizeRequesterPublicKey,
   type PendingActionTask,
 } from '../../../src/lib/task';
@@ -58,10 +59,51 @@ describe('computeSubmissionWindowOpen', () => {
 
   it('closes every mode at task expiry', () => {
     expect(computeSubmissionWindowOpen(task({ expiryTime: NOW }), NOW)).toBe(false);
-    expect(computeSubmissionWindowOpen(task({ status: 'claimed', mode: 'claim', expiryTime: PAST }), NOW)).toBe(
-      false
+    expect(
+      computeSubmissionWindowOpen(task({ status: 'claimed', mode: 'claim', expiryTime: PAST }), NOW)
+    ).toBe(false);
+  });
+});
+
+describe('computeTaskPhase', () => {
+  it.each([
+    ['open', FUTURE],
+    ['claimed', FUTURE],
+    ['worker_selected', FUTURE],
+    ['pending_approval', FUTURE],
+    ['pending_approval', PAST],
+  ])('reports active for status %s with expiry %s', (status, expiryTime) => {
+    expect(computeTaskPhase(task({ status, expiryTime }), NOW)).toBe('active');
+  });
+
+  it.each(['open', 'claimed', 'worker_selected'])(
+    'reports awaiting_settlement once %s has passed its deadline',
+    (status) => {
+      expect(computeTaskPhase(task({ status, expiryTime: PAST }), NOW)).toBe('awaiting_settlement');
+    }
+  );
+
+  it('treats an expiry of exactly now as passed (awaiting_settlement, not active)', () => {
+    expect(computeTaskPhase(task({ status: 'open', expiryTime: NOW }), NOW)).toBe(
+      'awaiting_settlement'
     );
   });
+
+  it.each(['review', 'appealing', 'disputed'])(
+    'reports in_review for status %s regardless of expiry',
+    (status) => {
+      expect(computeTaskPhase(task({ status, expiryTime: FUTURE }), NOW)).toBe('in_review');
+      expect(computeTaskPhase(task({ status, expiryTime: PAST }), NOW)).toBe('in_review');
+    }
+  );
+
+  it.each(['completed', 'cancelled', 'expired'])(
+    'reports resolved for terminal status %s regardless of expiry',
+    (status) => {
+      expect(computeTaskPhase(task({ status, expiryTime: FUTURE }), NOW)).toBe('resolved');
+      expect(computeTaskPhase(task({ status, expiryTime: PAST }), NOW)).toBe('resolved');
+    }
+  );
 });
 
 describe('computePendingActions', () => {
@@ -148,10 +190,9 @@ describe('computePendingActions', () => {
     });
     expect(claim).toMatchObject({ requiresPayment: false, paymentAmount: null });
 
-    const pitch = computePendingActions(
-      task({ mode: 'pitch', pitchDeadline: FUTURE }),
-      NOW
-    ).find((candidate) => candidate.action === 'pitch');
+    const pitch = computePendingActions(task({ mode: 'pitch', pitchDeadline: FUTURE }), NOW).find(
+      (candidate) => candidate.action === 'pitch'
+    );
     expect(pitch).toMatchObject({ requiresPayment: true, paymentAmount: '1000' });
   });
 
@@ -274,9 +315,7 @@ describe('computePendingActions', () => {
       NOW
     );
 
-    expect(actions).toEqual([
-      expect.objectContaining({ action: 'rate', targetWorker: WORKER }),
-    ]);
+    expect(actions).toEqual([expect.objectContaining({ action: 'rate', targetWorker: WORKER })]);
   });
 
   it('offers no rating action when there are no awards yet', () => {

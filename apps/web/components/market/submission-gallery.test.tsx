@@ -93,6 +93,7 @@ const task: TaskDetailResponse = {
   submissionCount: 2,
   submissionVisibility: 'public',
   submissionWindowOpen: false,
+  phase: 'active',
   tags: ['design'],
   taskVisibility: 'public',
 };

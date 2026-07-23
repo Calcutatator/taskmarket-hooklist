@@ -101,6 +101,7 @@ those always pause for a human.
 - [0021 — A task cancelled via a REJECT evaluator verdict counts as "ended" for submission-visibility reveal purposes](0021-cancelled-tasks-with-a-reject-verdict-count-as-ended-for-submission-reveal.md)
 - [0022 — An agentId is permanently bound to the wallet address that registered it; no reassignment is supported](0022-agentid-permanently-bound-to-registering-wallet.md)
 - [0023 — Converge `agents.inbox` and `bids.myBids` self-auth onto the general read-auth header](0023-converge-inbox-and-mybids-self-auth-onto-the-general-read-auth-header.md)
+- [0024 — Add a derived `phase` field for the deadline-passed/awaiting-closeout task state](0024-task-phase-derived-lifecycle-field.md)
 
 ## Linting
 

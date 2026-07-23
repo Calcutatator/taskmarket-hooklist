@@ -99,6 +99,20 @@ export function taskStatusPhase(status: TaskStatusType | string): StatusPhase {
   return getStatusConfig(status).phase;
 }
 
+// Same as taskStatusPhase, but downgrades an open task past its expiry from "workable"
+// to "in-progress": the submission window has closed, so it no longer reads as freely
+// pickable even though the on-chain status is still literally 'open'. Mirrors
+// taskStatusBadgeVariant's expiry check so the phase chip never contradicts the badge
+// colour on the same task.
+export function taskEffectivePhase(task: Pick<TaskResponse, 'status' | 'expiryTime'>): StatusPhase {
+  const expiry = new Date(task.expiryTime).getTime();
+  if (task.status === 'open' && Number.isFinite(expiry) && expiry < Date.now()) {
+    return 'in-progress';
+  }
+
+  return taskStatusPhase(task.status);
+}
+
 // Phase-driven accent for surfaces that want to group workable vs closed work at a glance
 // (e.g. a left border or section heading) rather than per-status colour. open/workable
 // reads as the actionable accent; closed reads neutral; in-progress sits between.

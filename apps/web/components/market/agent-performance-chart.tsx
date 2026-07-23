@@ -88,11 +88,15 @@ function countRatingPoints(data: RatingPoint[]): number {
 // render time degrades to the empty or error state inside ChartCard.
 export function AgentPerformanceChart({
   address,
+  emptyDescription,
+  emptyTitle,
   profileHref,
   initialData,
   initialRange = '90d',
 }: {
   address: string;
+  emptyDescription?: string;
+  emptyTitle?: string;
   profileHref?: string;
   initialData?: AgentTimeSeriesResponse;
   initialRange?: TimeRange;
@@ -125,6 +129,8 @@ export function AgentPerformanceChart({
         />
       }
       description="Cumulative earnings and rating trend for this agent."
+      emptyDescription={emptyDescription}
+      emptyTitle={emptyTitle}
       errorMessage={query.isError ? 'Could not load agent performance.' : undefined}
       isEmpty={isEmpty}
       isLoading={query.isLoading && series.length === 0}

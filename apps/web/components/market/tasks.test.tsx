@@ -7,12 +7,14 @@ import type {
   TaskDetailResponse,
   TaskResponse,
 } from '@taskmarket/shared';
+import { getAgentName } from '@taskmarket/shared';
 import {
   CreateTaskPanel,
   TaskDetailPanel,
   TaskFilterRail,
   TaskListPageContent,
   TaskTable,
+  taskFullTitle,
   taskTitle,
 } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
@@ -137,6 +139,7 @@ const task: TaskResponse = {
   auctionType: 'english',
   auctionBidCount: 2,
   submissionWindowOpen: true,
+  phase: 'active',
 };
 
 const taskDetail: TaskDetailResponse = {
@@ -244,6 +247,29 @@ describe('taskTitle', () => {
 
   it('falls back to the task id when stripping leaves nothing', () => {
     expect(taskTitle({ ...task, description: '**' })).toBe(`Task ${task.id}`);
+  });
+
+  it('truncates with a trailing ellipsis past 80 characters instead of cutting silently', () => {
+    const longFirstLine = 'A'.repeat(90);
+    const capped = taskTitle({ ...task, description: longFirstLine });
+    expect(capped).toHaveLength(80);
+    expect(capped.endsWith('…')).toBe(true);
+    expect(capped.startsWith('A'.repeat(79))).toBe(true);
+  });
+
+  it('does not add an ellipsis when the title is short enough to fit', () => {
+    expect(taskTitle({ ...task, description: 'Short title' }).endsWith('…')).toBe(false);
+  });
+});
+
+describe('taskFullTitle', () => {
+  it('returns the untruncated first line even past the 80-character cap', () => {
+    const longFirstLine = `${'A'.repeat(90)} tail-marker`;
+    expect(taskFullTitle({ ...task, description: longFirstLine })).toBe(longFirstLine);
+  });
+
+  it('falls back to the task id when stripping leaves nothing', () => {
+    expect(taskFullTitle({ ...task, description: '**' })).toBe(`Task ${task.id}`);
   });
 });
 
@@ -831,6 +857,51 @@ describe('Task marketplace components', () => {
     ).toBeInTheDocument();
     expect(screen.getAllByText(/release payout/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
+  });
+
+  it('paginates and sorts a large submission review queue', async () => {
+    const user = userEvent.setup();
+    const submissions: SubmissionResponse[] = Array.from({ length: 12 }, (_, index) => ({
+      artifacts: [],
+      fileUrl: 'ipfs://deliverable',
+      id: `sub-${index}`,
+      signature: '0xsig',
+      // Oldest first in the seed order; index 0 is the oldest, index 11 the newest.
+      submittedAt: new Date(Date.now() - (12 - index) * 60_000).toISOString(),
+      taskId: task.id,
+      workerAddress: `0x${(index + 1).toString().padStart(40, '0')}`,
+      workerStats: {
+        averageRating: 90,
+        completedTasks: index,
+        ratedTasks: index,
+        totalStars: index * 90,
+      },
+    }));
+
+    renderReviewSubmissions(submissions);
+
+    // 12 submissions at 10 per page -> 2 pages, showing 1-10 first. Scope the
+    // article query to submission cards -- the reward/status DetailMetric
+    // summaries are also <article>s and would otherwise inflate the count.
+    expect(screen.getByText('Showing 1-10 of 12')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(10);
+
+    await user.click(screen.getByRole('button', { name: /next page/i }));
+    expect(screen.getByText('Showing 11-12 of 12')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(2);
+
+    await user.selectOptions(
+      screen.getByRole('combobox', { name: /sort submissions/i }),
+      'credibility'
+    );
+    // Sorting resets back to page 1, now ordered by most-experienced worker first
+    // (index 11 has the highest completedTasks of the seed).
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+    const mostExperiencedWorker = submissions[11]?.workerAddress ?? '';
+    expect(
+      screen.getAllByRole('link', { name: compactAddressLabel(mostExperiencedWorker) })[0]
+    ).toBeInTheDocument();
   });
 
   it('renders pending approval submissions as media comparison cards', () => {
@@ -1473,5 +1544,70 @@ describe('Task marketplace components', () => {
 
     rerender(<TaskDetailPanel backHref="/tasks" modeData={{ bids: [] }} task={taskDetail} />);
     expect(screen.queryByRole('link', { name: /how this works/i })).not.toBeInTheDocument();
+  });
+
+  it('prefers the requester agent id over the wallet address in the reference sidebar', () => {
+    render(
+      <TaskDetailPanel modeData={{ bids: [] }} task={{ ...taskDetail, requesterAgentId: '42' }} />
+    );
+
+    expect(screen.getByText('Agent')).toBeInTheDocument();
+    expect(screen.queryByText('Wallet')).not.toBeInTheDocument();
+    expect(screen.queryByText(compactAddressLabel(task.requester))).not.toBeInTheDocument();
+    const requesterLink = screen.getByRole('link', { name: getAgentName('42') ?? 'Agent #42' });
+    expect(requesterLink).toHaveAttribute('href', '/dashboard/agents/42');
+  });
+
+  it('falls back to the wallet label when the requester has no registered agent id', () => {
+    render(<TaskDetailPanel modeData={{ bids: [] }} task={taskDetail} />);
+
+    expect(screen.getByText('Wallet')).toBeInTheDocument();
+    expect(screen.queryByText('Agent')).not.toBeInTheDocument();
+  });
+
+  it('never shows the workable phase chip for an open task past its expiry', () => {
+    render(
+      <TaskDetailPanel
+        modeData={{ bids: [] }}
+        task={{
+          ...taskDetail,
+          expiryTime: new Date(Date.now() - 3_600_000).toISOString(),
+          status: 'open',
+        }}
+      />
+    );
+
+    expect(screen.getByText('In progress')).toBeInTheDocument();
+    expect(screen.queryByText('Workable')).not.toBeInTheDocument();
+  });
+
+  it('gives the two copy-for-agent buttons distinct, real hover labels', () => {
+    render(<TaskDetailPanel modeData={{ bids: [] }} task={taskDetail} />);
+
+    expect(screen.getByRole('button', { name: 'Copy as JSON' })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Copy as markdown' })).toBeInTheDocument();
+  });
+
+  it('adds an ellipsis and a hover title once a title is long enough to truncate', () => {
+    const longDescription = `${'A very long task title with a github url '.repeat(4)}https://github.com/example/repo`;
+    render(
+      <TaskDetailPanel
+        modeData={{ bids: [] }}
+        task={{ ...taskDetail, description: longDescription }}
+      />
+    );
+
+    const capped = taskTitle({ ...taskDetail, description: longDescription });
+    const full = taskFullTitle({ ...taskDetail, description: longDescription });
+    expect(capped).not.toBe(full);
+    expect(capped.endsWith('…')).toBe(true);
+
+    const heading = screen.getByRole('heading', { level: 1, name: capped });
+    expect(heading).toHaveAttribute('title', full);
+    expect(heading.className).toContain('break-words');
+    expect(screen.getByText(capped, { selector: '[data-slot="breadcrumb-page"]' })).toHaveAttribute(
+      'title',
+      full
+    );
   });
 });

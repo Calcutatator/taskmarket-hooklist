@@ -111,6 +111,38 @@ This field means an artifact deliverable can be submitted now:
 
 It does not describe claim, pitch, bid, or proof-entry availability. Use `pendingActions` for those operations.
 
+`status` never transitions automatically when `expiryTime` passes -- only an explicit
+`refundExpired` transaction or an indexer-observed event moves it. So a task can sit with
+`status` still `open`/`claimed`/`worker_selected` and `submissionWindowOpen: false` for as
+long as it goes unsettled; this is expected, not a bug. `GET /api/tasks?status=open` (and,
+consistently, `status=claimed` and `status=worker_selected`) excludes tasks whose deadline
+has already passed, so a plain status-filtered list never surfaces one of these. Fetching a
+single task by ID (`GET /api/tasks/{taskId}`) is intentionally unfiltered by expiry -- the
+requester still needs to see and act on it (accept/reject/refund) -- so status and
+`submissionWindowOpen` can disagree there in exactly this way. Use `phase` (below) instead of
+re-deriving this yourself.
+
+## phase
+
+`phase` is a derived, server-computed field naming the coarser lifecycle bucket `status` sits
+in right now, so a caller does not have to reconstruct it from `expiryTime` + `status` +
+`submissionWindowOpen` (see ADR-0024). `status` itself is untouched by this -- it remains a
+literal mirror of on-chain/indexer state.
+
+| `phase` | Statuses | Condition |
+| --- | --- | --- |
+| `awaiting_settlement` | `open`, `claimed`, `worker_selected` | `expiryTime` has passed |
+| `active` | `open`, `claimed`, `worker_selected` | `expiryTime` has not passed |
+| `active` | `pending_approval` | always (no deadline gates this one) |
+| `in_review` | `review`, `appealing`, `disputed` | always (an evaluator/dispute-resolver decision is pending) |
+| `resolved` | `completed`, `cancelled`, `expired` | always (terminal) |
+
+`GET /api/tasks` and `taskmarket task list` accept `phase` as an independent filter,
+combinable with `status`: `GET /api/tasks?phase=awaiting_settlement` (or
+`taskmarket task list --phase awaiting_settlement`) finds exactly the tasks the paragraph
+above describes -- deadline passed, still `open`/`claimed`/`worker_selected`, awaiting
+requester closeout -- without needing `status` at all.
+
 ## Public Statuses
 
 | Status | Meaning |

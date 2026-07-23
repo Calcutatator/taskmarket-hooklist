@@ -25,7 +25,11 @@ import {
 import { eq, desc, sql, and, or, ilike, gte, inArray, isNull, getTableColumns } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
-import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
+import {
+  computeSubmissionWindowOpen,
+  computeTaskPhase,
+  normalizeRequesterPublicKey,
+} from '../lib/task';
 import { sha256Hex } from '../lib/hash';
 import { lowerAddressEq } from '../lib/agents';
 import { taskNotUnlisted } from '../lib/task-visibility';
@@ -239,6 +243,7 @@ export const agentsRouter = router({
         const sCount = submissionCountMap.get(task.id) ?? 0;
         const pCount = pitchCountMap.get(task.id) ?? 0;
         const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
+        const phase = computeTaskPhase(task, now);
 
         return {
           id: task.id,
@@ -274,6 +279,7 @@ export const agentsRouter = router({
           awardCount: Number(task.awardCount ?? 0),
           pitchCount: pCount,
           submissionWindowOpen,
+          phase,
         };
       };
 

@@ -42,6 +42,7 @@ const task: TaskResponse = {
   auctionType: null,
   auctionBidCount: 0,
   submissionWindowOpen: true,
+  phase: 'active',
 };
 
 beforeEach(() => {

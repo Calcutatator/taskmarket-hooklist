@@ -64,6 +64,11 @@ Any time you add or edit a file under `public/reference/`, `public/modes/`, `pub
 - Prefer simple solutions over clever ones
 - Follow existing patterns in the guides above before inventing new ones
 
+## Frontend/UI Changes: Run `make ui-ci` Before Pushing
+
+Any `apps/web` UI change must pass `make ui-ci` (run `make ui-ci-install-browsers` once first)
+before pushing; if that's not feasible, check the PR's `ui` CI job before calling it done.
+
 ## Smoke Tests
 
 Smoke tests live in `apps/backend/scripts/smoke-*.ts` and run against a live backend + deployed contract. Run with `make smoke <name>` (e.g. `make smoke bounty`, `make smoke evaluator`).

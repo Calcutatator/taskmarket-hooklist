@@ -12,8 +12,8 @@ import type {
   TaskResponse,
   TaskStatusType,
 } from '@taskmarket/shared';
-import { formatDreams } from '@taskmarket/shared';
-import { SlidersHorizontal } from 'lucide-react';
+import { formatDreams, getAgentName } from '@taskmarket/shared';
+import { FileJsonIcon, FileTextIcon, SlidersHorizontal } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -84,6 +84,7 @@ import {
   resolvedAwardCount,
   settledAwards,
   splitPayoutLabel,
+  taskEffectivePhase,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
   taskStatusLabel,
@@ -118,14 +119,33 @@ export type TaskModeData = {
   submissions?: SubmissionResponse[];
 };
 
-export function taskTitle(task: TaskResponse) {
-  // Strip markdown noise (emphasis, backticks, heading markers) so raw briefs do not
-  // leak "**Title**" into cards. Underscores stay: snake_case identifiers are content.
+const TASK_TITLE_MAX_LENGTH = 80;
+
+// Strip markdown noise (emphasis, backticks, heading markers) so raw briefs do not
+// leak "**Title**" into cards. Underscores stay: snake_case identifiers are content.
+function firstLineTitle(task: TaskResponse): string | null {
   const firstLine = (task.description.split('\n')[0] ?? '')
     .replace(/^#+\s*/, '')
     .replace(/[*`]/g, '')
     .trim();
-  return firstLine.slice(0, 80) || `Task ${task.id}`;
+  return firstLine || null;
+}
+
+// Capped title for compact surfaces (cards, table rows, breadcrumb). A truncated
+// title previously cut off silently with no visual signal that text was missing --
+// an ellipsis marks it as truncated (see taskFullTitle for the untruncated value a
+// tooltip can use to show the rest).
+export function taskTitle(task: TaskResponse) {
+  const firstLine = firstLineTitle(task);
+  if (!firstLine) return `Task ${task.id}`;
+  if (firstLine.length <= TASK_TITLE_MAX_LENGTH) return firstLine;
+  return `${firstLine.slice(0, TASK_TITLE_MAX_LENGTH - 1)}…`;
+}
+
+// Untruncated title, e.g. for a hover tooltip on a capped taskTitle() so a reader can
+// always see the complete text without navigating away.
+export function taskFullTitle(task: TaskResponse) {
+  return firstLineTitle(task) ?? `Task ${task.id}`;
 }
 
 function taskBody(task: TaskResponse) {
@@ -411,8 +431,8 @@ const PHASE_COPY: Record<ReturnType<typeof taskStatusPhase>, { label: string; ti
   closed: { label: 'Closed', title: 'This task has settled and can no longer accept work.' },
 };
 
-function PhaseBadge({ status }: { status: TaskStatusType }) {
-  const phase = taskStatusPhase(status);
+function PhaseBadge({ task }: { task: Pick<TaskResponse, 'status' | 'expiryTime'> }) {
+  const phase = taskEffectivePhase(task);
   const copy = PHASE_COPY[phase];
   // Workable reads as the actionable accent; in-progress/closed stay neutral so the chip
   // reinforces the status colour without competing with it.
@@ -444,14 +464,23 @@ function ratingProgress(task: TaskDetailResponse | TaskResponse): string | null 
   return `${[...ratingsByWorker.values()].filter(Boolean).length} of ${ratingsByWorker.size} rated`;
 }
 
-function statusContext(task: TaskDetailResponse | TaskResponse) {
+// Whether an 'open' task's submission window has already closed (deadline passed but
+// status has not transitioned, since expiry only flips status via an explicit on-chain
+// action or an indexer-observed event -- see docs/adr/0007). Shared by statusContext,
+// statusDescription, and taskEffectivePhase's callers so every surface on the detail
+// page agrees on when this task stopped accepting new work.
+function isOpenWindowClosed(task: TaskDetailResponse | TaskResponse): boolean {
   const expiry = new Date(task.expiryTime);
-  if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
+  return task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date();
+}
+
+function statusContext(task: TaskDetailResponse | TaskResponse) {
+  if (isOpenWindowClosed(task)) {
     if ((task.mode === 'bounty' || task.mode === 'benchmark') && task.submissionCount > 0) {
-      return 'Reviewing submissions';
+      return `Reviewing ${countLabel(task.submissionCount, 'submission')}`;
     }
     if (task.mode === 'pitch' && task.pitchCount > 0) {
-      return 'Reviewing pitches';
+      return `Reviewing ${countLabel(task.pitchCount, 'pitch', 'pitches')}`;
     }
     return 'Expired — no submissions';
   }
@@ -481,9 +510,20 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
   }
 }
 
+// Tooltip copy for the status badge. Delegates to statusContext for the open-but-expired
+// case so the hover text never contradicts the caption already printed underneath the
+// badge (previously this always showed STATUS_CONFIG's static "Accepting workers..."
+// description even once the submission window had closed).
+function statusDescription(task: TaskDetailResponse | TaskResponse) {
+  if (isOpenWindowClosed(task)) {
+    return `Submission window closed. ${statusContext(task)}.`;
+  }
+
+  return STATUS_CONFIG[task.status]?.description ?? statusContext(task);
+}
+
 function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
-  const expiry = new Date(task.expiryTime);
-  if (task.status === 'open' && Number.isFinite(expiry.getTime()) && expiry < new Date()) {
+  if (isOpenWindowClosed(task)) {
     return 'This task has passed its expiry time, so no open commands are available.';
   }
 
@@ -1448,7 +1488,13 @@ export function ActorLink({
   title?: string;
 }) {
   const identity = agentId ?? address;
-  const text = label ?? compactAddress(identity);
+  // Prefer a registered agent's name/id over a raw wallet address once one is on
+  // record -- compactAddress(agentId) previously rendered a short numeric agentId
+  // as-is (e.g. "42"), with nothing marking it as an agent identity.
+  const defaultText = agentId
+    ? (getAgentName(agentId) ?? `Agent #${agentId}`)
+    : compactAddress(address);
+  const text = label ?? defaultText;
 
   if (!identity) {
     return (
@@ -1956,13 +2002,14 @@ function TaskSummaryRail({
       <div className="mt-5 grid gap-5">
         <SummaryGroup title="Requester">
           <SummaryRow
-            label="Wallet"
+            label={task.requesterAgentId ? 'Agent' : 'Wallet'}
             value={
               <ActorLink
                 address={task.requester}
                 agentId={task.requesterAgentId}
                 className="min-w-0 truncate hover:text-primary"
                 profileBasePath={profileBasePath}
+                title={task.requester}
               />
             }
           />
@@ -2150,6 +2197,8 @@ export function TaskDetailPanel({
   const mainNextActions = nextActions.filter((action) => action.action !== 'cancel');
   const showNextActions =
     mainNextActions.length > 0 || (!reviewAction && cancelActions.length === 0);
+  const title = taskTitle(task);
+  const fullTitle = taskFullTitle(task);
   const descriptionBody = taskBody(task);
   const detailTags = taskDetailTags(task);
   const taskActivityTitle = activityTitle(task);
@@ -2171,8 +2220,11 @@ export function TaskDetailPanel({
             </BreadcrumbItem>
             <BreadcrumbSeparator />
             <BreadcrumbItem className="min-w-0">
-              <BreadcrumbPage className="max-w-[min(72vw,42rem)] truncate font-sans text-sm normal-case">
-                {taskTitle(task)}
+              <BreadcrumbPage
+                className="max-w-[min(72vw,42rem)] truncate font-sans text-sm normal-case"
+                title={fullTitle}
+              >
+                {title}
               </BreadcrumbPage>
             </BreadcrumbItem>
           </BreadcrumbList>
@@ -2203,7 +2255,7 @@ export function TaskDetailPanel({
             }
             label="Status"
             value={
-              <InfoTooltip label={STATUS_CONFIG[task.status]?.description ?? statusContext(task)}>
+              <InfoTooltip label={statusDescription(task)}>
                 <Badge className="px-3.5 py-1.5 text-base" variant={taskStatusBadgeVariant(task)}>
                   {taskStatusLabel(task.status)}
                 </Badge>
@@ -2235,7 +2287,7 @@ export function TaskDetailPanel({
                 </Link>
               ) : null}
               {task.taskVisibility === 'unlisted' ? <UnlistedBadge withTooltip /> : null}
-              <PhaseBadge status={task.status} />
+              <PhaseBadge task={task} />
               {taskTypesHref ? (
                 <Link
                   className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
@@ -2250,12 +2302,23 @@ export function TaskDetailPanel({
               <span className="font-mono text-[0.65rem] uppercase text-muted-foreground">
                 Copy for agent
               </span>
-              <CopyButton label="Copy as JSON" text={taskToAgentJson(task, modeData)} />
-              <CopyButton label="Copy as markdown" text={taskToMarkdown(task)} />
+              <CopyButton
+                icon={<FileJsonIcon />}
+                label="Copy as JSON"
+                text={taskToAgentJson(task, modeData)}
+              />
+              <CopyButton
+                icon={<FileTextIcon />}
+                label="Copy as markdown"
+                text={taskToMarkdown(task)}
+              />
             </div>
           </div>
-          <h1 className="font-display text-2xl font-semibold tracking-tight text-foreground">
-            {taskTitle(task)}
+          <h1
+            className="break-words font-display text-2xl font-semibold tracking-tight text-foreground"
+            title={fullTitle}
+          >
+            {title}
           </h1>
         </section>
         {reviewAction ? (

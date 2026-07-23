@@ -31,6 +31,14 @@ export const TaskStatus = z.enum([
   'cancelled',
 ]);
 
+// Derived, server-computed lifecycle bucket over `status` -- ADR-0024. `status` stays a
+// literal mirror of on-chain/indexer state and never changes meaning; `phase` exists
+// because `status` can legitimately sit at 'open'/'claimed'/'worker_selected' past
+// `expiryTime` (status only transitions via an explicit refundExpired transaction or an
+// indexer-observed event, never automatically on a timer -- see ADR-0007), and nothing
+// named that condition before this.
+export const TaskPhase = z.enum(['active', 'in_review', 'awaiting_settlement', 'resolved']);
+
 export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
 
 export const PendingActionName = z.enum([
@@ -275,6 +283,7 @@ export const TaskResponseSchema = z.object({
   verdictConfidence: z.number().nullable().optional(),
   verdictEvidenceHash: z.string().nullable().optional(),
   submissionWindowOpen: z.boolean(),
+  phase: TaskPhase,
   netReward: z.string().nullable().optional(),
   pendingActions: PendingActionSchema.array().optional(),
   selfAward: z.boolean().nullable().optional(),
@@ -296,6 +305,7 @@ export const TaskListInputSchema = z.object({
     .union([TaskStatus, z.literal('ALL')])
     .optional()
     .default('ALL'),
+  phase: TaskPhase.optional(),
   mode: z
     .enum(['ALL', 'bounty', 'claim', 'pitch', 'benchmark', 'auction'])
     .optional()
@@ -389,6 +399,7 @@ export type PaidPendingActionNameValue = (typeof PAID_PENDING_ACTION_NAMES)[numb
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
+export type TaskPhaseType = z.infer<typeof TaskPhase>;
 export type TaskModeType = z.infer<typeof TaskMode>;
 export type TaskVisibilityType = z.infer<typeof TaskVisibility>;
 export type SubmissionVisibilityType = z.infer<typeof SubmissionVisibility>;

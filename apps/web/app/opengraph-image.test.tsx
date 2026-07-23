@@ -110,6 +110,7 @@ const baseTask: TaskDetailResponse = {
   status: 'open',
   submissionCount: 0,
   submissionWindowOpen: true,
+  phase: 'active',
   tags: ['seo', 'images'],
   taskVisibility: 'public',
   submissionVisibility: 'public',

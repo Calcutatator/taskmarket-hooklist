@@ -101,6 +101,7 @@ function task(
     status: 'open',
     submissionCount: 0,
     submissionWindowOpen: true,
+    phase: 'active',
     tags: ['mock'],
     taskVisibility: 'public',
     submissionVisibility: 'public',

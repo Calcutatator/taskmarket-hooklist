@@ -3,6 +3,7 @@ import {
   Secp256k1PublicKeySchema,
   type PendingAction,
   type PendingActionNameValue,
+  type TaskPhaseType,
 } from '@taskmarket/shared';
 import { STANDARD_X402_ACTION_AMOUNT } from '../config/payments';
 
@@ -83,6 +84,24 @@ export function computeSubmissionWindowOpen(task: SubmissionWindowTask, now: Dat
     default:
       return false;
   }
+}
+
+const IN_REVIEW_STATUSES = new Set(['review', 'appealing', 'disputed']);
+const SUBMISSION_WINDOW_STATUSES = new Set(['open', 'claimed', 'worker_selected']);
+const RESOLVED_STATUSES = new Set(['completed', 'cancelled', 'expired']);
+
+// Derived lifecycle bucket over `status` -- see ADR-0024. `status` stays a literal
+// mirror of on-chain/indexer state; `phase` names the coarser bucket a client actually
+// wants without having to separately cross-check expiryTime and re-derive this itself.
+export function computeTaskPhase(task: SubmissionWindowTask, now: Date): TaskPhaseType {
+  if (IN_REVIEW_STATUSES.has(task.status)) return 'in_review';
+  if (RESOLVED_STATUSES.has(task.status)) return 'resolved';
+  if (SUBMISSION_WINDOW_STATUSES.has(task.status)) {
+    return task.expiryTime <= now ? 'awaiting_settlement' : 'active';
+  }
+  // pending_approval (and any future status this client does not yet know) has no
+  // deadline gating it -- treat as routine in-progress work, not a judged state.
+  return 'active';
 }
 
 export function computeNetReward(
