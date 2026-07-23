@@ -27,7 +27,10 @@ guard on top of this:
 
 ```ts
 if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-  throw new TRPCError({ code: 'FORBIDDEN', message: 'Only the task requester can call refundExpired' });
+  throw new TRPCError({
+    code: "FORBIDDEN",
+    message: "Only the task requester can call refundExpired",
+  });
 }
 ```
 
@@ -44,11 +47,11 @@ the underlying contract call would have succeeded from any address.
 
 ## Considered options
 
-| Option | Pros | Cons |
-|---|---|---|
-| Remove the backend requester check, matching the contract | Endpoint behavior matches on-chain semantics; anyone can unstick an expired task with no submissions; no fund-custody risk since the payout target is always `task.requester` | Any address can now trigger a refund the requester didn't initiate themselves (functionally harmless, but a behavior change from today) |
-| Keep the requester-only check (rejected) | No behavior change; matches other requester-gated endpoints | Reintroduces a single point of failure — an expired task can only be refunded by a requester who is willing and able to pay the X402 fee themselves, which is exactly the gap that surfaced this issue; inconsistent with the contract's own permissionless design and with `finalizeVerdict`'s documented precedent |
-| Require the caller to be requester OR an allowlisted operator address (rejected) | Narrower blast radius than fully open | Adds a config surface (allowlist) for a function that's already safe to open fully, since the contract itself has no such restriction; solves a problem that doesn't exist |
+| Option                                                                           | Pros                                                                                                                                                                          | Cons                                                                                                                                                                                                                                                                                                                 |
+| -------------------------------------------------------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- | -------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| Remove the backend requester check, matching the contract                        | Endpoint behavior matches on-chain semantics; anyone can unstick an expired task with no submissions; no fund-custody risk since the payout target is always `task.requester` | Any address can now trigger a refund the requester didn't initiate themselves (functionally harmless, but a behavior change from today)                                                                                                                                                                              |
+| Keep the requester-only check (rejected)                                         | No behavior change; matches other requester-gated endpoints                                                                                                                   | Reintroduces a single point of failure — an expired task can only be refunded by a requester who is willing and able to pay the X402 fee themselves, which is exactly the gap that surfaced this issue; inconsistent with the contract's own permissionless design and with `finalizeVerdict`'s documented precedent |
+| Require the caller to be requester OR an allowlisted operator address (rejected) | Narrower blast radius than fully open                                                                                                                                         | Adds a config surface (allowlist) for a function that's already safe to open fully, since the contract itself has no such restriction; solves a problem that doesn't exist                                                                                                                                           |
 
 ## Decision
 
@@ -60,16 +63,19 @@ unchanged and still enforced.
 ## Consequences
 
 **Positive:**
+
 - Backend behavior now matches the contract's intended permissionless design.
 - Expired, unsubmitted tasks can no longer get stuck in escrow solely because the requester is
   unavailable to pay the small X402 fee themselves.
 
 **Negative / trade-offs:**
+
 - A third party can now trigger a refund the requester didn't ask for. This has no fund-custody
   impact (money still only goes to the requester), but it is a visible behavior change worth
   recording here in case it surprises someone later.
 
 **Neutral / follow-up:**
+
 - `apps/backend/scripts/smoke-refund-expired.ts` gains a scenario asserting a non-requester
   caller can successfully refund an eligible expired task.
 

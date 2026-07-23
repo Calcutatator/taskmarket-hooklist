@@ -712,6 +712,37 @@ describe('tasks router', () => {
       expect(accept?.command).toContain('0xworker');
     });
 
+    it('active bounty with two distinct submitters: pendingActions commands omit any suggested address (ADR-0027)', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'public',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs])) // task row
+        .mockReturnValueOnce(makeChain([{ count: 2 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xworkerA' }, { workerAddress: '0xworkerB' }])
+        ); // distinct submitters -- ambiguous
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      const rejectSubmission = result!.pendingActions.find((a) => a.action === 'reject_submission');
+      expect(accept?.command).toContain('<address>');
+      expect(accept?.command).not.toContain('0xworkerA');
+      expect(accept?.command).not.toContain('0xworkerB');
+      expect(rejectSubmission?.command).toContain('<address>');
+      expect(rejectSubmission?.command).not.toContain('0xworkerA');
+      expect(rejectSubmission?.command).not.toContain('0xworkerB');
+    });
+
     it('active bounty under submissionVisibility never: pendingActions commands hide the submitter address from an anonymous caller', async () => {
       const ctx = createMockCtx();
       const activeRowWithSubs = {
@@ -876,6 +907,27 @@ describe('tasks router', () => {
 
       const accept = result!.pendingActions.find((a) => a.action === 'accept');
       expect(accept?.command).toContain('0xworker');
+    });
+
+    it('omits the suggested worker in pendingActions commands once two distinct submitters exist (ADR-0027)', async () => {
+      const ctx = createMockCtx(PAYER, { address: PAYER });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(makeChain([openBountyRow]))
+        .mockReturnValueOnce(makeChain([{ count: 2 }])) // updatedSubmissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // updatedPitchCount
+        .mockReturnValueOnce(makeChain([])) // updatedRequesterAgent
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xworkerA' }, { workerAddress: '0xworkerB' }])
+        ); // updatedDistinctSubmitters -- ambiguous
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('<address>');
+      expect(accept?.command).not.toContain('0xworkerA');
+      expect(accept?.command).not.toContain('0xworkerB');
     });
 
     it('rejects update once a task has left open', async () => {

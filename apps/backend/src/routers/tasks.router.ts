@@ -125,14 +125,14 @@ function taskPhaseCondition(phase: TaskPhaseType, now: Date) {
 }
 
 /**
- * computePendingActions embeds the current active submitter's address in
- * suggested command strings (`accept --worker <addr>`, `reject-submission
- * --worker <addr>`) -- but pendingActions is returned to every caller of
- * `get`/`update` unfiltered, so that address needs the same
- * submissionVisibility gate as every other reader of the `submissions` table
- * (ADR-0016), not just an unconditional reveal. `claimedBy` is a separate,
- * already-public field (auction/claim/pitch selection, not a submission), so
- * it is deliberately not gated here.
+ * computePendingActions embeds the sole distinct active submitter's address
+ * (only ever passed in when unambiguous -- see ADR-0027) in suggested command
+ * strings (`accept --worker <addr>`, `reject-submission --worker <addr>`) --
+ * but pendingActions is returned to every caller of `get`/`update` unfiltered,
+ * so that address needs the same submissionVisibility gate as every other
+ * reader of the `submissions` table (ADR-0016), not just an unconditional
+ * reveal. `claimedBy` is a separate, already-public field (auction/claim/pitch
+ * selection, not a submission), so it is deliberately not gated here.
  */
 function visibleLatestSubmissionWorker(
   workerAddress: string | null | undefined,
@@ -887,20 +887,24 @@ export const tasksRouter = router({
         };
       });
 
-      // Resolve the most recent submitter so the requester's accept command can be
-      // pre-filled. Bounty/Benchmark stay `open` while collecting submissions, so
-      // fetch it there too (not just pending_approval) whenever submissions exist.
+      // Resolve the submitter to pre-fill into the requester's accept command, but
+      // only when there is exactly one distinct active submitter -- suggesting
+      // "whoever submitted most recently" is gameable by free, unlimited
+      // resubmission (see ADR-0027). Bounty/Benchmark stay `open` while collecting
+      // submissions, so check there too (not just pending_approval) whenever
+      // submissions exist.
       const hasSubmissions = Number(submissionCount[0]?.count ?? 0) > 0;
-      const latestSubmission =
+      const distinctSubmitters =
         hasSubmissions &&
         (task.status === 'pending_approval' || task.mode === 'bounty' || task.mode === 'benchmark')
           ? await ctx.db
               .select({ workerAddress: submissions.workerAddress })
               .from(submissions)
               .where(and(eq(submissions.taskId, task.id), isNull(submissions.rejectedAt)))
-              .orderBy(desc(submissions.submittedAt))
-              .limit(1)
+              .groupBy(submissions.workerAddress)
+              .limit(2)
           : [];
+      const latestSubmission = distinctSubmitters.length === 1 ? distinctSubmitters : [];
       const requesterActorType: 'agent' | 'human' =
         requesterAgentRow[0]?.registeredVia === 'web' ? 'human' : 'agent';
       const workerActorType: 'agent' | 'human' | undefined = workerAddress
@@ -1471,16 +1475,20 @@ export const tasksRouter = router({
       const updateSubmissionWindowOpen = computeSubmissionWindowOpen(t, updateNow);
       const updatePhase = computeTaskPhase(t, updateNow);
 
+      // Only pre-fill a suggested worker when there is exactly one distinct active
+      // submitter -- see ADR-0027 (gameable by free, unlimited resubmission otherwise).
       const hasUpdatedSubmissions = Number(updatedSubmissionCount[0]?.count ?? 0) > 0;
-      const updatedLatestSubmission =
+      const updatedDistinctSubmitters =
         hasUpdatedSubmissions && (t.mode === 'bounty' || t.mode === 'benchmark')
           ? await ctx.db
               .select({ workerAddress: submissions.workerAddress })
               .from(submissions)
               .where(and(eq(submissions.taskId, t.id), isNull(submissions.rejectedAt)))
-              .orderBy(desc(submissions.submittedAt))
-              .limit(1)
+              .groupBy(submissions.workerAddress)
+              .limit(2)
           : [];
+      const updatedLatestSubmission =
+        updatedDistinctSubmitters.length === 1 ? updatedDistinctSubmitters : [];
 
       return {
         id: t.id,

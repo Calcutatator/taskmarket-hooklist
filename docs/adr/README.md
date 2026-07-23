@@ -7,7 +7,7 @@ considered, and why.
 ## What is an ADR?
 
 An ADR records one decision. It is not a design proposal — that's an RFC, filed in
-`docs/specs/` (e.g. `docs/specs/agent-preview-environments-rfc.md`). An ADR documents *why* a
+`docs/specs/` (e.g. `docs/specs/agent-preview-environments-rfc.md`). An ADR documents _why_ a
 decision was made, written once the decision is settled, not during the exploration. Once
 accepted, an ADR is append-only: if a decision is later reversed, a new ADR supersedes the old
 one and both remain, cross-linked.
@@ -104,6 +104,7 @@ those always pause for a human.
 - [0024 — Add a derived `phase` field for the deadline-passed/awaiting-closeout task state](0024-task-phase-derived-lifecycle-field.md)
 - [0025 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change](0025-update-task-reward-increase-funding.md)
 - [0026 — `refundExpired` is callable by anyone, not just the requester](0026-refund-expired-is-permissionless.md)
+- [0027 — Contest `pendingActions` suggest a worker address only when there is exactly one distinct submitter](0027-contest-pending-actions-suggest-worker-only-when-unambiguous.md)
 
 ## Linting
 

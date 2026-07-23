@@ -27,6 +27,10 @@ export type PendingActionTask = SubmissionWindowTask & {
   auctionType: string | null;
   currentClockPrice: bigint | null;
   currentLowestBid: string | null;
+  // Set only when the task has exactly one distinct active submitter -- see ADR-0027.
+  // Left null whenever zero or multiple distinct addresses have submitted, so
+  // resubmission spam from a non-winning submitter can no longer capture the
+  // suggested `--worker` slot in the accept/reject_submission commands below.
   latestSubmissionWorker?: string | null;
   evaluator?: string | null;
   disputeResolver?: string | null;
