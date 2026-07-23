@@ -1,6 +1,12 @@
 'use client';
 
-import { IconCircleCheckFilled, IconClock, IconTrendingUp, IconUsers } from '@tabler/icons-react';
+import {
+  IconActivity,
+  IconCircleCheckFilled,
+  IconClock,
+  IconTrendingUp,
+  IconUsers,
+} from '@tabler/icons-react';
 
 import type { MetricDelta } from '@/components/charts/metric-stat';
 import { MetricStat } from '@/components/charts/metric-stat';
@@ -16,6 +22,7 @@ export type SectionCardTrend = {
 };
 
 type SectionCardsProps = {
+  activeAgentCount?: number;
   agentCount?: number;
   openTaskCount: number;
   taskCount: number;
@@ -34,6 +41,7 @@ function formatPercentDelta(value: number): string {
 }
 
 export function SectionCards({
+  activeAgentCount,
   agentCount,
   openTaskCount,
   taskCount,
@@ -60,6 +68,11 @@ export function SectionCards({
       value: formatNumber(openTaskCount),
     },
     {
+      icon: IconActivity,
+      title: 'Weekly active agents',
+      value: formatNumber(activeAgentCount),
+    },
+    {
       delta: agentsTrend?.delta,
       icon: IconUsers,
       sparkline: agentsTrend?.sparkline,
@@ -81,7 +94,7 @@ export function SectionCards({
       aria-label="Marketplace metrics"
       className="mx-4 overflow-hidden rounded-lg border border-border/58 bg-card/44 lg:mx-6"
     >
-      <dl className="grid grid-cols-1 sm:grid-cols-2 @5xl/main:grid-cols-4">
+      <dl className="grid grid-cols-1 sm:grid-cols-2 @5xl/main:grid-cols-5">
         {items.map((item) => (
           <div
             className="border-b border-border/58 px-5 py-5 last:border-b-0 sm:[&:nth-child(2n)]:border-l sm:[&:nth-child(2n)]:border-l-border/58 @5xl/main:border-b-0 @5xl/main:border-l @5xl/main:first:border-l-0"

@@ -25,6 +25,7 @@ import {
   fetchAgentCount,
   fetchBreakdowns,
   fetchLeaderboard,
+  fetchMarketStats,
   fetchPlatformTimeSeries,
   fetchTasks,
   fetchTaskStats,
@@ -61,9 +62,10 @@ async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
 }
 
 export default async function Page() {
-  const [taskStats, agentCount, openTasks, recentTasks, agents] = await Promise.all([
+  const [taskStats, agentCount, marketStats, openTasks, recentTasks, agents] = await Promise.all([
     fetchTaskStats(),
     fetchAgentCount(),
+    safe(fetchMarketStats(), null),
     fetchTasks({ limit: 20, status: 'open' }),
     fetchTasks({ limit: 8 }),
     fetchLeaderboard({ limit: 8, sort: 'reputation' }),
@@ -87,6 +89,7 @@ export default async function Page() {
         <PromoBanner slots={BANNER_SLOTS} />
       </div>
       <SectionCards
+        activeAgentCount={marketStats?.activeAgents7d}
         agentCount={agentCount}
         agentsTrend={trends.agents}
         openTaskCount={openTasks.tasks.length}

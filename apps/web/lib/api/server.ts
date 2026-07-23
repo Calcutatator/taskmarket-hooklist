@@ -50,6 +50,7 @@ type TaskStats = {
 export type MarketStats = {
   registeredWorkers: number;
   activeWorkers7d: number;
+  activeAgents7d?: number;
   openTasks: number;
 };
 

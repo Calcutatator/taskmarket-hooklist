@@ -4,7 +4,7 @@ import { Card, CardContent, CardHeader } from '@/components/ui/card';
 import { Skeleton } from '@/components/ui/skeleton';
 import { cn } from '@/lib/utils';
 
-const metricSlots = ['metric-1', 'metric-2', 'metric-3', 'metric-4'];
+const metricSlots = ['metric-1', 'metric-2', 'metric-3', 'metric-4', 'metric-5'];
 const tableRows = ['row-1', 'row-2', 'row-3', 'row-4', 'row-5', 'row-6'];
 const filterRows = ['filter-1', 'filter-2', 'filter-3', 'filter-4', 'filter-5'];
 
@@ -45,7 +45,12 @@ function PageHeadingSkeleton({
 
 function MetricCardsSkeleton({ count = 4 }: { count?: number }) {
   return (
-    <div className="grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2 @5xl/main:grid-cols-4">
+    <div
+      className={cn(
+        'grid grid-cols-1 gap-4 px-4 lg:px-6 @xl/main:grid-cols-2',
+        count === 5 ? '@5xl/main:grid-cols-5' : '@5xl/main:grid-cols-4'
+      )}
+    >
       {metricSlots.slice(0, count).map((slot) => (
         <Card className="py-5" key={slot}>
           <CardContent className="grid gap-4">
@@ -117,7 +122,7 @@ function TableSkeleton({
                 </div>
               </div>
               <div className="grid grid-cols-2 gap-3">
-                {metricSlots.map((slot) => (
+                {metricSlots.slice(0, 4).map((slot) => (
                   <div className="grid gap-1" key={slot}>
                     <Skeleton className="h-3 w-14" />
                     <Skeleton className="h-4 w-20" />
@@ -186,12 +191,12 @@ function FormSkeleton({ fields = 6 }: { fields?: number }) {
   );
 }
 
-export function DashboardOverviewLoading() {
+export function DashboardOverviewLoading({ metricCount = 4 }: { metricCount?: number } = {}) {
   return (
     <LoadingFrame className="flex flex-1 flex-col" label="Loading dashboard">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <MetricCardsSkeleton />
+          <MetricCardsSkeleton count={metricCount} />
           <div className="grid gap-6 px-4 lg:px-6">
             <section className="grid gap-4">
               <PageHeadingSkeleton />

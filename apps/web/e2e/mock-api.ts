@@ -1353,6 +1353,16 @@ export async function startMockApiServer(
       return;
     }
 
+    if (url.pathname === '/api/market/stats') {
+      writeJson(response, {
+        activeAgents7d: 4,
+        activeWorkers7d: 3,
+        openTasks: tasks.filter((taskItem) => taskItem.status === 'open').length,
+        registeredWorkers: agents.length,
+      });
+      return;
+    }
+
     if (url.pathname === '/api/agents/leaderboard') {
       writeJson(response, agents);
       return;

@@ -21,6 +21,7 @@ export const marketRouter = router({
       z.object({
         registeredWorkers: z.number(),
         activeWorkers7d: z.number(),
+        activeAgents7d: z.number(),
         openTasks: z.number(),
       })
     )
@@ -34,40 +35,60 @@ export const marketRouter = router({
       // instead of relying on that inference.
       const since = new Date(Date.now() - SEVEN_DAYS_MS).toISOString();
 
-      // Count distinct worker addresses active in the last 7 days across all five
-      // engagement tables. UNION dedupes addresses that appear in more than one
-      // table, so the outer count(distinct) counts each worker exactly once.
-      const [registeredWorkersResult, openTasksResult, activeWorkersResult] = await Promise.all([
+      // Scan recent public task activity once for both activity metrics. The
+      // existing worker count remains case-sensitive and includes unregistered
+      // workers; the new agent count normalizes addresses and joins against the
+      // registry before counting requesters and workers together.
+      const [registeredWorkersResult, openTasksResult, activeActivityResult] = await Promise.all([
         ctx.db.select({ count: sql<number>`count(*)::int` }).from(agents),
         ctx.db
           .select({ count: sql<number>`count(*)::int` })
           .from(tasks)
           .where(and(eq(tasks.status, 'open'), taskNotUnlisted)),
         ctx.db
-          .select({ count: sql<number>`count(distinct active_workers.worker_address)::int` })
+          .select({
+            activeAgents7d: sql<number>`(
+                count(distinct lower(active_activity.agent_address))
+                filter (where ${agents.address} is not null)
+              )::int`,
+            activeWorkers7d: sql<number>`(
+                count(distinct active_activity.agent_address)
+                filter (where active_activity.is_worker)
+              )::int`,
+          })
           .from(
             sql`(
-            select s.worker_address from submissions s join tasks t on t.id = s.task_id
+            select t.requester as agent_address, false as is_worker from tasks t
+              where t.created_at >= ${since} and ${taskNotUnlistedSql}
+            union all
+            select s.worker_address as agent_address, true as is_worker
+              from submissions s join tasks t on t.id = s.task_id
               where s.submitted_at >= ${since} and ${taskNotUnlistedSql}
-            union
-            select p.worker_address from proposals p join tasks t on t.id = p.task_id
+            union all
+            select p.worker_address as agent_address, true as is_worker
+              from proposals p join tasks t on t.id = p.task_id
               where p.submitted_at >= ${since} and ${taskNotUnlistedSql}
-            union
-            select pr.worker_address from proofs pr join tasks t on t.id = pr.task_id
+            union all
+            select pr.worker_address as agent_address, true as is_worker
+              from proofs pr join tasks t on t.id = pr.task_id
               where pr.submitted_at >= ${since} and ${taskNotUnlistedSql}
-            union
-            select c.worker_address from claims c join tasks t on t.id = c.task_id
+            union all
+            select c.worker_address as agent_address, true as is_worker
+              from claims c join tasks t on t.id = c.task_id
               where c.claimed_at >= ${since} and ${taskNotUnlistedSql}
-            union
-            select b.worker_address from bids b join tasks t on t.id = b.task_id
+            union all
+            select b.worker_address as agent_address, true as is_worker
+              from bids b join tasks t on t.id = b.task_id
               where b.created_at >= ${since} and ${taskNotUnlistedSql}
-          ) as active_workers`
-          ),
+          ) as active_activity`
+          )
+          .leftJoin(agents, sql`lower(${agents.address}) = lower(active_activity.agent_address)`),
       ]);
 
       return {
         registeredWorkers: Number(registeredWorkersResult[0]?.count ?? 0),
-        activeWorkers7d: Number(activeWorkersResult[0]?.count ?? 0),
+        activeWorkers7d: Number(activeActivityResult[0]?.activeWorkers7d ?? 0),
+        activeAgents7d: Number(activeActivityResult[0]?.activeAgents7d ?? 0),
         openTasks: Number(openTasksResult[0]?.count ?? 0),
       };
     }),

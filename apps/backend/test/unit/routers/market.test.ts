@@ -18,23 +18,25 @@ describe('market router', () => {
   });
 
   describe('stats', () => {
-    it('returns the three numeric fields coerced to numbers', async () => {
+    it('returns the existing market stats plus weekly active registered agents', async () => {
       const ctx = createMockCtx();
-      // Calls happen in order: registeredWorkers, openTasks, activeWorkers7d.
+      // Calls happen in order: registeredWorkers, openTasks, then both activity metrics.
       ctx.db.select
         .mockReturnValueOnce(makeChain([{ count: 42 }]))
         .mockReturnValueOnce(makeChain([{ count: 7 }]))
-        .mockReturnValueOnce(makeChain([{ count: 5 }]));
+        .mockReturnValueOnce(makeChain([{ activeAgents7d: 3, activeWorkers7d: 5 }]));
 
       const result = await marketRouter.createCaller(ctx).stats({});
 
       expect(result).toEqual({
         registeredWorkers: 42,
         activeWorkers7d: 5,
+        activeAgents7d: 3,
         openTasks: 7,
       });
       expect(typeof result.registeredWorkers).toBe('number');
       expect(typeof result.activeWorkers7d).toBe('number');
+      expect(typeof result.activeAgents7d).toBe('number');
       expect(typeof result.openTasks).toBe('number');
     });
 
@@ -43,13 +45,14 @@ describe('market router', () => {
       ctx.db.select
         .mockReturnValueOnce(makeChain([{ count: '12' }]))
         .mockReturnValueOnce(makeChain([{ count: '3' }]))
-        .mockReturnValueOnce(makeChain([{ count: 2n }]));
+        .mockReturnValueOnce(makeChain([{ activeAgents7d: '4', activeWorkers7d: 2n }]));
 
       const result = await marketRouter.createCaller(ctx).stats({});
 
       expect(result.registeredWorkers).toBe(12);
       expect(result.openTasks).toBe(3);
       expect(result.activeWorkers7d).toBe(2);
+      expect(result.activeAgents7d).toBe(4);
     });
 
     it('defaults to zero when count rows are missing', async () => {
@@ -61,15 +64,20 @@ describe('market router', () => {
 
       const result = await marketRouter.createCaller(ctx).stats({});
 
-      expect(result).toEqual({ registeredWorkers: 0, activeWorkers7d: 0, openTasks: 0 });
+      expect(result).toEqual({
+        registeredWorkers: 0,
+        activeWorkers7d: 0,
+        activeAgents7d: 0,
+        openTasks: 0,
+      });
     });
 
-    it('counts distinct workers across engagement tables via UNION', async () => {
+    it('counts distinct activity across requester and worker sources in one query', async () => {
       const ctx = createMockCtx();
 
       // Capture the SQL passed to the third select's .from() call.
       let activeWorkersFromSql: SQL | undefined;
-      const activeWorkersChain = makeChain([{ count: 5 }]);
+      const activeWorkersChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
       activeWorkersChain.from = vi.fn((arg: SQL) => {
         activeWorkersFromSql = arg;
         return activeWorkersChain;
@@ -86,11 +94,10 @@ describe('market router', () => {
       const { sql: fromSql } = renderSql(activeWorkersFromSql!);
       const normalized = fromSql.toLowerCase();
 
-      // UNION (not UNION ALL) dedupes addresses appearing in multiple tables,
-      // so each distinct worker is counted exactly once.
-      expect(normalized).toContain('union');
-      expect(normalized).not.toContain('union all');
-      // All engagement tables are included.
+      // UNION ALL keeps the source scan simple; each projection applies its
+      // own count(distinct ...) with the appropriate normalization rules.
+      expect(normalized).toContain('union all');
+      expect(normalized).toContain('requester');
       expect(normalized).toContain('submissions');
       expect(normalized).toContain('proposals');
       expect(normalized).toContain('proofs');
@@ -102,7 +109,7 @@ describe('market router', () => {
       const ctx = createMockCtx();
 
       let activeWorkersFromSql: SQL | undefined;
-      const activeWorkersChain = makeChain([{ count: 5 }]);
+      const activeWorkersChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
       activeWorkersChain.from = vi.fn((arg: SQL) => {
         activeWorkersFromSql = arg;
         return activeWorkersChain;
@@ -127,7 +134,7 @@ describe('market router', () => {
       const ctx = createMockCtx();
 
       let activeWorkersCountSelect: Record<string, SQL> | undefined;
-      const activeWorkersChain = makeChain([{ count: 5 }]);
+      const activeWorkersChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
       const originalSelect = ctx.db.select;
       // Intercept only the third select to capture its projection.
       let callIndex = 0;
@@ -144,8 +151,41 @@ describe('market router', () => {
       ctx.db.select = originalSelect;
 
       expect(activeWorkersCountSelect).toBeDefined();
-      const { sql: countSql } = renderSql(activeWorkersCountSelect!.count);
+      const { sql: countSql } = renderSql(activeWorkersCountSelect!.activeWorkers7d);
       expect(countSql.toLowerCase()).toContain('count(distinct');
+    });
+
+    it('normalizes active agent addresses and only counts registered agents', async () => {
+      const ctx = createMockCtx();
+
+      let activityProjection: Record<string, SQL> | undefined;
+      let activityJoinSql: SQL | undefined;
+      const activityChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
+      activityChain.leftJoin = vi.fn((_table: unknown, predicate: SQL) => {
+        activityJoinSql = predicate;
+        return activityChain;
+      });
+
+      let callIndex = 0;
+      ctx.db.select = vi.fn((projection?: Record<string, SQL>) => {
+        callIndex += 1;
+        if (callIndex === 3) {
+          activityProjection = projection;
+          return activityChain;
+        }
+        return makeChain([{ count: 1 }]);
+      });
+
+      await marketRouter.createCaller(ctx).stats({});
+
+      expect(activityProjection).toBeDefined();
+      expect(activityJoinSql).toBeDefined();
+      expect(renderSql(activityProjection!.activeAgents7d).sql.toLowerCase()).toContain(
+        'count(distinct lower(active_activity.agent_address))'
+      );
+      expect(renderSql(activityJoinSql!).sql.toLowerCase()).toContain(
+        'lower("agents"."address") = lower(active_activity.agent_address)'
+      );
     });
 
     it('excludes unlisted tasks from the openTasks count (ADR-0014)', async () => {
@@ -174,7 +214,7 @@ describe('market router', () => {
       const ctx = createMockCtx();
 
       let activeWorkersFromSql: SQL | undefined;
-      const activeWorkersChain = makeChain([{ count: 5 }]);
+      const activeWorkersChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
       activeWorkersChain.from = vi.fn((arg: SQL) => {
         activeWorkersFromSql = arg;
         return activeWorkersChain;
@@ -202,7 +242,7 @@ describe('market router', () => {
       const ctx = createMockCtx();
 
       let activeWorkersFromSql: SQL | undefined;
-      const activeWorkersChain = makeChain([{ count: 5 }]);
+      const activeWorkersChain = makeChain([{ activeAgents7d: 6, activeWorkers7d: 5 }]);
       activeWorkersChain.from = vi.fn((arg: SQL) => {
         activeWorkersFromSql = arg;
         return activeWorkersChain;

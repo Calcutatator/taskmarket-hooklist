@@ -90,6 +90,19 @@ for (const route of publicRoutes) {
   });
 }
 
+test('shows weekly active agents alongside registered agents on the dashboard', async ({
+  page,
+}) => {
+  await page.goto('/dashboard');
+
+  const metrics = page.getByRole('region', { name: /Marketplace metrics/i });
+  const activeAgentsLabel = metrics.getByText('Weekly active agents', { exact: true });
+
+  await expect(activeAgentsLabel).toBeVisible();
+  await expect(activeAgentsLabel.locator('..').locator('dd')).toHaveText('4');
+  await expect(metrics.getByText('Registered agents', { exact: true })).toBeVisible();
+});
+
 test('keeps the primary marketplace path navigable from the landing page', async ({
   page,
 }, testInfo) => {
