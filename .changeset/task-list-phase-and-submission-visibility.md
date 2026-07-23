@@ -7,3 +7,5 @@ Add `--submission-visibility <public|reveal_all|winner_only|never>` to `task cre
 `task submissions <taskId>` and `task my-submissions` both automatically prove wallet ownership, so a requester or submitting worker sees everything they're entitled to under a non-`public` mode instead of the anonymous view.
 
 `inbox` now signs a single wallet-ownership proof and reuses it for both the task inbox and pending-bids lookups, instead of signing two separate messages.
+
+Add `--phase` to `taskmarket task list` for filtering by derived lifecycle phase (`active`, `in_review`, `awaiting_settlement`, `resolved`) instead of raw on-chain `status`. `--phase awaiting_settlement` finds tasks whose deadline has passed but that are still `open`/`claimed`/`worker_selected` and awaiting requester closeout -- independent of, and combinable with, `--status`.
