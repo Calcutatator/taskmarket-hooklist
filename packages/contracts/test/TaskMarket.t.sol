@@ -2832,6 +2832,31 @@ contract TaskMarketTest is DiamondTestHelper {
         _appeal(taskId, worker2);
     }
 
+    function test_RevertWhen_Appeal_BountyNonEmptyAwards_LosingSubmitterCannotAppeal() public {
+        // Two workers submit to the same bounty. The evaluator awards worker1 outright.
+        // worker2 is a real submitter but was not awarded -- the empty-awards fallback
+        // must not let a losing submitter appeal (and thus stall) a verdict that already
+        // has a valid, non-empty task.worker.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(2 days), uint32(1 days), address(0))
+            )
+        );
+        _submitWork(taskId, worker1, keccak256("winner work"));
+        _submitWork(taskId, worker2, keccak256("loser work"));
+
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: worker1, amount: REWARD, rank: 1 });
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 900, awards);
+        assertEq(market.getTask(taskId).worker, worker1);
+
+        vm.expectRevert(ITMPCore.NotWorker.selector);
+        _appeal(taskId, worker2);
+    }
+
     function test_EvaluatorTimeout_ForfeitsStakeAndOpensPendingApproval() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         uint32 evalWindowSecs = uint32(2 days);
