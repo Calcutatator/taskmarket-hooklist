@@ -62,35 +62,27 @@ export function SubmissionPayoutAction({
   const requiredRequester = compactAddress(task.requester);
   const connectedWallet = address ? compactAddress(address) : null;
 
+  // Non-requester viewers get a single quiet row, not a panel: on a review grid
+  // this state repeats on every card and must not compete with the deliverable.
   return (
     <div
       aria-label="Payout release requirement"
-      className="grid min-w-0 gap-3 rounded-xl border border-border/72 bg-surface/48 p-3 shadow-[var(--shadow-soft)]"
+      className="flex min-w-0 flex-wrap items-center justify-between gap-x-3 gap-y-2 rounded-lg border border-border/58 bg-background/30 px-3 py-2"
       role="group"
     >
-      <div className="grid gap-1">
-        <p className="text-sm font-semibold tracking-tight text-foreground">
-          {isConnected ? 'Requester wallet required' : 'Connect requester wallet to release payout'}
-        </p>
-        <p className="text-sm leading-5 text-muted-foreground">
-          Only the requester wallet can approve this submission and release escrow.
-        </p>
-      </div>
-      <div className="grid gap-1 rounded-lg border border-border/60 bg-background/48 p-3 font-mono text-xs text-muted-foreground">
-        <span>
-          Required requester: <span className="text-foreground">{requiredRequester}</span>
-        </span>
+      <p className="min-w-0 text-xs leading-5 text-muted-foreground">
         {connectedWallet ? (
-          <span>
-            Connected wallet: <span className="text-foreground">{connectedWallet}</span>
-          </span>
+          <>
+            Connected as <span className="font-mono text-foreground">{connectedWallet}</span>.{' '}
+          </>
         ) : null}
-      </div>
-      {isConnected ? (
-        <PrivyWalletActionButton label="Switch wallet" />
-      ) : (
-        <PrivyWalletActionButton label="Connect wallet" />
-      )}
+        Only requester{' '}
+        <span className="font-mono text-foreground" title={task.requester}>
+          {requiredRequester}
+        </span>{' '}
+        can release escrow.
+      </p>
+      <PrivyWalletActionButton label={isConnected ? 'Switch wallet' : 'Connect wallet'} />
     </div>
   );
 }
@@ -98,7 +90,7 @@ export function SubmissionPayoutAction({
 function PrivyWalletActionButton({ label }: { label: string }) {
   if (!isPrivyConfigured()) {
     return (
-      <Button disabled type="button" variant="outline">
+      <Button disabled size="sm" type="button" variant="outline">
         {label}
       </Button>
     );
@@ -114,6 +106,7 @@ function PrivyWalletActionButtonInner({ label }: { label: string }) {
     <Button
       disabled={!ready}
       onClick={() => connectOrCreateWallet()}
+      size="sm"
       type="button"
       variant="outline"
     >

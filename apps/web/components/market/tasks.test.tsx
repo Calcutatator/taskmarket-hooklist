@@ -823,7 +823,11 @@ describe('Task marketplace components', () => {
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
     expect(screen.getByText(/compare deliverables before releasing escrow/i)).toBeInTheDocument();
-    expect(screen.getByText(/deliverable submitted by/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('article', {
+        name: `Submission from ${compactAddressLabel('0x3333333333333333333333333333333333333333')}`,
+      })
+    ).toBeInTheDocument();
     expect(screen.getAllByText(/release payout/i).length).toBeGreaterThan(0);
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
@@ -887,6 +891,8 @@ describe('Task marketplace components', () => {
     expect(
       within(comparison).getByRole('button', { name: /open candidate-b\.mp4 preview/i })
     ).toBeInTheDocument();
+    // Supporting files sit behind a collapsed disclosure instead of an open list.
+    expect(within(comparison).getByText(/supporting files \(1\)/i)).toBeInTheDocument();
     expect(within(comparison).getByText('notes.txt')).toBeInTheDocument();
   });
 
@@ -1026,9 +1032,14 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText(/connect requester wallet to release payout/i)).toBeInTheDocument();
-    expect(screen.getByText(/required requester/i)).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /connect wallet/i })).toBeEnabled();
+    const requirement = screen.getByRole('group', { name: /payout release requirement/i });
+    expect(within(requirement).getByText(/only requester/i)).toBeInTheDocument();
+    expect(
+      within(requirement).getByText(
+        compactAddressLabel('0x1111111111111111111111111111111111111111')
+      )
+    ).toBeInTheDocument();
+    expect(within(requirement).getByRole('button', { name: /connect wallet/i })).toBeEnabled();
   });
 
   it('lets a wrong connected wallet switch before releasing payout', async () => {
@@ -1069,10 +1080,15 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText(/requester wallet required/i)).toBeInTheDocument();
-    expect(screen.getByText(/connected wallet/i)).toBeInTheDocument();
+    const requirement = screen.getByRole('group', { name: /payout release requirement/i });
+    expect(within(requirement).getByText(/connected as/i)).toBeInTheDocument();
+    expect(
+      within(requirement).getByText(
+        compactAddressLabel('0x9999999999999999999999999999999999999999')
+      )
+    ).toBeInTheDocument();
 
-    await user.click(screen.getByRole('button', { name: /switch wallet/i }));
+    await user.click(within(requirement).getByRole('button', { name: /switch wallet/i }));
 
     expect(mockPrivyConnect).toHaveBeenCalled();
   });

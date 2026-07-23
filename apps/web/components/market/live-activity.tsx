@@ -1,11 +1,16 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
+import { Images } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
+import {
+  SubmissionGalleryDialog,
+  submissionMediaEntries,
+} from '@/components/market/submission-gallery';
 import {
   BidRow,
   ClaimRow,
@@ -17,6 +22,7 @@ import {
   type TaskModeData,
 } from '@/components/market/tasks';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
 import { trpc } from '@/lib/api/client';
 import type { MarketStats } from '@/lib/api/server';
 import { compactAddress } from '@/lib/format';
@@ -344,6 +350,18 @@ export function LiveActivityPanel({
     bids.length > 0 ||
     claim != null;
 
+  // Gallery over every media artifact across submissions, in feed order. Opened
+  // from the header button (index 0) or from a card's hero/thumbnail (that
+  // artifact's index).
+  const galleryEntries = submissionMediaEntries(submissions);
+  const [galleryOpen, setGalleryOpen] = useState(false);
+  const [galleryIndex, setGalleryIndex] = useState(0);
+  const openGalleryAt = (artifactId: string) => {
+    const entryIndex = galleryEntries.findIndex((entry) => entry.artifact.id === artifactId);
+    setGalleryIndex(entryIndex >= 0 ? entryIndex : 0);
+    setGalleryOpen(true);
+  };
+
   const items = liveItems(task, data);
   const itemsRef = useRef(items);
   itemsRef.current = items;
@@ -452,7 +470,23 @@ export function LiveActivityPanel({
             </div>
             <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           </div>
-          <Badge variant="terminal">{activityLabel(task, data)}</Badge>
+          <div className="flex items-center gap-2">
+            {galleryEntries.length > 0 ? (
+              <Button
+                onClick={() => {
+                  setGalleryIndex(0);
+                  setGalleryOpen(true);
+                }}
+                size="sm"
+                type="button"
+                variant="outline"
+              >
+                <Images className="size-3.5" />
+                Gallery
+              </Button>
+            ) : null}
+            <Badge variant="terminal">{activityLabel(task, data)}</Badge>
+          </div>
         </div>
       </div>
       <div className="grid gap-3">
@@ -470,6 +504,7 @@ export function LiveActivityPanel({
                   motionDisabled={motionDisabled}
                 >
                   <SubmissionCard
+                    onOpenMedia={openGalleryAt}
                     profileBasePath={profileBasePath}
                     reviewAction={reviewAction}
                     submission={submission}
@@ -547,6 +582,14 @@ export function LiveActivityPanel({
           )
         ) : null}
       </div>
+      <SubmissionGalleryDialog
+        entries={galleryEntries}
+        initialIndex={galleryIndex}
+        onOpenChange={setGalleryOpen}
+        open={galleryOpen}
+        profileBasePath={profileBasePath}
+        taskId={task.id}
+      />
     </section>
   );
 }

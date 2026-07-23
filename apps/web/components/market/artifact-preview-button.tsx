@@ -13,7 +13,10 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
-import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import {
+  usableArtifactPreviewUrl,
+  useArtifactPreviewUrl,
+} from '@/components/market/use-artifact-preview-url';
 
 type Props = {
   artifact: ArtifactResponse;
@@ -32,32 +35,6 @@ type ArtifactPreviewTriggerProps = Props & {
   initialPreviewUrl?: string | null;
 };
 
-type PreviewState = {
-  expiresAt: string | null;
-  url: string | null;
-};
-
-function isPreviewUrlCurrent(expiresAt: string | null) {
-  if (!expiresAt) {
-    return true;
-  }
-
-  const expiresAtMs = Date.parse(expiresAt);
-  if (!Number.isFinite(expiresAtMs)) {
-    return false;
-  }
-
-  return expiresAtMs > Date.now() + 30_000;
-}
-
-function currentPreviewUrl(preview: PreviewState) {
-  if (!preview.url || !isPreviewUrlCurrent(preview.expiresAt)) {
-    return null;
-  }
-
-  return preview.url;
-}
-
 function formatBytes(value: number) {
   if (!Number.isFinite(value) || value <= 0) {
     return '0 B';
@@ -75,23 +52,6 @@ function formatBytes(value: number) {
   const formatted =
     Number.isInteger(size) || size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1);
   return `${formatted} ${units[unitIndex] ?? 'B'}`;
-}
-
-function usableArtifactPreviewUrl(artifact: ArtifactResponse) {
-  if (!artifact.previewUrl) {
-    return null;
-  }
-
-  if (!artifact.previewExpiresAt) {
-    return artifact.previewUrl;
-  }
-
-  const expiresAtMs = Date.parse(artifact.previewExpiresAt);
-  if (!Number.isFinite(expiresAtMs)) {
-    return null;
-  }
-
-  return expiresAtMs > Date.now() + 30_000 ? artifact.previewUrl : null;
 }
 
 function ArtifactKindIcon({ artifact }: { artifact: ArtifactResponse }) {
@@ -124,7 +84,7 @@ function MediaPreviewFallback({ artifact }: { artifact: ArtifactResponse }) {
   );
 }
 
-function ArtifactMetadata({
+export function ArtifactMetadata({
   artifact,
   previewUrl,
 }: {
@@ -302,60 +262,10 @@ export function ArtifactPreviewTrigger({
   taskId,
 }: ArtifactPreviewTriggerProps) {
   const [open, setOpen] = useState(false);
-  const providedPreviewUrl = initialPreviewUrl ?? artifact.previewUrl ?? null;
-  const providedPreviewExpiresAt = initialPreviewExpiresAt ?? artifact.previewExpiresAt ?? null;
-  const [preview, setPreview] = useState<PreviewState>({
-    expiresAt: providedPreviewExpiresAt,
-    url: providedPreviewUrl,
+  const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact, {
+    expiresAt: initialPreviewExpiresAt,
+    url: initialPreviewUrl,
   });
-  const [loading, setLoading] = useState(false);
-  const [error, setError] = useState<string | null>(null);
-  const previewUrl = currentPreviewUrl(preview);
-
-  useEffect(() => {
-    setPreview({
-      expiresAt: providedPreviewExpiresAt,
-      url: providedPreviewUrl,
-    });
-    setError(null);
-  }, [artifact.id, providedPreviewExpiresAt, providedPreviewUrl]);
-
-  async function loadPreview(force = false) {
-    const existingPreviewUrl = currentPreviewUrl(preview);
-    if (!force && existingPreviewUrl) {
-      return existingPreviewUrl;
-    }
-
-    setLoading(true);
-    setError(null);
-    if (force) {
-      setPreview({ expiresAt: null, url: null });
-    }
-
-    try {
-      const base = getBrowserApiBaseUrl();
-      const res = await fetch(
-        `${base}/api/tasks/${taskId}/artifacts/${artifact.id}/preview?taskId=${taskId}&artifactId=${artifact.id}`
-      );
-
-      if (!res.ok) {
-        const body = (await res.json().catch(() => ({}))) as { message?: string };
-        throw new Error(body.message ?? `Request failed (${res.status})`);
-      }
-
-      const { expiresAt, previewUrl } = (await res.json()) as {
-        expiresAt?: string;
-        previewUrl: string;
-      };
-      setPreview({ expiresAt: expiresAt ?? null, url: previewUrl });
-      return previewUrl;
-    } catch (err) {
-      setError(err instanceof Error ? err.message : 'Preview failed');
-      return null;
-    } finally {
-      setLoading(false);
-    }
-  }
 
   return (
     <>
@@ -363,12 +273,12 @@ export function ArtifactPreviewTrigger({
         error,
         loading,
         openPreview: () => {
-          if (currentPreviewUrl(preview)) {
+          if (previewUrl) {
             setOpen(true);
             return;
           }
 
-          void loadPreview().finally(() => setOpen(true));
+          void ensurePreviewUrl().finally(() => setOpen(true));
         },
       })}
       <Dialog open={open} onOpenChange={setOpen}>
@@ -385,7 +295,7 @@ export function ArtifactPreviewTrigger({
               <p>{error}</p>
               <Button
                 disabled={loading}
-                onClick={() => void loadPreview(true)}
+                onClick={() => void ensurePreviewUrl(true)}
                 size="sm"
                 type="button"
               >
@@ -483,6 +393,157 @@ export function ArtifactMediaTile({ artifact, taskId }: Props) {
             {error ? <span className="text-xs text-destructive">{error}</span> : null}
           </div>
         </div>
+      )}
+    </ArtifactPreviewTrigger>
+  );
+}
+
+// Full-width image-first surface for a submission's primary deliverable. The media
+// is the whole element: no filename/size caption, and a click opens the viewer
+// (the shared gallery when onOpen is provided, the per-artifact dialog otherwise).
+function MediaHeroSurface({
+  artifact,
+  onOpen,
+  previewUrl,
+}: {
+  artifact: ArtifactResponse;
+  onOpen: () => void;
+  previewUrl: string | null;
+}) {
+  const openLabel = `Open ${artifact.fileName} preview`;
+
+  return (
+    <div className="overflow-hidden rounded-lg border border-border/58 bg-muted/26 shadow-[var(--shadow-soft)]">
+      <div className="aspect-video">
+        {artifact.mediaKind === 'image' && previewUrl ? (
+          <button
+            aria-label={openLabel}
+            className="block h-full w-full cursor-zoom-in overflow-hidden"
+            onClick={onOpen}
+            type="button"
+          >
+            <img
+              alt={artifact.fileName}
+              className="h-full w-full object-contain"
+              loading="lazy"
+              src={previewUrl}
+            />
+          </button>
+        ) : artifact.mediaKind === 'video' && previewUrl ? (
+          <button
+            aria-label={openLabel}
+            className="relative block h-full w-full cursor-zoom-in overflow-hidden"
+            onClick={onOpen}
+            type="button"
+          >
+            <video
+              className="h-full w-full object-contain"
+              muted
+              preload="metadata"
+              src={previewUrl}
+            />
+            <span className="absolute inset-0 grid place-items-center">
+              <span className="grid size-11 place-items-center rounded-full border border-border/64 bg-background/72 text-foreground">
+                <Play className="size-4" />
+              </span>
+            </span>
+          </button>
+        ) : (
+          <button
+            aria-label={openLabel}
+            className="h-full w-full cursor-pointer"
+            onClick={onOpen}
+            type="button"
+          >
+            <MediaPreviewFallback artifact={artifact} />
+          </button>
+        )}
+      </div>
+    </div>
+  );
+}
+
+export function ArtifactMediaHero({ artifact, onOpen, taskId }: Props & { onOpen?: () => void }) {
+  const previewUrl = usableArtifactPreviewUrl(artifact);
+
+  if (onOpen) {
+    return <MediaHeroSurface artifact={artifact} onOpen={onOpen} previewUrl={previewUrl} />;
+  }
+
+  return (
+    <ArtifactPreviewTrigger
+      artifact={artifact}
+      initialPreviewExpiresAt={artifact.previewExpiresAt ?? null}
+      initialPreviewUrl={artifact.previewUrl ?? null}
+      taskId={taskId}
+    >
+      {({ error, openPreview }) => (
+        <div className="grid gap-1">
+          <MediaHeroSurface artifact={artifact} onOpen={openPreview} previewUrl={previewUrl} />
+          {error ? <span className="text-xs text-destructive">{error}</span> : null}
+        </div>
+      )}
+    </ArtifactPreviewTrigger>
+  );
+}
+
+// Small square thumbnail for a submission's secondary media artifacts.
+function MediaThumbSurface({
+  artifact,
+  onOpen,
+  previewUrl,
+}: {
+  artifact: ArtifactResponse;
+  onOpen: () => void;
+  previewUrl: string | null;
+}) {
+  return (
+    <button
+      aria-label={`Open ${artifact.fileName} preview`}
+      className="relative size-16 shrink-0 cursor-zoom-in overflow-hidden rounded-md border border-border/58 bg-muted/26"
+      onClick={onOpen}
+      title={artifact.fileName}
+      type="button"
+    >
+      {artifact.mediaKind === 'image' && previewUrl ? (
+        <img
+          alt={artifact.fileName}
+          className="h-full w-full object-cover"
+          loading="lazy"
+          src={previewUrl}
+        />
+      ) : (
+        <span className="grid h-full w-full place-items-center text-muted-foreground">
+          <ArtifactKindIcon artifact={artifact} />
+        </span>
+      )}
+      {artifact.mediaKind === 'video' ? (
+        <span className="absolute inset-0 grid place-items-center">
+          <span className="grid size-6 place-items-center rounded-full border border-border/64 bg-background/72 text-foreground">
+            <Play className="size-3" />
+          </span>
+        </span>
+      ) : null}
+    </button>
+  );
+}
+
+export function ArtifactMediaThumb({ artifact, onOpen, taskId }: Props & { onOpen?: () => void }) {
+  const previewUrl = usableArtifactPreviewUrl(artifact);
+
+  if (onOpen) {
+    return <MediaThumbSurface artifact={artifact} onOpen={onOpen} previewUrl={previewUrl} />;
+  }
+
+  return (
+    <ArtifactPreviewTrigger
+      artifact={artifact}
+      initialPreviewExpiresAt={artifact.previewExpiresAt ?? null}
+      initialPreviewUrl={artifact.previewUrl ?? null}
+      taskId={taskId}
+    >
+      {({ openPreview }) => (
+        <MediaThumbSurface artifact={artifact} onOpen={openPreview} previewUrl={previewUrl} />
       )}
     </ArtifactPreviewTrigger>
   );

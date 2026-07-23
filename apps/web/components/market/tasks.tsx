@@ -20,7 +20,8 @@ import type { ReactNode } from 'react';
 
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
 import {
-  ArtifactMediaTile,
+  ArtifactMediaHero,
+  ArtifactMediaThumb,
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
 import { CopyButton } from '@/components/market/copy-button';
@@ -1386,51 +1387,24 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
   );
 }
 
-function isMediaArtifact(artifact: ArtifactResponse) {
+export function isMediaArtifact(artifact: ArtifactResponse) {
   return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
 }
 
-function formatArtifactBytes(value: number) {
-  if (!Number.isFinite(value) || value <= 0) {
-    return '0 B';
-  }
-
-  const units = ['B', 'KB', 'MB', 'GB'];
-  let size = value;
-  let unitIndex = 0;
-
-  while (size >= 1024 && unitIndex < units.length - 1) {
-    size /= 1024;
-    unitIndex += 1;
-  }
-
-  const formatted =
-    Number.isInteger(size) || size >= 10 || unitIndex === 0 ? size.toFixed(0) : size.toFixed(1);
-  return `${formatted} ${units[unitIndex] ?? 'B'}`;
-}
-
+// Deliberately slim: just role, name, and the View action. Mime type, size, and
+// hashes live in the preview dialog's metadata panel one click away.
 function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId: string }) {
   const label = artifact.role !== 'attachment' ? artifact.role : null;
   return (
-    <div className="min-w-0 rounded-lg border border-border/52 bg-muted/24 p-3 text-sm">
-      <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
-        <div className="grid min-w-0 gap-1.5">
-          <div className="flex min-w-0 items-center gap-2">
-            {label ? <Badge variant="outline">{label}</Badge> : null}
-            <span className="min-w-0 truncate font-mono font-semibold" title={artifact.fileName}>
-              {artifact.fileName}
-            </span>
-          </div>
-          <span className="min-w-0 truncate text-xs text-muted-foreground">
-            {artifact.mimeType}
+    <div className="min-w-0 rounded-lg border border-border/52 bg-muted/24 px-3 py-2 text-sm">
+      <div className="flex min-w-0 items-center justify-between gap-3">
+        <div className="flex min-w-0 items-center gap-2">
+          {label ? <Badge variant="outline">{label}</Badge> : null}
+          <span className="min-w-0 truncate font-mono font-semibold" title={artifact.fileName}>
+            {artifact.fileName}
           </span>
         </div>
-        <div className="flex min-w-0 flex-wrap items-center gap-2 sm:justify-end">
-          <span className="font-mono text-xs text-muted-foreground">
-            {formatArtifactBytes(artifact.sizeBytes)}
-          </span>
-          <ArtifactPreviewButton artifact={artifact} taskId={taskId} />
-        </div>
+        <ArtifactPreviewButton artifact={artifact} taskId={taskId} />
       </div>
       {artifact.textPreview ? (
         <details className="mt-2">
@@ -1496,11 +1470,13 @@ export function ActorLink({
 }
 
 export function SubmissionCard({
+  onOpenMedia,
   profileBasePath,
   reviewAction,
   submission,
   task,
 }: {
+  onOpenMedia?: (artifactId: string) => void;
   profileBasePath: string;
   reviewAction?: PendingAction;
   submission: SubmissionResponse;
@@ -1509,6 +1485,7 @@ export function SubmissionCard({
   const artifacts: ArtifactResponse[] = submission.artifacts ?? [];
   const mediaArtifacts = artifacts.filter(isMediaArtifact);
   const supportingArtifacts = artifacts.filter((artifact) => !isMediaArtifact(artifact));
+  const [heroArtifact, ...extraMedia] = mediaArtifacts;
   const worker = submission.workerAddress;
   const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
   const acceptAction = reviewAction
@@ -1522,20 +1499,10 @@ export function SubmissionCard({
   return (
     <article
       aria-label={`Submission from ${workerLabel}`}
-      className="grid min-w-0 content-start gap-4 rounded-lg border border-border/58 bg-background/34 p-3 shadow-[var(--shadow-soft)]"
+      className="grid min-w-0 content-start gap-3 rounded-lg border border-border/58 bg-background/34 p-3 shadow-[var(--shadow-soft)]"
     >
-      <div className="grid min-w-0 gap-3">
-        <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
-          <span className="flex flex-wrap gap-1.5">
-            <Badge variant="outline">{countLabel(mediaArtifacts.length, 'media artifact')}</Badge>
-            {awardRecipient ? <Badge variant="success">Award recipient</Badge> : null}
-          </span>
-          <RelativeTime className="text-sm text-muted-foreground" value={submission.submittedAt} />
-        </div>
-        <div className="grid min-w-0 gap-1">
-          <p className="text-xs font-semibold uppercase tracking-normal text-muted-foreground">
-            Deliverable submitted by
-          </p>
+      <div className="flex min-w-0 flex-wrap items-center justify-between gap-2">
+        <span className="flex min-w-0 flex-wrap items-center gap-2">
           <ActorLink
             address={submission.workerAddress}
             agentId={submission.workerAgentId}
@@ -1544,22 +1511,43 @@ export function SubmissionCard({
             profileBasePath={profileBasePath}
             title={worker}
           />
-        </div>
+          {awardRecipient ? <Badge variant="success">Award recipient</Badge> : null}
+          {mediaArtifacts.length === 0 && artifacts.length > 0 ? (
+            <Badge variant="outline">{countLabel(artifacts.length, 'file')}</Badge>
+          ) : null}
+        </span>
+        <RelativeTime className="text-sm text-muted-foreground" value={submission.submittedAt} />
       </div>
-      {mediaArtifacts.length > 0 ? (
-        <div className="grid min-w-0 gap-3 sm:grid-cols-2">
-          {mediaArtifacts.map((artifact) => (
-            <ArtifactMediaTile artifact={artifact} key={artifact.id} taskId={submission.taskId} />
+      {heroArtifact ? (
+        <ArtifactMediaHero
+          artifact={heroArtifact}
+          onOpen={onOpenMedia ? () => onOpenMedia(heroArtifact.id) : undefined}
+          taskId={submission.taskId}
+        />
+      ) : null}
+      {extraMedia.length > 0 ? (
+        <div className="flex min-w-0 flex-wrap gap-2">
+          {extraMedia.map((artifact) => (
+            <ArtifactMediaThumb
+              artifact={artifact}
+              key={artifact.id}
+              onOpen={onOpenMedia ? () => onOpenMedia(artifact.id) : undefined}
+              taskId={submission.taskId}
+            />
           ))}
         </div>
       ) : null}
       {supportingArtifacts.length > 0 ? (
-        <div className="grid min-w-0 gap-2">
-          <p className="font-mono text-xs uppercase text-muted-foreground">Supporting artifacts</p>
-          {supportingArtifacts.map((artifact) => (
-            <ArtifactRow artifact={artifact} key={artifact.id} taskId={submission.taskId} />
-          ))}
-        </div>
+        <details className="min-w-0">
+          <summary className="cursor-pointer select-none font-mono text-xs uppercase text-muted-foreground hover:text-foreground">
+            Supporting files ({supportingArtifacts.length})
+          </summary>
+          <div className="mt-2 grid min-w-0 gap-2">
+            {supportingArtifacts.map((artifact) => (
+              <ArtifactRow artifact={artifact} key={artifact.id} taskId={submission.taskId} />
+            ))}
+          </div>
+        </details>
       ) : null}
       {artifacts.length === 0 ? (
         <p className="rounded-lg border border-dashed border-border/52 bg-background/30 p-4 text-sm text-muted-foreground">
