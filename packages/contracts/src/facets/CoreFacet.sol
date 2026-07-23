@@ -567,10 +567,23 @@ contract CoreFacet {
         AppStorage storage s,
         uint256 requesterAgentId
     ) private {
-        task.status = ITMPCore.TaskStatus.Expired;
-        uint256 refundAmount = task.reward;
-
         ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
+
+        // If evaluate() already ran (status Appealing/Disputed), it paid out
+        // evalFee = task.reward * evaluatorFeeBps / 10000 to the evaluator immediately.
+        // That amount is no longer part of this task's outstanding liability, so it
+        // must not be refunded again here on top of the full original reward.
+        uint256 evalFeeAlreadyPaid = 0;
+        if (
+            (task.status == ITMPCore.TaskStatus.Appealing || task.status == ITMPCore.TaskStatus.Disputed)
+                && evalCfg.evaluatorFeeBps > 0
+        ) {
+            evalFeeAlreadyPaid = (task.reward * evalCfg.evaluatorFeeBps) / 10000;
+        }
+
+        task.status = ITMPCore.TaskStatus.Expired;
+        uint256 refundAmount = task.reward - evalFeeAlreadyPaid;
+
         address timedOutEvaluator = evalCfg.evaluator;
         uint256 evaluatorForfeited = evalCfg.evaluatorStake;
         if (evaluatorForfeited > 0) {

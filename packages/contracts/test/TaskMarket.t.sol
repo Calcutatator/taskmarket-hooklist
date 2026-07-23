@@ -3068,6 +3068,39 @@ contract TaskMarketTest is DiamondTestHelper {
         assertGt(usdc.balanceOf(requester), before);
     }
 
+    function test_RefundExpired_DuringAppealing_DeductsAlreadyPaidEvaluatorFee() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        uint16 evalFeeBps = 1000; // 10%
+        uint32 evalWindow = uint32(2 days);
+        uint32 appealWindow = uint32(3 days);
+        _assignEvaluator(taskId, requester, evaluator, evalFeeBps, evalWindow, appealWindow);
+        _claimTask(taskId, worker1, 0);
+        // Submit near the original expiry so the appeal window extension actually pushes
+        // expiryTime past "now" (mirrors test_RefundExpired_DuringAppealing_AfterExtendedExpiry).
+        vm.warp(block.timestamp + DURATION - 1 hours);
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: worker1, amount: REWARD, rank: 1 });
+
+        uint256 evaluatorBalanceBefore = usdc.balanceOf(evaluator);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 900, awards);
+        uint256 evalFee = (REWARD * evalFeeBps) / 10000;
+        assertEq(usdc.balanceOf(evaluator), evaluatorBalanceBefore + evalFee);
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Appealing));
+
+        // Let the appeal window (and thus the extended expiry) pass without an appeal,
+        // then let anyone call refundExpired instead of finalizeVerdict.
+        vm.warp(block.timestamp + appealWindow + 1);
+        uint256 requesterBefore = usdc.balanceOf(requester);
+        market.refundExpired(taskId, 0);
+
+        // The requester must only recover reward - evalFee (already paid to the evaluator),
+        // not the full original reward stacked on top of it (that would drain other tasks'
+        // pooled escrow).
+        assertEq(usdc.balanceOf(requester), requesterBefore + (REWARD - evalFee));
+    }
+
     function test_RevertWhen_RefundExpired_DuringDisputed_BeforeExtendedExpiry() public {
         address resolver = address(20);
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
