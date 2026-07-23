@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli
+.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -39,6 +39,7 @@ help:
 	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> [revNNN] - Upgrade contract implementation; applies every pending step in sequence, or one explicit step (e.g. rev012)"
 	@echo "  make deploy-reward-hook <testnet|mainnet|preview> - Deploy DREAMS token reward hook (testnet/preview use a mock token)"
+	@echo "  make swap-reward-hook <testnet|mainnet> - Ship a reward-hook logic fix: deploy a new EpochBudget+hook, reuse the existing RewardVault (requires zero outstanding reservations, see ADR-0028)"
 	@echo "  make deploy-email-worker  - Deploy Cloudflare Email Worker"
 
 init:
@@ -194,6 +195,58 @@ deploy-reward-hook:
 			--broadcast; \
 	else \
 		echo "Usage: make deploy-reward-hook <testnet|mainnet|preview>"; \
+		exit 1; \
+	fi
+
+swap-reward-hook:
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		if [ "$(word 2,$(ARGS))" = "force" ]; then \
+			SKIP_RESERVATION_CHECK_TESTNET=true; \
+		fi; \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY=$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET} \
+		FORGE_REWARD_VAULT_ADDRESS=$${FORGE_REWARD_VAULT_ADDRESS:-$$FORGE_REWARD_VAULT_ADDRESS_TESTNET} \
+		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
+		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_TESTNET} \
+		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_TESTNET} \
+		FORGE_EPOCH_DURATION=$${FORGE_EPOCH_DURATION:-$$FORGE_EPOCH_DURATION_TESTNET} \
+		FORGE_GLOBAL_EPOCH_CAP_USD=$${FORGE_GLOBAL_EPOCH_CAP_USD:-$$FORGE_GLOBAL_EPOCH_CAP_USD_TESTNET} \
+		FORGE_WORKER_CAP_USD=$${FORGE_WORKER_CAP_USD:-$$FORGE_WORKER_CAP_USD_TESTNET} \
+		FORGE_REQUESTER_CAP_USD=$${FORGE_REQUESTER_CAP_USD:-$$FORGE_REQUESTER_CAP_USD_TESTNET} \
+		FORGE_MAX_USD_PER_TASK=$${FORGE_MAX_USD_PER_TASK:-$$FORGE_MAX_USD_PER_TASK_TESTNET} \
+		FORGE_WORKER_SPLIT_BPS=$${FORGE_WORKER_SPLIT_BPS:-$$FORGE_WORKER_SPLIT_BPS_TESTNET} \
+		FORGE_PGTR_FORWARDER=$${FORGE_PGTR_FORWARDER:-$$FORGE_PGTR_FORWARDER_TESTNET} \
+		SKIP_RESERVATION_CHECK=$${SKIP_RESERVATION_CHECK:-$${SKIP_RESERVATION_CHECK_TESTNET:-false}} \
+		forge script script/SwapRewardHook.s.sol:SwapRewardHook \
+			--rpc-url base_sepolia \
+			--broadcast \
+			--verify; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		if [ "$(word 2,$(ARGS))" = "force" ]; then \
+			SKIP_RESERVATION_CHECK_MAINNET=true; \
+		fi; \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY=$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET} \
+		FORGE_REWARD_VAULT_ADDRESS=$${FORGE_REWARD_VAULT_ADDRESS:-$$FORGE_REWARD_VAULT_ADDRESS_MAINNET} \
+		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_MAINNET} \
+		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_MAINNET} \
+		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_MAINNET} \
+		FORGE_EPOCH_DURATION=$${FORGE_EPOCH_DURATION:-$$FORGE_EPOCH_DURATION_MAINNET} \
+		FORGE_GLOBAL_EPOCH_CAP_USD=$${FORGE_GLOBAL_EPOCH_CAP_USD:-$$FORGE_GLOBAL_EPOCH_CAP_USD_MAINNET} \
+		FORGE_WORKER_CAP_USD=$${FORGE_WORKER_CAP_USD:-$$FORGE_WORKER_CAP_USD_MAINNET} \
+		FORGE_REQUESTER_CAP_USD=$${FORGE_REQUESTER_CAP_USD:-$$FORGE_REQUESTER_CAP_USD_MAINNET} \
+		FORGE_MAX_USD_PER_TASK=$${FORGE_MAX_USD_PER_TASK:-$$FORGE_MAX_USD_PER_TASK_MAINNET} \
+		FORGE_WORKER_SPLIT_BPS=$${FORGE_WORKER_SPLIT_BPS:-$$FORGE_WORKER_SPLIT_BPS_MAINNET} \
+		FORGE_PGTR_FORWARDER=$${FORGE_PGTR_FORWARDER:-$$FORGE_PGTR_FORWARDER_MAINNET} \
+		SKIP_RESERVATION_CHECK=$${SKIP_RESERVATION_CHECK:-$${SKIP_RESERVATION_CHECK_MAINNET:-false}} \
+		forge script script/SwapRewardHook.s.sol:SwapRewardHook \
+			--rpc-url base \
+			--broadcast \
+			--verify; \
+	else \
+		echo "Usage: make swap-reward-hook <testnet|mainnet> [force]"; \
+		echo "  force skips the RewardVault.totalReserved()==0 safety guard -- DANGEROUS, see ADR-0028"; \
 		exit 1; \
 	fi
 
@@ -596,7 +649,7 @@ smoke:
 		SMOKE_API_URL="$$TESTNET_API_URL"; \
 		SMOKE_REWARD_HOOK_ADDRESS="$$FORGE_DREAMS_HOOK_ADDRESS_TESTNET"; \
 		SMOKE_MOCK_TOKEN_ADDRESS="$$FORGE_MOCK_TOKEN_ADDRESS_TESTNET"; \
-		SMOKE_VAULT_ADDRESS="$$FORGE_VAULT_ADDRESS_TESTNET"; \
+		SMOKE_VAULT_ADDRESS="$$FORGE_REWARD_VAULT_ADDRESS_TESTNET"; \
 	else \
 		SMOKE_API_URL="$$API_URL"; \
 		SMOKE_REWARD_HOOK_ADDRESS="$$REWARD_HOOK_ADDRESS"; \

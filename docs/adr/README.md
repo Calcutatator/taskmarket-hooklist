@@ -105,6 +105,7 @@ those always pause for a human.
 - [0025 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change](0025-update-task-reward-increase-funding.md)
 - [0026 — `refundExpired` is callable by anyone, not just the requester](0026-refund-expired-is-permissionless.md)
 - [0027 — Contest `pendingActions` suggest a worker address only when there is exactly one distinct submitter](0027-contest-pending-actions-suggest-worker-only-when-unambiguous.md)
+- [0028 — Upgrading TaskTokenRewardHook reuses the existing RewardVault via a breaking hook cutover, after manually settling the one outstanding reservation first](0028-reward-hook-upgrade-leaves-old-hook-authorized-until-drained.md)
 
 ## Linting
 
