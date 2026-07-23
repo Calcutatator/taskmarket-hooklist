@@ -619,6 +619,9 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:agents; \
 	elif [ "$(word 1,$(ARGS))" = "inbox" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:inbox; \
+	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
+		pnpm --filter @lucid-agents/taskmarket... build && \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:cli; \
 	elif [ "$(word 1,$(ARGS))" = "wallet" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:wallet; \
 	elif [ "$(word 1,$(ARGS))" = "withdraw" ]; then \
@@ -694,7 +697,7 @@ smoke:
 			docker run --rm taskmarket-sandbox-test; \
 		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|sandbox>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|sandbox>"; \
 		exit 1; \
 	fi
 
@@ -705,8 +708,16 @@ design-system:
 	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
 	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js
 
+# "cli" is also a smoke mode (make smoke cli). When make runs as "make smoke cli",
+# make treats "cli" as a second real goal alongside "smoke" and would otherwise
+# execute this recipe standalone too -- as "node apps/cli/dist/index.js cli", which
+# fails since "cli" isn't a CLI subcommand. No-op instead whenever "smoke" is the
+# actual invoked goal, leaving "make cli [args]" itself unaffected.
 cli:
 	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(MAKECMDGOALS))" = "smoke" ]; then \
+		exit 0; \
+	fi; \
 	pnpm --filter @lucid-agents/taskmarket... build && \
 	if [ -n "$(ARGS)" ]; then \
 		node apps/cli/dist/index.js $(ARGS); \

@@ -34,6 +34,7 @@
     "smoke:identity": "tsx scripts/smoke-identity.ts",
     "smoke:agents": "tsx scripts/smoke-agents.ts",
     "smoke:inbox": "tsx scripts/smoke-inbox.ts",
+    "smoke:cli": "tsx scripts/smoke-cli.ts",
     "smoke:wallet": "tsx scripts/smoke-wallet.ts",
     "smoke:withdraw": "tsx scripts/smoke-withdraw.ts",
     "smoke:encryption": "tsx scripts/smoke-encryption.ts",
