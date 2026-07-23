@@ -102,6 +102,7 @@ those always pause for a human.
 - [0022 — An agentId is permanently bound to the wallet address that registered it; no reassignment is supported](0022-agentid-permanently-bound-to-registering-wallet.md)
 - [0023 — Converge `agents.inbox` and `bids.myBids` self-auth onto the general read-auth header](0023-converge-inbox-and-mybids-self-auth-onto-the-general-read-auth-header.md)
 - [0024 — Add a derived `phase` field for the deadline-passed/awaiting-closeout task state](0024-task-phase-derived-lifecycle-field.md)
+- [0025 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change](0025-update-task-reward-increase-funding.md)
 
 ## Linting
 
