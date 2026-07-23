@@ -109,8 +109,14 @@ deploy:
 
 upgrade:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(ARGS))" = "testnet" ] || [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
-		cd packages/contracts && ./script/upgrade.sh "$(word 1,$(ARGS))" "$(word 2,$(ARGS))"; \
+	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET}" \
+		./script/upgrade.sh testnet "$(word 2,$(ARGS))"; \
+	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
+		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET}" \
+		./script/upgrade.sh mainnet "$(word 2,$(ARGS))"; \
 	else \
 		echo "Usage: make upgrade <testnet|mainnet> [revNNN]"; \
 		exit 1; \
