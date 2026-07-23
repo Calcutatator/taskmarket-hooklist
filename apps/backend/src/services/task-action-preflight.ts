@@ -225,7 +225,6 @@ export async function validatePaidTaskAction(
       return;
     }
     case 'refund_expired': {
-      requirePayer(payer, task.requester, 'task requester');
       if (!expired) fail('Task has not expired');
       if (task.status === 'completed' || task.status === 'cancelled' || task.status === 'expired') {
         fail(`Task is already ${task.status}`);

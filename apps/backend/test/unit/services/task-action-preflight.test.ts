@@ -217,6 +217,29 @@ describe('paid task action preflight', () => {
     ).rejects.toMatchObject({ status: 403 });
   });
 
+  it('allows a non-requester payer to call refund_expired (ADR-0026, permissionless)', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        task({
+          mode: 'claim',
+          status: 'pending_approval',
+          expiryTime: new Date('2026-07-10T00:00:00.000Z'),
+        }),
+      ])
+    );
+
+    await expect(
+      validatePaidTaskAction(
+        ctx.db,
+        'refund_expired',
+        { params: { taskId: '0xtask' }, body: { taskId: '0xtask' } } as never,
+        WORKER,
+        NOW
+      )
+    ).resolves.toBeUndefined();
+  });
+
   it('rejects cancellation when an active contest submission exists', async () => {
     const ctx = createMockCtx();
     ctx.db.select
