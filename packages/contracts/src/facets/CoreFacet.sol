@@ -540,7 +540,28 @@ contract CoreFacet {
             task.status = ITMPCore.TaskStatus.Expired;
             uint256 refundAmount = task.reward;
             address requesterAddr = task.requester;
+
+            // An evaluator can be assigned to an auction task while it's still Open. Since
+            // the task never reaches Review without a deliverable, evaluate() never runs and
+            // never returns the evaluator's stake -- forfeit it here (mirroring the same
+            // evaluator-never-acted forfeiture _refundExpiredNormal already applies) instead
+            // of leaving it stranded in escrow with no path back to anyone.
+            ITMPCore.TaskEvaluatorConfig storage evalCfg = s.taskEvaluatorConfigs[taskId];
+            address timedOutEvaluator = evalCfg.evaluator;
+            uint256 evaluatorForfeited = evalCfg.evaluatorStake;
+            if (evaluatorForfeited > 0) {
+                evalCfg.evaluatorStake = 0;
+                evalCfg.evaluator = address(0);
+                s.totalFeesCollected += evaluatorForfeited;
+            }
+
             if (!s.usdcToken.transfer(requesterAddr, refundAmount)) revert ITMPCore.RefundFailed();
+
+            if (evaluatorForfeited > 0) {
+                if (!s.usdcToken.transfer(s.feeRecipient, evaluatorForfeited)) revert ITMPCore.ForfeitTransferFailed();
+                emit ITMPEvaluator.EvaluatorTimedOut(taskId, timedOutEvaluator, evaluatorForfeited);
+            }
+
             emit ITMPCore.TaskExpired(taskId, requesterAddr, refundAmount);
             LibTaskMarket._onExpireHooks(taskId, s);
             return;

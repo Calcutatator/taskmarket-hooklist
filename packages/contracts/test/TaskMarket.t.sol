@@ -1539,6 +1539,50 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(uint256(task.status), uint256(ITMPCore.TaskStatus.Expired));
     }
 
+    function test_RefundExpired_Auction_ClaimedNoDeliverable_ForfeitsEvaluatorStake() public {
+        // An evaluator can be assigned to an auction task while it's still Open (assignEvaluator
+        // only requires TaskStatus.Open, not a particular mode). If the worker then claims the
+        // auction but never submits, the task never reaches Review -- evaluate() never runs, so
+        // the evaluator's stake is never returned. The no-deliverable refund path must forfeit
+        // it (matching the existing Review-state precedent) instead of leaving it stranded.
+        uint256 stakeAmount = REWARD / 10;
+        uint256 acceptPrice = 40 * 10 ** 6;
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH());
+
+        usdc.mint(requester, stakeAmount);
+        vm.prank(requester);
+        usdc.approve(address(market), stakeAmount);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, stakeAmount, 0, uint32(2 days), uint32(1 days), address(0))
+            )
+        );
+
+        _acceptAuction(taskId, worker1, acceptPrice);
+
+        vm.warp(block.timestamp + DURATION + 1);
+
+        uint256 worker1BalanceBefore = usdc.balanceOf(worker1);
+        uint256 requesterBefore = usdc.balanceOf(requester);
+        uint256 feeRecipientBefore = usdc.balanceOf(feeRecipient);
+
+        vm.expectEmit(true, true, false, true);
+        emit ITMPEvaluator.EvaluatorTimedOut(taskId, evaluator, stakeAmount);
+
+        market.refundExpired(taskId, 0);
+
+        assertEq(usdc.balanceOf(worker1), worker1BalanceBefore, "worker must not be paid without a deliverable");
+        assertEq(usdc.balanceOf(requester), requesterBefore + REWARD, "requester must get the full reward back");
+        assertEq(
+            usdc.balanceOf(feeRecipient),
+            feeRecipientBefore + stakeAmount,
+            "evaluator stake must be forfeited, not stranded"
+        );
+        assertEq(market.getTaskEvaluatorConfig(taskId).evaluatorStake, 0, "stake zeroed");
+    }
+
     // -----------------------------------------------------------------------
     // cancelTask tests
     // -----------------------------------------------------------------------
