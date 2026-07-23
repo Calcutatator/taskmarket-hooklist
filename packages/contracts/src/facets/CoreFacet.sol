@@ -443,7 +443,7 @@ contract CoreFacet {
                 // escrow is one pooled balance across every task -- but it catches the
                 // acute failure mode where no funding transfer happened at all (e.g. a
                 // relayed paymentAmount of 0 due to a backend bug), instead of silently
-                // promising a reward the Diamond cannot pay. See ADR 0021.
+                // promising a reward the Diamond cannot pay. See ADR 0025.
                 if (s.usdcToken.balanceOf(address(this)) < newReward) {
                     revert ITMPCore.RewardIncreaseNotFunded();
                 }

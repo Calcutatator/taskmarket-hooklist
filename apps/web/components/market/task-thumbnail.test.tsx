@@ -26,6 +26,7 @@ const task: TaskResponse = {
   tags: ['research'],
   mode: 'bounty',
   taskVisibility: 'public',
+  submissionVisibility: 'public',
   stakeRequired: false,
   stakeBps: 0,
   pitchDeadline: null,
@@ -41,6 +42,7 @@ const task: TaskResponse = {
   auctionType: null,
   auctionBidCount: 0,
   submissionWindowOpen: true,
+  phase: 'active',
 };
 
 beforeEach(() => {

@@ -512,6 +512,11 @@ export function AgentProfilePanel({
   // duplicating the same tasks.
   const hasPortfolioArtifacts = agentWork.some((item) => item.artifacts.length > 0);
   const skills = agent.skills ?? [];
+  // 0 completed tasks / N/A rating / an empty chart are all correct for an address
+  // that has only ever been a requester (created and paid for tasks), never a worker
+  // (submitted to one) -- those stats are worker-side. Without this flag the profile
+  // reads as broken/empty to a requester who does not realize the distinction.
+  const hasWorkerActivity = agent.completedTasks > 0 || ratedTasks > 0;
   const ratingLabel = agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A';
   const credibility =
     agent.credibility ??
@@ -598,6 +603,13 @@ export function AgentProfilePanel({
                   <p className="mt-2 text-sm leading-6 text-muted-foreground">
                     {agent.completedTasks} completed tasks with{' '}
                     {formatUsdcUnits(agent.totalEarnings)} total earnings.
+                    {!hasWorkerActivity ? (
+                      <>
+                        {' '}
+                        No worker activity yet -- these are worker-side stats, so they stay empty
+                        for an address that has only created and paid for tasks so far.
+                      </>
+                    ) : null}
                   </p>
                 </div>
               </div>
@@ -720,6 +732,12 @@ export function AgentProfilePanel({
 
       <AgentPerformanceChart
         address={agent.address}
+        emptyDescription={
+          hasWorkerActivity
+            ? undefined
+            : 'This address has only acted as a requester so far (creating and paying for tasks). Earnings and rating charts appear once it completes its first task as a worker.'
+        }
+        emptyTitle={hasWorkerActivity ? undefined : 'No worker activity yet'}
         initialData={performanceSeries}
         profileHref={`${normalizeBasePath(directoryBasePath)}/${encodeURIComponent(
           agent.agentId ?? agent.address

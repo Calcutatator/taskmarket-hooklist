@@ -113,13 +113,38 @@ if (!result.verified) {
 }
 ```
 
-Build the canonical message with one of the shared builders in `@taskmarket/shared`'s `lib/authMessages.ts` (`buildInboxSelfAuthMessage`, `buildMyBidsMessage`, `buildSelectWorkerMessage`) rather than hand-typing a template string -- the CLI, web, and any smoke test that needs to reproduce the same signature all call the same builder, so the message text can never drift between signer and verifier. Add a new builder there for a new call site rather than inlining a string.
+Build the canonical message with one of the shared builders in `@taskmarket/shared`'s `lib/authMessages.ts` (`buildSelectWorkerMessage`, `buildSubmitMessage`, etc.) rather than hand-typing a template string -- the CLI, web, and any smoke test that needs to reproduce the same signature all call the same builder, so the message text can never drift between signer and verifier. Add a new builder there for a new call site rather than inlining a string.
 
-Current call sites: `agents.inbox`, `wallet.setWithdrawalAddress`/`withdrawDreamsRewards`, `bids.selectWinner`/`myBids`, `claims.claim`/`forfeit`, `pitches.select`, `submissions.submit`/`requestUploadUrl`/`submitFromKeys`, and the legal-acceptance service.
+Current call sites: `wallet.setWithdrawalAddress`/`withdrawDreamsRewards`, `bids.selectWinner`, `claims.claim`/`forfeit`, `pitches.select`, `submissions.submit`/`requestUploadUrl`/`submitFromKeys`, and the legal-acceptance service. (`agents.inbox` and `bids.myBids` used to each carry their own bespoke variant of this pattern -- see the read-auth section below for what they converged onto per ADR-0022.)
 
 Note: moving a pre-existing endpoint onto this helper is an API contract change, not just an internal refactor, if it previously threw one generic error for both failure reasons. `wallet.setWithdrawalAddress`/`withdrawDreamsRewards` used to throw a single `UNAUTHORIZED` for both a malformed signature and a valid-signature-wrong-signer; adopting `verifySignedAddress`'s distinct-reason pattern here (matching every other call site) means a malformed signature now returns `BAD_REQUEST` instead. This was an intentional, accepted trade-off of standardizing on one mechanism -- not an oversight -- but call it out explicitly in the PR/changelog when converting any other pre-existing endpoint the same way, since it changes the HTTP status code an existing caller might be branching on.
 
 This is a different mechanism from the device/API-token pattern in the next section: the device token proves "caller holds a previously-issued token" (useful for unlocking a locally-encrypted key, or as a stable messaging/email identity), not "caller controls this wallet address" -- `devices.register` accepts any client-supplied `walletAddress` with no signature check at all, so the token was never valid evidence of address ownership. Anything that needs to know whether the caller genuinely controls an address must use `verifySignedAddress`, not the device token (see ADR-0017 for the concrete case this distinction settled).
+
+## General read-auth (`ctx.caller`)
+
+Reads whose response depends on caller identity -- "does this address own this unlisted task," "is this my submission," "are these my bids" -- resolve the caller once per request in `createContext` (`src/context.ts`), rather than each endpoint verifying its own signature inline:
+
+```typescript
+export type Caller = { address: string };
+
+async function resolveCaller(req): Promise<Caller | undefined> {
+  const address = headerValue(req.headers['x-taskmarket-caller-address']);
+  const signature = headerValue(req.headers['x-taskmarket-caller-signature']);
+  if (!address || !signature) return undefined;
+  const result = await verifySignedAddress(buildReadAuthMessage(address), signature, address);
+  return result.verified ? { address: address.toLowerCase() } : undefined;
+}
+```
+
+The client signs `taskmarket:read:<address>` (`buildReadAuthMessage` in `@taskmarket/shared`) and sends it as the `X-Taskmarket-Caller-Address`/`X-Taskmarket-Caller-Signature` headers. No nonce: this is a read with no state-changing side effect to replay, so the same signature can be reused for the life of a CLI process or a web session. `ctx.caller` is `undefined` whenever the header is absent or the signature doesn't verify -- never throws on its own.
+
+Two procedure aliases in `trpc.ts` mark how a given endpoint treats `ctx.caller`:
+
+- `optionalAuthProcedure` -- same as `publicProcedure`; the endpoint branches on `ctx.caller` being present or not, but has a real anonymous view either way (e.g. `agents.inbox`: unlisted tasks are included only when `ctx.caller` matches the queried address).
+- `protectedProcedure` -- throws `UNAUTHORIZED` when `ctx.caller` is absent, for endpoints with no meaningful anonymous view (e.g. `bids.myBids`: "my bids" is not a public concept).
+
+`agents.inbox` and `bids.myBids` originally each carried their own narrower, mutually incompatible self-auth scheme (`taskmarket:inbox:<address>` as query params, `taskmarket:bids:my:<address>` as input fields) -- ADR-0015 and ADR-0017 respectively. ADR-0023 converged both onto this general mechanism once Phase 2 built it, so there is now exactly one "prove you own this address for a read" code path, not three. `submissions.listByTask`/`previewArtifact`/`download`/`listByWorker`/`mySubmissions` (Phase 2's submission-visibility gating) use the same mechanism from the start.
 
 ## Devices router
 

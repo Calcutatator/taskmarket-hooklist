@@ -1,10 +1,33 @@
 import { render, screen, within } from '@testing-library/react';
-import { describe, expect, it } from 'vitest';
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 
-import { DashboardProtocolContent } from './protocol-dashboard';
+import type { DashboardProtocolContent as DashboardProtocolContentType } from './protocol-dashboard';
+
+// protocol-dashboard.tsx computes chainId/explorerUrl as module-level consts from
+// NEXT_PUBLIC_CHAIN_ID/NEXT_PUBLIC_EXPLORER_URL, frozen at first import. The hrefs this
+// file asserts assume the mainnet default (chain 8453), so the env must be pinned and the
+// module freshly imported per test -- otherwise an ambient NEXT_PUBLIC_CHAIN_ID (e.g. a
+// local .env pointing at testnet for dev) leaks into the module cache and flips every
+// expected BaseScan href to sepolia.basescan.org.
+async function loadDashboardProtocolContent(): Promise<typeof DashboardProtocolContentType> {
+  const mod = await import('./protocol-dashboard');
+  return mod.DashboardProtocolContent;
+}
 
 describe('DashboardProtocolContent', () => {
-  it('renders the hero, standards, flow, surface, selectors, safety rules, and CTAs', () => {
+  beforeEach(() => {
+    vi.resetModules();
+    vi.unstubAllEnvs();
+    vi.stubEnv('NEXT_PUBLIC_CHAIN_ID', '8453');
+    vi.stubEnv('NEXT_PUBLIC_EXPLORER_URL', undefined);
+  });
+
+  afterEach(() => {
+    vi.unstubAllEnvs();
+  });
+
+  it('renders the hero, standards, flow, surface, selectors, safety rules, and CTAs', async () => {
+    const DashboardProtocolContent = await loadDashboardProtocolContent();
     render(<DashboardProtocolContent />);
 
     expect(
@@ -39,7 +62,8 @@ describe('DashboardProtocolContent', () => {
     );
   });
 
-  it('links each standard to the correct EIP source and opens in a new tab', () => {
+  it('links each standard to the correct EIP source and opens in a new tab', async () => {
+    const DashboardProtocolContent = await loadDashboardProtocolContent();
     render(<DashboardProtocolContent />);
 
     const expectedLinks: Array<[string, string]> = [
@@ -60,7 +84,8 @@ describe('DashboardProtocolContent', () => {
     }
   });
 
-  it('lists deployed contracts with BaseScan address links that open in a new tab', () => {
+  it('lists deployed contracts with BaseScan address links that open in a new tab', async () => {
+    const DashboardProtocolContent = await loadDashboardProtocolContent();
     render(<DashboardProtocolContent />);
 
     const contracts = screen.getByTestId('dashboard-protocol-contracts-list');

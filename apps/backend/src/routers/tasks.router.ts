@@ -13,6 +13,8 @@ import {
   type TaskStatusType,
   type TaskModeType,
   type TaskVisibilityType,
+  type TaskPhaseType,
+  type SubmissionVisibilityType,
   type TaskAward,
   type AuctionTypeValue,
   estimateUsdBonusValue,
@@ -72,8 +74,11 @@ import {
   computeNetReward,
   computePendingActions,
   computeSubmissionWindowOpen,
+  computeTaskPhase,
   normalizeRequesterPublicKey,
 } from '../lib/task';
+import { canViewSubmission, type SubmissionVisibilityMode } from '../lib/submission-visibility';
+import type { Context } from '../context';
 import { notifyTaskDropSubscribers } from '../services/task-drops-email';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
@@ -89,6 +94,68 @@ import {
 // requester-reject path existed yet, refundExpired wasn't callable the way it is now).
 // Hide them from discovery so agents stop finding tasks they can never win.
 const REV007_LISTING_CUTOFF = new Date('2026-06-30T22:15:06.000Z');
+
+const IN_REVIEW_TASK_STATUSES = ['review', 'appealing', 'disputed'] as const;
+const SUBMISSION_WINDOW_TASK_STATUSES = ['open', 'claimed', 'worker_selected'] as const;
+const RESOLVED_TASK_STATUSES = ['completed', 'cancelled', 'expired'] as const;
+
+// Translates the derived `phase` filter (ADR-0024) into the equivalent status/expiry SQL
+// condition -- `phase` is not a stored column, so filtering by it means expressing the
+// same bucketing computeTaskPhase (lib/task.ts) applies in memory as a query predicate
+// instead. Keep the two in lockstep; a task's phase must never differ between a filtered
+// list result and its own computeTaskPhase value.
+function taskPhaseCondition(phase: TaskPhaseType, now: Date) {
+  switch (phase) {
+    case 'in_review':
+      return inArray(tasks.status, IN_REVIEW_TASK_STATUSES);
+    case 'resolved':
+      return inArray(tasks.status, RESOLVED_TASK_STATUSES);
+    case 'awaiting_settlement':
+      return and(
+        inArray(tasks.status, SUBMISSION_WINDOW_TASK_STATUSES),
+        lte(tasks.expiryTime, now)
+      );
+    case 'active':
+    default:
+      return or(
+        and(inArray(tasks.status, SUBMISSION_WINDOW_TASK_STATUSES), gt(tasks.expiryTime, now)),
+        eq(tasks.status, 'pending_approval')
+      );
+  }
+}
+
+/**
+ * computePendingActions embeds the current active submitter's address in
+ * suggested command strings (`accept --worker <addr>`, `reject-submission
+ * --worker <addr>`) -- but pendingActions is returned to every caller of
+ * `get`/`update` unfiltered, so that address needs the same
+ * submissionVisibility gate as every other reader of the `submissions` table
+ * (ADR-0016), not just an unconditional reveal. `claimedBy` is a separate,
+ * already-public field (auction/claim/pitch selection, not a submission), so
+ * it is deliberately not gated here.
+ */
+function visibleLatestSubmissionWorker(
+  workerAddress: string | null | undefined,
+  task: {
+    requester: string;
+    status: string;
+    verdictType: string | null;
+    submissionVisibility: string;
+  },
+  caller: Context['caller']
+): string | null {
+  if (!workerAddress) return null;
+  const visible = canViewSubmission({
+    mode: task.submissionVisibility as SubmissionVisibilityMode,
+    taskStatus: task.status,
+    taskVerdictType: task.verdictType,
+    caller,
+    task,
+    submission: { workerAddress },
+    winningAddresses: new Set<string>(),
+  });
+  return visible ? workerAddress : null;
+}
 
 export const tasksRouter = router({
   stats: publicProcedure
@@ -287,6 +354,7 @@ export const tasksRouter = router({
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
       const taskVisibility = input.taskVisibility ?? 'public';
+      const submissionVisibility = input.submissionVisibility ?? 'public';
 
       const requesterAgent = await ctx.db
         .select({ agentId: agents.agentId, publicKey: agents.publicKey })
@@ -328,6 +396,7 @@ export const tasksRouter = router({
           tags: input.tags,
           mode: input.mode ?? 'bounty',
           taskVisibility,
+          submissionVisibility,
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
@@ -439,8 +508,20 @@ export const tasksRouter = router({
       if (!input.status || input.status === 'ALL' || input.status === 'open') {
         conditions.push(gte(tasks.createdAt, REV007_LISTING_CUTOFF));
       }
-      if (input.status === 'open') {
+      // 'open' isn't the only status with a submission window: 'claimed' (claim/auction
+      // mode) and 'worker_selected' (pitch mode) are the equivalent "still taking
+      // deliverables" states -- see computeSubmissionWindowOpen in lib/task.ts. Apply the
+      // same expiry-exclusion guard to all three so filtering by any of them consistently
+      // excludes tasks whose window has already closed, instead of only 'open' doing so.
+      if (
+        input.status === 'open' ||
+        input.status === 'claimed' ||
+        input.status === 'worker_selected'
+      ) {
         conditions.push(gt(tasks.expiryTime, now));
+      }
+      if (input.phase) {
+        conditions.push(taskPhaseCondition(input.phase, now));
       }
       if (input.mode && input.mode !== 'ALL') {
         conditions.push(eq(tasks.mode, input.mode));
@@ -654,6 +735,7 @@ export const tasksRouter = router({
             : null,
           mode: task.mode as TaskModeType,
           taskVisibility: task.taskVisibility as TaskVisibilityType,
+          submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -676,6 +758,7 @@ export const tasksRouter = router({
           auctionBidCount,
           currentLowestBid,
           submissionWindowOpen: computeSubmissionWindowOpen(task, now),
+          phase: computeTaskPhase(task, now),
           netReward: computeNetReward(grossPayout, task.platformFeeBps ?? 0),
           taskDropId: task.taskDropId ?? null,
         };
@@ -881,6 +964,7 @@ export const tasksRouter = router({
           : null;
 
       const submissionWindowOpen = computeSubmissionWindowOpen(task, now);
+      const phase = computeTaskPhase(task, now);
       const taskDrop =
         task.taskDropId !== null && task.taskDropId !== undefined
           ? ((
@@ -953,6 +1037,7 @@ export const tasksRouter = router({
         })(),
         mode: task.mode as TaskModeType,
         taskVisibility: task.taskVisibility as TaskVisibilityType,
+        submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
         pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -1003,6 +1088,7 @@ export const tasksRouter = router({
         estimatedWorkerDreamsBonus: estimatedWorkerDreamsBonusField,
         estimatedRequesterDreamsBonus: estimatedRequesterDreamsBonusField,
         submissionWindowOpen,
+        phase,
         netReward: computeNetReward(
           task.mode === 'auction'
             ? task.status === 'open'
@@ -1027,7 +1113,11 @@ export const tasksRouter = router({
             auctionType: task.auctionType,
             currentClockPrice: clockPrice,
             currentLowestBid,
-            latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
+            latestSubmissionWorker: visibleLatestSubmissionWorker(
+              latestSubmission[0]?.workerAddress,
+              task,
+              ctx.caller
+            ),
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
@@ -1385,6 +1475,7 @@ export const tasksRouter = router({
       ]);
 
       const updateSubmissionWindowOpen = computeSubmissionWindowOpen(t, updateNow);
+      const updatePhase = computeTaskPhase(t, updateNow);
 
       const hasUpdatedSubmissions = Number(updatedSubmissionCount[0]?.count ?? 0) > 0;
       const updatedLatestSubmission =
@@ -1416,6 +1507,7 @@ export const tasksRouter = router({
         primaryAward: null,
         mode: t.mode as TaskModeType,
         taskVisibility: t.taskVisibility as TaskVisibilityType,
+        submissionVisibility: t.submissionVisibility as SubmissionVisibilityType,
         stakeRequired: t.stakeRequired === 1,
         stakeBps: t.stakeBps,
         pitchDeadline: t.pitchDeadline?.toISOString() || null,
@@ -1441,6 +1533,7 @@ export const tasksRouter = router({
         auctionPriceReachesMaxAt: updateAuctionPriceReachesMaxAt,
         currentLowestBid: updateCurrentLowestBid,
         submissionWindowOpen: updateSubmissionWindowOpen,
+        phase: updatePhase,
         netReward: computeNetReward(t.mode === 'auction' ? null : t.reward, t.platformFeeBps ?? 0),
         pendingActions: computePendingActions(
           {
@@ -1459,7 +1552,11 @@ export const tasksRouter = router({
             currentClockPrice:
               updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
             currentLowestBid: updateCurrentLowestBid,
-            latestSubmissionWorker: updatedLatestSubmission[0]?.workerAddress ?? null,
+            latestSubmissionWorker: visibleLatestSubmissionWorker(
+              updatedLatestSubmission[0]?.workerAddress,
+              t,
+              ctx.caller
+            ),
             evaluator: t.evaluator,
             disputeResolver: t.disputeResolver,
             evaluatorDeadline: t.evaluatorDeadline,

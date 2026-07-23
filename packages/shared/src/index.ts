@@ -12,14 +12,15 @@ export {
 } from './lib/dreams';
 export {
   buildSelectWorkerMessage,
-  buildInboxSelfAuthMessage,
-  buildMyBidsMessage,
   buildSubmitMessage,
   buildClaimMessage,
   buildForfeitMessage,
   buildSetWithdrawalAddressMessage,
   buildWithdrawDreamsMessage,
   buildDeviceRegisterMessage,
+  buildReadAuthMessage,
+  READ_AUTH_ADDRESS_HEADER,
+  READ_AUTH_SIGNATURE_HEADER,
 } from './lib/authMessages';
 export {
   CURRENT_LEGAL_BUNDLE,

@@ -13,6 +13,11 @@ export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auctio
 // read surface (ADR-0014, ADR-0015). Add it only once that enforcement is real.
 export const TaskVisibility = z.enum(['unlisted', 'public']);
 
+// ADR-0016: independent axis from TaskVisibility. Chosen once at creation and
+// locked in permanently -- there is no update path for this field anywhere.
+// 'public' (default) matches today's always-open submission behavior exactly.
+export const SubmissionVisibility = z.enum(['public', 'reveal_all', 'winner_only', 'never']);
+
 export const TaskStatus = z.enum([
   'open',
   'claimed',
@@ -25,6 +30,14 @@ export const TaskStatus = z.enum([
   'expired',
   'cancelled',
 ]);
+
+// Derived, server-computed lifecycle bucket over `status` -- ADR-0024. `status` stays a
+// literal mirror of on-chain/indexer state and never changes meaning; `phase` exists
+// because `status` can legitimately sit at 'open'/'claimed'/'worker_selected' past
+// `expiryTime` (status only transitions via an explicit refundExpired transaction or an
+// indexer-observed event, never automatically on a timer -- see ADR-0007), and nothing
+// named that condition before this.
+export const TaskPhase = z.enum(['active', 'in_review', 'awaiting_settlement', 'resolved']);
 
 export const AuctionType = z.enum(['dutch', 'english', 'reverse_dutch', 'reverse_english']);
 
@@ -104,6 +117,7 @@ export const TaskCreateSchema = z
     tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
     mode: TaskMode.optional().default('bounty'),
     taskVisibility: TaskVisibility.optional().default('public'),
+    submissionVisibility: SubmissionVisibility.optional().default('public'),
     stakeRequired: z.boolean().optional().default(false),
     stakeBps: z.number().min(0).max(10000).optional().default(0),
     pitchDeadline: z.number().positive().optional(),
@@ -219,6 +233,7 @@ export const TaskResponseSchema = z.object({
   tags: z.array(z.string()),
   mode: TaskMode,
   taskVisibility: TaskVisibility.optional().default('public'),
+  submissionVisibility: SubmissionVisibility.optional().default('public'),
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
   pitchDeadline: z.string().nullable(),
@@ -268,6 +283,7 @@ export const TaskResponseSchema = z.object({
   verdictConfidence: z.number().nullable().optional(),
   verdictEvidenceHash: z.string().nullable().optional(),
   submissionWindowOpen: z.boolean(),
+  phase: TaskPhase,
   netReward: z.string().nullable().optional(),
   pendingActions: PendingActionSchema.array().optional(),
   selfAward: z.boolean().nullable().optional(),
@@ -289,6 +305,7 @@ export const TaskListInputSchema = z.object({
     .union([TaskStatus, z.literal('ALL')])
     .optional()
     .default('ALL'),
+  phase: TaskPhase.optional(),
   mode: z
     .enum(['ALL', 'bounty', 'claim', 'pitch', 'benchmark', 'auction'])
     .optional()
@@ -316,11 +333,6 @@ export const TaskListResponseSchema = z.object({
 
 export const TaskInboxInputSchema = z.object({
   address: z.string(),
-  // Optional proof that the caller owns `address`: a signature over
-  // `taskmarket:inbox:<address>` (see ADR-0015). When present and valid, the
-  // response additionally includes that address's own unlisted tasks; otherwise
-  // behavior is unchanged (public tasks only, same as today, for any address).
-  signature: z.string().optional(),
 });
 
 export const TaskInboxResponseSchema = z.object({
@@ -387,8 +399,10 @@ export type PaidPendingActionNameValue = (typeof PAID_PENDING_ACTION_NAMES)[numb
 export type TaskListInput = z.infer<typeof TaskListInputSchema>;
 export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
+export type TaskPhaseType = z.infer<typeof TaskPhase>;
 export type TaskModeType = z.infer<typeof TaskMode>;
 export type TaskVisibilityType = z.infer<typeof TaskVisibility>;
+export type SubmissionVisibilityType = z.infer<typeof SubmissionVisibility>;
 export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

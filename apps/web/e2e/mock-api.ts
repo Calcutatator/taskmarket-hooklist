@@ -101,8 +101,10 @@ function task(
     status: 'open',
     submissionCount: 0,
     submissionWindowOpen: true,
+    phase: 'active',
     tags: ['mock'],
     taskVisibility: 'public',
+    submissionVisibility: 'public',
     workerActorType: undefined,
     workerAgentId: null,
     ...rest,
@@ -237,6 +239,7 @@ const tasks: TaskDetailResponse[] = [
     submissionCount: 0,
     tags: ['bounty', 'unlisted'],
     taskVisibility: 'unlisted',
+    submissionVisibility: 'public',
   }),
   task({
     description:

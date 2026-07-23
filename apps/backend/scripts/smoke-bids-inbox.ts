@@ -5,26 +5,38 @@
  * Flow:
  *   1. Create two English auction tasks with short bid windows (requester, X402)
  *   2. Worker bids on both tasks (X402)
- *   3. Worker signs the canonical my-bids self-auth message and calls GET /api/bids/my —
- *      assert two entries with correct fields
- *   4. Wait for the first task's bid deadline to expire
- *   5. Re-sign and re-fetch /api/bids/my — assert only one entry remains (the live deadline)
+ *   3. GET /api/bids/my with no read-auth header -- assert UNAUTHORIZED
+ *      (myBids is a protectedProcedure: no anonymous view, per ADR-0017/ADR-0022)
+ *   4. A fresh address with zero bids, valid read-auth header -- assert an
+ *      empty array, not an error (the zero-rows early path through the query)
+ *   5. Worker signs the general read-auth header (ADR-0016/ADR-0022) and calls
+ *      GET /api/bids/my — assert two entries with correct fields
+ *   6. Wait for the first task's bid deadline to expire
+ *   7. Re-sign and re-fetch /api/bids/my — assert only one entry remains (the live deadline)
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env scripts/smoke-bids-inbox.ts
  */
-import { buildMyBidsMessage } from '@taskmarket/shared';
-import { log, ok, get, x402Post, getAccounts, API_URL, sleep, type Account } from './_x402.ts';
+import {
+  log,
+  ok,
+  get,
+  x402Post,
+  getAccounts,
+  readAuthHeaders,
+  randomAccount,
+  API_URL,
+  sleep,
+  type Account,
+} from './_x402.ts';
 
 // How long after the first bid deadline to wait before re-checking.
 const DEADLINE_BUFFER_MS = parseInt(process.env.AUCTION_DEADLINE_BUFFER_MS ?? '35000', 10);
 
 async function fetchMyBids(worker: Account) {
-  const signature = await worker.signMessage({ message: buildMyBidsMessage(worker.address) });
-  return (await get(
-    `/api/bids/my?address=${encodeURIComponent(worker.address)}&signature=${encodeURIComponent(signature)}`
-  )) as Array<{
+  const headers = await readAuthHeaders(worker);
+  return (await get('/api/bids/my', { headers })) as Array<{
     taskId: string;
     auctionType: string | null;
     myBidPrice: string;
@@ -44,7 +56,7 @@ async function main() {
   console.log('api:      ', API_URL);
 
   // 1a. Create first English auction task — short bid window (35s) so it expires soon
-  log('1a/5', 'Creating first English auction task (35s bid window)...');
+  log('1a/7', 'Creating first English auction task (35s bid window)...');
   const { taskId: task1 } = (await x402Post(
     '/api/tasks',
     {
@@ -62,7 +74,7 @@ async function main() {
   ok('task1', task1);
 
   // 1b. Create second English auction task — longer bid window (2h) stays alive
-  log('1b/5', 'Creating second English auction task (2h bid window)...');
+  log('1b/7', 'Creating second English auction task (2h bid window)...');
   const { taskId: task2 } = (await x402Post(
     '/api/tasks',
     {
@@ -80,16 +92,41 @@ async function main() {
   ok('task2', task2);
 
   // 2. Worker bids on both tasks
-  log('2a/5', 'Worker bidding on task1 (0.0008 USDC)...');
+  log('2a/7', 'Worker bidding on task1 (0.0008 USDC)...');
   await x402Post(`/api/tasks/${task1}/bids`, { taskId: task1, price: '800' }, worker);
   ok('bid on task1', true);
 
-  log('2b/5', 'Worker bidding on task2 (0.0008 USDC)...');
+  log('2b/7', 'Worker bidding on task2 (0.0008 USDC)...');
   await x402Post(`/api/tasks/${task2}/bids`, { taskId: task2, price: '800' }, worker);
   ok('bid on task2', true);
 
-  // 3. Sign the canonical my-bids self-auth message and fetch /api/bids/my — should have two entries
-  log('3/5', 'Fetching /api/bids/my (expect 2 entries)...');
+  // 3. No read-auth header at all -- protectedProcedure must hard-fail, not
+  // silently return an empty/anonymous view.
+  log('3/7', 'Fetching /api/bids/my with no read-auth header (expect failure)...');
+  let unauthedFailed = false;
+  try {
+    await get('/api/bids/my');
+  } catch {
+    unauthedFailed = true;
+  }
+  if (!unauthedFailed) {
+    throw new Error('/api/bids/my should reject requests with no read-auth header');
+  }
+  ok('unauthenticated /api/bids/my rejected', true);
+
+  // 4. A fresh address with a valid read-auth header but zero bids -- should
+  // cleanly return an empty array, not error on the zero-rows path.
+  log('4/7', 'Fetching /api/bids/my for a fresh address with no bids (expect empty array)...');
+  const freshBids = await fetchMyBids(randomAccount());
+  if (!Array.isArray(freshBids) || freshBids.length !== 0) {
+    throw new Error(
+      `/api/bids/my for a fresh address should return an empty array, got: ${JSON.stringify(freshBids)}`
+    );
+  }
+  ok('fresh address with no bids returns an empty array', true);
+
+  // 5. Sign the general read-auth header and fetch /api/bids/my — should have two entries
+  log('5/7', 'Fetching /api/bids/my (expect 2 entries)...');
   const bids1 = await fetchMyBids(worker);
 
   const entry1 = bids1.find((b) => b.taskId === task1);
@@ -108,12 +145,12 @@ async function main() {
   ok('entry2.myBidPrice', entry2.myBidPrice === '800');
   ok('entry2.taskStatus', entry2.taskStatus === 'open');
 
-  // 4. Wait for task1's bid deadline to pass
-  log('4/5', `Waiting ${DEADLINE_BUFFER_MS}ms for task1 bid deadline to pass...`);
+  // 6. Wait for task1's bid deadline to pass
+  log('6/7', `Waiting ${DEADLINE_BUFFER_MS}ms for task1 bid deadline to pass...`);
   await sleep(DEADLINE_BUFFER_MS);
 
-  // 5. Re-sign and re-fetch — task1 should no longer appear (deadline passed, task no longer open+active)
-  log('5/5', 'Re-fetching /api/bids/my (expect task1 gone, task2 still present)...');
+  // 7. Re-sign and re-fetch — task1 should no longer appear (deadline passed, task no longer open+active)
+  log('7/7', 'Re-fetching /api/bids/my (expect task1 gone, task2 still present)...');
   const bids2 = await fetchMyBids(worker);
 
   const stillHasTask1 = bids2.some((b) => b.taskId === task1);

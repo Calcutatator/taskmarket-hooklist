@@ -3,6 +3,7 @@
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { Images } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
+import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -19,10 +20,12 @@ import {
   SubmissionCard,
   activityEmptyCopy,
   activityLabel,
+  countLabel,
   type TaskModeData,
 } from '@/components/market/tasks';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { NativeSelect } from '@/components/ui/native-select';
 import { trpc } from '@/lib/api/client';
 import type { MarketStats } from '@/lib/api/server';
 import { compactAddress } from '@/lib/format';
@@ -42,6 +45,40 @@ const TERMINAL_STATUSES = ['completed', 'cancelled', 'expired', 'disputed'];
 
 const POLL_INTERVAL_MS = 9_000;
 const TOAST_DEBOUNCE_MS = 1_500;
+
+// A task can accumulate hundreds of submissions; rendering them all in one scroll pushes
+// the requirements/next-actions panels far down the page and makes manual review
+// impractical. Client-side pagination keeps each page small without adding a fetch.
+const PAGE_SIZE = 10;
+
+type ReviewSort = 'newest' | 'oldest' | 'credibility';
+
+const REVIEW_SORT_OPTIONS: Array<{ value: ReviewSort; label: string }> = [
+  { value: 'newest', label: 'Newest first' },
+  { value: 'oldest', label: 'Oldest first' },
+  { value: 'credibility', label: 'Most experienced worker' },
+];
+
+// Shared by submissions and pitches -- the only two review-queue item types that carry
+// both a submission timestamp and workerStats.completedTasks (proofs and bids have
+// neither the same credibility signal, so they keep arrival order only).
+function sortByReview<
+  T extends { submittedAt: string; workerStats?: { completedTasks: number } | null },
+>(list: readonly T[], sort: ReviewSort): T[] {
+  const sorted = [...list];
+  if (sort === 'credibility') {
+    sorted.sort(
+      (a, b) => (b.workerStats?.completedTasks ?? -1) - (a.workerStats?.completedTasks ?? -1)
+    );
+    return sorted;
+  }
+
+  sorted.sort((a, b) => {
+    const diff = new Date(a.submittedAt).getTime() - new Date(b.submittedAt).getTime();
+    return sort === 'oldest' ? diff : -diff;
+  });
+  return sorted;
+}
 
 export function isTerminalStatus(task: TaskDetailResponse | TaskResponse) {
   return TERMINAL_STATUSES.includes(task.status);
@@ -338,7 +375,10 @@ export function LiveActivityPanel({
 
   const data = useLiveModeData(task, initialModeData, pollEnabled);
 
-  const submissions = data.submissions ?? [];
+  const [reviewSort, setReviewSort] = useState<ReviewSort>('newest');
+  const [page, setPage] = useState(1);
+
+  const submissions = sortByReview(data.submissions ?? [], reviewSort);
   const pitches = data.pitches ?? [];
   const proofs = data.proofs ?? [];
   const bids = data.bids ?? [];
@@ -350,9 +390,21 @@ export function LiveActivityPanel({
     bids.length > 0 ||
     claim != null;
 
-  // Gallery over every media artifact across submissions, in feed order. Opened
-  // from the header button (index 0) or from a card's hero/thumbnail (that
-  // artifact's index).
+  // Every mode is mutually exclusive per task, so at most one of these lists is ever
+  // non-empty -- this total is just whichever one is active.
+  const totalItems = submissions.length + pitches.length + proofs.length + bids.length;
+  const totalPages = Math.max(1, Math.ceil(totalItems / PAGE_SIZE));
+  const currentPage = Math.min(page, totalPages);
+  const pageStart = (currentPage - 1) * PAGE_SIZE;
+  const pageEnd = pageStart + PAGE_SIZE;
+  const pagedSubmissions = submissions.slice(pageStart, pageEnd);
+  const pagedPitches = pitches.slice(pageStart, pageEnd);
+  const pagedProofs = proofs.slice(pageStart, pageEnd);
+  const pagedBids = bids.slice(pageStart, pageEnd);
+
+  // Gallery over every media artifact across ALL submissions (not just the current
+  // page), in feed order. Opened from the header button (index 0) or from a card's
+  // hero/thumbnail (that artifact's index).
   const galleryEntries = submissionMediaEntries(submissions);
   const [galleryOpen, setGalleryOpen] = useState(false);
   const [galleryIndex, setGalleryIndex] = useState(0);
@@ -439,12 +491,19 @@ export function LiveActivityPanel({
     };
   }, []);
 
+  const windowOpen = isOpenForWork(task);
+  // The submission window closing means intake has stopped for good (never reopens on
+  // its own), so a pulsing "Live" dot next to "Submission window closed" reads as a
+  // straight contradiction -- fold both facts into one line instead of showing both
+  // indicators side by side.
+  const submissionWindowClosed = task.status === 'open' && !windowOpen;
   const title = isReviewQueue ? 'Submission review' : 'Activity';
   const description = isReviewQueue
-    ? 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
+    ? submissionWindowClosed
+      ? `Submission window closed - ${countLabel(items.length, noun.singular, noun.plural)} awaiting review. Compare deliverables before releasing escrow.`
+      : 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
     : 'Work, bids, proofs, and reviews tied to this task.';
 
-  const windowOpen = isOpenForWork(task);
   const showReaching =
     isRequester && task.status === 'open' && !hasActivity && !terminal && windowOpen;
   const animateNew = pollEnabled && !motionDisabled;
@@ -461,8 +520,10 @@ export function LiveActivityPanel({
               <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
                 {title}
               </h2>
-              {pollEnabled ? <LiveIndicator motionDisabled={motionDisabled} /> : null}
-              {task.status === 'open' && !windowOpen ? (
+              {pollEnabled && !submissionWindowClosed ? (
+                <LiveIndicator motionDisabled={motionDisabled} />
+              ) : null}
+              {submissionWindowClosed ? (
                 <span className="font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted-foreground">
                   Submission window closed
                 </span>
@@ -490,6 +551,29 @@ export function LiveActivityPanel({
         </div>
       </div>
       <div className="grid gap-3">
+        {submissions.length > 1 ? (
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <label className="flex items-center gap-2 font-mono text-xs uppercase text-muted-foreground">
+              Sort
+              <NativeSelect
+                aria-label="Sort submissions"
+                onChange={(event) => {
+                  setReviewSort(event.target.value as ReviewSort);
+                  setPage(1);
+                }}
+                value={reviewSort}
+                wrapperClassName="w-auto"
+              >
+                {REVIEW_SORT_OPTIONS.map((option) => (
+                  <option key={option.value} value={option.value}>
+                    {option.label}
+                  </option>
+                ))}
+              </NativeSelect>
+            </label>
+          </div>
+        ) : null}
+
         {submissions.length > 0 ? (
           <div
             aria-label={isReviewQueue ? 'Artifact comparison' : undefined}
@@ -497,7 +581,7 @@ export function LiveActivityPanel({
             role={isReviewQueue ? 'region' : undefined}
           >
             <AnimatePresence initial={false}>
-              {submissions.map((submission) => (
+              {pagedSubmissions.map((submission) => (
                 <AnimatedRow
                   animate={animateNew && !seedIds.has(submission.id)}
                   key={submission.id}
@@ -517,7 +601,7 @@ export function LiveActivityPanel({
         ) : null}
 
         <AnimatePresence initial={false}>
-          {pitches.map((pitch) => (
+          {pagedPitches.map((pitch) => (
             <AnimatedRow
               animate={animateNew && !seedIds.has(pitch.id)}
               key={pitch.id}
@@ -527,7 +611,7 @@ export function LiveActivityPanel({
             </AnimatedRow>
           ))}
 
-          {proofs.map((proof) => (
+          {pagedProofs.map((proof) => (
             <AnimatedRow
               animate={animateNew && !seedIds.has(proof.id)}
               key={proof.id}
@@ -537,7 +621,7 @@ export function LiveActivityPanel({
             </AnimatedRow>
           ))}
 
-          {bids.map((bid) => (
+          {pagedBids.map((bid) => (
             <AnimatedRow
               animate={animateNew && !seedIds.has(bid.id)}
               key={bid.id}
@@ -548,6 +632,39 @@ export function LiveActivityPanel({
           ))}
         </AnimatePresence>
 
+        {totalItems > PAGE_SIZE ? (
+          <div className="flex flex-wrap items-center justify-between gap-2 border-t border-border/58 pt-3">
+            <p className="font-mono text-xs text-muted-foreground">
+              Showing {pageStart + 1}-{Math.min(pageEnd, totalItems)} of {totalItems}
+            </p>
+            <div className="flex items-center gap-2">
+              <Button
+                disabled={currentPage <= 1}
+                onClick={() => setPage(currentPage - 1)}
+                size="icon-xs"
+                type="button"
+                variant="outline"
+              >
+                <ChevronLeftIcon aria-hidden />
+                <span className="sr-only">Previous page</span>
+              </Button>
+              <span className="font-mono text-xs text-muted-foreground">
+                Page {currentPage} of {totalPages}
+              </span>
+              <Button
+                disabled={currentPage >= totalPages}
+                onClick={() => setPage(currentPage + 1)}
+                size="icon-xs"
+                type="button"
+                variant="outline"
+              >
+                <ChevronRightIcon aria-hidden />
+                <span className="sr-only">Next page</span>
+              </Button>
+            </div>
+          </div>
+        ) : null}
+
         {claim ? <ClaimRow claim={claim} profileBasePath={profileBasePath} /> : null}
 
         {!hasActivity ? (
@@ -557,9 +674,7 @@ export function LiveActivityPanel({
               motionDisabled={motionDisabled}
               task={task}
             />
-          ) : task.status === 'open' &&
-            !windowOpen &&
-            (task.mode === 'bounty' || task.mode === 'benchmark') ? (
+          ) : submissionWindowClosed && (task.mode === 'bounty' || task.mode === 'benchmark') ? (
             <div className="rounded-lg border border-dashed border-border/58 bg-background/30 p-4">
               <p className="text-sm font-semibold tracking-tight text-foreground">
                 Submission window closed

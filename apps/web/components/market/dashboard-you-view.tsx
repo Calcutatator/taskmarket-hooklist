@@ -3,7 +3,7 @@
 import type { TaskResponse } from '@taskmarket/shared';
 import { IconCircleCheckFilled, IconClock, IconCoin, IconTrendingUp } from '@tabler/icons-react';
 import Link from 'next/link';
-import { useMemo } from 'react';
+import { useEffect, useMemo } from 'react';
 import { useAccount } from 'wagmi';
 
 import { ChartCard, MetricStat, StatusBreakdown, TrendAreaChart } from '@/components/charts';
@@ -20,7 +20,7 @@ import {
   taskStatusDistribution,
 } from '@/lib/charts/inbox-aggregations';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
-import { useInboxSelfAuthSignature } from '@/lib/use-inbox-self-auth-signature';
+import { useReadAuthSignature } from '@/lib/use-read-auth-signature';
 
 // Counts only. Reward volume (USDC) never shares this axis; your spend lives in a
 // KPI sparkline and its own card, mirroring the marketplace activity chart.
@@ -127,16 +127,27 @@ function YouMetricCard({ children }: { children: React.ReactNode }) {
 // not flat zero-lines.
 export function DashboardYouView() {
   const { address, isConnected } = useAccount();
-  const inboxSignature = useInboxSelfAuthSignature(address);
+  const readAuthReady = useReadAuthSignature(address);
+  const utils = trpc.useUtils();
 
   const inboxQuery = trpc.agents.inbox.useQuery(
-    { address: address ?? '', signature: inboxSignature },
+    { address: address ?? '' },
     {
       enabled: Boolean(isConnected && address),
       refetchInterval: 30_000,
       refetchOnWindowFocus: true,
     }
   );
+
+  // The read-auth header is attached globally once signed (api/client.tsx),
+  // but signing happens asynchronously after this query already fired with
+  // the anonymous view -- refetch once it lands so unlisted tasks show up
+  // without waiting for the next poll.
+  useEffect(() => {
+    if (readAuthReady) {
+      void utils.agents.inbox.invalidate();
+    }
+  }, [readAuthReady, utils]);
 
   const statsQuery = trpc.agents.stats.useQuery(
     { address: address ?? '' },

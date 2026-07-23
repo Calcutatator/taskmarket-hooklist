@@ -13,10 +13,10 @@
 > shape (`deviceId` to `address` + `signature`) with no backward-compatible dual-mode,
 > requiring the CLI (its only caller) to be updated in the same change.
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-20
 - **Deciders:** Beau
-- **Supersedes / Superseded-by:** —
+- **Supersedes / Superseded-by:** Superseded by ADR-0023
 
 ## Context
 
@@ -115,3 +115,6 @@ run.
 - ADR 0015 — Phase 1's `agents.inbox` scoped self-auth (the precedent this
   decision extends to a second endpoint)
 - Issue #183 — Phase 1/2/3 implementation tracker
+- ADR-0023 — supersedes this decision: `bids.myBids` converges onto the general
+  `ctx.caller` read-auth mechanism, becoming a `protectedProcedure` rather than
+  verifying its own signed message.

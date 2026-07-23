@@ -50,6 +50,7 @@ describe('task create command', () => {
         reward: '5000000',
         mode: 'bounty',
         taskVisibility: 'public',
+        submissionVisibility: 'public',
       })
     );
     expect(mockPrintResult).toHaveBeenCalledWith({ taskId: '0xtask' });
@@ -75,6 +76,35 @@ describe('task create command', () => {
 
     expect(mockPrintError).toHaveBeenCalledWith(
       expect.stringContaining('--task-visibility must be one of: public, unlisted')
+    );
+    expect(mockX402Post).not.toHaveBeenCalled();
+  });
+
+  it.each(['reveal_all', 'winner_only', 'never'])(
+    'passes --submission-visibility %s through to the request body',
+    async (mode) => {
+      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+
+      await createCmd.parseAsync([...BASE_ARGS, '--submission-visibility', mode], {
+        from: 'node',
+      });
+
+      expect(mockX402Post).toHaveBeenCalledWith(
+        '/api/tasks',
+        expect.objectContaining({ submissionVisibility: mode })
+      );
+    }
+  );
+
+  it('rejects an invalid --submission-visibility value', async () => {
+    await createCmd.parseAsync([...BASE_ARGS, '--submission-visibility', 'secret'], {
+      from: 'node',
+    });
+
+    expect(mockPrintError).toHaveBeenCalledWith(
+      expect.stringContaining(
+        '--submission-visibility must be one of: public, reveal_all, winner_only, never'
+      )
     );
     expect(mockX402Post).not.toHaveBeenCalled();
   });

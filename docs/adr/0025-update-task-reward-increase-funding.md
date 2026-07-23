@@ -1,4 +1,4 @@
-# 0021 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change
+# 0025 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change
 
 > **Decision (Y-statement):** In the context of `CoreFacet.updateTask` (tracked as issue #203)
 > allowing a requester to raise `task.reward` with no on-chain verification that the increase

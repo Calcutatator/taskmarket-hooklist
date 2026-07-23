@@ -1,4 +1,4 @@
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, protectedProcedure } from '../trpc';
 import { BidCreateSchema, BidResponseSchema, AuctionAcceptSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { bids, tasks, agents } from '../db/schema';
@@ -12,9 +12,6 @@ import {
 import { computeClockPrice } from '../lib/auction';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
-import { buildMyBidsMessage } from '@taskmarket/shared';
-
-const EthAddress = z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid Ethereum address');
 
 export const bidsRouter = router({
   submit: publicProcedure
@@ -431,7 +428,7 @@ export const bidsRouter = router({
       };
     }),
 
-  myBids: publicProcedure
+  myBids: protectedProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -440,12 +437,7 @@ export const bidsRouter = router({
         summary: 'List my active pending bids on auction tasks',
       },
     })
-    .input(
-      z.object({
-        address: EthAddress,
-        signature: z.string(),
-      })
-    )
+    .input(z.object({}))
     .output(
       z.array(
         z.object({
@@ -459,23 +451,14 @@ export const bidsRouter = router({
         })
       )
     )
-    .query(async ({ input, ctx }) => {
-      // Proof that the caller owns `address` -- same signed-message pattern as
-      // agents.inbox and wallet.setWithdrawalAddress. Unlike agents.inbox there
-      // is no public fallback view: "my bids" has no meaning without a verified
-      // caller, so a missing/invalid signature is a hard failure, not a
-      // narrower response.
-      await verifySignedAddressOrThrow(
-        buildMyBidsMessage(input.address),
-        input.signature,
-        input.address,
-        {
-          invalid_signature: () =>
-            new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
-          address_mismatch: () =>
-            new TRPCError({ code: 'UNAUTHORIZED', message: 'Signature does not match address' }),
-        }
-      );
+    .query(async ({ ctx }) => {
+      // Proof that the caller owns the address -- the general read-auth
+      // header (ADR-0016/ADR-0022), resolved once per request in context.ts.
+      // Unlike agents.inbox there is no public fallback view: "my bids" has no
+      // meaning without a verified caller, so protectedProcedure hard-fails
+      // with UNAUTHORIZED when ctx.caller is absent, preserving ADR-0017's
+      // original hard-fail behavior under the new mechanism.
+      const address = ctx.caller.address;
 
       const now = new Date();
 
@@ -496,7 +479,7 @@ export const bidsRouter = router({
         .innerJoin(tasks, eq(bids.taskId, tasks.id))
         .where(
           and(
-            sql`lower(${bids.workerAddress}) = lower(${input.address})`,
+            sql`lower(${bids.workerAddress}) = lower(${address})`,
             eq(tasks.status, 'open'),
             gt(tasks.bidDeadline, now)
           )

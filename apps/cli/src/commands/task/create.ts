@@ -17,6 +17,18 @@ export const createCmd = new Command('create')
       'own indexer. Not a privacy feature.',
     'public'
   )
+  .option(
+    '--submission-visibility <mode>',
+    'Submission visibility: public (default), reveal_all, winner_only, or never. ' +
+      'Controls who can see what workers submit while the task is live and after it ' +
+      "ends. public matches today's behavior exactly. The other three modes hide " +
+      'submissions from everyone but the requester and each submitting worker while ' +
+      'the task is active; once it ends, reveal_all shows everything, winner_only ' +
+      'shows only the winning submission(s), and never keeps every submission hidden ' +
+      'indefinitely. Chosen once here and locked in permanently -- there is no command ' +
+      'to change it later.',
+    'public'
+  )
   .option('--tags <tags>', 'Comma-separated tags')
   .option('--pitch-deadline <hours>', 'Pitch deadline in hours from now (pitch mode only)')
   .option('--bid-deadline <hours>', 'Bid deadline in hours from now (auction mode only)')
@@ -50,6 +62,7 @@ export const createCmd = new Command('create')
       duration: string;
       mode: string;
       taskVisibility: string;
+      submissionVisibility: string;
       tags?: string;
       pitchDeadline?: string;
       bidDeadline?: string;
@@ -81,6 +94,13 @@ export const createCmd = new Command('create')
 
       if (opts.taskVisibility !== 'public' && opts.taskVisibility !== 'unlisted') {
         return void printError('--task-visibility must be one of: public, unlisted');
+      }
+
+      const validSubmissionVisibilities = ['public', 'reveal_all', 'winner_only', 'never'];
+      if (!validSubmissionVisibilities.includes(opts.submissionVisibility)) {
+        return void printError(
+          `--submission-visibility must be one of: ${validSubmissionVisibilities.join(', ')}`
+        );
       }
 
       if (opts.mode === 'auction') {
@@ -130,6 +150,7 @@ export const createCmd = new Command('create')
         duration,
         mode: opts.mode,
         taskVisibility: opts.taskVisibility,
+        submissionVisibility: opts.submissionVisibility,
         tags,
         stakeRequired: false,
         stakeBps: 0,

@@ -62,7 +62,7 @@ FEE_RECIPIENT_ADDRESS="0x14dC79964da2C08b23698B3D3cc7Ca32193d9955"
 # ever signs on its behalf, so no matching private key is needed.
 WITHDRAWAL_ADDRESS="0x23618e81E3f5cdA7203161e132bB542BBc7A5A9F"
 
-echo "==> [1/12] Toolchain (Node, pnpm, bun, Foundry)"
+echo "==> [1/14] Toolchain (Node, pnpm, bun, Foundry)"
 # Match the Makefile's own ENV_LOADER (`nvm install && nvm use`, reading .nvmrc) before
 # installing anything globally -- npm/pnpm installs are keyed to whichever node version is
 # active at install time, and nvm keeps each version's global packages separate. Skipping
@@ -144,10 +144,10 @@ for bin in forge cast anvil chisel; do
   fi
 done
 
-echo "==> [2/12] Git submodules (contracts dependencies)"
+echo "==> [2/14] Git submodules (contracts dependencies)"
 git submodule update --init --recursive
 
-echo "==> [3/12] Native Postgres (cloud sandboxes have no Docker)"
+echo "==> [3/14] Native Postgres (cloud sandboxes have no Docker)"
 if ! command -v pg_isready > /dev/null 2>&1; then
   # sudo resets the environment by default -- a plain `export` here never reaches the
   # sudo'd apt-get, so tzdata's postinstall prompts interactively and hangs forever on
@@ -171,10 +171,10 @@ sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_roles WHERE rolname='$
 sudo -u postgres psql -p "$DB_PORT" -tc "SELECT 1 FROM pg_database WHERE datname='$DB_NAME'" | grep -q 1 \
   || sudo -u postgres createdb -p "$DB_PORT" -O "$DB_USER" "$DB_NAME"
 
-echo "==> [4/12] Workspace dependencies"
+echo "==> [4/14] Workspace dependencies"
 make install
 
-echo "==> [5/12] Local Anvil chain"
+echo "==> [5/14] Local Anvil chain"
 if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   -d '{"jsonrpc":"2.0","id":1,"method":"eth_chainId","params":[]}' > /dev/null 2>&1; then
   # --chain-id 84532: Base Sepolia masquerade, see header note on X402.
@@ -191,7 +191,7 @@ if ! curl -sf -X POST "$ANVIL_RPC_URL" -H 'Content-Type: application/json' \
   done
 fi
 
-echo "==> [6/12] Local facilitator (X402 payment verification/settlement)"
+echo "==> [6/14] Local facilitator (X402 payment verification/settlement)"
 FACILITATOR_PORT=8402
 # BEARER_TOKEN gates the facilitator's /verify and /settle routes specifically
 # (not /supported) -- the backend must present the same token as
@@ -284,14 +284,14 @@ clone_eip1967_proxy() {
   done
 }
 
-echo "==> [7/12] Clone ERC-8004 identity/reputation registries from Base Sepolia"
+echo "==> [7/14] Clone ERC-8004 identity/reputation registries from Base Sepolia"
 BASE_SEPOLIA_RPC_URL="${FORGE_BASE_SEPOLIA_RPC_URL:-https://base-sepolia.g.alchemy.com/v2/7MBoD_MGw1P6ZpTHDhBAx}"
 ERC8004_IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
 ERC8004_REPUTATION_REGISTRY="0x8004B663056A597Dffe9eCcC1965A193B7388713"
 clone_eip1967_proxy "$ERC8004_IDENTITY_REGISTRY" "$BASE_SEPOLIA_RPC_URL" "$ANVIL_RPC_URL"
 clone_eip1967_proxy "$ERC8004_REPUTATION_REGISTRY" "$BASE_SEPOLIA_RPC_URL" "$ANVIL_RPC_URL"
 
-echo "==> [8/12] Deploy mock USDC, diamond, and forwarder to local Anvil"
+echo "==> [8/14] Deploy mock USDC, diamond, and forwarder to local Anvil"
 # Every FORGE_* input below carries the _PREVIEW suffix -- the same convention
 # FORGE_DIAMOND_ADDRESS_TESTNET/_MAINNET already use -- so this file can sit
 # alongside real testnet/mainnet forge config without any name colliding.
@@ -386,7 +386,7 @@ for ACCOUNT in "$REQUESTER_ADDRESS" "$WORKER_ADDRESS" "$WORKER_B_ADDRESS" "$EVAL
     --private-key "$FORGE_DEV_PRIVATE_KEY_PREVIEW" --rpc-url "$FORGE_RPC_URL_PREVIEW" > /dev/null
 done
 
-echo "==> [9/12] Deploy reward hook stack (mock DREAMS token, vault) to local Anvil"
+echo "==> [9/14] Deploy reward hook stack (mock DREAMS token, vault) to local Anvil"
 # Mirrors \`make deploy-reward-hook testnet\` -- same Makefile target and
 # DeployRewardHookTestnet.s.sol script, just pointed at this disposable Anvil chain
 # via the preview branch added to deploy-reward-hook alongside deploy's own. Lets
@@ -507,10 +507,22 @@ NEXT_PUBLIC_CHAIN_ID=84532
 NEXT_PUBLIC_BASE_SEPOLIA_RPC_URL=$ANVIL_RPC_URL
 EOF
 
-echo "==> [10/13] Build the CLI"
+echo "==> [10/14] Build the CLI"
 make cli
 
-echo "==> [11/13] Start the backend"
+echo "==> [11/14] Playwright browsers for apps/web e2e tests (make ui-ci)"
+# The version this installs is whatever @taskmarket/web's package.json pins for
+# @playwright/test -- read from the lockfile, never hardcoded here -- so this
+# always matches exactly what CI's own browser install step fetches. This
+# sandbox's base image separately pre-installs a generic Chromium build for
+# general-purpose use; that build's version has no relationship to this
+# repo's pinned one, so this step still needs to run even when a Chromium
+# already answers at /opt/pw-browsers/chromium. Playwright's own install
+# command already no-ops if the pinned version is already present, so this
+# is safe and cheap to run on every session, not just the first.
+make ui-ci-install-browsers
+
+echo "==> [12/14] Start the backend"
 # The whole point of this script is that the sandbox is ready to use the
 # moment it finishes -- not "ready after one more manual step". Migrations
 # run on boot; nohup keeps it alive after this script exits.
@@ -589,7 +601,7 @@ for _ in $(seq 1 30); do
   sleep 1
 done
 
-echo "==> [12/13] Provision CLI keystore for smoke-withdraw.ts"
+echo "==> [13/14] Provision CLI keystore for smoke-withdraw.ts"
 # smoke-withdraw.ts drives `taskmarket wallet set-withdrawal-address` and
 # `taskmarket withdraw` for DEV_PRIVATE_KEY's wallet, and both commands call
 # loadKeystore() and hard-fail ("No keystore found. Run `taskmarket init` first.")
@@ -625,7 +637,7 @@ rm -f "$HOME/.taskmarket/keystore.json"
   TASKMARKET_IMPORT_KEY="$DEPLOYER_KEY" pnpm --filter @lucid-agents/taskmarket exec tsx src/index.ts wallet import --yes > /dev/null
 )
 
-echo "==> [13/13] Done"
+echo "==> [14/14] Done"
 echo "Diamond:     $DIAMOND_ADDRESS"
 echo "Mock USDC:   $USDC_ADDRESS"
 echo "Forwarder:   $FORWARDER_ADDRESS"

@@ -9,10 +9,10 @@ import { EvaluatorFacet } from "../../src/facets/EvaluatorFacet.sol";
 import { FacetSelectors } from "../lib/FacetSelectors.sol";
 
 /// @title Rev013Upgrade — replace CoreFacet + EvaluatorFacet with five bundled security fixes
-///        (issues #198, #199, #200, #201, #203 / ADR-0021)
+///        (issues #198, #199, #200, #201, #203 / ADR-0025)
 /// @dev CoreFacet carries the #198 refundExpired double-refund fix, the #199 rejectSubmission
 ///      phantom-clear fix, the #200 auction-claim-requires-deliverable fix, and the #203
-///      updateTask reward-increase funding check (ADR-0021). EvaluatorFacet carries the #201
+///      updateTask reward-increase funding check (ADR-0025). EvaluatorFacet carries the #201
 ///      empty-award appeal fix. None of these add, remove, or rename an external/public
 ///      function, so the selector set for both facets is unchanged from rev012 -- this is a
 ///      pure Replace on the two facets whose bytecode changed.

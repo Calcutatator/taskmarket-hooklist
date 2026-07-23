@@ -83,8 +83,10 @@ const task: TaskDetailResponse = {
   // The API reports the deliverable window here: false for an open auction
   // still taking bids (only true once a worker is locked in).
   submissionWindowOpen: false,
+  phase: 'active',
   tags: ['research'],
   taskVisibility: 'public',
+  submissionVisibility: 'public',
 };
 
 function bid(id: string, worker: string): BidResponse {

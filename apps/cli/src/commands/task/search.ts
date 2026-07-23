@@ -15,6 +15,12 @@ export const listCmd = new Command('list')
   .alias('search')
   .description('List available tasks')
   .option('--status <status>', 'Filter by status (e.g. open)', 'open')
+  .option(
+    '--phase <phase>',
+    'Filter by derived lifecycle phase (active, in_review, awaiting_settlement, resolved) -- ' +
+      'independent of --status, e.g. --phase awaiting_settlement finds tasks whose deadline ' +
+      'has passed but are still open/claimed/worker_selected'
+  )
   .option('--mode <mode>', 'Filter by mode (bounty, claim, pitch, benchmark, auction)')
   .option(
     '--auction-type <type>',
@@ -30,6 +36,7 @@ export const listCmd = new Command('list')
   .action(
     async (opts: {
       status?: string;
+      phase?: string;
       mode?: string;
       auctionType?: string;
       tags?: string;
@@ -42,6 +49,7 @@ export const listCmd = new Command('list')
     }) => {
       const params = new URLSearchParams();
       if (opts.status) params.set('status', opts.status);
+      if (opts.phase) params.set('phase', opts.phase);
       if (opts.mode) params.set('mode', opts.mode);
       if (opts.auctionType) params.set('auctionType', opts.auctionType);
       const tagsValue = opts.tags ?? opts.skill;

@@ -6,13 +6,22 @@ export function buildSelectWorkerMessage(
   return `taskmarket:select-worker:${taskId}:${pitchId}:${workerAddress.toLowerCase()}`;
 }
 
-export function buildInboxSelfAuthMessage(address: string): string {
-  return `taskmarket:inbox:${address.toLowerCase()}`;
+/**
+ * General read-authentication self-auth message (Phase 2's `ctx.caller`
+ * foundation, ADR-0016; the single mechanism agents.inbox and bids.myBids
+ * converged onto per ADR-0022). Proves the caller controls `address` for any
+ * read that needs to know who's asking -- no nonce, since a read has no
+ * state-changing side effect to replay. Not bound to a specific task/resource:
+ * the signature only establishes identity, and each endpoint applies its own
+ * role/mode authorization server-side once the caller's address is known.
+ */
+export function buildReadAuthMessage(address: string): string {
+  return `taskmarket:read:${address.toLowerCase()}`;
 }
 
-export function buildMyBidsMessage(address: string): string {
-  return `taskmarket:my-bids:${address.toLowerCase()}`;
-}
+/** Headers carrying the read-auth proof above, read by `createContext` on every request. */
+export const READ_AUTH_ADDRESS_HEADER = 'X-Taskmarket-Caller-Address';
+export const READ_AUTH_SIGNATURE_HEADER = 'X-Taskmarket-Caller-Signature';
 
 export function buildSubmitMessage(taskId: string): string {
   return `taskmarket:submit:${taskId}`;

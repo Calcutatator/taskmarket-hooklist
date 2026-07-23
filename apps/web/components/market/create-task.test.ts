@@ -25,6 +25,7 @@ describe('buildCreateTaskPayload', () => {
         stakeRequired: true,
         tags: 'scrape, data',
         taskVisibility: 'public',
+        submissionVisibility: 'public',
         hookContract: '',
         evaluator: '',
         evaluatorFeeBps: '',
@@ -50,6 +51,7 @@ describe('buildCreateTaskPayload', () => {
       stakeRequired: true,
       tags: ['scrape', 'data'],
       taskVisibility: 'public',
+      submissionVisibility: 'public',
     });
   });
 });
@@ -72,6 +74,7 @@ function validValues(): CreateTaskFormValues {
     stakeRequired: false,
     tags: 'scrape, data',
     taskVisibility: 'public',
+    submissionVisibility: 'public',
     hookContract: '',
     evaluator: '',
     evaluatorFeeBps: '',

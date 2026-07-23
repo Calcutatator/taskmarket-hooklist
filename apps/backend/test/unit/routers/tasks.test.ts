@@ -101,6 +101,8 @@ const mockTaskRow = {
   tags: ['test'],
   mode: 'bounty',
   taskVisibility: 'unlisted',
+  submissionVisibility: 'public',
+  verdictType: null,
   stakeRequired: 0,
   stakeBps: 0,
   pitchDeadline: null,
@@ -687,6 +689,78 @@ describe('tasks router', () => {
       expect(result!.pendingActions.some((a) => a.action === 'submit')).toBe(true);
     });
 
+    it('active bounty under submissionVisibility public: pendingActions commands reveal the real submitter address', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'public',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
+    });
+
+    it('active bounty under submissionVisibility never: pendingActions commands hide the submitter address from an anonymous caller', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'never',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      const rejectSubmission = result!.pendingActions.find((a) => a.action === 'reject_submission');
+      expect(accept?.command).not.toContain('0xworker');
+      expect(accept?.command).toContain('<address>');
+      expect(rejectSubmission?.command).not.toContain('0xworker');
+    });
+
+    it('active bounty under submissionVisibility never: pendingActions commands still reveal the address to the requester', async () => {
+      const ctx = createMockCtx(undefined, { address: mockTaskRow.requester });
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'never',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
+    });
+
     it('pitch task after pitchDeadline: no pitch action, select_worker still present', async () => {
       const ctx = createMockCtx();
       const pitchRow = {
@@ -765,6 +839,43 @@ describe('tasks router', () => {
 
       // Regression: update() must return the stored visibility, not silently drop it.
       expect(result!.taskVisibility).toBe('unlisted');
+    });
+
+    it('masks the latest submitter address in pendingActions commands under submissionVisibility never for an anonymous caller', async () => {
+      const ctx = createMockCtx(PAYER);
+      const neverRow = { ...openBountyRow, submissionVisibility: 'never' };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // updatedSubmissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // updatedPitchCount
+        .mockReturnValueOnce(makeChain([])) // updatedRequesterAgent
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // updatedLatestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).not.toContain('0xworker');
+      expect(accept?.command).toContain('<address>');
+    });
+
+    it('still reveals the latest submitter address in pendingActions commands under submissionVisibility never to the requester', async () => {
+      const ctx = createMockCtx(PAYER, { address: PAYER });
+      const neverRow = { ...openBountyRow, submissionVisibility: 'never' };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // updatedSubmissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // updatedPitchCount
+        .mockReturnValueOnce(makeChain([])) // updatedRequesterAgent
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // updatedLatestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
     });
 
     it('rejects update once a task has left open', async () => {
@@ -1262,6 +1373,116 @@ describe('tasks router', () => {
 
       expect(query.sql).toContain('"tasks"."task_visibility" <>');
       expect(query.params).toContain('unlisted');
+    });
+
+    // A submission-window status (open/claimed/worker_selected) whose deadline has
+    // passed is real and common -- see computeSubmissionWindowOpen in lib/task.ts --
+    // but a plain status filter should not surface it, the same way status=open
+    // already excludes it (#166). These three tests lock that guard in across every
+    // submission-window status, not just 'open'.
+    function expiryParamNearNow(query: { params: unknown[] }) {
+      const raw = query.params.at(-1);
+      const ms = raw instanceof Date ? raw.getTime() : new Date(raw as string).getTime();
+      return Math.abs(Date.now() - ms);
+    }
+
+    it('excludes tasks whose deadline has passed when filtering by status=open', async () => {
+      const query = await captureListWhere({ status: 'open' });
+
+      expect(query.sql).toContain('"tasks"."expiry_time" > ');
+      expect(query.params.slice(0, 3)).toEqual(['unlisted', 'open', REV007_CUTOFF_ISO]);
+      expect(query.params).toHaveLength(4);
+      expect(expiryParamNearNow(query)).toBeLessThan(5_000);
+    });
+
+    it('applies the same expiry-exclusion guard to status=claimed (claim/auction submission window)', async () => {
+      const query = await captureListWhere({ status: 'claimed' });
+
+      expect(query.sql).toContain('"tasks"."status" = ');
+      expect(query.sql).toContain('"tasks"."expiry_time" > ');
+      // Non-open statuses stay outside the REV007 cutoff guard (unchanged, historical
+      // records must stay queryable), so this is exactly 3 params, not 4.
+      expect(query.params).toHaveLength(3);
+      expect(query.params.slice(0, 2)).toEqual(['unlisted', 'claimed']);
+      expect(expiryParamNearNow(query)).toBeLessThan(5_000);
+    });
+
+    it('applies the same expiry-exclusion guard to status=worker_selected (pitch submission window)', async () => {
+      const query = await captureListWhere({ status: 'worker_selected' });
+
+      expect(query.sql).toContain('"tasks"."status" = ');
+      expect(query.sql).toContain('"tasks"."expiry_time" > ');
+      expect(query.params).toHaveLength(3);
+      expect(query.params.slice(0, 2)).toEqual(['unlisted', 'worker_selected']);
+      expect(expiryParamNearNow(query)).toBeLessThan(5_000);
+    });
+
+    it('does not apply the expiry guard to a terminal status filter', async () => {
+      const query = await captureListWhere({ status: 'completed' });
+
+      expect(query.sql).not.toContain('"tasks"."expiry_time" > ');
+      expect(query.params).toEqual(['unlisted', 'completed']);
+    });
+
+    // `phase` (ADR-0024) is a derived filter, not a stored column -- these lock in that
+    // it translates to the same status/expiry SQL condition computeTaskPhase applies
+    // in memory (lib/task.ts), for every one of its four values.
+    it('filters by phase=in_review as a status IN (review, appealing, disputed) condition', async () => {
+      const query = await captureListWhere({ phase: 'in_review' });
+
+      expect(query.sql).toContain('"tasks"."status" in (');
+      expect(query.params).toEqual([
+        'unlisted',
+        REV007_CUTOFF_ISO,
+        'review',
+        'appealing',
+        'disputed',
+      ]);
+    });
+
+    it('filters by phase=resolved as a status IN (completed, cancelled, expired) condition', async () => {
+      const query = await captureListWhere({ phase: 'resolved' });
+
+      expect(query.sql).toContain('"tasks"."status" in (');
+      expect(query.params).toEqual([
+        'unlisted',
+        REV007_CUTOFF_ISO,
+        'completed',
+        'cancelled',
+        'expired',
+      ]);
+    });
+
+    it('filters by phase=awaiting_settlement as submission-window statuses past their deadline', async () => {
+      const query = await captureListWhere({ phase: 'awaiting_settlement' });
+
+      expect(query.sql).toContain('"tasks"."status" in (');
+      expect(query.sql).toContain('"tasks"."expiry_time" <= ');
+      expect(query.params.slice(0, 5)).toEqual([
+        'unlisted',
+        REV007_CUTOFF_ISO,
+        'open',
+        'claimed',
+        'worker_selected',
+      ]);
+      const expiryMs = new Date(query.params[5] as string).getTime();
+      expect(Math.abs(Date.now() - expiryMs)).toBeLessThan(5_000);
+    });
+
+    it('filters by phase=active as submission-window statuses before their deadline, or pending_approval', async () => {
+      const query = await captureListWhere({ phase: 'active' });
+
+      expect(query.sql).toContain('"tasks"."status" in (');
+      expect(query.sql).toContain('"tasks"."expiry_time" > ');
+      expect(query.params).toEqual([
+        'unlisted',
+        REV007_CUTOFF_ISO,
+        'open',
+        'claimed',
+        'worker_selected',
+        expect.any(String),
+        'pending_approval',
+      ]);
     });
   });
 });

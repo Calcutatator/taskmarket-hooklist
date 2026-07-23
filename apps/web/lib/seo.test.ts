@@ -50,8 +50,10 @@ const baseTask: TaskDetailResponse = {
   status: 'open',
   submissionCount: 0,
   submissionWindowOpen: true,
+  phase: 'active',
   tags: ['typescript', 'agents'],
   taskVisibility: 'public',
+  submissionVisibility: 'public',
 };
 
 const baseAgent: AgentStats = {

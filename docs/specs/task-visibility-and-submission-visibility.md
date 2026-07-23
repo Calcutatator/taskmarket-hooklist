@@ -1,12 +1,22 @@
 # Task Visibility and Submission Visibility
 
 Status: Phase 1 decided and shipped -- see ADR-0014 (task visibility, public-by-default
-  opt-in), ADR-0015 (Phase 1's scoped inbox self-auth), ADR-0016 (submission visibility as
-  an independent axis), ADR-0017 (`bids.myBids` signed self-auth), and ADR-0018
-  (`devices.register` signature proof), all Accepted. Phase 2 (submission visibility) and
-  Phase 3 (true private tasks) below are still open proposals, not decided.
+  opt-in), ADR-0015 (Phase 1's scoped inbox self-auth, Superseded by ADR-0023), ADR-0016
+  (submission visibility as an independent axis), ADR-0017 (`bids.myBids` signed
+  self-auth, Superseded by ADR-0023), and ADR-0018 (`devices.register` signature proof),
+  all Accepted. Phase 2 (submission visibility) is implemented per ADR-0016 (PR #210);
+  one lifecycle edge case found during that PR's review is tracked as ADR-0021 (Accepted)
+  -- see the "Time + role gated reveal" section below. A follow-up exhaustive review pass
+  after the initial PR merge found two more surfaces the original design missed --
+  `submissions.mySubmissions` (`GET /api/submissions/mine`) was fully ungated, and
+  `tasks.get`/`update`'s `pendingActions.command` strings leaked an active contest's
+  current submitter address through a side channel -- both are now fixed; see "Six public
+  read-paths" and the Phase 2 shipped file list below. A further pass converged
+  `agents.inbox` and `bids.myBids`'s bespoke self-auth schemes onto the general
+  `ctx.caller` mechanism -- ADR-0023 (Accepted), implemented in the same PR (#210). Phase
+  3 (true private tasks) below remains an open proposal, not decided.
 Owner: Taskmarket
-Last updated: 2026-07-21
+Last updated: 2026-07-22
 
 This is an RFC: a design proposal for discussion, not a decision record. Once a direction is
 chosen, the decision itself belongs in an ADR under `docs/adr/` (see `docs/adr/README.md`
@@ -62,12 +72,12 @@ Client-side (platform-blind) encryption is an explicit non-goal for now, for any
 | Phase | What you get | Estimate |
 |---|---|---|
 | **Phase 1 -- Unlisted tasks (shipped)** | Tasks hidden from public list/search/SEO, but anyone with the task ID/URL can still view. One narrow self-auth check (see `agents.inbox` below); no general read-auth. | **~5.5-6.5 days** |
-| **Phase 2 -- Submission visibility** | A `submissionVisibility` choice at task creation (`public` default, or opt-in `reveal_all` / `winner_only` / `never`), locked in permanently, independent of the task's own visibility. Builds the general read-authentication foundation this and Phase 3 both need. | **~7-11 days** |
+| **Phase 2 -- Submission visibility (shipped, PR #210)** | A `submissionVisibility` choice at task creation (`public` default, or opt-in `reveal_all` / `winner_only` / `never`), locked in permanently, independent of the task's own visibility. Builds the general read-authentication foundation this and Phase 3 both need. | **~7-11 days** |
 | **Phase 3 -- True private tasks** | Tasks visible only to requester + invited/assigned workers (password-protected or wallet-scoped). Reuses Phase 2's read-auth foundation, so it is now an incremental follow-up rather than its own multi-week foundation-plus-feature cost. | **~1-1.5 weeks on top of Phase 2** |
 
-The honest recommendation: **Phase 1 is done.** Ship **Phase 2 next** -- it closes the
+The honest recommendation: **Phase 1 and Phase 2 are both done.** Phase 2 closed the
 loudest real complaint (world-readable submissions while a task is live, for anyone who
-opts into a hiding mode) and, unlike Phase 1, has to build the read-auth foundation
+opts into a hiding mode) and, unlike Phase 1, had to build the read-auth foundation
 anyway, which is the expensive part of Phase 3 too. Treat **Phase 3** as a scoped
 follow-up gated on a separate product decision about whether true-private tasks are
 worth building at all. All three phases are strictly opt-in; the default stays
@@ -245,7 +255,11 @@ canonical `taskmarket:inbox:<address>` message (built via the shared
 with no state-changing side effect, so a replayed signature does nothing a fresh one
 couldn't); if present and it recovers to the `address` being queried, include that
 address's own `unlisted` tasks in the response; if absent or invalid, behave exactly as
-today (public tasks only, for any address, no error). The recovery-and-compare logic
+today (public tasks only, for any address, no error). (Later superseded by ADR-0023:
+`agents.inbox` now compares `ctx.caller?.address` -- the general read-auth header --
+against the queried address instead of verifying its own bespoke signature; the
+`buildInboxSelfAuthMessage`/`taskmarket:inbox:<address>` scheme described here no longer
+exists in the code.) The recovery-and-compare logic
 itself is a single shared `verifySignedAddress` helper (`apps/backend/src/lib/agents.ts`)
 reused by every backend endpoint that verifies a caller-owned-address claim this way --
 this is a small, self-contained verification function, not the general `ctx.caller`
@@ -317,6 +331,20 @@ role while the task is active, not a static flag:
 | Active (open/claimed/...) | sees all submissions | sees only their own | nothing |
 | Ended (completed/expired) | sees all (per the chosen mode) | sees own + whatever the mode reveals | only what the mode reveals (`reveal_all`: everything; `winner_only`: the winner(s); `never`: nothing) |
 
+**A third status can also mean "ended": `cancelled` via a REJECT evaluator verdict.**
+`cancelled` is not in the table above because it is usually the *opposite* of a resolution
+-- `tasks.router.ts`'s plain `cancel` mutation only succeeds with zero active
+(non-rejected) submissions, so by the time a task reaches `cancelled` that way, there is
+genuinely nothing left to reveal. But `evaluations.router.ts`'s `finalizeVerdict` also
+sets `status: 'cancelled'` on a REJECT verdict, after a worker submitted, an evaluator
+ruled, and the appeal window ran without a successful appeal -- that path *is* a fully
+resolved, terminal outcome (the contract refunds the requester and does not reopen the
+task), and this proposal's implementation treats it as "ended" for `reveal_all`/
+`winner_only` purposes, distinguished from the plain-cancel path via `tasks.verdictType
+=== 'REJECT'` (set when the verdict was submitted, never cleared by the REJECT branch).
+See ADR-0021 for the full reasoning; this was found and fixed during implementation
+review, not in the original design of this table.
+
 - The winning submission(s) are already identifiable via `task_awards` rows (one per
   ranked payout) -- surface that linkage in `listByTask` output and the UI rather than
   inventing a new winner marker.
@@ -387,6 +415,35 @@ endpoint is also updated to respect the mode.
 `listByTask`, `previewArtifact`, `preview`, `download`, and `listByWorker` in
 `submissions.router.ts` are the only five; no other router exposes file content this
 way.)
+
+**A sixth surface was missed by this analysis and by the initial Phase 2 PR, and only
+surfaced in a later exhaustive review pass:** `submissions.mySubmissions`
+(`GET /api/submissions/mine`, `submissions.router.ts` ~L1051) -- a `publicProcedure` that
+takes a bare `workerAddress` query parameter with no signature and returns, for every task
+that address ever submitted to, the full off-chain `taskDescription` plus
+`deliverableHash`/`submitTxHash`/`rejectedAt`, entirely unaware of `submissionVisibility`.
+This is functionally the same data `listByTask` already gates, reachable through a
+different join (`submissions` joined to `tasks` by worker address instead of by task),
+and it has its own CLI command (`taskmarket task my-submissions`) and raw-API doc entry --
+so it was a real, live gap, not a hypothetical one. Fixed by routing it through the same
+`canViewSubmission` predicate as every other reader (winner addresses resolved per
+distinct `winner_only` task in the result set) and by having the CLI command sign the
+same read-auth message `task submissions` already does.
+
+A related but distinct side-channel was found in the same pass: `tasks.get` and
+`tasks.update`'s `pendingActions` array (`apps/backend/src/lib/task.ts`,
+`computePendingActions`) embeds the current active contest's most recent submitter
+address directly into suggested command strings (`accept --worker <addr>`,
+`reject-submission --worker <addr>`), and `pendingActions` is returned to **every** caller
+of `get`/`update` unfiltered -- there is no per-caller filtering of that array today. For a
+`reveal_all`/`winner_only`/`never` bounty or benchmark still collecting submissions, this
+let anyone learn who has currently submitted to a still-open contest, defeating the mode
+during exactly the window it is meant to protect. `claimedBy` (the auction/claim/pitch
+selection address) is a separate, already-public field and was deliberately left alone.
+Fixed with a small `visibleLatestSubmissionWorker` helper in `tasks.router.ts` that gates
+the address through `canViewSubmission` before handing it to `computePendingActions`,
+falling back to the existing `<address>` placeholder string when the caller isn't
+entitled to see it.
 
 The submission visibility setting needs to be settable from every task-creation surface, not just the
 API: the CLI (`task create --submission-visibility <public|reveal_all|winner_only|
@@ -529,20 +586,25 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   branch to return generic site metadata for a genuinely private task, to avoid
   confirming its existence via OG tags.
 
-### Layer 5 -- CLI (~1 day for Phase 1, shipped; ~1-1.5 days for Phase 2)
+### Layer 5 -- CLI (~1 day for Phase 1, shipped; ~1-1.5 days for Phase 2, shipped)
 
 - **Phase 1 (shipped):** `task create --task-visibility <unlisted|public>` (default
   `public`); `taskmarket inbox` signs its self-auth message automatically. `task
   search`/`list` deliberately left unchanged -- `tasks.list` has no per-call override to
   reveal unlisted tasks, so a flag there would filter nothing.
-- **Phase 2:** `task create --submission-visibility <public|reveal_all|winner_only|
-  never>` (default `public`), set once at creation with no update command -- there is
-  nothing to change later since the mode is locked in permanently. All output stays
-  JSON per `apps/cli/src/lib/output.ts`.
+- **Phase 2 (shipped):** `task create --submission-visibility <public|reveal_all|
+  winner_only|never>` (default `public`), set once at creation with no update command --
+  there is nothing to change later since the mode is locked in permanently. All output
+  stays JSON per `apps/cli/src/lib/output.ts`. `taskmarket task submissions <taskId>`
+  (the CLI's only caller of `listByTask`) signs and sends the read-auth message
+  automatically, the same way `taskmarket inbox` does for its own self-auth check --
+  this is the *only* CLI command that touches one of the four gated reads today; there
+  is no CLI command for artifact preview, `download`, or the public work list (`GET
+  /agents/{address}/work`), so those three have no CLI-side read-auth wiring to add.
 - Each phase's CLI change needs its own changeset per this repo's rules (only
   `apps/cli` needs one): single file, `minor` bump.
 
-### Layer 6 -- Web app (~1.5-2 days for Phase 1, shipped; ~1.5-2 days for Phase 2)
+### Layer 6 -- Web app (~1.5-2 days for Phase 1, shipped; ~1.5-2 days for Phase 2, shipped)
 
 - **Phase 1 (shipped):** visibility toggle in the create wizard; "Unlisted" badge on
   the task detail page and the dashboard "You" feed; the dashboard's inbox query signs
@@ -550,38 +612,60 @@ The system already supports both, so this is a policy/UX choice, not a missing c
   `agents.inbox` actually needs") so the owner's own unlisted tasks show up there too.
   Every other read (`list`, `search`, a third party's `inbox`) stays exactly as
   unauthenticated as it is today.
-- **Phase 2:** a `submissionVisibility` control (four options) in the create wizard next
-  to the task-visibility toggle, sharing the same disclaimer-copy pattern, shown as
-  read-only/locked once the task exists (no edit UI, since there is no update path); the
-  submissions list view respects whatever the backend now returns (already gated
-  server-side, so this is mostly "don't assume every submission in the response is
-  visible to render a comparison UI the same way for everyone").
+- **Phase 2 (shipped):** a `submissionVisibility` control (four options) in the create
+  wizard next to the task-visibility toggle, sharing the same disclaimer-copy pattern,
+  shown as read-only/locked once the task exists (no edit UI, since there is no update
+  path); the submissions list view respects whatever the backend now returns (already
+  gated server-side). As scoped, the web app's own fetches for these reads stay
+  unauthenticated (matching Phase 1's pattern of not building a general authenticated-
+  fetch layer) -- a signed-in web user gets exactly the same "other workers / public" row
+  of the truth table above as an anonymous visitor would, for now.
 - **Phase 3** would additionally require the web app to gain a notion of a logged-in
   reader for *every* gated fetch, which it still lacks after Phase 2 (Phase 2's web
   changes are scoped to the two call sites above, not a general authenticated-fetch
   layer); budget that separately if Phase 3 is pursued.
 
-### Layer 7 -- Docs & agent skill (~0.5 day for Phase 1, shipped; ~0.5-1 day for Phase 2)
+### Layer 7 -- Docs & agent skill (~0.5 day for Phase 1, shipped; ~0.5-1 day for Phase 2, shipped)
 
 - **Phase 1 (shipped):** `reference/cli.md`, `reference/raw-api.md`,
   `reference/task-schema.md`, and `skill.md` all cover `visibility`/`unlisted`,
   including explicit agent guidance that unlisted is not confidentiality. Mirrored to
   `pages/`.
-- **Phase 2:** the same four files need the equivalent treatment for
-  `submissionVisibility` -- this is new agent-facing behavior (a new CLI flag, a new
-  response field, and critically, agent guidance that the mode is locked in permanently
-  once chosen) -- so it needs the same doc/skill coverage Phase 1 got, not an
-  afterthought.
+- **Phase 2 (shipped):** the same four files cover `submissionVisibility` -- the new CLI
+  flag, the new response field, the read-auth header names, and agent guidance that the
+  mode is locked in permanently once chosen. `skill.md`/`cli.md` are explicit that
+  `taskmarket task submissions <taskId>` and `taskmarket task my-submissions` are the
+  *only* CLI commands with automatic read-auth signing (see Layer 5) -- an earlier draft
+  of this doc update overstated `task submissions` alone as covering all gated reads,
+  caught during implementation review; a later review pass added `mySubmissions` as a
+  fifth gated read and its own CLI auto-signing. The docs also now carry an explicit
+  disclaimer (mirroring Phase 1's) that `submissionVisibility` only gates off-chain
+  content -- a worker's participation, selection, payment, and rating are independently
+  public via on-chain events regardless of the chosen mode, caught in the same later pass.
 
-### Layer 8 -- Tests (~1 day for Phase 1, shipped; ~2-3 days for Phase 2; ~2-3 days for Phase 3)
+### Layer 8 -- Tests (~1 day for Phase 1, shipped; ~2-3 days for Phase 2, shipped; ~2-3 days for Phase 3)
 
 - **Phase 1 (shipped):** `smoke-visibility.ts` mirroring the existing `smoke-*.ts`
   pattern: create an unlisted task, confirm it's absent from `tasks.list`/search,
   confirm direct `tasks.get(taskId)` still returns it, confirm the owner's own
   `agents.inbox` (self-auth signed) includes it while an unauthenticated call doesn't.
-- **Phase 2:** unit tests for the submission role-check's truth table (requester /
-  submitting worker / other worker, active / ended, revealed / not) plus a
-  `smoke-submission-visibility.ts`-style end-to-end test.
+- **Phase 2 (shipped):** unit tests for the submission role-check's truth table
+  (requester / submitting worker / other worker, active / ended, revealed / not,
+  including the `cancelled`+`REJECT`-verdict edge case from ADR-0021 and a multi-winner
+  ranked-payout `winner_only` scenario) across all five retrofitted endpoints
+  (`listByTask`, `previewArtifact`, `download`, `listByWorker`, `mySubmissions`), plus
+  `smoke-submission-visibility.ts` exercising `listByTask`, `previewArtifact`,
+  `mySubmissions`, and the public work list end to end over real HTTP for every mode.
+  `submissions.download` is covered at the unit-test layer only, not by the smoke test --
+  it has no `.meta({ openapi })` REST route and no CLI or web caller today (the CLI's
+  `task download` calls the separately-gated `preview` endpoint instead), so there is no
+  real HTTP path to exercise it through; this is pre-existing, not introduced by Phase 2.
+  A later review pass also added `tasks.test.ts` coverage confirming `pendingActions`
+  command strings mask the active submitter's address for unauthorized callers and reveal
+  it to the requester (see "A sixth surface" above), and routed `listByWorker`'s
+  `never`-mode check through the shared `canViewSubmission` predicate instead of a
+  hand-duplicated condition, with tests confirming `winner_only`/`reveal_all` still
+  resolve correctly through the shared helper.
 - **Phase 3:** unit tests for `canView`'s truth table and each retrofitted endpoint
   (follow `apps/backend/test/unit/routers/`).
 
@@ -593,7 +677,7 @@ No contract change. On-chain data stays public (see constraint above). We explic
 
 ## Effort summary
 
-| Layer | Phase 1 (unlisted, shipped) | Phase 2 (submission visibility) | Phase 3 (true private) |
+| Layer | Phase 1 (unlisted, shipped) | Phase 2 (submission visibility, shipped) | Phase 3 (true private) |
 |---|---|---|---|
 | 1. Data model | 0.5d | 0.5d | 0.5d |
 | 2. General read-auth framework | -- (not needed) | 4-6d (built here) | -- (reuses Phase 2's) |
@@ -603,7 +687,7 @@ No contract change. On-chain data stays public (see constraint above). We explic
 | 6. Web | 1.5-2d | 1.5-2d | 1.5-2d (general authenticated-fetch layer) |
 | 7. Docs & skill | 0.5d | 0.5-1d | 0.5-1d |
 | 8. Tests | 1d | 2-3d | 2-3d |
-| **Total** | **~5.5-6.5 days (shipped)** | **~7-11 days** | **~8.5-11.5 days on top of Phase 2** |
+| **Total** | **~5.5-6.5 days (shipped)** | **~7-11 days (shipped, PR #210)** | **~8.5-11.5 days on top of Phase 2** |
 
 Phase 1 does not need the *general* read-auth framework (Layer 2) -- `unlisted` mostly
 requires *omitting* rows from list/search/SEO, and direct `get(taskId)` stays open, so
@@ -656,15 +740,17 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
    inbox lookup), no general architectural change, no default-behavior change for
    existing tasks, and does not expose a `'private'` task-visibility value that would
    not actually be enforced.
-2. Ship **Phase 2 (submission visibility -- default `public`, opt-in
-   `reveal_all`/`winner_only`/`never`, locked in at creation)** next -- prioritise it
-   over Phase 3, since it directly answers the copying/homogenisation and
-   requester-confidentiality complaints, which in practice matter more than task-level
-   discoverability. ~7-11 days, including the general read-authentication foundation
-   this phase has to build regardless. **Client-side encryption is a non-goal** for now:
-   we do not need to hide submissions from the platform, and it would break
-   preview/auto-verify/evaluator for no gain on the stated problems. Use S3
-   encryption-at-rest if an "encrypted" checkbox is ever needed.
+2. **Phase 2 (submission visibility -- default `public`, opt-in
+   `reveal_all`/`winner_only`/`never`, locked in at creation) is shipped (PR #210)** --
+   it directly answers the copying/homogenisation and requester-confidentiality
+   complaints, which in practice matter more than task-level discoverability. ~7-11
+   days, including the general read-authentication foundation this phase had to build
+   regardless. One lifecycle edge case (a task cancelled via a REJECT evaluator verdict)
+   found during implementation review is tracked as ADR-0021 (Accepted).
+   **Client-side encryption is a non-goal** for now: we do not need to hide
+   submissions from the platform, and it would break preview/auto-verify/evaluator for
+   no gain on the stated problems. Use S3 encryption-at-rest if an "encrypted" checkbox
+   is ever needed.
 3. Treat **Phase 3 (true private tasks, also opt-in)** as a scoped follow-up gated on a
    separate product decision about whether to build it at all. Because it reuses Phase
    2's read-auth foundation, budget only ~8.5-11.5 additional days rather than a second
@@ -716,23 +802,76 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   device/API-token header to signed self-auth (ADR-0017); `selectWinner` converted to
   the shared helper
 
-### Phase 2 (submission visibility) -- not started
+(`agents.inbox`'s and `bids.myBids`'s self-auth described above was later converged onto
+the general `ctx.caller` mechanism -- see ADR-0023 (Accepted) and the Phase 3 section
+below. `buildInboxSelfAuthMessage`/`buildMyBidsMessage`, the `signature` query
+param/input field, and `use-inbox-self-auth-signature.ts` no longer exist in the code;
+`agents.inbox` is an `optionalAuthProcedure` and `bids.myBids` a `protectedProcedure`,
+both reading `ctx.caller`.)
+
+### Phase 2 (submission visibility) -- shipped, PR #210
 
 - `apps/backend/src/trpc.ts`, `context.ts` -- `optionalAuthProcedure`/
-  `protectedProcedure`, `ctx.caller` resolution (the shared read-auth foundation)
-- `apps/backend/src/db/schema.ts` -- `submissionVisibility` column on `tasks`
+  `protectedProcedure`, `ctx.caller` resolution via a signed `taskmarket:read:<address>`
+  message over `X-Taskmarket-Caller-Address`/`X-Taskmarket-Caller-Signature` headers
+  (the shared read-auth foundation)
+- `packages/shared/src/lib/authMessages.ts` -- `buildReadAuthMessage`,
+  `READ_AUTH_ADDRESS_HEADER`, `READ_AUTH_SIGNATURE_HEADER`
+- `apps/backend/src/db/schema.ts`, `apps/backend/drizzle/migrations/
+  0035_add_submission_visibility.sql` -- `submissionVisibility` column on `tasks`
   (`'public' | 'reveal_all' | 'winner_only' | 'never'`, default `'public'`)
+- `packages/shared/src/schemas/task.schemas.ts` -- `SubmissionVisibility` enum, wired
+  into `TaskCreateSchema`/`TaskResponseSchema`
+- `apps/backend/src/lib/submission-visibility.ts` -- `isRequester`/`isSubmittingWorker`/
+  `isTaskEnded`/`canViewSubmission`, the shared role/mode/lifecycle predicate module
+  (see ADR-0021 for the `cancelled`+`REJECT`-verdict lifecycle edge case found during
+  review)
 - `apps/backend/src/routers/submissions.router.ts` -- mode-aware role-gated
-  `listByTask` (active-state role check; deterministic post-resolution branch per mode)
+  `listByTask`, `previewArtifact`, `download`, `listByWorker` (`GET
+  /agents/{address}/work`), and `mySubmissions` (`GET /api/submissions/mine`) -- all
+  five public read-paths the RFC names above; `listByWorker`'s `never`-mode check
+  routes through the shared `canViewSubmission` predicate rather than a duplicated
+  inline condition. A later generalization pass also extracted
+  `resolveWinningAddresses` (the "only fetch task_awards winners for `winner_only`
+  mode" one-liner, previously repeated at every call site) and
+  `assertSubmissionVisible` (the "resolve winners, call `canViewSubmission`, throw
+  `FORBIDDEN` if not visible" block, previously duplicated verbatim between
+  `previewArtifact` and `download`) into shared helpers -- the single-submission
+  readers now differ only in their forbidden-message text.
+- `apps/backend/src/routers/tasks.router.ts`, `agents.router.ts` -- `submissionVisibility`
+  serialization alongside every existing `taskVisibility` serialization site;
+  `tasks.router.ts` also gates `pendingActions`' `latestSubmissionWorker` (embedded in
+  `accept`/`reject_submission` command strings on `get` and `update`) through the same
+  predicate, closing the side channel described in "A sixth surface" above
 - `apps/cli/src/commands/task/create.ts` -- `--submission-visibility`; no separate
   reveal/update command, since the mode is locked in permanently at creation
-- `apps/web/components/market/wizard/**` -- `submissionVisibility` control, sharing the
-  Phase 1 disclaimer pattern, read-only once the task exists
-- `apps/backend/scripts/smoke-submission-visibility.ts` -- new smoke test
+- `apps/cli/src/commands/task/submissions.ts`, `my-submissions.ts` -- both sign and send
+  the read-auth message automatically (the CLI's only two callers of the five gated
+  reads), via a shared `apps/cli/src/lib/read-auth.ts` (`signReadAuth`) extracted once
+  the same sign-and-build-headers block appeared in both commands verbatim -- returns
+  the wallet address even when signing itself fails, so a caller needing a default
+  `--address` (`my-submissions`) doesn't lose it just because the caller-identity proof
+  couldn't be attached
+- `apps/web/components/market/wizard/step-brief.tsx`, `step-publish.tsx`,
+  `apps/web/lib/market/{create-task-form.ts,status-config.ts}` -- `submissionVisibility`
+  control, sharing the Phase 1 disclaimer pattern, read-only once the task exists
+- `apps/backend/scripts/smoke-submission-visibility.ts` -- end-to-end smoke test over
+  real HTTP (all four modes x three roles x two lifecycle states, plus the read-auth
+  headers, plus `mySubmissions` added in the later review pass); `apps/backend/test/
+  unit/lib/submission-visibility.test.ts` and additions to `test/unit/routers/
+  submissions.test.ts`/`submissions.listByWorker.test.ts`/`tasks.test.ts` for unit-level
+  coverage, including `download` (no REST route, so not smoke-tested), a multi-winner
+  ranked-payout `winner_only` scenario, and the `pendingActions` masking behavior
 - `apps/docs/src/public/{reference/cli.md,reference/raw-api.md,
   reference/task-schema.md,skill.md}` (mirrored to `pages/`) -- `submissionVisibility`
-  is new agent-facing behavior and needs the same coverage Phase 1 got, not an
-  afterthought
+  is new agent-facing behavior and got the same coverage Phase 1 got, not an
+  afterthought; a later pass added `mySubmissions` to the gated-reads list and an
+  explicit on-chain-exposure disclaimer mirroring Phase 1's
+- `docs/adr/0021-cancelled-tasks-with-a-reject-verdict-count-as-ended-for-submission-reveal.md`
+  -- `Accepted`
+- `docs/adr/0023-converge-inbox-and-mybids-self-auth-onto-the-general-read-auth-header.md`
+  -- `Accepted`; `agents.inbox`/`bids.myBids` converge onto `ctx.caller` (see the Phase 3
+  section below, superseded by this having landed in Phase 2 instead)
 
 ### Phase 3 (true private tasks) -- not started, gated on a separate product decision
 
@@ -745,3 +884,12 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
   detail page, to avoid confirming existence via OG tags
 - `apps/web/lib/api/server.ts` -- general authenticated-fetch layer (gated fetch for
   every relevant read, not just the two Phase 1/2 call sites)
+- **ADR-0023 (`Accepted`, implemented ahead of Phase 3, in Phase 2's PR #210):**
+  converged `agents.inbox` (ADR-0015, now Superseded) and `bids.myBids` (ADR-0017, now
+  Superseded)'s bespoke signed-message self-auth schemes onto the general `ctx.caller`
+  read-auth header, before `canView`'s retrofit below could add a fourth/fifth variant of
+  the same "prove you own this address" check. `agents.inbox` is now an
+  `optionalAuthProcedure` comparing `ctx.caller?.address` against the queried address;
+  `bids.myBids` is now a `protectedProcedure` deriving the address from `ctx.caller`. The
+  `canView` retrofit below now starts from this one converged pattern instead of three
+  precedents.

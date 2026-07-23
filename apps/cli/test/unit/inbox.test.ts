@@ -28,6 +28,7 @@ vi.mock('../../src/lib/output.js', () => ({
 import { inboxCommand } from '../../src/commands/inbox.js';
 import { apiGet } from '../../src/lib/api.js';
 import { createWalletAccountFromKeystore } from '../../src/lib/signer.js';
+import { loadKeystore } from '../../src/lib/keystore.js';
 import { printResult } from '../../src/lib/output.js';
 
 const ADDRESS = '0xRequester0000000000000000000000000000001';
@@ -41,60 +42,33 @@ describe('inbox command', () => {
     } as unknown as Awaited<ReturnType<typeof createWalletAccountFromKeystore>>);
   });
 
-  it('signs the canonical self-auth message and includes it in the inbox request', async () => {
-    vi.mocked(apiGet).mockResolvedValue({ asRequester: [], asWorker: [] });
-
-    await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
-
-    expect(mockSignMessage).toHaveBeenCalledWith({
-      message: `taskmarket:inbox:${ADDRESS.toLowerCase()}`,
-    });
-    const [inboxUrl] = vi.mocked(apiGet).mock.calls[0];
-    expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
-    expect(inboxUrl).toContain('signature=0xsignature');
-  });
-
-  it('derives the wallet account once and signs both messages locally (one key-server round trip)', async () => {
-    vi.mocked(apiGet).mockResolvedValue({ asRequester: [], asWorker: [] });
-
-    await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
-
-    expect(vi.mocked(createWalletAccountFromKeystore)).toHaveBeenCalledTimes(1);
-    expect(mockSignMessage).toHaveBeenCalledTimes(2);
-  });
-
-  it('falls back to an unsigned inbox request when inbox signing fails, without erroring', async () => {
-    mockSignMessage.mockImplementation(async ({ message }: { message: string }) =>
-      message.startsWith('taskmarket:inbox:')
-        ? Promise.reject(new Error('signing failed'))
-        : '0xbidsig'
-    );
-    vi.mocked(apiGet).mockResolvedValue({ asRequester: [], asWorker: [] });
-
-    await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
-
-    const [inboxUrl] = vi.mocked(apiGet).mock.calls[0];
-    expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
-    expect(inboxUrl).not.toContain('signature=');
-    expect(printResult).toHaveBeenCalled();
-  });
-
-  it('signs a separate my-bids message and fetches pending bids alongside the inbox', async () => {
-    mockSignMessage.mockResolvedValue('0xsignature');
-    vi.mocked(apiGet).mockImplementation(async (url: string) =>
-      url.startsWith('/api/bids/my')
+  it('signs one read-auth message and sends it as headers to both endpoints', async () => {
+    vi.mocked(apiGet).mockImplementation(async (path: string) =>
+      path.startsWith('/api/bids/my')
         ? [{ taskId: '0xtask', auctionType: 'english', myBidPrice: '1000000' }]
         : { asRequester: [], asWorker: [] }
     );
 
     await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
 
+    expect(mockSignMessage).toHaveBeenCalledTimes(1);
     expect(mockSignMessage).toHaveBeenCalledWith({
-      message: `taskmarket:my-bids:${ADDRESS.toLowerCase()}`,
+      message: `taskmarket:read:${ADDRESS.toLowerCase()}`,
     });
-    const [bidsUrl] = vi.mocked(apiGet).mock.calls[1];
-    expect(bidsUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
-    expect(bidsUrl).toContain('signature=0xsignature');
+
+    const expectedHeaders = {
+      'X-Taskmarket-Caller-Address': ADDRESS,
+      'X-Taskmarket-Caller-Signature': '0xsignature',
+    };
+
+    const [inboxUrl, inboxOptions] = vi.mocked(apiGet).mock.calls[0];
+    expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
+    expect(inboxOptions?.headers).toEqual(expectedHeaders);
+
+    const [bidsUrl, bidsOptions] = vi.mocked(apiGet).mock.calls[1];
+    expect(bidsUrl).toBe('/api/bids/my');
+    expect(bidsOptions?.headers).toEqual(expectedHeaders);
+
     expect(printResult).toHaveBeenCalledWith(
       expect.objectContaining({
         pendingBids: [{ taskId: '0xtask', auctionType: 'english', myBidPrice: '1000000' }],
@@ -102,30 +76,39 @@ describe('inbox command', () => {
     );
   });
 
-  it('includes an empty pendingBids list when my-bids signing fails, without erroring', async () => {
-    mockSignMessage.mockImplementation(async ({ message }: { message: string }) =>
-      message.startsWith('taskmarket:my-bids:')
-        ? Promise.reject(new Error('signing failed'))
-        : '0xsignature'
-    );
+  it('falls back to an unsigned inbox request and skips my-bids when signing fails', async () => {
+    mockSignMessage.mockRejectedValue(new Error('signing failed'));
     vi.mocked(apiGet).mockResolvedValue({ asRequester: [], asWorker: [] });
 
     await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
 
-    expect(vi.mocked(apiGet)).toHaveBeenCalledTimes(1);
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    const [inboxUrl, inboxOptions] = vi.mocked(apiGet).mock.calls[0];
+    expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
+    expect(inboxOptions?.headers).toEqual({});
     expect(printResult).toHaveBeenCalledWith(expect.objectContaining({ pendingBids: [] }));
   });
 
-  it('falls back to unsigned/empty views for both when account derivation fails', async () => {
+  it('falls back to an unsigned inbox request when account derivation fails', async () => {
     vi.mocked(createWalletAccountFromKeystore).mockRejectedValueOnce(new Error('key fetch failed'));
     vi.mocked(apiGet).mockResolvedValue({ asRequester: [], asWorker: [] });
 
     await inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' });
 
     expect(mockSignMessage).not.toHaveBeenCalled();
-    const [inboxUrl] = vi.mocked(apiGet).mock.calls[0];
-    expect(inboxUrl).not.toContain('signature=');
-    expect(vi.mocked(apiGet)).toHaveBeenCalledTimes(1);
+    expect(apiGet).toHaveBeenCalledTimes(1);
+    const [inboxUrl, inboxOptions] = vi.mocked(apiGet).mock.calls[0];
+    expect(inboxUrl).toContain(`address=${encodeURIComponent(ADDRESS)}`);
+    expect(inboxOptions?.headers).toEqual({});
     expect(printResult).toHaveBeenCalledWith(expect.objectContaining({ pendingBids: [] }));
+  });
+
+  it('errors when there is no keystore at all', async () => {
+    vi.mocked(loadKeystore).mockRejectedValueOnce(new Error('no keystore'));
+
+    await expect(inboxCommand.parseAsync(['node', 'inbox'], { from: 'node' })).rejects.toThrow(
+      'printError called'
+    );
+    expect(apiGet).not.toHaveBeenCalled();
   });
 });

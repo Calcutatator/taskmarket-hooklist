@@ -4,7 +4,6 @@ import cors from 'cors';
 import helmet from 'helmet';
 import path from 'path';
 import fs from 'fs';
-import { fileURLToPath } from 'url';
 import compression from 'compression';
 import morgan from 'morgan';
 import { createExpressMiddleware } from '@trpc/server/adapters/express';
@@ -652,12 +651,3 @@ app.get('/docs', (_, res) => {
 app.get('/health', (_, res) => {
   res.json({ status: 'ok' });
 });
-
-if (process.env.SERVE_FRONTEND === 'true') {
-  const __dirname = path.dirname(fileURLToPath(import.meta.url));
-  const distPath = path.join(__dirname, '../../../apps/frontend/dist');
-  app.use(express.static(distPath));
-  app.get('*', (_req, res) => {
-    res.sendFile(path.join(distPath, 'index.html'));
-  });
-}
