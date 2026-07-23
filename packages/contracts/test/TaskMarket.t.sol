@@ -1716,6 +1716,36 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Cancelled));
     }
 
+    function test_RevertWhen_RejectSubmission_NonSubmitter_CannotPhantomClearGuard() public {
+        // A real worker has a live submission. The requester tries to reject a
+        // throwaway address that never submitted, hoping to phantom-clear the
+        // active-submission counter and unblock cancelTask around the real submission.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _submitWork(taskId, worker1, keccak256("real work"));
+
+        address neverSubmitted = address(0x9999);
+        _rejectSubmission(taskId, requester, neverSubmitted);
+
+        // worker1's real submission must still block cancelTask.
+        vm.expectRevert(ITMPCore.SubmissionsExist.selector);
+        forwarder.relay(address(market), requester, 0, abi.encodeCall(market.cancelTask, (taskId, 0)));
+    }
+
+    function test_RejectSubmission_NonSubmitter_ThenRealRejection_StillUnblocks() public {
+        // Rejecting a non-submitter is a legitimate no-op pre-rejection and must not
+        // block the real worker's eventual rejection from clearing the guard correctly.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _submitWork(taskId, worker1, keccak256("real work"));
+
+        _rejectSubmission(taskId, requester, address(0x9999));
+        _rejectSubmission(taskId, requester, worker1);
+
+        uint256 balanceBefore = usdc.balanceOf(requester);
+        _cancelTask(taskId, requester);
+        assertEq(usdc.balanceOf(requester), balanceBefore + REWARD);
+        assertEq(uint256(market.getTask(taskId).status), uint256(ITMPCore.TaskStatus.Cancelled));
+    }
+
     // -----------------------------------------------------------------------
     // updateTask tests
     // -----------------------------------------------------------------------

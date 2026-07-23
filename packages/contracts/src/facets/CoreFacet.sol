@@ -301,12 +301,14 @@ contract CoreFacet {
         s.taskRejectedWorkers[taskId][worker] = true;
         // Decrement by the worker's full submission count so that workers who submitted
         // multiple times don't leave a phantom count that blocks cancelTask/refundExpired.
-        // Falls back to 1 for pre-rejection (worker hasn't submitted yet) and for
-        // submissions made before taskSubmissionHashes tracking was introduced.
+        // A worker with zero recorded submissions has nothing to decrement -- crediting a
+        // decrement for them would let a requester phantom-clear this guard against a
+        // real, still-live submission from a different worker.
         uint256 workerCount = s.taskSubmissionHashes[taskId][worker].length;
-        uint256 decrement = workerCount > 0 ? workerCount : 1;
-        uint256 active = s.taskActiveSubmissionCount[taskId];
-        s.taskActiveSubmissionCount[taskId] = active > decrement ? active - decrement : 0;
+        if (workerCount > 0) {
+            uint256 active = s.taskActiveSubmissionCount[taskId];
+            s.taskActiveSubmissionCount[taskId] = active > workerCount ? active - workerCount : 0;
+        }
 
         emit ITMPCore.SubmissionRejected(taskId, worker);
         LibTaskMarket._nonReentrantAfter(s);
