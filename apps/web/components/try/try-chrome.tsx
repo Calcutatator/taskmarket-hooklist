@@ -67,7 +67,7 @@ function TryHeaderContent({
           </span>
         </Link>
         <div className="flex items-center gap-2">
-          <Button asChild size="sm" variant="ghost">
+          <Button asChild className="hidden min-[480px]:inline-flex" size="sm" variant="ghost">
             <a href="#how-it-works">How it works</a>
           </Button>
           {authenticated ? (
