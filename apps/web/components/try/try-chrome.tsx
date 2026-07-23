@@ -82,7 +82,7 @@ function TryHeaderContent({
               type="button"
               variant="terminal"
             >
-              {walletConfigurationAvailable ? 'Sign in' : 'Sign in unavailable'}
+              {walletConfigurationAvailable ? 'Sign in' : 'Unavailable'}
             </Button>
           )}
         </div>
