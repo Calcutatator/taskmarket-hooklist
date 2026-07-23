@@ -1734,6 +1734,17 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(task.reward, newReward);
     }
 
+    function test_RevertWhen_UpdateTask_RewardIncrease_NotFunded() public {
+        // No paymentAmount funds the increase this time (additionalPayment = 0) -- the
+        // Diamond's balance can't cover the new reward, so the increase must revert instead
+        // of silently promising a reward the escrow doesn't actually hold.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        uint256 newReward = REWARD * 2;
+
+        vm.expectRevert(ITMPCore.RewardIncreaseNotFunded.selector);
+        _updateTask(taskId, requester, 0, newReward, 0, 0, 0);
+    }
+
     function test_UpdateTask_RewardDecrease() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
         uint256 newReward = REWARD / 2;
