@@ -250,6 +250,9 @@ cd "$REPO_ROOT"
 # deployed logic, not a hand-written approximation of it. One-time read-only RPC calls
 # to the source chain at setup time only -- no ongoing dependency afterwards.
 EIP1967_IMPL_SLOT="0x360894a13ba1a3210667c828492db98dca3e2076cc3735a920a3ca505d382bbc"
+# How many low storage slots (0..N-1) to also copy, beyond the EIP-1967 implementation
+# slot above -- see the loop below for why.
+LOW_STORAGE_SLOT_COUNT=16
 clone_eip1967_proxy() {
   local proxy_addr="$1" source_rpc="$2" local_rpc="$3"
   local proxy_code impl_addr impl_code
@@ -260,6 +263,25 @@ clone_eip1967_proxy() {
   cast rpc anvil_setCode "$proxy_addr" "$proxy_code" --rpc-url "$local_rpc" > /dev/null
   cast rpc anvil_setStorageAt "$proxy_addr" "$EIP1967_IMPL_SLOT" \
     "$(cast to-uint256 "$impl_addr")" --rpc-url "$local_rpc" > /dev/null
+  # The EIP-1967 implementation slot above is the only storage this function copied
+  # until now -- correct for a proxy whose implementation keeps no other state a
+  # caller depends on, but wrong for one that does. Confirmed directly: the ERC-8004
+  # reputation registry stores its identity-registry reference as a plain address in
+  # storage slot 0 (not immutable, not part of the bytecode this function already
+  # copies), so cloning only the impl slot left that reference as the zero address
+  # locally -- getIdentityRegistry() returned 0x0 instead of the real registry, which
+  # made every giveFeedback() call revert (caught by AcceptanceFacet.sol's try/catch,
+  # surfacing as a silent ReputationFeedbackFailed event) even though the clone
+  # otherwise looked fully functional. Copy a generous range of low slots
+  # unconditionally for every proxy this function clones, not just the reputation
+  # registry specifically -- confirmed safe for the identity registry too, whose
+  # low slots are all zero on the real chain (it keeps no external-contract
+  # reference, only hash-keyed mappings), so this is a no-op there.
+  local slot slot_value
+  for ((slot = 0; slot < LOW_STORAGE_SLOT_COUNT; slot++)); do
+    slot_value="$(cast storage "$proxy_addr" "$slot" --rpc-url "$source_rpc")"
+    cast rpc anvil_setStorageAt "$proxy_addr" "$slot" "$slot_value" --rpc-url "$local_rpc" > /dev/null
+  done
 }
 
 echo "==> [7/12] Clone ERC-8004 identity/reputation registries from Base Sepolia"
@@ -573,9 +595,25 @@ echo "==> [12/13] Provision CLI keystore for smoke-withdraw.ts"
 # loadKeystore() and hard-fail ("No keystore found. Run `taskmarket init` first.")
 # if none exists yet. `wallet import` is the right command here, not `init` --
 # `init` always generates a brand new wallet, whereas `import` seeds the keystore
-# from an existing private key. It's idempotent (keystoreExists() short-circuits
-# and just prints the existing address), so safe to run unconditionally on every
-# rerun of this script.
+# from an existing private key.
+#
+# The keystore file (~/.taskmarket/keystore.json) lives in the user's home
+# directory, which survives across reruns of this script, but the `devices`
+# row it references gets wiped by the DB truncate earlier in this same run
+# (see the DB-reset comment in step 11) -- a keystore left over from an
+# earlier run then points at a deviceId/apiToken pair the backend has no
+# record of. `wallet import`'s own idempotency check (keystoreExists() short-
+# circuits and just prints the existing address) means it would never notice
+# or fix this: the command reports success, but any later command needing the
+# device-encrypted key (e.g. `wallet set-withdrawal-address`, which
+# smoke-withdraw.ts calls next) fails at runtime with "Device not found" --
+# confirmed by triggering it directly (rerunning this script against an
+# already-truncated DB with a stale keystore file still on disk). Delete the
+# keystore first so it always gets re-registered against whichever database
+# this run actually has. Safe unconditionally: this keystore slot exists
+# solely for DEPLOYER_KEY, a fixed well-known Anvil dev key, not a real user's
+# own wallet, so there is nothing here to lose.
+rm -f "$HOME/.taskmarket/keystore.json"
 (
   set -a
   source "$REPO_ROOT/.env"
