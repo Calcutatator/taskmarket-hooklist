@@ -1080,6 +1080,26 @@ describe('tasks router', () => {
       expect(ctx.db.select).toHaveBeenCalledOnce();
     });
 
+    it('allows a non-requester payer to refund an expired task (permissionless)', async () => {
+      const NON_REQUESTER = '0x2222222222222222222222222222222222222222';
+      const ctx = createMockCtx(NON_REQUESTER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          {
+            ...mockTaskRow,
+            mode: 'claim',
+            status: 'pending_approval',
+            expiryTime: new Date(Date.now() - 60_000),
+          },
+        ])
+      );
+
+      const result = await tasksRouter.createCaller(ctx).refundExpired({ taskId: '0xabc' });
+
+      expect(contractRefundExpired).toHaveBeenCalledOnce();
+      expect(result.txHash).toBe('0xrefundhash');
+    });
+
     it('blocks an expired contest while active submissions remain', async () => {
       const ctx = createMockCtx(PAYER);
       ctx.db.select

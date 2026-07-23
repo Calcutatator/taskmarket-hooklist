@@ -103,6 +103,7 @@ those always pause for a human.
 - [0023 — Converge `agents.inbox` and `bids.myBids` self-auth onto the general read-auth header](0023-converge-inbox-and-mybids-self-auth-onto-the-general-read-auth-header.md)
 - [0024 — Add a derived `phase` field for the deadline-passed/awaiting-closeout task state](0024-task-phase-derived-lifecycle-field.md)
 - [0025 — `updateTask` reward-increase gets a balance-sufficiency check, not a funding-model change](0025-update-task-reward-increase-funding.md)
+- [0026 — `refundExpired` is callable by anyone, not just the requester](0026-refund-expired-is-permissionless.md)
 
 ## Linting
 

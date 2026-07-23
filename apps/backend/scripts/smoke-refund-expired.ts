@@ -8,6 +8,8 @@
  *      in pendingActions → call refundExpired (X402) → poll until status=expired
  *   B. Create bounty → submit work → let it expire → assert refund_expired is
  *      absent from pendingActions (has submissions, on-chain refund would revert)
+ *   C. Create bounty → let it expire with no submissions → worker (not the
+ *      requester) calls refundExpired → succeeds (ADR-0026: permissionless)
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -158,9 +160,55 @@ async function main() {
 
   console.log('\n--- Scenario B passed: bounty with submission correctly blocks refund action ---');
 
+  // --- Scenario C: non-requester (worker) calls refundExpired → succeeds ---
+
+  log('C1/3', 'Creating third bounty task with 1-second duration (no submissions)...');
+  const { taskId: taskC } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Refund-expired smoke test task C (non-requester refund)',
+      reward: '1000',
+      duration: 1 / 3600,
+      mode: 'bounty',
+      tags: ['smoke-refund-expired'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('taskId (C)', taskC);
+
+  log('C2/3', 'Polling until submission window closes (expiryTime passes)...');
+  await pollUntil(
+    () => get(`/api/tasks/${taskC}`) as Promise<TaskResponse>,
+    (t) => !t.submissionWindowOpen,
+    { label: 'submissionWindowOpen=false', timeoutMs: 30000 }
+  );
+
+  log('C3/3', 'Worker (non-requester) calling refundExpired (X402)...');
+  const nonRequesterRefund = (await x402Post(
+    `/api/tasks/${taskC}/refund-expired`,
+    { taskId: taskC },
+    worker
+  )) as { txHash?: string };
+  if (!nonRequesterRefund.txHash) {
+    throw new Error(
+      `Expected txHash from non-requester refundExpired. Got: ${JSON.stringify(nonRequesterRefund)}`
+    );
+  }
+  ok('non-requester txHash', nonRequesterRefund.txHash);
+
+  const finalTaskC = await pollUntil(
+    () => get(`/api/tasks/${taskC}`) as Promise<TaskResponse>,
+    (t) => t.status === 'expired',
+    { label: 'status=expired', timeoutMs: 60000 }
+  );
+  ok('final status (C)', finalTaskC.status);
+
+  console.log('\n--- Scenario C passed: non-requester successfully refunded an expired task ---');
+
   console.log('\n=== Refund-expired smoke test passed ===');
   console.log('taskA (refunded):', taskA, '  txHash:', refundResult.txHash);
   console.log('taskB (has sub, no refund action):', taskB);
+  console.log('taskC (refunded by non-requester):', taskC, '  txHash:', nonRequesterRefund.txHash);
 }
 
 main().catch((err) => {

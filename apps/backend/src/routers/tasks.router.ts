@@ -1217,7 +1217,8 @@ export const tasksRouter = router({
         method: 'POST',
         path: '/tasks/{taskId}/refund-expired',
         tags: ['Tasks'],
-        summary: 'Refund an expired task with no submissions back to the requester (X402 required)',
+        summary:
+          'Refund an expired task with no submissions back to the requester (X402 required, callable by anyone)',
       },
     })
     .input(RefundExpiredInputSchema)
@@ -1239,13 +1240,6 @@ export const tasksRouter = router({
       }
 
       const task = taskResult[0];
-
-      if (task.requester.toLowerCase() !== payer.toLowerCase()) {
-        throw new TRPCError({
-          code: 'FORBIDDEN',
-          message: 'Only the task requester can call refundExpired',
-        });
-      }
 
       if (task.status === 'expired') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task is already expired' });
