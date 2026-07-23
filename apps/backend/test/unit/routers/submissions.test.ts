@@ -62,6 +62,7 @@ function makeTask(overrides: Record<string, any> = {}) {
     status: 'open',
     tags: [],
     mode: 'bounty',
+    submissionVisibility: 'public',
     stakeRequired: 0,
     stakeBps: 0,
     pitchDeadline: null,
@@ -449,6 +450,7 @@ describe('submissions router', () => {
     it('lists submissions with artifact metadata and no preview URLs', async () => {
       const ctx = createMockCtx();
       ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([submissionRow]))
         .mockReturnValueOnce(makeChain([artifactRow]))
         .mockReturnValueOnce(makeChain([]));
@@ -503,6 +505,7 @@ describe('submissions router', () => {
         storageUri: 'file://test/result.png',
       };
       ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([submissionRow, secondSubmissionRow]))
         .mockReturnValueOnce(makeChain([textArtifactRow, videoArtifactRow, imageArtifactRow]))
         .mockReturnValueOnce(
@@ -532,7 +535,7 @@ describe('submissions router', () => {
         taskId: TASK_ID,
       });
 
-      expect(ctx.db.select).toHaveBeenCalledTimes(3);
+      expect(ctx.db.select).toHaveBeenCalledTimes(4);
       expect(storage.getPresignedUrl).toHaveBeenCalledTimes(2);
       expect(storage.getPresignedUrl).toHaveBeenNthCalledWith(1, 'file://test/demo.mp4', 3600);
       expect(storage.getPresignedUrl).toHaveBeenNthCalledWith(2, 'file://test/result.png', 3600);
@@ -633,6 +636,199 @@ describe('submissions router', () => {
         caller.download({ submissionId: SUB_ID, acceptanceTxHash: '0xaccepttx' })
       ).rejects.toThrow('Task not completed');
     });
+
+    it('rejects downloading a never-mode submission for an unauthenticated caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...makeTask(), status: 'completed', submissionVisibility: 'never' }])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      await expect(
+        caller.download({ submissionId: SUB_ID, acceptanceTxHash: '0xaccepttx' })
+      ).rejects.toThrow('Not authorized to download this submission');
+    });
+
+    it('allows the submitting worker to download their own never-mode submission', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...makeTask(), status: 'completed', submissionVisibility: 'never' }])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.download({
+        submissionId: SUB_ID,
+        acceptanceTxHash: '0xaccepttx',
+      });
+
+      expect(result.presignedUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('allows an anonymous caller to download a reveal_all submission once completed', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...makeTask(), status: 'completed', submissionVisibility: 'reveal_all' }])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.download({
+        submissionId: SUB_ID,
+        acceptanceTxHash: '0xaccepttx',
+      });
+
+      expect(result.presignedUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('allows an anonymous caller to download a winner_only submission that is the task_awards winner', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...makeTask(), status: 'completed', submissionVisibility: 'winner_only' }])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.download({
+        submissionId: SUB_ID,
+        acceptanceTxHash: '0xaccepttx',
+      });
+
+      expect(result.presignedUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('rejects an anonymous caller downloading a winner_only submission that is NOT a task_awards winner', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(
+          makeChain([{ ...makeTask(), status: 'completed', submissionVisibility: 'winner_only' }])
+        )
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xSomeoneElse000000000000000000000001' }])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      await expect(
+        caller.download({ submissionId: SUB_ID, acceptanceTxHash: '0xaccepttx' })
+      ).rejects.toThrow('Not authorized to download this submission');
+    });
+  });
+
+  describe('listByTask submissionVisibility gating', () => {
+    const submissionRow = {
+      id: SUB_ID,
+      taskId: TASK_ID,
+      workerAddress: WORKER,
+      fileUrl: 'file://test/file',
+      signature: '0xsig',
+      submittedAt: new Date(),
+    };
+    const otherSubmissionRow = {
+      ...submissionRow,
+      id: '00000000-0000-0000-0000-000000000002',
+      workerAddress: '0xWorker0000000000000000000000000000000002',
+    };
+
+    it('never mode hides every submission from an unauthenticated caller while active', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({ taskId: TASK_ID });
+
+      expect(result).toEqual([]);
+    });
+
+    it('never mode still lets the requester see every submission while active', async () => {
+      const ctx = createMockCtx(undefined, { address: REQUESTER });
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({ taskId: TASK_ID });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].id).toBe(SUB_ID);
+    });
+
+    it('winner_only reveals only the task_awards-linked winner once the task ends', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow, otherSubmissionRow]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({ taskId: TASK_ID });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].workerAddress).toBe(WORKER);
+    });
+
+    it('winner_only reveals every ranked-payout winner, not just one, while still hiding non-winners', async () => {
+      // Ranked payout: task_awards can have more than one row per task (see
+      // ADR-0006 / the worker-identity correction in the RFC) -- confirm
+      // winningAddressesForTask's Set correctly includes every winner, not
+      // just the first one, and that a genuine non-winner still stays hidden.
+      const thirdSubmissionRow = {
+        ...submissionRow,
+        id: '00000000-0000-0000-0000-000000000003',
+        workerAddress: '0xWorker0000000000000000000000000000000003',
+      };
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([submissionRow, otherSubmissionRow, thirdSubmissionRow]))
+        .mockReturnValueOnce(
+          makeChain([
+            { workerAddress: WORKER },
+            { workerAddress: otherSubmissionRow.workerAddress },
+          ])
+        )
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({ taskId: TASK_ID });
+
+      expect(result.map((r) => r.workerAddress).sort()).toEqual(
+        [WORKER, otherSubmissionRow.workerAddress].sort()
+      );
+      expect(result.some((r) => r.workerAddress === thirdSubmissionRow.workerAddress)).toBe(false);
+    });
+
+    it('returns an empty array for an unknown taskId without checking visibility', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByTask({ taskId: 'nonexistent' });
+
+      expect(result).toEqual([]);
+      expect(ctx.db.select).toHaveBeenCalledTimes(1);
+    });
   });
 
   describe('previewArtifact', () => {
@@ -654,7 +850,9 @@ describe('submissions router', () => {
 
     it('returns a preview URL for any caller', async () => {
       const ctx = createMockCtx();
-      ctx.db.select.mockReturnValueOnce(makeChain([artifactRow]));
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(makeChain([makeTask()]));
 
       const caller = submissionsRouter.createCaller(ctx) as any;
       const result = await caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' });
@@ -671,6 +869,261 @@ describe('submissions router', () => {
       await expect(
         caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' })
       ).rejects.toThrow('Task/artifact mismatch');
+    });
+
+    it('rejects previewing a never-mode artifact for an unauthenticated caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      await expect(
+        caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' })
+      ).rejects.toThrow('Not authorized to preview this artifact');
+    });
+
+    it('allows the submitting worker to preview their own never-mode artifact', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'never', status: 'open' })])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      const result = await caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' });
+
+      expect(result.previewUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('allows an anonymous caller to preview a reveal_all artifact once the task has ended', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'reveal_all', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      const result = await caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' });
+
+      expect(result.previewUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('allows an anonymous caller to preview a winner_only artifact that is the task_awards winner', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]))
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      const result = await caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' });
+
+      expect(result.previewUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('rejects an anonymous caller previewing a winner_only artifact that is NOT the winner', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([makeTask({ submissionVisibility: 'winner_only', status: 'completed' })])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]))
+        .mockReturnValueOnce(
+          makeChain([{ workerAddress: '0xSomeoneElse000000000000000000000001' }])
+        );
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      await expect(
+        caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' })
+      ).rejects.toThrow('Not authorized to preview this artifact');
+    });
+
+    it('treats a REJECT-verdict cancelled task as ended for reveal_all preview', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              submissionVisibility: 'reveal_all',
+              status: 'cancelled',
+              verdictType: 'REJECT',
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      const result = await caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' });
+
+      expect(result.previewUrl).toBe('https://presigned.example.com/file');
+    });
+
+    it('treats a plain (non-verdict) cancelled task as still active for reveal_all preview', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([artifactRow]))
+        .mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              submissionVisibility: 'reveal_all',
+              status: 'cancelled',
+              verdictType: null,
+            }),
+          ])
+        )
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]));
+
+      const caller = submissionsRouter.createCaller(ctx) as any;
+      await expect(
+        caller.previewArtifact({ taskId: TASK_ID, artifactId: 'artifact-1' })
+      ).rejects.toThrow('Not authorized to preview this artifact');
+    });
+  });
+
+  describe('mySubmissions submissionVisibility gating', () => {
+    const OTHER_TASK_ID = '0xtask0000000000000000000000000000000002';
+    const OTHER_WORKER = '0xWorker0000000000000000000000000000000002';
+
+    function myRow(overrides: Record<string, any> = {}) {
+      return {
+        taskId: TASK_ID,
+        workerAddress: WORKER,
+        submittedAt: new Date('2026-06-10T10:00:00.000Z'),
+        deliverableHash: null,
+        submitTxHash: null,
+        rejectedAt: null,
+        taskDescription: 'Test task',
+        taskStatus: 'open',
+        taskVerdictType: null,
+        taskMode: 'bounty',
+        taskReward: '1000000',
+        taskRequester: REQUESTER,
+        submissionVisibility: 'public',
+        ...overrides,
+      };
+    }
+
+    it('shows a public-mode submission to any unauthenticated caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([myRow()]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].taskId).toBe(TASK_ID);
+    });
+
+    it('hides a never-mode active-task submission from an unauthenticated caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toEqual([]);
+    });
+
+    it('still shows a never-mode submission to the worker themselves once ctx.caller proves it', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER });
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('does not let an unrelated caller impersonate the worker via the workerAddress query param alone', async () => {
+      const ctx = createMockCtx(undefined, { address: OTHER_WORKER });
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toEqual([]);
+    });
+
+    it("still shows a never-mode submission to that task's requester", async () => {
+      const ctx = createMockCtx(undefined, { address: REQUESTER });
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'never', taskStatus: 'open' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('reveals a reveal_all submission to anyone once the task has ended', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'reveal_all', taskStatus: 'completed' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('hides a reveal_all submission from anyone while the task is still active', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([myRow({ submissionVisibility: 'reveal_all', taskStatus: 'open' })])
+      );
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toEqual([]);
+    });
+
+    it('reveals only the winner_only submissions the caller actually won, across multiple tasks', async () => {
+      const ctx = createMockCtx();
+      // Two rows, two different tasks -- both winner_only and ended, but only
+      // one of them has this worker in task_awards.
+      ctx.db.select
+        .mockReturnValueOnce(
+          makeChain([
+            myRow({ submissionVisibility: 'winner_only', taskStatus: 'completed' }),
+            myRow({
+              taskId: OTHER_TASK_ID,
+              submissionVisibility: 'winner_only',
+              taskStatus: 'completed',
+            }),
+          ])
+        )
+        // winningAddressesForTask(TASK_ID) -- this worker won.
+        .mockReturnValueOnce(makeChain([{ workerAddress: WORKER }]))
+        // winningAddressesForTask(OTHER_TASK_ID) -- someone else won.
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xSomeoneElse000000000000000000001' }]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.mySubmissions({ workerAddress: WORKER });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].taskId).toBe(TASK_ID);
     });
   });
 });

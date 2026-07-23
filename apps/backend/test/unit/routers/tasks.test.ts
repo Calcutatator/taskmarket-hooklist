@@ -101,6 +101,8 @@ const mockTaskRow = {
   tags: ['test'],
   mode: 'bounty',
   taskVisibility: 'unlisted',
+  submissionVisibility: 'public',
+  verdictType: null,
   stakeRequired: 0,
   stakeBps: 0,
   pitchDeadline: null,
@@ -687,6 +689,78 @@ describe('tasks router', () => {
       expect(result!.pendingActions.some((a) => a.action === 'submit')).toBe(true);
     });
 
+    it('active bounty under submissionVisibility public: pendingActions commands reveal the real submitter address', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'public',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
+    });
+
+    it('active bounty under submissionVisibility never: pendingActions commands hide the submitter address from an anonymous caller', async () => {
+      const ctx = createMockCtx();
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'never',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      const rejectSubmission = result!.pendingActions.find((a) => a.action === 'reject_submission');
+      expect(accept?.command).not.toContain('0xworker');
+      expect(accept?.command).toContain('<address>');
+      expect(rejectSubmission?.command).not.toContain('0xworker');
+    });
+
+    it('active bounty under submissionVisibility never: pendingActions commands still reveal the address to the requester', async () => {
+      const ctx = createMockCtx(undefined, { address: mockTaskRow.requester });
+      const activeRowWithSubs = {
+        ...mockTaskRow,
+        status: 'open',
+        submissionVisibility: 'never',
+        expiryTime: new Date(Date.now() + 72 * 3600 * 1000),
+      };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([activeRowWithSubs]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // submissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // pitchCount
+        .mockReturnValueOnce(makeChain([])) // requesterAgentRow
+        .mockReturnValueOnce(makeChain([])) // awardRows
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // latestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.get({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
+    });
+
     it('pitch task after pitchDeadline: no pitch action, select_worker still present', async () => {
       const ctx = createMockCtx();
       const pitchRow = {
@@ -765,6 +839,43 @@ describe('tasks router', () => {
 
       // Regression: update() must return the stored visibility, not silently drop it.
       expect(result!.taskVisibility).toBe('unlisted');
+    });
+
+    it('masks the latest submitter address in pendingActions commands under submissionVisibility never for an anonymous caller', async () => {
+      const ctx = createMockCtx(PAYER);
+      const neverRow = { ...openBountyRow, submissionVisibility: 'never' };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // updatedSubmissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // updatedPitchCount
+        .mockReturnValueOnce(makeChain([])) // updatedRequesterAgent
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // updatedLatestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).not.toContain('0xworker');
+      expect(accept?.command).toContain('<address>');
+    });
+
+    it('still reveals the latest submitter address in pendingActions commands under submissionVisibility never to the requester', async () => {
+      const ctx = createMockCtx(PAYER, { address: PAYER });
+      const neverRow = { ...openBountyRow, submissionVisibility: 'never' };
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([{ count: 1 }])) // updatedSubmissionCount
+        .mockReturnValueOnce(makeChain([{ count: 0 }])) // updatedPitchCount
+        .mockReturnValueOnce(makeChain([])) // updatedRequesterAgent
+        .mockReturnValueOnce(makeChain([{ workerAddress: '0xworker' }])); // updatedLatestSubmission
+
+      const caller = tasksRouter.createCaller(ctx);
+      const result = await caller.update({ taskId: '0xabc' });
+
+      const accept = result!.pendingActions.find((a) => a.action === 'accept');
+      expect(accept?.command).toContain('0xworker');
     });
 
     it('rejects update once a task has left open', async () => {

@@ -121,6 +121,7 @@ const task: TaskResponse = {
   tags: ['research'],
   mode: 'auction',
   taskVisibility: 'public',
+  submissionVisibility: 'public',
   stakeRequired: false,
   stakeBps: 0,
   pitchDeadline: null,

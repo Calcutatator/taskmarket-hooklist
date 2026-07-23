@@ -91,6 +91,7 @@ const task: TaskDetailResponse = {
   stakeRequired: false,
   status: 'pending_approval',
   submissionCount: 2,
+  submissionVisibility: 'public',
   submissionWindowOpen: false,
   tags: ['design'],
   taskVisibility: 'public',

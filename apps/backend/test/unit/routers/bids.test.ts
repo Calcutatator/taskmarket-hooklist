@@ -679,14 +679,10 @@ describe('bids router', () => {
   });
 
   describe('myBids', () => {
-    // myBids validates `address` against a strict 0x + 40-hex-char regex, unlike WORKER/WORKER_B
-    // (used elsewhere in this file for endpoints that don't validate address format).
     const WORKER_HEX = `0x${'1'.repeat(40)}`;
-    const WORKER_B_HEX = `0x${'2'.repeat(40)}`;
 
-    it('returns pending bids for the signed-in address', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER_HEX as `0x${string}`);
-      const ctx = createMockCtx();
+    it('returns pending bids for ctx.caller (ADR-0016/ADR-0022 read-auth)', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER_HEX });
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           {
@@ -702,7 +698,7 @@ describe('bids router', () => {
       );
 
       const caller = bidsRouter.createCaller(ctx);
-      const result = await caller.myBids({ address: WORKER_HEX, signature: '0xsig' });
+      const result = await caller.myBids({});
 
       expect(result).toEqual([
         {
@@ -717,9 +713,8 @@ describe('bids router', () => {
       ]);
     });
 
-    it('matches bids.workerAddress case-insensitively against the authenticated address', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER_HEX as `0x${string}`);
-      const ctx = createMockCtx();
+    it('matches bids.workerAddress case-insensitively against ctx.caller', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER_HEX });
 
       let whereSql: SQL | undefined;
       const chain = makeChain([]);
@@ -730,31 +725,18 @@ describe('bids router', () => {
       ctx.db.select.mockReturnValueOnce(chain);
 
       const caller = bidsRouter.createCaller(ctx);
-      await caller.myBids({ address: WORKER_HEX, signature: '0xsig' });
+      await caller.myBids({});
 
       expect(whereSql).toBeDefined();
       const { sql: q } = renderSql(whereSql!);
       expect(q.toLowerCase()).toContain('lower(');
     });
 
-    it('rejects with BAD_REQUEST when the signature is invalid', async () => {
-      vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
-      const ctx = createMockCtx();
+    it('rejects with UNAUTHORIZED when there is no caller (protectedProcedure, ADR-0017/ADR-0022)', async () => {
+      const ctx = createMockCtx(undefined, undefined);
 
       const caller = bidsRouter.createCaller(ctx);
-      await expect(caller.myBids({ address: WORKER_HEX, signature: '0xinvalid' })).rejects.toThrow(
-        'Invalid signature'
-      );
-    });
-
-    it('rejects with UNAUTHORIZED when the signature is from a different address', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER_B_HEX as `0x${string}`);
-      const ctx = createMockCtx();
-
-      const caller = bidsRouter.createCaller(ctx);
-      await expect(caller.myBids({ address: WORKER_HEX, signature: '0xsig' })).rejects.toThrow(
-        'Signature does not match address'
-      );
+      await expect(caller.myBids({})).rejects.toThrow('Caller authentication required');
     });
   });
 });

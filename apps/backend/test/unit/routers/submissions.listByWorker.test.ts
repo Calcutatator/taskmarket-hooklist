@@ -27,6 +27,8 @@ import { getStorageBackend } from '../../../src/lib/storage';
 import { taskAwards } from '../../../src/db/schema';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
+const OTHER_WORKER = '0xWorker0000000000000000000000000000000002';
+const REQUESTER = '0xRequester00000000000000000000000000000001';
 const TASK_ID = '0xtask0000000000000000000000000000000001';
 const SUB_ID = '00000000-0000-0000-0000-000000000001';
 const dialect = new PgDialect();
@@ -38,6 +40,10 @@ const completedRow = {
   // caught the `.toISOString is not a function` bug a real driver response triggers.
   completedAt: '2026-06-10T10:00:00.000Z',
   description: 'Design a logo\nmore details on the next line',
+  submissionVisibility: 'public',
+  requester: REQUESTER,
+  status: 'completed',
+  verdictType: null,
 };
 
 const submissionRow = {
@@ -206,5 +212,90 @@ describe('submissions router listByWorker', () => {
     expect(result).toHaveLength(1);
     expect(result[0].taskId).toBe(TASK_ID);
     expect(result[0].artifacts).toEqual([]);
+  });
+
+  describe('submissionVisibility: never', () => {
+    const neverRow = { ...completedRow, submissionVisibility: 'never' };
+
+    it('excludes a never-mode task for an unauthenticated caller', async () => {
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([neverRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER });
+
+      expect(result).toEqual([]);
+    });
+
+    it('excludes a never-mode task even for a different worker address', async () => {
+      const ctx = createMockCtx(undefined, { address: OTHER_WORKER });
+      ctx.db.select.mockReturnValueOnce(makeChain([neverRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER });
+
+      expect(result).toEqual([]);
+    });
+
+    it('still shows a never-mode task to the worker themselves once ctx.caller proves it', async () => {
+      const ctx = createMockCtx(undefined, { address: WORKER });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([imageArtifactRow]))
+        .mockReturnValueOnce(makeChain([agentRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER, includePreviewUrls: 'none' });
+
+      expect(result).toHaveLength(1);
+      expect(result[0].taskId).toBe(TASK_ID);
+    });
+
+    it("still shows a never-mode task to that task's requester", async () => {
+      const ctx = createMockCtx(undefined, { address: REQUESTER });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([neverRow]))
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([imageArtifactRow]))
+        .mockReturnValueOnce(makeChain([agentRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER, includePreviewUrls: 'none' });
+
+      expect(result).toHaveLength(1);
+    });
+  });
+
+  describe('submissionVisibility: winner_only / reveal_all -- routed through canViewSubmission', () => {
+    it('shows a winner_only task to an unauthenticated caller since award-linkage proves it is a winner', async () => {
+      const winnerOnlyRow = { ...completedRow, submissionVisibility: 'winner_only' };
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([winnerOnlyRow]))
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([imageArtifactRow]))
+        .mockReturnValueOnce(makeChain([agentRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER, includePreviewUrls: 'none' });
+
+      expect(result).toHaveLength(1);
+    });
+
+    it('shows a reveal_all task to an unauthenticated caller once the task has ended', async () => {
+      const revealAllRow = { ...completedRow, submissionVisibility: 'reveal_all' };
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([revealAllRow]))
+        .mockReturnValueOnce(makeChain([submissionRow]))
+        .mockReturnValueOnce(makeChain([imageArtifactRow]))
+        .mockReturnValueOnce(makeChain([agentRow]));
+
+      const caller = submissionsRouter.createCaller(ctx);
+      const result = await caller.listByWorker({ address: WORKER, includePreviewUrls: 'none' });
+
+      expect(result).toHaveLength(1);
+    });
   });
 });

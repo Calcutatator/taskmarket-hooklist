@@ -10,10 +10,10 @@
 > scoped mechanism will likely need replacing or generalizing once Phase 2 (or Phase 3,
 > true private tasks) is built.
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-20
 - **Deciders:** Beau
-- **Supersedes / Superseded-by:** —
+- **Supersedes / Superseded-by:** Superseded by ADR-0023
 
 ## Context
 
@@ -94,3 +94,6 @@ separately decided.
   section
 - Issue #183 — Phase 1 implementation tracker
 - ADR 0014 — the related decision that visibility stays public-by-default/opt-in
+- ADR-0023 — supersedes this decision: `agents.inbox` converges onto the general
+  `ctx.caller` read-auth mechanism, exactly as the "Negative / trade-offs" section above
+  anticipated.

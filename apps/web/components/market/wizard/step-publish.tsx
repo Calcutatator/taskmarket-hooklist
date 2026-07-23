@@ -23,7 +23,12 @@ import {
   validateCreateTask,
 } from '@/lib/market/create-task-form';
 import { formatUsdcUnits } from '@/lib/format';
-import { TASK_VISIBILITY_DISCLAIMER } from '@/lib/market/status-config';
+import {
+  TASK_VISIBILITY_DISCLAIMER,
+  SUBMISSION_VISIBILITY_DISCLAIMERS,
+  SUBMISSION_VISIBILITY_LABELS,
+  SUBMISSION_VISIBILITY_LOCKED_NOTICE,
+} from '@/lib/market/status-config';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
 import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
@@ -649,6 +654,25 @@ export function StepPublish({
                   </Button>
                 </div>
                 <p className="text-muted-foreground">{TASK_VISIBILITY_DISCLAIMER}</p>
+              </div>
+            ) : null}
+
+            {values.submissionVisibility !== 'public' ? (
+              <div className="grid gap-2 rounded-xl border border-warning/46 bg-warning/12 p-4 text-sm leading-5 shadow-[var(--shadow-soft)]">
+                <div className="flex items-start justify-between gap-3">
+                  <p className="font-semibold text-foreground">
+                    Submissions: {SUBMISSION_VISIBILITY_LABELS[values.submissionVisibility]}
+                  </p>
+                  <Button onClick={onEditBrief} size="sm" type="button" variant="outline">
+                    Edit
+                  </Button>
+                </div>
+                <p className="text-muted-foreground">
+                  {SUBMISSION_VISIBILITY_DISCLAIMERS[values.submissionVisibility]}
+                </p>
+                <p className="font-semibold text-foreground">
+                  {SUBMISSION_VISIBILITY_LOCKED_NOTICE}
+                </p>
               </div>
             ) : null}
 

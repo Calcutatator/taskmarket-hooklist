@@ -32,6 +32,7 @@ function makeTask(overrides: Partial<TaskResponse> = {}): TaskResponse {
     pitchCount: 0,
     submissionWindowOpen: true,
     taskVisibility: 'public',
+    submissionVisibility: 'public',
     ...overrides,
   };
 }

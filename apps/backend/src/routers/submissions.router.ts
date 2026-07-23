@@ -1,4 +1,4 @@
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, optionalAuthProcedure } from '../trpc';
 import {
   SubmissionCreateSchema,
   SubmissionCreateFromKeysSchema,
@@ -31,6 +31,8 @@ import { contractSubmitWork } from '../services/contract';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
 import { verifySignedAddressOrThrow } from '../lib/agents';
+import { canViewSubmission, type SubmissionVisibilityMode } from '../lib/submission-visibility';
+import type { Context } from '../context';
 
 type ArtifactInsertRow = Omit<
   NewArtifact,
@@ -144,6 +146,64 @@ type ArtifactPreview = {
 
 function canEmbedMediaPreview(row: Artifact) {
   return row.mediaKind === 'image' || row.mediaKind === 'video';
+}
+
+/** task_awards-linked worker addresses (lowercased) -- the "winner(s)" winner_only reveals. */
+async function winningAddressesForTask(db: Context['db'], taskId: string): Promise<Set<string>> {
+  const rows = await db
+    .select({ workerAddress: taskAwards.workerAddress })
+    .from(taskAwards)
+    .where(eq(taskAwards.taskId, taskId));
+  return new Set(rows.map((row) => row.workerAddress.toLowerCase()));
+}
+
+/** Only winner_only mode needs the winner set -- every other mode short-circuits before it's used. */
+async function resolveWinningAddresses(
+  db: Context['db'],
+  mode: SubmissionVisibilityMode,
+  taskId: string
+): Promise<Set<string>> {
+  return mode === 'winner_only' ? winningAddressesForTask(db, taskId) : new Set<string>();
+}
+
+type VisibilityTask = {
+  requester: string;
+  status: string;
+  verdictType: string | null;
+  submissionVisibility: string;
+};
+
+/**
+ * Shared "look up this one submission's visibility and throw FORBIDDEN if the
+ * caller isn't entitled to see it" gate -- used by every single-submission
+ * reader (previewArtifact, download), so the forbidden message is the only
+ * thing that varies between them.
+ */
+async function assertSubmissionVisible(
+  db: Context['db'],
+  taskId: string,
+  task: VisibilityTask,
+  submission: { workerAddress: string } | undefined,
+  caller: Context['caller'],
+  forbiddenMessage: string
+): Promise<void> {
+  const mode = task.submissionVisibility as SubmissionVisibilityMode;
+  if (mode === 'public') return;
+  const winningAddresses = await resolveWinningAddresses(db, mode, taskId);
+  const visible =
+    !!submission &&
+    canViewSubmission({
+      mode,
+      taskStatus: task.status,
+      taskVerdictType: task.verdictType,
+      caller,
+      task,
+      submission,
+      winningAddresses,
+    });
+  if (!visible) {
+    throw new TRPCError({ code: 'FORBIDDEN', message: forbiddenMessage });
+  }
 }
 
 function toArtifactResponse(
@@ -558,7 +618,7 @@ export const submissionsRouter = router({
       return { success: true, submissionId };
     }),
 
-  listByTask: publicProcedure
+  listByTask: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -575,10 +635,48 @@ export const submissionsRouter = router({
     )
     .output(z.array(SubmissionResponseSchema))
     .query(async ({ input, ctx }) => {
-      const results = await ctx.db
+      const taskResult = await ctx.db
+        .select({
+          requester: tasks.requester,
+          status: tasks.status,
+          verdictType: tasks.verdictType,
+          submissionVisibility: tasks.submissionVisibility,
+        })
+        .from(tasks)
+        .where(eq(tasks.id, input.taskId))
+        .limit(1);
+
+      // No task lookup existed here before Phase 2 -- an unknown taskId simply
+      // has no submissions either way, so this stays a lenient empty result
+      // rather than a NOT_FOUND, matching this endpoint's pre-existing behavior.
+      if (taskResult.length === 0) {
+        return [];
+      }
+      const task = taskResult[0];
+      const mode = task.submissionVisibility as SubmissionVisibilityMode;
+
+      const allResults = await ctx.db
         .select()
         .from(submissions)
         .where(eq(submissions.taskId, input.taskId));
+
+      // public (the default) matches today's exact behavior -- every submission
+      // stays visible to anyone, no role/lifecycle gating at all.
+      let results = allResults;
+      if (mode !== 'public') {
+        const winningAddresses = await resolveWinningAddresses(ctx.db, mode, input.taskId);
+        results = allResults.filter((submission) =>
+          canViewSubmission({
+            mode,
+            taskStatus: task.status,
+            taskVerdictType: task.verdictType,
+            caller: ctx.caller,
+            task,
+            submission,
+            winningAddresses,
+          })
+        );
+      }
 
       const artifactResults =
         results.length > 0
@@ -665,7 +763,7 @@ export const submissionsRouter = router({
       return submissionsWithStats;
     }),
 
-  listByWorker: publicProcedure
+  listByWorker: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -685,20 +783,48 @@ export const submissionsRouter = router({
     .query(async ({ input, ctx }) => {
       // Awards are authoritative for completed work, including unrated and
       // secondary split-payout recipients.
-      const completed = await ctx.db
+      const completedRows = await ctx.db
         .select({
           taskId: taskAwards.taskId,
           // Raw aggregate expressions come back through the driver as a plain string,
           // not run through drizzle's column-level Date mapping -- coerce at the call site.
           completedAt: sql<string>`max(${taskAwards.settledAt})`,
           description: tasks.description,
+          submissionVisibility: tasks.submissionVisibility,
+          requester: tasks.requester,
+          status: tasks.status,
+          verdictType: tasks.verdictType,
         })
         .from(taskAwards)
         .innerJoin(tasks, eq(tasks.id, taskAwards.taskId))
         .where(sql`lower(${taskAwards.workerAddress}) = lower(${input.address})`)
-        .groupBy(taskAwards.taskId, tasks.description)
+        .groupBy(
+          taskAwards.taskId,
+          tasks.description,
+          tasks.submissionVisibility,
+          tasks.requester,
+          tasks.status,
+          tasks.verdictType
+        )
         .orderBy(desc(sql`max(${taskAwards.settledAt})`))
         .limit(input.limit);
+
+      // Every row here is already task_awards-linked (a "winner" by
+      // definition), so this goes through the same canViewSubmission gate as
+      // every other reader instead of re-deriving the truth table inline --
+      // winningAddresses is seeded with just this worker since award-linkage
+      // is exactly what "winner" means for winner_only.
+      const completed = completedRows.filter((row) =>
+        canViewSubmission({
+          mode: row.submissionVisibility as SubmissionVisibilityMode,
+          taskStatus: row.status,
+          taskVerdictType: row.verdictType,
+          caller: ctx.caller,
+          task: row,
+          submission: { workerAddress: input.address },
+          winningAddresses: new Set([input.address.toLowerCase()]),
+        })
+      );
 
       if (completed.length === 0) {
         return [];
@@ -898,13 +1024,14 @@ export const submissionsRouter = router({
       return { presignedUrl };
     }),
 
-  previewArtifact: publicProcedure
+  previewArtifact: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
         path: '/tasks/{taskId}/artifacts/{artifactId}/preview',
         tags: ['Tasks'],
-        summary: 'Get a presigned preview URL for an artifact (public)',
+        summary:
+          "Get a presigned preview URL for an artifact (subject to the task's submissionVisibility)",
       },
     })
     .input(z.object({ taskId: z.string(), artifactId: z.string() }))
@@ -924,6 +1051,38 @@ export const submissionsRouter = router({
         throw new TRPCError({ code: 'FORBIDDEN', message: 'Task/artifact mismatch' });
       }
 
+      const taskResult = await ctx.db
+        .select({
+          requester: tasks.requester,
+          status: tasks.status,
+          verdictType: tasks.verdictType,
+          submissionVisibility: tasks.submissionVisibility,
+        })
+        .from(tasks)
+        .where(eq(tasks.id, artifact.taskId))
+        .limit(1);
+      if (!taskResult.length) {
+        throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
+      }
+      const task = taskResult[0];
+      const mode = task.submissionVisibility as SubmissionVisibilityMode;
+
+      if (mode !== 'public') {
+        const submissionResult = await ctx.db
+          .select({ workerAddress: submissions.workerAddress })
+          .from(submissions)
+          .where(eq(submissions.id, artifact.submissionId))
+          .limit(1);
+        await assertSubmissionVisible(
+          ctx.db,
+          artifact.taskId,
+          task,
+          submissionResult[0],
+          ctx.caller,
+          'Not authorized to preview this artifact'
+        );
+      }
+
       const expiresIn = 3600;
       const previewUrl = await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn);
       return {
@@ -932,7 +1091,7 @@ export const submissionsRouter = router({
       };
     }),
 
-  mySubmissions: publicProcedure
+  mySubmissions: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -961,21 +1120,56 @@ export const submissionsRouter = router({
       const results = await ctx.db
         .select({
           taskId: submissions.taskId,
+          workerAddress: submissions.workerAddress,
           submittedAt: submissions.submittedAt,
           deliverableHash: submissions.deliverableHash,
           submitTxHash: submissions.submitTxHash,
           rejectedAt: submissions.rejectedAt,
           taskDescription: tasks.description,
           taskStatus: tasks.status,
+          taskVerdictType: tasks.verdictType,
           taskMode: tasks.mode,
           taskReward: tasks.reward,
+          taskRequester: tasks.requester,
+          submissionVisibility: tasks.submissionVisibility,
         })
         .from(submissions)
         .innerJoin(tasks, eq(tasks.id, submissions.taskId))
         .where(eq(submissions.workerAddress, input.workerAddress))
         .orderBy(desc(submissions.submittedAt));
 
-      return results.map((row) => ({
+      // This endpoint is really "list this one worker's own submissions", so
+      // it goes through the same canViewSubmission gate as listByTask -- the
+      // worker themselves (or the task's requester) always sees their rows;
+      // anyone else only sees what the task's submissionVisibility mode
+      // allows once the task has ended, same truth table as everywhere else.
+      const winnerOnlyTaskIds = Array.from(
+        new Set(
+          results
+            .filter((row) => row.submissionVisibility === 'winner_only')
+            .map((row) => row.taskId)
+        )
+      );
+      const winningAddressesByTask = new Map<string, Set<string>>();
+      await Promise.all(
+        winnerOnlyTaskIds.map(async (taskId) => {
+          winningAddressesByTask.set(taskId, await winningAddressesForTask(ctx.db, taskId));
+        })
+      );
+
+      const visible = results.filter((row) =>
+        canViewSubmission({
+          mode: row.submissionVisibility as SubmissionVisibilityMode,
+          taskStatus: row.taskStatus,
+          taskVerdictType: row.taskVerdictType,
+          caller: ctx.caller,
+          task: { requester: row.taskRequester },
+          submission: { workerAddress: row.workerAddress },
+          winningAddresses: winningAddressesByTask.get(row.taskId) ?? new Set<string>(),
+        })
+      );
+
+      return visible.map((row) => ({
         taskId: row.taskId,
         taskDescription: row.taskDescription,
         taskStatus: row.taskStatus,
@@ -988,7 +1182,7 @@ export const submissionsRouter = router({
       }));
     }),
 
-  download: publicProcedure
+  download: optionalAuthProcedure
     .input(
       z.object({
         submissionId: z.string(),
@@ -1020,9 +1214,19 @@ export const submissionsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
 
-      if (taskResult[0].status !== 'completed') {
+      const task = taskResult[0];
+      if (task.status !== 'completed') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not completed' });
       }
+
+      await assertSubmissionVisible(
+        ctx.db,
+        task.id,
+        task,
+        submission,
+        ctx.caller,
+        'Not authorized to download this submission'
+      );
 
       let storageUri = submission.fileUrl;
       if (input.artifactId) {

@@ -52,6 +52,7 @@ const baseTask: TaskDetailResponse = {
   submissionWindowOpen: true,
   tags: ['typescript', 'agents'],
   taskVisibility: 'public',
+  submissionVisibility: 'public',
 };
 
 const baseAgent: AgentStats = {

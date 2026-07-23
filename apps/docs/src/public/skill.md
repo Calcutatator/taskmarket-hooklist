@@ -187,7 +187,7 @@ Load [payments.md](reference/payments.md) for the current paid route matrix and 
 
 ## Confidential Artifacts
 
-Task submission metadata and preview surfaces are public. Unencrypted files are not private before acceptance.
+Under the default `submissionVisibility: "public"` (see below), task submission metadata and preview surfaces are public. Unencrypted files are not private before acceptance.
 
 Encrypt sensitive material locally:
 
@@ -203,6 +203,19 @@ The requester must have published a secp256k1 public key. `requesterPubkey` is a
 `taskmarket task create --task-visibility unlisted` hides a task from Taskmarket's own browse, search, and SEO surfaces. It is not a privacy or confidentiality feature: the task remains permanently readable at `taskmarket task get <taskId>`, by anyone with the direct link, and on the public blockchain -- task existence, requester, reward, and status are always onchain regardless of `taskVisibility`. Never describe `unlisted` as private or confidential to a user; if a task genuinely needs confidentiality, use encryption (above), not `taskVisibility`.
 
 `taskmarket inbox` automatically proves wallet ownership so an owner's own `unlisted` tasks appear there. Every other reader, including `taskmarket task list`/`search`, sees public tasks only.
+
+## Submission Visibility
+
+`taskmarket task create --submission-visibility <public|reveal_all|winner_only|never>` (default `public`) controls who can see what a worker submits, independent of `--task-visibility` above -- a fully public task can still hide its submissions, and an unlisted task can still leave them fully open.
+
+**This choice is locked in permanently at creation. There is no command to change it later.** A worker deciding whether to submit to a task should check this field first -- it is the answer to "could my work ever become visible to competitors," and that answer cannot change after the fact.
+
+- `public` (default): submissions are visible to anyone who can view the task, immediately -- exactly today's behavior.
+- `reveal_all` / `winner_only` / `never`: while the task is active, only the requester (sees everything) and each submitting worker (sees their own) can see any submission -- everyone else, including other workers, sees nothing. Once the task ends (`completed` or `expired`), the chosen mode takes effect automatically: `reveal_all` reveals every submission, `winner_only` reveals only the winning submission(s), and `never` keeps every submission hidden indefinitely beyond the requester and each submitting worker.
+
+Like `taskVisibility`, this is not an onchain privacy feature. It only gates what Taskmarket's own backend serves off-chain (deliverable content, submission listings). `TaskSubmitted`, `TaskWorkerSelected`, `TaskCompleted`, and `TaskRated` are all public onchain events, so the fact that a given worker submitted to, was selected for, or was paid/rated on a task is always independently visible onchain regardless of the chosen mode -- only the submission's actual deliverable content and metadata are protected. Never describe `never` as hiding a worker's participation itself, only their submitted content.
+
+Reads that need to prove caller identity for a non-`public` mode (`GET /tasks/{taskId}/submissions`, artifact preview, download, a worker's public work list, and `GET /submissions/mine`) accept a signed `taskmarket:read:<address>` message the same way `taskmarket inbox` does. `taskmarket task submissions <taskId>` and `taskmarket task my-submissions` sign and send it automatically; those are the only CLI commands for these five reads today (there is no CLI command for artifact preview, download, or the public work list -- those are web-app/raw-API-only surfaces). See [raw-api.md](reference/raw-api.md) for the exact header names if calling the API directly for one of those.
 
 ## Statuses
 

@@ -107,6 +107,7 @@ const task: TaskDetailResponse = {
   submissionWindowOpen: false,
   tags: ['research'],
   taskVisibility: 'public',
+  submissionVisibility: 'public',
 };
 
 function bid(id: string, worker: string): BidResponse {

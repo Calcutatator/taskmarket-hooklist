@@ -6,6 +6,7 @@ import { createTRPCReact } from '@trpc/react-query';
 
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { getCachedReadAuthHeaders } from '@/lib/read-auth';
 
 import type { AppRouter } from '@taskmarket/backend/src/router';
 
@@ -27,7 +28,10 @@ export function makeTrpcClient() {
   return createTRPCClient<AppRouter>({
     links: [
       httpBatchLink({
-        headers: getLegalRequestHeaders,
+        headers: async () => ({
+          ...(await getLegalRequestHeaders()),
+          ...getCachedReadAuthHeaders(),
+        }),
         url: `${getBrowserApiBaseUrl()}/trpc`,
       }),
     ],

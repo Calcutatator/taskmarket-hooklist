@@ -13,6 +13,11 @@ export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auctio
 // read surface (ADR-0014, ADR-0015). Add it only once that enforcement is real.
 export const TaskVisibility = z.enum(['unlisted', 'public']);
 
+// ADR-0016: independent axis from TaskVisibility. Chosen once at creation and
+// locked in permanently -- there is no update path for this field anywhere.
+// 'public' (default) matches today's always-open submission behavior exactly.
+export const SubmissionVisibility = z.enum(['public', 'reveal_all', 'winner_only', 'never']);
+
 export const TaskStatus = z.enum([
   'open',
   'claimed',
@@ -104,6 +109,7 @@ export const TaskCreateSchema = z
     tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
     mode: TaskMode.optional().default('bounty'),
     taskVisibility: TaskVisibility.optional().default('public'),
+    submissionVisibility: SubmissionVisibility.optional().default('public'),
     stakeRequired: z.boolean().optional().default(false),
     stakeBps: z.number().min(0).max(10000).optional().default(0),
     pitchDeadline: z.number().positive().optional(),
@@ -219,6 +225,7 @@ export const TaskResponseSchema = z.object({
   tags: z.array(z.string()),
   mode: TaskMode,
   taskVisibility: TaskVisibility.optional().default('public'),
+  submissionVisibility: SubmissionVisibility.optional().default('public'),
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
   pitchDeadline: z.string().nullable(),
@@ -316,11 +323,6 @@ export const TaskListResponseSchema = z.object({
 
 export const TaskInboxInputSchema = z.object({
   address: z.string(),
-  // Optional proof that the caller owns `address`: a signature over
-  // `taskmarket:inbox:<address>` (see ADR-0015). When present and valid, the
-  // response additionally includes that address's own unlisted tasks; otherwise
-  // behavior is unchanged (public tasks only, same as today, for any address).
-  signature: z.string().optional(),
 });
 
 export const TaskInboxResponseSchema = z.object({
@@ -389,6 +391,7 @@ export type TaskListResponse = z.infer<typeof TaskListResponseSchema>;
 export type TaskStatusType = z.infer<typeof TaskStatus>;
 export type TaskModeType = z.infer<typeof TaskMode>;
 export type TaskVisibilityType = z.infer<typeof TaskVisibility>;
+export type SubmissionVisibilityType = z.infer<typeof SubmissionVisibility>;
 export type AuctionTypeValue = z.infer<typeof AuctionType>;
 export type TaskInboxInput = z.infer<typeof TaskInboxInputSchema>;
 export type TaskInboxResponse = z.infer<typeof TaskInboxResponseSchema>;

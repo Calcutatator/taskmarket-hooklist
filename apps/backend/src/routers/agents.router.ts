@@ -1,14 +1,14 @@
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, optionalAuthProcedure } from '../trpc';
 import {
   AgentStatsSchema,
   LeaderboardResponseSchema,
   LeaderboardInputSchema,
   TaskInboxInputSchema,
   TaskInboxResponseSchema,
-  buildInboxSelfAuthMessage,
   type TaskStatusType,
   type TaskModeType,
   type TaskVisibilityType,
+  type SubmissionVisibilityType,
   Secp256k1PublicKeySchema,
   normalizeAddress,
 } from '@taskmarket/shared';
@@ -27,7 +27,7 @@ import type { SQL } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';
 import { computeSubmissionWindowOpen, normalizeRequesterPublicKey } from '../lib/task';
 import { sha256Hex } from '../lib/hash';
-import { lowerAddressEq, verifySignedAddress } from '../lib/agents';
+import { lowerAddressEq } from '../lib/agents';
 import { taskNotUnlisted } from '../lib/task-visibility';
 
 export const agentsRouter = router({
@@ -114,7 +114,7 @@ export const agentsRouter = router({
       };
     }),
 
-  inbox: publicProcedure
+  inbox: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -126,15 +126,13 @@ export const agentsRouter = router({
     .input(TaskInboxInputSchema)
     .output(TaskInboxResponseSchema)
     .query(async ({ input, ctx }) => {
-      const { address, signature } = input;
+      const { address } = input;
 
-      // Proof that the caller owns `address` (ADR-0015): a signature over a
-      // canonical message, verified the same way as wallet.setWithdrawalAddress.
-      // No nonce -- this is a read with no state-changing side effect to replay.
-      const selfAuthed = signature
-        ? (await verifySignedAddress(buildInboxSelfAuthMessage(address), signature, address))
-            .verified
-        : false;
+      // Proof that the caller owns `address` (ADR-0016/ADR-0022): the general
+      // read-auth header (X-Taskmarket-Caller-Address/-Signature), resolved
+      // once per request in context.ts. When it matches the queried address,
+      // the response additionally includes that address's own unlisted tasks.
+      const selfAuthed = ctx.caller?.address === address.toLowerCase();
 
       const isWorker = or(
         sql`lower(${tasks.claimedBy}) = lower(${address})`,
@@ -261,6 +259,7 @@ export const agentsRouter = router({
             : null,
           mode: task.mode as TaskModeType,
           taskVisibility: task.taskVisibility as TaskVisibilityType,
+          submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,

@@ -91,6 +91,38 @@ export const MODE_TOOLTIPS: Record<TaskModeType, string> = {
 export const TASK_VISIBILITY_DISCLAIMER =
   "Unlisted just means this task won't show up when people browse or search Taskmarket. Anyone with the direct link can still open it, and it stays permanently visible on the public blockchain to anyone who looks. It is not private or secret.";
 
+// Plain-language explanation of each submissionVisibility mode, reused by the
+// create-flow control and the locked review-step summary so the wording never
+// drifts between the two surfaces. This choice is locked in permanently once a
+// task is created -- there is no edit path -- so the copy leans on "forever"
+// language rather than describing it as changeable later.
+export const SUBMISSION_VISIBILITY_DISCLAIMERS: Record<
+  'public' | 'reveal_all' | 'winner_only' | 'never',
+  string
+> = {
+  public:
+    'Submissions are visible to anyone who can view this task, immediately -- the same as every task today.',
+  reveal_all:
+    'Submissions stay hidden from everyone but you and each submitting worker while the task is active. Once it ends, every submission becomes visible to anyone who can view the task.',
+  winner_only:
+    'Submissions stay hidden from everyone but you and each submitting worker while the task is active. Once it ends, only the winning submission(s) become visible; the rest stay hidden.',
+  never:
+    'Submissions stay hidden from everyone but you and each submitting worker, forever -- even after the task ends.',
+};
+
+export const SUBMISSION_VISIBILITY_LABELS: Record<
+  'public' | 'reveal_all' | 'winner_only' | 'never',
+  string
+> = {
+  public: 'Public',
+  reveal_all: 'Reveal all',
+  winner_only: 'Winner only',
+  never: 'Never',
+};
+
+export const SUBMISSION_VISIBILITY_LOCKED_NOTICE =
+  'This choice is locked in permanently once the task is created. There is no way to change it later.';
+
 // Plain-language meaning of the headline agent metrics, mirroring how they are derived
 // in components/market/agents.tsx (averageRating 0-100; credibility as a weighted
 // share of accepted/rated work). Used to fill metric tooltips/legends consistently.

@@ -63,6 +63,10 @@ export const tasks = pgTable(
     // 'unlisted' | 'public' only for now -- see ADR-0014/0015 for why 'private' is
     // deliberately not a value here yet.
     taskVisibility: text('task_visibility').notNull().default('public'),
+    // 'public' | 'reveal_all' | 'winner_only' | 'never' -- ADR-0016. Independent of
+    // taskVisibility. Chosen once at creation and locked in permanently -- no update
+    // path exists anywhere in the codebase for this column.
+    submissionVisibility: text('submission_visibility').notNull().default('public'),
     stakeRequired: integer('stake_required').notNull().default(0),
     stakeBps: smallint('stake_bps').notNull().default(0),
     pitchDeadline: timestamp('pitch_deadline'),
@@ -102,6 +106,9 @@ export const tasks = pgTable(
     requesterIdx: index('idx_tasks_requester').on(table.requester),
     modeIdx: index('idx_tasks_mode').on(table.mode),
     taskVisibilityIdx: index('idx_tasks_task_visibility').on(table.taskVisibility),
+    submissionVisibilityIdx: index('idx_tasks_submission_visibility').on(
+      table.submissionVisibility
+    ),
     claimedByIdx: index('idx_tasks_claimed_by').on(table.claimedBy),
     createdAtIdx: index('idx_tasks_created_at').on(table.createdAt),
     taskDropIdx: index('idx_tasks_task_drop').on(table.taskDropId),

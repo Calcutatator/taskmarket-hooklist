@@ -13,6 +13,7 @@ import {
   type TaskStatusType,
   type TaskModeType,
   type TaskVisibilityType,
+  type SubmissionVisibilityType,
   type TaskAward,
   type AuctionTypeValue,
   estimateUsdBonusValue,
@@ -74,6 +75,8 @@ import {
   computeSubmissionWindowOpen,
   normalizeRequesterPublicKey,
 } from '../lib/task';
+import { canViewSubmission, type SubmissionVisibilityMode } from '../lib/submission-visibility';
+import type { Context } from '../context';
 import { notifyTaskDropSubscribers } from '../services/task-drops-email';
 import { notifyNewTask } from '../services/task-notifications';
 import { logger } from '../lib/logger';
@@ -89,6 +92,39 @@ import {
 // requester-reject path existed yet, refundExpired wasn't callable the way it is now).
 // Hide them from discovery so agents stop finding tasks they can never win.
 const REV007_LISTING_CUTOFF = new Date('2026-06-30T22:15:06.000Z');
+
+/**
+ * computePendingActions embeds the current active submitter's address in
+ * suggested command strings (`accept --worker <addr>`, `reject-submission
+ * --worker <addr>`) -- but pendingActions is returned to every caller of
+ * `get`/`update` unfiltered, so that address needs the same
+ * submissionVisibility gate as every other reader of the `submissions` table
+ * (ADR-0016), not just an unconditional reveal. `claimedBy` is a separate,
+ * already-public field (auction/claim/pitch selection, not a submission), so
+ * it is deliberately not gated here.
+ */
+function visibleLatestSubmissionWorker(
+  workerAddress: string | null | undefined,
+  task: {
+    requester: string;
+    status: string;
+    verdictType: string | null;
+    submissionVisibility: string;
+  },
+  caller: Context['caller']
+): string | null {
+  if (!workerAddress) return null;
+  const visible = canViewSubmission({
+    mode: task.submissionVisibility as SubmissionVisibilityMode,
+    taskStatus: task.status,
+    taskVerdictType: task.verdictType,
+    caller,
+    task,
+    submission: { workerAddress },
+    winningAddresses: new Set<string>(),
+  });
+  return visible ? workerAddress : null;
+}
 
 export const tasksRouter = router({
   stats: publicProcedure
@@ -287,6 +323,7 @@ export const tasksRouter = router({
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
       const taskVisibility = input.taskVisibility ?? 'public';
+      const submissionVisibility = input.submissionVisibility ?? 'public';
 
       const requesterAgent = await ctx.db
         .select({ agentId: agents.agentId, publicKey: agents.publicKey })
@@ -328,6 +365,7 @@ export const tasksRouter = router({
           tags: input.tags,
           mode: input.mode ?? 'bounty',
           taskVisibility,
+          submissionVisibility,
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
@@ -654,6 +692,7 @@ export const tasksRouter = router({
             : null,
           mode: task.mode as TaskModeType,
           taskVisibility: task.taskVisibility as TaskVisibilityType,
+          submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -953,6 +992,7 @@ export const tasksRouter = router({
         })(),
         mode: task.mode as TaskModeType,
         taskVisibility: task.taskVisibility as TaskVisibilityType,
+        submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
         pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -1027,7 +1067,11 @@ export const tasksRouter = router({
             auctionType: task.auctionType,
             currentClockPrice: clockPrice,
             currentLowestBid,
-            latestSubmissionWorker: latestSubmission[0]?.workerAddress ?? null,
+            latestSubmissionWorker: visibleLatestSubmissionWorker(
+              latestSubmission[0]?.workerAddress,
+              task,
+              ctx.caller
+            ),
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
             evaluatorDeadline: task.evaluatorDeadline,
@@ -1416,6 +1460,7 @@ export const tasksRouter = router({
         primaryAward: null,
         mode: t.mode as TaskModeType,
         taskVisibility: t.taskVisibility as TaskVisibilityType,
+        submissionVisibility: t.submissionVisibility as SubmissionVisibilityType,
         stakeRequired: t.stakeRequired === 1,
         stakeBps: t.stakeBps,
         pitchDeadline: t.pitchDeadline?.toISOString() || null,
@@ -1459,7 +1504,11 @@ export const tasksRouter = router({
             currentClockPrice:
               updateCurrentAuctionPrice !== null ? BigInt(updateCurrentAuctionPrice) : null,
             currentLowestBid: updateCurrentLowestBid,
-            latestSubmissionWorker: updatedLatestSubmission[0]?.workerAddress ?? null,
+            latestSubmissionWorker: visibleLatestSubmissionWorker(
+              updatedLatestSubmission[0]?.workerAddress,
+              t,
+              ctx.caller
+            ),
             evaluator: t.evaluator,
             disputeResolver: t.disputeResolver,
             evaluatorDeadline: t.evaluatorDeadline,

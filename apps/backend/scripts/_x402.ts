@@ -4,7 +4,7 @@
 import { randomBytes } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { toHex } from 'viem';
-import { buildDeviceRegisterMessage } from '@taskmarket/shared';
+import { buildDeviceRegisterMessage, buildReadAuthMessage } from '@taskmarket/shared';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
 
@@ -216,6 +216,23 @@ export async function registerDevice(
   return (await post('/api/devices', { walletAddress: account.address, signature })) as {
     deviceId: string;
     apiToken: string;
+  };
+}
+
+/**
+ * The general read-auth headers (ADR-0016/ADR-0022): signs
+ * taskmarket:read:<address> and returns it as the X-Taskmarket-Caller-*
+ * headers `get()`/context.ts's resolveCaller expect. Used by any smoke test
+ * exercising a ctx.caller-gated read (agents.inbox, bids.myBids,
+ * submission-visibility, task-visibility).
+ */
+export async function readAuthHeaders(account: Account): Promise<Record<string, string>> {
+  const signature = await account.signMessage({
+    message: buildReadAuthMessage(account.address),
+  });
+  return {
+    'X-Taskmarket-Caller-Address': account.address,
+    'X-Taskmarket-Caller-Signature': signature,
   };
 }
 

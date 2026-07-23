@@ -25,7 +25,11 @@ import {
   VISUAL_PRESETS,
 } from '@/lib/market/task-templates';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
-import { TASK_VISIBILITY_DISCLAIMER } from '@/lib/market/status-config';
+import {
+  TASK_VISIBILITY_DISCLAIMER,
+  SUBMISSION_VISIBILITY_DISCLAIMERS,
+  SUBMISSION_VISIBILITY_LABELS,
+} from '@/lib/market/status-config';
 import { cn } from '@/lib/utils';
 
 import type {
@@ -37,6 +41,13 @@ import type {
 // Flag for the forward-compatible AI brief seam. The button is built but not
 // rendered until real generation lands; flipping this to true wires it up.
 const AI_BRIEF_ENABLED = false;
+
+const SUBMISSION_VISIBILITY_VALUES: Array<'public' | 'reveal_all' | 'winner_only' | 'never'> = [
+  'public',
+  'reveal_all',
+  'winner_only',
+  'never',
+];
 
 type StepBriefProps = {
   campaignState?: WizardCampaignBriefState;
@@ -423,6 +434,53 @@ export function StepBrief({
                 </div>
               );
             }}
+          />
+
+          <Controller
+            control={control}
+            name="submissionVisibility"
+            render={({ field }) => (
+              <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
+                <span className="text-sm font-semibold tracking-tight">Submission visibility</span>
+                <div
+                  aria-label="Submission visibility"
+                  className="grid grid-cols-2 gap-2 sm:grid-cols-4"
+                  onKeyDown={(event) =>
+                    handleRadioGroupKeyDown(
+                      event,
+                      SUBMISSION_VISIBILITY_VALUES,
+                      field.value,
+                      field.onChange
+                    )
+                  }
+                  role="radiogroup"
+                >
+                  {SUBMISSION_VISIBILITY_VALUES.map((value) => {
+                    const selected = value === field.value;
+                    return (
+                      <button
+                        aria-checked={selected}
+                        className={cn(
+                          'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
+                          selected &&
+                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
+                        )}
+                        key={value}
+                        onClick={() => field.onChange(value)}
+                        role="radio"
+                        tabIndex={selected ? 0 : -1}
+                        type="button"
+                      >
+                        {SUBMISSION_VISIBILITY_LABELS[value]}
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {SUBMISSION_VISIBILITY_DISCLAIMERS[field.value]}
+                </p>
+              </div>
+            )}
           />
 
           {selectedTemplate.tokens.length > 0 ? (

@@ -19,6 +19,7 @@ export type CreateTaskFormValues = {
   stakeRequired: boolean;
   tags: string;
   taskVisibility: 'public' | 'unlisted';
+  submissionVisibility: 'public' | 'reveal_all' | 'winner_only' | 'never';
   hookContract: string;
   evaluator: string;
   evaluatorFeeBps: string;
@@ -52,6 +53,7 @@ export const DEFAULT_FORM_VALUES: CreateTaskFormValues = {
   stakeRequired: false,
   tags: '',
   taskVisibility: 'public',
+  submissionVisibility: 'public',
   hookContract: '',
   evaluator: '',
   evaluatorFeeBps: '',
@@ -145,6 +147,7 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
     mode: values.mode,
     reward: parseUnits(values.reward, 6).toString(),
     taskVisibility: values.taskVisibility,
+    submissionVisibility: values.submissionVisibility,
     stakeBps: percentToBps(values.stakeBps),
     stakeRequired: values.stakeRequired,
     tags: values.tags
