@@ -137,9 +137,7 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   const payoutRequirement = page
     .getByRole('group', { name: /Payout release requirement/i })
     .first();
-  await expect(
-    payoutRequirement.getByText(/Connect requester wallet to release payout/i)
-  ).toBeVisible();
+  await expect(payoutRequirement.getByText(/Only requester .* can release escrow/i)).toBeVisible();
   await expect(payoutRequirement.getByRole('button', { name: /Connect wallet/i })).toBeVisible();
 
   await expectNoHorizontalOverflow(page);
