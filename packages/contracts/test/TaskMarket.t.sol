@@ -2855,6 +2855,48 @@ contract TaskMarketTest is DiamondTestHelper {
         assertGt(usdc.balanceOf(worker1), before);
     }
 
+    function test_Appeal_BountyEmptyAwards_AllowsRealSubmitterToAppeal() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(2 days), uint32(1 days), address(0))
+            )
+        );
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        ITMPCore.Award[] memory noAwards = new ITMPCore.Award[](0);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.REJECT, 100, noAwards);
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Appealing));
+        // task.worker is never set for an empty-awards verdict.
+        assertEq(market.getTask(taskId).worker, address(0));
+
+        // worker1 is a real submitter (tracked via taskSubmissionHashes) even though
+        // task.worker was never populated -- appeal must still succeed for them.
+        _appeal(taskId, worker1);
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Disputed));
+    }
+
+    function test_RevertWhen_Appeal_BountyEmptyAwards_NonSubmitterCannotAppeal() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(2 days), uint32(1 days), address(0))
+            )
+        );
+        _submitWork(taskId, worker1, keccak256("work"));
+
+        ITMPCore.Award[] memory noAwards = new ITMPCore.Award[](0);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.REJECT, 100, noAwards);
+
+        // worker2 never submitted anything on this task -- must not be able to appeal.
+        vm.expectRevert(ITMPCore.NotWorker.selector);
+        _appeal(taskId, worker2);
+    }
+
     function test_EvaluatorTimeout_ForfeitsStakeAndOpensPendingApproval() public {
         bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
         uint32 evalWindowSecs = uint32(2 days);
