@@ -5,7 +5,6 @@ import { buildPageMetadata, ogImageSize } from '@/lib/seo';
 export type StaticOgConfig = {
   description: string;
   eyebrow: string;
-  footer?: string;
   imageAlt: string;
   metrics: Array<{ label: string; value: string }>;
   path: string;

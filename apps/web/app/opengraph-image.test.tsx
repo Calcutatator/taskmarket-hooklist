@@ -3,44 +3,24 @@ import type { AgentStats, TaskDetailResponse } from '@taskmarket/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { fetchAgentStats, fetchTask } from '@/lib/api/server';
-import { OgCard } from '@/lib/og-card';
+import { OgBrandCard, OgCard } from '@/lib/og-card';
 
 import SiteImage, {
   alt as siteAlt,
   contentType as siteContentType,
   size as siteSize,
 } from './opengraph-image';
-import StaticAgentsImage, {
-  alt as staticAgentsAlt,
-  contentType as staticAgentsContentType,
-  size as staticAgentsSize,
-} from './(public)/agents/opengraph-image';
+import TaskdropImage, {
+  alt as taskdropAlt,
+  contentType as taskdropContentType,
+  size as taskdropSize,
+} from './(public)/taskdrop/opengraph-image';
 import AgentImage, {
   alt as agentAlt,
   contentType as agentContentType,
   runtime as agentRuntime,
   size as agentSize,
 } from './(public)/agents/[agentId]/opengraph-image';
-import StaticHumansImage, {
-  alt as staticHumansAlt,
-  contentType as staticHumansContentType,
-  size as staticHumansSize,
-} from './(public)/humans/opengraph-image';
-import StaticLeaderboardImage, {
-  alt as staticLeaderboardAlt,
-  contentType as staticLeaderboardContentType,
-  size as staticLeaderboardSize,
-} from './(public)/leaderboard/opengraph-image';
-import StaticProtocolImage, {
-  alt as staticProtocolAlt,
-  contentType as staticProtocolContentType,
-  size as staticProtocolSize,
-} from './(public)/protocol/opengraph-image';
-import StaticTasksImage, {
-  alt as staticTasksAlt,
-  contentType as staticTasksContentType,
-  size as staticTasksSize,
-} from './(public)/tasks/opengraph-image';
 import DashboardAgentImage, {
   alt as dashboardAgentAlt,
   contentType as dashboardAgentContentType,
@@ -59,6 +39,7 @@ import TaskImage, {
   runtime as taskRuntime,
   size as taskSize,
 } from './(public)/tasks/[taskId]/opengraph-image';
+import StaticTasksImage from './(public)/tasks/opengraph-image';
 
 vi.mock('next/og', () => ({
   ImageResponse: vi.fn(function ImageResponse(
@@ -75,6 +56,10 @@ vi.mock('next/og', () => ({
 vi.mock('@/lib/api/server', () => ({
   fetchAgentStats: vi.fn(),
   fetchTask: vi.fn(),
+}));
+
+vi.mock('@/lib/og-fonts', () => ({
+  ogFonts: vi.fn().mockResolvedValue([]),
 }));
 
 const baseTask: TaskDetailResponse = {
@@ -108,9 +93,9 @@ const baseTask: TaskDetailResponse = {
   stakeBps: 0,
   stakeRequired: false,
   status: 'open',
-  submissionCount: 0,
   submissionWindowOpen: true,
   phase: 'active',
+  submissionCount: 0,
   tags: ['seo', 'images'],
   taskVisibility: 'public',
   submissionVisibility: 'public',
@@ -128,19 +113,20 @@ const baseAgent: AgentStats = {
   totalStars: 38,
 };
 
-function expectOgCard(response: unknown) {
+function expectImage(response: unknown, expectedType: typeof OgCard | typeof OgBrandCard) {
   const imageResponse = response as {
     element: ReactElement<{
-      description: string;
-      eyebrow: string;
+      badge?: string;
+      description?: string;
+      field?: string;
       metrics?: Array<{ label: string; value: string }>;
       title: string;
     }>;
     options: { height: number; width: number };
   };
 
-  expect(imageResponse.options).toEqual({ height: 630, width: 1200 });
-  expect(imageResponse.element.type).toBe(OgCard);
+  expect(imageResponse.options).toMatchObject({ height: 630, width: 1200 });
+  expect(imageResponse.element.type).toBe(expectedType);
 
   return imageResponse.element.props;
 }
@@ -156,25 +142,9 @@ describe('opengraph image routes', () => {
     expect(siteContentType).toBe('image/png');
     expect(siteSize).toEqual({ height: 630, width: 1200 });
 
-    expect(staticTasksAlt).toBe('Taskmarket open tasks preview');
-    expect(staticTasksContentType).toBe('image/png');
-    expect(staticTasksSize).toEqual(siteSize);
-
-    expect(staticAgentsAlt).toBe('Taskmarket agent directory preview');
-    expect(staticAgentsContentType).toBe('image/png');
-    expect(staticAgentsSize).toEqual(siteSize);
-
-    expect(staticLeaderboardAlt).toBe('Taskmarket leaderboard preview');
-    expect(staticLeaderboardContentType).toBe('image/png');
-    expect(staticLeaderboardSize).toEqual(siteSize);
-
-    expect(staticProtocolAlt).toBe('Taskmarket protocol preview');
-    expect(staticProtocolContentType).toBe('image/png');
-    expect(staticProtocolSize).toEqual(siteSize);
-
-    expect(staticHumansAlt).toBe('Taskmarket humans directory preview');
-    expect(staticHumansContentType).toBe('image/png');
-    expect(staticHumansSize).toEqual(siteSize);
+    expect(taskdropAlt).toBe('Task Drops on Taskmarket: compete in the live Task Drop');
+    expect(taskdropContentType).toBe('image/png');
+    expect(taskdropSize).toEqual(siteSize);
 
     expect(taskAlt).toBe('Taskmarket task preview');
     expect(taskContentType).toBe('image/png');
@@ -197,138 +167,90 @@ describe('opengraph image routes', () => {
     expect(dashboardAgentSize).toEqual(siteSize);
   });
 
-  it('renders the default marketplace OG card', () => {
-    const props = expectOgCard(SiteImage());
+  it('renders the brand card for the site root', async () => {
+    const props = expectImage(await SiteImage(), OgBrandCard);
 
-    expect(props).toMatchObject({
-      description: 'Taskmarket is a marketplace for paid autonomous agent work.',
-      eyebrow: 'Agent work',
-      title: 'Paid work for autonomous agents',
-    });
+    expect(props).toMatchObject({ title: 'Paid work for agents.' });
+  });
+
+  it('keeps stable metrics on static directory cards', async () => {
+    const props = expectImage(await StaticTasksImage(), OgCard);
+
     expect(props.metrics).toEqual([
-      { label: 'Escrow', value: 'USDC' },
       { label: 'Modes', value: '5' },
-      { label: 'Network', value: 'Base' },
+      { label: 'Escrow', value: 'USDC' },
+      { label: 'Status', value: 'Open' },
     ]);
   });
 
-  it('renders route-specific static public OG cards', () => {
-    const cases = [
-      {
-        image: StaticTasksImage,
-        metrics: [
-          { label: 'Modes', value: '5' },
-          { label: 'Escrow', value: 'USDC' },
-          { label: 'Status', value: 'Open' },
-        ],
-        title: 'Open tasks',
-      },
-      {
-        image: StaticAgentsImage,
-        metrics: [
-          { label: 'Profiles', value: 'Agents' },
-          { label: 'Signal', value: 'Ratings' },
-          { label: 'Proof', value: 'Work' },
-        ],
-        title: 'Agent directory',
-      },
-      {
-        image: StaticLeaderboardImage,
-        metrics: [
-          { label: 'Sort', value: 'Rep' },
-          { label: 'Signal', value: 'Tasks' },
-          { label: 'Market', value: 'Agents' },
-        ],
-        title: 'Leaderboard',
-      },
-      {
-        image: StaticProtocolImage,
-        metrics: [
-          { label: 'Pay', value: 'x402' },
-          { label: 'Escrow', value: 'USDC' },
-          { label: 'Network', value: 'Base' },
-        ],
-        title: 'Protocol',
-      },
-      {
-        image: StaticHumansImage,
-        metrics: [
-          { label: 'Profiles', value: 'Humans' },
-          { label: 'Identity', value: 'Wallets' },
-          { label: 'Market', value: 'Actors' },
-        ],
-        title: 'Humans directory',
-      },
-    ];
+  it('renders the Task Drop card on the green field', async () => {
+    const props = expectImage(await TaskdropImage(), OgCard);
 
-    for (const testCase of cases) {
-      const props = expectOgCard(testCase.image());
-
-      expect(props.title).toBe(testCase.title);
-      expect(props.metrics).toEqual(testCase.metrics);
-    }
+    expect(props).toMatchObject({
+      description: 'The fun way to start earning in the agent economy.',
+      field: 'green',
+      title: 'Compete in the live Task Drop.',
+    });
   });
 
-  it('renders task-specific OG details from decoded route params', async () => {
+  it('renders task cards from decoded route params without reward amounts', async () => {
     vi.mocked(fetchTask).mockResolvedValue(baseTask);
 
-    const props = expectOgCard(
-      await TaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) })
+    const props = expectImage(
+      await TaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) }),
+      OgCard
     );
 
     expect(fetchTask).toHaveBeenCalledWith('task/with spaces');
     expect(props).toMatchObject({
-      description: 'Bounty task. Reward: 125 USDC. Status: open. Tags: seo, images.',
-      eyebrow: 'Task',
+      badge: 'Complete this task',
+      description: 'Live on Taskmarket.',
       title: 'Build a reliable OG image renderer.',
     });
-    expect(props.metrics).toEqual([
-      { label: 'Reward', value: '125 USDC' },
-      { label: 'Mode', value: 'bounty' },
-      { label: 'Status', value: 'open' },
-    ]);
+    expect(JSON.stringify(props)).not.toContain('USDC');
 
-    const dashboardProps = expectOgCard(
-      await DashboardTaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) })
+    const dashboardProps = expectImage(
+      await DashboardTaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) }),
+      OgCard
     );
 
     expect(fetchTask).toHaveBeenLastCalledWith('task/with spaces');
     expect(dashboardProps).toMatchObject(props);
   });
 
-  it('renders a generic task OG card when the task cannot be loaded', async () => {
+  it('renders a generic task card when the task cannot be loaded', async () => {
     vi.mocked(fetchTask).mockRejectedValue(new Error('api unavailable'));
 
-    const props = expectOgCard(await TaskImage({ params: Promise.resolve({ taskId: 'missing' }) }));
+    const props = expectImage(
+      await TaskImage({ params: Promise.resolve({ taskId: 'missing' }) }),
+      OgCard
+    );
 
     expect(props).toMatchObject({
-      description: 'Browse this Taskmarket task and related marketplace details.',
-      eyebrow: 'Task',
+      badge: 'Task',
+      description: 'Live on Taskmarket.',
       title: 'Taskmarket task',
     });
-    expect(props.metrics).toEqual([{ label: 'Status', value: 'Unavailable' }]);
   });
 
-  it('renders agent-specific OG details for agent id routes', async () => {
+  it('renders agent cards for agent id routes', async () => {
     vi.mocked(fetchAgentStats).mockResolvedValue(baseAgent);
 
-    const props = expectOgCard(await AgentImage({ params: Promise.resolve({ agentId: '42' }) }));
+    const props = expectImage(
+      await AgentImage({ params: Promise.resolve({ agentId: '42' }) }),
+      OgCard
+    );
 
     expect(fetchAgentStats).toHaveBeenCalledWith({ agentId: '42' });
     expect(props).toMatchObject({
-      description:
-        '12 completed tasks. Rating: 4.8. Total earned: 1,250 USDC. Skills: typescript, analysis.',
-      eyebrow: 'Agent',
+      badge: 'Agent',
+      description: 'Live on Taskmarket.',
       title: 'PhotonGlowPhantom',
     });
-    expect(props.metrics).toEqual([
-      { label: 'Tasks', value: '12' },
-      { label: 'Rating', value: '4.8' },
-      { label: 'Earned', value: '1,250 USDC' },
-    ]);
 
-    const dashboardProps = expectOgCard(
-      await DashboardAgentImage({ params: Promise.resolve({ agentId: '42' }) })
+    const dashboardProps = expectImage(
+      await DashboardAgentImage({ params: Promise.resolve({ agentId: '42' }) }),
+      OgCard
     );
 
     expect(fetchAgentStats).toHaveBeenLastCalledWith({ agentId: '42' });
@@ -338,10 +260,11 @@ describe('opengraph image routes', () => {
   it('looks up raw address agent routes by address', async () => {
     vi.mocked(fetchAgentStats).mockResolvedValue({ ...baseAgent, agentId: null });
 
-    const props = expectOgCard(
+    const props = expectImage(
       await AgentImage({
         params: Promise.resolve({ agentId: '0x0000000000000000000000000000000000000002' }),
-      })
+      }),
+      OgCard
     );
 
     expect(fetchAgentStats).toHaveBeenCalledWith({
@@ -350,16 +273,14 @@ describe('opengraph image routes', () => {
     expect(props.title).toBe('0x0000...0002');
   });
 
-  it('renders a generic agent OG card when the agent cannot be loaded', async () => {
+  it('renders the brand fallback when the agent cannot be loaded', async () => {
     vi.mocked(fetchAgentStats).mockResolvedValue(null);
 
-    const props = expectOgCard(await AgentImage({ params: Promise.resolve({ agentId: '404' }) }));
+    const props = expectImage(
+      await AgentImage({ params: Promise.resolve({ agentId: '404' }) }),
+      OgBrandCard
+    );
 
-    expect(props).toMatchObject({
-      description: 'View this Taskmarket agent profile, reputation, skills, and earnings.',
-      eyebrow: 'Agent',
-      title: 'Taskmarket agent',
-    });
-    expect(props.metrics).toEqual([{ label: 'Status', value: 'Unavailable' }]);
+    expect(props).toMatchObject({ title: 'Get your agent earning with one line.' });
   });
 });

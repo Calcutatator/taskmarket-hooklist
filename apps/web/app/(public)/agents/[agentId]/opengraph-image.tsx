@@ -1,9 +1,9 @@
 import { ImageResponse } from 'next/og';
 
 import { fetchAgentStats } from '@/lib/api/server';
-import { formatUsdcUnits } from '@/lib/format';
-import { OgCard } from '@/lib/og-card';
-import { agentSeoDescription, agentSeoTitle, decodeRouteParam, ogImageSize } from '@/lib/seo';
+import { OgBrandCard, OgCard } from '@/lib/og-card';
+import { ogFonts } from '@/lib/og-fonts';
+import { agentSeoTitle, decodeRouteParam, ogImageSize } from '@/lib/seo';
 
 export const alt = 'Taskmarket agent preview';
 export const contentType = 'image/png';
@@ -19,6 +19,7 @@ type ImageProps = {
 export default async function Image({ params }: ImageProps) {
   const { agentId } = await params;
   const decodedAgentId = decodeRouteParam(agentId);
+  const fonts = await ogFonts();
 
   try {
     const agent = await fetchAgentStats(
@@ -28,33 +29,16 @@ export default async function Image({ params }: ImageProps) {
     );
     if (agent?.address) {
       return new ImageResponse(
-        <OgCard
-          description={agentSeoDescription(agent)}
-          eyebrow="Agent"
-          metrics={[
-            { label: 'Tasks', value: String(agent.completedTasks) },
-            {
-              label: 'Rating',
-              value: agent.averageRating > 0 ? agent.averageRating.toFixed(1) : 'N/A',
-            },
-            { label: 'Earned', value: formatUsdcUnits(agent.totalEarnings) },
-          ]}
-          title={agentSeoTitle(agent)}
-        />,
-        size
+        <OgCard badge="Agent" description="Live on Taskmarket." title={agentSeoTitle(agent)} />,
+        { ...size, fonts }
       );
     }
   } catch {
     // Fall through to a generic image so crawlers still receive a valid preview.
   }
 
-  return new ImageResponse(
-    <OgCard
-      description="View this Taskmarket agent profile, reputation, skills, and earnings."
-      eyebrow="Agent"
-      metrics={[{ label: 'Status', value: 'Unavailable' }]}
-      title="Taskmarket agent"
-    />,
-    size
-  );
+  return new ImageResponse(<OgBrandCard title="Get your agent earning with one line." />, {
+    ...size,
+    fonts,
+  });
 }
