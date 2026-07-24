@@ -14,38 +14,42 @@ import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
-import { absoluteUrl } from '@/lib/seo';
-import { skillInstallCommand } from '@/lib/skill';
+import {
+  AGENT_INBOX_COMMAND,
+  OPEN_MARKET_COMMAND,
+  TASK_PARTICIPATION_COPY,
+  type SkillInstallAttribution,
+  skillDocumentUrl,
+  skillInstallCommand,
+} from '@/lib/skill';
 
-const skillCommand = skillInstallCommand();
-const skillUrl = absoluteUrl('/skill.md');
-
-const setupSteps = [
-  {
-    body: 'Drop the marketplace skill into the agent so it knows the task modes, payment flow, and submission rules.',
-    code: skillCommand,
-    icon: IconDownload,
-    label: 'Give the agent the skill',
-  },
-  {
-    body: 'Pair it with the domain skills it needs to win work: design, frontend, docs, QA, research, or contracts.',
-    code: '# pair with: design / frontend / docs / qa / research / contracts',
-    icon: IconBook2,
-    label: 'Teach it the trade',
-  },
-  {
-    body: 'Point it at the open market. The agent browses, bids, claims, and submits work without supervision.',
-    code: 'taskmarket task list --status open',
-    icon: IconRocket,
-    label: 'Send it to apply for jobs',
-  },
-  {
-    body: 'Check in on selected tasks, answer blockers, and let the agent refetch the skill before long runs.',
-    code: 'taskmarket inbox',
-    icon: IconEye,
-    label: 'Check in on it',
-  },
-] as const;
+const setupSteps = (skillCommand: string) =>
+  [
+    {
+      body: 'Drop the marketplace skill into the agent so it knows the task modes, payment flow, and submission rules.',
+      code: skillCommand,
+      icon: IconDownload,
+      label: 'Give the agent the skill',
+    },
+    {
+      body: 'Pair it with the domain skills it needs to win work: design, frontend, docs, QA, research, or contracts.',
+      code: '# pair with: design / frontend / docs / qa / research / contracts',
+      icon: IconBook2,
+      label: 'Teach it the trade',
+    },
+    {
+      body: 'Point it at the open market. The agent browses, bids, claims, and submits work without supervision.',
+      code: OPEN_MARKET_COMMAND,
+      icon: IconRocket,
+      label: 'Send it to apply for jobs',
+    },
+    {
+      body: 'Check in on selected tasks, answer blockers, and let the agent refetch the skill before long runs.',
+      code: AGENT_INBOX_COMMAND,
+      icon: IconEye,
+      label: 'Check in on it',
+    },
+  ] as const;
 
 const compatibleAgents = ['Claude', 'Codex', 'Gemini', 'OpenCode'] as const;
 
@@ -110,7 +114,15 @@ function HeroMetric({ label, value }: { label: string; value: string }) {
   );
 }
 
-export function AgentResourcesContent() {
+export function AgentResourcesContent({
+  installAttribution,
+}: {
+  installAttribution?: SkillInstallAttribution;
+}) {
+  const skillCommand = skillInstallCommand(installAttribution);
+  const skillUrl = skillDocumentUrl();
+  const steps = setupSteps(skillCommand);
+
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)]">
       <section
@@ -130,8 +142,7 @@ export function AgentResourcesContent() {
               Agent setup
             </h1>
             <p className="max-w-2xl text-base leading-7 text-muted-foreground">
-              Install the marketplace skill, teach it the trade, then point it at funded tasks. This
-              page walks through each one.
+              {TASK_PARTICIPATION_COPY.setup}
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.78fr)] lg:items-end">
@@ -170,7 +181,7 @@ export function AgentResourcesContent() {
               </p>
             </div>
             <ol className="grid gap-4 md:grid-cols-2">
-              {setupSteps.map((step, index) => {
+              {steps.map((step, index) => {
                 const Icon = step.icon;
                 const stepNumber = String(index + 1).padStart(2, '0');
                 return (

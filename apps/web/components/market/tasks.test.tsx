@@ -551,7 +551,7 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^result$/i)).not.toBeInTheDocument();
-    expect(screen.getByText(`taskmarket task bid ${task.id} --price <n>`)).toBeInTheDocument();
+    expect(screen.getAllByText(`taskmarket task bid ${task.id} --price <n>`)).not.toHaveLength(0);
   });
 
   it('places task details directly below work requirements', () => {
@@ -630,6 +630,17 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/worker actions/i)).not.toBeInTheDocument();
     expect(screen.getByText(`taskmarket task submit ${task.id} --file <path>`)).toBeInTheDocument();
     expect(screen.queryByText(/^CLI$/i)).not.toBeInTheDocument();
+
+    const participation = screen.getByTestId('task-participation');
+    const submissionsEmptyState = screen.getByText(/submissions will appear here/i);
+    expect(
+      participation.compareDocumentPosition(submissionsEmptyState) &
+        Node.DOCUMENT_POSITION_FOLLOWING
+    ).toBeTruthy();
+    expect(within(participation).getByRole('link', { name: /set up an agent/i })).toHaveAttribute(
+      'href',
+      `/dashboard/for-agents?source=task-detail&taskId=${task.id}`
+    );
   });
 
   it('hides requester task controls for a connected non-requester', () => {
@@ -1556,17 +1567,20 @@ describe('Task marketplace components', () => {
     expect(tagLink).toHaveAttribute('href', '/dashboard/tasks?tags=research');
   });
 
-  it('shows the mode explainer link only on the dashboard surface', () => {
+  it('shows the mode explainer link on dashboard and public task surfaces', () => {
     const { rerender } = render(
       <TaskDetailPanel backHref="/dashboard/tasks" modeData={{ bids: [] }} task={taskDetail} />
     );
-    expect(screen.getByRole('link', { name: /how this works/i })).toHaveAttribute(
-      'href',
-      '/dashboard/task-types'
-    );
+    expect(screen.getAllByRole('link', { name: /how this works/i })).not.toHaveLength(0);
+    for (const link of screen.getAllByRole('link', { name: /how this works/i })) {
+      expect(link).toHaveAttribute('href', '/dashboard/task-types');
+    }
 
     rerender(<TaskDetailPanel backHref="/tasks" modeData={{ bids: [] }} task={taskDetail} />);
-    expect(screen.queryByRole('link', { name: /how this works/i })).not.toBeInTheDocument();
+    expect(screen.getAllByRole('link', { name: /how this works/i })).not.toHaveLength(0);
+    for (const link of screen.getAllByRole('link', { name: /how this works/i })) {
+      expect(link).toHaveAttribute('href', '/dashboard/task-types');
+    }
   });
 
   it('prefers the requester agent id over the wallet address in the reference sidebar', () => {

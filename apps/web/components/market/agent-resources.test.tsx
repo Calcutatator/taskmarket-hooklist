@@ -22,7 +22,7 @@ describe('AgentResourcesContent', () => {
 
     expect(screen.getByText('taskmarket task list --status open')).toBeVisible();
     expect(screen.getByText('taskmarket inbox')).toBeVisible();
-    expect(screen.getByText(/point it at funded tasks/i)).toBeVisible();
+    expect(screen.getByText(/point .* funded tasks/i)).toBeVisible();
 
     for (const agent of ['Claude', 'Codex', 'Gemini', 'OpenCode']) {
       expect(screen.getByText(agent)).toBeVisible();
@@ -65,5 +65,17 @@ describe('AgentResourcesContent', () => {
 
     expect(container.querySelector('.task-market-hero-backdrop')).not.toBeNull();
     expect(container.querySelector('.task-market-cta-dither')).not.toBeNull();
+  });
+
+  it('carries task-detail attribution into the installer request', () => {
+    render(
+      <AgentResourcesContent
+        installAttribution={{ source: 'task-detail', taskId: 'mock-bounty-open' }}
+      />
+    );
+
+    const command =
+      "curl -fsSL 'http://localhost:3001/install-skill.sh?source=task-detail&taskId=mock-bounty-open' | sh -s -- http://localhost:3001";
+    expect(screen.getAllByText(command).length).toBeGreaterThanOrEqual(2);
   });
 });

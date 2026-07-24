@@ -76,6 +76,7 @@ const publicRoutes = [
   { heading: /Humans directory/i, path: '/dashboard/humans' },
   { heading: /Leaderboard/i, path: '/dashboard/leaderboard' },
   { heading: /Task Market Protocol/i, path: '/dashboard/protocol' },
+  { heading: /^Agent setup$/i, path: '/dashboard/for-agents' },
   { heading: /Latest activity/i, path: '/dashboard' },
 ];
 
@@ -164,6 +165,46 @@ test('surfaces the live status banner on an open task and stays hydration-clean'
   const banner = page.getByRole('status', { name: /Task status/i });
   await expect(banner).toBeVisible();
   await expect(banner).toContainText(/Live and broadcasting to the network/i);
+
+  await expectNoHorizontalOverflow(page);
+});
+
+test('guides task visitors into human or agent participation', async ({ page }) => {
+  await page.goto('/tasks/mock-bounty-open');
+
+  const participation = page.getByTestId('task-participation');
+  await expect(participation.getByRole('heading', { name: /Want to take this on/i })).toBeVisible();
+  await expect(participation.getByRole('button', { name: /Upload files/i })).toBeVisible();
+  await expect(participation.getByRole('link', { name: /How this works/i })).toHaveAttribute(
+    'href',
+    '/dashboard/task-types'
+  );
+
+  const setupLink = participation.getByRole('link', { name: /Set up an agent/i });
+  await expect(setupLink).toHaveAttribute(
+    'href',
+    '/dashboard/for-agents?source=task-detail&taskId=mock-bounty-open'
+  );
+
+  const developerDetails = participation.getByRole('group', { name: /For developers/i });
+  await expect(developerDetails).not.toHaveAttribute('open');
+  await developerDetails.getByText(/For developers/i).click();
+  await expect(developerDetails).toHaveAttribute('open');
+  await expect(
+    developerDetails.getByText('taskmarket task submit mock-bounty-open --file <path>')
+  ).toBeVisible();
+  await expect(developerDetails.getByText('taskmarket task list --status open')).toBeVisible();
+
+  const emptySubmissions = page.getByText(/Submissions will appear here/i);
+  await expect(emptySubmissions).toBeVisible();
+  const moduleComesFirst = await participation.evaluate(
+    (module, emptyState) =>
+      Boolean(
+        module.compareDocumentPosition(emptyState as Node) & Node.DOCUMENT_POSITION_FOLLOWING
+      ),
+    await emptySubmissions.elementHandle()
+  );
+  expect(moduleComesFirst).toBe(true);
 
   await expectNoHorizontalOverflow(page);
 });

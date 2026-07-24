@@ -32,6 +32,7 @@ import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
+import { TaskParticipationModule } from '@/components/market/task-participation-module';
 import { UnlistedBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -110,6 +111,23 @@ const statuses: Array<'ALL' | TaskStatusType> = [
   'completed',
   'cancelled',
 ];
+
+const PARTICIPATION_ACTIONS = new Set<PendingAction['action']>([
+  'auction_accept',
+  'bid',
+  'claim',
+  'pitch',
+  'submit_proof',
+]);
+
+function findParticipationAction(actions: PendingAction[]) {
+  return (
+    actions.find((action) => action.action === 'submit') ??
+    actions.find(
+      (action) => action.role !== 'requester' && PARTICIPATION_ACTIONS.has(action.action)
+    )
+  );
+}
 
 export type TaskModeData = {
   bids?: BidResponse[];
@@ -2177,8 +2195,7 @@ export function TaskDetailPanel({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const listBase = normalizeBasePath(backHref);
-  const isDashboardSurface = listBase.startsWith('/dashboard');
-  const taskTypesHref = isDashboardSurface ? ('/dashboard/task-types' as Route) : null;
+  const taskTypesHref = '/dashboard/task-types' as Route;
   const modeHref = taskFiltersHref(listBase, { mode: task.mode }) as Route;
   const pendingActions = task.pendingActions ?? [];
   // Route the accept action to per-submission cards only when submissions are
@@ -2193,10 +2210,16 @@ export function TaskDetailPanel({
   const nextActions = reviewAction
     ? pendingActions.filter((action) => action !== reviewAction)
     : pendingActions;
+  const participationAction = findParticipationAction(nextActions);
+  const extractedSubmitAction =
+    participationAction?.action === 'submit' ? participationAction : undefined;
   const cancelActions = nextActions.filter((action) => action.action === 'cancel');
-  const mainNextActions = nextActions.filter((action) => action.action !== 'cancel');
+  const mainNextActions = nextActions.filter(
+    (action) => action.action !== 'cancel' && action !== extractedSubmitAction
+  );
   const showNextActions =
-    mainNextActions.length > 0 || (!reviewAction && cancelActions.length === 0);
+    mainNextActions.length > 0 ||
+    (!reviewAction && cancelActions.length === 0 && !extractedSubmitAction);
   const title = taskTitle(task);
   const fullTitle = taskFullTitle(task);
   const descriptionBody = taskBody(task);
@@ -2206,6 +2229,9 @@ export function TaskDetailPanel({
   // the activity count (and drop the duplicate sidebar Outcome row).
   const rated = task.primaryAward?.rating != null;
   const splitRatingProgress = ratingProgress(task);
+  const participationModule = participationAction ? (
+    <TaskParticipationModule action={participationAction} task={task} />
+  ) : null;
 
   return (
     <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
@@ -2288,14 +2314,12 @@ export function TaskDetailPanel({
               ) : null}
               {task.taskVisibility === 'unlisted' ? <UnlistedBadge withTooltip /> : null}
               <PhaseBadge task={task} />
-              {taskTypesHref ? (
-                <Link
-                  className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
-                  href={taskTypesHref}
-                >
-                  How this works
-                </Link>
-              ) : null}
+              <Link
+                className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
+                href={taskTypesHref}
+              >
+                How this works
+              </Link>
             </div>
             {/* Copy-for-agent: hand the whole brief to an operator/LLM without scraping the page. */}
             <div className="flex items-center gap-1.5">
@@ -2322,13 +2346,16 @@ export function TaskDetailPanel({
           </h1>
         </section>
         {reviewAction ? (
-          <ModeDataPanel
-            marketStats={marketStats}
-            modeData={modeData}
-            profileBasePath={profileBasePath}
-            reviewAction={reviewAction}
-            task={task}
-          />
+          <>
+            {participationModule}
+            <ModeDataPanel
+              marketStats={marketStats}
+              modeData={modeData}
+              profileBasePath={profileBasePath}
+              reviewAction={reviewAction}
+              task={task}
+            />
+          </>
         ) : null}
         <WorkRequirementsPanel task={task} />
         {descriptionBody || detailTags.length > 0 ? (
@@ -2373,12 +2400,15 @@ export function TaskDetailPanel({
           />
         ) : null}
         {!reviewAction ? (
-          <ModeDataPanel
-            marketStats={marketStats}
-            modeData={modeData}
-            profileBasePath={profileBasePath}
-            task={task}
-          />
+          <>
+            {participationModule}
+            <ModeDataPanel
+              marketStats={marketStats}
+              modeData={modeData}
+              profileBasePath={profileBasePath}
+              task={task}
+            />
+          </>
         ) : null}
       </div>
       <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">

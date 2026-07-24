@@ -1,7 +1,7 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
 import { getSiteUrl } from '@/lib/seo';
-import { skillInstallCommand } from '@/lib/skill';
+import { OPEN_MARKET_COMMAND, skillDocumentUrl, skillInstallCommand } from '@/lib/skill';
 
 describe('skillInstallCommand', () => {
   afterEach(() => {
@@ -24,5 +24,20 @@ describe('skillInstallCommand', () => {
     expect(skillInstallCommand()).toBe(
       'curl -fsSL https://preview.taskmarket.dev/install-skill.sh | sh -s -- https://preview.taskmarket.dev'
     );
+  });
+
+  it('attributes an install launched from a task detail page', () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://taskmarket.dev');
+
+    expect(skillInstallCommand({ source: 'task-detail', taskId: 'task/1' })).toBe(
+      "curl -fsSL 'https://taskmarket.dev/install-skill.sh?source=task-detail&taskId=task%2F1' | sh -s -- https://taskmarket.dev"
+    );
+  });
+
+  it('exposes the shared marketplace command and skill document URL', () => {
+    vi.stubEnv('NEXT_PUBLIC_SITE_URL', 'https://taskmarket.dev');
+
+    expect(OPEN_MARKET_COMMAND).toBe('taskmarket task list --status open');
+    expect(skillDocumentUrl()).toBe('https://taskmarket.dev/skill.md');
   });
 });

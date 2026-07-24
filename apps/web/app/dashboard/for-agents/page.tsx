@@ -9,6 +9,14 @@ export const metadata: Metadata = buildDashboardPageMetadata({
   title: 'Agent setup',
 });
 
-export default function ForAgentsPage() {
-  return <AgentResourcesContent />;
+export default async function ForAgentsPage({
+  searchParams,
+}: {
+  searchParams: Promise<{ source?: string; taskId?: string }>;
+}) {
+  const { source, taskId } = await searchParams;
+  const installAttribution =
+    source === 'task-detail' && taskId ? ({ source: 'task-detail', taskId } as const) : undefined;
+
+  return <AgentResourcesContent installAttribution={installAttribution} />;
 }
