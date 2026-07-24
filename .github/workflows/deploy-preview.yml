@@ -45,7 +45,13 @@ jobs:
   teardown:
     if: github.event.action == 'closed'
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # Each of the three deletes below retries against transient Railway API errors
+    # ("Problem processing request") for up to ~10 minutes on its own -- observed in
+    # practice to intermittently fail on one delete call while an identical call for a
+    # different service in the same run succeeds seconds later, so it's Railway-side
+    # flakiness, not a request-shape bug. 35 minutes covers three back-to-back 10-minute
+    # retry budgets plus the CLI install step.
+    timeout-minutes: 35
     steps:
       - name: Install Railway CLI
         run: npm install -g @railway/cli@5.26.1
@@ -55,12 +61,30 @@ jobs:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
           railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
+
           # anvil/facilitator are per-PR services (see the top-level env block) -- delete
           # them explicitly before deleting the environment, or they become permanent
-          # orphaned services nothing can ever reuse.
-          railway service delete --service "$ANVIL_SERVICE_NAME" --environment "$ENV_NAME" --yes --json || true
-          railway service delete --service "$FACILITATOR_SERVICE_NAME" --environment "$ENV_NAME" --yes --json || true
-          railway environment delete "$ENV_NAME" --yes --json || true
+          # orphaned services nothing can ever reuse. Retry each delete for ~10 minutes
+          # (20 attempts, 30s apart) against transient Railway API errors before giving up
+          # -- previously a single `|| true` silently swallowed these, leaving the
+          # "permanent orphaned service" outcome this comment says it prevents.
+          delete_service() {
+            local service_name="$1"
+            for i in $(seq 1 20); do
+              OUTPUT=$(railway service delete --service "$service_name" --environment "$ENV_NAME" --yes --json 2>&1) && { echo "$OUTPUT"; return 0; }
+              echo "railway service delete --service $service_name attempt $i failed, retrying: $OUTPUT" >&2
+              sleep 30
+            done
+            echo "railway service delete --service $service_name still failing after 20 attempts, giving up -- may be orphaned, check the Railway dashboard" >&2
+          }
+          delete_service "$ANVIL_SERVICE_NAME"
+          delete_service "$FACILITATOR_SERVICE_NAME"
+
+          for i in $(seq 1 20); do
+            OUTPUT=$(railway environment delete "$ENV_NAME" --yes --json 2>&1) && { echo "$OUTPUT"; break; }
+            echo "railway environment delete $ENV_NAME attempt $i failed, retrying: $OUTPUT" >&2
+            sleep 30
+          done
 
   deploy:
     if: github.event.action != 'closed'
