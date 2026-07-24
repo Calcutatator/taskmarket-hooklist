@@ -27,6 +27,8 @@ export const SETTLEMENT_READ_ABI = [
           { name: 'deliverable', type: 'bytes32' },
           { name: 'rating', type: 'uint8' },
           { name: 'hookContract', type: 'address' },
+          { name: 'stakeRequired', type: 'bool' },
+          { name: 'stakeBps', type: 'uint16' },
         ],
         type: 'tuple',
       },

@@ -63,7 +63,7 @@ const DREAMS_HOOK_ADDRESS = config.DREAMS_HOOK_ADDRESS as `0x${string}` | undefi
 const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
 
 const TASK_CREATED_EVENT = parseAbiItem(
-  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
+  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime, bool stakeRequired, uint16 stakeBps)'
 );
 const TASK_CLAIMED_EVENT = parseAbiItem(
   'event TaskClaimed(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
@@ -242,7 +242,7 @@ export async function processTaskCreatedEvent(
   log: EventLog,
   database: Database = db
 ): Promise<void> {
-  const { taskId, requester, reward, expiryTime, mode } = log.args;
+  const { taskId, requester, reward, expiryTime, mode, stakeRequired, stakeBps } = log.args;
   const modeKey = (mode as `0x${string}`).toLowerCase();
   const modeString = MODE_BY_SELECTOR[modeKey] || 'bounty';
 
@@ -259,8 +259,11 @@ export async function processTaskCreatedEvent(
       status: 'open',
       tags: [],
       mode: modeString,
-      stakeRequired: 0,
-      stakeBps: 0,
+      // Recovered directly from the TaskCreated event (rev014, ADR-0029) -- unlike
+      // Task.stakeAmount (only set later by the worker's claimTask call), the requester's
+      // stakeRequired/stakeBps choice is now emitted on-chain at creation time.
+      stakeRequired: stakeRequired ? 1 : 0,
+      stakeBps: stakeBps as number,
       platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
       // task_awards backfill only scans the currently-configured contract; an
       // unset contract_address makes a task's settlement unrecoverable (ADR-0008).

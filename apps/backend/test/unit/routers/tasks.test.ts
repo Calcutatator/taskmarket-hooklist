@@ -149,6 +149,29 @@ describe('tasks router', () => {
       expect(mode).toBe('0x00000002'); // MODE_MAP.claim
     });
 
+    it('passes stakeRequired/stakeBps to contractCreateTask', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      await caller.create({ ...baseTaskInput, stakeRequired: true, stakeBps: 1500 });
+
+      const [, , , , , , , stakeRequired, stakeBps] = vi.mocked(contractCreateTask).mock.calls[0];
+      expect(stakeRequired).toBe(true);
+      expect(stakeBps).toBe(1500);
+    });
+
+    it('defaults stakeRequired/stakeBps to false/0 for contractCreateTask when unset', async () => {
+      const ctx = createMockCtx(PAYER);
+      const caller = tasksRouter.createCaller(ctx);
+
+      const { stakeRequired: _stakeRequired, stakeBps: _stakeBps, ...inputWithoutStake } = baseTaskInput;
+      await caller.create(inputWithoutStake);
+
+      const [, , , , , , , stakeRequired, stakeBps] = vi.mocked(contractCreateTask).mock.calls[0];
+      expect(stakeRequired).toBe(false);
+      expect(stakeBps).toBe(0);
+    });
+
     it('fires targeted new-task notifications and skips Task Drops email without a drop', async () => {
       const ctx = createMockCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);

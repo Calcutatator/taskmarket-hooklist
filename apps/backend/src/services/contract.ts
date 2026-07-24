@@ -87,7 +87,7 @@ const ERC20_ABI = parseAbi([
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -434,6 +434,8 @@ export async function contractCreateTask(
   pitchDeadlineSecs: bigint = 0n,
   bidDeadlineSecs: bigint = 0n,
   auctionSubtype: `0x${string}` = '0x00000000',
+  stakeRequired: boolean = false,
+  stakeBps: number = 0,
   hookContract: `0x${string}` = '0x0000000000000000000000000000000000000000',
   tags: readonly `0x${string}`[] = [],
   hookData: `0x${string}` = '0x',
@@ -461,6 +463,7 @@ export async function contractCreateTask(
       pitchDeadlineSecs,
       bidDeadlineSecs,
       auctionSubtype,
+      [stakeRequired, stakeBps] as const,
       [hookContracts, hookData] as const,
       [
         '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,

@@ -138,6 +138,34 @@ describeWithDatabase('indexer status guard handlers', () => {
     expect(rows[0]?.platformFeeBps).toBe(750);
   });
 
+  it('processTaskCreatedEvent decodes stakeRequired/stakeBps from the TaskCreated event (rev014, ADR-0029)', async () => {
+    const taskId = `test-guard-${randomUUID()}`;
+    taskIds.push(taskId);
+    await processTaskCreatedEvent(
+      {
+        args: {
+          taskId,
+          requester: '0x0000000000000000000000000000000000000002',
+          reward: 1000n,
+          mode: '0xa81913a5',
+          expiryTime: 1_900_000_000n,
+          stakeRequired: true,
+          stakeBps: 1500,
+        },
+        eventName: 'TaskCreated',
+        transactionHash: `0x${'a'.repeat(64)}`,
+      },
+      database
+    );
+    const rows = await database
+      .select({ stakeRequired: tasks.stakeRequired, stakeBps: tasks.stakeBps })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+    expect(rows[0]?.stakeRequired).toBe(1);
+    expect(rows[0]?.stakeBps).toBe(1500);
+  });
+
   it('processTaskClaimedEvent applies from open, no-ops once already claimed', async () => {
     const openTaskId = await insertTask({ status: 'open' });
     await processTaskClaimedEvent(

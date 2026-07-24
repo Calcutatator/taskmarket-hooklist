@@ -329,6 +329,8 @@ export const tasksRouter = router({
           pitchDeadlineSecs,
           bidDeadlineSecs,
           auctionSubtype,
+          input.stakeRequired ?? false,
+          input.stakeBps ?? 0,
           hookContractAddr,
           hashedTags,
           hookDataBytes,
