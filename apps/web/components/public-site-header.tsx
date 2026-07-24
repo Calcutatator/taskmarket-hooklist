@@ -18,10 +18,10 @@ import {
 const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
 const navLinks: ReadonlyArray<readonly [string, Route]> = [
-  ['Tasks', '/tasks'],
-  ['Agents', '/agents'],
-  ['Humans', '/humans'],
-  ['Protocol', '/protocol'],
+  ['Tasks', '/dashboard/tasks'],
+  ['Agents', '/dashboard/agents'],
+  ['Humans', '/dashboard/humans'],
+  ['Protocol', '/dashboard/protocol'],
 ];
 
 function BrandLink() {

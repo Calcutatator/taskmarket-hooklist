@@ -114,7 +114,7 @@ test('keeps the primary marketplace path navigable from the landing page', async
     .getByRole('navigation', { name: /^Primary$/i })
     .getByRole('link', { name: /^Tasks$/i })
     .click();
-  await expect(page).toHaveURL(/\/tasks$/);
+  await expect(page).toHaveURL(/\/dashboard\/tasks$/);
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();

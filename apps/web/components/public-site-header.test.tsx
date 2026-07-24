@@ -5,7 +5,7 @@ import { describe, expect, it } from 'vitest';
 import { PublicSiteHeader } from './public-site-header';
 
 describe('PublicSiteHeader', () => {
-  it('links the primary navigation to the public market routes', () => {
+  it('links the primary navigation to the dashboard market routes', () => {
     render(<PublicSiteHeader />);
 
     const primaryNav = screen.getByRole('navigation', { name: /^primary$/i });
@@ -13,19 +13,19 @@ describe('PublicSiteHeader', () => {
     expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'href',
-      '/tasks'
+      '/dashboard/tasks'
     );
     expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/agents'
+      '/dashboard/agents'
     );
     expect(within(primaryNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/humans'
+      '/dashboard/humans'
     );
     expect(within(primaryNav).getByRole('link', { name: /^protocol$/i })).toHaveAttribute(
       'href',
-      '/protocol'
+      '/dashboard/protocol'
     );
     expect(screen.getByRole('link', { name: /^dashboard$/i })).toHaveAttribute(
       'href',
@@ -45,11 +45,11 @@ describe('PublicSiteHeader', () => {
     const mobileNav = screen.getByRole('navigation', { name: /mobile primary/i });
     expect(within(mobileNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/agents'
+      '/dashboard/agents'
     );
     expect(within(mobileNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/humans'
+      '/dashboard/humans'
     );
   });
 });
