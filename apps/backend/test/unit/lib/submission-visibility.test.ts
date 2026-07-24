@@ -10,7 +10,8 @@ import {
 const REQUESTER = '0xRequester00000000000000000000000000000001';
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const OTHER_WORKER = '0xWorker0000000000000000000000000000000002';
-const task = { requester: REQUESTER };
+const TASK_ID = 'task-1';
+const task = { id: TASK_ID, requester: REQUESTER, taskVisibility: 'public', claimedBy: null };
 const submission = { workerAddress: WORKER };
 
 describe('isTaskEnded', () => {
@@ -279,5 +280,106 @@ describe('canViewSubmission', () => {
         winningAddresses: noWinners,
       })
     ).toBe(false);
+  });
+
+  describe('Phase 3 (ADR-0030): composes canView as a prerequisite', () => {
+    const privateTask = { ...task, taskVisibility: 'private' };
+    const ALLOWED_VIEWER = '0xAllowed000000000000000000000000000000001';
+
+    it('a private task with default (public) submissionVisibility does NOT leak to an uninvited caller -- the gap this fix closes', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: { address: OTHER_WORKER },
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+        })
+      ).toBe(false);
+    });
+
+    it('a private task with public submissionVisibility still lets the requester see it', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: { address: REQUESTER },
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+        })
+      ).toBe(true);
+    });
+
+    it('a private task with public submissionVisibility still lets the submitting worker see their own', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: { address: WORKER },
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+        })
+      ).toBe(true);
+    });
+
+    it('a private task lets an allowlisted viewer see public-mode submissions', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: { address: ALLOWED_VIEWER },
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+          taskViewability: {
+            allowedViewerAddresses: new Set([ALLOWED_VIEWER.toLowerCase()]),
+          },
+        })
+      ).toBe(true);
+    });
+
+    it('a private task lets a valid task-scoped access grant through, even with no wallet caller at all', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: undefined,
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+          taskViewability: { taskAccessGrant: { taskId: TASK_ID } },
+        })
+      ).toBe(true);
+    });
+
+    it("an access grant scoped to a DIFFERENT task does not unlock this one", () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: undefined,
+          task: privateTask,
+          submission,
+          winningAddresses: noWinners,
+          taskViewability: { taskAccessGrant: { taskId: 'some-other-task' } },
+        })
+      ).toBe(false);
+    });
+
+    it('a non-private task never needs viewability context -- canView passes unconditionally', () => {
+      expect(
+        canViewSubmission({
+          mode: 'public',
+          taskStatus: 'open',
+          caller: undefined,
+          task,
+          submission,
+          winningAddresses: noWinners,
+        })
+      ).toBe(true);
+    });
   });
 });

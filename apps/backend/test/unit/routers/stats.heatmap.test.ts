@@ -133,7 +133,7 @@ describe('stats router activityHeatmap', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).activityHeatmap({ range: '30d', dimension: 'mode' });
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("task_visibility != 'unlisted'");
+      expect(q).toContain("task_visibility NOT IN ('unlisted', 'private')");
     });
   });
 

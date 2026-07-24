@@ -39,7 +39,11 @@ export function makeChain(resolveValue: any = undefined) {
  * chain.  Individual tests override specific calls with:
  *   ctx.db.select.mockReturnValueOnce(makeChain([...data]))
  */
-export function createMockCtx(payer?: string, caller?: { address: string }) {
+export function createMockCtx(
+  payer?: string,
+  caller?: { address: string },
+  taskAccessGrant?: { taskId: string }
+) {
   const db: any = {
     select: vi.fn().mockReturnValue(makeChain([])),
     insert: vi.fn().mockReturnValue(makeChain()),
@@ -53,5 +57,6 @@ export function createMockCtx(payer?: string, caller?: { address: string }) {
     req: {} as any,
     res: { locals: { payer: payer ?? undefined }, setHeader: vi.fn(), vary: vi.fn() } as any,
     caller,
+    taskAccessGrant,
   };
 }

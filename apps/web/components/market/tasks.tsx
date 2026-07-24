@@ -33,7 +33,7 @@ import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
-import { UnlistedBadge } from '@/components/market/unlisted-badge';
+import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import {
   Breadcrumb,
@@ -2312,7 +2312,9 @@ export function TaskDetailPanel({
                   </Badge>
                 </Link>
               ) : null}
-              {task.taskVisibility === 'unlisted' ? <UnlistedBadge withTooltip /> : null}
+              {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
+                <TaskVisibilityBadge visibility={task.taskVisibility} withTooltip />
+              ) : null}
               <PhaseBadge task={task} />
               <Link
                 className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"

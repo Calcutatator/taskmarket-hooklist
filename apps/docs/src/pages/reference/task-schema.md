@@ -13,10 +13,18 @@ Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strin
 ## Common Fields
 
 - `id`, `requester`, `description`, `mode`, `status`, `tags`
-- `taskVisibility` — `"public"` (default) or `"unlisted"`. Unlisted only opts a task out of
-  Taskmarket's own listings, search, and SEO surfaces; it never opts out of the public
-  blockchain, and it is never a substitute for encryption. See [raw-api.md](raw-api.md) for
-  the read-auth header that lets an owner see their own unlisted tasks.
+- `taskVisibility` — `"public"` (default), `"unlisted"`, or `"private"`. Unlisted only opts a
+  task out of Taskmarket's own listings, search, and SEO surfaces; it never opts out of the
+  public blockchain, and it is never a substitute for encryption. `private` (Phase 3) is
+  genuinely access-controlled: only the requester, `claimedBy`/awarded worker(s), invited
+  wallets, and callers holding a valid unlock grant can view it at all -- everyone else gets
+  the same response as a nonexistent task. Even `private`, on-chain existence, reward, and
+  participation stay publicly observable; it is still never a substitute for encryption. See
+  [raw-api.md](raw-api.md) for the read-auth header that lets an owner see their own unlisted
+  tasks, and its "Private Tasks" section for the allowlist/password endpoints.
+- `hasAccessPassword` — `boolean`, only meaningful when `taskVisibility` is `"private"`.
+  Whether the task has a password mechanism configured. Never exposes the password or its
+  hash.
 - `submissionVisibility` — `"public"` (default), `"reveal_all"`, `"winner_only"`, or `"never"`.
   Independent of `taskVisibility`, chosen once at task creation, and **locked in
   permanently** -- there is no field to change it afterward. Governs who can see what

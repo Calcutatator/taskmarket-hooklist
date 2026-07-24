@@ -15,3 +15,4 @@ export * from './stats.schemas';
 export * from './task-drops.schemas';
 export * from './evaluation.schemas';
 export * from './legal.schemas';
+export * from './task-access.schemas';

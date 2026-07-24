@@ -1,6 +1,7 @@
 import { router } from './trpc';
 import { healthRouter } from './routers/health.router';
 import { tasksRouter } from './routers/tasks.router';
+import { taskAccessRouter } from './routers/task-access.router';
 import { agentsRouter } from './routers/agents.router';
 import { submissionsRouter } from './routers/submissions.router';
 import { acceptanceRouter } from './routers/acceptance.router';
@@ -25,6 +26,7 @@ import { legalRouter } from './routers/legal.router';
 export const appRouter = router({
   health: healthRouter,
   tasks: tasksRouter,
+  taskAccess: taskAccessRouter,
   agents: agentsRouter,
   market: marketRouter,
   stats: statsRouter,

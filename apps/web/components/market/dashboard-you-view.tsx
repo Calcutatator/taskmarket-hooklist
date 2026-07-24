@@ -8,7 +8,7 @@ import { useAccount } from 'wagmi';
 
 import { ChartCard, MetricStat, StatusBreakdown, TrendAreaChart } from '@/components/charts';
 import { RelativeTime } from '@/components/market/motion/relative-time';
-import { UnlistedBadge } from '@/components/market/unlisted-badge';
+import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
@@ -88,7 +88,9 @@ function YouFeedRow({ entry }: { entry: FeedEntry }) {
             <span className="font-mono text-[0.65rem] uppercase tracking-wide text-primary">
               {role}
             </span>
-            {task.taskVisibility === 'unlisted' ? <UnlistedBadge compact /> : null}
+            {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
+              <TaskVisibilityBadge compact visibility={task.taskVisibility} />
+            ) : null}
           </span>
           <RelativeTime
             className="font-mono text-[0.65rem] text-muted-foreground"
@@ -159,6 +161,13 @@ export function DashboardYouView() {
 
   const asRequester = useMemo(() => inboxQuery.data?.asRequester ?? [], [inboxQuery.data]);
   const asWorker = useMemo(() => inboxQuery.data?.asWorker ?? [], [inboxQuery.data]);
+  // Phase 3 (ADR-0030): private tasks this address has been wallet-allowlisted onto --
+  // the in-app invite-discovery mechanism, populated only once read-auth proves address
+  // ownership (same self-auth gate as asRequester/asWorker above).
+  const invitedPrivateTasks = useMemo(
+    () => inboxQuery.data?.invitedPrivateTasks ?? [],
+    [inboxQuery.data]
+  );
 
   const postedByDay = useMemo(() => bucketTasksByDay(asRequester), [asRequester]);
   const statusData = useMemo(() => taskStatusDistribution(asRequester), [asRequester]);
@@ -293,6 +302,31 @@ export function DashboardYouView() {
           </YouMetricCard>
         </dl>
       </section>
+
+      {invitedPrivateTasks.length > 0 ? (
+        <section aria-label="Private task invites" className="mx-4 lg:mx-6">
+          <Card className="border-dashed border-border/68 bg-card/60">
+            <CardHeader>
+              <CardTitle>
+                You&apos;ve been invited to {formatNumber(invitedPrivateTasks.length)} private task
+                {invitedPrivateTasks.length === 1 ? '' : 's'}
+              </CardTitle>
+            </CardHeader>
+            <CardContent className="grid gap-2">
+              {invitedPrivateTasks.map((task) => (
+                <Link
+                  className="flex items-center justify-between gap-3 rounded-lg border border-border/58 bg-background/46 px-3 py-2 text-sm hover:border-primary/48"
+                  href={`/dashboard/tasks/${task.id}`}
+                  key={task.id}
+                >
+                  <span className="truncate">{task.description.split('\n')[0]}</span>
+                  <TaskVisibilityBadge compact visibility="private" />
+                </Link>
+              ))}
+            </CardContent>
+          </Card>
+        </section>
+      ) : null}
 
       <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
         <ChartCard

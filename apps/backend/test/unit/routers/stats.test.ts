@@ -165,7 +165,7 @@ describe('stats router', () => {
       await statsRouter.createCaller(ctx).platformTimeSeries({ range: '30d', bucket: 'day' });
       const { sql: q } = renderSql(executeCalls[0]);
       // tasks_created, reward_volume, and completed all filter unlisted tasks.
-      const occurrences = q.split("task_visibility != 'unlisted'").length - 1;
+      const occurrences = q.split("task_visibility NOT IN ('unlisted', 'private')").length - 1;
       expect(occurrences).toBe(3);
       // completed now joins feedbacks -> tasks so the filter can apply.
       expect(q.toLowerCase()).toContain('join tasks t on t.id = f.task_id');
@@ -292,7 +292,7 @@ describe('stats router', () => {
         .createCaller(ctx)
         .agentTimeSeries({ address: '0xWORKER', range: '90d', bucket: 'week' });
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("task_visibility != 'unlisted'");
+      expect(q).toContain("task_visibility NOT IN ('unlisted', 'private')");
     });
   });
 
@@ -339,7 +339,7 @@ describe('stats router', () => {
       const { ctx, executeCalls } = createStatsCtx([[]]);
       await statsRouter.createCaller(ctx).breakdowns({});
       const { sql: q } = renderSql(executeCalls[0]);
-      expect(q).toContain("task_visibility != 'unlisted'");
+      expect(q).toContain("task_visibility NOT IN ('unlisted', 'private')");
     });
   });
 
@@ -461,7 +461,7 @@ describe('stats router', () => {
       // One join/select per activity type (task_created, task_submitted,
       // task_claimed, task_pitched, bid_placed, task_rated) -- all six must
       // filter unlisted tasks out of this public feed.
-      const occurrences = q.split("task_visibility != 'unlisted'").length - 1;
+      const occurrences = q.split("task_visibility NOT IN ('unlisted', 'private')").length - 1;
       expect(occurrences).toBe(6);
     });
 

@@ -151,6 +151,8 @@ describe('proofs router', () => {
     it('returns the acceptable submission ID for a current proof commitment', async () => {
       const ctx = createMockCtx();
       ctx.db.select
+        // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makeProof()]))
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([{ id: 'submission-id' }]));
@@ -163,6 +165,8 @@ describe('proofs router', () => {
     it('returns null submissionId for a legacy proof', async () => {
       const ctx = createMockCtx();
       ctx.db.select
+        // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makeProof()]))
         .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([]));

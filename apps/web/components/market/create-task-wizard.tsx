@@ -82,6 +82,9 @@ const STEP_BRIEF_FIELDS: Array<keyof CreateTaskFormValues> = [
   'maxPrice',
   'auctionFloorPrice',
   'auctionStartPrice',
+  'taskVisibility',
+  'allowedViewers',
+  'accessPassword',
 ];
 
 const STEP_DROP_FIELDS: Array<keyof CreateTaskFormValues> = ['taskDropId', 'taskDropName'];

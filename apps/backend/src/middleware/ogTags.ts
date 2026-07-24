@@ -3,7 +3,7 @@ import { db } from '../db/client';
 import { tasks, agents } from '../db/schema';
 import { and, eq, desc } from 'drizzle-orm';
 import { getAgentName } from '@taskmarket/shared';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable } from '../lib/task-visibility';
 import { logger } from '../lib/logger';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
@@ -136,7 +136,7 @@ async function buildHomepageBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), taskNotUnlisted))
+    .where(and(eq(tasks.status, 'open'), taskDiscoverable))
     .orderBy(desc(tasks.createdAt))
     .limit(5);
 
@@ -164,7 +164,7 @@ async function buildTasksBody(): Promise<string> {
       tags: tasks.tags,
     })
     .from(tasks)
-    .where(and(eq(tasks.status, 'open'), taskNotUnlisted))
+    .where(and(eq(tasks.status, 'open'), taskDiscoverable))
     .orderBy(desc(tasks.createdAt))
     .limit(20);
 
@@ -296,7 +296,7 @@ export async function ogTagsMiddleware(
       const rows = await db
         .select()
         .from(tasks)
-        .where(and(eq(tasks.id, taskId), taskNotUnlisted))
+        .where(and(eq(tasks.id, taskId), taskDiscoverable))
         .limit(1);
       if (rows.length > 0) {
         const task = rows[0];

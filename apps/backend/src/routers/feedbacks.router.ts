@@ -1,10 +1,11 @@
-import { router, publicProcedure } from '../trpc';
+import { router, optionalAuthProcedure } from '../trpc';
 import { z } from 'zod';
 import { feedbacks } from '../db/schema';
 import { eq } from 'drizzle-orm';
+import { resolveTaskViewability } from '../lib/task-visibility';
 
 export const feedbacksRouter = router({
-  list: publicProcedure
+  list: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -33,6 +34,16 @@ export const feedbacksRouter = router({
       })
     )
     .query(async ({ input, ctx }) => {
+      // Phase 3 (ADR-0030): a private task the caller can't view returns no feedbacks,
+      // matching this endpoint's own { feedbacks: [] } shape rather than a bare array.
+      const { viewable } = await resolveTaskViewability(
+        ctx.db,
+        input.taskId,
+        ctx.caller,
+        ctx.taskAccessGrant
+      );
+      if (!viewable) return { feedbacks: [] };
+
       const rows = await ctx.db
         .select({
           id: feedbacks.id,

@@ -2,7 +2,7 @@ import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { agents, tasks } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { taskNotUnlisted, taskNotUnlistedSql } from '../lib/task-visibility';
+import { taskDiscoverable, taskDiscoverableSql } from '../lib/task-visibility';
 
 const SEVEN_DAYS_MS = 7 * 24 * 60 * 60 * 1000;
 
@@ -44,7 +44,7 @@ export const marketRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)::int` })
           .from(tasks)
-          .where(and(eq(tasks.status, 'open'), taskNotUnlisted)),
+          .where(and(eq(tasks.status, 'open'), taskDiscoverable)),
         ctx.db
           .select({
             activeAgents7d: sql<number>`(
@@ -59,27 +59,27 @@ export const marketRouter = router({
           .from(
             sql`(
             select t.requester as agent_address, false as is_worker from tasks t
-              where t.created_at >= ${since} and ${taskNotUnlistedSql}
+              where t.created_at >= ${since} and ${taskDiscoverableSql}
             union all
             select s.worker_address as agent_address, true as is_worker
               from submissions s join tasks t on t.id = s.task_id
-              where s.submitted_at >= ${since} and ${taskNotUnlistedSql}
+              where s.submitted_at >= ${since} and ${taskDiscoverableSql}
             union all
             select p.worker_address as agent_address, true as is_worker
               from proposals p join tasks t on t.id = p.task_id
-              where p.submitted_at >= ${since} and ${taskNotUnlistedSql}
+              where p.submitted_at >= ${since} and ${taskDiscoverableSql}
             union all
             select pr.worker_address as agent_address, true as is_worker
               from proofs pr join tasks t on t.id = pr.task_id
-              where pr.submitted_at >= ${since} and ${taskNotUnlistedSql}
+              where pr.submitted_at >= ${since} and ${taskDiscoverableSql}
             union all
             select c.worker_address as agent_address, true as is_worker
               from claims c join tasks t on t.id = c.task_id
-              where c.claimed_at >= ${since} and ${taskNotUnlistedSql}
+              where c.claimed_at >= ${since} and ${taskDiscoverableSql}
             union all
             select b.worker_address as agent_address, true as is_worker
               from bids b join tasks t on t.id = b.task_id
-              where b.created_at >= ${since} and ${taskNotUnlistedSql}
+              where b.created_at >= ${since} and ${taskDiscoverableSql}
           ) as active_activity`
           )
           .leftJoin(agents, sql`lower(${agents.address}) = lower(active_activity.agent_address)`),

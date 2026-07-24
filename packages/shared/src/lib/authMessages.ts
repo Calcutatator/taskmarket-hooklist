@@ -23,6 +23,15 @@ export function buildReadAuthMessage(address: string): string {
 export const READ_AUTH_ADDRESS_HEADER = 'X-Taskmarket-Caller-Address';
 export const READ_AUTH_SIGNATURE_HEADER = 'X-Taskmarket-Caller-Signature';
 
+/**
+ * Header carrying a Phase 3 (ADR-0030) task-access grant -- an opaque bearer proof issued
+ * by `taskAccess.verifyPassword` after a private task's password is verified. Unlike the
+ * read-auth headers above, this is not a wallet identity: it's a task-scoped anonymous
+ * proof, so it's resolved as its own `ctx.taskAccessGrant` field rather than folded into
+ * `ctx.caller`.
+ */
+export const TASK_ACCESS_GRANT_HEADER = 'X-Taskmarket-Task-Access-Grant';
+
 export function buildSubmitMessage(taskId: string): string {
   return `taskmarket:submit:${taskId}`;
 }

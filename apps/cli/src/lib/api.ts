@@ -49,17 +49,46 @@ export async function apiGet(
   return body;
 }
 
-export async function apiPost(path: string, body: Record<string, unknown>): Promise<unknown> {
+export async function apiPost(
+  path: string,
+  body: Record<string, unknown>,
+  options?: { headers?: Record<string, string> }
+): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     redirect: 'error',
-    headers: { 'Content-Type': 'application/json', ...legalHeaders },
+    headers: {
+      'Content-Type': 'application/json',
+      ...legalHeaders,
+      ...(options?.headers ?? {}),
+    },
     body: JSON.stringify(body),
   });
   const result = await res.json();
   if (!res.ok) {
     throw new Error(`POST ${path} failed (${res.status}): ${JSON.stringify(result)}`);
+  }
+  return result;
+}
+
+export async function apiDelete(
+  path: string,
+  options?: { headers?: Record<string, string> }
+): Promise<unknown> {
+  const legalHeaders = await legalReceiptHeaders(path, 'POST');
+  const res = await fetch(`${API_URL}${path}`, {
+    method: 'DELETE',
+    redirect: 'error',
+    headers: {
+      'Content-Type': 'application/json',
+      ...legalHeaders,
+      ...(options?.headers ?? {}),
+    },
+  });
+  const result = await res.json();
+  if (!res.ok) {
+    throw new Error(`DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`);
   }
   return result;
 }

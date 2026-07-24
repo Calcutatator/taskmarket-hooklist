@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
+import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
 import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
 import {
   buildDashboardPageMetadata,
@@ -56,10 +56,20 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
 
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
-  const task = await getTask(decodeRouteParam(taskId));
+  const decodedTaskId = decodeRouteParam(taskId);
+  const task = await getTask(decodedTaskId);
 
+  // Phase 3 (ADR-0031/0031): see the (public) task detail route's identical comment.
   if (!task) {
-    notFound();
+    return (
+      <PrivateTaskAccessGate
+        backHref="/dashboard/tasks"
+        browseAgentsHref="/dashboard/agents"
+        browseTasksHref="/dashboard/tasks"
+        profileBasePath="/dashboard/agents"
+        taskId={decodedTaskId}
+      />
+    );
   }
 
   const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);

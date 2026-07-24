@@ -207,7 +207,7 @@ describe('market router', () => {
 
       expect(openTasksWhereSql).toBeDefined();
       const { sql: whereSql } = renderSql(openTasksWhereSql!);
-      expect(whereSql).toContain('"tasks"."task_visibility" <>');
+      expect(whereSql).toContain('"tasks"."task_visibility" not in');
     });
 
     it('excludes unlisted-task activity from activeWorkers7d (ADR-0014)', async () => {
@@ -231,9 +231,9 @@ describe('market router', () => {
       const { sql: fromSql } = renderSql(activeWorkersFromSql!);
       const normalized = fromSql.toLowerCase();
 
-      // Every engagement table is now joined back to tasks so unlisted-task
+      // Every engagement table is now joined back to tasks so unlisted/private-task
       // activity can't count toward the public active-workers figure.
-      expect(normalized).toContain("task_visibility != 'unlisted'");
+      expect(normalized).toContain("task_visibility not in ('unlisted', 'private')");
       const joinCount = (normalized.match(/join tasks t on t\.id/g) ?? []).length;
       expect(joinCount).toBe(5);
     });

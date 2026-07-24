@@ -9,7 +9,7 @@ import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
 import { FundingGuard, type FundingStatus } from '@/components/market/fund-wallet-button';
-import { UnlistedBadge } from '@/components/market/unlisted-badge';
+import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
@@ -24,7 +24,8 @@ import {
 } from '@/lib/market/create-task-form';
 import { formatUsdcUnits } from '@/lib/format';
 import {
-  TASK_VISIBILITY_DISCLAIMER,
+  TASK_VISIBILITY_LABELS,
+  TASK_VISIBILITY_DISCLAIMERS,
   SUBMISSION_VISIBILITY_DISCLAIMERS,
   SUBMISSION_VISIBILITY_LABELS,
   SUBMISSION_VISIBILITY_LOCKED_NOTICE,
@@ -559,7 +560,9 @@ export function StepPublish({
             <div className="flex flex-wrap items-center gap-2">
               <Badge variant="terminal">{selectedTemplate.label}</Badge>
               <Badge variant="secondary">{currentMode.label}</Badge>
-              {values.taskVisibility === 'unlisted' ? <UnlistedBadge /> : null}
+              {values.taskVisibility === 'unlisted' || values.taskVisibility === 'private' ? (
+                <TaskVisibilityBadge visibility={values.taskVisibility} />
+              ) : null}
             </div>
 
             <div className="grid grid-cols-2 overflow-hidden rounded-xl border border-border/68 font-mono text-xs uppercase shadow-[var(--shadow-soft)]">
@@ -645,15 +648,25 @@ export function StepPublish({
               ) : null}
             </div>
 
-            {values.taskVisibility === 'unlisted' ? (
+            {values.taskVisibility !== 'public' ? (
               <div className="grid gap-2 rounded-xl border border-warning/46 bg-warning/12 p-4 text-sm leading-5 shadow-[var(--shadow-soft)]">
                 <div className="flex items-start justify-between gap-3">
-                  <p className="font-semibold text-foreground">Unlisted</p>
+                  <p className="font-semibold text-foreground">
+                    {TASK_VISIBILITY_LABELS[values.taskVisibility]}
+                  </p>
                   <Button onClick={onEditBrief} size="sm" type="button" variant="outline">
                     Edit
                   </Button>
                 </div>
-                <p className="text-muted-foreground">{TASK_VISIBILITY_DISCLAIMER}</p>
+                <p className="text-muted-foreground">
+                  {TASK_VISIBILITY_DISCLAIMERS[values.taskVisibility]}
+                </p>
+                {values.taskVisibility === 'private' ? (
+                  <p className="text-muted-foreground">
+                    {values.allowedViewers.split(',').filter((a) => a.trim()).length} wallet(s)
+                    invited{values.accessPassword ? ', password protection on' : ''}.
+                  </p>
+                ) : null}
               </div>
             ) : null}
 

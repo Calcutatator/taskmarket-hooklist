@@ -11,11 +11,26 @@ export const createCmd = new Command('create')
   .option('--mode <mode>', 'Task mode: bounty, claim, pitch, benchmark, auction', 'bounty')
   .option(
     '--task-visibility <mode>',
-    'Task visibility: public (default) or unlisted. Unlisted only hides a task from ' +
-      "Taskmarket's own listings/search/SEO -- it stays permanently visible on the public " +
-      'blockchain to anyone with the link, reading the contract directly, or running their ' +
-      'own indexer. Not a privacy feature.',
+    'Task visibility: public (default), unlisted, or private. Unlisted only hides a task ' +
+      "from Taskmarket's own listings/search/SEO -- it stays permanently visible on the " +
+      'public blockchain to anyone with the link, reading the contract directly, or ' +
+      'running their own indexer. private is genuinely access-controlled: only the ' +
+      'requester and invited/assigned workers can view it via listings, get, or the ' +
+      'gated reads -- see --allowed-viewers and --access-password. Even private, the ' +
+      'on-chain existence, reward, and participation stay publicly observable regardless.',
     'public'
+  )
+  .option(
+    '--allowed-viewers <addresses>',
+    'Comma-separated wallet addresses to invite to a private task. At least one of ' +
+      '--allowed-viewers or --access-password is required when --task-visibility is ' +
+      'private; both may be given together. More wallets can be invited later with ' +
+      '`task invite`.'
+  )
+  .option(
+    '--access-password <password>',
+    'Password (min 8 characters) granting anonymous access to a private task via ' +
+      '`task unlock`. Set once at creation -- there is no command to change it later.'
   )
   .option(
     '--submission-visibility <mode>',
@@ -63,6 +78,8 @@ export const createCmd = new Command('create')
       mode: string;
       taskVisibility: string;
       submissionVisibility: string;
+      allowedViewers?: string;
+      accessPassword?: string;
       tags?: string;
       pitchDeadline?: string;
       bidDeadline?: string;
@@ -92,14 +109,36 @@ export const createCmd = new Command('create')
         return void printError('--duration must be a positive number of hours');
       }
 
-      if (opts.taskVisibility !== 'public' && opts.taskVisibility !== 'unlisted') {
-        return void printError('--task-visibility must be one of: public, unlisted');
+      const validTaskVisibilities = ['public', 'unlisted', 'private'];
+      if (!validTaskVisibilities.includes(opts.taskVisibility)) {
+        return void printError(
+          `--task-visibility must be one of: ${validTaskVisibilities.join(', ')}`
+        );
       }
 
       const validSubmissionVisibilities = ['public', 'reveal_all', 'winner_only', 'never'];
       if (!validSubmissionVisibilities.includes(opts.submissionVisibility)) {
         return void printError(
           `--submission-visibility must be one of: ${validSubmissionVisibilities.join(', ')}`
+        );
+      }
+
+      const allowedViewers = opts.allowedViewers
+        ? opts.allowedViewers.split(',').map((a) => a.trim())
+        : undefined;
+
+      if (opts.taskVisibility === 'private') {
+        if ((!allowedViewers || allowedViewers.length === 0) && !opts.accessPassword) {
+          return void printError(
+            '--task-visibility private requires at least one of --allowed-viewers or --access-password'
+          );
+        }
+        if (opts.accessPassword && opts.accessPassword.length < 8) {
+          return void printError('--access-password must be at least 8 characters');
+        }
+      } else if (allowedViewers || opts.accessPassword) {
+        return void printError(
+          '--allowed-viewers/--access-password are only valid with --task-visibility private'
         );
       }
 
@@ -155,6 +194,13 @@ export const createCmd = new Command('create')
         stakeRequired: false,
         stakeBps: 0,
       };
+
+      if (allowedViewers && allowedViewers.length > 0) {
+        body.allowedViewers = allowedViewers;
+      }
+      if (opts.accessPassword) {
+        body.accessPassword = opts.accessPassword;
+      }
 
       if (opts.pitchDeadline) {
         body.pitchDeadline = parseInt(opts.pitchDeadline, 10) * 3600;

@@ -1,4 +1,4 @@
-import { router, publicProcedure, protectedProcedure } from '../trpc';
+import { router, publicProcedure, protectedProcedure, optionalAuthProcedure } from '../trpc';
 import { BidCreateSchema, BidResponseSchema, AuctionAcceptSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { bids, tasks, agents } from '../db/schema';
@@ -11,6 +11,7 @@ import {
 } from '../services/contract';
 import { computeClockPrice } from '../lib/auction';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
+import { resolveTaskViewability } from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
 
 export const bidsRouter = router({
@@ -140,7 +141,7 @@ export const bidsRouter = router({
       return { success: true, bidId };
     }),
 
-  listByTask: publicProcedure
+  listByTask: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -149,22 +150,31 @@ export const bidsRouter = router({
         summary: 'List bids for an auction task',
       },
     })
-    .input(z.object({ taskId: z.string(), callerAddress: z.string().optional() }))
+    .input(z.object({ taskId: z.string() }))
     .output(z.array(BidResponseSchema))
     .query(async ({ input, ctx }) => {
-      const taskResult = await ctx.db
-        .select()
-        .from(tasks)
-        .where(eq(tasks.id, input.taskId))
-        .limit(1);
+      const { task, viewable } = await resolveTaskViewability(
+        ctx.db,
+        input.taskId,
+        ctx.caller,
+        ctx.taskAccessGrant
+      );
 
-      const task = taskResult[0] ?? null;
+      // Phase 3 (ADR-0030): a private task the caller can't view returns no bids at
+      // all, matching this endpoint's pre-existing lenient "unknown taskId returns []"
+      // behavior -- no new existence-confirming signal. Composes as an AND with the
+      // auction bid-sealing logic below, not a replacement for it: a viewable,
+      // non-private, still-sealed auction still hides workerAddress/price pre-deadline.
+      if (!viewable) return [];
+
       const now = new Date();
       const deadlinePassed = task?.bidDeadline ? now >= task.bidDeadline : true;
 
       // For reverse_english before deadline: bids are fully sealed
       const isSealed =
         task?.auctionType === 'reverse_english' && task?.status === 'open' && !deadlinePassed;
+
+      const callerAddress = ctx.caller?.address;
 
       const results = await ctx.db
         .select()
@@ -184,8 +194,8 @@ export const bidsRouter = router({
               createdAt: bid.createdAt.toISOString(),
               workerAgentId: null,
               isMyBid:
-                input.callerAddress != null
-                  ? bid.workerAddress.toLowerCase() === input.callerAddress.toLowerCase()
+                callerAddress != null
+                  ? bid.workerAddress.toLowerCase() === callerAddress.toLowerCase()
                   : undefined,
             };
           }
@@ -204,8 +214,8 @@ export const bidsRouter = router({
             createdAt: bid.createdAt.toISOString(),
             workerAgentId: agentResult[0]?.agentId ?? null,
             isMyBid:
-              input.callerAddress != null
-                ? bid.workerAddress.toLowerCase() === input.callerAddress.toLowerCase()
+              callerAddress != null
+                ? bid.workerAddress.toLowerCase() === callerAddress.toLowerCase()
                 : undefined,
           };
         })

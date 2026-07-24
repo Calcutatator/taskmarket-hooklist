@@ -2,7 +2,7 @@ import { sql } from 'drizzle-orm';
 import type { db as Database } from '../db/client';
 import { agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { taskNotUnlistedSql } from '../lib/task-visibility';
+import { taskDiscoverableSql } from '../lib/task-visibility';
 import type {
   PlatformTimeSeriesInput,
   PlatformTimeSeriesResponse,
@@ -109,18 +109,18 @@ export async function getPlatformTimeSeries(
     ),
     tasks_created as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket, count(*)::int as c
-      from tasks where ${taskNotUnlistedSql} group by 1
+      from tasks where ${taskDiscoverableSql} group by 1
     ),
     reward_volume as (
       select ${bucketTruncExpr('created_at', bucket)} as bucket,
              coalesce(sum(reward), 0)::text as v
-      from tasks where ${taskNotUnlistedSql} group by 1
+      from tasks where ${taskDiscoverableSql} group by 1
     ),
     completed as (
       select ${bucketTruncExpr('f.created_at', bucket)} as bucket, count(*)::int as c
       from feedbacks f
       join tasks t on t.id = f.task_id
-      where ${taskNotUnlistedSql}
+      where ${taskDiscoverableSql}
       group by 1
     ),
     new_agents as (
@@ -238,7 +238,7 @@ export async function getAgentTimeSeries(
              coalesce(sum(t.reward), 0)::text as v
       from feedbacks f
       join tasks t on t.id = f.task_id
-      where f.worker_address = ${address} and ${taskNotUnlistedSql}
+      where f.worker_address = ${address} and ${taskDiscoverableSql}
       group by 1
     ),
     completed as (
@@ -304,10 +304,10 @@ export async function getAgentTimeSeries(
 export async function getBreakdowns(db: DB): Promise<BreakdownsResponse> {
   const query = sql`
     select 'status' as kind, status as key, count(*)::int as c
-    from tasks where ${taskNotUnlistedSql} group by status
+    from tasks where ${taskDiscoverableSql} group by status
     union all
     select 'mode' as kind, mode as key, count(*)::int as c
-    from tasks where ${taskNotUnlistedSql} group by mode
+    from tasks where ${taskDiscoverableSql} group by mode
     union all
     select 'actorType' as kind,
            case when registered_via = 'web' then 'human' else 'agent' end as key,
@@ -375,7 +375,7 @@ export async function getActivityFeed(
         select 'task_created' as type, t.created_at as ts, t.id as task_id,
                t.description as descr, t.requester as actor,
                t.reward::text as amount, null::int as rating
-        from tasks t where ${taskNotUnlistedSql}`,
+        from tasks t where ${taskDiscoverableSql}`,
     });
   }
   if (typeSet.has('task_submitted')) {
@@ -386,7 +386,7 @@ export async function getActivityFeed(
                t.description as descr, s.worker_address as actor,
                null::text as amount, null::int as rating
         from submissions s join tasks t on t.id = s.task_id
-        where ${taskNotUnlistedSql}`,
+        where ${taskDiscoverableSql}`,
     });
   }
   if (typeSet.has('task_claimed')) {
@@ -397,7 +397,7 @@ export async function getActivityFeed(
                t.description as descr, c.worker_address as actor,
                c.stake_amount::text as amount, null::int as rating
         from claims c join tasks t on t.id = c.task_id
-        where ${taskNotUnlistedSql}`,
+        where ${taskDiscoverableSql}`,
     });
   }
   if (typeSet.has('task_pitched')) {
@@ -408,7 +408,7 @@ export async function getActivityFeed(
                t.description as descr, p.worker_address as actor,
                null::text as amount, null::int as rating
         from proposals p join tasks t on t.id = p.task_id
-        where ${taskNotUnlistedSql}`,
+        where ${taskDiscoverableSql}`,
     });
   }
   if (typeSet.has('bid_placed')) {
@@ -419,7 +419,7 @@ export async function getActivityFeed(
                t.description as descr, b.worker_address as actor,
                b.price::text as amount, null::int as rating
         from bids b join tasks t on t.id = b.task_id
-        where ${taskNotUnlistedSql}`,
+        where ${taskDiscoverableSql}`,
     });
   }
   if (typeSet.has('task_rated')) {
@@ -430,7 +430,7 @@ export async function getActivityFeed(
                t.description as descr, f.requester_address as actor,
                null::text as amount, f.rating::int as rating
         from feedbacks f join tasks t on t.id = f.task_id
-        where ${taskNotUnlistedSql}`,
+        where ${taskDiscoverableSql}`,
     });
   }
 
@@ -605,7 +605,7 @@ export async function getActivityHeatmap(
         count(*)::int as c,
         coalesce(sum(reward), 0)::text as v
       from tasks
-      where created_at is not null and ${taskNotUnlistedSql}
+      where created_at is not null and ${taskDiscoverableSql}
       ${rangeClause}
       group by 1, 2
     )

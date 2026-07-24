@@ -25,7 +25,7 @@ import { taskDrops, taskDropSubscriptions, tasks } from '../db/schema';
 import { logger } from '../lib/logger';
 import { isOfficialTaskDropOwner } from '../lib/task-drops';
 import { secureCompare } from '../lib/secure-compare';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable } from '../lib/task-visibility';
 import { announceOfficialTaskDrop } from '../services/task-drop-announcements';
 import { enforceTaskDropSubscribeRateLimit } from '../services/task-drop-subscribe-rate-limit';
 import { sendOfficialTaskDropsWelcome, sendTaskDropsWelcome } from '../services/task-drops-email';
@@ -215,7 +215,7 @@ export const taskDropsRouter = router({
         })
         .from(taskDrops)
         .innerJoin(tasks, eq(tasks.taskDropId, taskDrops.id))
-        .where(taskNotUnlisted)
+        .where(taskDiscoverable)
         .groupBy(taskDrops.id);
       const pagedQuery = cursorCondition ? groupedQuery.having(cursorCondition) : groupedQuery;
       const rows = await pagedQuery
@@ -287,7 +287,7 @@ export const taskDropsRouter = router({
           expiryTime: tasks.expiryTime,
         })
         .from(tasks)
-        .where(and(eq(tasks.taskDropId, input.taskDropId), taskNotUnlisted))
+        .where(and(eq(tasks.taskDropId, input.taskDropId), taskDiscoverable))
         .orderBy(desc(tasks.createdAt));
 
       return {

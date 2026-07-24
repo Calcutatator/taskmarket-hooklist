@@ -1,4 +1,5 @@
 import type { Caller } from '../context';
+import { canView, type CanViewTask, type TaskViewabilityContext } from './task-visibility';
 
 export type SubmissionVisibilityMode = 'public' | 'reveal_all' | 'winner_only' | 'never';
 
@@ -41,33 +42,58 @@ export function isSubmittingWorker(
 /**
  * Can `caller` see this one submission, given the task's submissionVisibility
  * mode/status and (for winner_only) the set of task_awards-linked winning
- * addresses? This is Phase 2's role/mode gate (ADR-0016) -- narrower than
- * Phase 3's general canView, which will decide "can this caller see the task
- * at all" rather than "can this caller see this one already-visible task's
- * submission."
+ * addresses? This is Phase 2's role/mode gate (ADR-0016).
+ *
+ * Phase 3 (ADR-0030) composes the general task-level `canView` predicate here, rather
+ * than requiring every call site to check it separately: a private task with the
+ * default (`public`) submissionVisibility mode would otherwise leak every submission to
+ * any caller, since `mode === 'public'` used to short-circuit the rest of this function
+ * to `true` regardless of who's asking. But the composition isn't a simple prerequisite
+ * gate in front of everything -- the requester and the submission's own submitting
+ * worker must always be able to see it, exactly as Phase 2 already guaranteed,
+ * regardless of whether they separately satisfy `canView` (e.g. a worker who submitted
+ * to a private bounty-mode task without ever being `claimedBy` or allowlisted -- their
+ * own submission is still theirs to see). `canView` only gates the *wider* audience
+ * beyond the caller's own participation: an uninvited third party, or an invited viewer
+ * who never submitted anything.
  *
  * Truth table (see the RFC's "Time + role gated reveal" section):
- *   - public: always visible.
- *   - Active task (not yet ended): requester sees all, submitting worker sees
- *     their own, everyone else sees nothing, regardless of mode.
- *   - Ended task: reveal_all shows everything; winner_only shows only
- *     task_awards-linked submissions; never shows nothing beyond requester/
- *     submitting worker.
+ *   - Requester or the submission's own submitting worker: always visible, regardless
+ *     of task visibility or submission-visibility mode.
+ *   - Anyone else on a task not viewable by caller (per canView): never visible.
+ *   - public (once the task itself is viewable): always visible.
+ *   - Active task (not yet ended): nobody else sees it, regardless of mode.
+ *   - Ended task: reveal_all shows everything (to anyone who can view the task);
+ *     winner_only shows only task_awards-linked submissions; never shows nothing beyond
+ *     requester/submitting worker.
  */
 export function canViewSubmission(params: {
   mode: SubmissionVisibilityMode;
   taskStatus: string;
   taskVerdictType?: string | null;
   caller: Caller | undefined;
-  task: { requester: string };
+  task: CanViewTask;
   submission: { workerAddress: string };
   winningAddresses: ReadonlySet<string>;
+  taskViewability?: TaskViewabilityContext;
 }): boolean {
-  const { mode, taskStatus, taskVerdictType, caller, task, submission, winningAddresses } = params;
+  const {
+    mode,
+    taskStatus,
+    taskVerdictType,
+    caller,
+    task,
+    submission,
+    winningAddresses,
+    taskViewability,
+  } = params;
 
-  if (mode === 'public') return true;
   if (isRequester(caller, task)) return true;
   if (isSubmittingWorker(caller, submission)) return true;
+
+  if (!canView(task, caller, taskViewability)) return false;
+
+  if (mode === 'public') return true;
   if (!isTaskEnded(taskStatus, taskVerdictType)) return false;
 
   switch (mode) {

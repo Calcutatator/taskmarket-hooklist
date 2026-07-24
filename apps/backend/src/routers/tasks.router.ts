@@ -33,6 +33,7 @@ import {
   bids,
   taskDrops,
   taskDropTaskReservations,
+  taskAllowedViewers,
 } from '../db/schema';
 import {
   eq,
@@ -69,7 +70,8 @@ import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 import { lowerAddressEq } from '../lib/agents';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable, canView, fetchPrivateViewabilityContext } from '../lib/task-visibility';
+import { hashTaskAccessPassword } from '../lib/task-access-password';
 import {
   computeNetReward,
   computePendingActions,
@@ -137,12 +139,16 @@ function taskPhaseCondition(phase: TaskPhaseType, now: Date) {
 function visibleLatestSubmissionWorker(
   workerAddress: string | null | undefined,
   task: {
+    id: string;
     requester: string;
+    claimedBy: string | null;
+    taskVisibility: string;
     status: string;
     verdictType: string | null;
     submissionVisibility: string;
   },
-  caller: Context['caller']
+  caller: Context['caller'],
+  taskAccessGrant: Context['taskAccessGrant']
 ): string | null {
   if (!workerAddress) return null;
   const visible = canViewSubmission({
@@ -153,6 +159,11 @@ function visibleLatestSubmissionWorker(
     task,
     submission: { workerAddress },
     winningAddresses: new Set<string>(),
+    // The caller already had to pass canView() to reach this point (get() returns
+    // null earlier for a private task the caller can't see; update() requires the
+    // caller to be the requester), so this is always viewable in practice -- passed
+    // through for correctness rather than assuming it.
+    taskViewability: { taskAccessGrant },
   });
   return visible ? workerAddress : null;
 }
@@ -176,7 +187,7 @@ export const tasksRouter = router({
           totalRewards: sql<string>`coalesce(sum(${tasks.reward}::numeric), 0)::text`,
         })
         .from(tasks)
-        .where(taskNotUnlisted);
+        .where(taskDiscoverable);
       return {
         count: result[0]?.count ?? 0,
         totalRewards: result[0]?.totalRewards ?? '0',
@@ -357,6 +368,17 @@ export const tasksRouter = router({
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
       const taskVisibility = input.taskVisibility ?? 'public';
       const submissionVisibility = input.submissionVisibility ?? 'public';
+      // Phase 3 (ADR-0030): only meaningful for a private task -- TaskCreateSchema's
+      // superRefine already guarantees at least one of allowedViewers/accessPassword is
+      // present when taskVisibility === 'private', and that neither is present otherwise.
+      const privateAccessPasswordHash =
+        taskVisibility === 'private' && input.accessPassword
+          ? hashTaskAccessPassword(input.accessPassword)
+          : null;
+      const allowedViewerAddresses =
+        taskVisibility === 'private'
+          ? Array.from(new Set((input.allowedViewers ?? []).map((a) => a.toLowerCase())))
+          : [];
 
       const requesterAgent = await ctx.db
         .select({ agentId: agents.agentId, publicKey: agents.publicKey })
@@ -399,6 +421,7 @@ export const tasksRouter = router({
           mode: input.mode ?? 'bounty',
           taskVisibility,
           submissionVisibility,
+          privateAccessPasswordHash,
           stakeRequired: input.stakeRequired ? 1 : 0,
           stakeBps: input.stakeBps ?? 0,
           pitchDeadline: input.pitchDeadline
@@ -426,6 +449,16 @@ export const tasksRouter = router({
             .delete(taskDropTaskReservations)
             .where(eq(taskDropTaskReservations.reservationId, taskDropReservationId));
         }
+
+        if (allowedViewerAddresses.length > 0) {
+          await tx.insert(taskAllowedViewers).values(
+            allowedViewerAddresses.map((viewerAddress) => ({
+              taskId,
+              viewerAddress,
+              addedBy: normalizedPayer,
+            }))
+          );
+        }
       });
 
       if (evaluatorAssignment) {
@@ -443,10 +476,11 @@ export const tasksRouter = router({
         await ctx.db.update(tasks).set(evaluatorAssignment).where(eq(tasks.id, taskId));
       }
 
-      // Unlisted tasks opt out of Taskmarket's own discovery surfaces (ADR-0014) --
-      // that includes outbound notifications, not just browse/search, since actively
-      // emailing/pinging worker agents about an "unlisted" task would defeat the point.
-      if (taskVisibility !== 'unlisted') {
+      // Unlisted and private tasks opt out of Taskmarket's own discovery surfaces
+      // (ADR-0014, ADR-0030) -- that includes outbound notifications, not just
+      // browse/search, since actively emailing/pinging worker agents about an
+      // "unlisted" or "private" task would defeat the point.
+      if (taskVisibility !== 'unlisted' && taskVisibility !== 'private') {
         // Fire-and-forget targeted "new task" notification to eligible worker agents.
         // Runs AFTER the successful insert so a mailer hiccup can never fail or delay
         // task creation. Idempotent by taskId (embedded in the body); the daemon's
@@ -497,7 +531,7 @@ export const tasksRouter = router({
       const conditions = [];
       // Discovery listings never surface unlisted tasks (ADR-0014). Fetching a
       // specific task by ID is unaffected -- this only gates the browse/search path.
-      conditions.push(taskNotUnlisted);
+      conditions.push(taskDiscoverable);
       if (input.status && input.status !== 'ALL') {
         conditions.push(eq(tasks.status, input.status));
       }
@@ -738,6 +772,7 @@ export const tasksRouter = router({
           mode: task.mode as TaskModeType,
           taskVisibility: task.taskVisibility as TaskVisibilityType,
           submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
+          hasAccessPassword: task.privateAccessPasswordHash != null,
           stakeRequired: task.stakeRequired === 1,
           stakeBps: task.stakeBps,
           pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -792,6 +827,19 @@ export const tasksRouter = router({
       }
 
       const task = result[0];
+
+      // Phase 3 (ADR-0030): a private task's denial looks identical to "doesn't exist" --
+      // returning null here (rather than throwing NOT_FOUND) is zero behavior change to
+      // this endpoint's existing missing-task contract, and avoids confirming existence
+      // to a caller who can't view it. Checked before any of the heavier joins/contract
+      // calls below so a denied caller doesn't pay for wasted work.
+      if (task.taskVisibility === 'private') {
+        const viewability = await fetchPrivateViewabilityContext(ctx.db, task.id);
+        if (!canView(task, ctx.caller, { taskAccessGrant: ctx.taskAccessGrant, ...viewability })) {
+          return null;
+        }
+      }
+
       const now = new Date();
 
       const workerAddress = task.claimedBy;
@@ -1044,6 +1092,7 @@ export const tasksRouter = router({
         mode: task.mode as TaskModeType,
         taskVisibility: task.taskVisibility as TaskVisibilityType,
         submissionVisibility: task.submissionVisibility as SubmissionVisibilityType,
+        hasAccessPassword: task.privateAccessPasswordHash != null,
         stakeRequired: task.stakeRequired === 1,
         stakeBps: task.stakeBps,
         pitchDeadline: task.pitchDeadline?.toISOString() || null,
@@ -1122,7 +1171,8 @@ export const tasksRouter = router({
             latestSubmissionWorker: visibleLatestSubmissionWorker(
               latestSubmission[0]?.workerAddress,
               task,
-              ctx.caller
+              ctx.caller,
+              ctx.taskAccessGrant
             ),
             evaluator: task.evaluator,
             disputeResolver: task.disputeResolver,
@@ -1512,6 +1562,7 @@ export const tasksRouter = router({
         mode: t.mode as TaskModeType,
         taskVisibility: t.taskVisibility as TaskVisibilityType,
         submissionVisibility: t.submissionVisibility as SubmissionVisibilityType,
+        hasAccessPassword: t.privateAccessPasswordHash != null,
         stakeRequired: t.stakeRequired === 1,
         stakeBps: t.stakeBps,
         pitchDeadline: t.pitchDeadline?.toISOString() || null,
@@ -1559,7 +1610,8 @@ export const tasksRouter = router({
             latestSubmissionWorker: visibleLatestSubmissionWorker(
               updatedLatestSubmission[0]?.workerAddress,
               t,
-              ctx.caller
+              ctx.caller,
+              ctx.taskAccessGrant
             ),
             evaluator: t.evaluator,
             disputeResolver: t.disputeResolver,

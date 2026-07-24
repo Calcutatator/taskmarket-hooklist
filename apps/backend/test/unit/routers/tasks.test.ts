@@ -1400,10 +1400,10 @@ describe('tasks router', () => {
 
     // Default (unset) status resolves to 'ALL', which -- like 'open' -- excludes
     // pre-Rev007 legacy tasks via a leading createdAt >= cutoff condition (see
-    // REV007_LISTING_CUTOFF in tasks.router.ts). The shared taskNotUnlisted filter
+    // REV007_LISTING_CUTOFF in tasks.router.ts). The shared taskDiscoverable filter
     // is pushed before that cutoff condition, so every filter combination below
-    // carries 'unlisted' (bound via Drizzle's `ne()`) as its first parameter,
-    // followed by the cutoff ISO timestamp.
+    // carries 'unlisted' and 'private' (bound via Drizzle's `notInArray()`) as its
+    // first two parameters, followed by the cutoff ISO timestamp.
     const REV007_CUTOFF_ISO = '2026-06-30T22:15:06.000Z';
 
     it('filters by worker matching assignment or award membership', async () => {
@@ -1414,6 +1414,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('lower("task_awards"."worker_address")');
       expect(query.params).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         WORKER.toLowerCase(),
         WORKER.toLowerCase(),
@@ -1424,7 +1425,12 @@ describe('tasks router', () => {
       const query = await captureListWhere({ requester: REQUESTER });
 
       expect(query.sql).toContain('"tasks"."requester" = ');
-      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, REQUESTER.toLowerCase()]);
+      expect(query.params).toEqual([
+        'unlisted',
+        'private',
+        REV007_CUTOFF_ISO,
+        REQUESTER.toLowerCase(),
+      ]);
     });
 
     it('combines requester and worker filters', async () => {
@@ -1435,6 +1441,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('from "task_awards"');
       expect(query.params).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         REQUESTER.toLowerCase(),
         WORKER.toLowerCase(),
@@ -1446,28 +1453,29 @@ describe('tasks router', () => {
       const query = await captureListWhere({ status: 'completed', taskDropId: DROP_ID });
 
       expect(query.sql).toContain('"tasks"."task_drop_id" = ');
-      expect(query.params).toEqual(['unlisted', 'completed', DROP_ID]);
+      expect(query.params).toEqual(['unlisted', 'private', 'completed', DROP_ID]);
     });
 
     it('filters by a single tags value delivered as a bare string, matching arrayOverlaps', async () => {
       const query = await captureListWhere({ tags: 'creative' as unknown as string[] });
 
       expect(query.sql).toContain('&&');
-      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, '{"creative"}']);
+      expect(query.params).toEqual(['unlisted', 'private', REV007_CUTOFF_ISO, '{"creative"}']);
     });
 
     it('filters by a comma-separated tags value, splitting into an array before arrayOverlaps', async () => {
       const query = await captureListWhere({ tags: 'creative,dev' as unknown as string[] });
 
       expect(query.sql).toContain('&&');
-      expect(query.params).toEqual(['unlisted', REV007_CUTOFF_ISO, '{"creative","dev"}']);
+      expect(query.params).toEqual(['unlisted', 'private', REV007_CUTOFF_ISO, '{"creative","dev"}']);
     });
 
     it('always excludes unlisted tasks from discovery listings (ADR-0014)', async () => {
       const query = await captureListWhere({});
 
-      expect(query.sql).toContain('"tasks"."task_visibility" <>');
+      expect(query.sql).toContain('"tasks"."task_visibility" not in');
       expect(query.params).toContain('unlisted');
+      expect(query.params).toContain('private');
     });
 
     // A submission-window status (open/claimed/worker_selected) whose deadline has
@@ -1485,8 +1493,8 @@ describe('tasks router', () => {
       const query = await captureListWhere({ status: 'open' });
 
       expect(query.sql).toContain('"tasks"."expiry_time" > ');
-      expect(query.params.slice(0, 3)).toEqual(['unlisted', 'open', REV007_CUTOFF_ISO]);
-      expect(query.params).toHaveLength(4);
+      expect(query.params.slice(0, 4)).toEqual(['unlisted', 'private', 'open', REV007_CUTOFF_ISO]);
+      expect(query.params).toHaveLength(5);
       expect(expiryParamNearNow(query)).toBeLessThan(5_000);
     });
 
@@ -1496,9 +1504,9 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."status" = ');
       expect(query.sql).toContain('"tasks"."expiry_time" > ');
       // Non-open statuses stay outside the REV007 cutoff guard (unchanged, historical
-      // records must stay queryable), so this is exactly 3 params, not 4.
-      expect(query.params).toHaveLength(3);
-      expect(query.params.slice(0, 2)).toEqual(['unlisted', 'claimed']);
+      // records must stay queryable), so this is exactly 4 params, not 5.
+      expect(query.params).toHaveLength(4);
+      expect(query.params.slice(0, 3)).toEqual(['unlisted', 'private', 'claimed']);
       expect(expiryParamNearNow(query)).toBeLessThan(5_000);
     });
 
@@ -1507,8 +1515,8 @@ describe('tasks router', () => {
 
       expect(query.sql).toContain('"tasks"."status" = ');
       expect(query.sql).toContain('"tasks"."expiry_time" > ');
-      expect(query.params).toHaveLength(3);
-      expect(query.params.slice(0, 2)).toEqual(['unlisted', 'worker_selected']);
+      expect(query.params).toHaveLength(4);
+      expect(query.params.slice(0, 3)).toEqual(['unlisted', 'private', 'worker_selected']);
       expect(expiryParamNearNow(query)).toBeLessThan(5_000);
     });
 
@@ -1516,7 +1524,7 @@ describe('tasks router', () => {
       const query = await captureListWhere({ status: 'completed' });
 
       expect(query.sql).not.toContain('"tasks"."expiry_time" > ');
-      expect(query.params).toEqual(['unlisted', 'completed']);
+      expect(query.params).toEqual(['unlisted', 'private', 'completed']);
     });
 
     // `phase` (ADR-0024) is a derived filter, not a stored column -- these lock in that
@@ -1528,6 +1536,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."status" in (');
       expect(query.params).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         'review',
         'appealing',
@@ -1541,6 +1550,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."status" in (');
       expect(query.params).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         'completed',
         'cancelled',
@@ -1553,14 +1563,15 @@ describe('tasks router', () => {
 
       expect(query.sql).toContain('"tasks"."status" in (');
       expect(query.sql).toContain('"tasks"."expiry_time" <= ');
-      expect(query.params.slice(0, 5)).toEqual([
+      expect(query.params.slice(0, 6)).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         'open',
         'claimed',
         'worker_selected',
       ]);
-      const expiryMs = new Date(query.params[5] as string).getTime();
+      const expiryMs = new Date(query.params[6] as string).getTime();
       expect(Math.abs(Date.now() - expiryMs)).toBeLessThan(5_000);
     });
 
@@ -1571,6 +1582,7 @@ describe('tasks router', () => {
       expect(query.sql).toContain('"tasks"."expiry_time" > ');
       expect(query.params).toEqual([
         'unlisted',
+        'private',
         REV007_CUTOFF_ISO,
         'open',
         'claimed',

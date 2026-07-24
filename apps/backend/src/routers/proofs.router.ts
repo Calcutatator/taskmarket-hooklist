@@ -1,4 +1,4 @@
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, optionalAuthProcedure } from '../trpc';
 import { ProofSubmitSchema, ProofResponseSchema } from '@taskmarket/shared';
 import { z } from 'zod';
 import { proofs, submissions, tasks, agents } from '../db/schema';
@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server';
 import { contractSubmitProof, contractSubmitWork } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
 import { lowerAddressEq } from '../lib/agents';
+import { resolveTaskViewability } from '../lib/task-visibility';
 
 export const proofsRouter = router({
   submit: publicProcedure
@@ -147,7 +148,7 @@ export const proofsRouter = router({
       return { success: true, proofId, submissionId };
     }),
 
-  listByTask: publicProcedure
+  listByTask: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -159,6 +160,16 @@ export const proofsRouter = router({
     .input(z.object({ taskId: z.string() }))
     .output(z.array(ProofResponseSchema))
     .query(async ({ input, ctx }) => {
+      // Phase 3 (ADR-0030): a private task the caller can't view returns no proofs,
+      // matching this endpoint's pre-existing "unknown taskId returns []" behavior.
+      const { viewable } = await resolveTaskViewability(
+        ctx.db,
+        input.taskId,
+        ctx.caller,
+        ctx.taskAccessGrant
+      );
+      if (!viewable) return [];
+
       const results = await ctx.db.select().from(proofs).where(eq(proofs.taskId, input.taskId));
 
       return Promise.all(

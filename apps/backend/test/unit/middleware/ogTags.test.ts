@@ -7,7 +7,7 @@ import type { NextFunction } from 'express';
  * Renders a drizzle condition to real Postgres SQL text so assertions check the actual
  * query taskmarket would send, not just that mocked rows happen to render correctly.
  * This is what lets these tests catch a future regression where someone drops the
- * taskNotUnlisted filter from a query -- a test that only supplies pre-filtered mock rows
+ * taskDiscoverable filter from a query -- a test that only supplies pre-filtered mock rows
  * would stay green even if the real code never filtered anything.
  */
 function renderSql(condition: SQL | undefined): { sql: string; params: unknown[] } {
@@ -56,7 +56,7 @@ vi.mock('../../../src/lib/logger', () => ({
 }));
 
 const { ogTagsMiddleware } = await import('../../../src/middleware/ogTags');
-const { taskNotUnlisted } = await import('../../../src/lib/task-visibility');
+const { taskDiscoverable } = await import('../../../src/lib/task-visibility');
 
 function fakeReq(path: string, userAgent: string | undefined) {
   return { path, headers: { 'user-agent': userAgent } } as unknown as Parameters<
@@ -97,6 +97,15 @@ const UNLISTED_TASK = {
   status: 'open',
 };
 
+const PRIVATE_TASK = {
+  id: 'task-private',
+  description: 'PRIVATE-TASK-MARKER an invite-only task',
+  reward: '3000000',
+  mode: 'bounty',
+  tags: [],
+  status: 'open',
+};
+
 describe('ogTagsMiddleware', () => {
   beforeEach(() => {
     selectMock.mockReset();
@@ -114,11 +123,11 @@ describe('ogTagsMiddleware', () => {
     expect(res.send).not.toHaveBeenCalled();
   });
 
-  it('homepage query filters on the real taskNotUnlisted condition, and the rendered body omits an unlisted task even if the DB layer misbehaved and returned one', async () => {
-    // Deliberately return BOTH tasks, as if the WHERE clause did nothing -- this is the
-    // test that actually catches a dropped filter, rather than trusting the mock rows
+  it('homepage query filters on the real taskDiscoverable condition, and the rendered body omits an unlisted or private task even if the DB layer misbehaved and returned one', async () => {
+    // Deliberately return ALL THREE tasks, as if the WHERE clause did nothing -- this is
+    // the test that actually catches a dropped filter, rather than trusting the mock rows
     // are already correctly filtered.
-    const chain = makeChain([PUBLIC_TASK, UNLISTED_TASK]);
+    const chain = makeChain([PUBLIC_TASK, UNLISTED_TASK, PRIVATE_TASK]);
     selectMock.mockReturnValue(chain);
 
     const req = fakeReq('/', BOT_UA);
@@ -129,18 +138,19 @@ describe('ogTagsMiddleware', () => {
     const rendered = renderSql(condition as SQL);
     expect(rendered.sql).toContain('task_visibility');
     expect(rendered.params).toContain('unlisted');
+    expect(rendered.params).toContain('private');
 
-    // The condition actually used must be built from the shared taskNotUnlisted export,
-    // not a look-alike inline condition -- render taskNotUnlisted alone and confirm its
+    // The condition actually used must be built from the shared taskDiscoverable export,
+    // not a look-alike inline condition -- render taskDiscoverable alone and confirm its
     // SQL shape (column + operator, ignoring positional $N placeholder numbering, which
     // shifts depending on where the condition sits inside a larger AND) is a substring of
     // the full where-clause SQL.
-    const sharedFilterRendered = renderSql(taskNotUnlisted).sql.replace(/\$\d+/g, '$N');
+    const sharedFilterRendered = renderSql(taskDiscoverable).sql.replace(/\$\d+/g, '$N');
     expect(rendered.sql.replace(/\$\d+/g, '$N')).toContain(sharedFilterRendered);
   });
 
-  it('tasks list query also uses the real taskNotUnlisted condition', async () => {
-    const chain = makeChain([PUBLIC_TASK, UNLISTED_TASK]);
+  it('tasks list query also uses the real taskDiscoverable condition', async () => {
+    const chain = makeChain([PUBLIC_TASK, UNLISTED_TASK, PRIVATE_TASK]);
     selectMock.mockReturnValue(chain);
 
     const req = fakeReq('/tasks', BOT_UA);
@@ -151,10 +161,11 @@ describe('ogTagsMiddleware', () => {
     const rendered = renderSql(condition as SQL);
     expect(rendered.sql).toContain('task_visibility');
     expect(rendered.params).toContain('unlisted');
+    expect(rendered.params).toContain('private');
   });
 
   it('direct task-detail request for an unlisted task never renders its title or description', async () => {
-    // Simulates the real DB behavior: the taskNotUnlisted-gated query returns zero rows
+    // Simulates the real DB behavior: the taskDiscoverable-gated query returns zero rows
     // for an unlisted task id, exactly as Postgres would.
     const chain = makeChain([]);
     selectMock.mockReturnValue(chain);
@@ -169,6 +180,20 @@ describe('ogTagsMiddleware', () => {
 
     expect(res.body()).not.toContain('UNLISTED-TASK-MARKER');
     // Falls back to the generic /tasks static meta, not a 404 or an empty/broken page.
+    expect(res.body()).toContain('Browse open tasks');
+  });
+
+  it('direct task-detail request for a private task never renders its title or description (Phase 3)', async () => {
+    // Same non-leaking behavior as unlisted: a private task's existence, title, and
+    // description must not be confirmed via OG tags to an anonymous bot crawler.
+    const chain = makeChain([]);
+    selectMock.mockReturnValue(chain);
+
+    const req = fakeReq(`/tasks/${PRIVATE_TASK.id}`, BOT_UA);
+    const res = fakeRes();
+    await ogTagsMiddleware(req, res, fakeNext());
+
+    expect(res.body()).not.toContain('PRIVATE-TASK-MARKER');
     expect(res.body()).toContain('Browse open tasks');
   });
 

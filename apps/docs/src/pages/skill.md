@@ -204,6 +204,19 @@ The requester must have published a secp256k1 public key. `requesterPubkey` is a
 
 `taskmarket inbox` automatically proves wallet ownership so an owner's own `unlisted` tasks appear there. Every other reader, including `taskmarket task list`/`search`, sees public tasks only.
 
+## Private Tasks (Phase 3)
+
+`--task-visibility private` restricts who can even view a task on Taskmarket: only the requester, its `claimedBy`/awarded worker(s), invited wallets, and callers holding a valid unlock grant can see it via `get`, `list`, `pitches`, `proofs`, `submissions`, or `my-submissions` -- everyone else gets the same response as a nonexistent task. This is real, enforced access control (unlike `unlisted`), but it is still not full confidentiality: the task's onchain existence, reward, and participation events remain publicly readable by anyone who reads the blockchain directly. Never describe `private` as hiding a task's onchain footprint.
+
+A private task requires at least one of two invite mechanisms at creation, and may use both together:
+
+- **Wallet allowlist** -- `--allowed-viewers <addr1,addr2,...>` at creation, or add/remove wallets later with `taskmarket task invite <taskId> <address>` / `taskmarket task uninvite <taskId> <address>` (requester only). List the current allowlist with `taskmarket task viewers <taskId>` (requester only).
+- **Password** -- `--access-password <password>` (min 8 characters) at creation. There is no command to change it later. Anyone with the password unlocks the task with `taskmarket task unlock <taskId> --password <password>`, which caches a task-scoped access grant used automatically by subsequent read commands for that `taskId` (`get`, `pitches`, `proofs`, `submissions`, `my-submissions`).
+
+`taskmarket inbox` surfaces `invitedPrivateTasks` -- private tasks a wallet-allowlisted address has been invited to -- once it proves ownership of that address, the same self-auth check it already uses for `unlisted` tasks. This is the primary in-app discovery path for an invited worker; a requester may also just share the task ID directly.
+
+`--submission-visibility` is an independent axis from `--task-visibility`: it governs, among callers who can already view the task, who additionally sees what was submitted. It never widens who can view a private task itself.
+
 ## Submission Visibility
 
 `taskmarket task create --submission-visibility <public|reveal_all|winner_only|never>` (default `public`) controls who can see what a worker submits, independent of `--task-visibility` above -- a fully public task can still hide its submissions, and an unlisted task can still leave them fully open.

@@ -8,10 +8,12 @@ import {
 
 export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
 
-// 'private' is deliberately not a value here yet -- it would behave identically to
-// 'unlisted' with no real access control until read-authentication exists across the
-// read surface (ADR-0014, ADR-0015). Add it only once that enforcement is real.
-export const TaskVisibility = z.enum(['unlisted', 'public']);
+// 'unlisted' | 'public' | 'private'. 'private' (Phase 3, ADR-0030) is a genuinely
+// enforced access-control value -- gated by canView() in the backend's
+// lib/task-visibility.ts, using the ctx.caller read-authentication foundation Phase 2
+// (ADR-0016) built. See ADR-0014/0015 for why 'private' was deliberately withheld until
+// that enforcement existed.
+export const TaskVisibility = z.enum(['unlisted', 'public', 'private']);
 
 // ADR-0016: independent axis from TaskVisibility. Chosen once at creation and
 // locked in permanently -- there is no update path for this field anywhere.
@@ -143,6 +145,14 @@ export const TaskCreateSchema = z
     disputeResolver: z.string().optional(),
     taskDropId: z.string().min(1).optional(),
     taskDropCreate: TaskDropCreateInlineSchema.optional(),
+    // Phase 3 (ADR-0030): only meaningful when taskVisibility === 'private'. At least
+    // one of the two invite mechanisms is required for a private task; either or both
+    // may be provided (requester's choice).
+    allowedViewers: z
+      .array(z.string())
+      .max(50, 'Maximum 50 invited wallets at creation')
+      .optional(),
+    accessPassword: z.string().min(8, 'Password must be at least 8 characters').max(200).optional(),
   })
   .superRefine((input, ctx) => {
     if (input.taskDropId && input.taskDropCreate) {
@@ -151,6 +161,33 @@ export const TaskCreateSchema = z
         path: ['taskDropId'],
         message: 'Provide taskDropId or taskDropCreate, not both',
       });
+    }
+
+    if (input.taskVisibility === 'private') {
+      const hasViewers = !!input.allowedViewers && input.allowedViewers.length > 0;
+      const hasPassword = !!input.accessPassword;
+      if (!hasViewers && !hasPassword) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['taskVisibility'],
+          message: 'A private task needs at least one of allowedViewers or accessPassword',
+        });
+      }
+    } else {
+      if (input.allowedViewers && input.allowedViewers.length > 0) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['allowedViewers'],
+          message: 'allowedViewers is only valid when taskVisibility is private',
+        });
+      }
+      if (input.accessPassword) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ['accessPassword'],
+          message: 'accessPassword is only valid when taskVisibility is private',
+        });
+      }
     }
 
     if (input.mode !== 'auction') return;
@@ -234,6 +271,9 @@ export const TaskResponseSchema = z.object({
   mode: TaskMode,
   taskVisibility: TaskVisibility.optional().default('public'),
   submissionVisibility: SubmissionVisibility.optional().default('public'),
+  // Phase 3 (ADR-0030): whether a private task has a password mechanism configured --
+  // never the hash itself, and never returned for a non-private task.
+  hasAccessPassword: z.boolean().optional(),
   stakeRequired: z.boolean(),
   stakeBps: z.number(),
   pitchDeadline: z.string().nullable(),
@@ -338,6 +378,10 @@ export const TaskInboxInputSchema = z.object({
 export const TaskInboxResponseSchema = z.object({
   asRequester: z.array(TaskResponseSchema),
   asWorker: z.array(TaskResponseSchema),
+  // Phase 3 (ADR-0030): private tasks this address has been wallet-allowlisted onto,
+  // surfaced here (self-authed only) as the in-app invite-discovery mechanism rather
+  // than a separate notification-center feature.
+  invitedPrivateTasks: z.array(TaskResponseSchema).optional().default([]),
 });
 
 export const TaskDetailResponseSchema = TaskResponseSchema.extend({

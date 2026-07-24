@@ -1,8 +1,8 @@
 import type { Metadata } from 'next';
-import { notFound } from 'next/navigation';
 import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
+import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
 import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
 import { buildPageMetadata, buildTaskMetadata, decodeRouteParam } from '@/lib/seo';
 
@@ -51,10 +51,23 @@ export async function generateMetadata({ params }: TaskDetailPageProps): Promise
 
 export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
   const { taskId } = await params;
-  const task = await getTask(decodeRouteParam(taskId));
+  const decodedTaskId = decodeRouteParam(taskId);
+  const task = await getTask(decodedTaskId);
 
+  // Phase 3 (ADR-0031/0031): a private task the anonymous SSR fetch can't view returns
+  // null here, identical to a genuinely missing task -- render the client-side access
+  // gate (wallet signature or password) rather than a hard 404, so an entitled caller
+  // (owner wallet, invited wallet, or a valid unlock) can still reach it.
   if (!task) {
-    notFound();
+    return (
+      <PrivateTaskAccessGate
+        backHref="/tasks"
+        browseAgentsHref="/agents"
+        browseTasksHref="/tasks"
+        profileBasePath="/agents"
+        taskId={decodedTaskId}
+      />
+    );
   }
 
   const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);

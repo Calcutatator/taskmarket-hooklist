@@ -117,8 +117,9 @@ describe('official Task Drop announcements', () => {
 
     expect(taskWhereSql).toBeDefined();
     const { sql: whereSql, params } = dialect.sqlToQuery(taskWhereSql!);
-    expect(whereSql).toContain('"task_visibility" <>');
+    expect(whereSql).toContain('"task_visibility" not in');
     expect(params).toContain('unlisted');
+    expect(params).toContain('private');
   });
 
   it('does not freeze a drop while a task creation is reserved', async () => {

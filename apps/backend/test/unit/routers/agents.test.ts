@@ -183,11 +183,11 @@ describe('agents router', () => {
 
       const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
       const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
-      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" not in');
 
       const workerWhere = workerChain.where.mock.calls[0]?.[0];
       const workerQuery = new PgDialect().sqlToQuery(workerWhere);
-      expect(workerQuery.sql).toContain('"tasks"."task_visibility" <>');
+      expect(workerQuery.sql).toContain('"tasks"."task_visibility" not in');
     });
 
     it('includes unlisted tasks when ctx.caller matches the queried address (ADR-0016/ADR-0022)', async () => {
@@ -219,7 +219,97 @@ describe('agents router', () => {
 
       const requesterWhere = requesterChain.where.mock.calls[0]?.[0];
       const requesterQuery = new PgDialect().sqlToQuery(requesterWhere);
-      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" <>');
+      expect(requesterQuery.sql).toContain('"tasks"."task_visibility" not in');
+    });
+
+    describe('invitedPrivateTasks (Phase 3, ADR-0030)', () => {
+      function makeInvitedTask(overrides: Record<string, unknown> = {}) {
+        return {
+          id: 'task-private-1',
+          requester: '0xRequester000000000000000000000000000001',
+          requesterPubkey: null,
+          description: 'A private task',
+          reward: '1000000',
+          escrowTxHash: '0xhash',
+          createdAt: new Date(),
+          expiryTime: new Date(Date.now() + 86400000),
+          status: 'open',
+          tags: [],
+          mode: 'bounty',
+          taskVisibility: 'private',
+          submissionVisibility: 'public',
+          stakeRequired: 0,
+          stakeBps: 0,
+          pitchDeadline: null,
+          bidDeadline: null,
+          maxPrice: null,
+          metricDescription: null,
+          metricTarget: null,
+          claimedBy: null,
+          claimedAt: null,
+          platformFeeBps: 500,
+          awardCount: 0,
+          primaryAwardWorker: null,
+          primaryAwardRating: null,
+          ...overrides,
+        };
+      }
+
+      it('never queries the invite join for a third party (not self-authed)', async () => {
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([]))
+          .mockReturnValueOnce(makeChain([]));
+
+        const result = await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
+
+        expect(result.invitedPrivateTasks).toEqual([]);
+        // Only 2 real query configurations were provided; if a third select() call
+        // happened and consumed one of these by accident, one of the two branches
+        // above would have received the wrong chain -- asserting exactly 2 calls
+        // catches that regression directly.
+        expect(ctx.db.select).toHaveBeenCalledTimes(2);
+      });
+
+      it('surfaces a private task the address was invited to, once self-authed', async () => {
+        const invitedChain = makeChain([makeInvitedTask()]);
+        const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([])) // asRequester
+          .mockReturnValueOnce(makeChain([])) // asWorker
+          .mockReturnValueOnce(invitedChain) // invitedPrivateTasks join
+          .mockReturnValueOnce(makeChain([])) // submissionCounts
+          .mockReturnValueOnce(makeChain([])) // pitchCounts
+          .mockReturnValueOnce(makeChain([])); // requesterKeys
+
+        const result = await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
+
+        expect(result.invitedPrivateTasks).toHaveLength(1);
+        expect(result.invitedPrivateTasks[0]!.id).toBe('task-private-1');
+        expect(invitedChain.innerJoin).toHaveBeenCalled();
+
+        const where = invitedChain.where.mock.calls[0]?.[0];
+        const query = new PgDialect().sqlToQuery(where);
+        expect(query.sql).toContain("tasks\".\"task_visibility\" = ");
+        expect(query.params).toContain('private');
+      });
+
+      it('does not double-list an invited wallet that has since become the assigned worker', async () => {
+        const sharedTask = makeInvitedTask({ id: 'task-private-2', claimedBy: ADDR.toLowerCase() });
+        const ctx = createMockCtx(undefined, { address: ADDR.toLowerCase() });
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([])) // asRequester
+          .mockReturnValueOnce(makeChain([sharedTask])) // asWorker
+          .mockReturnValueOnce(makeChain([sharedTask])) // invitedPrivateTasks (same task)
+          .mockReturnValueOnce(makeChain([])) // submissionCounts
+          .mockReturnValueOnce(makeChain([])) // pitchCounts
+          .mockReturnValueOnce(makeChain([])); // requesterKeys
+
+        const result = await agentsRouter.createCaller(ctx).inbox({ address: ADDR });
+
+        expect(result.asWorker).toHaveLength(1);
+        expect(result.invitedPrivateTasks).toHaveLength(0);
+      });
     });
   });
 });

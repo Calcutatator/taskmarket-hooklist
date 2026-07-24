@@ -26,7 +26,8 @@ import {
 } from '@/lib/market/task-templates';
 import { auctionTypeOptions, taskModeOptions } from '@/lib/market/task-mode-config';
 import {
-  TASK_VISIBILITY_DISCLAIMER,
+  TASK_VISIBILITY_LABELS,
+  TASK_VISIBILITY_DISCLAIMERS,
   SUBMISSION_VISIBILITY_DISCLAIMERS,
   SUBMISSION_VISIBILITY_LABELS,
 } from '@/lib/market/status-config';
@@ -47,6 +48,12 @@ const SUBMISSION_VISIBILITY_VALUES: Array<'public' | 'reveal_all' | 'winner_only
   'reveal_all',
   'winner_only',
   'never',
+];
+
+const TASK_VISIBILITY_VALUES: Array<'public' | 'unlisted' | 'private'> = [
+  'public',
+  'unlisted',
+  'private',
 ];
 
 type StepBriefProps = {
@@ -415,25 +422,103 @@ export function StepBrief({
           <Controller
             control={control}
             name="taskVisibility"
-            render={({ field }) => {
-              const unlisted = field.value === 'unlisted';
-              return (
-                <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
-                  <label className="flex items-start gap-3 text-sm font-semibold tracking-tight">
-                    <Checkbox
-                      checked={unlisted}
-                      onCheckedChange={(checked) =>
-                        field.onChange(checked === true ? 'unlisted' : 'public')
-                      }
-                    />
-                    Unlisted (hide from browse &amp; search)
-                  </label>
-                  <p className="text-xs leading-5 text-muted-foreground">
-                    {TASK_VISIBILITY_DISCLAIMER}
-                  </p>
+            render={({ field }) => (
+              <div className="grid gap-2 rounded-xl border border-border/68 bg-surface/42 p-4 shadow-[var(--shadow-soft)]">
+                <span className="text-sm font-semibold tracking-tight">Task visibility</span>
+                <div
+                  aria-label="Task visibility"
+                  className="grid grid-cols-3 gap-2"
+                  onKeyDown={(event) =>
+                    handleRadioGroupKeyDown(
+                      event,
+                      TASK_VISIBILITY_VALUES,
+                      field.value,
+                      field.onChange
+                    )
+                  }
+                  role="radiogroup"
+                >
+                  {TASK_VISIBILITY_VALUES.map((value) => {
+                    const selected = value === field.value;
+                    return (
+                      <button
+                        aria-checked={selected}
+                        className={cn(
+                          'rounded-lg border border-border/68 bg-background/46 px-3 py-2 text-center text-sm font-medium transition-[background-color,border-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:border-primary/48',
+                          selected &&
+                            'border-primary/56 bg-primary/10 shadow-[var(--shadow-control)]'
+                        )}
+                        key={value}
+                        onClick={() => field.onChange(value)}
+                        role="radio"
+                        tabIndex={selected ? 0 : -1}
+                        type="button"
+                      >
+                        {TASK_VISIBILITY_LABELS[value]}
+                      </button>
+                    );
+                  })}
                 </div>
-              );
-            }}
+                <p className="text-xs leading-5 text-muted-foreground">
+                  {TASK_VISIBILITY_DISCLAIMERS[field.value]}
+                </p>
+                {field.value === 'private' ? (
+                  <div className="grid gap-3 pt-1">
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="allowed-viewers">Invite wallets (optional)</Label>
+                      <Controller
+                        control={control}
+                        name="allowedViewers"
+                        render={({ field: viewersField }) => (
+                          <Input
+                            id="allowed-viewers"
+                            onChange={viewersField.onChange}
+                            placeholder="0xabc..., 0xdef... (comma-separated)"
+                            value={viewersField.value}
+                          />
+                        )}
+                      />
+                      {fieldErrors.allowedViewers ? (
+                        <p className="text-xs leading-5 text-destructive">
+                          {fieldErrors.allowedViewers}
+                        </p>
+                      ) : null}
+                    </div>
+                    <div className="grid gap-1.5">
+                      <Label htmlFor="access-password">Password (optional)</Label>
+                      <Controller
+                        control={control}
+                        name="accessPassword"
+                        render={({ field: passwordField }) => (
+                          <Input
+                            id="access-password"
+                            minLength={8}
+                            onChange={passwordField.onChange}
+                            placeholder="At least 8 characters"
+                            type="password"
+                            value={passwordField.value}
+                          />
+                        )}
+                      />
+                      {fieldErrors.accessPassword ? (
+                        <p className="text-xs leading-5 text-destructive">
+                          {fieldErrors.accessPassword}
+                        </p>
+                      ) : null}
+                    </div>
+                    <p className="text-xs leading-5 text-muted-foreground">
+                      At least one of invited wallets or a password is required for a private task.
+                      More wallets can be invited later from the task&apos;s dashboard.
+                    </p>
+                    {fieldErrors.taskVisibility ? (
+                      <p className="text-xs leading-5 text-destructive">
+                        {fieldErrors.taskVisibility}
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+              </div>
+            )}
           />
 
           <Controller

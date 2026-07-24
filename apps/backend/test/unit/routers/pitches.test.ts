@@ -164,6 +164,8 @@ describe('pitches router', () => {
     it('returns pitches with worker stats', async () => {
       const ctx = createMockCtx();
       ctx.db.select
+        // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(
           makeChain([
             {
@@ -202,6 +204,8 @@ describe('pitches router', () => {
     it('returns pitches with no workerStats when agent not found', async () => {
       const ctx = createMockCtx();
       ctx.db.select
+        // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
+        .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(
           makeChain([
             {

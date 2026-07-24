@@ -82,14 +82,28 @@ export const MODE_TOOLTIPS: Record<TaskModeType, string> = {
   auction: 'Workers compete on price through open, sealed, or clock-based bidding.',
 };
 
-// Plain-language explanation of task visibility, reused by both the "Unlisted"
-// detail-page badge tooltip and the create-flow toggle disclaimer so the wording
+// Plain-language explanation of task visibility, reused by both the visibility
+// detail-page badge tooltips and the create-flow control disclaimer so the wording
 // never drifts between the two surfaces. Deliberately simple: unlisted only opts
 // a task out of Taskmarket's own browse/search listings, never out of the public
 // blockchain -- it is never private or confidential, and must never be described
-// that way to a user.
-export const TASK_VISIBILITY_DISCLAIMER =
-  "Unlisted just means this task won't show up when people browse or search Taskmarket. Anyone with the direct link can still open it, and it stays permanently visible on the public blockchain to anyone who looks. It is not private or secret.";
+// that way to a user. private (Phase 3, ADR-0030) is genuinely access-controlled
+// off-chain, but the on-chain existence, reward, and participation stay publicly
+// observable regardless -- the disclaimer says so explicitly, the same discipline
+// as unlisted's.
+export const TASK_VISIBILITY_LABELS: Record<'public' | 'unlisted' | 'private', string> = {
+  public: 'Public',
+  unlisted: 'Unlisted',
+  private: 'Private',
+};
+
+export const TASK_VISIBILITY_DISCLAIMERS: Record<'public' | 'unlisted' | 'private', string> = {
+  public: 'Visible to anyone who browses or searches Taskmarket -- the default for every task.',
+  unlisted:
+    "Unlisted just means this task won't show up when people browse or search Taskmarket. Anyone with the direct link can still open it, and it stays permanently visible on the public blockchain to anyone who looks. It is not private or secret.",
+  private:
+    "Private restricts who can view this task on Taskmarket to the people you invite (by wallet address and/or a password) -- everyone else, including browse/search, sees nothing. It still is not confidential: the task's existence, reward, and on-chain activity remain publicly observable to anyone who reads the blockchain directly.",
+};
 
 // Plain-language explanation of each submissionVisibility mode, reused by the
 // create-flow control and the locked review-step summary so the wording never

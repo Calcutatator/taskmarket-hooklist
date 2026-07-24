@@ -18,8 +18,11 @@ export type CreateTaskFormValues = {
   stakeBps: string;
   stakeRequired: boolean;
   tags: string;
-  taskVisibility: 'public' | 'unlisted';
+  taskVisibility: 'public' | 'unlisted' | 'private';
   submissionVisibility: 'public' | 'reveal_all' | 'winner_only' | 'never';
+  // Phase 3 (ADR-0030): only meaningful when taskVisibility === 'private'.
+  allowedViewers: string;
+  accessPassword: string;
   hookContract: string;
   evaluator: string;
   evaluatorFeeBps: string;
@@ -54,6 +57,8 @@ export const DEFAULT_FORM_VALUES: CreateTaskFormValues = {
   tags: '',
   taskVisibility: 'public',
   submissionVisibility: 'public',
+  allowedViewers: '',
+  accessPassword: '',
   hookContract: '',
   evaluator: '',
   evaluatorFeeBps: '',
@@ -171,6 +176,15 @@ export function buildCreateTaskPayload(values: CreateTaskFormValues) {
     payload.auctionType = values.auctionType;
     if (auctionStartPrice) payload.auctionStartPrice = auctionStartPrice;
     if (auctionFloorPrice) payload.auctionFloorPrice = auctionFloorPrice;
+  }
+
+  if (values.taskVisibility === 'private') {
+    const allowedViewers = values.allowedViewers
+      .split(',')
+      .map((address) => address.trim())
+      .filter(Boolean);
+    if (allowedViewers.length > 0) payload.allowedViewers = allowedViewers;
+    if (values.accessPassword.trim()) payload.accessPassword = values.accessPassword.trim();
   }
 
   if (values.hookContract.trim()) {

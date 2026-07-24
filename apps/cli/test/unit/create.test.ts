@@ -70,14 +70,121 @@ describe('task create command', () => {
   });
 
   it('rejects an invalid --task-visibility value', async () => {
-    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'private'], {
+    await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'secret'], {
       from: 'node',
     });
 
     expect(mockPrintError).toHaveBeenCalledWith(
-      expect.stringContaining('--task-visibility must be one of: public, unlisted')
+      expect.stringContaining('--task-visibility must be one of: public, unlisted, private')
     );
     expect(mockX402Post).not.toHaveBeenCalled();
+  });
+
+  describe('--task-visibility private (Phase 3, ADR-0030)', () => {
+    it('rejects private with neither --allowed-viewers nor --access-password', async () => {
+      await createCmd.parseAsync([...BASE_ARGS, '--task-visibility', 'private'], {
+        from: 'node',
+      });
+
+      expect(mockPrintError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '--task-visibility private requires at least one of --allowed-viewers or --access-password'
+        )
+      );
+      expect(mockX402Post).not.toHaveBeenCalled();
+    });
+
+    it('rejects a too-short --access-password', async () => {
+      await createCmd.parseAsync(
+        [...BASE_ARGS, '--task-visibility', 'private', '--access-password', 'short'],
+        { from: 'node' }
+      );
+
+      expect(mockPrintError).toHaveBeenCalledWith(
+        expect.stringContaining('--access-password must be at least 8 characters')
+      );
+      expect(mockX402Post).not.toHaveBeenCalled();
+    });
+
+    it('rejects --allowed-viewers/--access-password when not private', async () => {
+      await createCmd.parseAsync(
+        [...BASE_ARGS, '--allowed-viewers', '0xabc0000000000000000000000000000000000a'],
+        { from: 'node' }
+      );
+
+      expect(mockPrintError).toHaveBeenCalledWith(
+        expect.stringContaining(
+          '--allowed-viewers/--access-password are only valid with --task-visibility private'
+        )
+      );
+      expect(mockX402Post).not.toHaveBeenCalled();
+    });
+
+    it('passes --allowed-viewers (comma-separated, trimmed) through to the request body', async () => {
+      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+
+      await createCmd.parseAsync(
+        [
+          ...BASE_ARGS,
+          '--task-visibility',
+          'private',
+          '--allowed-viewers',
+          '0xabc0000000000000000000000000000000000a, 0xdef0000000000000000000000000000000000b',
+        ],
+        { from: 'node' }
+      );
+
+      expect(mockX402Post).toHaveBeenCalledWith(
+        '/api/tasks',
+        expect.objectContaining({
+          taskVisibility: 'private',
+          allowedViewers: [
+            '0xabc0000000000000000000000000000000000a',
+            '0xdef0000000000000000000000000000000000b',
+          ],
+        })
+      );
+    });
+
+    it('passes --access-password through to the request body', async () => {
+      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+
+      await createCmd.parseAsync(
+        [...BASE_ARGS, '--task-visibility', 'private', '--access-password', 'hunter22'],
+        { from: 'node' }
+      );
+
+      expect(mockX402Post).toHaveBeenCalledWith(
+        '/api/tasks',
+        expect.objectContaining({ taskVisibility: 'private', accessPassword: 'hunter22' })
+      );
+    });
+
+    it('allows both --allowed-viewers and --access-password together', async () => {
+      mockX402Post.mockResolvedValue({ taskId: '0xtask' });
+
+      await createCmd.parseAsync(
+        [
+          ...BASE_ARGS,
+          '--task-visibility',
+          'private',
+          '--allowed-viewers',
+          '0xabc0000000000000000000000000000000000a',
+          '--access-password',
+          'hunter22',
+        ],
+        { from: 'node' }
+      );
+
+      expect(mockX402Post).toHaveBeenCalledWith(
+        '/api/tasks',
+        expect.objectContaining({
+          taskVisibility: 'private',
+          allowedViewers: ['0xabc0000000000000000000000000000000000a'],
+          accessPassword: 'hunter22',
+        })
+      );
+    });
   });
 
   it.each(['reveal_all', 'winner_only', 'never'])(

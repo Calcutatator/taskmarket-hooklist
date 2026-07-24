@@ -21,6 +21,7 @@ import {
   submissions,
   proposals,
   devices,
+  taskAllowedViewers,
 } from '../db/schema';
 import { eq, desc, sql, and, or, ilike, gte, inArray, isNull, getTableColumns } from 'drizzle-orm';
 import type { SQL } from 'drizzle-orm';
@@ -32,7 +33,7 @@ import {
 } from '../lib/task';
 import { sha256Hex } from '../lib/hash';
 import { lowerAddressEq } from '../lib/agents';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable } from '../lib/task-visibility';
 
 export const agentsRouter = router({
   stats: publicProcedure
@@ -147,68 +148,76 @@ export const agentsRouter = router({
         )`
       );
 
-      const [requesterRows, workerRows] = await Promise.all([
+      const awardColumns = {
+        awardCount: sql<number>`(
+          select count(*)::int from ${taskAwards}
+          where ${taskAwards.taskId} = "tasks"."id"
+        )`,
+        primaryAwardWorker: sql<string | null>`(
+          select ${taskAwards.workerAddress} from ${taskAwards}
+          where ${taskAwards.taskId} = "tasks"."id"
+          order by ${taskAwards.rank} asc
+          limit 1
+        )`,
+        primaryAwardRating: sql<number | null>`(
+          select ${taskAwards.rating} from ${taskAwards}
+          where ${taskAwards.taskId} = "tasks"."id"
+          order by ${taskAwards.rank} asc
+          limit 1
+        )`,
+      };
+
+      const [requesterRows, workerRows, invitedRows] = await Promise.all([
         ctx.db
-          .select({
-            ...getTableColumns(tasks),
-            awardCount: sql<number>`(
-              select count(*)::int from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-            )`,
-            primaryAwardWorker: sql<string | null>`(
-              select ${taskAwards.workerAddress} from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-              order by ${taskAwards.rank} asc
-              limit 1
-            )`,
-            primaryAwardRating: sql<number | null>`(
-              select ${taskAwards.rating} from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-              order by ${taskAwards.rank} asc
-              limit 1
-            )`,
-          })
+          .select({ ...getTableColumns(tasks), ...awardColumns })
           .from(tasks)
           .where(
             selfAuthed
               ? eq(tasks.requester, address)
-              : and(eq(tasks.requester, address), taskNotUnlisted)
+              : and(eq(tasks.requester, address), taskDiscoverable)
           )
           .orderBy(desc(tasks.createdAt))
           .limit(50),
         ctx.db
-          .select({
-            ...getTableColumns(tasks),
-            awardCount: sql<number>`(
-              select count(*)::int from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-            )`,
-            primaryAwardWorker: sql<string | null>`(
-              select ${taskAwards.workerAddress} from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-              order by ${taskAwards.rank} asc
-              limit 1
-            )`,
-            primaryAwardRating: sql<number | null>`(
-              select ${taskAwards.rating} from ${taskAwards}
-              where ${taskAwards.taskId} = "tasks"."id"
-              order by ${taskAwards.rank} asc
-              limit 1
-            )`,
-          })
+          .select({ ...getTableColumns(tasks), ...awardColumns })
           .from(tasks)
-          .where(selfAuthed ? isWorker : and(isWorker, taskNotUnlisted))
+          .where(selfAuthed ? isWorker : and(isWorker, taskDiscoverable))
           .orderBy(desc(tasks.createdAt))
           .limit(50),
+        // Phase 3 (ADR-0030): the in-app invite-discovery mechanism for private tasks --
+        // an address wallet-allowlisted onto a private task sees it here once it proves
+        // ownership of that address, the same self-auth mechanism as the two queries
+        // above. Never queried for a third party (selfAuthed === false): an unproven
+        // caller asking about someone else's address has no business learning what
+        // private tasks that address was invited to.
+        selfAuthed
+          ? ctx.db
+              .select({ ...getTableColumns(tasks), ...awardColumns })
+              .from(tasks)
+              .innerJoin(taskAllowedViewers, eq(taskAllowedViewers.taskId, tasks.id))
+              .where(
+                and(
+                  eq(tasks.taskVisibility, 'private'),
+                  sql`lower(${taskAllowedViewers.viewerAddress}) = lower(${address})`
+                )
+              )
+              .orderBy(desc(tasks.createdAt))
+              .limit(50)
+          : Promise.resolve([]),
       ]);
 
-      const allRows = [...requesterRows, ...workerRows];
+      // An invited wallet that has since become the assigned worker (claimedBy/awarded)
+      // already shows up in workerRows -- dedupe so it isn't listed twice.
+      const workerIds = new Set(workerRows.map((t) => t.id));
+      const dedupedInvitedRows = invitedRows.filter((t) => !workerIds.has(t.id));
+
+      const allRows = [...requesterRows, ...workerRows, ...dedupedInvitedRows];
       const allIds = [...new Set(allRows.map((t) => t.id))];
 
       const now = new Date();
 
       if (allIds.length === 0) {
-        return { asRequester: [], asWorker: [] };
+        return { asRequester: [], asWorker: [], invitedPrivateTasks: [] };
       }
 
       const requesterAddresses = [...new Set(allRows.map((task) => task.requester))];
@@ -286,6 +295,7 @@ export const agentsRouter = router({
       return {
         asRequester: requesterRows.map(mapTask),
         asWorker: workerRows.map(mapTask),
+        invitedPrivateTasks: dedupedInvitedRows.map(mapTask),
       };
     }),
 

@@ -60,13 +60,19 @@ export const tasks = pgTable(
     status: text('status').notNull(),
     tags: text('tags').array().notNull(),
     mode: text('mode').notNull().default('bounty'),
-    // 'unlisted' | 'public' only for now -- see ADR-0014/0015 for why 'private' is
-    // deliberately not a value here yet.
+    // 'unlisted' | 'public' | 'private' -- ADR-0030 (Phase 3) added 'private', enforced
+    // via canView() in lib/task-visibility.ts. See ADR-0014/0015 for the original
+    // unlisted/public-only design.
     taskVisibility: text('task_visibility').notNull().default('public'),
     // 'public' | 'reveal_all' | 'winner_only' | 'never' -- ADR-0016. Independent of
     // taskVisibility. Chosen once at creation and locked in permanently -- no update
     // path exists anywhere in the codebase for this column.
     submissionVisibility: text('submission_visibility').notNull().default('public'),
+    // Only set when taskVisibility === 'private' and the requester chose a password
+    // mechanism (ADR-0030). Format: 'scrypt:<saltHex>:<hashHex>' -- see
+    // lib/task-access-password.ts. Never returned to any client; TaskResponseSchema
+    // exposes only the derived hasAccessPassword boolean.
+    privateAccessPasswordHash: text('private_access_password_hash'),
     stakeRequired: integer('stake_required').notNull().default(0),
     stakeBps: smallint('stake_bps').notNull().default(0),
     pitchDeadline: timestamp('pitch_deadline'),
@@ -688,6 +694,64 @@ export const legalAccessReceipts = pgTable(
   })
 );
 
+// Phase 3 (ADR-0030): wallet-allowlist mechanism for private tasks. Modeled directly on
+// `bids`'s composite-unique shape -- one row per (task, viewer), no dupes. Mutable after
+// creation (add/remove), unlike the password mechanism below, since in-app invite
+// discovery (agents.inbox's invitedPrivateTasks) requires being able to add viewers later.
+export const taskAllowedViewers = pgTable(
+  'task_allowed_viewers',
+  {
+    id: serial('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    viewerAddress: text('viewer_address').notNull(),
+    addedBy: text('added_by').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_task_allowed_viewers_task').on(table.taskId),
+    viewerIdx: index('idx_task_allowed_viewers_viewer').on(table.viewerAddress),
+    taskViewerUnique: unique('task_allowed_viewers_task_viewer_unique').on(
+      table.taskId,
+      table.viewerAddress
+    ),
+  })
+);
+
+// Phase 3 (ADR-0030): opaque bearer receipt proving password-verified access to one
+// private task, modeled directly on `legalAccessReceipts` above (same shape: random
+// token, hashed at rest, revocable, lastUsedAt tracked) rather than a stateless
+// HMAC-signed token -- see lib/task-access-grants.ts.
+export const taskAccessGrants = pgTable(
+  'task_access_grants',
+  {
+    id: text('id').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    tokenHash: text('token_hash').notNull().unique(),
+    issuedAt: timestamp('issued_at', { withTimezone: true }).defaultNow().notNull(),
+    expiresAt: timestamp('expires_at', { withTimezone: true }).notNull(),
+    lastUsedAt: timestamp('last_used_at', { withTimezone: true }),
+    revokedAt: timestamp('revoked_at', { withTimezone: true }),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_task_access_grants_task').on(table.taskId),
+    expiresIdx: index('idx_task_access_grants_expires').on(table.expiresAt),
+  })
+);
+
+// Phase 3 (ADR-0030): rate limit for taskAccess.verifyPassword, modeled directly on
+// taskDropSubscribeRateLimits below (same shape: hashed key, sliding window, attempts
+// counter) -- prevents unlimited password-guessing against a private task.
+export const taskAccessPasswordRateLimits = pgTable('task_access_password_rate_limits', {
+  key: text('rate_limit_key').primaryKey(),
+  windowStartedAt: timestamp('window_started_at', { precision: 3, withTimezone: true }).notNull(),
+  attempts: integer('attempts').notNull(),
+  updatedAt: timestamp('updated_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
+});
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskAward = typeof taskAwards.$inferSelect;
@@ -732,3 +796,7 @@ export type LegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferSe
 export type NewLegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferInsert;
 export type LegalAccessReceipt = typeof legalAccessReceipts.$inferSelect;
 export type NewLegalAccessReceipt = typeof legalAccessReceipts.$inferInsert;
+export type TaskAllowedViewer = typeof taskAllowedViewers.$inferSelect;
+export type NewTaskAllowedViewer = typeof taskAllowedViewers.$inferInsert;
+export type TaskAccessGrant = typeof taskAccessGrants.$inferSelect;
+export type NewTaskAccessGrant = typeof taskAccessGrants.$inferInsert;

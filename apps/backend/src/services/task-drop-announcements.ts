@@ -11,7 +11,7 @@ import {
 } from '../db/schema';
 import { sendOfficialTaskDropAnnouncement } from './task-drops-email';
 import { TASK_DROP_RESERVATION_STALE_AFTER_MS } from './task-drop-reservations';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable } from '../lib/task-visibility';
 
 type Db = typeof DbType;
 
@@ -110,7 +110,7 @@ export async function announceOfficialTaskDrop(input: {
     db
       .select({ description: tasks.description, mode: tasks.mode, reward: tasks.reward })
       .from(tasks)
-      .where(and(eq(tasks.taskDropId, taskDropId), taskNotUnlisted)),
+      .where(and(eq(tasks.taskDropId, taskDropId), taskDiscoverable)),
     db
       .select({
         attempts: taskDropAnnouncementDeliveries.attempts,

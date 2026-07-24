@@ -33,7 +33,13 @@ function tasksListApp() {
     '/api',
     createOpenApiExpressMiddleware({
       router: tasksListRouter,
-      createContext: ({ req, res }) => ({ db: database!, req, res, caller: undefined }),
+      createContext: ({ req, res }) => ({
+        db: database!,
+        req,
+        res,
+        caller: undefined,
+        taskAccessGrant: undefined,
+      }),
     })
   );
   return app;

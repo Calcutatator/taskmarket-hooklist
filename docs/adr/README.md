@@ -107,6 +107,8 @@ those always pause for a human.
 - [0027 — Contest `pendingActions` suggest a worker address only when there is exactly one distinct submitter](0027-contest-pending-actions-suggest-worker-only-when-unambiguous.md)
 - [0028 — Upgrading TaskTokenRewardHook reuses the existing RewardVault via a breaking hook cutover, after manually settling the one outstanding reservation first](0028-reward-hook-upgrade-leaves-old-hook-authorized-until-drained.md)
 - [0029 — `processTaskCreatedEvent`'s reconciliation insert cannot recover off-chain-only `create()` inputs](0029-task-created-reconciliation-cannot-recover-off-chain-only-create-inputs.md)
+- [0030 — Private tasks grant access via both wallet allowlist and password, discovered in-app via `agents.inbox`, using an opaque bearer receipt](0030-private-tasks-both-allowlist-and-password-in-app-invite.md)
+- [0031 — Phase 3's private-task SSR gating is a client-side access gate, not a persisted wallet session](0031-private-task-ssr-gating-client-side-not-session.md)
 
 ## Linting
 

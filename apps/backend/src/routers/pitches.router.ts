@@ -1,4 +1,4 @@
-import { router, publicProcedure } from '../trpc';
+import { router, publicProcedure, optionalAuthProcedure } from '../trpc';
 import {
   buildSelectWorkerMessage,
   PitchCreateSchema,
@@ -13,6 +13,7 @@ import { contractSelectWorker, contractSubmitPitch } from '../services/contract'
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
+import { resolveTaskViewability } from '../lib/task-visibility';
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -119,7 +120,7 @@ export const pitchesRouter = router({
       return { success: true, pitchId };
     }),
 
-  listByTask: publicProcedure
+  listByTask: optionalAuthProcedure
     .meta({
       openapi: {
         method: 'GET',
@@ -131,6 +132,16 @@ export const pitchesRouter = router({
     .input(z.object({ taskId: z.string() }))
     .output(z.array(PitchResponseSchema))
     .query(async ({ input, ctx }) => {
+      // Phase 3 (ADR-0030): a private task the caller can't view returns no pitches,
+      // matching this endpoint's pre-existing "unknown taskId returns []" behavior.
+      const { viewable } = await resolveTaskViewability(
+        ctx.db,
+        input.taskId,
+        ctx.caller,
+        ctx.taskAccessGrant
+      );
+      if (!viewable) return [];
+
       const results = await ctx.db
         .select()
         .from(proposals)

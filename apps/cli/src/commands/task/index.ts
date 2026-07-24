@@ -29,6 +29,10 @@ import { appealCmd } from './appeal.js';
 import { evaluatorTimeoutCmd } from './evaluator-timeout.js';
 import { finalizeVerdictCmd } from './finalize-verdict.js';
 import { resolveDisputeCmd } from './resolve-dispute.js';
+import { unlockCmd } from './unlock.js';
+import { inviteCmd } from './invite.js';
+import { uninviteCmd } from './uninvite.js';
+import { viewersCmd } from './viewers.js';
 
 export const taskCommand = new Command('task').description('Manage tasks');
 
@@ -62,3 +66,7 @@ taskCommand.addCommand(appealCmd);
 taskCommand.addCommand(evaluatorTimeoutCmd);
 taskCommand.addCommand(finalizeVerdictCmd);
 taskCommand.addCommand(resolveDisputeCmd);
+taskCommand.addCommand(unlockCmd);
+taskCommand.addCommand(inviteCmd);
+taskCommand.addCommand(uninviteCmd);
+taskCommand.addCommand(viewersCmd);

@@ -1,6 +1,7 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
 import { printResult } from '../../lib/output.js';
+import { signReadAuth } from '../../lib/read-auth.js';
 
 interface TaskRow {
   id: string;
@@ -62,7 +63,13 @@ export const listCmd = new Command('list')
       if (opts.limit) params.set('limit', opts.limit);
       if (opts.cursor) params.set('cursor', opts.cursor);
 
-      const result = (await apiGet(`/api/tasks?${params.toString()}`)) as {
+      // Phase 3 (ADR-0030): wired for consistency with the other read commands, though
+      // it has no effect today -- tasks.list unconditionally excludes private tasks from
+      // browse/search (same as unlisted), with no per-caller override.
+      const auth = await signReadAuth();
+      const result = (await apiGet(`/api/tasks?${params.toString()}`, {
+        headers: auth?.headers ?? {},
+      })) as {
         tasks: TaskRow[];
         hasMore: boolean;
         nextCursor: string | null;

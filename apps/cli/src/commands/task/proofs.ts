@@ -1,13 +1,18 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
 import { printError, printResult } from '../../lib/output.js';
+import { signReadAuth } from '../../lib/read-auth.js';
+import { taskAccessGrantHeaders } from '../../lib/task-access-grants.js';
 
 export const proofsCmd = new Command('proofs')
   .description('List proofs for a benchmark task')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
   .action(async (taskId: string) => {
     try {
-      printResult(await apiGet(`/api/tasks/${taskId}/proofs`));
+      // Phase 3 (ADR-0030): see get.ts's comment -- same read-auth + cached-grant wiring.
+      const auth = await signReadAuth();
+      const headers = { ...(auth?.headers ?? {}), ...(await taskAccessGrantHeaders(taskId)) };
+      printResult(await apiGet(`/api/tasks/${taskId}/proofs`, { headers }));
     } catch (err) {
       printError(err instanceof Error ? err.message : String(err));
     }

@@ -32,6 +32,11 @@ import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
 import { verifySignedAddressOrThrow } from '../lib/agents';
 import { canViewSubmission, type SubmissionVisibilityMode } from '../lib/submission-visibility';
+import {
+  fetchPrivateViewabilityContext,
+  fetchPrivateViewabilityContextForTasks,
+  type CanViewTask,
+} from '../lib/task-visibility';
 import type { Context } from '../context';
 
 type ArtifactInsertRow = Omit<
@@ -166,8 +171,7 @@ async function resolveWinningAddresses(
   return mode === 'winner_only' ? winningAddressesForTask(db, taskId) : new Set<string>();
 }
 
-type VisibilityTask = {
-  requester: string;
+type VisibilityTask = CanViewTask & {
   status: string;
   verdictType: string | null;
   submissionVisibility: string;
@@ -178,6 +182,12 @@ type VisibilityTask = {
  * caller isn't entitled to see it" gate -- used by every single-submission
  * reader (previewArtifact, download), so the forbidden message is the only
  * thing that varies between them.
+ *
+ * Phase 3 (ADR-0030): always runs, even when submissionVisibility is 'public' -- a
+ * private task must still deny a caller who can't view the task at all, regardless of
+ * its submission-visibility mode (see canViewSubmission's doc comment). The fast path
+ * for the common case (non-private task, public mode) still short-circuits before any
+ * extra queries.
  */
 async function assertSubmissionVisible(
   db: Context['db'],
@@ -185,11 +195,18 @@ async function assertSubmissionVisible(
   task: VisibilityTask,
   submission: { workerAddress: string } | undefined,
   caller: Context['caller'],
+  taskAccessGrant: Context['taskAccessGrant'],
   forbiddenMessage: string
 ): Promise<void> {
   const mode = task.submissionVisibility as SubmissionVisibilityMode;
-  if (mode === 'public') return;
+  if (task.taskVisibility !== 'private' && mode === 'public') return;
+
   const winningAddresses = await resolveWinningAddresses(db, mode, taskId);
+  const taskViewability =
+    task.taskVisibility === 'private'
+      ? { taskAccessGrant, ...(await fetchPrivateViewabilityContext(db, taskId)) }
+      : { taskAccessGrant };
+
   const visible =
     !!submission &&
     canViewSubmission({
@@ -200,6 +217,7 @@ async function assertSubmissionVisible(
       task,
       submission,
       winningAddresses,
+      taskViewability,
     });
   if (!visible) {
     throw new TRPCError({ code: 'FORBIDDEN', message: forbiddenMessage });
@@ -637,7 +655,10 @@ export const submissionsRouter = router({
     .query(async ({ input, ctx }) => {
       const taskResult = await ctx.db
         .select({
+          id: tasks.id,
           requester: tasks.requester,
+          claimedBy: tasks.claimedBy,
+          taskVisibility: tasks.taskVisibility,
           status: tasks.status,
           verdictType: tasks.verdictType,
           submissionVisibility: tasks.submissionVisibility,
@@ -661,10 +682,19 @@ export const submissionsRouter = router({
         .where(eq(submissions.taskId, input.taskId));
 
       // public (the default) matches today's exact behavior -- every submission
-      // stays visible to anyone, no role/lifecycle gating at all.
+      // stays visible to anyone, no role/lifecycle gating at all. Phase 3 (ADR-0030):
+      // a private task must still be gated even in public mode, or a private task left
+      // at the default submissionVisibility would leak every submission to anyone.
       let results = allResults;
-      if (mode !== 'public') {
+      if (task.taskVisibility === 'private' || mode !== 'public') {
         const winningAddresses = await resolveWinningAddresses(ctx.db, mode, input.taskId);
+        const taskViewability =
+          task.taskVisibility === 'private'
+            ? {
+                taskAccessGrant: ctx.taskAccessGrant,
+                ...(await fetchPrivateViewabilityContext(ctx.db, input.taskId)),
+              }
+            : { taskAccessGrant: ctx.taskAccessGrant };
         results = allResults.filter((submission) =>
           canViewSubmission({
             mode,
@@ -674,6 +704,7 @@ export const submissionsRouter = router({
             task,
             submission,
             winningAddresses,
+            taskViewability,
           })
         );
       }
@@ -791,6 +822,8 @@ export const submissionsRouter = router({
           completedAt: sql<string>`max(${taskAwards.settledAt})`,
           description: tasks.description,
           submissionVisibility: tasks.submissionVisibility,
+          taskVisibility: tasks.taskVisibility,
+          claimedBy: tasks.claimedBy,
           requester: tasks.requester,
           status: tasks.status,
           verdictType: tasks.verdictType,
@@ -802,12 +835,24 @@ export const submissionsRouter = router({
           taskAwards.taskId,
           tasks.description,
           tasks.submissionVisibility,
+          tasks.taskVisibility,
+          tasks.claimedBy,
           tasks.requester,
           tasks.status,
           tasks.verdictType
         )
         .orderBy(desc(sql`max(${taskAwards.settledAt})`))
         .limit(input.limit);
+
+      // Phase 3 (ADR-0030): batch-fetch allowlist/award context for just the private
+      // tasks in this result set -- zero extra queries when none of them are private.
+      const privateTaskIds = completedRows
+        .filter((row) => row.taskVisibility === 'private')
+        .map((row) => row.taskId);
+      const viewabilityByTaskId = await fetchPrivateViewabilityContextForTasks(
+        ctx.db,
+        privateTaskIds
+      );
 
       // Every row here is already task_awards-linked (a "winner" by
       // definition), so this goes through the same canViewSubmission gate as
@@ -820,9 +865,13 @@ export const submissionsRouter = router({
           taskStatus: row.status,
           taskVerdictType: row.verdictType,
           caller: ctx.caller,
-          task: row,
+          task: { id: row.taskId, ...row },
           submission: { workerAddress: input.address },
           winningAddresses: new Set([input.address.toLowerCase()]),
+          taskViewability: {
+            taskAccessGrant: ctx.taskAccessGrant,
+            ...viewabilityByTaskId.get(row.taskId),
+          },
         })
       );
 
@@ -1053,7 +1102,10 @@ export const submissionsRouter = router({
 
       const taskResult = await ctx.db
         .select({
+          id: tasks.id,
           requester: tasks.requester,
+          claimedBy: tasks.claimedBy,
+          taskVisibility: tasks.taskVisibility,
           status: tasks.status,
           verdictType: tasks.verdictType,
           submissionVisibility: tasks.submissionVisibility,
@@ -1065,23 +1117,21 @@ export const submissionsRouter = router({
         throw new TRPCError({ code: 'NOT_FOUND', message: 'Task not found' });
       }
       const task = taskResult[0];
-      const mode = task.submissionVisibility as SubmissionVisibilityMode;
 
-      if (mode !== 'public') {
-        const submissionResult = await ctx.db
-          .select({ workerAddress: submissions.workerAddress })
-          .from(submissions)
-          .where(eq(submissions.id, artifact.submissionId))
-          .limit(1);
-        await assertSubmissionVisible(
-          ctx.db,
-          artifact.taskId,
-          task,
-          submissionResult[0],
-          ctx.caller,
-          'Not authorized to preview this artifact'
-        );
-      }
+      const submissionResult = await ctx.db
+        .select({ workerAddress: submissions.workerAddress })
+        .from(submissions)
+        .where(eq(submissions.id, artifact.submissionId))
+        .limit(1);
+      await assertSubmissionVisible(
+        ctx.db,
+        artifact.taskId,
+        task,
+        submissionResult[0],
+        ctx.caller,
+        ctx.taskAccessGrant,
+        'Not authorized to preview this artifact'
+      );
 
       const expiresIn = 3600;
       const previewUrl = await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn);
@@ -1131,6 +1181,8 @@ export const submissionsRouter = router({
           taskMode: tasks.mode,
           taskReward: tasks.reward,
           taskRequester: tasks.requester,
+          taskClaimedBy: tasks.claimedBy,
+          taskVisibility: tasks.taskVisibility,
           submissionVisibility: tasks.submissionVisibility,
         })
         .from(submissions)
@@ -1157,15 +1209,34 @@ export const submissionsRouter = router({
         })
       );
 
+      // Phase 3 (ADR-0030): batch-fetch allowlist/award context for just the private
+      // tasks in this result set -- zero extra queries when none of them are private.
+      const privateTaskIds = Array.from(
+        new Set(results.filter((row) => row.taskVisibility === 'private').map((row) => row.taskId))
+      );
+      const viewabilityByTaskId = await fetchPrivateViewabilityContextForTasks(
+        ctx.db,
+        privateTaskIds
+      );
+
       const visible = results.filter((row) =>
         canViewSubmission({
           mode: row.submissionVisibility as SubmissionVisibilityMode,
           taskStatus: row.taskStatus,
           taskVerdictType: row.taskVerdictType,
           caller: ctx.caller,
-          task: { requester: row.taskRequester },
+          task: {
+            id: row.taskId,
+            requester: row.taskRequester,
+            claimedBy: row.taskClaimedBy,
+            taskVisibility: row.taskVisibility,
+          },
           submission: { workerAddress: row.workerAddress },
           winningAddresses: winningAddressesByTask.get(row.taskId) ?? new Set<string>(),
+          taskViewability: {
+            taskAccessGrant: ctx.taskAccessGrant,
+            ...viewabilityByTaskId.get(row.taskId),
+          },
         })
       );
 
@@ -1225,6 +1296,7 @@ export const submissionsRouter = router({
         task,
         submission,
         ctx.caller,
+        ctx.taskAccessGrant,
         'Not authorized to download this submission'
       );
 

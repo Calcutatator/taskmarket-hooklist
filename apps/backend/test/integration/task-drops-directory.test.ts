@@ -40,7 +40,13 @@ function directoryApp() {
     '/api',
     createOpenApiExpressMiddleware({
       router: directoryRouter,
-      createContext: ({ req, res }) => ({ db: database!, req, res, caller: undefined }),
+      createContext: ({ req, res }) => ({
+        db: database!,
+        req,
+        res,
+        caller: undefined,
+        taskAccessGrant: undefined,
+      }),
     })
   );
   return app;

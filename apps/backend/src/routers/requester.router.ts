@@ -2,7 +2,7 @@ import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { tasks, submissions, requesterReputationEvents } from '../db/schema';
 import { and, eq, sql } from 'drizzle-orm';
-import { taskNotUnlisted } from '../lib/task-visibility';
+import { taskDiscoverable } from '../lib/task-visibility';
 
 export const requesterRouter = router({
   stats: publicProcedure
@@ -42,7 +42,7 @@ export const requesterRouter = router({
         ctx.db
           .select({ count: sql<number>`count(*)` })
           .from(tasks)
-          .where(and(sql`lower(${tasks.requester}) = ${addr}`, taskNotUnlisted)),
+          .where(and(sql`lower(${tasks.requester}) = ${addr}`, taskDiscoverable)),
         ctx.db
           .select({ count: sql<number>`count(distinct ${submissions.workerAddress})` })
           .from(submissions)

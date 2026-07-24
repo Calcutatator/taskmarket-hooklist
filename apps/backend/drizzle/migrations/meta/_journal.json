@@ -260,6 +260,13 @@
       "when": 1784763077000,
       "tag": "0035_add_submission_visibility",
       "breakpoints": true
+    },
+    {
+      "idx": 37,
+      "version": "7",
+      "when": 1784907951000,
+      "tag": "0036_add_private_tasks",
+      "breakpoints": true
     }
   ]
 }
