@@ -65,6 +65,17 @@ const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
 const TASK_CREATED_EVENT = parseAbiItem(
   'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime, bool stakeRequired, uint16 stakeBps)'
 );
+// Pre-rev014 signature (no stakeRequired/stakeBps) -- rev014 (ADR-0029) appended two
+// non-indexed fields to TaskCreated, which changes topic0. The Diamond's address is
+// unchanged across the upgrade, so a single address has emitted both signatures over its
+// lifetime. Both must stay registered in the getLogs `events` filter below so a full
+// reseed/disaster-recovery replay from CONTRACT_DEPLOY_BLOCK (see pollIndexerOnce's
+// getLastBlock default) doesn't silently skip every pre-upgrade TaskCreated -- viem
+// decodes each log against whichever ABI item matches its topic0, and both dispatch to
+// the same 'TaskCreated' case in dispatchMainEvent by event name.
+const TASK_CREATED_EVENT_PRE_REV014 = parseAbiItem(
+  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
+);
 const TASK_CLAIMED_EVENT = parseAbiItem(
   'event TaskClaimed(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
 );
@@ -261,9 +272,11 @@ export async function processTaskCreatedEvent(
       mode: modeString,
       // Recovered directly from the TaskCreated event (rev014, ADR-0029) -- unlike
       // Task.stakeAmount (only set later by the worker's claimTask call), the requester's
-      // stakeRequired/stakeBps choice is now emitted on-chain at creation time.
+      // stakeRequired/stakeBps choice is now emitted on-chain at creation time. Pre-rev014
+      // logs (TASK_CREATED_EVENT_PRE_REV014) have neither field in `args`; default both
+      // rather than inserting undefined, since those tasks predate stake config existing.
       stakeRequired: stakeRequired ? 1 : 0,
-      stakeBps: stakeBps as number,
+      stakeBps: (stakeBps as number | undefined) ?? 0,
       platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
       // task_awards backfill only scans the currently-configured contract; an
       // unset contract_address makes a task's settlement unrecoverable (ADR-0008).
@@ -994,6 +1007,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
     toBlock,
     events: [
       TASK_CREATED_EVENT,
+      TASK_CREATED_EVENT_PRE_REV014,
       TASK_CLAIMED_EVENT,
       TASK_WORKER_SELECTED_EVENT,
       TASK_COMPLETED_EVENT,

@@ -138,6 +138,35 @@ describeWithDatabase('indexer status guard handlers', () => {
     expect(rows[0]?.platformFeeBps).toBe(750);
   });
 
+  it('processTaskCreatedEvent defaults stakeRequired/stakeBps to 0 for a pre-rev014 TaskCreated log (no stake args)', async () => {
+    // Simulates a log decoded against TASK_CREATED_EVENT_PRE_REV014 -- args has no
+    // stakeRequired/stakeBps keys at all, not just falsy values. A full reseed replaying
+    // pre-upgrade history must not throw or insert undefined for these columns.
+    const taskId = `test-guard-${randomUUID()}`;
+    taskIds.push(taskId);
+    await processTaskCreatedEvent(
+      {
+        args: {
+          taskId,
+          requester: '0x0000000000000000000000000000000000000002',
+          reward: 1000n,
+          mode: '0xa81913a5',
+          expiryTime: 1_900_000_000n,
+        },
+        eventName: 'TaskCreated',
+        transactionHash: `0x${'b'.repeat(64)}`,
+      },
+      database
+    );
+    const rows = await database
+      .select({ stakeRequired: tasks.stakeRequired, stakeBps: tasks.stakeBps })
+      .from(tasks)
+      .where(eq(tasks.id, taskId))
+      .limit(1);
+    expect(rows[0]?.stakeRequired).toBe(0);
+    expect(rows[0]?.stakeBps).toBe(0);
+  });
+
   it('processTaskCreatedEvent decodes stakeRequired/stakeBps from the TaskCreated event (rev014, ADR-0029)', async () => {
     const taskId = `test-guard-${randomUUID()}`;
     taskIds.push(taskId);
