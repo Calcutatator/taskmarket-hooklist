@@ -1,5 +1,13 @@
 # @lucid-agents/taskmarket
 
+## 1.6.1
+
+### Patch Changes
+
+- fa32efc: USDC amounts printed by `stats` and `task auction-accept` are now formatted with
+  exact base-unit math, so balances and prices above the JavaScript safe-integer
+  limit are no longer rounded.
+
 ## 1.6.0
 
 ### Minor Changes
