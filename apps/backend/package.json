@@ -14,6 +14,7 @@
     "db:studio": "drizzle-kit studio",
     "db:backfill-task-awards": "tsx scripts/backfill-task-awards.ts",
     "db:backfill-agent-registry-chain": "tsx scripts/backfill-agent-registry-chain.ts",
+    "db:retry-orphaned-refunds": "tsx scripts/retry-orphaned-refunds.ts",
     "clean": "rm -rf dist",
     "lint:check": "eslint src/",
     "lint:write": "eslint src/ --fix",
@@ -59,7 +60,8 @@
     "smoke:evaluator": "tsx scripts/smoke-evaluator.ts",
     "smoke:visibility": "tsx scripts/smoke-visibility.ts",
     "smoke:submission-visibility": "tsx scripts/smoke-submission-visibility.ts",
-    "smoke:concurrent-tasks": "tsx scripts/smoke-concurrent-tasks.ts"
+    "smoke:concurrent-tasks": "tsx scripts/smoke-concurrent-tasks.ts",
+    "smoke:payment-orphan-refund": "tsx scripts/smoke-payment-orphan-refund.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

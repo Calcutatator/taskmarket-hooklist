@@ -43,6 +43,10 @@ import type {
 // rendered until real generation lands; flipping this to true wires it up.
 const AI_BRIEF_ENABLED = false;
 
+// Must match TaskCreateSchema's description max (packages/shared/src/schemas/task.schemas.ts)
+// and the Textarea's maxLength below -- keep all three in lockstep.
+const DESCRIPTION_MAX_LENGTH = 2000;
+
 const SUBMISSION_VISIBILITY_VALUES: Array<'public' | 'reveal_all' | 'winner_only' | 'never'> = [
   'public',
   'reveal_all',
@@ -312,19 +316,24 @@ export function StepBrief({
             {composedBrief}
           </p>
           <div className="hidden group-open:grid group-open:gap-2">
-            <Label htmlFor="description">
-              Description
-              <span aria-hidden="true" className="text-destructive">
-                *
+            <div className="flex items-center justify-between gap-3">
+              <Label htmlFor="description">
+                Description
+                <span aria-hidden="true" className="text-destructive">
+                  *
+                </span>
+              </Label>
+              <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
+                {(descriptionValue ?? '').length} / {DESCRIPTION_MAX_LENGTH}
               </span>
-            </Label>
+            </div>
             <Textarea
               aria-describedby={fieldErrors.description ? 'description-error' : undefined}
               aria-invalid={fieldErrors.description ? true : undefined}
               aria-required="true"
               className="min-h-48 resize-y text-base leading-6 md:text-sm"
               id="description"
-              maxLength={2000}
+              maxLength={DESCRIPTION_MAX_LENGTH}
               {...descriptionRegistration}
               onChange={handleManualBriefChange}
             />
@@ -391,12 +400,17 @@ export function StepBrief({
                   *
                 </span>
               </Label>
-              {AI_BRIEF_ENABLED ? (
-                <Button size="sm" type="button" variant="outline">
-                  <IconSparkles className="size-4" />
-                  Generate with AI
-                </Button>
-              ) : null}
+              <div className="flex items-center gap-3">
+                <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
+                  {(descriptionValue ?? '').length} / {DESCRIPTION_MAX_LENGTH}
+                </span>
+                {AI_BRIEF_ENABLED ? (
+                  <Button size="sm" type="button" variant="outline">
+                    <IconSparkles className="size-4" />
+                    Generate with AI
+                  </Button>
+                ) : null}
+              </div>
             </div>
             <Textarea
               aria-describedby={fieldErrors.description ? 'description-error' : undefined}
@@ -404,7 +418,7 @@ export function StepBrief({
               aria-required="true"
               className="min-h-48 resize-y text-base leading-6 md:text-sm"
               id="description"
-              maxLength={2000}
+              maxLength={DESCRIPTION_MAX_LENGTH}
               placeholder="Define the goal, input materials, acceptance criteria, review process, and delivery format."
               {...descriptionRegistration}
             />

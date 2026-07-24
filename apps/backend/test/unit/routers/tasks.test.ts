@@ -13,6 +13,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractGetDreamsWorkerSplitBps: vi.fn().mockResolvedValue(0),
   contractGetDreamsBonusBps: vi.fn().mockResolvedValue(0),
   contractRefundExpired: vi.fn().mockResolvedValue('0xrefundhash'),
+  contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
   precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
@@ -67,6 +68,7 @@ import {
   contractGetDreamsWorkerSplitBps,
   contractGetDreamsBonusBps,
   contractRefundExpired,
+  contractRefundOrphanedPayment,
 } from '../../../src/services/contract';
 import { getServerConfig } from '../../../src/config/env';
 import { notifyNewTask } from '../../../src/services/task-notifications';
@@ -164,7 +166,11 @@ describe('tasks router', () => {
       const ctx = createMockCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
-      const { stakeRequired: _stakeRequired, stakeBps: _stakeBps, ...inputWithoutStake } = baseTaskInput;
+      const {
+        stakeRequired: _stakeRequired,
+        stakeBps: _stakeBps,
+        ...inputWithoutStake
+      } = baseTaskInput;
       await caller.create(inputWithoutStake);
 
       const [, , , , , , , stakeRequired, stakeBps] = vi.mocked(contractCreateTask).mock.calls[0];
@@ -386,6 +392,62 @@ describe('tasks router', () => {
       expect(ctx.db.insert.mock.invocationCallOrder[0]).toBeLessThan(
         vi.mocked(contractAssignEvaluator).mock.invocationCallOrder[0]
       );
+    });
+
+    describe('payment-orphan refund (2026-06-11, 2026-07-24 incidents)', () => {
+      const PAYMENT_TX_HASH = '0xpaymenttxhash';
+
+      it('refunds the settled reward and surfaces it in the error when createTask fails after payment', async () => {
+        vi.mocked(contractCreateTask).mockRejectedValueOnce(
+          new Error('Contract call rejected: EnforcedPause')
+        );
+        const ctx = createMockCtx(PAYER);
+        ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
+        // attemptRefund's compare-and-swap claim step needs its update() call to
+        // return a non-empty row array (the default mock db.update resolves .returning()
+        // to []); the second update() call is the final 'refunded' status set.
+        ctx.db.update
+          .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
+          .mockReturnValueOnce(makeChain());
+        const caller = tasksRouter.createCaller(ctx);
+
+        await expect(caller.create(baseTaskInput)).rejects.toThrow(/automatically refunded/);
+
+        expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(
+          PAYER,
+          BigInt(baseTaskInput.reward)
+        );
+        // No task row (or anything else) is ever persisted for a create that never
+        // succeeded on-chain -- the only insert is orphaned-payments' own ledger row.
+        expect(ctx.db.insert).toHaveBeenCalledOnce();
+      });
+
+      it('tells the caller to contact support when the automatic refund itself cannot be sent', async () => {
+        vi.mocked(contractCreateTask).mockRejectedValueOnce(new Error('unknown revert'));
+        vi.mocked(contractRefundOrphanedPayment).mockRejectedValueOnce(
+          new Error('insufficient funds for gas')
+        );
+        const ctx = createMockCtx(PAYER);
+        ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
+        ctx.db.update
+          .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
+          .mockReturnValueOnce(makeChain());
+        const caller = tasksRouter.createCaller(ctx);
+
+        await expect(caller.create(baseTaskInput)).rejects.toThrow(/flagged for manual review/);
+      });
+
+      it('does not attempt a refund when createTask fails but no payment ever settled', async () => {
+        vi.mocked(contractCreateTask).mockRejectedValueOnce(new Error('unknown revert'));
+        const ctx = createMockCtx(PAYER);
+        // No ctx.res.locals.paymentTxHash set.
+        const caller = tasksRouter.createCaller(ctx);
+
+        await expect(caller.create(baseTaskInput)).rejects.toThrow('unknown revert');
+
+        expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+        expect(ctx.db.insert).not.toHaveBeenCalled();
+      });
     });
   });
 
@@ -878,6 +940,37 @@ describe('tasks router', () => {
 
       expect(contractUpdateTask).toHaveBeenCalledOnce();
       expect(result!.reward).toBe('5000000');
+    });
+
+    it('refunds and never persists the reward change when the on-chain update fails', async () => {
+      // Regression test for the payment-orphan review finding: this handler's catch
+      // block must `return` out of the mutation on failure, not just call
+      // handlePostPaymentFailure and fall through -- otherwise the reward/expiry
+      // change below would be written to the DB despite the on-chain update having
+      // reverted, leaving the DB and chain permanently out of sync.
+      vi.mocked(contractUpdateTask).mockRejectedValueOnce(
+        new Error('Contract call rejected: EnforcedPause')
+      );
+      const ctx = createMockCtx(PAYER);
+      ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+      ctx.db.select.mockReturnValueOnce(makeChain([openBountyRow]));
+      // First update() call is orphaned-payments' compare-and-swap claim, second is
+      // its final 'refunded' status set -- neither is the tasks-table dbUpdate write,
+      // which must never be reached.
+      ctx.db.update
+        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
+        .mockReturnValueOnce(makeChain());
+      const caller = tasksRouter.createCaller(ctx);
+
+      await expect(caller.update({ taskId: '0xabc', reward: '5000000' })).rejects.toThrow(
+        /automatically refunded/
+      );
+
+      // computeUpdatePaymentAmount(currentReward='1000000', requestedReward='5000000')
+      // = STANDARD_X402_ACTION_AMOUNT (1000) + the 4000000 increase.
+      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(PAYER, 4001000n);
+      // Exactly the 2 orphaned-payments calls above -- the tasks-table update never runs.
+      expect(ctx.db.update).toHaveBeenCalledTimes(2);
     });
 
     it('returns the stored taskVisibility after an unrelated field update', async () => {

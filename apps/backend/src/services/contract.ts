@@ -61,12 +61,147 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0x089087ea': 'SharesMustSumTo10000',
   '0xff633a38': 'LengthMismatch',
   '0x91edfffa': 'SubmissionNotFound',
+  // Guard-level errors (LibTaskMarket) -- these fire before any facet-specific logic
+  // runs, so they can surface on almost any relayed call, including createTask.
+  '0xd93c0665': 'EnforcedPause',
+  // createTask-specific validation (CoreFacet.createTask / _buildAndCheckHooks). These
+  // decoded incorrectly as "unknown revert" before this map existed for them -- see the
+  // 2026-07-24 createTask payment-orphan incident.
+  '0xcc3440c9': 'RewardMustBeGreaterThanZero',
+  '0xcf478f23': 'DurationMustBeGreaterThanZero',
+  '0xa0042b17': 'InvalidMode',
+  '0xba204b83': 'InvalidAuctionSubtype',
+  '0xa2425099': 'StakeBpsTooHigh',
+  '0x0cbb8fa2': 'PitchDeadlineMustBeGreaterThanZero',
+  '0xe27d6e53': 'BidDeadlineMustBeGreaterThanZero',
+  '0xde720534': 'TooManyHooks',
+  '0x49b38860': 'DuplicateHookAddress',
+  '0xaa5be784': 'InvalidHookAddress',
+  '0xbc47aba9': 'HookCheckFundRejected',
+  // TaskMarketForwarder errors -- these come from relay() itself, before the call
+  // ever reaches the Diamond, so they're exactly as reachable on any relayed call as
+  // the Diamond-side errors above. FORWARDER_ABI (below) declares only the relay()
+  // function, no error types, so viem can't decode these from that ABI either --
+  // same "signature only, no errorName" situation this map exists to work around.
+  '0x0b17c5d4': 'ReceiptAlreadyConsumed',
+  '0x34d2712a': 'ReceiptExpired',
+  '0x118a0502': 'ReceiptNotYetValid',
+  '0xdb6a42ee': 'RelayFailed',
+  '0x3c20627b': 'UnauthorizedRelayer',
+  '0xe6c4247b': 'InvalidAddress',
+  '0x6c87eb66': 'NoActiveForwardedCall',
+  '0x21bbd70f': 'CalldataTooShort',
+  // EvaluatorFacet -- evaluate/appeal/resolveDispute/evaluatorTimeout/rate.
+  '0xd4ce3f2d': 'EvaluatorAlreadyAssigned',
+  '0x46500a43': 'InvalidEvaluator',
+  '0x83e2a1e8': 'WrongStatusForEvaluation',
+  '0x7401943d': 'AppealWindowClosed',
+  '0x06395591': 'AppealWindowStillOpen',
+  '0xb285a583': 'NoVerdictIssued',
+  '0x7a64de64': 'EvaluationWindowNotExpired',
+  '0x0171222f': 'DisputeResolutionMustAwardWorkers',
+  '0xcd217144': 'AwardsRequired',
+  '0x82f5f0a4': 'NotInAppealingState',
+  '0xcadc127f': 'NotInDisputedState',
+  '0x62d7af0e': 'NotInReviewState',
+  '0xed5ad759': 'NotDisputeResolver',
+  '0x1740689d': 'UseEvaluate',
+  '0x2095265c': 'HookCheckEvaluateRejected',
+  '0x0e53e04d': 'InvalidAwardRecipient',
+  '0x0371a99e': 'DuplicateAwardWorker',
+  '0xccb51b2d': 'ZeroPayoutPerPair',
+  '0x3728feb3': 'NoWinners',
+  '0xca7a0355': 'WorkerAlreadyRated',
+  '0xbdf7e3aa': 'RatingMustBe0To100',
+  '0xc91959ac': 'NotEvaluator',
+  // AuctionFacet -- bid/auctionAccept/selectLowestBidder.
+  '0x5bf27b90': 'NotAnAuctionTask',
+  '0x13f1714a': 'NotABidAuction',
+  '0x32c10a01': 'NotAClockPriceAuction',
+  '0xeaf4d9ee': 'BidExceedsMaxPrice',
+  '0x208f4eee': 'BidLimitReached',
+  '0x008c2864': 'PriceExceedsMaxPrice',
+  '0x3583314c': 'ExpiryMustBeInFuture',
+  '0xf38b1d59': 'BidDeadlineMustBeInFuture',
+  '0x80b38ec9': 'PitchDeadlineMustBeInFuture',
+  // Mode/state-check errors reachable across several CoreFacet functions.
+  '0xc7512fa5': 'NotAClaimTask',
+  '0x2f775ae6': 'NotAPitchTask',
+  '0x71bcf3b2': 'NotABenchmarkTask',
+  '0x8ffc2f7b': 'MultiSubmissionOnlyForBountyBenchmark',
+  '0xc89c9972': 'EmptyPitchHash',
+  '0xd2fee4b1': 'EmptyProofHash',
+  '0xaea4a319': 'WorkerNotSelected',
+  '0x5378dda1': 'WorkerRequired',
+  '0xefd1521e': 'TaskNotYetExpired',
+  '0x128dbd39': 'HookCheckSelectWorkerRejected',
+  // Settlement/payout invariant failures -- internal transfer failures during
+  // acceptance, cancellation, dispute resolution, or expiry refund.
+  '0x56886241': 'WorkerPaymentFailed',
+  '0x4033e4e3': 'FeeTransferFailed',
+  '0xec0440fd': 'StakeReturnFailed',
+  '0x55dce6a3': 'AuctionRefundFailed',
+  '0xf0c49d44': 'RefundFailed',
+  '0x00f094e5': 'ForfeitTransferFailed',
+  '0x48c7b0bc': 'StakeTransferFailed',
+  '0x25e2e459': 'EvaluatorPaymentFailed',
+  '0x6db755e6': 'RequesterRefundFailed',
+  '0x9c4f94bc': 'USDCRefundFailed',
+  '0x6fd8d492': 'ExcessRefundFailed',
+  '0xb40fbcfc': 'RewardIncreaseNotFunded',
+  // Reward-hook errors (EpochBudget/RewardVault/TaskTokenRewardHook) -- only
+  // reachable when a reward hook is actually configured on a task (DREAMS_HOOK_ADDRESS
+  // et al.), but a relayed create/accept/etc. call routes through the hook check just
+  // like any other Diamond-side validation, so these are just as undecodable against
+  // FORWARDER_ABI as the rest of this map.
+  '0x5a91834f': 'OnlyHook',
+  '0x5ab718b9': 'EpochDurationZero',
+  '0x41df58ee': 'CapExceedsUint192',
+  '0xa15c414d': 'GlobalCapExceeded',
+  '0x75eadc75': 'WorkerCapExceeded',
+  '0x7f9315f7': 'RequesterCapExceeded',
+  '0xef7b6850': 'TaskCapExceeded',
+  '0xfffd3438': 'InsufficientAvailable',
+  '0xe05df49f': 'InsufficientReserve',
+  '0xd92e233d': 'ZeroAddress',
+  '0x299dcf9a': 'ZeroRate',
+  '0xd8a77c33': 'RewardAlreadyPaid',
+  '0x24e2c082': 'RewardNotReserved',
+  // Distinct from the no-arg WorkerMismatch() above -- same name, different args,
+  // different selector (TaskTokenRewardHook's own mismatch check, not CoreFacet's).
+  '0x1ba63587': 'WorkerMismatch',
+  '0xf1c52981': 'NoWorkerFound',
+  '0x36eab548': 'CallerNotDiamond',
+  '0xa31c3dd0': 'NotBackend',
+  '0x969bf728': 'NothingToClaim',
+  '0xc6cc5d7f': 'InvalidBps',
+  '0xb548366f': 'InvalidRamp',
+  '0xdafb1235': 'InsufficientSweepable',
+  // Deliberately NOT included: LibDiamond/Diamond admin errors (NotContractOwner,
+  // FunctionNotFound, IncorrectFacetCutAction, etc.) and ITMPCore's constructor/init-only
+  // validation (InvalidFeeRecipient, InvalidUSDCToken, InvalidForwarderAddress, ...) --
+  // these only fire for an owner calling diamondCut/initialize directly, never through
+  // relay(), so decodeRelayRevert (used only for relayed calls) can never see them.
 };
 
 function decodeRelayRevert(err: unknown): string {
   if (err instanceof BaseError) {
     const revertError = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revertError instanceof ContractFunctionRevertedError) {
+      // Every relayed call is simulated/decoded against FORWARDER_ABI (the relay()
+      // function), never MARKET_ABI -- but the actual revert data always originates
+      // from the Diamond side (EnforcedPause, TaskNotOpen, etc.), which FORWARDER_ABI
+      // has no knowledge of. viem can never decode that against the ABI it was given,
+      // so it sets `.signature` to the raw undecoded 4-byte selector instead of
+      // `.data.errorName` -- prefer looking that selector up in KNOWN_ERRORS before
+      // falling back to `.reason`/`.message` (viem's own verbose "unable to decode
+      // signature" text). Without this, KNOWN_ERRORS was silently never consulted
+      // for this -- the overwhelmingly common -- case: `.message` is always truthy,
+      // so the `if (name) return name` below always won first, and the raw-data
+      // fallback further down was dead code no relayed-call error could ever reach.
+      const signature = revertError.signature?.toLowerCase();
+      if (signature && KNOWN_ERRORS[signature]) return KNOWN_ERRORS[signature];
+
       const name = revertError.data?.errorName ?? revertError.reason ?? revertError.message;
       if (name) return name;
     }
@@ -84,6 +219,7 @@ const ERC20_ABI = parseAbi([
   'function approve(address,uint256) returns (bool)',
   'function allowance(address,address) view returns (uint256)',
   'function balanceOf(address) view returns (uint256)',
+  'function transfer(address,uint256) returns (bool)',
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
 ]);
 const MARKET_ABI = parseAbi([
@@ -338,19 +474,41 @@ async function relayThroughForwarderResult(
 
     const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
     const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
+    const callArgs = {
+      address: forwarderAddr,
+      abi: FORWARDER_ABI,
+      functionName: 'relay' as const,
+      args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data] as const,
+    };
+
+    // Read-only pre-check before the real signed+broadcast call below. This is what
+    // actually makes retrying safe to recover from RPC read-after-write lag: a
+    // simulateContract call costs nothing but an RPC round-trip, but client.writeContract
+    // (with an account.nonceManager-configured wallet, as createServerWallet() sets up)
+    // consumes a real nonce as soon as it's called, whether or not the transaction is
+    // ultimately broadcast -- and viem's nonceManager has no way to release a consumed
+    // nonce back. Retrying writeContract directly on a deterministic on-chain revert
+    // (task already claimed, market paused, etc. -- these don't change between retries no
+    // matter how long you wait) burned a real nonce on every one of RELAY_MAX_RETRIES
+    // attempts, permanently gapping the server wallet's nonce sequence and jamming every
+    // later transaction from it -- including the orphaned-payment refund transfer meant to
+    // fix exactly this kind of failure -- until manually resolved. Found via a genuine
+    // concurrent-request race in scripts/smoke-payment-orphan-refund.ts.
+    try {
+      await publicClient.simulateContract({ ...callArgs, account: account.address });
+    } catch (err) {
+      lastError = err;
+      continue;
+    }
 
     let hash: `0x${string}`;
     try {
-      hash = await client.writeContract({
-        address: forwarderAddr,
-        abi: FORWARDER_ABI,
-        functionName: 'relay',
-        args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data],
-        ...gas,
-      });
+      hash = await client.writeContract({ ...callArgs, ...gas });
     } catch (err) {
-      // writeContract threw before sending — simulation failed. Retry on transient
-      // errors; on the final attempt, decode and surface the revert reason.
+      // writeContract threw before sending despite the simulate above having just
+      // succeeded (e.g. state changed in the gap between the two calls, or a wallet/RPC
+      // error unrelated to contract logic). Retry on transient errors; on the final
+      // attempt, decode and surface the revert reason.
       lastError = err;
       continue;
     }
@@ -824,6 +982,37 @@ export async function contractTransferWithAuthorization(
   assertSuccess(
     await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
     'transferWithAuthorization'
+  );
+  return hash;
+}
+
+/**
+ * Send USDC straight back to a payer from the server wallet -- used when an x402
+ * payment already settled (payer -> server wallet) but the on-chain action it was
+ * paying for then reverted, so the funds never made it into escrow. This is a plain
+ * wallet-to-wallet ERC20 transfer, not a relayed TaskMarket call: the server wallet
+ * already holds the USDC at this point, so no forwarder/approval step is needed.
+ * See services/orphaned-payments.ts for the caller and the ledger it writes.
+ */
+export async function contractRefundOrphanedPayment(
+  payer: `0x${string}`,
+  amount: bigint
+): Promise<`0x${string}`> {
+  const config = getServerConfig();
+  const { client } = createServerWallet();
+  const publicClient = getPublicClient();
+  const gas = await getGasParams(publicClient);
+
+  const hash = await client.writeContract({
+    address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
+    abi: ERC20_ABI,
+    functionName: 'transfer',
+    args: [payer, amount],
+    ...gas,
+  });
+  assertSuccess(
+    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
+    'refund transfer'
   );
   return hash;
 }

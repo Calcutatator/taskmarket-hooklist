@@ -694,6 +694,37 @@ export const legalAccessReceipts = pgTable(
   })
 );
 
+// x402 payments that settled (payer -> server wallet) but whose downstream on-chain
+// action then failed, leaving no task (or other paid-for resource) created. See
+// services/orphaned-payments.ts for the write path and the createTask payment-orphan
+// incidents (2026-06-11, 2026-07-24) for why this exists.
+export const orphanedPayments = pgTable(
+  'orphaned_payments',
+  {
+    id: text('id').primaryKey(),
+    payer: text('payer').notNull(),
+    amount: numeric('amount', { precision: 78, scale: 0 }).notNull(),
+    paymentTxHash: text('payment_tx_hash').notNull().unique(),
+    context: text('context').notNull(),
+    failureReason: text('failure_reason'),
+    // 'pending' | 'refunding' | 'refunded' | 'failed' -- 'refunding' is a transient
+    // claim state a row briefly holds between attemptRefund's compare-and-swap and the
+    // refund transfer settling; see services/orphaned-payments.ts.
+    refundStatus: text('refund_status').notNull().default('pending'),
+    refundTxHash: text('refund_tx_hash'),
+    createdAt: timestamp('created_at').defaultNow().notNull(),
+    resolvedAt: timestamp('resolved_at'),
+  },
+  (table) => ({
+    payerIdx: index('idx_orphaned_payments_payer').on(table.payer),
+    refundStatusIdx: index('idx_orphaned_payments_refund_status').on(table.refundStatus),
+    refundStatusCheck: check(
+      'orphaned_payments_refund_status_check',
+      sql`${table.refundStatus} IN ('pending', 'refunding', 'refunded', 'failed')`
+    ),
+  })
+);
+
 // Phase 3 (ADR-0030): wallet-allowlist mechanism for private tasks. Modeled directly on
 // `bids`'s composite-unique shape -- one row per (task, viewer), no dupes. Mutable after
 // creation (add/remove), unlike the password mechanism below, since in-app invite

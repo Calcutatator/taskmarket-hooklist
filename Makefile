@@ -32,7 +32,7 @@ help:
 	@echo "  make ui-ci                - Run production web UI regression checks"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
-	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain)"
+	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds)"
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
@@ -638,8 +638,14 @@ db:
 		else \
 			cd apps/backend && pnpm db:backfill-agent-registry-chain -- --registry "$$REGISTRY" --chain-id "$$CHAIN_ID"; \
 		fi; \
+	elif [ "$(word 1,$(ARGS))" = "retry-orphaned-refunds" ]; then \
+		if [ "$(word 2,$(ARGS))" = "dry-run" ]; then \
+			cd apps/backend && pnpm db:retry-orphaned-refunds -- --dry-run; \
+		else \
+			cd apps/backend && pnpm db:retry-orphaned-refunds; \
+		fi; \
 	else \
-		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain [dry-run]>"; \
+		echo "Usage: make db <start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds [dry-run]>"; \
 		exit 1; \
 	fi
 
@@ -733,6 +739,8 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:submission-visibility; \
 	elif [ "$(word 1,$(ARGS))" = "concurrent-tasks" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:concurrent-tasks; \
+	elif [ "$(word 1,$(ARGS))" = "payment-orphan-refund" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:payment-orphan-refund; \
 	elif [ "$(word 1,$(ARGS))" = "sandbox" ]; then \
 		if [ -f .git ]; then \
 			echo "Linked git worktree detected -- its .git file points at the main repo's" ; \
@@ -750,7 +758,7 @@ smoke:
 			docker run --rm taskmarket-sandbox-test; \
 		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|sandbox>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|payment-orphan-refund|sandbox>"; \
 		exit 1; \
 	fi
 

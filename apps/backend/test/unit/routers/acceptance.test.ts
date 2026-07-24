@@ -5,6 +5,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractAcceptSubmission: vi.fn().mockResolvedValue('0xaccepttx'),
   contractAcceptSubmissions: vi.fn().mockResolvedValue('0xacceptrankedtx'),
   contractRateTask: vi.fn().mockResolvedValue({ hash: '0xratetx', blockNumber: 100 }),
+  contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
 }));
 
 vi.mock('../../../src/config/env', () => ({
@@ -21,6 +22,7 @@ import {
   contractAcceptSubmission,
   contractAcceptSubmissions,
   contractRateTask,
+  contractRefundOrphanedPayment,
 } from '../../../src/services/contract';
 import { agents, taskAwards, tasks } from '../../../src/db/schema';
 
@@ -111,6 +113,33 @@ describe('acceptance router', () => {
       expect(contractAcceptSubmission).toHaveBeenCalledOnce();
       const args = (contractAcceptSubmission as ReturnType<typeof vi.fn>).mock.calls[0];
       expect(args[3]).toBe(DELIVERABLE); // deliverable from DB, not caller
+    });
+
+    it('refunds the action fee and never reports success when the on-chain accept fails', async () => {
+      // Regression test: the catch block must `return` handleStandardFeePostPaymentFailure,
+      // not just call it and fall through -- otherwise self-award detection would run
+      // and { success: true } would be returned despite the on-chain accept reverting.
+      (contractAcceptSubmission as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('Contract call rejected: TaskNotOpen')
+      );
+      const ctx = createMockCtx(REQUESTER);
+      ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
+        .mockReturnValueOnce(makeChain([{ deliverableHash: DELIVERABLE }])) // submission lookup
+        .mockReturnValueOnce(makeChain([])); // requester agent lookup
+      ctx.db.update
+        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }])) // orphaned-payments claim
+        .mockReturnValueOnce(makeChain()); // orphaned-payments final status
+
+      await expect(acceptanceRouter.createCaller(ctx).accept(acceptInput)).rejects.toThrow(
+        /automatically refunded/
+      );
+
+      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(REQUESTER.toLowerCase(), 1000n);
+      // Self-award detection (a 3rd select + possible update) must never run.
+      expect(ctx.db.select).toHaveBeenCalledTimes(3);
+      expect(ctx.db.update).toHaveBeenCalledTimes(2);
     });
   });
 

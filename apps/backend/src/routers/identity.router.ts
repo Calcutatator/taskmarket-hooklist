@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import { contractRegisterIdentity } from '../services/contract';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
 // Only trust a cached agentId if it was minted against the currently configured
 // registry contract AND chain -- see register()'s cacheIsFresh usage for why
@@ -68,7 +69,18 @@ export const identityRouter = router({
       }
 
       // Mint a new ERC-8004 identity via the server wallet
-      const agentIdBigInt = await contractRegisterIdentity();
+      let agentIdBigInt: bigint;
+      try {
+        agentIdBigInt = await contractRegisterIdentity();
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'identity_register',
+          error,
+        });
+      }
       const agentIdStr = agentIdBigInt.toString();
 
       if (existing[0]) {

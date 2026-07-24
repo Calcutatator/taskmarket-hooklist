@@ -18,6 +18,7 @@ import {
 } from '../services/contract';
 import { recordTaskSettlement } from '../services/settlement-recorder';
 import { getServerConfig } from '../config/env';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
 const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
@@ -63,15 +64,27 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      const { txHash, evaluatedAt } = await contractEvaluate(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        VERDICT_MAP[input.verdict] ?? 0,
-        input.score,
-        input.confidence,
-        input.evidenceHash as `0x${string}`,
-        awards
-      );
+      let txHash: `0x${string}`;
+      let evaluatedAt: number;
+      try {
+        ({ txHash, evaluatedAt } = await contractEvaluate(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          VERDICT_MAP[input.verdict] ?? 0,
+          input.score,
+          input.confidence,
+          input.evidenceHash as `0x${string}`,
+          awards
+        ));
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_evaluate',
+          error,
+        });
+      }
 
       const appealDeadline =
         task.appealWindow != null ? new Date((evaluatedAt + task.appealWindow) * 1000) : null;
@@ -129,7 +142,18 @@ export const evaluationsRouter = router({
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
 
-      const txHash = await contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`);
+      let txHash: `0x${string}`;
+      try {
+        txHash = await contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`);
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_appeal',
+          error,
+        });
+      }
       await ctx.db.update(tasks).set({ status: 'disputed' }).where(eq(tasks.id, input.taskId));
       return { txHash };
     }),
@@ -239,12 +263,25 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      const { txHash, settlement, settledAt } = await contractResolveDispute(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        VERDICT_MAP[input.verdict] ?? 0,
-        awards
-      );
+      let txHash: `0x${string}`;
+      let settlement: Awaited<ReturnType<typeof contractResolveDispute>>['settlement'];
+      let settledAt: number | null;
+      try {
+        ({ txHash, settlement, settledAt } = await contractResolveDispute(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          VERDICT_MAP[input.verdict] ?? 0,
+          awards
+        ));
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_resolve_dispute',
+          error,
+        });
+      }
 
       if (settlement && settledAt != null) {
         // Record task_awards synchronously from the same receipt this mutation
@@ -300,10 +337,21 @@ export const evaluationsRouter = router({
         throw new Error('Evaluator deadline has not yet passed');
       }
 
-      const txHash = await contractEvaluatorTimeout(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`
-      );
+      let txHash: `0x${string}`;
+      try {
+        txHash = await contractEvaluatorTimeout(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_evaluator_timeout',
+          error,
+        });
+      }
 
       await ctx.db
         .update(tasks)

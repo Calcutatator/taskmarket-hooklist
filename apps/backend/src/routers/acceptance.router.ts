@@ -17,6 +17,7 @@ import {
   AcceptSubmissionsInputSchema,
   RateInputSchema,
 } from '../schemas/acceptance.schemas';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
 function sortKeys(obj: unknown): unknown {
   if (Array.isArray(obj)) return obj.map(sortKeys);
@@ -101,14 +102,24 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      await contractAcceptSubmission(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        input.worker as `0x${string}`,
-        deliverable,
-        requesterOnChainId,
-        task.contractAddress
-      );
+      try {
+        await contractAcceptSubmission(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          input.worker as `0x${string}`,
+          deliverable,
+          requesterOnChainId,
+          task.contractAddress
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_accept',
+          error,
+        });
+      }
 
       // Detect self-award: same address OR same ERC-8004 agentId (sybil case).
       const workerAgentRow = await ctx.db
@@ -227,15 +238,25 @@ export const acceptanceRouter = router({
         ? BigInt(requesterAgentRow[0].agentId)
         : 0n;
 
-      await contractAcceptSubmissions(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        workers,
-        shares,
-        deliverables,
-        requesterAgentId,
-        task.contractAddress
-      );
+      try {
+        await contractAcceptSubmissions(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          workers,
+          shares,
+          deliverables,
+          requesterAgentId,
+          task.contractAddress
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_accept_submissions',
+          error,
+        });
+      }
 
       return { success: true };
     }),
@@ -345,17 +366,29 @@ export const acceptanceRouter = router({
       const fileContent = JSON.stringify(feedbackData, null, 2);
       const feedbackHash = keccak256(toBytes(fileContent)) as `0x${string}`;
 
-      const { hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        input.worker as `0x${string}`,
-        input.rating,
-        workerAgentId,
-        raterAgentId,
-        feedbackURI,
-        feedbackHash,
-        task.contractAddress
-      );
+      let ratingTxHash: `0x${string}`;
+      let ratingBlockNumber: number;
+      try {
+        ({ hash: ratingTxHash, blockNumber: ratingBlockNumber } = await contractRateTask(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          input.worker as `0x${string}`,
+          input.rating,
+          workerAgentId,
+          raterAgentId,
+          feedbackURI,
+          feedbackHash,
+          task.contractAddress
+        ));
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_rate',
+          error,
+        });
+      }
 
       await ctx.db.insert(feedbacks).values({
         id: feedbackId,

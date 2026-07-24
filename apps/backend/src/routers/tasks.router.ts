@@ -89,6 +89,11 @@ import {
   reserveTaskDropForCreation,
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
+import {
+  handlePostPaymentFailure,
+  handleStandardFeePostPaymentFailure,
+} from '../services/orphaned-payments';
+import { computeUpdatePaymentAmount } from '../services/task-payments';
 
 // Tasks created before the ERC-8195 Rev007 submission-integrity upgrade (PR #135,
 // merged 2026-06-30T18:15:06-04:00) predate the current escrow/refund flow. A wave of
@@ -362,7 +367,29 @@ export const tasksRouter = router({
             );
           }
         }
-        throw error;
+
+        // x402 already settled the reward into the server wallet before this handler
+        // ran (see middleware/x402.ts) -- createTask failing here means that payment
+        // is now orphaned: no task exists on-chain or in the DB to account for it.
+        // Payment and on-chain create are two separate transactions and can't be made
+        // atomic, so the mitigation is an immediate automatic refund plus a durable
+        // record of the attempt (see incident 2026-07-24: a prior occurrence of this
+        // exact failure had no rollback and no ledger entry to trace afterward).
+        //
+        // `return` (not a bare `await`): handlePostPaymentFailure is typed to always
+        // throw, but that guarantee isn't visible to TypeScript's control-flow
+        // analysis across an `await` in a catch block -- a plain `await
+        // handlePostPaymentFailure(...)` would let execution fall through into the DB
+        // transaction below with escrowTxHash never assigned if that guarantee were
+        // ever violated. `return` makes the exit unconditional regardless.
+        return handlePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          amount: reward,
+          paymentTxHash,
+          context: 'task_create',
+          error,
+        });
       }
 
       const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
@@ -1252,12 +1279,23 @@ export const tasksRouter = router({
         }
       }
 
-      const txHash = await contractCancelTask(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
-        task.contractAddress
-      );
+      let txHash: `0x${string}`;
+      try {
+        txHash = await contractCancelTask(
+          input.taskId as `0x${string}`,
+          payer as `0x${string}`,
+          task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
+          task.contractAddress
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_cancel',
+          error,
+        });
+      }
 
       await ctx.db
         .update(tasks)
@@ -1417,16 +1455,36 @@ export const tasksRouter = router({
         newPitchDeadline !== 0n;
 
       if (hasOnChainChange) {
-        await contractUpdateTask(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          newReward,
-          newExpiryTime,
-          newBidDeadline,
-          newPitchDeadline,
-          BigInt(task.reward),
-          task.contractAddress
-        );
+        try {
+          await contractUpdateTask(
+            input.taskId as `0x${string}`,
+            payer as `0x${string}`,
+            newReward,
+            newExpiryTime,
+            newBidDeadline,
+            newPitchDeadline,
+            BigInt(task.reward),
+            task.contractAddress
+          );
+        } catch (error) {
+          // computeUpdatePaymentAmount must be given the SAME (currentReward,
+          // requestedReward) pair the X402 middleware used to size this payment
+          // (services/task-payments.ts's getUpdatePaymentAmount) -- task.reward here
+          // is still the pre-update value read above, so this reproduces that amount
+          // exactly, including any reward-increase escrow on top of the flat action fee.
+          //
+          // `return`, not a bare `await`: the dbUpdate write below must never run if
+          // the on-chain update failed, and an explicit return is the only way to
+          // guarantee that regardless of handlePostPaymentFailure's runtime behavior.
+          return handlePostPaymentFailure({
+            db: ctx.db,
+            payer: payer as `0x${string}`,
+            amount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
+            paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+            context: 'task_update',
+            error,
+          });
+        }
       }
 
       const dbUpdate: Record<string, unknown> = {};
@@ -1694,11 +1752,22 @@ export const tasksRouter = router({
         });
       }
 
-      const txHash = await contractRejectSubmission(
-        input.taskId as `0x${string}`,
-        input.worker as `0x${string}`,
-        payer as `0x${string}`
-      );
+      let txHash: `0x${string}`;
+      try {
+        txHash = await contractRejectSubmission(
+          input.taskId as `0x${string}`,
+          input.worker as `0x${string}`,
+          payer as `0x${string}`
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'task_reject_submission',
+          error,
+        });
+      }
 
       await ctx.db
         .update(submissions)

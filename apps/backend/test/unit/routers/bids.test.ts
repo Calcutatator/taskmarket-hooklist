@@ -13,6 +13,7 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitBid: vi.fn().mockResolvedValue('0xbidtx'),
   contractSelectLowestBidder: vi.fn().mockResolvedValue('0xselecttx'),
   contractAcceptAuction: vi.fn().mockResolvedValue('0xaccepttx'),
+  contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
 }));
 
 vi.mock('viem', async () => {
@@ -28,8 +29,10 @@ import {
   contractSubmitBid,
   contractSelectLowestBidder,
   contractAcceptAuction,
+  contractRefundOrphanedPayment,
 } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
+import { bids as bidsTable, orphanedPayments } from '../../../src/db/schema';
 
 const WORKER = '0xWorker0000000000000000000000000000000001';
 const WORKER_B = '0xWorkerB000000000000000000000000000000002';
@@ -243,6 +246,34 @@ describe('bids router', () => {
       expect(typeof result.bidId).toBe('string');
       expect(contractSubmitBid).toHaveBeenCalledOnce();
       expect(ctx.db.insert).toHaveBeenCalledOnce();
+    });
+
+    it('refunds the action fee and never inserts a phantom bid row when the on-chain submit fails', async () => {
+      // Regression test: the catch block must `return` handleStandardFeePostPaymentFailure,
+      // not just call it and fall through -- otherwise a bid that was never placed
+      // on-chain would still be upserted into the DB and could win the auction.
+      (contractSubmitBid as ReturnType<typeof vi.fn>).mockRejectedValueOnce(
+        new Error('Contract call rejected: BidExceedsMaxPrice')
+      );
+      const ctx = createMockCtx(WORKER);
+      ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([])) // no current lowest
+        .mockReturnValueOnce(makeChain([])); // no existing bid for this worker
+      ctx.db.update
+        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }])) // orphaned-payments claim
+        .mockReturnValueOnce(makeChain()); // orphaned-payments final status
+
+      const caller = bidsRouter.createCaller(ctx);
+      await expect(caller.submit(submitInput)).rejects.toThrow(/automatically refunded/);
+
+      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(WORKER.toLowerCase(), 1000n);
+      // The one insert() call that did happen is orphaned-payments' own ledger row,
+      // not a phantom bid for a submission that was never placed on-chain.
+      const insertedTables = ctx.db.insert.mock.calls.map(([table]: [unknown]) => table);
+      expect(insertedTables).toEqual([orphanedPayments]);
+      expect(insertedTables).not.toContain(bidsTable);
     });
   });
 

@@ -13,6 +13,7 @@ import { computeClockPrice } from '../lib/auction';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { resolveTaskViewability } from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
 export const bidsRouter = router({
   submit: publicProcedure
@@ -106,12 +107,25 @@ export const bidsRouter = router({
         }
       }
 
-      await contractSubmitBid(
-        input.taskId as `0x${string}`,
-        workerAddress as `0x${string}`,
-        BigInt(input.price),
-        task.contractAddress
-      );
+      try {
+        await contractSubmitBid(
+          input.taskId as `0x${string}`,
+          workerAddress as `0x${string}`,
+          BigInt(input.price),
+          task.contractAddress
+        );
+      } catch (error) {
+        // `return`: the DB upsert below must never run for a bid that was never
+        // placed on-chain -- an explicit return guarantees that regardless of
+        // handlePostPaymentFailure's runtime behavior.
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: workerAddress as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'bid_submit',
+          error,
+        });
+      }
 
       // Upsert: if worker already has a bid on this task, replace it (English and Reverse English).
       // The DB unique constraint on (task_id, worker_address) enforces one bid per worker per task.
@@ -398,12 +412,24 @@ export const bidsRouter = router({
       }
 
       // Call contract first — if it reverts, DB is untouched and the task stays open
-      await contractAcceptAuction(
-        input.taskId as `0x${string}`,
-        workerAddress as `0x${string}`,
-        clockPrice,
-        task.contractAddress
-      );
+      try {
+        await contractAcceptAuction(
+          input.taskId as `0x${string}`,
+          workerAddress as `0x${string}`,
+          clockPrice,
+          task.contractAddress
+        );
+      } catch (error) {
+        // `return`: the task-claim update and bid insert below must never run for an
+        // auction accept that was never placed on-chain.
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: workerAddress as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'auction_accept',
+          error,
+        });
+      }
 
       // Conditional DB update: only succeeds if task is still 'open' (race guard)
       const updated = await ctx.db

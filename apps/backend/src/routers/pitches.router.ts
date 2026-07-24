@@ -13,6 +13,7 @@ import { contractSelectWorker, contractSubmitPitch } from '../services/contract'
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 import { resolveTaskViewability } from '../lib/task-visibility';
 
 export const pitchesRouter = router({
@@ -98,12 +99,23 @@ export const pitchesRouter = router({
 
       // Anchor on chain before inserting the off-chain row: if the contract call
       // reverts, we don't leave a phantom DB row pointing at no tx hash.
-      const submitTxHash = await contractSubmitPitch(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        pitchHash,
-        task.contractAddress
-      );
+      let submitTxHash: `0x${string}`;
+      try {
+        submitTxHash = await contractSubmitPitch(
+          input.taskId as `0x${string}`,
+          input.workerAddress as `0x${string}`,
+          pitchHash,
+          task.contractAddress
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'pitch_submit',
+          error,
+        });
+      }
 
       await ctx.db.insert(proposals).values({
         id: pitchId,
@@ -248,12 +260,28 @@ export const pitchesRouter = router({
           }),
       });
 
-      await contractSelectWorker(
-        input.taskId as `0x${string}`,
-        task.requester as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        task.contractAddress
-      );
+      try {
+        await contractSelectWorker(
+          input.taskId as `0x${string}`,
+          task.requester as `0x${string}`,
+          input.workerAddress as `0x${string}`,
+          task.contractAddress
+        );
+      } catch (error) {
+        // ctx.res.locals.payer is always set here: it's set unconditionally by the
+        // x402 middleware once payment settles (middleware/x402.ts), and this catch
+        // only has anything to refund when a payment actually settled.
+        //
+        // `return`: the proposal/task status updates below must never run for a
+        // worker selection that was never placed on-chain.
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: ctx.res.locals.payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'pitch_select',
+          error,
+        });
+      }
 
       await ctx.db
         .update(proposals)

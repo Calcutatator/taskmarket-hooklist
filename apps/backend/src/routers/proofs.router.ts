@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server';
 import { contractSubmitProof, contractSubmitWork } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
 import { lowerAddressEq } from '../lib/agents';
+import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 import { resolveTaskViewability } from '../lib/task-visibility';
 
 export const proofsRouter = router({
@@ -84,14 +85,25 @@ export const proofsRouter = router({
       const proofId = randomUUID();
       const submissionId = randomUUID();
 
-      const proofTxHash = await contractSubmitProof(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        proofHash,
-        proofTypeBytes32,
-        metricValueBig,
-        task.contractAddress
-      );
+      let proofTxHash: `0x${string}`;
+      try {
+        proofTxHash = await contractSubmitProof(
+          input.taskId as `0x${string}`,
+          input.workerAddress as `0x${string}`,
+          proofHash,
+          proofTypeBytes32,
+          metricValueBig,
+          task.contractAddress
+        );
+      } catch (error) {
+        return handleStandardFeePostPaymentFailure({
+          db: ctx.db,
+          payer: payer as `0x${string}`,
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          context: 'proof_submit',
+          error,
+        });
+      }
 
       // Benchmark acceptance is based on submitWork commitments. Register the
       // canonical proof hash as the deliverable so a proof-only entry can be
