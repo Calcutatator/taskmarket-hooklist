@@ -381,7 +381,8 @@ app.get('/api/feedback/:id', async (req, res) => {
     if (!result.length) return res.status(404).json({ error: 'Not found' });
     res.setHeader('Content-Type', 'application/json');
     res.send(result[0].fileContent);
-  } catch {
+  } catch (err) {
+    logger.error('feedback endpoint failed', { err });
     res.status(500).json({ error: 'Internal server error' });
   }
 });

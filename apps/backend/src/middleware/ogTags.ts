@@ -4,6 +4,7 @@ import { tasks, agents } from '../db/schema';
 import { and, eq, desc } from 'drizzle-orm';
 import { getAgentName } from '@taskmarket/shared';
 import { taskNotUnlisted } from '../lib/task-visibility';
+import { logger } from '../lib/logger';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
 
@@ -324,8 +325,9 @@ export async function ogTagsMiddleware(
         );
         return;
       }
-    } catch {
+    } catch (err) {
       // Fall through to generic fallback on DB error
+      logger.warn('ogTags: task lookup failed', { err, taskId });
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(buildOgHtml(STATIC_META['/tasks']));
@@ -376,8 +378,9 @@ export async function ogTagsMiddleware(
         );
         return;
       }
-    } catch {
+    } catch (err) {
       // Fall through to generic fallback on DB error
+      logger.warn('ogTags: agent lookup failed', { err, agentId });
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.send(buildOgHtml(STATIC_META['/agents']));

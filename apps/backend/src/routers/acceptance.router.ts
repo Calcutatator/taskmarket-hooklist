@@ -9,6 +9,7 @@ import {
   contractRateTask,
 } from '../services/contract';
 import { getServerConfig } from '../config/env';
+import { logger } from '../lib/logger';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
 import {
@@ -125,8 +126,12 @@ export const acceptanceRouter = router({
       if (isSelfAward) {
         try {
           await ctx.db.update(tasks).set({ selfAward: true }).where(eq(tasks.id, input.taskId));
-        } catch {
+        } catch (err) {
           // On-chain acceptance already succeeded; DB flag is best-effort.
+          logger.warn('acceptSubmission: failed to persist selfAward flag', {
+            err,
+            taskId: input.taskId,
+          });
         }
       }
 

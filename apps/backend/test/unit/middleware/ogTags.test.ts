@@ -51,6 +51,10 @@ const { selectMock } = vi.hoisted(() => ({ selectMock: vi.fn() }));
 
 vi.mock('../../../src/db/client', () => ({ db: { select: selectMock } }));
 
+vi.mock('../../../src/lib/logger', () => ({
+  logger: { info: vi.fn(), error: vi.fn(), warn: vi.fn(), debug: vi.fn() },
+}));
+
 const { ogTagsMiddleware } = await import('../../../src/middleware/ogTags');
 const { taskNotUnlisted } = await import('../../../src/lib/task-visibility');
 
