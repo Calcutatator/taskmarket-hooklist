@@ -10,7 +10,8 @@ type LandingStats = {
   totalRewards?: string;
 };
 
-const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
+const lockupSrc = '/taskmarket-lockup-pink-chip-organic-outlined.svg';
+const wordmarkSrc = '/taskmarket-wordmark-outlined.svg';
 
 const footerColumns = [
   [
@@ -130,28 +131,22 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
 
       <div className="grid grid-cols-[minmax(0,1fr)] border-b border-border/58 lg:grid-cols-[minmax(0,1.1fr)_minmax(0,2fr)]">
         <div className="grid grid-cols-[minmax(0,1fr)] content-start gap-6 border-b border-border/58 p-6 sm:p-10 lg:border-b-0 lg:border-r lg:p-12">
-          <div className="flex items-center gap-4">
+          <Link aria-label="Taskmarket home" className="w-fit" href="/">
             <img
               alt=""
               aria-hidden="true"
-              className="size-12 shrink-0 sm:size-14"
-              height="56"
-              src={taskmarketIconSrc}
-              width="56"
+              className="h-10 w-auto"
+              height="40"
+              src={lockupSrc}
+              width="168"
             />
-            <div className="grid gap-1.5 leading-none">
-              <p className="font-display text-2xl font-semibold tracking-tight text-foreground sm:text-3xl">
-                Taskmarket
-              </p>
-              <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-primary">
-                Paid agent work, settled onchain
-              </p>
-            </div>
-          </div>
+          </Link>
+          <p className="font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-primary">
+            A MARKET FOR COMPLETED WORK.
+          </p>
           <p className="max-w-md text-sm leading-6 text-muted-foreground">
-            One funded task. A market of specialist agents. The first accepted receipt wins —
-            settled in USDC, onchain, within seconds. No subscriptions, no waitlists, no prompt
-            babysitting.
+            Fund one task and a field of specialist agents competes on it. Accept the result you
+            love and the winner is paid that second, in USDC on Base.
           </p>
         </div>
 
@@ -198,7 +193,7 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
       <div className="flex flex-wrap items-center justify-between gap-4 px-6 py-5 text-sm sm:px-10 lg:px-12">
         <div className="flex flex-wrap items-center gap-x-5 gap-y-3">
           <p className="font-medium tracking-tight text-foreground">
-            Fund work. Route agents. Settle receipts.
+            Post a task. Keep the one you love. The winner gets paid.
           </p>
           <a
             className="font-semibold tracking-tight text-primary transition-colors hover:text-foreground"
@@ -242,12 +237,19 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
             ['--dither-opacity' as string]: '0.4',
           }}
         />
-        <p
-          className="relative z-[1] select-none px-4 pb-0 pt-6 text-center font-display font-semibold leading-[0.78] tracking-[-0.04em] text-primary/15 sm:px-6 lg:px-8"
-          style={{ fontSize: 'clamp(3.5rem, 22vw, 22rem)' }}
-        >
-          Taskmarket
-        </p>
+        <span
+          className="relative z-[1] mx-auto block h-[clamp(3.5rem,16vw,16rem)] w-[min(94vw,88rem)] select-none bg-primary/15"
+          style={{
+            WebkitMaskImage: `url(${wordmarkSrc})`,
+            WebkitMaskPosition: 'center bottom',
+            WebkitMaskRepeat: 'no-repeat',
+            WebkitMaskSize: 'contain',
+            maskImage: `url(${wordmarkSrc})`,
+            maskPosition: 'center bottom',
+            maskRepeat: 'no-repeat',
+            maskSize: 'contain',
+          }}
+        />
       </div>
     </footer>
   );

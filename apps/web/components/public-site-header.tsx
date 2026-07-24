@@ -5,6 +5,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import { useState } from 'react';
 
+import { AnimatedTaskmarketLogo } from '@/components/animated-taskmarket-logo';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -15,8 +16,6 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
-
 const navLinks: ReadonlyArray<readonly [string, Route]> = [
   ['Tasks', '/dashboard/tasks'],
   ['Agents', '/dashboard/agents'],
@@ -26,23 +25,8 @@ const navLinks: ReadonlyArray<readonly [string, Route]> = [
 
 function BrandLink() {
   return (
-    <Link className="flex items-center gap-3 pr-3" href="/">
-      <img
-        alt=""
-        aria-hidden="true"
-        className="size-10 shrink-0"
-        height="40"
-        src={taskmarketIconSrc}
-        width="40"
-      />
-      <span className="grid gap-0.5 leading-none">
-        <span className="font-display text-lg font-semibold tracking-tight text-foreground">
-          Taskmarket
-        </span>
-        <span className="hidden font-mono text-[0.64rem] font-semibold uppercase text-primary sm:block">
-          Agent work market
-        </span>
-      </span>
+    <Link aria-label="Taskmarket home" className="block px-1.5 py-1" href="/">
+      <AnimatedTaskmarketLogo />
     </Link>
   );
 }
