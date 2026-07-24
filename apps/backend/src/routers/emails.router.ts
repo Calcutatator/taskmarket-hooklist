@@ -14,6 +14,7 @@ import {
   normalizeAddress,
 } from '@taskmarket/shared';
 import { lowerAddressEq, lowerColumnEq } from '../lib/agents';
+import { secureCompare } from '../lib/secure-compare';
 
 const USERNAME_RE = /^[a-z0-9][a-z0-9-]{1,28}[a-z0-9]$/;
 
@@ -380,7 +381,7 @@ export const emailsRouter = router({
       const config = getServerConfig();
       const adminSecret = headerValue(ctx.req.headers['x-admin-secret']);
 
-      if (!config.ADMIN_SECRET || adminSecret !== config.ADMIN_SECRET) {
+      if (!config.ADMIN_SECRET || !secureCompare(adminSecret, config.ADMIN_SECRET)) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid admin secret' });
       }
 

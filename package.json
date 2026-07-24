@@ -26,5 +26,12 @@
     "turbo": "^1.13.0",
     "typescript": "5.7.3",
     "prettier": "^3.2.5"
+  },
+  "pnpm": {
+    "overrides": {
+      "fast-xml-parser@<5.3.5": "5.3.5",
+      "protobufjs@<7.5.5": "7.5.5",
+      "postcss@<8.5.12": "8.5.12"
+    }
   }
 }

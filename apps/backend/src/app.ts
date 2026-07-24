@@ -1,6 +1,6 @@
 import express from 'express';
 import { randomUUID } from 'node:crypto';
-import cors from 'cors';
+import cors, { type CorsOptions } from 'cors';
 import helmet from 'helmet';
 import path from 'path';
 import fs from 'fs';
@@ -81,6 +81,27 @@ const trustProxyHops =
       : 0;
 if (trustProxyHops > 0) {
   app.set('trust proxy', trustProxyHops);
+}
+
+/**
+ * Build CORS options from the configured origin(s). CORS_ORIGIN may be a single
+ * origin or a comma-separated allowlist. The CORS spec forbids combining a
+ * wildcard origin with credentialed requests, and browsers reject that
+ * combination, so a wildcard origin is served without `credentials: true`
+ * rather than emitting the contradictory header pair. A concrete allowlist
+ * keeps credentials enabled and only reflects origins that match.
+ */
+function buildCorsOptions(corsOrigin: string): CorsOptions {
+  const origins = corsOrigin
+    .split(',')
+    .map((origin) => origin.trim())
+    .filter(Boolean);
+
+  if (origins.length === 0 || origins.includes('*')) {
+    return { origin: '*', credentials: false };
+  }
+
+  return { origin: origins, credentials: true };
 }
 
 function escapeHtml(value: string) {
@@ -179,12 +200,7 @@ app.use(
   })
 );
 app.use(compression());
-app.use(
-  cors({
-    origin: config.CORS_ORIGIN,
-    credentials: true,
-  })
-);
+app.use(cors(buildCorsOptions(config.CORS_ORIGIN)));
 app.use(morgan('combined', { stream: morganStream }));
 app.use(express.json({ limit: '50mb' }));
 

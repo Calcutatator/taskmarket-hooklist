@@ -24,6 +24,7 @@ import { getServerConfig } from '../config/env';
 import { taskDrops, taskDropSubscriptions, tasks } from '../db/schema';
 import { logger } from '../lib/logger';
 import { isOfficialTaskDropOwner } from '../lib/task-drops';
+import { secureCompare } from '../lib/secure-compare';
 import { taskNotUnlisted } from '../lib/task-visibility';
 import { announceOfficialTaskDrop } from '../services/task-drop-announcements';
 import { enforceTaskDropSubscribeRateLimit } from '../services/task-drop-subscribe-rate-limit';
@@ -656,7 +657,7 @@ export const taskDropsRouter = router({
     .mutation(async ({ input, ctx }) => {
       const config = getServerConfig();
       const adminSecret = headerValue(ctx.req.headers?.['x-admin-secret']);
-      if (!config.ADMIN_SECRET || adminSecret !== config.ADMIN_SECRET) {
+      if (!config.ADMIN_SECRET || !secureCompare(adminSecret, config.ADMIN_SECRET)) {
         throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Invalid admin secret' });
       }
 
