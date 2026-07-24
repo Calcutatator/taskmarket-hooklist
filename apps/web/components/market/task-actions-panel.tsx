@@ -6,7 +6,7 @@ import {
   type TaskDetailResponse,
   type TaskResponse,
 } from '@taskmarket/shared';
-import { Terminal } from 'lucide-react';
+import { BotIcon, Terminal, UploadIcon, UserRoundIcon } from 'lucide-react';
 import { useRouter } from 'next/navigation';
 import { useAccount } from 'wagmi';
 
@@ -17,7 +17,17 @@ import {
   PAID_ACTION_COST_BASE_UNITS,
   usePaidActionFundingPrompt,
 } from '@/components/market/fund-wallet-button';
+import { Button } from '@/components/ui/button';
+import {
+  Dialog,
+  DialogContent,
+  DialogDescription,
+  DialogHeader,
+  DialogTitle,
+  DialogTrigger,
+} from '@/components/ui/dialog';
 import { formatUsdcUnits } from '@/lib/format';
+import { absoluteUrl } from '@/lib/seo';
 
 type TaskActionPanelProps = {
   claimedBy?: string | null;
@@ -31,6 +41,7 @@ type TaskActionPanelProps = {
 };
 
 const PAID_ACTIONS = new Set<PendingAction['action']>(PAID_PENDING_ACTION_NAMES);
+const SKILL_URL = absoluteUrl('/skill.md');
 
 // Evaluator and dispute controls are not built yet (their components only render
 // "coming soon" copy), so we do not surface them. The components stay wired in
@@ -160,6 +171,101 @@ export function TaskActionsPanel({
             const Component = COMPONENT_BY_ACTION[action.action];
             const canRun = canRunAction({ action, address, claimedBy, requester, worker });
             const blockedByFunding = Boolean(actionFundingPrompt && isPaidAction(action));
+
+            if (action.action === 'submit') {
+              return (
+                <div
+                  className="grid min-w-0 gap-3 sm:grid-cols-2"
+                  key={`${action.role}-${action.action}-${action.command}`}
+                >
+                  <article
+                    aria-label="For agents"
+                    className="grid min-w-0 content-between gap-5 rounded-lg border border-border/58 bg-surface/40 p-4"
+                  >
+                    <div className="grid gap-3">
+                      <span className="flex size-9 items-center justify-center rounded-full border border-border/58 bg-background/68 text-primary">
+                        <BotIcon aria-hidden="true" className="size-4" />
+                      </span>
+                      <div className="grid gap-1">
+                        <h3 className="font-display font-semibold tracking-tight text-foreground">
+                          For agents
+                        </h3>
+                        <p className="text-sm leading-5 text-muted-foreground">
+                          Give your agent the Taskmarket skill so it can complete and submit the
+                          work.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid min-w-0 gap-2">
+                      <div className="flex min-w-0 items-center gap-2 rounded-lg border border-border/52 bg-background/68 p-2 pl-3">
+                        <span className="min-w-0 flex-1 truncate font-mono text-xs text-foreground">
+                          {SKILL_URL}
+                        </span>
+                        <CopyButton label="Copy skill.md link" text={SKILL_URL} />
+                      </div>
+                      <details className="min-w-0">
+                        <summary className="cursor-pointer select-none font-mono text-xs uppercase text-muted-foreground hover:text-foreground">
+                          Task command
+                        </summary>
+                        <div className="mt-2 grid min-w-0 gap-2 rounded-lg bg-background/76 p-2">
+                          <div className="flex justify-end">
+                            <CopyButton
+                              label={`Copy ${action.action} command`}
+                              text={action.command}
+                            />
+                          </div>
+                          <pre className="max-w-full overflow-x-auto rounded-md bg-surface/60 p-2 font-mono text-xs leading-5 text-foreground">
+                            <code className="block min-w-0">{action.command}</code>
+                          </pre>
+                        </div>
+                      </details>
+                    </div>
+                  </article>
+
+                  <article
+                    aria-label="For humans"
+                    className="grid min-w-0 content-between gap-5 rounded-lg border border-border/58 bg-surface/40 p-4"
+                  >
+                    <div className="grid gap-3">
+                      <span className="flex size-9 items-center justify-center rounded-full border border-border/58 bg-background/68 text-primary">
+                        <UserRoundIcon aria-hidden="true" className="size-4" />
+                      </span>
+                      <div className="grid gap-1">
+                        <h3 className="font-display font-semibold tracking-tight text-foreground">
+                          For humans
+                        </h3>
+                        <p className="text-sm leading-5 text-muted-foreground">
+                          Upload finished files from this browser and submit them for review.
+                        </p>
+                      </div>
+                    </div>
+                    <Dialog>
+                      <DialogTrigger asChild>
+                        <Button className="w-full" type="button" variant="outline">
+                          <UploadIcon aria-hidden="true" className="size-4" />
+                          Upload files
+                        </Button>
+                      </DialogTrigger>
+                      <DialogContent className="max-h-[90vh] overflow-y-auto">
+                        <DialogHeader>
+                          <DialogTitle>Submit work</DialogTitle>
+                          <DialogDescription>
+                            Add your deliverables, choose their roles, and submit them for requester
+                            review.
+                          </DialogDescription>
+                        </DialogHeader>
+                        <Component
+                          action={action}
+                          disabled={blockedByFunding || (!canRun && Boolean(address))}
+                          onSuccess={() => router.refresh()}
+                          task={task}
+                        />
+                      </DialogContent>
+                    </Dialog>
+                  </article>
+                </div>
+              );
+            }
 
             return (
               <article

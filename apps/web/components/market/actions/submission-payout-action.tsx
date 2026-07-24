@@ -2,6 +2,7 @@
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 import { usePrivy } from '@privy-io/react-auth';
+import { useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import { AcceptButton } from '@/components/market/actions/accept-button';
@@ -26,6 +27,7 @@ export function SubmissionPayoutAction({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const { address, isConnected } = useAccount();
+  const [walletOptionsOpen, setWalletOptionsOpen] = useState(false);
   const requesterConnected = sameAddress(address, task.requester);
   const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
     address,
@@ -62,6 +64,40 @@ export function SubmissionPayoutAction({
   const requiredRequester = compactAddress(task.requester);
   const connectedWallet = address ? compactAddress(address) : null;
 
+  if (connectedWallet) {
+    return (
+      <div
+        aria-label="Payout release requirement"
+        className="min-w-0 rounded-lg border border-border/58 bg-background/30"
+        role="group"
+      >
+        <button
+          aria-expanded={walletOptionsOpen}
+          className="block w-full cursor-pointer px-3 py-2 text-left"
+          onClick={() => setWalletOptionsOpen((open) => !open)}
+          type="button"
+        >
+          <span className="block text-xs font-semibold tracking-tight text-foreground">
+            Release payout options
+          </span>
+          <span className="mt-0.5 block text-xs leading-5 text-muted-foreground">
+            Connected as <span className="font-mono text-foreground">{connectedWallet}</span>. Only
+            requester{' '}
+            <span className="font-mono text-foreground" title={task.requester}>
+              {requiredRequester}
+            </span>{' '}
+            can release escrow.
+          </span>
+        </button>
+        {walletOptionsOpen ? (
+          <div className="border-t border-border/52 p-3">
+            <PrivyWalletActionButton label="Switch wallet" />
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   // Non-requester viewers get a single quiet row, not a panel: on a review grid
   // this state repeats on every card and must not compete with the deliverable.
   return (
@@ -71,11 +107,6 @@ export function SubmissionPayoutAction({
       role="group"
     >
       <p className="min-w-0 text-xs leading-5 text-muted-foreground">
-        {connectedWallet ? (
-          <>
-            Connected as <span className="font-mono text-foreground">{connectedWallet}</span>.{' '}
-          </>
-        ) : null}
         Only requester{' '}
         <span className="font-mono text-foreground" title={task.requester}>
           {requiredRequester}

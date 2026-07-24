@@ -554,6 +554,25 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(`taskmarket task bid ${task.id} --price <n>`)).toBeInTheDocument();
   });
 
+  it('places task details directly below work requirements', () => {
+    render(
+      <TaskDetailPanel
+        modeData={{}}
+        task={{
+          ...taskDetail,
+          description: 'Summarize protocol feedback\nInclude a concise findings report.',
+        }}
+      />
+    );
+
+    const requirementsSection = screen.getByRole('heading', {
+      name: /work requirements/i,
+    }).parentElement;
+    const detailsSection = screen.getByRole('heading', { name: /^details$/i }).parentElement;
+
+    expect(requirementsSection?.nextElementSibling).toBe(detailsSection);
+  });
+
   it('shows an estimated worker DREAMS bonus caption when the hook is attached', () => {
     render(
       <TaskDetailPanel
@@ -1159,7 +1178,11 @@ describe('Task marketplace components', () => {
         compactAddressLabel('0x9999999999999999999999999999999999999999')
       )
     ).toBeInTheDocument();
+    expect(
+      within(requirement).queryByRole('button', { name: /switch wallet/i })
+    ).not.toBeInTheDocument();
 
+    await user.click(within(requirement).getByText(/release payout options/i));
     await user.click(within(requirement).getByRole('button', { name: /switch wallet/i }));
 
     expect(mockPrivyConnect).toHaveBeenCalled();

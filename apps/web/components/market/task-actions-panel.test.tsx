@@ -33,6 +33,7 @@ vi.mock('@/components/market/actions', () => ({
         run accept
       </button>
     ),
+    submit: () => <button type="button">Choose files</button>,
   },
 }));
 
@@ -85,5 +86,33 @@ describe('TaskActionsPanel', () => {
         requester: task.requester,
       })
     ).toBe(true);
+  });
+
+  it('splits work submission into agent and human paths and opens uploads on demand', async () => {
+    const user = userEvent.setup();
+    const submitAction = {
+      action: 'submit',
+      role: 'worker',
+      command: 'taskmarket task submit task-1 --file <path>',
+    } as PendingAction;
+
+    render(
+      <TaskActionsPanel
+        emptyReason="none"
+        pendingActions={[submitAction]}
+        requester="0x2222222222222222222222222222222222222222"
+        task={task}
+      />
+    );
+
+    expect(screen.getByRole('article', { name: /for agents/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /copy skill\.md link/i })).toBeInTheDocument();
+    expect(screen.getByRole('article', { name: /for humans/i })).toBeInTheDocument();
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /upload files/i }));
+
+    expect(screen.getByRole('dialog', { name: /submit work/i })).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: /choose files/i })).toBeInTheDocument();
   });
 });

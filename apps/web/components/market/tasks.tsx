@@ -2331,6 +2331,25 @@ export function TaskDetailPanel({
           />
         ) : null}
         <WorkRequirementsPanel task={task} />
+        {descriptionBody || detailTags.length > 0 ? (
+          <section className="grid gap-5 border-t border-border/58 pt-5">
+            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
+              Details
+            </h2>
+            {descriptionBody ? <TaskBrief body={descriptionBody} /> : null}
+            {detailTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {detailTags.map((tag) => (
+                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
+                      {tag}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         {showNextActions ? (
           <TaskActionsPanel
             claimedBy={task.claimedBy}
@@ -2352,25 +2371,6 @@ export function TaskDetailPanel({
             title="Task controls"
             worker={task.primaryAward?.workerAddress}
           />
-        ) : null}
-        {descriptionBody || detailTags.length > 0 ? (
-          <section className="grid gap-5 border-t border-border/58 pt-5">
-            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
-              Details
-            </h2>
-            {descriptionBody ? <TaskBrief body={descriptionBody} /> : null}
-            {detailTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {detailTags.map((tag) => (
-                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
-                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
-                      {tag}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </section>
         ) : null}
         {!reviewAction ? (
           <ModeDataPanel
