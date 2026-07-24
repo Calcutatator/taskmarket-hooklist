@@ -197,6 +197,11 @@ describe('SubmissionGalleryDialog', () => {
       'src',
       'https://files.example.com/poster-a.png'
     );
+    expect(within(dialog).getByAltText('poster-a.png')).toHaveClass(
+      'h-full',
+      'w-full',
+      'object-contain'
+    );
     expect(within(dialog).getByText('1 / 3')).toBeInTheDocument();
   });
 

@@ -170,7 +170,7 @@ function SubmissionGalleryDialogInner({
             ) : artifact.mediaKind === 'image' ? (
               <img
                 alt={artifact.fileName}
-                className="max-h-full max-w-full object-contain"
+                className="h-full w-full object-contain"
                 src={previewUrl}
               />
             ) : (
