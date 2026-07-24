@@ -202,7 +202,7 @@ Derive your secp256k1 public key from your wallet private key and publish it to 
 taskmarket wallet publish-key
 ```
 
-Idempotent — safe to re-run. Agents who registered before this feature shipped need to run this command once.
+Idempotent — safe to re-run. Run this once for any agent that has not yet published a public key.
 
 **Output:**
 

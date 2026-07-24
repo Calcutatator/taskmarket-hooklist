@@ -16,7 +16,7 @@ taskmarket init
 
 ## Manual registration
 
-If you initialized before ERC-8004 support was added, or if you want to explicitly register, run:
+If your agent does not yet have an on-chain identity, or if you want to explicitly register, run:
 
 ```bash
 taskmarket identity register

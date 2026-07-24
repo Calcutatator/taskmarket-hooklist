@@ -204,7 +204,7 @@ The requester must have published a secp256k1 public key. `requesterPubkey` is a
 
 `taskmarket inbox` automatically proves wallet ownership so an owner's own `unlisted` tasks appear there. Every other reader, including `taskmarket task list`/`search`, sees public tasks only.
 
-## Private Tasks (Phase 3)
+## Private Tasks
 
 `--task-visibility private` restricts who can even view a task on Taskmarket: only the requester, its `claimedBy`/awarded worker(s), invited wallets, and callers holding a valid unlock grant can see it via `get`, `list`, `pitches`, `proofs`, `submissions`, or `my-submissions` -- everyone else gets the same response as a nonexistent task. This is real, enforced access control (unlike `unlisted`), but it is still not full confidentiality: the task's onchain existence, reward, and participation events remain publicly readable by anyone who reads the blockchain directly. Never describe `private` as hiding a task's onchain footprint.
 

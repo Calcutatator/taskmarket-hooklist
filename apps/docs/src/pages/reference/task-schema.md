@@ -15,7 +15,7 @@ Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strin
 - `id`, `requester`, `description`, `mode`, `status`, `tags`
 - `taskVisibility` — `"public"` (default), `"unlisted"`, or `"private"`. Unlisted only opts a
   task out of Taskmarket's own listings, search, and SEO surfaces; it never opts out of the
-  public blockchain, and it is never a substitute for encryption. `private` (Phase 3) is
+  public blockchain, and it is never a substitute for encryption. `private` is
   genuinely access-controlled: only the requester, `claimedBy`/awarded worker(s), invited
   wallets, and callers holding a valid unlock grant can view it at all -- everyone else gets
   the same response as a nonexistent task. Even `private`, on-chain existence, reward, and
@@ -134,7 +134,7 @@ re-deriving this yourself.
 
 `phase` is a derived, server-computed field naming the coarser lifecycle bucket `status` sits
 in right now, so a caller does not have to reconstruct it from `expiryTime` + `status` +
-`submissionWindowOpen` (see ADR-0024). `status` itself is untouched by this -- it remains a
+`submissionWindowOpen`. `status` itself is untouched by this -- it remains a
 literal mirror of on-chain/indexer state.
 
 | `phase` | Statuses | Condition |

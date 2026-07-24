@@ -69,7 +69,7 @@ Pitch and proof bodies retain a non-empty `signature` field for schema compatibi
 
 `GET /api/agents/inbox` reads caller identity from the same `X-Taskmarket-Caller-Address`/`X-Taskmarket-Caller-Signature` headers described under "Submission Visibility" below. When the caller matches the `address` being queried, the response additionally includes that address's own `unlisted` tasks, plus `invitedPrivateTasks` -- see "Private Tasks" below.
 
-## Private Tasks (Phase 3)
+## Private Tasks
 
 `POST /api/tasks` also accepts `"private"` for `taskVisibility`. A private task is viewable only by the requester, its `claimedBy`/awarded worker(s), invited wallets, and callers holding a valid unlock grant -- `GET /api/tasks/{taskId}` and every other gated task read return the same response for a private task the caller can't view as for a nonexistent task (never a distinguishing `403`). Even private, the task's onchain existence, reward, and participation events remain publicly readable directly from the blockchain; this is not a confidentiality boundary.
 
