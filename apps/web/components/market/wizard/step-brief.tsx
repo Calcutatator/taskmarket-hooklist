@@ -526,7 +526,7 @@ export function StepBrief({
                   </span>
                 </Label>
                 <div className="relative">
-                  <span className="pointer-events-none absolute top-1/2 left-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center font-mono text-sm leading-none text-muted-foreground">
+                  <span className="pointer-events-none absolute top-1/2 left-1 -mt-1 flex h-8 w-8 -translate-y-1/2 items-center justify-center font-mono text-sm leading-none text-muted-foreground">
                     $
                   </span>
                   <Input
