@@ -175,11 +175,9 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expect(
     comparison.getByRole('button', { name: /Open candidate-a-demo\.mp4 preview/i })
   ).toBeVisible();
-  const payoutRequirement = page
-    .getByRole('group', { name: /Payout release requirement/i })
-    .first();
-  await expect(payoutRequirement.getByText(/Only requester .* can release escrow/i)).toBeVisible();
-  await expect(payoutRequirement.getByRole('button', { name: /Connect wallet/i })).toBeVisible();
+  const taskSidebar = page.getByRole('complementary', { name: /Task sidebar/i });
+  await expect(taskSidebar.getByRole('heading', { name: /Review status/i })).toBeVisible();
+  await expect(taskSidebar.getByText(/Only requester .* can release escrow/i)).toBeVisible();
 
   await expectNoHorizontalOverflow(page);
 });

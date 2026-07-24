@@ -507,42 +507,38 @@ describe('Task marketplace components', () => {
         }}
       />
     );
-    const breadcrumb = screen.getByRole('navigation', { name: /breadcrumb/i });
-    expect(within(breadcrumb).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks'
-    );
-    expect(within(breadcrumb).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
+    expect(
+      screen.getByRole('heading', { level: 1, name: /summarize protocol feedback/i })
+    ).toBeInTheDocument();
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const metricCards = within(metrics).getAllByRole('article');
-    expect(metricCards).toHaveLength(2);
+    expect(metricCards).toHaveLength(4);
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
     // Auction reward metric surfaces the live operative price (lowest bid), not the static reward.
     expect(within(rewardSummary).getByText('12 USDC')).toBeInTheDocument();
     expect(within(rewardSummary).getByText(/lowest bid/i)).toBeInTheDocument();
-    expect(within(rewardSummary).getByText(/^due$/i)).toBeInTheDocument();
-    const statusSummary = within(metrics).getByRole('article', { name: /status summary/i });
-    expect(within(statusSummary).getByText(/^status$/i)).toBeInTheDocument();
-    expect(within(statusSummary).getByText(/accepting work/i)).toBeInTheDocument();
-    expect(within(statusSummary).getByText(/^bids$/i)).toBeInTheDocument();
-    expect(within(statusSummary).getByText('2 bids')).toBeInTheDocument();
+    const dueSummary = within(metrics).getByRole('article', { name: /due summary/i });
+    const bidsSummary = within(metrics).getByRole('article', { name: /bids summary/i });
+    expect(within(dueSummary).getByText(/^due$/i)).toBeInTheDocument();
+    expect(within(bidsSummary).getByText(/^bids$/i)).toBeInTheDocument();
+    expect(within(bidsSummary).getByText('2 bids')).toBeInTheDocument();
     expect(metrics.closest('[data-slot="card"]')).toBeNull();
     const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
     expect(screen.getByText(/task reference/i).closest('[data-slot="card"]')).toBeNull();
     const reference = within(sidebar);
     expect(reference.getByText(/^requester$/i)).toBeInTheDocument();
-    expect(reference.getByText(/settlement/i)).toBeInTheDocument();
+    expect(reference.getByText(/escrow tx/i)).toBeInTheDocument();
     expect(reference.getByText(/auction pricing/i)).toBeInTheDocument();
-    expect(reference.getByText(/history/i)).toBeInTheDocument();
+    expect(reference.getByText(/created/i)).toBeInTheDocument();
     expect(reference.queryByText(/^reward$/i)).not.toBeInTheDocument();
     expect(reference.queryByText(/^activity$/i)).not.toBeInTheDocument();
     expect(screen.getByText(/work requirements/i)).toBeInTheDocument();
     expect(
       screen.queryByText('Summarize protocol feedback', { selector: 'p' })
     ).not.toBeInTheDocument();
-    expect(screen.getAllByText(/^auction$/i)).toHaveLength(1);
-    expect(screen.getAllByText(/^open$/i)).toHaveLength(1);
+    expect(screen.getAllByText(/^auction$/i).length).toBeGreaterThan(0);
+    expect(screen.getAllByText(/^open$/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/^research$/i)).toBeInTheDocument();
     expect(screen.getAllByText(/english auction/i).length).toBeGreaterThan(0);
     expect(screen.getByText(/lowest bid/i)).toBeInTheDocument();
@@ -588,9 +584,11 @@ describe('Task marketplace components', () => {
     );
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
-    expect(
-      within(rewardSummary).getByText(/~0.06 usdc.*~200 dreams worker bonus \(est\.\)/i)
-    ).toBeInTheDocument();
+    const bonusSummary = within(metrics).getByRole('article', { name: /bonus summary/i });
+
+    expect(within(rewardSummary).getByText('25 USDC')).toBeInTheDocument();
+    expect(within(bonusSummary).getByText('+200 DREAMS')).toBeInTheDocument();
+    expect(within(bonusSummary).getByText(/approximately 0.06 usdc/i)).toBeInTheDocument();
   });
 
   it('omits the DREAMS bonus caption when no estimate is present', () => {
@@ -876,7 +874,8 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getAllByText(/awaiting requester review/i).length).toBeGreaterThan(0);
+    expect(screen.getByText(/review required/i)).toBeInTheDocument();
+    expect(screen.getAllByText(/submission window closed/i).length).toBeGreaterThan(0);
     expect(screen.getAllByText(/1 submission/i).length).toBeGreaterThan(0);
     expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
     expect(screen.getByText(/compare deliverables before releasing escrow/i)).toBeInTheDocument();
@@ -998,6 +997,44 @@ describe('Task marketplace components', () => {
     expect(within(comparison).getByText('notes.txt')).toBeInTheDocument();
   });
 
+  it('lets reviewers switch the same submission queue between gallery and list views', async () => {
+    const user = userEvent.setup();
+
+    renderReviewSubmissions([
+      {
+        artifacts: [
+          makeArtifact({
+            fileName: 'candidate-a.png',
+            id: 'artifact-image-a',
+            previewUrl: 'https://files.example.com/candidate-a.png',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable-a',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+    ]);
+
+    const galleryButton = screen.getByRole('button', { name: /gallery view/i });
+    const listButton = screen.getByRole('button', { name: /list view/i });
+
+    expect(galleryButton).toHaveAttribute('aria-pressed', 'true');
+    expect(listButton).toHaveAttribute('aria-pressed', 'false');
+
+    await user.click(listButton);
+
+    expect(galleryButton).toHaveAttribute('aria-pressed', 'false');
+    expect(listButton).toHaveAttribute('aria-pressed', 'true');
+    expect(
+      screen.getByRole('article', {
+        name: `Submission from ${compactAddressLabel('0x3333333333333333333333333333333333333333')}`,
+      })
+    ).toBeInTheDocument();
+  });
+
   it('opens batch-preview media artifacts without refetching the preview URL', async () => {
     const fetchMock = vi.spyOn(globalThis, 'fetch');
     const user = userEvent.setup();
@@ -1100,7 +1137,9 @@ describe('Task marketplace components', () => {
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
   });
 
-  it('explains how disconnected requesters can release a pending payout', () => {
+  it('lets disconnected viewers connect from the review summary', async () => {
+    const user = userEvent.setup();
+
     render(
       <TaskDetailPanel
         modeData={{
@@ -1134,17 +1173,22 @@ describe('Task marketplace components', () => {
       />
     );
 
-    const requirement = screen.getByRole('group', { name: /payout release requirement/i });
-    expect(within(requirement).getByText(/only requester/i)).toBeInTheDocument();
+    const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    expect(within(sidebar).getByText(/connected as/i)).toHaveTextContent(/no wallet connected/i);
+    expect(within(sidebar).getByText(/only requester/i)).toBeInTheDocument();
     expect(
-      within(requirement).getByText(
+      within(sidebar).getAllByText(
         compactAddressLabel('0x1111111111111111111111111111111111111111')
       )
-    ).toBeInTheDocument();
-    expect(within(requirement).getByRole('button', { name: /connect wallet/i })).toBeEnabled();
+    ).toHaveLength(2);
+    await user.click(within(sidebar).getByRole('button', { name: /connect wallet/i }));
+    expect(mockPrivyConnect).toHaveBeenCalled();
+    expect(
+      screen.queryByRole('group', { name: /payout release requirement/i })
+    ).not.toBeInTheDocument();
   });
 
-  it('lets a wrong connected wallet switch before releasing payout', async () => {
+  it('lets a wrong connected wallet switch from the review summary', async () => {
     const user = userEvent.setup();
     mockAccount.address = '0x9999999999999999999999999999999999999999';
     mockAccount.isConnected = true;
@@ -1182,20 +1226,15 @@ describe('Task marketplace components', () => {
       />
     );
 
-    const requirement = screen.getByRole('group', { name: /payout release requirement/i });
-    expect(within(requirement).getByText(/connected as/i)).toBeInTheDocument();
+    const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    expect(within(sidebar).getByText(/connected as/i)).toBeInTheDocument();
     expect(
-      within(requirement).getByText(
-        compactAddressLabel('0x9999999999999999999999999999999999999999')
-      )
+      within(sidebar).getByText(compactAddressLabel('0x9999999999999999999999999999999999999999'))
     ).toBeInTheDocument();
     expect(
-      within(requirement).queryByRole('button', { name: /switch wallet/i })
+      screen.queryByRole('group', { name: /payout release requirement/i })
     ).not.toBeInTheDocument();
-
-    await user.click(within(requirement).getByText(/release payout options/i));
-    await user.click(within(requirement).getByRole('button', { name: /switch wallet/i }));
-
+    await user.click(within(sidebar).getByRole('button', { name: /switch wallet/i }));
     expect(mockPrivyConnect).toHaveBeenCalled();
   });
 
@@ -1468,8 +1507,8 @@ describe('Task marketplace components', () => {
     expect(screen.getByText(/no pending commands/i)).toBeInTheDocument();
     expect(screen.getByRole('region', { name: /task metrics/i })).toBeInTheDocument();
     expect(screen.getByText(/task reference/i)).toBeInTheDocument();
-    expect(screen.getByText(/settlement/i)).toBeInTheDocument();
-    expect(screen.getByText(/history/i)).toBeInTheDocument();
+    expect(screen.getByText(/escrow tx/i)).toBeInTheDocument();
+    expect(screen.getByText(/created/i)).toBeInTheDocument();
     expect(screen.getAllByText('25 USDC').length).toBeGreaterThan(0);
   });
 
@@ -1588,21 +1627,22 @@ describe('Task marketplace components', () => {
       <TaskDetailPanel modeData={{ bids: [] }} task={{ ...taskDetail, requesterAgentId: '42' }} />
     );
 
-    expect(screen.getByText('Agent')).toBeInTheDocument();
-    expect(screen.queryByText('Wallet')).not.toBeInTheDocument();
+    expect(screen.getByText('Requester')).toBeInTheDocument();
     expect(screen.queryByText(compactAddressLabel(task.requester))).not.toBeInTheDocument();
     const requesterLink = screen.getByRole('link', { name: getAgentName('42') ?? 'Agent #42' });
     expect(requesterLink).toHaveAttribute('href', '/dashboard/agents/42');
   });
 
-  it('falls back to the wallet label when the requester has no registered agent id', () => {
+  it('falls back to the requester wallet when there is no registered agent id', () => {
     render(<TaskDetailPanel modeData={{ bids: [] }} task={taskDetail} />);
 
-    expect(screen.getByText('Wallet')).toBeInTheDocument();
-    expect(screen.queryByText('Agent')).not.toBeInTheDocument();
+    expect(screen.getByText('Requester')).toBeInTheDocument();
+    expect(
+      screen.getByRole('link', { name: compactAddressLabel(task.requester) })
+    ).toBeInTheDocument();
   });
 
-  it('never shows the workable phase chip for an open task past its expiry', () => {
+  it('shows an expired due state for an open task past its expiry', () => {
     render(
       <TaskDetailPanel
         modeData={{ bids: [] }}
@@ -1614,8 +1654,8 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByText('In progress')).toBeInTheDocument();
-    expect(screen.queryByText('Workable')).not.toBeInTheDocument();
+    expect(screen.getAllByText('Expired').length).toBeGreaterThan(0);
+    expect(screen.getByText('Expired - no submissions')).toBeInTheDocument();
   });
 
   it('gives the two copy-for-agent buttons distinct, real hover labels', () => {
@@ -1642,9 +1682,5 @@ describe('Task marketplace components', () => {
     const heading = screen.getByRole('heading', { level: 1, name: capped });
     expect(heading).toHaveAttribute('title', full);
     expect(heading.className).toContain('break-words');
-    expect(screen.getByText(capped, { selector: '[data-slot="breadcrumb-page"]' })).toHaveAttribute(
-      'title',
-      full
-    );
   });
 });

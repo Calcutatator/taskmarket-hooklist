@@ -118,7 +118,7 @@ export function SubmissionPayoutAction({
   );
 }
 
-function PrivyWalletActionButton({ label }: { label: string }) {
+export function PrivyWalletActionButton({ label }: { label: string }) {
   if (!isPrivyConfigured()) {
     return (
       <Button disabled size="sm" type="button" variant="outline">

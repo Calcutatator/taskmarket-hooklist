@@ -13,7 +13,13 @@ import type {
   TaskStatusType,
 } from '@taskmarket/shared';
 import { formatDreams, getAgentName } from '@taskmarket/shared';
-import { FileJsonIcon, FileTextIcon, SlidersHorizontal } from 'lucide-react';
+import {
+  ExternalLinkIcon,
+  FileIcon,
+  FileJsonIcon,
+  FileTextIcon,
+  SlidersHorizontal,
+} from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
@@ -33,6 +39,7 @@ import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
+import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
 import {
@@ -79,17 +86,15 @@ import { Textarea } from '@/components/ui/textarea';
 import type { MarketStats } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
 import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
-import { MODE_TOOLTIPS, STATUS_CONFIG } from '@/lib/market/status-config';
+import { MODE_TOOLTIPS } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
   resolvedAwardCount,
   settledAwards,
   splitPayoutLabel,
-  taskEffectivePhase,
   taskModeBadgeVariant,
   taskStatusBadgeVariant,
   taskStatusLabel,
-  taskStatusPhase,
 } from '@/lib/market/task-badges';
 import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
@@ -357,7 +362,9 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
 // (bonusBps and dreamsPerUsdc) are never conflated -- see docs/reference/rewards.md. This
 // is a display estimate -- actual payouts also apply the wallet-age ramp and epoch budget
 // caps, and bounty-mode payouts settle at completion-time rates, not these.
-function dreamsBonusCaption(task: TaskDetailResponse | TaskResponse): string | null {
+function dreamsBonusSummary(
+  task: TaskDetailResponse | TaskResponse
+): { caption: string; value: string } | null {
   const usdBonus =
     'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
   const dreamsBonus =
@@ -365,7 +372,10 @@ function dreamsBonusCaption(task: TaskDetailResponse | TaskResponse): string | n
   if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
     return null;
   }
-  return `~${formatUsdcUnits(usdBonus)} · ~${formatDreams(dreamsBonus)} DREAMS worker bonus (est.)`;
+  return {
+    caption: `Approximately ${formatUsdcUnits(usdBonus)}`,
+    value: `+${formatDreams(dreamsBonus)} DREAMS`,
+  };
 }
 
 // Reward as a scannable headline: larger/bolder than the surrounding cells, plus an
@@ -440,27 +450,6 @@ function ActorTypeBadge({ actorType }: { actorType?: 'agent' | 'human' | null })
   );
 }
 
-// Lifecycle phase chip: separates work you can pick up (workable) from work that is
-// mid-flight or already settled (closed). Reads from STATUS_CONFIG via taskStatusPhase so
-// it stays in lockstep with the per-status colour and never re-derives the mapping.
-const PHASE_COPY: Record<ReturnType<typeof taskStatusPhase>, { label: string; title: string }> = {
-  workable: { label: 'Workable', title: 'Open for anyone matching the brief to take on.' },
-  'in-progress': { label: 'In progress', title: 'A worker or decision is mid-flight.' },
-  closed: { label: 'Closed', title: 'This task has settled and can no longer accept work.' },
-};
-
-function PhaseBadge({ task }: { task: Pick<TaskResponse, 'status' | 'expiryTime'> }) {
-  const phase = taskEffectivePhase(task);
-  const copy = PHASE_COPY[phase];
-  // Workable reads as the actionable accent; in-progress/closed stay neutral so the chip
-  // reinforces the status colour without competing with it.
-  return (
-    <Badge title={copy.title} variant={phase === 'workable' ? 'success' : 'outline'}>
-      {copy.label}
-    </Badge>
-  );
-}
-
 function awardRecipientCount(awards: TaskAward[]): number {
   return new Set(awards.map((award) => award.workerAddress.toLowerCase())).size;
 }
@@ -500,7 +489,7 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
     if (task.mode === 'pitch' && task.pitchCount > 0) {
       return `Reviewing ${countLabel(task.pitchCount, 'pitch', 'pitches')}`;
     }
-    return 'Expired — no submissions';
+    return 'Expired - no submissions';
   }
 
   switch (task.status) {
@@ -526,18 +515,6 @@ function statusContext(task: TaskDetailResponse | TaskResponse) {
     default:
       return labelize(task.status);
   }
-}
-
-// Tooltip copy for the status badge. Delegates to statusContext for the open-but-expired
-// case so the hover text never contradicts the caption already printed underneath the
-// badge (previously this always showed STATUS_CONFIG's static "Accepting workers..."
-// description even once the submission window had closed).
-function statusDescription(task: TaskDetailResponse | TaskResponse) {
-  if (isOpenWindowClosed(task)) {
-    return `Submission window closed. ${statusContext(task)}.`;
-  }
-
-  return STATUS_CONFIG[task.status]?.description ?? statusContext(task);
 }
 
 function pendingActionEmptyReason(task: TaskDetailResponse | TaskResponse) {
@@ -1534,12 +1511,14 @@ export function ActorLink({
 }
 
 export function SubmissionCard({
+  layout = 'card',
   onOpenMedia,
   profileBasePath,
   reviewAction,
   submission,
   task,
 }: {
+  layout?: 'card' | 'gallery' | 'list';
   onOpenMedia?: (artifactId: string) => void;
   profileBasePath: string;
   reviewAction?: PendingAction;
@@ -1550,6 +1529,7 @@ export function SubmissionCard({
   const mediaArtifacts = artifacts.filter(isMediaArtifact);
   const supportingArtifacts = artifacts.filter((artifact) => !isMediaArtifact(artifact));
   const [heroArtifact, ...extraMedia] = mediaArtifacts;
+  const primaryArtifact = heroArtifact ?? supportingArtifacts[0];
   const worker = submission.workerAddress;
   const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
   const acceptAction = reviewAction
@@ -1559,6 +1539,160 @@ export function SubmissionCard({
       }
     : null;
   const awardRecipient = isAwardRecipient(task, worker);
+
+  if (layout === 'list') {
+    return (
+      <article
+        aria-label={`Submission from ${workerLabel}`}
+        className="grid min-w-0 gap-3 border-b border-border/58 py-4 first:pt-0"
+      >
+        <div className="flex min-w-0 flex-col gap-4 sm:flex-row sm:items-center">
+          <div className="w-full shrink-0 sm:w-32">
+            {heroArtifact ? (
+              <ArtifactMediaHero
+                artifact={heroArtifact}
+                onOpen={onOpenMedia ? () => onOpenMedia(heroArtifact.id) : undefined}
+                taskId={submission.taskId}
+              />
+            ) : (
+              <div className="grid h-24 place-items-center rounded-lg bg-muted/32 text-muted-foreground">
+                <FileIcon className="size-9" strokeWidth={1.5} />
+              </div>
+            )}
+          </div>
+          <div className="grid min-w-0 flex-1 gap-1">
+            <ActorLink
+              address={submission.workerAddress}
+              agentId={submission.workerAgentId}
+              className="truncate font-mono text-base font-semibold hover:text-primary"
+              label={workerLabel}
+              profileBasePath={profileBasePath}
+              title={worker}
+            />
+            <p className="text-sm text-muted-foreground">
+              {heroArtifact
+                ? heroArtifact.mediaKind === 'video'
+                  ? 'Video submission'
+                  : 'Image submission'
+                : artifacts.length > 0
+                  ? 'Supporting files'
+                  : 'No attached files'}
+            </p>
+            {artifacts.length > 0 ? (
+              <p className="text-sm text-muted-foreground">
+                {countLabel(artifacts.length, 'file')}
+              </p>
+            ) : null}
+          </div>
+          <RelativeTime
+            className="shrink-0 text-sm text-muted-foreground sm:w-24"
+            value={submission.submittedAt}
+          />
+          {primaryArtifact ? (
+            <ArtifactPreviewButton
+              artifact={primaryArtifact}
+              label={
+                <>
+                  Open
+                  <ExternalLinkIcon className="size-3.5" />
+                </>
+              }
+              taskId={submission.taskId}
+            />
+          ) : null}
+        </div>
+        {acceptAction ? <SubmissionPayoutAction action={acceptAction} task={task} /> : null}
+      </article>
+    );
+  }
+
+  if (layout === 'gallery') {
+    return (
+      <article
+        aria-label={`Submission from ${workerLabel}`}
+        className="grid h-full min-w-0 content-start overflow-hidden rounded-lg border border-border/58 bg-background/34 shadow-[var(--shadow-soft)] transition-colors hover:border-primary/54"
+      >
+        <div className="grid min-h-72 place-items-center bg-muted/20 p-4">
+          {heroArtifact ? (
+            <ArtifactMediaHero
+              artifact={heroArtifact}
+              onOpen={onOpenMedia ? () => onOpenMedia(heroArtifact.id) : undefined}
+              taskId={submission.taskId}
+            />
+          ) : (
+            <div className="grid justify-items-center gap-3 text-muted-foreground">
+              <FileIcon className="size-14" strokeWidth={1.25} />
+              <span className="font-mono text-sm uppercase">
+                {countLabel(artifacts.length, 'file')}
+              </span>
+            </div>
+          )}
+        </div>
+        <div className="grid gap-3 border-t border-border/58 p-4">
+          <div className="flex min-w-0 items-center justify-between gap-3">
+            <span className="flex min-w-0 items-center gap-2">
+              <ActorLink
+                address={submission.workerAddress}
+                agentId={submission.workerAgentId}
+                className="truncate font-mono text-sm font-semibold hover:text-primary"
+                label={workerLabel}
+                profileBasePath={profileBasePath}
+                title={worker}
+              />
+              {awardRecipient ? <Badge variant="success">Award recipient</Badge> : null}
+            </span>
+            <RelativeTime
+              className="shrink-0 text-sm text-muted-foreground"
+              value={submission.submittedAt}
+            />
+          </div>
+          {extraMedia.length > 0 ? (
+            <div className="flex min-w-0 flex-wrap gap-2">
+              {extraMedia.map((artifact) => (
+                <ArtifactMediaThumb
+                  artifact={artifact}
+                  key={artifact.id}
+                  onOpen={onOpenMedia ? () => onOpenMedia(artifact.id) : undefined}
+                  taskId={submission.taskId}
+                />
+              ))}
+            </div>
+          ) : null}
+          {supportingArtifacts.length > 0 ? (
+            <details className="min-w-0">
+              <summary className="cursor-pointer select-none font-mono text-xs uppercase text-muted-foreground hover:text-foreground">
+                Supporting files ({supportingArtifacts.length})
+              </summary>
+              <div className="mt-2 grid min-w-0 gap-2">
+                {supportingArtifacts.map((artifact) => (
+                  <ArtifactRow artifact={artifact} key={artifact.id} taskId={submission.taskId} />
+                ))}
+              </div>
+            </details>
+          ) : null}
+        </div>
+        {primaryArtifact ? (
+          <div className="flex items-center justify-between border-t border-border/58 px-4 py-2">
+            <ArtifactPreviewButton
+              artifact={primaryArtifact}
+              label="Open submission"
+              taskId={submission.taskId}
+            />
+          </div>
+        ) : null}
+        {artifacts.length === 0 ? (
+          <p className="border-t border-border/58 p-4 text-sm text-muted-foreground">
+            No artifacts were attached to this submission.
+          </p>
+        ) : null}
+        {acceptAction ? (
+          <div className="border-t border-border/58 p-3">
+            <SubmissionPayoutAction action={acceptAction} task={task} />
+          </div>
+        ) : null}
+      </article>
+    );
+  }
 
   return (
     <article
@@ -1747,15 +1881,11 @@ function ModeDataPanel({
 }
 
 function DetailMetric({
-  footerLabel,
-  footerValue,
   label,
   value,
   valueCaption,
   valueClassName,
 }: {
-  footerLabel: string;
-  footerValue: ReactNode;
   label: string;
   value: ReactNode;
   valueCaption?: ReactNode;
@@ -1775,13 +1905,7 @@ function DetailMetric({
       >
         {value}
       </div>
-      {valueCaption ? (
-        <p className="mt-1 truncate text-sm text-muted-foreground">{valueCaption}</p>
-      ) : null}
-      <div className="mt-4 grid gap-1 border-t border-border/52 pt-3">
-        <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{footerLabel}</p>
-        <div className="truncate text-sm text-muted-foreground">{footerValue}</div>
-      </div>
+      {valueCaption ? <p className="mt-1 text-sm text-muted-foreground">{valueCaption}</p> : null}
     </article>
   );
 }
@@ -1995,11 +2119,19 @@ function WorkRequirementsPanel({ task }: { task: TaskDetailResponse | TaskRespon
 }
 
 function TaskSummaryRail({
+  modeData,
+  modeHref,
   profileBasePath,
+  reviewRequired,
   task,
+  taskTypesHref,
 }: {
+  modeData?: TaskModeData;
+  modeHref: Route;
   profileBasePath: string;
+  reviewRequired: boolean;
   task: TaskDetailResponse | TaskResponse;
+  taskTypesHref: Route;
 }) {
   // Only the static price anchors live in the reference rail. The live clock price /
   // lowest bid are shown in the headline metric and the action button, which poll live,
@@ -2014,13 +2146,22 @@ function TaskSummaryRail({
 
   return (
     <div className="w-full border-l border-border/58 pl-5">
-      <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
-        Task reference
-      </h2>
-      <div className="mt-5 grid gap-5">
-        <SummaryGroup title="Requester">
+      <TaskReviewStatus
+        detail={
+          reviewRequired
+            ? task.status === 'pending_approval' || isOpenWindowClosed(task)
+              ? 'Submission window closed'
+              : 'Submissions ready for review'
+            : statusContext(task)
+        }
+        requester={task.requester}
+        reviewRequired={reviewRequired}
+        status={taskStatusLabel(task.status)}
+      />
+      <div className="grid gap-5 pt-5">
+        <SummaryGroup title="Task reference">
           <SummaryRow
-            label={task.requesterAgentId ? 'Agent' : 'Wallet'}
+            label="Requester"
             value={
               <ActorLink
                 address={task.requester}
@@ -2041,9 +2182,6 @@ function TaskSummaryRail({
               }
             />
           ) : null}
-        </SummaryGroup>
-
-        <SummaryGroup title="Settlement">
           <SummaryRow label="Task ID" value={compactAddress(task.id)} />
           <SummaryRow
             label="Escrow tx"
@@ -2055,6 +2193,7 @@ function TaskSummaryRail({
             labelTooltip="Share of the reward kept by Taskmarket when the task settles."
             value={formatBps(task.platformFeeBps)}
           />
+          <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
         </SummaryGroup>
 
         {showAuctionPricing ? (
@@ -2070,22 +2209,6 @@ function TaskSummaryRail({
             ) : null}
           </SummaryGroup>
         ) : null}
-
-        <SummaryGroup title="History">
-          <SummaryRow label="Created" value={formatDateTime(task.createdAt)} />
-          {task.claimedAt ? (
-            <SummaryRow label="Claimed" value={formatDateTime(task.claimedAt)} />
-          ) : null}
-          {task.auctionPriceReachesFloorAt ? (
-            <SummaryRow
-              label="Floor reached"
-              value={formatDateTime(task.auctionPriceReachesFloorAt)}
-            />
-          ) : null}
-          {task.auctionPriceReachesMaxAt ? (
-            <SummaryRow label="Max reached" value={formatDateTime(task.auctionPriceReachesMaxAt)} />
-          ) : null}
-        </SummaryGroup>
 
         {awardCount > 1 ? (
           <SummaryGroup title="Winners">
@@ -2124,6 +2247,55 @@ function TaskSummaryRail({
             />
           </SummaryGroup>
         ) : null}
+
+        <SummaryGroup title="Task type">
+          <div className="flex flex-wrap gap-2">
+            <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
+              <Link href={modeHref}>
+                <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                  {task.mode}
+                </Badge>
+              </Link>
+            </InfoTooltip>
+            {task.auctionType ? (
+              <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
+            ) : null}
+            {task.taskDrop ? (
+              <Link href={`/drops/${task.taskDrop.id}` as Route}>
+                <Badge className="hover:opacity-80" variant="outline">
+                  {task.taskDrop.name}
+                </Badge>
+              </Link>
+            ) : null}
+            {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
+              <TaskVisibilityBadge visibility={task.taskVisibility} withTooltip />
+            ) : null}
+          </div>
+        </SummaryGroup>
+
+        <SummaryGroup title="Utilities">
+          <div className="flex items-center justify-between gap-3">
+            <span className="text-muted-foreground">Copy for agent</span>
+            <span className="flex items-center gap-1">
+              <CopyButton
+                icon={<FileJsonIcon />}
+                label="Copy as JSON"
+                text={taskToAgentJson(task, modeData)}
+              />
+              <CopyButton
+                icon={<FileTextIcon />}
+                label="Copy as markdown"
+                text={taskToMarkdown(task)}
+              />
+            </span>
+          </div>
+          <Link
+            className="text-muted-foreground transition-colors hover:text-primary"
+            href={taskTypesHref}
+          >
+            How this works
+          </Link>
+        </SummaryGroup>
       </div>
     </div>
   );
@@ -2224,129 +2396,67 @@ export function TaskDetailPanel({
   const fullTitle = taskFullTitle(task);
   const descriptionBody = taskBody(task);
   const detailTags = taskDetailTags(task);
-  const taskActivityTitle = activityTitle(task);
-  // A finished task's rating is its headline outcome, so surface it in the metric instead of
-  // the activity count (and drop the duplicate sidebar Outcome row).
-  const rated = task.primaryAward?.rating != null;
-  const splitRatingProgress = ratingProgress(task);
+  const bonusSummary = dreamsBonusSummary(task);
+  const dashboardDetail = backHref.startsWith('/dashboard');
   const participationModule = participationAction ? (
     <TaskParticipationModule action={participationAction} task={task} />
   ) : null;
 
   return (
-    <div className="grid w-full min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_340px]">
+    <div className="grid w-full min-w-0 gap-6 lg:grid-cols-3">
       <PublishedCelebration />
-      <div className="block w-full min-w-0 space-y-5">
-        <Breadcrumb className="px-1">
-          <BreadcrumbList className="font-mono text-xs uppercase">
-            <BreadcrumbItem>
-              <BreadcrumbLink asChild>
-                <Link href={backHref as Route}>Tasks</Link>
-              </BreadcrumbLink>
-            </BreadcrumbItem>
-            <BreadcrumbSeparator />
-            <BreadcrumbItem className="min-w-0">
-              <BreadcrumbPage
-                className="max-w-[min(72vw,42rem)] truncate font-sans text-sm normal-case"
-                title={fullTitle}
-              >
-                {title}
-              </BreadcrumbPage>
-            </BreadcrumbItem>
-          </BreadcrumbList>
-        </Breadcrumb>
-        <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
+      <div className="block w-full min-w-0 space-y-5 lg:col-span-2">
+        {!dashboardDetail ? (
+          <Breadcrumb className="px-1">
+            <BreadcrumbList>
+              <BreadcrumbItem>
+                <BreadcrumbLink asChild>
+                  <Link href={backHref as Route}>Tasks</Link>
+                </BreadcrumbLink>
+              </BreadcrumbItem>
+              <BreadcrumbSeparator />
+              <BreadcrumbItem className="min-w-0">
+                <BreadcrumbPage className="truncate" title={fullTitle}>
+                  {compactAddress(task.id)}
+                </BreadcrumbPage>
+              </BreadcrumbItem>
+            </BreadcrumbList>
+          </Breadcrumb>
+        ) : null}
+        <h1
+          className="break-words font-display text-2xl font-semibold leading-tight tracking-tight text-foreground"
+          title={fullTitle}
+        >
+          {title}
+        </h1>
         <section
           aria-label="Task metrics"
-          className="grid overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-2"
+          className="grid overflow-hidden rounded-lg border border-border/58 bg-card/38 md:grid-cols-4"
         >
           <DetailMetric
-            footerLabel="Due"
-            footerValue={<DeadlineLabel task={task} />}
             label="Reward"
             value={<span className="text-primary">{formatUsdcUnits(taskDisplayReward(task))}</span>}
-            valueCaption={
-              [auctionPriceCaption(task), dreamsBonusCaption(task)].filter(Boolean).join(' · ') ||
-              null
-            }
+            valueCaption={auctionPriceCaption(task)}
           />
           <DetailMetric
-            footerLabel={splitRatingProgress ? 'Ratings' : rated ? 'Rating' : taskActivityTitle}
-            footerValue={
-              splitRatingProgress
-                ? splitRatingProgress
-                : rated
-                  ? `${task.primaryAward?.rating}/100`
-                  : activityLabel(task, modeData)
-            }
-            label="Status"
-            value={
-              <InfoTooltip label={statusDescription(task)}>
-                <Badge className="px-3.5 py-1.5 text-base" variant={taskStatusBadgeVariant(task)}>
-                  {taskStatusLabel(task.status)}
-                </Badge>
-              </InfoTooltip>
-            }
-            valueCaption={statusContext(task)}
-            valueClassName="mt-2 flex min-w-0 items-center"
+            label="Bonus"
+            value={bonusSummary?.value ?? '--'}
+            valueCaption={bonusSummary?.caption}
+            valueClassName="mt-2 font-mono text-xl font-semibold tracking-tight text-foreground"
+          />
+          <DetailMetric
+            label="Due"
+            value={<DeadlineLabel className="text-lg" task={task} />}
+            valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
+          />
+          <DetailMetric
+            label={activityTitle(task)}
+            value={activityLabel(task, modeData)}
+            valueClassName="mt-2 min-w-0 text-lg font-medium text-foreground"
           />
         </section>
+        <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
-        <section className="grid gap-3 border-t border-border/58 pt-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div className="flex flex-wrap items-center gap-2">
-              <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
-                <Link href={modeHref}>
-                  <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
-                    {task.mode}
-                  </Badge>
-                </Link>
-              </InfoTooltip>
-              {task.auctionType ? (
-                <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
-              ) : null}
-              {task.taskDrop ? (
-                <Link href={`/drops/${task.taskDrop.id}` as Route}>
-                  <Badge className="hover:opacity-80" variant="outline">
-                    {task.taskDrop.name}
-                  </Badge>
-                </Link>
-              ) : null}
-              {task.taskVisibility === 'unlisted' || task.taskVisibility === 'private' ? (
-                <TaskVisibilityBadge visibility={task.taskVisibility} withTooltip />
-              ) : null}
-              <PhaseBadge task={task} />
-              <Link
-                className="font-mono text-xs uppercase text-muted-foreground hover:text-primary"
-                href={taskTypesHref}
-              >
-                How this works
-              </Link>
-            </div>
-            {/* Copy-for-agent: hand the whole brief to an operator/LLM without scraping the page. */}
-            <div className="flex items-center gap-1.5">
-              <span className="font-mono text-[0.65rem] uppercase text-muted-foreground">
-                Copy for agent
-              </span>
-              <CopyButton
-                icon={<FileJsonIcon />}
-                label="Copy as JSON"
-                text={taskToAgentJson(task, modeData)}
-              />
-              <CopyButton
-                icon={<FileTextIcon />}
-                label="Copy as markdown"
-                text={taskToMarkdown(task)}
-              />
-            </div>
-          </div>
-          <h1
-            className="break-words font-display text-2xl font-semibold tracking-tight text-foreground"
-            title={fullTitle}
-          >
-            {title}
-          </h1>
-        </section>
         {reviewAction ? (
           <>
             {participationModule}
@@ -2414,7 +2524,14 @@ export function TaskDetailPanel({
         ) : null}
       </div>
       <aside aria-label="Task sidebar" className="grid h-fit gap-6 lg:sticky lg:top-20">
-        <TaskSummaryRail profileBasePath={profileBasePath} task={task} />
+        <TaskSummaryRail
+          modeData={modeData}
+          modeHref={modeHref}
+          profileBasePath={profileBasePath}
+          reviewRequired={Boolean(reviewAction)}
+          task={task}
+          taskTypesHref={taskTypesHref}
+        />
       </aside>
     </div>
   );

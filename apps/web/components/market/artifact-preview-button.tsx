@@ -549,13 +549,17 @@ export function ArtifactMediaThumb({ artifact, onOpen, taskId }: Props & { onOpe
   );
 }
 
-export function ArtifactPreviewButton({ artifact, taskId }: Props) {
+export function ArtifactPreviewButton({
+  artifact,
+  label = 'View',
+  taskId,
+}: Props & { label?: ReactNode }) {
   return (
     <ArtifactPreviewTrigger artifact={artifact} taskId={taskId}>
       {({ error, loading, openPreview }) => (
         <div className="flex items-center gap-2">
           <Button disabled={loading} onClick={openPreview} size="sm" type="button" variant="ghost">
-            {loading ? 'Loading...' : 'View'}
+            {loading ? 'Loading...' : label}
           </Button>
           {error ? <span className="text-xs text-destructive">{error}</span> : null}
         </div>

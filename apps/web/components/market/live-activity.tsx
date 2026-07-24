@@ -1,9 +1,8 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
-import { Images } from 'lucide-react';
 import { AnimatePresence, motion } from 'motion/react';
-import { ChevronLeftIcon, ChevronRightIcon } from 'lucide-react';
+import { ChevronLeftIcon, ChevronRightIcon, Images, LayoutGridIcon, ListIcon } from 'lucide-react';
 import { useEffect, useRef, useState } from 'react';
 import { toast } from 'sonner';
 
@@ -20,7 +19,6 @@ import {
   SubmissionCard,
   activityEmptyCopy,
   activityLabel,
-  countLabel,
   type TaskModeData,
 } from '@/components/market/tasks';
 import { Badge } from '@/components/ui/badge';
@@ -52,6 +50,7 @@ const TOAST_DEBOUNCE_MS = 1_500;
 const PAGE_SIZE = 10;
 
 type ReviewSort = 'newest' | 'oldest' | 'credibility';
+type ReviewView = 'gallery' | 'list';
 
 const REVIEW_SORT_OPTIONS: Array<{ value: ReviewSort; label: string }> = [
   { value: 'newest', label: 'Newest first' },
@@ -376,6 +375,7 @@ export function LiveActivityPanel({
   const data = useLiveModeData(task, initialModeData, pollEnabled);
 
   const [reviewSort, setReviewSort] = useState<ReviewSort>('newest');
+  const [reviewView, setReviewView] = useState<ReviewView>('gallery');
   const [page, setPage] = useState(1);
 
   const submissions = sortByReview(data.submissions ?? [], reviewSort);
@@ -499,9 +499,7 @@ export function LiveActivityPanel({
   const submissionWindowClosed = task.status === 'open' && !windowOpen;
   const title = isReviewQueue ? 'Submission review' : 'Activity';
   const description = isReviewQueue
-    ? submissionWindowClosed
-      ? `Submission window closed - ${countLabel(items.length, noun.singular, noun.plural)} awaiting review. Compare deliverables before releasing escrow.`
-      : 'Compare deliverables before releasing escrow. Each payout action is tied to its submission worker.'
+    ? 'Compare deliverables before releasing escrow.'
     : 'Work, bids, proofs, and reviews tied to this task.';
 
   const showReaching =
@@ -509,7 +507,11 @@ export function LiveActivityPanel({
   const animateNew = pollEnabled && !motionDisabled;
 
   return (
-    <section className="grid gap-4 border-t border-border/58 pt-5" id="task-activity" tabIndex={-1}>
+    <section
+      className={cn('grid gap-5', isReviewQueue ? '' : 'border-t border-border/58 pt-5')}
+      id="task-activity"
+      tabIndex={-1}
+    >
       <span aria-live="polite" className="sr-only">
         {announce}
       </span>
@@ -520,10 +522,10 @@ export function LiveActivityPanel({
               <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
                 {title}
               </h2>
-              {pollEnabled && !submissionWindowClosed ? (
+              {!isReviewQueue && pollEnabled && !submissionWindowClosed ? (
                 <LiveIndicator motionDisabled={motionDisabled} />
               ) : null}
-              {submissionWindowClosed ? (
+              {!isReviewQueue && submissionWindowClosed ? (
                 <span className="font-mono text-[0.7rem] uppercase tracking-[0.08em] text-muted-foreground">
                   Submission window closed
                 </span>
@@ -532,7 +534,7 @@ export function LiveActivityPanel({
             <p className="text-sm leading-5 text-muted-foreground">{description}</p>
           </div>
           <div className="flex items-center gap-2">
-            {galleryEntries.length > 0 ? (
+            {!isReviewQueue && galleryEntries.length > 0 ? (
               <Button
                 onClick={() => {
                   setGalleryIndex(0);
@@ -546,38 +548,71 @@ export function LiveActivityPanel({
                 Gallery
               </Button>
             ) : null}
-            <Badge variant="terminal">{activityLabel(task, data)}</Badge>
+            {!isReviewQueue ? <Badge variant="terminal">{activityLabel(task, data)}</Badge> : null}
           </div>
         </div>
       </div>
       <div className="grid gap-3">
-        {submissions.length > 1 ? (
-          <div className="flex flex-wrap items-center justify-between gap-2">
-            <label className="flex items-center gap-2 font-mono text-xs uppercase text-muted-foreground">
-              Sort
-              <NativeSelect
-                aria-label="Sort submissions"
-                onChange={(event) => {
-                  setReviewSort(event.target.value as ReviewSort);
-                  setPage(1);
-                }}
-                value={reviewSort}
-                wrapperClassName="w-auto"
+        {submissions.length > 0 && isReviewQueue ? (
+          <div className="flex flex-wrap items-center gap-3">
+            <div className="flex items-center gap-2" role="group" aria-label="Submission view">
+              <Button
+                aria-label="Gallery view"
+                aria-pressed={reviewView === 'gallery'}
+                data-active={reviewView === 'gallery'}
+                onClick={() => setReviewView('gallery')}
+                size="chip"
+                type="button"
+                variant="chip"
               >
-                {REVIEW_SORT_OPTIONS.map((option) => (
-                  <option key={option.value} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </label>
+                <LayoutGridIcon className="size-3.5" />
+                Gallery
+              </Button>
+              <Button
+                aria-label="List view"
+                aria-pressed={reviewView === 'list'}
+                data-active={reviewView === 'list'}
+                onClick={() => setReviewView('list')}
+                size="chip"
+                type="button"
+                variant="chip"
+              >
+                <ListIcon className="size-3.5" />
+                List
+              </Button>
+            </div>
+            {submissions.length > 1 ? (
+              <label className="flex items-center gap-2 text-sm text-muted-foreground">
+                Sort:
+                <NativeSelect
+                  aria-label="Sort submissions"
+                  onChange={(event) => {
+                    setReviewSort(event.target.value as ReviewSort);
+                    setPage(1);
+                  }}
+                  value={reviewSort}
+                  wrapperClassName="w-auto"
+                >
+                  {REVIEW_SORT_OPTIONS.map((option) => (
+                    <option key={option.value} value={option.value}>
+                      {option.label}
+                    </option>
+                  ))}
+                </NativeSelect>
+              </label>
+            ) : null}
           </div>
         ) : null}
 
         {submissions.length > 0 ? (
           <div
             aria-label={isReviewQueue ? 'Artifact comparison' : undefined}
-            className={isReviewQueue ? 'grid items-start gap-3 xl:grid-cols-2' : 'grid gap-3'}
+            className={cn(
+              'grid',
+              isReviewQueue && reviewView === 'gallery'
+                ? 'items-stretch gap-5 md:grid-cols-2'
+                : 'items-start gap-3'
+            )}
             role={isReviewQueue ? 'region' : undefined}
           >
             <AnimatePresence initial={false}>
@@ -588,9 +623,10 @@ export function LiveActivityPanel({
                   motionDisabled={motionDisabled}
                 >
                   <SubmissionCard
+                    layout={isReviewQueue ? reviewView : 'card'}
                     onOpenMedia={openGalleryAt}
                     profileBasePath={profileBasePath}
-                    reviewAction={reviewAction}
+                    reviewAction={isRequester ? reviewAction : undefined}
                     submission={submission}
                     task={task}
                   />
@@ -681,8 +717,8 @@ export function LiveActivityPanel({
               </p>
               <p className="mt-1 text-sm leading-5 text-muted-foreground">
                 {task.mode === 'benchmark'
-                  ? 'Submission window closed — reviewing benchmark proofs'
-                  : 'Submission window closed — the requester is reviewing entries'}
+                  ? 'Submission window closed - reviewing benchmark proofs'
+                  : 'Submission window closed - the requester is reviewing entries'}
               </p>
             </div>
           ) : (
