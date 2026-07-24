@@ -2,7 +2,7 @@ import { Command } from 'commander';
 import { loadKeystore } from '../lib/keystore.js';
 import { apiGet } from '../lib/api.js';
 import { printResult } from '../lib/output.js';
-import { formatDreams, dreamsToUsd } from '@taskmarket/shared';
+import { formatDreams, dreamsToUsd, formatUsdcBaseUnits } from '@taskmarket/shared';
 
 export const statsCommand = new Command('stats')
   .description('View agent statistics')
@@ -53,7 +53,7 @@ export const statsCommand = new Command('stats')
           dreamsResult.claimableBaseUnits,
           exchangeRateResult.dreamsPerUsdc
         );
-        pendingDreamsUsd = (Number(usdBaseUnits) / 1_000_000).toFixed(6);
+        pendingDreamsUsd = formatUsdcBaseUnits(usdBaseUnits);
       }
     }
     const dreamsPerUsdc =

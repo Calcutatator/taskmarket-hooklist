@@ -1,6 +1,7 @@
 import {
   PAID_PENDING_ACTION_NAMES,
   Secp256k1PublicKeySchema,
+  formatUsdcBaseUnits,
   type PendingAction,
   type PendingActionNameValue,
   type TaskPhaseType,
@@ -45,13 +46,6 @@ type ActionOptions = {
   availableUntil?: Date | null;
   targetWorker?: string | null;
 };
-
-function formatUsdcBaseUnits(value: string | bigint): string {
-  const baseUnits = BigInt(value);
-  const whole = baseUnits / 1_000_000n;
-  const fraction = (baseUnits % 1_000_000n).toString().padStart(6, '0');
-  return `${whole.toString()}.${fraction}`;
-}
 
 function action(
   role: PendingAction['role'],

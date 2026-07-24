@@ -1,4 +1,5 @@
 import { Command } from 'commander';
+import { formatUsdcBaseUnits } from '@taskmarket/shared';
 import { x402Post } from '../../lib/x402.js';
 import { printResult, printError } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
@@ -27,7 +28,7 @@ export const auctionAcceptCmd = new Command('auction-accept')
     };
     printResult({
       acceptedPrice: result.acceptedPrice,
-      acceptedPriceUsdc: (Number(result.acceptedPrice) / 1_000_000).toFixed(6),
+      acceptedPriceUsdc: formatUsdcBaseUnits(result.acceptedPrice),
       workerAddress: result.workerAddress,
     });
   });

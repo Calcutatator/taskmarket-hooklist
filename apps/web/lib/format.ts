@@ -1,3 +1,5 @@
+import { formatUsdcBaseUnits } from '@taskmarket/shared';
+
 export function formatUsdcUnits(value?: string | number | null) {
   if (value === null || value === undefined || value === '') {
     return '0 USDC';
@@ -17,14 +19,7 @@ export function formatUsdcUnits(value?: string | number | null) {
     return '0 USDC';
   }
 
-  const negative = baseUnits < 0n;
-  const absolute = negative ? -baseUnits : baseUnits;
-  const wholeUnits = absolute / 1_000_000n;
-  const fractionalUnits = absolute % 1_000_000n;
-  const whole = new Intl.NumberFormat('en-US', { maximumFractionDigits: 0 }).format(wholeUnits);
-  const fraction = fractionalUnits.toString().padStart(6, '0').replace(/0+$/, '');
-
-  return `${negative ? '-' : ''}${whole}${fraction ? `.${fraction}` : ''} USDC`;
+  return `${formatUsdcBaseUnits(baseUnits, { trimTrailingZeros: true, groupThousands: true })} USDC`;
 }
 
 export function formatNumber(value?: number | null) {

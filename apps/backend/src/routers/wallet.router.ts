@@ -25,6 +25,7 @@ import {
   WithdrawDreamsOutputSchema,
   ExchangeRateOutputSchema,
   dreamsToUsd,
+  formatUsdcBaseUnits,
   buildSetWithdrawalAddressMessage,
   buildWithdrawDreamsMessage,
   normalizeAddress,
@@ -57,7 +58,7 @@ export const walletRouter = router({
         args: [input.address as `0x${string}`],
       });
       const balanceBaseUnits = raw.toString();
-      const balanceUsdc = (Number(raw) / 1_000_000).toFixed(6);
+      const balanceUsdc = formatUsdcBaseUnits(raw);
       return { address: input.address, balanceBaseUnits, balanceUsdc };
     }),
 

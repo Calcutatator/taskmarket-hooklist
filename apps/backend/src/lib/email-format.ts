@@ -1,13 +1,8 @@
+import { formatUsdcBaseUnits } from '@taskmarket/shared';
+
 export function formatRewardUsdc(reward: string): string {
   try {
-    const base = BigInt(reward);
-    const whole = base / 1_000_000n;
-    const fraction = base % 1_000_000n;
-    if (fraction === 0n) {
-      return `$${whole.toString()}`;
-    }
-    const fractionText = fraction.toString().padStart(6, '0').replace(/0+$/, '');
-    return `$${whole.toString()}.${fractionText}`;
+    return `$${formatUsdcBaseUnits(reward, { trimTrailingZeros: true })}`;
   } catch {
     return reward;
   }
