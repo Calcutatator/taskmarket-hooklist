@@ -93,6 +93,11 @@ export const TaskDropGetInputSchema = z.object({
   taskDropId: z.string().min(1),
 });
 
+export const TaskDropDirectoryInputSchema = z.object({
+  cursor: z.string().min(1).max(2048).optional(),
+  limit: z.number().int().min(1).max(48).optional().default(24),
+});
+
 export const TaskDropSummarySchema = z
   .object({
     id: z.string().min(1),
@@ -125,6 +130,21 @@ export const TaskDropPageDataSchema = z.object({
   tasks: z.array(TaskDropTaskSchema),
 });
 
+export const TaskDropDirectoryItemSchema = z.object({
+  drop: TaskDropSummarySchema,
+  availableTaskCount: z.number().int().nonnegative(),
+  taskCount: z.number().int().positive(),
+  resolvedTaskCount: z.number().int().nonnegative(),
+  totalReward: z.string().regex(/^\d+$/),
+  nextExpiryTime: z.string().datetime().nullable(),
+  latestTaskAt: z.string().datetime(),
+});
+
+export const TaskDropDirectoryResponseSchema = z.object({
+  items: z.array(TaskDropDirectoryItemSchema),
+  nextCursor: z.string().nullable(),
+});
+
 export type TaskDropSource = z.infer<typeof TaskDropSourceSchema>;
 export type TaskDropSubscriptionScope = z.infer<typeof TaskDropSubscriptionScopeSchema>;
 export type TaskDropCreateInline = z.infer<typeof TaskDropCreateInlineSchema>;
@@ -142,6 +162,9 @@ export type TaskDropAnnouncementInput = z.infer<typeof TaskDropAnnouncementInput
 export type TaskDropAnnouncementResponse = z.infer<typeof TaskDropAnnouncementResponseSchema>;
 export type TaskDropListByOwnerInput = z.infer<typeof TaskDropListByOwnerInputSchema>;
 export type TaskDropGetInput = z.infer<typeof TaskDropGetInputSchema>;
+export type TaskDropDirectoryInput = z.infer<typeof TaskDropDirectoryInputSchema>;
 export type TaskDropSummary = z.infer<typeof TaskDropSummarySchema>;
 export type TaskDropTask = z.infer<typeof TaskDropTaskSchema>;
 export type TaskDropPageData = z.infer<typeof TaskDropPageDataSchema>;
+export type TaskDropDirectoryItem = z.infer<typeof TaskDropDirectoryItemSchema>;
+export type TaskDropDirectoryResponse = z.infer<typeof TaskDropDirectoryResponseSchema>;

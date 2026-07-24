@@ -314,6 +314,55 @@ export function DirectoryLoading({ label = 'Loading directory' }: { label?: stri
   );
 }
 
+export function TaskDropDirectoryLoading() {
+  return (
+    <LoadingFrame
+      className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:px-8"
+      label="Loading Task Drops"
+    >
+      <div className="grid gap-5 border-b border-border/58 pb-7 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+        <div className="grid gap-3">
+          <Skeleton className="h-3 w-24" />
+          <Skeleton className="h-12 w-60 max-w-[70vw]" />
+          <Skeleton className="h-4 w-full max-w-2xl" />
+          <Skeleton className="h-4 w-4/5 max-w-xl" />
+        </div>
+        <Skeleton className="h-10 w-44" />
+      </div>
+      <section className="grid gap-4">
+        <Skeleton className="h-8 w-56" />
+        <Card className="min-h-72 overflow-hidden p-0 md:grid md:grid-cols-[minmax(14rem,0.8fr)_minmax(0,1.2fr)]">
+          <Skeleton className="min-h-24 rounded-none md:min-h-full" />
+          <CardContent className="grid content-between gap-6 py-6">
+            <Skeleton className="h-6 w-28 rounded-full" />
+            <div className="grid gap-3">
+              <Skeleton className="h-8 w-2/3" />
+              <Skeleton className="h-4 w-full" />
+            </div>
+            <Skeleton className="h-16 w-full" />
+          </CardContent>
+        </Card>
+      </section>
+      <section className="grid gap-4">
+        <Skeleton className="h-8 w-48" />
+        <div className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+          {['drop-1', 'drop-2', 'drop-3'].map((slot) => (
+            <Card className="min-h-80 overflow-hidden p-0" key={slot}>
+              <Skeleton className="h-24 rounded-none" />
+              <CardContent className="grid gap-5 py-5">
+                <Skeleton className="h-6 w-28 rounded-full" />
+                <Skeleton className="h-7 w-3/4" />
+                <Skeleton className="h-4 w-full" />
+                <Skeleton className="h-16 w-full" />
+              </CardContent>
+            </Card>
+          ))}
+        </div>
+      </section>
+    </LoadingFrame>
+  );
+}
+
 export function LeaderboardLoading() {
   return (
     <LoadingFrame

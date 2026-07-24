@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
 
-import { ApiConnectionError, fetchTasks } from './server';
+import { ApiConnectionError, fetchTaskDropDirectory, fetchTasks } from './server';
 
 function stubSuccessfulTaskListFetch() {
   const fetchMock = vi.fn(
@@ -79,5 +79,31 @@ describe('server API fetchers', () => {
     );
 
     await expect(fetchTasks({ limit: 20 })).rejects.toBe(dynamicServerError);
+  });
+
+  it('fetches a cursor page from the public Task Drop directory', async () => {
+    const responseBody = {
+      items: [],
+      nextCursor: 'next/drop',
+    };
+    const fetchMock = vi.fn(
+      async (_input: RequestInfo | URL, _init?: RequestInit) =>
+        new Response(JSON.stringify(responseBody), {
+          headers: { 'content-type': 'application/json' },
+          status: 200,
+        })
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    await expect(fetchTaskDropDirectory({ cursor: 'current/drop', limit: 24 })).resolves.toEqual(
+      responseBody
+    );
+
+    const firstCall = fetchMock.mock.calls[0];
+    expect(firstCall).toBeDefined();
+    const requestUrl = new URL(String(firstCall![0]));
+    expect(requestUrl.pathname).toBe('/api/task-drops/directory');
+    expect(requestUrl.searchParams.get('cursor')).toBe('current/drop');
+    expect(requestUrl.searchParams.get('limit')).toBe('24');
   });
 });

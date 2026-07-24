@@ -2,6 +2,8 @@ import { randomUUID } from 'crypto';
 import {
   TaskDropAnnouncementInputSchema,
   TaskDropAnnouncementResponseSchema,
+  TaskDropDirectoryInputSchema,
+  TaskDropDirectoryResponseSchema,
   TaskDropGetInputSchema,
   TaskDropListByOwnerInputSchema,
   TaskDropOfficialStatusInputSchema,
@@ -16,7 +18,7 @@ import {
   TaskDropSubscribeResponseSchema,
 } from '@taskmarket/shared';
 import { TRPCError } from '@trpc/server';
-import { and, desc, eq, sql } from 'drizzle-orm';
+import { and, asc, desc, eq, gt, inArray, or, sql } from 'drizzle-orm';
 
 import { getServerConfig } from '../config/env';
 import { taskDrops, taskDropSubscriptions, tasks } from '../db/schema';
@@ -53,6 +55,53 @@ function isUniqueViolation(error: unknown): boolean {
   return 'cause' in error && isUniqueViolation(error.cause);
 }
 
+type DirectoryCursor = {
+  acceptsWorkRank: 0 | 1;
+  officialRank: 0 | 1;
+  latestTaskAtRank: string;
+  id: string;
+};
+
+function encodeDirectoryCursor(cursor: DirectoryCursor): string {
+  return Buffer.from(JSON.stringify(cursor), 'utf8').toString('base64url');
+}
+
+function decodeDirectoryCursor(cursor: string | undefined): DirectoryCursor | null {
+  if (!cursor) return null;
+
+  try {
+    const decoded: unknown = JSON.parse(Buffer.from(cursor, 'base64url').toString('utf8'));
+    if (
+      !decoded ||
+      typeof decoded !== 'object' ||
+      !('acceptsWorkRank' in decoded) ||
+      (decoded.acceptsWorkRank !== 0 && decoded.acceptsWorkRank !== 1) ||
+      !('officialRank' in decoded) ||
+      (decoded.officialRank !== 0 && decoded.officialRank !== 1) ||
+      !('latestTaskAtRank' in decoded) ||
+      typeof decoded.latestTaskAtRank !== 'string' ||
+      !/^\d+$/.test(decoded.latestTaskAtRank) ||
+      !('id' in decoded) ||
+      typeof decoded.id !== 'string' ||
+      decoded.id.length === 0
+    ) {
+      throw new Error('Invalid cursor');
+    }
+    return {
+      acceptsWorkRank: decoded.acceptsWorkRank,
+      officialRank: decoded.officialRank,
+      latestTaskAtRank: decoded.latestTaskAtRank,
+      id: decoded.id,
+    };
+  } catch {
+    throw new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid Task Drop directory cursor' });
+  }
+}
+
+function aggregateDateToISOString(value: Date | string): string {
+  return value instanceof Date ? value.toISOString() : new Date(value).toISOString();
+}
+
 export const taskDropsRouter = router({
   listByOwner: publicProcedure
     .meta({
@@ -73,6 +122,133 @@ export const taskDropsRouter = router({
         .orderBy(desc(taskDrops.createdAt));
 
       return rows.map(serializeDrop);
+    }),
+
+  listPublic: publicProcedure
+    .meta({
+      openapi: {
+        method: 'GET',
+        path: '/task-drops/directory',
+        tags: ['Task Drops'],
+        summary: 'List public Task Drops',
+      },
+    })
+    .input(TaskDropDirectoryInputSchema)
+    .output(TaskDropDirectoryResponseSchema)
+    .query(async ({ input, ctx }) => {
+      const now = new Date();
+      const cursor = decodeDirectoryCursor(input.cursor);
+      const officialOwners = getServerConfig().OFFICIAL_TASK_DROP_OWNER_ADDRESSES ?? [];
+
+      // A Task Drop advertises work only while its delivery window is open.
+      // pending_approval remains an active lifecycle phase, but delivery is complete.
+      const availableTaskCondition = and(
+        inArray(tasks.status, ['open', 'claimed', 'worker_selected']),
+        gt(tasks.expiryTime, now)
+      );
+      const availableTaskCount = sql<number>`count(*) filter (where ${availableTaskCondition})`.as(
+        'available_task_count'
+      );
+      const taskCount = sql<number>`count(*)`.as('task_count');
+      const resolvedTaskCount = sql<number>`count(*) filter (where ${inArray(tasks.status, [
+        'completed',
+        'cancelled',
+        'expired',
+      ])})`.as('resolved_task_count');
+      const totalReward = sql<string>`coalesce(sum(${tasks.reward}), 0)::text`.as('total_reward');
+      const nextExpiryTime = sql<
+        Date | string | null
+      >`min(${tasks.expiryTime}) filter (where ${availableTaskCondition})`.as('next_expiry_time');
+      const latestTaskAtExpression = sql<
+        Date | string
+      >`date_trunc('milliseconds', max(${tasks.createdAt}))`;
+      const latestTaskAt = latestTaskAtExpression.as('latest_task_at');
+      const latestTaskAtRankExpression = sql<string>`floor(extract(epoch from max(${tasks.createdAt})) * 1000)::bigint`;
+      const latestTaskAtRank = latestTaskAtRankExpression.as('latest_task_at_rank');
+      const acceptsWorkRankExpression = sql<number>`case when count(*) filter (where ${availableTaskCondition}) > 0 then 1 else 0 end`;
+      const acceptsWorkRank = acceptsWorkRankExpression.as('accepts_work_rank');
+      const officialDropCondition =
+        officialOwners.length > 0
+          ? inArray(sql<string>`lower(${taskDrops.ownerAddress})`, officialOwners)
+          : sql<boolean>`false`;
+      const officialRankExpression = sql<number>`case when ${officialDropCondition} then 1 else 0 end`;
+      const officialRank = officialRankExpression.as('official_rank');
+      const cursorCondition = cursor
+        ? or(
+            sql`${acceptsWorkRankExpression} < ${cursor.acceptsWorkRank}`,
+            and(
+              sql`${acceptsWorkRankExpression} = ${cursor.acceptsWorkRank}`,
+              sql`${officialRankExpression} < ${cursor.officialRank}`
+            ),
+            and(
+              sql`${acceptsWorkRankExpression} = ${cursor.acceptsWorkRank}`,
+              sql`${officialRankExpression} = ${cursor.officialRank}`,
+              sql`${latestTaskAtRankExpression} < ${cursor.latestTaskAtRank}`
+            ),
+            and(
+              sql`${acceptsWorkRankExpression} = ${cursor.acceptsWorkRank}`,
+              sql`${officialRankExpression} = ${cursor.officialRank}`,
+              sql`${latestTaskAtRankExpression} = ${cursor.latestTaskAtRank}`,
+              gt(taskDrops.id, cursor.id)
+            )
+          )
+        : undefined;
+
+      const groupedQuery = ctx.db
+        .select({
+          id: taskDrops.id,
+          ownerAddress: taskDrops.ownerAddress,
+          name: taskDrops.name,
+          description: taskDrops.description,
+          createdAt: taskDrops.createdAt,
+          announcedAt: taskDrops.announcedAt,
+          availableTaskCount,
+          taskCount,
+          resolvedTaskCount,
+          totalReward,
+          nextExpiryTime,
+          latestTaskAt,
+          latestTaskAtRank,
+          acceptsWorkRank,
+          officialRank,
+        })
+        .from(taskDrops)
+        .innerJoin(tasks, eq(tasks.taskDropId, taskDrops.id))
+        .where(taskNotUnlisted)
+        .groupBy(taskDrops.id);
+      const pagedQuery = cursorCondition ? groupedQuery.having(cursorCondition) : groupedQuery;
+      const rows = await pagedQuery
+        .orderBy(
+          desc(acceptsWorkRank),
+          desc(officialRank),
+          desc(latestTaskAtRank),
+          asc(taskDrops.id)
+        )
+        .limit(input.limit + 1);
+
+      const hasMore = rows.length > input.limit;
+      const page = hasMore ? rows.slice(0, input.limit) : rows;
+
+      return {
+        items: page.map((row) => ({
+          drop: serializeDrop(row),
+          availableTaskCount: Number(row.availableTaskCount),
+          taskCount: Number(row.taskCount),
+          resolvedTaskCount: Number(row.resolvedTaskCount),
+          totalReward: row.totalReward.toString(),
+          nextExpiryTime: row.nextExpiryTime ? aggregateDateToISOString(row.nextExpiryTime) : null,
+          latestTaskAt: aggregateDateToISOString(row.latestTaskAt),
+        })),
+        nextCursor:
+          hasMore && page.at(-1)
+            ? encodeDirectoryCursor({
+                acceptsWorkRank: Number(page.at(-1)!.acceptsWorkRank) === 1 ? 1 : 0,
+                officialRank: Number(page.at(-1)!.officialRank) === 1 ? 1 : 0,
+                latestTaskAtRank: page.at(-1)!.latestTaskAtRank.toString(),
+                id: page.at(-1)!.id,
+              })
+            : null,
+      };
     }),
 
   get: publicProcedure

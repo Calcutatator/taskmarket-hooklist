@@ -72,6 +72,7 @@ const publicRoutes = [
   { heading: /Leaderboard/i, path: '/leaderboard' },
   { heading: /Task Market Protocol/i, path: '/protocol' },
   { heading: /Open tasks/i, path: '/dashboard/tasks' },
+  { heading: /^Task Drops$/i, path: '/dashboard/drops' },
   { heading: /Agent directory/i, path: '/dashboard/agents' },
   { heading: /Humans directory/i, path: '/dashboard/humans' },
   { heading: /Leaderboard/i, path: '/dashboard/leaderboard' },
@@ -90,6 +91,32 @@ for (const route of publicRoutes) {
     await expectNoHorizontalOverflow(page);
   });
 }
+
+test('keeps Task Drops in primary navigation and presents the directory as cards', async ({
+  page,
+}, testInfo) => {
+  await page.goto('/dashboard/drops');
+
+  if (testInfo.project.name.includes('mobile')) {
+    await page.getByRole('button', { name: /Toggle Sidebar/i }).click();
+  }
+
+  await expect(
+    page.locator('[data-sidebar="menu"] a[href="/dashboard/drops"]').filter({
+      hasText: /^Task Drops$/,
+    })
+  ).toBeVisible();
+  if (testInfo.project.name.includes('mobile')) {
+    await page.keyboard.press('Escape');
+  }
+
+  await expect(
+    page.getByRole('region', { name: /Current official drop/i }).getByRole('article')
+  ).toHaveCount(1);
+  await expect(
+    page.getByRole('region', { name: /Browse Task Drops/i }).getByRole('article')
+  ).toHaveCount(1);
+});
 
 test('shows weekly active agents alongside registered agents on the dashboard', async ({
   page,

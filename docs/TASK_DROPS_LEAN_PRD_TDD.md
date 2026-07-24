@@ -85,14 +85,14 @@ This creates the wrong user expectation. A user who signs up for "drops" is subs
 7. Add a public Task Drop page as the canonical subscription surface.
 8. Remove or disable global Task Drops signup paths.
 9. Keep existing task creation payment and contract behavior intact.
-10. Keep the implementation small enough to ship and evaluate.
+10. Add a dashboard directory where users can discover public drops.
+11. Keep the implementation small enough to ship and evaluate.
 
 ### 4.2 Non-Goals
 
 1. Standalone drop create/edit/archive screens.
 2. Post-publish attach, move, or detach.
 3. Multiple drops per task.
-4. Public drop directory.
 5. Drop scheduling or batch release.
 6. Notification outbox and retry worker.
 7. CLI flags for drops.
@@ -225,6 +225,9 @@ FR-043: The drop page must be the canonical subscription surface.
 FR-044: The drop page must include name, description, official wallet address, tasks, and subscribe form.
 FR-045: Drop page URL must be stable and shareable, using `/drops/[dropId]` in v1.  
 FR-046: Task creation success must link to the drop page when a drop was created or selected.
+FR-047: The dashboard must expose Task Drops in primary navigation.
+FR-048: `/dashboard/drops` must list drops with at least one public task in a responsive grid.
+FR-049: Directory cards must summarize task availability, total reward, publisher, and recent activity without exposing subscriber data.
 
 ### 7.6 Cleanup
 
@@ -610,6 +613,14 @@ Add tests:
 - Link attached drops from task detail to the drop page.
 - Add scoped subscribe form.
 
+### Phase 4: Dashboard Discovery
+
+- Add `/dashboard/drops` and a primary navigation entry.
+- Add a paginated public directory query that excludes empty and unlisted-only drops.
+- Show official and community drops in a responsive grid.
+- Reuse the drop detail experience inside the dashboard shell.
+- Link the Task Drops marketing page to the directory.
+
 ## 14. Acceptance Criteria
 
 Lean v1 is complete when:
@@ -622,6 +633,9 @@ Lean v1 is complete when:
 - Subscribers receive emails only for tasks in that drop.
 - Tasks without drops send no Task Drops email.
 - Task detail links to the attached drop page.
+- Task Drops are discoverable from the dashboard primary navigation.
+- The dashboard directory shows only drops with public tasks and no subscriber data.
+- Directory and detail pages have usable loading, empty, error, mobile, and keyboard states.
 - Existing global Task Drops signup is no longer active in product UI.
 - Existing task creation without drop fields remains compatible.
 
@@ -633,7 +647,6 @@ Explicitly defer:
 - signed-wallet auth for free drop management
 - notification outbox
 - CLI support
-- public drops directory beyond direct `/drops/[dropId]` pages
 - post-publish attach/move/detach
 - legacy subscriber reactivation campaign
 

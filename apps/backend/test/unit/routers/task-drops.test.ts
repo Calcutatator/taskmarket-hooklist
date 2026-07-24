@@ -103,6 +103,115 @@ describe('taskDrops router', () => {
     ]);
   });
 
+  it('lists public drops with task aggregates and no subscriber data', async () => {
+    const ctx = createMockCtx();
+    ctx.db.select.mockReturnValueOnce(
+      makeChain([
+        {
+          announcedAt: null,
+          availableTaskCount: 2,
+          createdAt: new Date('2026-07-01T00:00:00.000Z'),
+          description: 'Monthly growth work.',
+          id: DROP_ID,
+          latestTaskAt: new Date('2026-07-03T00:00:00.000Z'),
+          latestTaskAtRank: '1783036800000',
+          name: 'Growth',
+          nextExpiryTime: new Date('2026-07-09T00:00:00.000Z'),
+          ownerAddress: WALLET,
+          resolvedTaskCount: 1,
+          subscriberCount: 99,
+          taskCount: 3,
+          totalReward: '6000000',
+        },
+      ])
+    );
+
+    const result = await taskDropsRouter.createCaller(ctx).listPublic({});
+
+    expect(result).toEqual({
+      items: [
+        {
+          availableTaskCount: 2,
+          drop: {
+            announcedAt: null,
+            createdAt: '2026-07-01T00:00:00.000Z',
+            description: 'Monthly growth work.',
+            id: DROP_ID,
+            isOfficial: false,
+            name: 'Growth',
+            officialWalletAddress: WALLET,
+            ownerAddress: WALLET,
+          },
+          latestTaskAt: '2026-07-03T00:00:00.000Z',
+          nextExpiryTime: '2026-07-09T00:00:00.000Z',
+          resolvedTaskCount: 1,
+          taskCount: 3,
+          totalReward: '6000000',
+        },
+      ],
+      nextCursor: null,
+    });
+  });
+
+  it('paginates the public directory with an opaque cursor', async () => {
+    const aggregateRow = {
+      acceptsWorkRank: 1,
+      announcedAt: null,
+      availableTaskCount: 1,
+      createdAt: new Date('2026-07-01T00:00:00.000Z'),
+      description: null,
+      id: DROP_ID,
+      latestTaskAt: new Date('2026-07-03T00:00:00.000Z'),
+      latestTaskAtRank: '1783036800000',
+      name: 'Growth',
+      nextExpiryTime: new Date('2026-07-09T00:00:00.000Z'),
+      ownerAddress: WALLET,
+      officialRank: 0,
+      resolvedTaskCount: 0,
+      taskCount: 1,
+      totalReward: '1000000',
+    };
+    const ctx = createMockCtx();
+    ctx.db.select
+      .mockReturnValueOnce(
+        makeChain([
+          aggregateRow,
+          {
+            ...aggregateRow,
+            id: 'drop-2',
+            latestTaskAt: new Date('2026-07-02T00:00:00.000Z'),
+            latestTaskAtRank: '1782950400000',
+            name: 'Research',
+          },
+        ])
+      )
+      .mockReturnValueOnce(
+        makeChain([
+          {
+            ...aggregateRow,
+            id: 'drop-2',
+            latestTaskAt: new Date('2026-07-02T00:00:00.000Z'),
+            latestTaskAtRank: '1782950400000',
+            name: 'Research',
+          },
+        ])
+      );
+
+    const firstPage = await taskDropsRouter.createCaller(ctx).listPublic({ limit: 1 });
+    expect(firstPage.items.map((item) => item.drop.id)).toEqual([DROP_ID]);
+    expect(firstPage.nextCursor).toEqual(expect.any(String));
+
+    const secondPage = await taskDropsRouter
+      .createCaller(ctx)
+      .listPublic({ cursor: firstPage.nextCursor!, limit: 1 });
+    expect(secondPage.items.map((item) => item.drop.id)).toEqual(['drop-2']);
+    expect(secondPage.nextCursor).toBeNull();
+
+    await expect(
+      taskDropsRouter.createCaller(ctx).listPublic({ cursor: 'not-a-cursor' })
+    ).rejects.toThrow('Invalid Task Drop directory cursor');
+  });
+
   it('gets a serialized drop and its tasks', async () => {
     const ctx = createMockCtx();
     ctx.db.select

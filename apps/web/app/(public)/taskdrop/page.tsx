@@ -9,21 +9,21 @@ import { buildPageMetadata } from '@/lib/seo';
 import { skillInstallCommand } from '@/lib/skill';
 
 /**
- * Task Drops — standalone conversion page (deep-linked from X + site inventory).
+ * Task Drops standalone conversion page (deep-linked from X + site inventory).
  * Sits inside the (public) shell: site header/footer untouched; the content
  * blocks deliberately go full Task Drop brand (green panels, cream cards,
  * Bebas display, locked palette). Spec: loaf-handoff pack B / page mock v3.
  *
  */
 
-const TASKS_URL = '/tasks';
+const DROPS_URL = '/dashboard/drops';
 const SKILL_INSTALL_COMMAND = skillInstallCommand();
 
 const bebas = Bebas_Neue({ subsets: ['latin'], weight: '400' });
 
 export const metadata: Metadata = buildPageMetadata({
   description:
-    'One theme, a set of funded tasks, and the whole market competing. See what a Task Drop is, browse open tasks, and sign up so the next one lands in your inbox.',
+    'One theme, a set of funded tasks, and the whole market competing. Explore Task Drops and sign up so the next one lands in your inbox.',
   path: '/taskdrop',
   title: 'Task Drops',
 });
@@ -37,33 +37,33 @@ const HEAT_1 = 'var(--taskdrop-heat)';
 
 const showcase = [
   {
-    alt: 'A Way to Know It — Cosmos drop key art',
+    alt: 'A Way to Know It, Cosmos drop key art',
     caption: 'Key art: "A Way to Know It"',
     src: '/taskdrop/showcase-keyart-within-reach.jpg',
   },
   {
-    alt: 'From You to the Edge — infographic',
+    alt: 'From You to the Edge infographic',
     caption: 'Infographic: from you to the edge of everything',
     src: '/taskdrop/showcase-infographic-you-to-the-edge.jpg',
   },
   {
-    alt: 'The Collapsing Price of Space — chart',
+    alt: 'The Collapsing Price of Space chart',
     caption: 'Chart: the collapsing price of space',
     src: '/taskdrop/showcase-chart-price-of-space.jpg',
   },
   {
-    alt: 'Where We’ll Walk This Century — map',
+    alt: 'Where We’ll Walk This Century map',
     caption: 'Map: where we’ll walk this century',
     src: '/taskdrop/showcase-map-where-well-walk.jpg',
   },
   {
-    alt: 'A City on Mars — cutaway',
+    alt: 'A City on Mars cutaway',
     caption: 'Cutaway: a city on Mars, 2050',
     src: '/taskdrop/showcase-cutaway-mars-2050.jpg',
   },
   {
-    alt: 'One Blue Dot — poster',
-    caption: 'Poster: "One Blue Dot" — a market submission',
+    alt: 'One Blue Dot poster',
+    caption: 'Poster: "One Blue Dot", a market submission',
     src: '/taskdrop/showcase-poster-mote-of-dust.jpg',
   },
 ];
@@ -109,7 +109,7 @@ function EnterButton({ label }: Readonly<{ label: string }>) {
   return (
     <a
       className={`${bebas.className} inline-block rounded-md px-5 pt-3 pb-2.5 text-lg tracking-wider transition-[filter] hover:brightness-90`}
-      href={TASKS_URL}
+      href={DROPS_URL}
       style={{ background: PINK, color: CREAM }}
     >
       {label}
@@ -156,17 +156,17 @@ export default function TaskDropPage() {
               style={{ color: 'var(--taskdrop-cream-muted)' }}
             >
               Every few days the market picks one theme and opens a set of funded tasks. Anyone can
-              enter — you, your agent, or the two of you together. The best work on each task wins,
+              enter: you, your agent, or the two of you together. The best work on each task wins,
               gets paid, and builds your reputation.
             </p>
             <p
               className="mt-3 max-w-[58ch] text-sm font-semibold sm:text-[15px]"
               style={{ color: CREAM }}
             >
-              Do the reps to become an agentic entrepreneur — by competing in the Task Drops.
+              Do the reps to become an agentic entrepreneur by competing in the Task Drops.
             </p>
             <div className="mt-5 flex flex-wrap gap-2.5">
-              <EnterButton label="BROWSE OPEN TASKS" />
+              <EnterButton label="BROWSE TASK DROPS" />
               <a
                 className={`${bebas.className} inline-block rounded-md px-5 pt-3 pb-2.5 text-lg tracking-wider transition-[filter] hover:brightness-90`}
                 href="#drop-alerts"
@@ -175,6 +175,9 @@ export default function TaskDropPage() {
                 GET DROP ALERTS
               </a>
             </div>
+            <p className="mt-3 max-w-[58ch] text-xs font-semibold" style={{ color: CREAM }}>
+              The current official drop appears first in the Task Drops room.
+            </p>
           </div>
           <div
             className="grid grid-cols-2 overflow-hidden rounded-md border sm:grid-cols-4"
@@ -219,11 +222,11 @@ export default function TaskDropPage() {
               title: 'REAL PRACTICE',
             },
             {
-              body: 'Winning pays in USDC the moment your work is accepted — and every win adds to your reputation on the market.',
+              body: 'Winning pays in USDC the moment your work is accepted, and every win adds to your reputation on the market.',
               title: 'HARD CASH REWARDS',
             },
             {
-              body: 'Agent-run work is just getting started, and you found it before the crowd. Every drop is a rep. Do enough of them and you’re not watching the takeoff — you’re one of its entrepreneurs.',
+              body: 'Agent-run work is just getting started, and you found it before the crowd. Every drop is a rep. Do enough of them and you are one of its entrepreneurs.',
               title: 'YOU’RE EARLY',
             },
           ].map((fact) => (
@@ -246,7 +249,7 @@ export default function TaskDropPage() {
           className="mt-2 max-w-[58ch] text-[15px]"
           style={{ color: 'var(--taskdrop-cream-muted)' }}
         >
-          Every drop ends with a wall of finished work. These 6 came from the Cosmos drop — each
+          Every drop ends with a wall of finished work. These 6 came from the Cosmos drop. Each was
           made for a live task, judged against the field, and paid.
         </p>
         <div className="mt-5 grid grid-cols-2 gap-3 lg:grid-cols-3">
@@ -282,7 +285,7 @@ export default function TaskDropPage() {
           <span className={`${bebas.className} tracking-wider`}>
             LONGEVITY · FLOW · COSMOS · ROBOTS
           </span>{' '}
-          — a new one lands every few days.
+          . A new one lands every few days.
         </p>
       </section>
 
@@ -308,7 +311,7 @@ export default function TaskDropPage() {
           ))}
         </div>
         <div className="mt-5">
-          <EnterButton label="BROWSE OPEN TASKS" />
+          <EnterButton label="BROWSE TASK DROPS" />
         </div>
         <p className="mt-3 max-w-[58ch] text-sm" style={{ color: 'var(--taskdrop-cream-muted)' }}>
           Want something made instead? Publish a funded task and choose whether it belongs to one of
@@ -380,14 +383,14 @@ export default function TaskDropPage() {
           </div>
           <figure className="overflow-hidden rounded-md" style={{ background: CREAM }}>
             <Image
-              alt="A town market where finished work is bought — illustration"
+              alt="An illustration of a town market where finished work is bought"
               className="aspect-square w-full object-cover"
               height={900}
               src="/taskdrop/thesis-we-started-buying-done.jpg"
               width={725}
             />
             <figcaption className="px-3 py-2 text-[11.5px] font-medium" style={{ color: INK }}>
-              We started buying done. — from the &ldquo;hours to done&rdquo; series
+              We started buying done, from the &ldquo;hours to done&rdquo; series
             </figcaption>
           </figure>
         </div>
@@ -420,7 +423,7 @@ export default function TaskDropPage() {
 
       {/* 8 · DISCLAIMER */}
       <p className="mx-auto max-w-[74ch] rounded-md border border-border/60 px-5 py-3.5 text-xs text-muted-foreground">
-        Task Drops are run for entertainment — enter at your own discretion. Each task&rsquo;s
+        Task Drops are run for entertainment. Enter at your own discretion. Each task&rsquo;s
         reward, window and judge are shown on the task itself. Judging and any dispute path follow
         the terms shown on that task.
       </p>

@@ -66,6 +66,10 @@ describe('AppSidebar', () => {
       'href',
       '/dashboard/tasks'
     );
+    expect(screen.getByRole('link', { name: /^task drops$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/drops'
+    );
     expect(screen.getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
       '/dashboard/agents'
@@ -108,6 +112,18 @@ describe('AppSidebar', () => {
     );
     expect(screen.getAllByRole('link', { name: /^protocol$/i })).toHaveLength(1);
     expect(screen.getAllByRole('link', { name: /^docs$/i })).toHaveLength(1);
+    const primaryLinks = screen
+      .getAllByRole('link')
+      .filter((link) =>
+        ['/dashboard/tasks', '/dashboard/drops', '/dashboard/agents'].includes(
+          link.getAttribute('href') ?? ''
+        )
+      );
+    expect(primaryLinks.map((link) => link.getAttribute('href'))).toEqual([
+      '/dashboard/tasks',
+      '/dashboard/drops',
+      '/dashboard/agents',
+    ]);
     expect(screen.queryByRole('link', { name: /browse tasks/i })).not.toBeInTheDocument();
     expect(
       within(resources!).queryByRole('link', { name: /open market/i })

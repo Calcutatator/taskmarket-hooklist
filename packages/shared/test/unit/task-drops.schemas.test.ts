@@ -3,6 +3,8 @@ import { describe, expect, it } from 'vitest';
 import {
   TaskDropAnnouncementInputSchema,
   TaskDropAnnouncementResponseSchema,
+  TaskDropDirectoryInputSchema,
+  TaskDropDirectoryResponseSchema,
   TaskDropOfficialStatusInputSchema,
   TaskDropOfficialSubscribeInputSchema,
   TaskDropListByOwnerInputSchema,
@@ -184,6 +186,49 @@ describe('Task Drops schemas', () => {
       },
       tasks: [{ id: 'task-1', reward: '1000000' }],
     });
+  });
+
+  it('defaults and bounds public directory pagination', () => {
+    expect(TaskDropDirectoryInputSchema.parse({})).toEqual({ limit: 24 });
+    expect(TaskDropDirectoryInputSchema.parse({ cursor: 'opaque', limit: 48 })).toEqual({
+      cursor: 'opaque',
+      limit: 48,
+    });
+    expect(() => TaskDropDirectoryInputSchema.parse({ limit: 49 })).toThrow();
+  });
+
+  it('validates public directory aggregates without subscriber data', () => {
+    const result = TaskDropDirectoryResponseSchema.parse({
+      items: [
+        {
+          availableTaskCount: 2,
+          drop: {
+            announcedAt: '2026-07-02T00:00:00.000Z',
+            createdAt: '2026-07-01T00:00:00.000Z',
+            description: 'Monthly growth work.',
+            id: 'drop-1',
+            isOfficial: false,
+            name: 'Growth',
+            officialWalletAddress: '0x1111111111111111111111111111111111111111',
+            ownerAddress: '0x1111111111111111111111111111111111111111',
+          },
+          latestTaskAt: '2026-07-03T00:00:00.000Z',
+          nextExpiryTime: '2026-07-09T00:00:00.000Z',
+          resolvedTaskCount: 1,
+          taskCount: 3,
+          totalReward: '6000000',
+        },
+      ],
+      nextCursor: null,
+    });
+
+    expect(result.items[0]).toMatchObject({
+      availableTaskCount: 2,
+      resolvedTaskCount: 1,
+      taskCount: 3,
+      totalReward: '6000000',
+    });
+    expect(result.items[0]).not.toHaveProperty('subscriberCount');
   });
 
   it('rejects Task Drop summaries with a mismatched official wallet address', () => {

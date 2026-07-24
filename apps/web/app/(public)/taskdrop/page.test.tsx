@@ -25,9 +25,10 @@ describe('TaskDropPage', () => {
     render(<TaskDropPage />);
 
     expect(screen.getByRole('heading', { level: 1 })).toHaveTextContent(/enter the\s*task drop/i);
-    const taskLinks = screen.getAllByRole('link', { name: /browse open tasks/i });
+    const taskLinks = screen.getAllByRole('link', { name: /browse task drops/i });
     expect(taskLinks.length).toBeGreaterThan(0);
-    expect(taskLinks.every((link) => link.getAttribute('href') === '/tasks')).toBe(true);
+    expect(taskLinks.every((link) => link.getAttribute('href') === '/dashboard/drops')).toBe(true);
+    expect(screen.getByText(/current official drop appears first/i)).toBeVisible();
     expect(screen.getByRole('link', { name: /get drop alerts/i })).toBeInTheDocument();
     expect(screen.getByPlaceholderText('you@wherever.dev')).toBeInTheDocument();
   });

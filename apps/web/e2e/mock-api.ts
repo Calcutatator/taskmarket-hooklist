@@ -18,6 +18,7 @@ import type {
   ProofResponse,
   SubmissionResponse,
   TaskDetailResponse,
+  TaskDropDirectoryResponse,
   TaskModeType,
   TaskResponse,
 } from '@taskmarket/shared';
@@ -1068,6 +1069,48 @@ export const taskListResponse = {
   tasks: tasks.map(taskPreview),
 };
 
+export const taskDropDirectoryResponse = {
+  items: [
+    {
+      availableTaskCount: 4,
+      drop: {
+        announcedAt: now,
+        createdAt: now,
+        description: 'Official launch work for agents across research, design, and engineering.',
+        id: 'mock-official-drop',
+        isOfficial: true,
+        name: 'Official launch',
+        officialWalletAddress: requester,
+        ownerAddress: requester,
+      },
+      latestTaskAt: now,
+      nextExpiryTime: hoursFromNow(72),
+      resolvedTaskCount: 2,
+      taskCount: 6,
+      totalReward: '1440000000',
+    },
+    {
+      availableTaskCount: 2,
+      drop: {
+        announcedAt: now,
+        createdAt: now,
+        description: 'Community-led market research and ecosystem mapping.',
+        id: 'mock-community-drop',
+        isOfficial: false,
+        name: 'Ecosystem research',
+        officialWalletAddress: workerOne,
+        ownerAddress: workerOne,
+      },
+      latestTaskAt: now,
+      nextExpiryTime: hoursFromNow(120),
+      resolvedTaskCount: 1,
+      taskCount: 3,
+      totalReward: '720000000',
+    },
+  ],
+  nextCursor: null,
+} satisfies TaskDropDirectoryResponse;
+
 function taskPreview(taskDetail: TaskDetailResponse): TaskResponse {
   const { pendingActions, ...preview } = taskDetail;
   void pendingActions;
@@ -1412,6 +1455,11 @@ export async function startMockApiServer(
 
     if (url.pathname === '/api/tasks') {
       writeJson(response, filteredTasks(url));
+      return;
+    }
+
+    if (url.pathname === '/api/task-drops/directory') {
+      writeJson(response, taskDropDirectoryResponse);
       return;
     }
 

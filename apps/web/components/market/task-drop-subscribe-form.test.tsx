@@ -126,6 +126,24 @@ describe('TaskDropSubscribeForm', () => {
     await user.click(screen.getByRole('button', { name: /get official drops/i }));
 
     expect(await screen.findByText('Service unavailable')).toBeVisible();
+    expect(screen.getByRole('alert')).toHaveTextContent('Service unavailable');
     expect(localStorage.getItem(OFFICIAL_STORAGE_KEY)).toBeNull();
+  });
+
+  it('announces a successful subscription without moving focus', async () => {
+    const user = userEvent.setup();
+    mutateAsync.mockResolvedValue({
+      alreadySubscribed: false,
+      email: 'alice@example.com',
+      scope: 'drop',
+      subscribed: true,
+      taskDropId: DROP_ID,
+    });
+    render(<TaskDropSubscribeForm isOfficial={false} taskDropId={DROP_ID} />);
+
+    await user.type(screen.getByLabelText(/email/i), 'alice@example.com');
+    await user.click(screen.getByRole('button', { name: /^subscribe$/i }));
+
+    expect(await screen.findByRole('status')).toHaveTextContent('Subscribed to this drop.');
   });
 });

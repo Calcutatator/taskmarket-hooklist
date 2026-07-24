@@ -167,9 +167,17 @@ export function TaskDropSubscribeForm({
       <Button disabled={isPending || !email.trim()} type="submit">
         {isPending ? 'Subscribing...' : isOfficial ? 'Get official drops' : 'Subscribe'}
       </Button>
-      {message ? <p className="text-sm text-success">{message}</p> : null}
+      {message ? (
+        <p aria-live="polite" className="text-sm text-success" role="status">
+          {message}
+        </p>
+      ) : null}
       {error ? (
-        <p className="text-sm text-destructive" id={`task-drop-subscribe-error-${taskDropId}`}>
+        <p
+          className="text-sm text-destructive"
+          id={`task-drop-subscribe-error-${taskDropId}`}
+          role="alert"
+        >
           {error}
         </p>
       ) : null}

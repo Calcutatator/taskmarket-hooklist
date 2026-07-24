@@ -8,6 +8,7 @@ const dashboardLoadingFiles = [
   'app/dashboard/account/loading.tsx',
   'app/dashboard/agents/loading.tsx',
   'app/dashboard/agents/[agentId]/loading.tsx',
+  'app/dashboard/drops/loading.tsx',
   'app/dashboard/for-agents/loading.tsx',
   'app/dashboard/humans/loading.tsx',
   'app/dashboard/inbox/loading.tsx',

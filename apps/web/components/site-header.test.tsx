@@ -143,6 +143,18 @@ describe('SiteHeader', () => {
     expect(screen.getByRole('heading', { name: /^task detail$/i })).toBeInTheDocument();
   });
 
+  it('names Task Drop directory and detail routes', () => {
+    const { rerender } = render(<SiteHeader />);
+
+    routeState.pathname = '/dashboard/drops';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('heading', { name: /^Task Drops$/i })).toBeInTheDocument();
+
+    routeState.pathname = '/dashboard/drops/drop-1';
+    rerender(<SiteHeader />);
+    expect(screen.getByRole('heading', { name: /^Task Drop detail$/i })).toBeInTheDocument();
+  });
+
   it('lets users sign in and log out with Privy from the header', async () => {
     const user = userEvent.setup();
     const { rerender } = render(<SiteHeader />);

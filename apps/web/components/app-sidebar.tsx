@@ -11,6 +11,7 @@ import {
   IconListDetails,
   IconMoodSmile,
   IconNews,
+  IconPackages,
   IconSettings,
   IconUser,
   IconUsers,
@@ -46,6 +47,11 @@ const data = {
       title: 'Tasks',
       url: '/dashboard/tasks',
       icon: IconListDetails,
+    },
+    {
+      title: 'Task Drops',
+      url: '/dashboard/drops',
+      icon: IconPackages,
     },
     {
       title: 'Agents',

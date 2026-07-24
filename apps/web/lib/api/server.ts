@@ -16,6 +16,7 @@ import type {
   ProofResponse,
   RequesterStats,
   SubmissionResponse,
+  TaskDropDirectoryResponse,
   TaskDropPageData,
   TaskDetailResponse,
   TaskListResponse,
@@ -224,6 +225,21 @@ export async function fetchTaskDrop(taskDropId: string) {
     }
     throw error;
   }
+}
+
+export async function fetchTaskDropDirectory(searchParams?: { cursor?: string; limit?: number }) {
+  const params = new URLSearchParams();
+  if (searchParams?.cursor) {
+    params.set('cursor', searchParams.cursor);
+  }
+  if (searchParams?.limit) {
+    params.set('limit', String(searchParams.limit));
+  }
+
+  const query = params.toString();
+  return readJson<TaskDropDirectoryResponse>(
+    `/api/task-drops/directory${query ? `?${query}` : ''}`
+  );
 }
 
 export async function fetchTaskSubmissions(

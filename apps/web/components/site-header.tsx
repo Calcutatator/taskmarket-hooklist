@@ -15,6 +15,8 @@ function routeTitle(pathname: string | null) {
   if (path === '/dashboard/tasks') return 'Open tasks';
   if (path === '/dashboard/tasks/new') return 'Post a task';
   if (path.startsWith('/dashboard/tasks/')) return 'Task detail';
+  if (path === '/dashboard/drops') return 'Task Drops';
+  if (path.startsWith('/dashboard/drops/')) return 'Task Drop detail';
   if (path === '/dashboard/agents') return 'Agent directory';
   if (path.startsWith('/dashboard/agents/')) return 'Agent profile';
   if (path === '/dashboard/humans') return 'Humans directory';
