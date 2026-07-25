@@ -1,4 +1,5 @@
 import type { AgentStats, TaskDetailResponse } from '@taskmarket/shared';
+import type { Metadata } from 'next';
 import { describe, expect, it, vi } from 'vitest';
 
 import {
@@ -6,6 +7,7 @@ import {
   buildDashboardAgentMetadata,
   buildDashboardPageMetadata,
   buildDashboardTaskMetadata,
+  buildPageMetadata,
   buildTaskMetadata,
   dashboardAgentPath,
   dashboardTaskPath,
@@ -119,14 +121,8 @@ describe('seo helpers', () => {
     );
     expect(metadata.alternates).toEqual({ canonical: '/tasks/task-123' });
     expect(metadata.openGraph?.url).toBe('/tasks/task-123');
-    expect(metadata.openGraph?.images).toEqual([
-      {
-        alt: 'Build a typed parser for agent capability manifests.',
-        height: 630,
-        url: '/tasks/task-123/opengraph-image',
-        width: 1200,
-      },
-    ]);
+    expect(Object.hasOwn(metadata.openGraph ?? {}, 'images')).toBe(false);
+    expect(Object.hasOwn(metadata.twitter ?? {}, 'images')).toBe(false);
     expect((metadata.twitter as { card?: string })?.card).toBe('summary_large_image');
   });
 
@@ -151,6 +147,19 @@ describe('seo helpers', () => {
     expect((metadata.twitter as { card?: string })?.card).toBe('summary_large_image');
   });
 
+  it('uses an explicit share title only for social metadata', () => {
+    const metadata = buildPageMetadata({
+      description: 'A page description.',
+      ogTitle: 'The share title',
+      path: '/example',
+      title: 'The browser title',
+    });
+
+    expect(metadata.title).toBe('The browser title');
+    expect(metadata.openGraph?.title).toBe('The share title');
+    expect((metadata.twitter as { title?: string })?.title).toBe('The share title');
+  });
+
   it('builds route-specific metadata for static public OG pages', () => {
     const cases = Object.entries(staticOgConfigs);
 
@@ -160,34 +169,60 @@ describe('seo helpers', () => {
       );
 
       expect(metadata.alternates).toEqual({ canonical: config.path });
-      expect(metadata.openGraph?.images).toEqual([
-        {
-          alt: config.imageAlt,
-          height: 630,
-          url: `${config.path}/opengraph-image`,
-          width: 1200,
-        },
-      ]);
-      expect((metadata.twitter as { images?: Array<{ url: string }> })?.images?.[0]?.url).toBe(
-        `${config.path}/opengraph-image`
-      );
+      expect(Object.hasOwn(metadata.openGraph ?? {}, 'images')).toBe(false);
+      expect(Object.hasOwn(metadata.twitter ?? {}, 'images')).toBe(false);
     }
   });
 
-  it('builds noindex dashboard task metadata with dashboard OG image paths', () => {
+  // Regression guard for the whole class of bug this replaced, and it has to check for an
+  // absent key rather than an undefined value. Next injects the colocated opengraph-image.tsx
+  // only when the page's own metadata does not `hasOwnProperty('images')`, so `images:
+  // undefined` reads as "this page set its own images" and emits no card at all - the same
+  // silent failure as the hardcoded `${path}/opengraph-image` it replaced, which pointed at a
+  // 404 while the meta tag still looked correct.
+  it('never hardcodes an opengraph-image path', () => {
+    expect(Object.hasOwn(buildStaticPageMetadata('tasks').openGraph ?? {}, 'images')).toBe(false);
+
+    const builders: Array<Metadata> = [
+      buildTaskMetadata(baseTask),
+      buildDashboardTaskMetadata(baseTask),
+      buildAgentMetadata(baseAgent, '42'),
+      buildDashboardAgentMetadata(baseAgent, '42'),
+      ...Object.keys(staticOgConfigs).map((key) =>
+        buildStaticPageMetadata(key as Parameters<typeof buildStaticPageMetadata>[0])
+      ),
+    ];
+
+    for (const metadata of builders) {
+      expect(Object.hasOwn(metadata.openGraph ?? {}, 'images')).toBe(false);
+      expect(Object.hasOwn(metadata.twitter ?? {}, 'images')).toBe(false);
+    }
+  });
+
+  it('still emits the shared default card for routes without their own image', () => {
+    const metadata = buildPageMetadata({
+      description: 'A page description.',
+      path: '/example',
+      title: 'The browser title',
+    });
+
+    expect(metadata.openGraph?.images).toEqual([
+      {
+        alt: 'The browser title',
+        height: 630,
+        url: '/opengraph-image',
+        width: 1200,
+      },
+    ]);
+  });
+
+  it('builds noindex dashboard task metadata that defers to its own OG image route', () => {
     const metadata = buildDashboardTaskMetadata(baseTask);
 
     expect(metadata.alternates).toEqual({ canonical: '/dashboard/tasks/task-123' });
     expect(metadata.robots).toEqual({ follow: true, index: false });
     expect(metadata.openGraph?.url).toBe('/dashboard/tasks/task-123');
-    expect(metadata.openGraph?.images).toEqual([
-      {
-        alt: 'Build a typed parser for agent capability manifests.',
-        height: 630,
-        url: '/dashboard/tasks/task-123/opengraph-image',
-        width: 1200,
-      },
-    ]);
+    expect(Object.hasOwn(metadata.openGraph ?? {}, 'images')).toBe(false);
   });
 
   it('builds task metadata for auction tasks without a tags suffix when tags are empty', () => {
@@ -220,13 +255,6 @@ describe('seo helpers', () => {
     expect(dashboardAgentMetadata.alternates).toEqual({ canonical: '/dashboard/agents/42' });
     expect(dashboardAgentMetadata.robots).toEqual({ follow: true, index: false });
     expect(dashboardAgentMetadata.openGraph?.url).toBe('/dashboard/agents/42');
-    expect(dashboardAgentMetadata.openGraph?.images).toEqual([
-      {
-        alt: 'PhotonGlowPhantom on Taskmarket',
-        height: 630,
-        url: '/dashboard/agents/42/opengraph-image',
-        width: 1200,
-      },
-    ]);
+    expect(Object.hasOwn(dashboardAgentMetadata.openGraph ?? {}, 'images')).toBe(false);
   });
 });

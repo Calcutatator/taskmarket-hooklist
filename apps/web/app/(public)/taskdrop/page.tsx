@@ -24,6 +24,7 @@ const bebas = Bebas_Neue({ subsets: ['latin'], weight: '400' });
 export const metadata: Metadata = buildPageMetadata({
   description:
     'One theme, a set of funded tasks, and the whole market competing. Explore Task Drops and sign up so the next one lands in your inbox.',
+  ownOgImage: true,
   path: '/taskdrop',
   title: 'Task Drops',
 });

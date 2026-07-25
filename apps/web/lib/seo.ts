@@ -27,6 +27,18 @@ type SeoMetadataInput = {
   description: string;
   imageAlt?: string;
   imagePath?: string;
+  // What X and Discord print in the chip over the card. Defaults to `title`. Set it where
+  // the share chip should say something different from the browser tab and the search result.
+  ogTitle?: string;
+  // Set on any route that ships its own opengraph-image.tsx. We then omit the images
+  // arrays entirely so Next's file-based convention injects the real URL.
+  //
+  // Do NOT hardcode `${path}/opengraph-image`. Next serves a metadata image route inside a
+  // route group at a build-generated, fingerprinted path (`/taskdrop/opengraph-image-a1xgmz`),
+  // so every hardcoded clean path under `(public)` resolves to a 404 or, where a sibling
+  // dynamic segment swallows it, to an HTML page. The fingerprint is not knowable from the
+  // source path, so only Next can write this URL.
+  ownOgImage?: boolean;
   path: string;
   title: string;
 };
@@ -118,6 +130,12 @@ function metadataImage(path: string, alt: string) {
 export function buildPageMetadata(input: SeoMetadataInput): Metadata {
   const imagePath = input.imagePath ?? defaultOgImagePath;
   const imageAlt = input.imageAlt ?? input.title;
+  const shareTitle = input.ogTitle ?? input.title;
+  // Spread rather than assigned, because the key has to be absent and not merely undefined.
+  // Next injects the colocated opengraph-image.tsx only when the page's own metadata does not
+  // `hasOwnProperty('images')` (see mergeStaticMetadata in next/dist/lib/metadata), so
+  // `images: undefined` reads as "this page set its own images" and emits no card at all.
+  const images = input.ownOgImage ? {} : { images: [metadataImage(imagePath, imageAlt)] };
 
   return {
     alternates: {
@@ -126,9 +144,9 @@ export function buildPageMetadata(input: SeoMetadataInput): Metadata {
     description: input.description,
     openGraph: {
       description: input.description,
-      images: [metadataImage(imagePath, imageAlt)],
+      ...images,
       siteName,
-      title: input.title,
+      title: shareTitle,
       type: 'website',
       url: input.path,
     },
@@ -136,8 +154,8 @@ export function buildPageMetadata(input: SeoMetadataInput): Metadata {
     twitter: {
       card: 'summary_large_image',
       description: input.description,
-      images: [metadataImage(imagePath, imageAlt)],
-      title: input.title,
+      ...images,
+      title: shareTitle,
     },
   };
 }
@@ -191,8 +209,7 @@ export function buildTaskMetadata(task: TaskResponse): Metadata {
 
   return buildPageMetadata({
     description: taskSeoDescription(task),
-    imageAlt: title,
-    imagePath: `${path}/opengraph-image`,
+    ownOgImage: true,
     path,
     title,
   });
@@ -204,8 +221,7 @@ export function buildDashboardTaskMetadata(task: TaskResponse): Metadata {
 
   return buildDashboardPageMetadata({
     description: taskSeoDescription(task),
-    imageAlt: title,
-    imagePath: `${path}/opengraph-image`,
+    ownOgImage: true,
     path,
     title,
   });
@@ -249,8 +265,7 @@ export function buildAgentMetadata(
 
   return buildPageMetadata({
     description: agentSeoDescription(agent),
-    imageAlt: `${title} on ${siteName}`,
-    imagePath: `${path}/opengraph-image`,
+    ownOgImage: true,
     path,
     title,
   });
@@ -265,8 +280,7 @@ export function buildDashboardAgentMetadata(
 
   return buildDashboardPageMetadata({
     description: agentSeoDescription(agent),
-    imageAlt: `${title} on ${siteName}`,
-    imagePath: `${path}/opengraph-image`,
+    ownOgImage: true,
     path,
     title,
   });

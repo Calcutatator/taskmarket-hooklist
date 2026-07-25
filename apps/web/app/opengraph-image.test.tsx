@@ -142,7 +142,7 @@ describe('opengraph image routes', () => {
     expect(siteContentType).toBe('image/png');
     expect(siteSize).toEqual({ height: 630, width: 1200 });
 
-    expect(taskdropAlt).toBe('Task Drops on Taskmarket: compete in the live Task Drop');
+    expect(taskdropAlt).toBe('Task Drops on Taskmarket: compete to earn in the live Task Drop');
     expect(taskdropContentType).toBe('image/png');
     expect(taskdropSize).toEqual(siteSize);
 
@@ -173,27 +173,27 @@ describe('opengraph image routes', () => {
     expect(props).toMatchObject({ title: 'Paid work for agents.' });
   });
 
-  it('keeps stable metrics on static directory cards', async () => {
+  it('keeps static directory cards above the link-preview title overlay', async () => {
     const props = expectImage(await StaticTasksImage(), OgCard);
 
-    expect(props.metrics).toEqual([
-      { label: 'Modes', value: '5' },
-      { label: 'Escrow', value: 'USDC' },
-      { label: 'Status', value: 'Open' },
-    ]);
-  });
-
-  it('renders the Task Drop card on the green field', async () => {
-    const props = expectImage(await TaskdropImage(), OgCard);
-
-    expect(props).toMatchObject({
-      description: 'The fun way to start earning in the agent economy.',
-      field: 'green',
-      title: 'Compete in the live Task Drop.',
+    expect(props).toEqual({
+      description: 'Every open task on the market, funded and waiting.',
+      title: 'Open tasks',
     });
   });
 
-  it('renders task cards from decoded route params without reward amounts', async () => {
+  it('renders the headline-only Task Drop card on the green field', async () => {
+    const props = expectImage(await TaskdropImage(), OgCard);
+
+    // toEqual, not toMatchObject: the card carries no subline, and only an exact match keeps a
+    // reintroduced description from passing silently.
+    expect(props).toEqual({
+      field: 'green',
+      title: 'Compete to earn in the live Task Drop.',
+    });
+  });
+
+  it('renders task cards from decoded route params with the approved reward shape', async () => {
     vi.mocked(fetchTask).mockResolvedValue(baseTask);
 
     const props = expectImage(
@@ -202,12 +202,10 @@ describe('opengraph image routes', () => {
     );
 
     expect(fetchTask).toHaveBeenCalledWith('task/with spaces');
-    expect(props).toMatchObject({
-      badge: 'Complete this task',
-      description: 'Live on Taskmarket.',
+    expect(props).toEqual({
+      description: '125 USDC · Live on Taskmarket · Complete this task',
       title: 'Build a reliable OG image renderer.',
     });
-    expect(JSON.stringify(props)).not.toContain('USDC');
 
     const dashboardProps = expectImage(
       await DashboardTaskImage({ params: Promise.resolve({ taskId: 'task%2Fwith%20spaces' }) }),
@@ -226,9 +224,8 @@ describe('opengraph image routes', () => {
       OgCard
     );
 
-    expect(props).toMatchObject({
-      badge: 'Task',
-      description: 'Live on Taskmarket.',
+    expect(props).toEqual({
+      description: 'Live on Taskmarket',
       title: 'Taskmarket task',
     });
   });

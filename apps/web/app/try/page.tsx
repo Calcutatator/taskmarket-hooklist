@@ -8,6 +8,8 @@ import { TRY_DROPS } from '@/lib/try/drops';
 export const metadata: Metadata = buildPageMetadata({
   description:
     'Turn one sentence into a custom infographic for $1. Start the brief without an account and fund only when it is ready.',
+  ogTitle: 'A burst of infographics for $1.',
+  ownOgImage: true,
   path: '/try',
   title: 'A custom infographic for $1',
 });

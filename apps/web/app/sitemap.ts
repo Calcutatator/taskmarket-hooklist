@@ -19,6 +19,21 @@ const staticEntries: MetadataRoute.Sitemap = [
   {
     changeFrequency: 'daily',
     priority: 0.8,
+    url: absoluteUrl('/taskdrop'),
+  },
+  {
+    changeFrequency: 'weekly',
+    priority: 0.6,
+    url: absoluteUrl('/taskdrop/alerts'),
+  },
+  {
+    changeFrequency: 'weekly',
+    priority: 0.6,
+    url: absoluteUrl('/skill'),
+  },
+  {
+    changeFrequency: 'daily',
+    priority: 0.8,
     url: absoluteUrl('/agents'),
   },
   {

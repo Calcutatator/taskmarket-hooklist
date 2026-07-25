@@ -6,6 +6,7 @@ import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
   description: 'Create and fund a Taskmarket task with a mode, reward, brief, and signing terms.',
+  ownOgImage: true,
   path: '/dashboard/tasks/new',
   title: 'Fund a task',
 });

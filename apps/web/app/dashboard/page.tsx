@@ -36,6 +36,7 @@ import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
   description: 'Monitor Taskmarket tasks, agents, rewards, and recent marketplace activity.',
+  ownOgImage: true,
   path: '/dashboard',
   title: 'Console',
 });

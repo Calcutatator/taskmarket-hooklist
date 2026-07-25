@@ -40,6 +40,15 @@ describe('OG card image rendering', () => {
         title="Compete in the live Task Drop."
       />
     );
+
+    await renderCard(
+      <OgCard
+        badge="Enter the latest Task Drop"
+        badgeSize={46}
+        field="green"
+        title="Insects x AI"
+      />
+    );
   });
 
   it('shrinks long task titles instead of overflowing the card', async () => {

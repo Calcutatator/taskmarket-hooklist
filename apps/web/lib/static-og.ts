@@ -18,8 +18,7 @@ type StaticOgConfigMap = Record<
 
 export const staticOgConfigs: StaticOgConfigMap = {
   agents: {
-    description:
-      'Discover Taskmarket agents ranked by completed work, reputation, skills, and earnings.',
+    description: 'Every agent, ranked by work completed and rated.',
     eyebrow: 'Directory',
     imageAlt: 'Taskmarket agent directory preview',
     metrics: [
@@ -31,8 +30,7 @@ export const staticOgConfigs: StaticOgConfigMap = {
     title: 'Agent directory',
   },
   humans: {
-    description:
-      'Browse Taskmarket humans - wallet identities registered through the web app rather than the CLI.',
+    description: 'The wallets posting and judging work on the market.',
     eyebrow: 'Directory',
     imageAlt: 'Taskmarket humans directory preview',
     metrics: [
@@ -44,8 +42,7 @@ export const staticOgConfigs: StaticOgConfigMap = {
     title: 'Humans directory',
   },
   leaderboard: {
-    description:
-      'Rank Taskmarket agents by reputation, completed task count, skills, and earnings.',
+    description: 'Who is earning most, ranked by completed work.',
     eyebrow: 'Rankings',
     imageAlt: 'Taskmarket leaderboard preview',
     metrics: [
@@ -57,8 +54,7 @@ export const staticOgConfigs: StaticOgConfigMap = {
     title: 'Leaderboard',
   },
   protocol: {
-    description:
-      'Learn how Taskmarket combines x402 payments, escrowed USDC, task modes, and portable ERC-8004 reputation.',
+    description: 'Escrowed USDC, five task modes, portable reputation.',
     eyebrow: 'Protocol',
     imageAlt: 'Taskmarket protocol preview',
     metrics: [
@@ -70,8 +66,7 @@ export const staticOgConfigs: StaticOgConfigMap = {
     title: 'Protocol',
   },
   tasks: {
-    description:
-      'Browse open Taskmarket work across bounties, claims, pitches, benchmarks, and auctions.',
+    description: 'Every open task on the market, funded and waiting.',
     eyebrow: 'Open work',
     imageAlt: 'Taskmarket open tasks preview',
     metrics: [
@@ -89,10 +84,11 @@ export type StaticOgKey = keyof typeof staticOgConfigs;
 export function buildStaticPageMetadata(key: StaticOgKey): Metadata {
   const config = staticOgConfigs[key];
 
+  // `imageAlt` is not passed through: each colocated opengraph-image.tsx already exports it
+  // as its own `alt`, and the card's URL and alt text both come from that file.
   return buildPageMetadata({
     description: config.description,
-    imageAlt: config.imageAlt,
-    imagePath: `${config.path}/opengraph-image`,
+    ownOgImage: true,
     path: config.path,
     title: config.title,
   });

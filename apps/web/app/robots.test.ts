@@ -17,4 +17,16 @@ describe('robots', () => {
     expect(disallow).not.toContain('/agents');
     expect(rule?.allow).toBe('/');
   });
+
+  it('allows Twitterbot to render dashboard link previews', () => {
+    const { rules } = robots();
+    const twitterRule = Array.isArray(rules)
+      ? rules.find((rule) => rule.userAgent === 'Twitterbot')
+      : undefined;
+
+    expect(twitterRule).toEqual({
+      allow: '/',
+      userAgent: 'Twitterbot',
+    });
+  });
 });

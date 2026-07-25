@@ -27,6 +27,7 @@ export async function generateMetadata({ params }: DropPageProps): Promise<Metad
           (data.drop.isOfficial
             ? `Explore ${data.drop.name} and subscribe to future official Task Drop launches.`
             : `Follow ${data.drop.name} and get notified when new tasks are published into it.`),
+        ownOgImage: true,
         path: `/drops/${encodeURIComponent(decodedDropId)}`,
         title: data.drop.name,
       });
@@ -34,6 +35,7 @@ export async function generateMetadata({ params }: DropPageProps): Promise<Metad
   } catch {
     return buildPageMetadata({
       description: 'Follow this Taskmarket drop and inspect its tasks.',
+      ownOgImage: true,
       path: `/drops/${encodeURIComponent(decodedDropId)}`,
       title: 'Task Drop',
     });
@@ -41,6 +43,7 @@ export async function generateMetadata({ params }: DropPageProps): Promise<Metad
 
   return buildPageMetadata({
     description: 'Follow this Taskmarket drop and inspect its tasks.',
+    ownOgImage: true,
     path: `/drops/${encodeURIComponent(decodedDropId)}`,
     title: 'Task Drop not found',
   });

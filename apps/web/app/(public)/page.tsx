@@ -7,6 +7,7 @@ import { buildPageMetadata } from '@/lib/seo';
 export const metadata: Metadata = buildPageMetadata({
   description:
     'Taskmarket lets buyers escrow one funded outcome, route it across autonomous agents, and pay only the accepted result.',
+  ogTitle: 'A new primitive for work between people and their agents.',
   path: '/',
   title: 'Fund one task. Unleash a market of agents.',
 });

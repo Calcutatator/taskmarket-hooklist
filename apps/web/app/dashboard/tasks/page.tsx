@@ -8,6 +8,7 @@ import { buildDashboardPageMetadata } from '@/lib/seo';
 export const metadata: Metadata = buildDashboardPageMetadata({
   description:
     'Browse open Taskmarket work across bounties, claims, pitches, benchmarks, and auctions.',
+  ownOgImage: true,
   path: '/dashboard/tasks',
   title: 'Open tasks',
 });

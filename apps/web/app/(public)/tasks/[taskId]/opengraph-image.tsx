@@ -1,6 +1,7 @@
 import { ImageResponse } from 'next/og';
 
 import { fetchTask } from '@/lib/api/server';
+import { formatUsdcUnits } from '@/lib/format';
 import { OgCard } from '@/lib/og-card';
 import { ogFonts } from '@/lib/og-fonts';
 import { decodeRouteParam, ogImageSize, taskSeoTitle } from '@/lib/seo';
@@ -16,9 +17,10 @@ type ImageProps = {
   }>;
 };
 
-// No reward amount on the card — a link preview broadcasts wider than the task
-// page, and incentives stay abstract in public. The subline can't go stale
-// (platforms cache the first scrape), so no live counters either.
+// The reward goes on the card (secretive, 2026-07-25) — it is the thing that makes someone
+// stop scrolling, and it is already public on the task page and onchain. Fees, DREAMS and
+// projections stay off. No live counters either: platforms cache the first scrape, so a
+// submission count baked in today would be wrong by tomorrow.
 export default async function Image({ params }: ImageProps) {
   const { taskId } = await params;
   const decodedTaskId = decodeRouteParam(taskId);
@@ -29,8 +31,7 @@ export default async function Image({ params }: ImageProps) {
     if (task) {
       return new ImageResponse(
         <OgCard
-          badge="Complete this task"
-          description="Live on Taskmarket."
+          description={`${formatUsdcUnits(task.reward)} · Live on Taskmarket · Complete this task`}
           title={taskSeoTitle(task)}
         />,
         { ...size, fonts }
@@ -40,8 +41,8 @@ export default async function Image({ params }: ImageProps) {
     // Fall through to a generic image so crawlers still receive a valid preview.
   }
 
-  return new ImageResponse(
-    <OgCard badge="Task" description="Live on Taskmarket." title="Taskmarket task" />,
-    { ...size, fonts }
-  );
+  return new ImageResponse(<OgCard description="Live on Taskmarket" title="Taskmarket task" />, {
+    ...size,
+    fonts,
+  });
 }

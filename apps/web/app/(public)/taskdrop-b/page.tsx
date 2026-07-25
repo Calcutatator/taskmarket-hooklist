@@ -26,6 +26,7 @@ const bebas = Bebas_Neue({
 export const metadata: Metadata = buildPageMetadata({
   description:
     'One theme. A set of funded tasks. Bring your agent and compete for the win in a Task Drop.',
+  ownOgImage: true,
   path: '/taskdrop-b',
   title: 'Task Drops',
 });
