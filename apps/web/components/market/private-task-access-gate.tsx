@@ -7,12 +7,14 @@ import { useAccount } from 'wagmi';
 import type { TaskDetailResponse } from '@taskmarket/shared';
 
 import { Button } from '@/components/ui/button';
+import { PrivyWalletAccessButton } from '@/components/privy-account-control';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { TaskDetailPanel } from '@/components/market/tasks';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { CLIENT_AUTH_STATE_CLEARED_EVENT } from '@/lib/clear-client-auth-state';
 import { getCachedReadAuthHeaders } from '@/lib/read-auth';
-import { useReadAuthSignature } from '@/lib/use-read-auth-signature';
+import { useReadAuthSignatureState } from '@/lib/use-read-auth-signature';
 import {
   getCachedTaskAccessGrantHeaders,
   setCachedTaskAccessGrant,
@@ -49,11 +51,25 @@ export function PrivateTaskAccessGate({
   browseAgentsHref: string;
 }) {
   const { address, isConnected } = useAccount();
-  const readAuthReady = useReadAuthSignature(address);
+  const readAuth = useReadAuthSignatureState(address, { autoStart: false });
   const [password, setPassword] = useState('');
   const [unlocking, setUnlocking] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [checkingWallet, setCheckingWallet] = useState(false);
+  const [walletAccessError, setWalletAccessError] = useState<string | null>(null);
   const [task, setTask] = useState<TaskDetailResponse | null>(null);
+
+  useEffect(() => {
+    setWalletAccessError(null);
+    setTask(null);
+  }, [address]);
+
+  useEffect(() => {
+    const clearRenderedPrivateTask = () => setTask(null);
+    window.addEventListener(CLIENT_AUTH_STATE_CLEARED_EVENT, clearRenderedPrivateTask);
+    return () =>
+      window.removeEventListener(CLIENT_AUTH_STATE_CLEARED_EVENT, clearRenderedPrivateTask);
+  }, []);
 
   const attemptFetch = useCallback(async () => {
     const headers = {
@@ -74,12 +90,24 @@ export function PrivateTaskAccessGate({
     }
   }, [taskId]);
 
+  const checkWalletAccess = useCallback(async () => {
+    setCheckingWallet(true);
+    setWalletAccessError(null);
+    const found = await attemptFetch();
+    if (!found) {
+      setWalletAccessError(
+        'We could not load private task access for this wallet. Switch wallets or try again.'
+      );
+    }
+    setCheckingWallet(false);
+  }, [attemptFetch]);
+
   // Once a wallet signature lands, try the gated fetch.
   useEffect(() => {
-    if (readAuthReady) {
-      void attemptFetch();
+    if (readAuth.ready) {
+      void checkWalletAccess();
     }
-  }, [readAuthReady, attemptFetch]);
+  }, [readAuth.ready, checkWalletAccess]);
 
   const handleUnlock = async () => {
     setUnlocking(true);
@@ -140,16 +168,60 @@ export function PrivateTaskAccessGate({
 
         <div className="mt-8 grid gap-3 border-t border-border/58 pt-8 text-left">
           <p className="text-sm text-muted-foreground">
-            If you were invited to a private task at this link, connect the wallet you were invited
-            with, or enter its password below.
+            If you were invited to a private task at this link, sign in, then choose the wallet that
+            received the invitation. You can also enter the task password below.
           </p>
-          {isConnected ? (
-            <p className="text-xs text-muted-foreground">
-              {readAuthReady
-                ? 'Wallet signature verified -- checking access...'
-                : 'Waiting for wallet signature...'}
-            </p>
-          ) : null}
+          {!isConnected || !address ? (
+            <div className="grid gap-2">
+              <p className="text-xs leading-5 text-muted-foreground">
+                Sign in with email, Google, or a wallet. Access still requires the wallet that
+                received the invitation.
+              </p>
+              <PrivyWalletAccessButton
+                className="min-h-11 w-fit"
+                returnTargetId="private-task-access"
+              />
+            </div>
+          ) : (
+            <div className="grid gap-2">
+              {readAuth.status === 'ready' ? (
+                <p className="text-xs text-muted-foreground">
+                  {checkingWallet
+                    ? 'Wallet verified. Checking private task access...'
+                    : 'Wallet verified.'}
+                </p>
+              ) : null}
+              {readAuth.error ? (
+                <p className="text-xs leading-5 text-destructive">{readAuth.error}</p>
+              ) : null}
+              {walletAccessError ? (
+                <p className="text-xs leading-5 text-destructive">{walletAccessError}</p>
+              ) : null}
+              <Button
+                className="min-h-11 w-fit"
+                disabled={
+                  readAuth.status === 'signing' ||
+                  checkingWallet ||
+                  (readAuth.status === 'ready' && !walletAccessError)
+                }
+                onClick={
+                  readAuth.status === 'ready' ? checkWalletAccess : readAuth.requestSignature
+                }
+                type="button"
+                variant="outline"
+              >
+                {checkingWallet
+                  ? 'Checking private task access...'
+                  : readAuth.status === 'signing'
+                    ? 'Check your wallet...'
+                    : readAuth.status === 'ready' && walletAccessError
+                      ? 'Retry private task access'
+                      : readAuth.status === 'error'
+                        ? 'Retry wallet verification'
+                        : 'Verify wallet access'}
+              </Button>
+            </div>
+          )}
           <div className="grid gap-1.5">
             <Label htmlFor="unlock-password">Password</Label>
             <Input

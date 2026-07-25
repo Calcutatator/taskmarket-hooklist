@@ -12,6 +12,7 @@ import { Skeleton } from '@/components/ui/skeleton';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
+import { PrivyWalletAccessButton } from '@/components/privy-account-control';
 
 type IdentityStatus = {
   agentId: string | null;
@@ -59,12 +60,14 @@ export function AgentIdentityCard() {
     return (
       <Card>
         <CardHeader>
-          <CardTitle>Connect a wallet</CardTitle>
+          <CardTitle>Sign in to manage your identity</CardTitle>
         </CardHeader>
-        <CardContent>
+        <CardContent className="grid gap-3">
           <p className="text-sm text-muted-foreground">
-            Connect with the button in the top right to manage your identity.
+            Use email, Google, or an existing wallet. Taskmarket can create a wallet for you if you
+            are new.
           </p>
+          <PrivyWalletAccessButton className="min-h-11 w-fit" />
         </CardContent>
       </Card>
     );
@@ -101,7 +104,7 @@ export function AgentIdentityCard() {
       <CardContent className="grid gap-3">
         <div className="grid gap-1 text-sm">
           <span className="text-muted-foreground">Wallet</span>
-          <code className="font-mono text-xs">{address}</code>
+          <code className="break-all font-mono text-xs">{address}</code>
         </div>
         {loadingStatus ? (
           <div className="grid gap-2" aria-label="Checking identity status">

@@ -8,6 +8,7 @@ import { CircleAlertIcon, LockKeyholeIcon } from 'lucide-react';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
+import type { WalletAccessStatus } from '@/components/privy-account-control';
 import { FundingGuard, type FundingStatus } from '@/components/market/fund-wallet-button';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
@@ -165,29 +166,41 @@ function computeCostBreakdown(reward: string) {
   };
 }
 
+function runOptionalEffect(effect: (() => void) | undefined): void {
+  try {
+    effect?.();
+  } catch {
+    // Optional cleanup and instrumentation must not alter publication state.
+  }
+}
+
 type StepPublishProps = {
+  beginWalletAccess: (returnTargetId?: string) => void;
   form: UseFormReturn<WizardFormValues>;
   marketStats: MarketStats | null;
   ready: boolean;
-  connectOrCreateWallet: () => void | Promise<void>;
   onEditBrief: () => void;
   onEditDrop: () => void;
   onFunnelEvent?: (event: WizardFunnelEvent) => void;
+  onPublished?: () => void;
   onValidationError: (errors: CreateTaskFieldErrors) => void;
   variant?: WizardVariant;
+  walletActionStatus: WalletAccessStatus | 'unavailable';
   walletConfigurationAvailable?: boolean;
 };
 
 export function StepPublish({
-  connectOrCreateWallet,
+  beginWalletAccess,
   form,
   marketStats,
   onEditDrop,
   onEditBrief,
   onFunnelEvent,
+  onPublished,
   onValidationError,
   ready,
   variant = 'default',
+  walletActionStatus,
   walletConfigurationAvailable = true,
 }: StepPublishProps) {
   const router = useRouter();
@@ -266,11 +279,11 @@ export function StepPublish({
       const nextFundingPrompt = buildFundingPrompt(balance, rewardBaseUnits);
       if (nextFundingPrompt) {
         setFundingPrompt(nextFundingPrompt);
-        onFunnelEvent?.({ name: 'funding_required' });
+        runOptionalEffect(() => onFunnelEvent?.({ name: 'funding_required' }));
         return;
       }
 
-      onFunnelEvent?.({ name: 'payment_started' });
+      runOptionalEffect(() => onFunnelEvent?.({ name: 'payment_started' }));
       setPhase('payment');
       const probeRes = await fetch(`${apiUrl}/api/tasks`, {
         body: JSON.stringify(body),
@@ -368,7 +381,8 @@ export function StepPublish({
       }
 
       const result = (await createRes.json()) as { taskDropId?: string | null; taskId?: string };
-      onFunnelEvent?.({ name: 'task_published' });
+      runOptionalEffect(() => onFunnelEvent?.({ name: 'task_published' }));
+      runOptionalEffect(onPublished);
       router.push(
         result.taskId
           ? `/dashboard/tasks/${result.taskId}?published=1${
@@ -410,8 +424,8 @@ export function StepPublish({
 
   function handleConnectWallet() {
     setError(null);
-    onFunnelEvent?.({ name: 'connect_started' });
-    connectOrCreateWallet();
+    runOptionalEffect(() => onFunnelEvent?.({ name: 'connect_started' }));
+    beginWalletAccess('task-publish-wallet-access');
   }
 
   const buttonLabel =
@@ -427,9 +441,19 @@ export function StepPublish({
               ? variant === 'campaign'
                 ? 'Fund $1 and publish'
                 : 'Fund and publish'
-              : variant === 'campaign'
-                ? 'Connect to fund $1'
-                : 'Connect wallet to post';
+              : walletActionStatus === 'signed-out'
+                ? variant === 'campaign'
+                  ? 'Sign in to fund $1'
+                  : 'Sign in to post'
+                : walletActionStatus === 'initializing'
+                  ? 'Loading sign in'
+                  : walletActionStatus === 'wallet-loading'
+                    ? 'Loading wallet'
+                    : variant === 'campaign'
+                      ? 'Connect to fund $1'
+                      : 'Connect wallet to post';
+  const walletAccessPending =
+    walletActionStatus === 'initializing' || walletActionStatus === 'wallet-loading';
 
   if (variant === 'campaign') {
     return (
@@ -523,7 +547,13 @@ export function StepPublish({
 
           <Button
             className="h-11 w-full"
-            disabled={!walletConfigurationAvailable || isSubmitting || (!walletReady && !ready)}
+            disabled={
+              !walletConfigurationAvailable ||
+              isSubmitting ||
+              walletAccessPending ||
+              (!walletReady && !ready)
+            }
+            id="task-publish-wallet-access"
             onClick={walletReady ? handlePublish : handleConnectWallet}
             type="button"
           >
@@ -846,7 +876,8 @@ export function StepPublish({
 
             <Button
               className="h-11 w-full"
-              disabled={isSubmitting || (!walletReady && !ready)}
+              disabled={isSubmitting || walletAccessPending || (!walletReady && !ready)}
+              id="task-publish-wallet-access"
               onClick={walletReady ? handlePublish : handleConnectWallet}
               type="button"
             >

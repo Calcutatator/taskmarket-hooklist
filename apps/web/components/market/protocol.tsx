@@ -77,8 +77,8 @@ function SafetyRule({ rule }: { rule: string }) {
 
 export function ProtocolContent() {
   return (
-    <div className="mx-auto grid max-w-7xl gap-10 px-4 py-10 sm:px-6 lg:px-8">
-      <section className="grid gap-4">
+    <div className="grid gap-10 pb-10">
+      <section className="mx-auto grid w-full max-w-7xl gap-4 px-4 pt-10 sm:px-6 lg:px-8">
         <Badge className="w-fit" variant="terminal">
           Protocol stack
         </Badge>
@@ -92,7 +92,33 @@ export function ProtocolContent() {
         </p>
       </section>
 
-      <section className="grid gap-5">
+      <nav
+        aria-label="Protocol sections"
+        className="sticky top-0 z-20 overflow-x-auto border-y border-border/58 bg-background/92 px-4 backdrop-blur sm:px-6 lg:px-8"
+      >
+        <div className="mx-auto flex w-max min-w-full max-w-7xl items-center gap-1 py-2">
+          {[
+            ['Standards', '#standards'],
+            ['Internal EIPs', '#internal-eips'],
+            ['Flow', '#settlement-flow'],
+            ['Mode selectors', '#mode-selectors'],
+            ['Safety', '#safety'],
+          ].map(([label, href]) => (
+            <a
+              className="inline-flex min-h-11 shrink-0 items-center rounded-md px-3 font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href={href}
+              key={href}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </nav>
+
+      <section
+        className="mx-auto grid w-full max-w-7xl scroll-mt-24 gap-5 px-4 sm:px-6 lg:px-8"
+        id="standards"
+      >
         <SectionHeading kicker="Standards" title="Protocol dependencies" />
         <div className="grid gap-5 md:grid-cols-2 xl:grid-cols-3">
           {standards.map((standard) => (
@@ -101,18 +127,42 @@ export function ProtocolContent() {
         </div>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)]">
+      <section
+        className="relative mx-auto grid w-full max-w-7xl scroll-mt-24 gap-5 px-4 sm:px-6 lg:grid-cols-[minmax(0,0.75fr)_minmax(0,1.25fr)] lg:px-8"
+        id="internal-eips"
+      >
+        <span aria-hidden className="absolute -top-24" id="interfaces" />
         <SectionHeading kicker="Internal EIPs" title="Taskmarket protocol surface" />
         <Card>
           <CardContent className="pt-0">
-            {internalInterfaces.map((protocolInterface) => (
-              <InterfaceRow key={protocolInterface.label} {...protocolInterface} />
-            ))}
+            <div
+              className="divide-y divide-border/62 md:hidden"
+              data-testid="protocol-mobile-interfaces"
+            >
+              {internalInterfaces.map((protocolInterface) => (
+                <details key={protocolInterface.label}>
+                  <summary className="flex min-h-11 cursor-pointer list-none items-center py-3 font-mono text-sm font-semibold tracking-tight marker:content-none">
+                    {protocolInterface.label}
+                  </summary>
+                  <p className="pb-4 text-sm leading-6 text-muted-foreground">
+                    {protocolInterface.body}
+                  </p>
+                </details>
+              ))}
+            </div>
+            <div className="hidden md:block">
+              {internalInterfaces.map((protocolInterface) => (
+                <InterfaceRow key={protocolInterface.label} {...protocolInterface} />
+              ))}
+            </div>
           </CardContent>
         </Card>
       </section>
 
-      <section className="grid gap-5">
+      <section
+        className="mx-auto grid w-full max-w-7xl scroll-mt-24 gap-5 px-4 sm:px-6 lg:px-8"
+        id="settlement-flow"
+      >
         <SectionHeading kicker="Flow" title="How a paid task becomes settlement" />
         <ol className="grid gap-4 md:grid-cols-2">
           {flow.map((step, index) => (
@@ -121,7 +171,10 @@ export function ProtocolContent() {
         </ol>
       </section>
 
-      <section className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.75fr)]">
+      <section
+        className="mx-auto grid w-full max-w-7xl scroll-mt-24 gap-5 px-4 sm:px-6 lg:px-8"
+        id="mode-selectors"
+      >
         <Card>
           <CardHeader>
             <CardTitle>Mode selectors</CardTitle>
@@ -134,7 +187,12 @@ export function ProtocolContent() {
             </div>
           </CardContent>
         </Card>
+      </section>
 
+      <section
+        className="mx-auto grid w-full max-w-7xl scroll-mt-24 gap-5 px-4 sm:px-6 lg:px-8"
+        id="safety"
+      >
         <Card>
           <CardHeader>
             <CardTitle>Safety rules</CardTitle>

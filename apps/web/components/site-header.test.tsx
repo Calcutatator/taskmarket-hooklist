@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { SiteHeader } from './site-header';
@@ -19,6 +19,8 @@ const { connectOrCreateWallet, login, logout, routeState, walletState } = vi.hoi
     authenticated: undefined as boolean | undefined,
     isConnected: false,
     privyAddress: undefined as `0x${string}` | undefined,
+    ready: true,
+    walletsReady: true,
   },
 }));
 
@@ -43,7 +45,7 @@ vi.mock('@privy-io/react-auth', () => ({
       connectOrCreateWallet,
       login,
       logout,
-      ready: true,
+      ready: walletState.ready,
       user: authenticated ? { email: { address: 'user@example.com' } } : null,
     };
   },
@@ -51,7 +53,7 @@ vi.mock('@privy-io/react-auth', () => ({
     const address = walletState.privyAddress ?? walletState.address;
 
     return {
-      ready: true,
+      ready: walletState.walletsReady,
       wallets: address
         ? [
             {
@@ -76,6 +78,11 @@ describe('SiteHeader', () => {
     walletState.authenticated = undefined;
     walletState.isConnected = false;
     walletState.privyAddress = undefined;
+    walletState.ready = true;
+    walletState.walletsReady = true;
+    vi.useRealTimers();
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 
   it('uses a route-aware Taskmarket shell title instead of dashboard demo copy', () => {
@@ -95,10 +102,11 @@ describe('SiteHeader', () => {
   it('standardizes the primary create-task CTA and renames the skill link', () => {
     render(<SiteHeader />);
 
-    expect(screen.getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks/new'
-    );
+    const postTaskLink = screen.getByRole('link', { name: /^post a task$/i });
+
+    expect(postTaskLink).toHaveAttribute('href', '/dashboard/tasks/new');
+    expect(postTaskLink).toHaveClass('max-[360px]:hidden');
+    expect(screen.getByRole('heading', { name: /^dashboard$/i })).toHaveClass('min-w-0', 'flex-1');
     expect(screen.queryByRole('link', { name: /^post task$/i })).not.toBeInTheDocument();
     expect(screen.getByRole('link', { name: /agent skill file/i })).toHaveAttribute(
       'href',
@@ -172,8 +180,12 @@ describe('SiteHeader', () => {
     expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /switch wallet/i })).toBeEnabled();
+    window.localStorage.setItem('taskmarket:legal-receipt', 'receipt-1');
+    window.sessionStorage.setItem('taskmarket:task-access:private-task', 'grant-1');
     await user.click(screen.getByRole('button', { name: /log out/i }));
     expect(logout).toHaveBeenCalled();
+    expect(window.localStorage.getItem('taskmarket:legal-receipt')).toBeNull();
+    expect(window.sessionStorage.getItem('taskmarket:task-access:private-task')).toBeNull();
   });
 
   it('treats an authenticated Privy wallet as signed in before wagmi connects', async () => {
@@ -190,5 +202,44 @@ describe('SiteHeader', () => {
     expect(screen.getByText('0x1234567890abcdef1234567890abcdef12345678')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
     expect(screen.queryByRole('button', { name: /^sign in$/i })).not.toBeInTheDocument();
+  });
+
+  it('offers wallet creation after an authenticated user has no wallet', async () => {
+    const user = userEvent.setup();
+    walletState.authenticated = true;
+
+    render(<SiteHeader />);
+
+    await user.click(screen.getByRole('button', { name: /^connect wallet$/i }));
+
+    expect(connectOrCreateWallet).toHaveBeenCalledTimes(1);
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it('offers recovery when authenticated wallets stop hydrating', async () => {
+    vi.useFakeTimers();
+    walletState.authenticated = true;
+    walletState.walletsReady = false;
+
+    render(<SiteHeader />);
+
+    expect(screen.getByRole('button', { name: /^loading wallet$/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^connect wallet$/i })).not.toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+
+    expect(screen.getByRole('button', { name: /^retry wallet$/i })).toBeEnabled();
+  });
+
+  it('offers a retry when mobile sign-in readiness times out', async () => {
+    vi.useFakeTimers();
+    walletState.ready = false;
+
+    render(<SiteHeader />);
+    expect(screen.getByRole('button', { name: /loading/i })).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+
+    expect(screen.getByRole('button', { name: /retry sign in/i })).toBeEnabled();
   });
 });

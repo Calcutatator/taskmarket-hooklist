@@ -14,7 +14,13 @@ type Scope = 'market' | 'you';
 // client-only personal view, which sources every visual from the connected
 // wallet. Next App Router allows a server-rendered ReactNode to be handed to a
 // client component as a prop, which is what keeps the market view fast here.
-export function DashboardScope({ marketContent }: { marketContent: ReactNode }) {
+export function DashboardScope({
+  marketContent,
+  marketTitle = 'Marketplace overview',
+}: {
+  marketContent: ReactNode;
+  marketTitle?: string;
+}) {
   const [scope, setScope] = useState<Scope>('market');
 
   return (
@@ -23,7 +29,7 @@ export function DashboardScope({ marketContent }: { marketContent: ReactNode }) 
         <div>
           <p className="font-mono text-xs uppercase text-primary">Console</p>
           <h1 className="mt-2 font-display text-3xl font-semibold tracking-tight">
-            {scope === 'market' ? 'Marketplace overview' : 'Your activity'}
+            {scope === 'market' ? marketTitle : 'Your activity'}
           </h1>
         </div>
         <ToggleGroup

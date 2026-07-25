@@ -98,7 +98,12 @@ import {
 } from '@/lib/market/task-badges';
 import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
-import type { ActiveFilter, TaskSearchParams, TaskSortValue } from '@/lib/market/task-filters';
+import type {
+  ActiveFilter,
+  TaskListView,
+  TaskSearchParams,
+  TaskSortValue,
+} from '@/lib/market/task-filters';
 
 const modes: Array<'ALL' | TaskModeType> = [
   'ALL',
@@ -608,65 +613,47 @@ function activityTitle(task: TaskDetailResponse | TaskResponse) {
 
 function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
-  const splitLabel = splitPayoutLabel(task);
 
   return (
-    <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
-      <div className="grid gap-2">
-        <Link
-          className="text-base font-semibold leading-6 text-foreground hover:text-primary"
-          href={detailHref as Route}
-        >
+    <li>
+      <Link
+        className="group grid h-36 grid-rows-[auto_1fr_auto] gap-2 overflow-hidden rounded-lg border border-border/58 bg-background/38 p-3 transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        href={detailHref as Route}
+        prefetch={false}
+      >
+        <div className="flex min-w-0 items-center justify-between gap-2">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
+            <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
+          </div>
+          <span className="shrink-0 font-mono text-xs text-muted-foreground">
+            {activityLabel(task)}
+          </span>
+        </div>
+        <span className="line-clamp-2 min-w-0 text-sm font-semibold leading-5 text-foreground group-hover:text-primary">
           {taskTitle(task)}
-        </Link>
-        <div className="flex flex-wrap gap-1.5">
-          <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
-          <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
-          {splitLabel ? <Badge variant="outline">{splitLabel}</Badge> : null}
-          {taskDetailTags(task)
-            .slice(0, 2)
-            .map((tag) => (
-              <Badge key={tag} variant={TASK_TAG_BADGE_VARIANT}>
-                {tag}
-              </Badge>
-            ))}
+        </span>
+        <div className="flex min-w-0 items-end justify-between gap-3">
+          <dl className="flex min-w-0 items-end gap-4 text-xs">
+            <div className="min-w-0">
+              <dt className="font-mono text-[0.65rem] uppercase text-muted-foreground">Reward</dt>
+              <dd className="mt-1">
+                <RewardAmount task={task} />
+              </dd>
+            </div>
+            <div className="min-w-0">
+              <dt className="font-mono text-[0.65rem] uppercase text-muted-foreground">Due</dt>
+              <dd className="mt-1 max-w-28 truncate text-muted-foreground">
+                <DeadlineLabel className="text-xs" task={task} />
+              </dd>
+            </div>
+          </dl>
+          <span className="shrink-0 text-xs font-medium text-primary">View task</span>
         </div>
-      </div>
-      <dl className="grid grid-cols-2 gap-3 text-sm">
-        <div className="min-w-0">
-          <dt className="font-mono text-xs uppercase text-muted-foreground">Reward</dt>
-          <dd className="mt-1">
-            <RewardAmount task={task} />
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-xs uppercase text-muted-foreground">Due</dt>
-          <dd className="mt-1 truncate">
-            <DeadlineLabel task={task} />
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-xs uppercase text-muted-foreground">Requester</dt>
-          <dd className="mt-1 flex flex-wrap items-center gap-1.5">
-            <span className="font-mono text-muted-foreground" title={task.requester}>
-              {compactAddress(task.requester)}
-            </span>
-            <ActorTypeBadge actorType={task.requesterActorType} />
-          </dd>
-        </div>
-        <div className="min-w-0">
-          <dt className="font-mono text-xs uppercase text-muted-foreground">Activity</dt>
-          <dd className="mt-1 font-mono text-muted-foreground">{activityLabel(task)}</dd>
-        </div>
-      </dl>
-      <Button asChild className="w-full sm:w-fit" variant="outline">
-        <Link href={detailHref as Route}>View task</Link>
-      </Button>
+      </Link>
     </li>
   );
 }
-
-export type TaskListView = 'table' | 'gallery';
 
 // Whether a listing row carries any in-flight work, across every mode. Drives the
 // "show the work" thumbnail: only tasks that report submissions/bids/pitches/proofs mount a
@@ -691,6 +678,7 @@ function TaskGalleryCard({ detailBasePath, task }: { detailBasePath: string; tas
       <Link
         className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         href={detailHref as Route}
+        prefetch={false}
       >
         <TaskCover task={task} />
       </Link>
@@ -862,6 +850,7 @@ export function TaskTable({
                       href={
                         `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}` as Route
                       }
+                      prefetch={false}
                     >
                       {taskTitle(task)}
                     </Link>
@@ -928,8 +917,11 @@ type TaskFilterControlsProps = {
   selectedMode?: 'ALL' | TaskModeType | string;
   selectedSort?: string;
   selectedStatus?: 'ALL' | TaskStatusType | string;
+  selectedView?: TaskListView;
   tags?: string;
   taskDropId?: string;
+  requester?: string;
+  worker?: string;
 };
 
 // Filter options are radio-group facts, not actions: quiet text rows keep the rail
@@ -954,8 +946,11 @@ function TaskFilterControls({
   selectedMode = 'ALL',
   selectedSort = 'newest',
   selectedStatus = 'ALL',
+  selectedView = 'table',
   tags = '',
   taskDropId = '',
+  requester = '',
+  worker = '',
 }: TaskFilterControlsProps) {
   const currentFilters: TaskSearchParams = {
     actor: selectedActor,
@@ -967,6 +962,9 @@ function TaskFilterControls({
     status: selectedStatus,
     tags,
     taskDropId,
+    requester,
+    view: selectedView,
+    worker,
   };
 
   return (
@@ -1027,6 +1025,11 @@ function TaskFilterControls({
         {selectedSort !== 'newest' ? (
           <input name="sort" type="hidden" value={selectedSort} />
         ) : null}
+        {selectedView === 'gallery' ? (
+          <input name="view" type="hidden" value={selectedView} />
+        ) : null}
+        {requester ? <input name="requester" type="hidden" value={requester} /> : null}
+        {worker ? <input name="worker" type="hidden" value={worker} /> : null}
         <div className="grid gap-2">
           <Label htmlFor={`task-filter-${idPrefix}-task-drop`}>Task Drop ID</Label>
           <Input
@@ -1087,7 +1090,10 @@ function TaskFilterControls({
             Apply filters
           </Button>
           <Button asChild variant="outline">
-            <Link aria-label="Clear filters" href={normalizeBasePath(basePath) as Route}>
+            <Link
+              aria-label="Clear filters"
+              href={taskFiltersHref(basePath, { view: selectedView }) as Route}
+            >
               Clear
             </Link>
           </Button>
@@ -1270,27 +1276,40 @@ export function TaskListPageContent({
     selectedMode: string;
     selectedSort: TaskSortValue;
     selectedStatus: string;
+    selectedView?: TaskListView;
     tags?: string;
     taskDropId?: string;
+    requester?: string;
+    worker?: string;
   };
   listHref?: string;
   pagination?: TaskPaginationState;
   tasks: TaskResponse[];
 }) {
+  const selectedView = filterParams.selectedView ?? 'table';
   const sortFilters: TaskSearchParams = {
     actor: filterParams.selectedActor,
     deadlineHours: filterParams.deadlineHours,
     maxReward: filterParams.maxReward,
     minReward: filterParams.minReward,
     mode: filterParams.selectedMode,
+    requester: filterParams.requester,
     status: filterParams.selectedStatus,
     tags: filterParams.tags,
     taskDropId: filterParams.taskDropId,
+    view: selectedView,
+    worker: filterParams.worker,
   };
   const paginationFilters: TaskSearchParams = {
     ...sortFilters,
     sort: filterParams.selectedSort,
   };
+  const boardFilters: TaskSearchParams = {
+    ...paginationFilters,
+    cursor: pagination?.currentCursor,
+    cursorStack: pagination?.cursorStack,
+  };
+  const clearFiltersHref = taskFiltersHref(listHref, { view: selectedView });
 
   // Reflect the active status filter so a completed/cancelled view is not mislabelled "Open tasks".
   const { selectedStatus } = filterParams;
@@ -1310,8 +1329,11 @@ export function TaskListPageContent({
         selectedMode={filterParams.selectedMode}
         selectedSort={filterParams.selectedSort}
         selectedStatus={filterParams.selectedStatus}
+        selectedView={selectedView}
         tags={filterParams.tags}
         taskDropId={filterParams.taskDropId}
+        requester={filterParams.requester}
+        worker={filterParams.worker}
       />
       <section
         aria-label="Task list"
@@ -1330,8 +1352,11 @@ export function TaskListPageContent({
                 selectedMode={filterParams.selectedMode}
                 selectedSort={filterParams.selectedSort}
                 selectedStatus={filterParams.selectedStatus}
+                selectedView={selectedView}
                 tags={filterParams.tags}
                 taskDropId={filterParams.taskDropId}
+                requester={filterParams.requester}
+                worker={filterParams.worker}
               />
             </div>
             <Button asChild>
@@ -1350,16 +1375,18 @@ export function TaskListPageContent({
               </Badge>
             ))}
             <Button asChild size="xs" variant="link">
-              <Link href={listHref as Route}>Clear filters</Link>
+              <Link href={clearFiltersHref as Route}>Clear filters</Link>
             </Button>
           </div>
         ) : null}
         <TaskListBoard
+          basePath={basePath}
           createHref={createHref}
+          currentFilters={boardFilters}
           detailBasePath={detailBasePath}
           errorMessage={errorMessage}
           hasActiveFilters={activeFilters.length > 0}
-          listHref={listHref}
+          listHref={clearFiltersHref}
           tasks={tasks}
           toolbarStart={
             <TaskSortControl
@@ -1368,6 +1395,7 @@ export function TaskListPageContent({
               selectedSort={filterParams.selectedSort}
             />
           }
+          view={selectedView}
         />
         {filterParams.selectedSort === 'newest' ? (
           <TaskPaginationControl

@@ -3,7 +3,7 @@
 import type { ReactNode } from 'react';
 import { motion } from 'motion/react';
 
-import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
+import { useHydrationSafeMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 
 type MotionShellProps = {
   children: ReactNode;
@@ -30,7 +30,10 @@ function groupVariants(delay = 0, stagger = 0.1) {
 
 const itemVariants = {
   hidden: {
-    opacity: 0,
+    // Critical landing content must remain readable if hydration or the
+    // animation scheduler stalls. The entrance motion is a translation from a
+    // visible state rather than a reveal from transparency.
+    opacity: 1,
     y: 18,
   },
   show: {
@@ -50,7 +53,7 @@ export function LandingMotionGroup({
   motionId,
   stagger,
 }: MotionShellProps) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
 
   return (
     <motion.div
@@ -70,7 +73,7 @@ export function LandingMotionItem({
   className,
   motionId,
 }: Omit<MotionShellProps, 'delay' | 'stagger'>) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
 
   return (
     <motion.div
@@ -88,7 +91,7 @@ export function LandingMotionAction({
   className,
   motionId,
 }: Omit<MotionShellProps, 'delay' | 'stagger'>) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
 
   return (
     <motion.div
@@ -107,7 +110,7 @@ export function LandingMotionSection({
   children,
   motionId,
 }: Pick<MotionShellProps, 'children' | 'motionId'>) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
   const canUseViewportAnimation = !motionDisabled;
 
   return (

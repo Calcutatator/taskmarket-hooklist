@@ -1,3 +1,4 @@
+import { useEffect, useState } from 'react';
 import { useReducedMotion } from 'motion/react';
 
 // Skip animation under reduced-motion, jsdom, and tests so the static markup
@@ -8,4 +9,18 @@ export function useMotionDisabled() {
     typeof navigator !== 'undefined' && navigator.userAgent.toLowerCase().includes('jsdom');
 
   return useReducedMotion() || isJsdom || process.env.NODE_ENV === 'test';
+}
+
+// Critical first-paint content uses a static server/client tree, then opts into
+// motion after hydration. This avoids both transparent SSR output and a
+// reduced-motion hydration mismatch.
+export function useHydrationSafeMotionDisabled() {
+  const motionDisabled = useMotionDisabled();
+  const [hydrated, setHydrated] = useState(false);
+
+  useEffect(() => {
+    setHydrated(true);
+  }, []);
+
+  return motionDisabled || !hydrated;
 }

@@ -73,13 +73,16 @@ const minTasksOptions = [
 
 type LeaderboardSort = 'reputation' | 'tasks';
 
-type LeaderboardState = {
-  limit?: number;
+type AgentFilterValues = {
   minRating?: string;
   minTasks?: string;
-  page?: number;
   search?: string;
   skill?: string;
+};
+
+type LeaderboardState = AgentFilterValues & {
+  limit?: number;
+  page?: number;
   sort: LeaderboardSort;
 };
 
@@ -303,6 +306,292 @@ function AgentMobileCard({
   );
 }
 
+function LeaderboardFilterForm({
+  basePath,
+  filters,
+  hasActiveFilters,
+  idPrefix,
+  mobile = false,
+  pageSize,
+  sort,
+  state,
+}: {
+  basePath: string;
+  filters: AgentFilterValues;
+  hasActiveFilters: boolean;
+  idPrefix: string;
+  mobile?: boolean;
+  pageSize: number;
+  sort: LeaderboardSort;
+  state: LeaderboardState;
+}) {
+  const controlClassName = mobile ? 'min-h-11' : undefined;
+
+  return (
+    <form action={normalizeBasePath(basePath)} className="grid gap-4 lg:grid-cols-6">
+      <input name="sort" type="hidden" value={sort} />
+      <div className="grid gap-2 lg:col-span-2">
+        <Label htmlFor={`${idPrefix}-search`}>Search</Label>
+        <Input
+          className={controlClassName}
+          defaultValue={filters.search}
+          id={`${idPrefix}-search`}
+          name="search"
+          placeholder="Agent ID or address"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-skill`}>Skill</Label>
+        <Input
+          className={controlClassName}
+          defaultValue={filters.skill}
+          id={`${idPrefix}-skill`}
+          name="skill"
+          placeholder="e.g. python"
+        />
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-min-rating`}>Min rating</Label>
+        <NativeSelect
+          className={controlClassName}
+          defaultValue={filters.minRating ?? ''}
+          id={`${idPrefix}-min-rating`}
+          name="minRating"
+        >
+          {minRatingOptions.map((option) => (
+            <option key={option.label} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-min-tasks`}>Min tasks</Label>
+        <NativeSelect
+          className={controlClassName}
+          defaultValue={filters.minTasks ?? ''}
+          id={`${idPrefix}-min-tasks`}
+          name="minTasks"
+        >
+          {minTasksOptions.map((option) => (
+            <option key={option.label} value={option.value}>
+              {option.label}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="grid gap-2">
+        <Label htmlFor={`${idPrefix}-limit`}>Per page</Label>
+        <NativeSelect
+          className={controlClassName}
+          defaultValue={String(pageSize)}
+          id={`${idPrefix}-limit`}
+          name="limit"
+        >
+          {pageSizeOptions.map((option) => (
+            <option key={option} value={option}>
+              {option}
+            </option>
+          ))}
+        </NativeSelect>
+      </div>
+      <div className="flex flex-wrap items-end gap-3 lg:col-span-6">
+        <Button className={controlClassName} type="submit" variant="terminal">
+          Apply filters
+        </Button>
+        {hasActiveFilters ? (
+          <Button asChild className={controlClassName} type="button" variant="outline">
+            <Link
+              href={
+                leaderboardHref(
+                  state,
+                  {
+                    minRating: '',
+                    minTasks: '',
+                    page: undefined,
+                    search: '',
+                    skill: '',
+                  },
+                  basePath
+                ) as Route
+              }
+            >
+              Clear filters
+            </Link>
+          </Button>
+        ) : null}
+      </div>
+    </form>
+  );
+}
+
+function activeDirectoryFilters({ minRating, minTasks, search, skill }: AgentFilterValues) {
+  return [
+    search ? { label: 'Search', value: search } : null,
+    skill ? { label: 'Skill', value: skill } : null,
+    minRating ? { label: 'Rating', value: `${minRating}+` } : null,
+    minTasks ? { label: 'Tasks', value: `${minTasks}+` } : null,
+  ].filter((filter): filter is { label: string; value: string } => filter !== null);
+}
+
+function FilterResultContext({
+  activeFilters,
+  resultCount,
+}: {
+  activeFilters: Array<{ label: string; value: string }>;
+  resultCount: number;
+}) {
+  return (
+    <>
+      <div
+        aria-live="polite"
+        className="flex flex-wrap items-center justify-between gap-2 text-xs text-muted-foreground"
+      >
+        <span>
+          {resultCount === 1 ? '1 result on this page' : `${resultCount} results on this page`}
+        </span>
+        <span>
+          {activeFilters.length === 1
+            ? '1 filter applied'
+            : `${activeFilters.length} filters applied`}
+        </span>
+      </div>
+      {activeFilters.length > 0 ? (
+        <div aria-label="Applied filters" className="flex flex-wrap gap-2">
+          {activeFilters.map((filter) => (
+            <Badge key={filter.label} variant="outline">
+              {filter.label}: {filter.value}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+    </>
+  );
+}
+
+function AgentDirectoryFilterForm({
+  basePath,
+  filters,
+  idPrefix,
+  mobile = false,
+}: {
+  basePath: string;
+  filters: AgentFilterValues;
+  idPrefix: string;
+  mobile?: boolean;
+}) {
+  const controlClassName = mobile ? 'min-h-11' : undefined;
+
+  return (
+    <form action={normalizeBasePath(basePath)} className="grid gap-4">
+      <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,2fr)_minmax(160px,1fr)_140px_140px]">
+        <div className="grid gap-2">
+          <Label htmlFor={`${idPrefix}-search`}>Search</Label>
+          <Input
+            className={controlClassName}
+            defaultValue={filters.search}
+            id={`${idPrefix}-search`}
+            name="search"
+            placeholder="Agent ID or address"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor={`${idPrefix}-skill`}>Skill</Label>
+          <Input
+            className={controlClassName}
+            defaultValue={filters.skill}
+            id={`${idPrefix}-skill`}
+            name="skill"
+            placeholder="skill"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor={`${idPrefix}-min-rating`}>Min rating</Label>
+          <Input
+            className={controlClassName}
+            defaultValue={filters.minRating}
+            id={`${idPrefix}-min-rating`}
+            max="5"
+            min="0"
+            name="minRating"
+            step="0.5"
+            type="number"
+          />
+        </div>
+        <div className="grid gap-2">
+          <Label htmlFor={`${idPrefix}-min-tasks`}>Min tasks</Label>
+          <Input
+            className={controlClassName}
+            defaultValue={filters.minTasks}
+            id={`${idPrefix}-min-tasks`}
+            min="0"
+            name="minTasks"
+            type="number"
+          />
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2 sm:justify-end">
+        <Button className={controlClassName} type="submit" variant="terminal">
+          Apply filters
+        </Button>
+        <Button asChild className={controlClassName} variant="outline">
+          <Link href={normalizeBasePath(basePath) as Route}>Clear</Link>
+        </Button>
+      </div>
+    </form>
+  );
+}
+
+export function AgentDirectoryFilterPanel({
+  basePath,
+  idPrefix,
+  minRating,
+  minTasks,
+  resultCount,
+  search,
+  skill,
+}: {
+  basePath: string;
+  idPrefix: string;
+  minRating?: string;
+  minTasks?: string;
+  resultCount: number;
+  search?: string;
+  skill?: string;
+}) {
+  const filters = { minRating, minTasks, search, skill } satisfies AgentFilterValues;
+  const activeFilters = activeDirectoryFilters(filters);
+
+  return (
+    <div className="grid gap-4">
+      <FilterResultContext activeFilters={activeFilters} resultCount={resultCount} />
+      <details className="rounded-lg border border-border/58 bg-card/38 md:hidden">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-foreground marker:content-none">
+          <span>Filters</span>
+          {activeFilters.length > 0 ? (
+            <Badge variant="outline">{activeFilters.length} applied</Badge>
+          ) : null}
+        </summary>
+        <div className="border-t border-border/58 p-4">
+          <AgentDirectoryFilterForm
+            basePath={basePath}
+            filters={filters}
+            idPrefix={`${idPrefix}-mobile`}
+            mobile
+          />
+        </div>
+      </details>
+      <section aria-label="Directory filters" className="hidden md:block">
+        <Card>
+          <CardContent>
+            <AgentDirectoryFilterForm basePath={basePath} filters={filters} idPrefix={idPrefix} />
+          </CardContent>
+        </Card>
+      </section>
+    </div>
+  );
+}
+
 export function AgentLeaderboardPanel({
   agents,
   basePath = '/dashboard/leaderboard',
@@ -334,102 +623,50 @@ export function AgentLeaderboardPanel({
   tableVariant?: 'directory' | 'leaderboard';
   profileBasePath?: string;
 }) {
-  const state = { limit: pageSize, minRating, minTasks, page, search, skill, sort };
-  const hasActiveFilters = Boolean(search || skill || minRating || minTasks);
+  const filters = { minRating, minTasks, search, skill } satisfies AgentFilterValues;
+  const state = { ...filters, limit: pageSize, page, sort };
+  const activeFilters = activeDirectoryFilters(filters);
+  const hasActiveFilters = activeFilters.length > 0;
 
   return (
     <div className="grid gap-5">
-      <section className="grid gap-4 border-y border-border/58 py-5">
+      <FilterResultContext activeFilters={activeFilters} resultCount={agents.length} />
+
+      <details className="rounded-lg border border-border/58 bg-card/38 md:hidden">
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-3 font-semibold text-foreground marker:content-none">
+          <span>Filters</span>
+          {hasActiveFilters ? (
+            <Badge variant="outline">{activeFilters.length} applied</Badge>
+          ) : null}
+        </summary>
+        <div className="border-t border-border/58 p-4">
+          <h2 className="sr-only">{filterTitle}</h2>
+          <LeaderboardFilterForm
+            basePath={basePath}
+            filters={filters}
+            hasActiveFilters={hasActiveFilters}
+            idPrefix="leaderboard-mobile"
+            mobile
+            pageSize={pageSize}
+            sort={sort}
+            state={state}
+          />
+        </div>
+      </details>
+
+      <section className="hidden gap-4 border-y border-border/58 py-5 md:grid">
         <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
           {filterTitle}
         </h2>
-        <div>
-          <form action={normalizeBasePath(basePath)} className="grid gap-4 lg:grid-cols-6">
-            <input name="sort" type="hidden" value={sort} />
-            <div className="grid gap-2 lg:col-span-2">
-              <Label htmlFor="leaderboard-search">Search</Label>
-              <Input
-                defaultValue={search}
-                id="leaderboard-search"
-                name="search"
-                placeholder="Agent ID or address"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="leaderboard-skill">Skill</Label>
-              <Input
-                defaultValue={skill}
-                id="leaderboard-skill"
-                name="skill"
-                placeholder="e.g. python"
-              />
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="leaderboard-min-rating">Min rating</Label>
-              <NativeSelect
-                defaultValue={minRating ?? ''}
-                id="leaderboard-min-rating"
-                name="minRating"
-              >
-                {minRatingOptions.map((option) => (
-                  <option key={option.label} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="leaderboard-min-tasks">Min tasks</Label>
-              <NativeSelect
-                defaultValue={minTasks ?? ''}
-                id="leaderboard-min-tasks"
-                name="minTasks"
-              >
-                {minTasksOptions.map((option) => (
-                  <option key={option.label} value={option.value}>
-                    {option.label}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="grid gap-2">
-              <Label htmlFor="leaderboard-limit">Per page</Label>
-              <NativeSelect defaultValue={String(pageSize)} id="leaderboard-limit" name="limit">
-                {pageSizeOptions.map((option) => (
-                  <option key={option} value={option}>
-                    {option}
-                  </option>
-                ))}
-              </NativeSelect>
-            </div>
-            <div className="flex flex-wrap items-end gap-3 lg:col-span-6">
-              <Button type="submit" variant="terminal">
-                Apply filters
-              </Button>
-              {hasActiveFilters ? (
-                <Button asChild type="button" variant="outline">
-                  <Link
-                    href={
-                      leaderboardHref(
-                        state,
-                        {
-                          minRating: '',
-                          minTasks: '',
-                          page: undefined,
-                          search: '',
-                          skill: '',
-                        },
-                        basePath
-                      ) as Route
-                    }
-                  >
-                    Clear filters
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-          </form>
-        </div>
+        <LeaderboardFilterForm
+          basePath={basePath}
+          filters={filters}
+          hasActiveFilters={hasActiveFilters}
+          idPrefix="leaderboard"
+          pageSize={pageSize}
+          sort={sort}
+          state={state}
+        />
       </section>
 
       <div className="flex flex-wrap items-center justify-between gap-3">

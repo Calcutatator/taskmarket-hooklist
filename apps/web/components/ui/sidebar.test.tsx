@@ -1,13 +1,21 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { Sidebar, SidebarProvider, SidebarRail, SidebarTrigger } from '@/components/ui/sidebar';
 
-function setupMatchMedia() {
+const routeState = vi.hoisted(() => ({
+  pathname: '/dashboard',
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => routeState.pathname,
+}));
+
+function setupMatchMedia(width = 1024) {
   Object.defineProperty(window, 'innerWidth', {
     configurable: true,
-    value: 1024,
+    value: width,
   });
 
   Object.defineProperty(window, 'matchMedia', {
@@ -15,7 +23,7 @@ function setupMatchMedia() {
     value: vi.fn().mockImplementation((query: string) => ({
       addEventListener: vi.fn(),
       dispatchEvent: vi.fn(),
-      matches: false,
+      matches: width < 768,
       media: query,
       onchange: null,
       removeEventListener: vi.fn(),
@@ -26,6 +34,7 @@ function setupMatchMedia() {
 describe('Sidebar desktop collapse', () => {
   beforeEach(() => {
     setupMatchMedia();
+    routeState.pathname = '/dashboard';
     window.localStorage.clear();
   });
 
@@ -123,5 +132,52 @@ describe('Sidebar desktop collapse', () => {
     window.dispatchEvent(new KeyboardEvent('keydown', { key: 'b', metaKey: true }));
 
     expect(sidebar).toHaveAttribute('data-state', 'collapsed');
+  });
+});
+
+describe('Sidebar mobile navigation', () => {
+  beforeEach(() => {
+    setupMatchMedia(375);
+    routeState.pathname = '/dashboard';
+    window.localStorage.clear();
+  });
+
+  it('opens with accessible 44px controls, closes explicitly, and closes after navigation', async () => {
+    const user = userEvent.setup();
+    const renderShell = () => (
+      <SidebarProvider>
+        <Sidebar collapsible="icon">
+          <a href="/dashboard/tasks">Tasks</a>
+        </Sidebar>
+        <SidebarTrigger />
+      </SidebarProvider>
+    );
+    const { rerender } = render(renderShell());
+    const trigger = screen.getByRole('button', { name: /toggle sidebar/i });
+
+    await waitFor(() => expect(trigger).toHaveAttribute('aria-expanded', 'false'));
+    expect(trigger).toHaveClass('size-11');
+
+    await user.click(trigger);
+
+    const close = await screen.findByRole('button', { name: /^close$/i });
+    expect(trigger).toHaveAttribute('aria-expanded', 'true');
+    expect(close).toHaveClass('size-11');
+
+    await user.click(close);
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument()
+    );
+
+    await user.click(trigger);
+    expect(await screen.findByRole('button', { name: /^close$/i })).toBeInTheDocument();
+
+    routeState.pathname = '/dashboard/tasks';
+    rerender(renderShell());
+
+    await waitFor(() =>
+      expect(screen.queryByRole('button', { name: /^close$/i })).not.toBeInTheDocument()
+    );
+    expect(trigger).toHaveAttribute('aria-expanded', 'false');
   });
 });

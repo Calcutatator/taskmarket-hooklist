@@ -1,6 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { render, screen, within } from '@testing-library/react';
+import userEvent from '@testing-library/user-event';
 import { describe, expect, it, vi } from 'vitest';
-import { AgentLeaderboardPanel, AgentProfilePanel, AgentTable } from './agents';
+import {
+  AgentDirectoryFilterPanel,
+  AgentLeaderboardPanel,
+  AgentProfilePanel,
+  AgentTable,
+} from './agents';
 
 vi.mock('next/link', () => ({
   default: ({
@@ -94,12 +100,12 @@ describe('Agent components', () => {
       />
     );
 
-    expect(screen.getByText('Ranking filters')).toBeInTheDocument();
-    expect(screen.getByLabelText(/search/i)).toHaveValue('sum');
-    expect(screen.getByLabelText(/skill/i)).toHaveValue('research');
-    expect(screen.getByLabelText(/min rating/i)).toHaveValue('4');
-    expect(screen.getByLabelText(/min tasks/i)).toHaveValue('5');
-    expect(screen.getByLabelText(/per page/i)).toHaveValue('20');
+    expect(screen.getAllByText('Ranking filters').length).toBeGreaterThan(0);
+    expect(screen.getAllByLabelText(/search/i)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/skill/i)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/min rating/i)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/min tasks/i)).toHaveLength(2);
+    expect(screen.getAllByLabelText(/per page/i)).toHaveLength(2);
     expect(screen.getByRole('link', { name: /reputation/i })).toHaveAttribute(
       'href',
       '/dashboard/leaderboard?sort=reputation&search=sum&skill=research&page=1&limit=20&minRating=4&minTasks=5'
@@ -112,10 +118,92 @@ describe('Agent components', () => {
       'href',
       '/dashboard/leaderboard?sort=tasks&search=sum&skill=research&page=3&limit=20&minRating=4&minTasks=5'
     );
-    expect(screen.getByRole('link', { name: /clear filters/i })).toHaveAttribute(
-      'href',
-      '/dashboard/leaderboard?sort=tasks&limit=20'
+    for (const clearLink of screen.getAllByRole('link', { name: /clear filters/i })) {
+      expect(clearLink).toHaveAttribute('href', '/dashboard/leaderboard?sort=tasks&limit=20');
+    }
+  });
+
+  it('preserves every active filter when the leaderboard sort changes', () => {
+    render(
+      <AgentLeaderboardPanel
+        agents={[entry]}
+        basePath="/leaderboard"
+        hasNextPage
+        hasPrevPage
+        minRating="4.5"
+        minTasks="10"
+        page={3}
+        pageSize={50}
+        search="summarizer"
+        skill="research"
+        sort="reputation"
+      />
     );
+
+    expect(screen.getByRole('link', { name: /task count/i })).toHaveAttribute(
+      'href',
+      '/leaderboard?sort=tasks&search=summarizer&skill=research&page=1&limit=50&minRating=4.5&minTasks=10'
+    );
+  });
+
+  it('keeps mobile filters in a 44px disclosure with applied-filter and result context', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <AgentLeaderboardPanel
+        agents={[entry]}
+        hasNextPage={false}
+        hasPrevPage={false}
+        minRating="4"
+        page={1}
+        pageSize={20}
+        search="sum"
+        sort="reputation"
+      />
+    );
+
+    const disclosure = container.querySelector('details.md\\:hidden');
+    expect(disclosure).not.toBeNull();
+    const summary = within(disclosure as HTMLElement)
+      .getByText('Filters')
+      .closest('summary');
+    expect(summary).toHaveClass('min-h-11');
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.getByText('1 result on this page')).toBeInTheDocument();
+    expect(screen.getByText('2 filters applied')).toBeInTheDocument();
+
+    await user.click(summary as HTMLElement);
+
+    expect(disclosure).toHaveAttribute('open');
+    expect(within(disclosure as HTMLElement).getByLabelText(/search/i)).toHaveValue('sum');
+  });
+
+  it('preserves directory desktop filters while collapsing their mobile form', async () => {
+    const user = userEvent.setup();
+    const { container } = render(
+      <AgentDirectoryFilterPanel
+        basePath="/dashboard/agents"
+        idPrefix="agent"
+        minRating="3.5"
+        resultCount={1}
+        search="sum"
+      />
+    );
+
+    const desktopFilters = container.querySelector('section.hidden.md\\:block');
+    expect(desktopFilters).not.toBeNull();
+    expect(within(desktopFilters as HTMLElement).getByLabelText(/min rating/i)).toHaveAttribute(
+      'type',
+      'number'
+    );
+
+    const mobileFilters = container.querySelector('details.md\\:hidden');
+    const summary = within(mobileFilters as HTMLElement)
+      .getByText('Filters')
+      .closest('summary');
+    expect(summary).toHaveClass('min-h-11');
+    await user.click(summary as HTMLElement);
+    expect(mobileFilters).toHaveAttribute('open');
+    expect(within(mobileFilters as HTMLElement).getByLabelText(/search/i)).toHaveValue('sum');
   });
 
   it('uses leaderboard-specific worker labels and empty copy', () => {

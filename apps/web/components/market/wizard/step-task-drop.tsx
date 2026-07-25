@@ -10,6 +10,7 @@ import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Textarea } from '@/components/ui/textarea';
 import { trpc } from '@/lib/api/client';
+import type { WalletAccessStatus } from '@/components/privy-account-control';
 import { handleRadioGroupKeyDown, type CreateTaskFieldErrors } from '@/lib/market/create-task-form';
 import { cn } from '@/lib/utils';
 
@@ -36,13 +37,15 @@ const dropModes = [
 type DropMode = (typeof dropModes)[number]['value'];
 
 export function StepTaskDrop({
-  connectOrCreateWallet,
+  beginWalletAccess,
   fieldErrors,
   form,
+  walletActionStatus,
 }: {
-  connectOrCreateWallet: () => void | Promise<void>;
+  beginWalletAccess: (returnTargetId?: string) => void;
   fieldErrors: CreateTaskFieldErrors;
   form: UseFormReturn<WizardFormValues>;
+  walletActionStatus: WalletAccessStatus | 'unavailable';
 }) {
   const { address, isConnected } = useAccount();
   const taskDropMode = form.watch('taskDropMode');
@@ -55,6 +58,16 @@ export function StepTaskDrop({
     }
   );
   const drops = dropsQuery.data ?? [];
+  const walletAccessPending =
+    walletActionStatus === 'initializing' || walletActionStatus === 'wallet-loading';
+  const walletButtonLabel =
+    walletActionStatus === 'signed-out'
+      ? 'Sign in to load drops'
+      : walletActionStatus === 'initializing'
+        ? 'Loading sign in'
+        : walletActionStatus === 'wallet-loading'
+          ? 'Loading wallet'
+          : 'Connect wallet to load drops';
 
   function selectMode(value: DropMode) {
     const previousMode = form.getValues('taskDropMode');
@@ -133,8 +146,15 @@ export function StepTaskDrop({
               {!isConnected ? (
                 <div className="flex flex-col items-start gap-3 rounded-lg border border-border/68 bg-surface/42 p-3 text-sm leading-5 text-muted-foreground sm:flex-row sm:items-center sm:justify-between">
                   <p>Connect your wallet before publishing to load drops you own.</p>
-                  <Button onClick={connectOrCreateWallet} size="sm" type="button" variant="outline">
-                    Connect wallet to load drops
+                  <Button
+                    disabled={walletAccessPending || walletActionStatus === 'unavailable'}
+                    id="task-drop-wallet-access"
+                    onClick={() => beginWalletAccess('task-drop-wallet-access')}
+                    size="sm"
+                    type="button"
+                    variant="outline"
+                  >
+                    {walletButtonLabel}
                   </Button>
                 </div>
               ) : null}

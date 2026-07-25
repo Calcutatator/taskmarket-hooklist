@@ -84,10 +84,13 @@ vi.mock('next/link', () => ({
   ),
 }));
 
-const { mockAccount, mockFund, mockPrivyConnect } = vi.hoisted(() => ({
+const { mockAccount, mockAuth, mockFund, mockPrivyConnect } = vi.hoisted(() => ({
   mockAccount: {
     address: undefined as string | undefined,
     isConnected: false,
+  },
+  mockAuth: {
+    authenticated: false,
   },
   mockFund: vi.fn(),
   mockPrivyConnect: vi.fn(),
@@ -103,9 +106,14 @@ vi.mock('wagmi', () => ({
 vi.mock('@privy-io/react-auth', () => ({
   useFiatOnramp: () => ({ fund: mockFund }),
   usePrivy: () => ({
+    authenticated: mockAuth.authenticated,
     connectOrCreateWallet: mockPrivyConnect,
+    login: vi.fn(),
+    logout: vi.fn(),
     ready: true,
+    user: null,
   }),
+  useWallets: () => ({ ready: true, wallets: [] }),
 }));
 
 beforeEach(() => {
@@ -115,6 +123,7 @@ beforeEach(() => {
 afterEach(() => {
   mockAccount.address = undefined;
   mockAccount.isConnected = false;
+  mockAuth.authenticated = false;
   mockFund.mockClear();
   mockPrivyConnect.mockClear();
   vi.unstubAllGlobals();
@@ -368,6 +377,33 @@ describe('Task marketplace components', () => {
     expect(screen.getAllByText(/^human$/i).length).toBeGreaterThan(0);
   });
 
+  it('renders each compact mobile task as one obvious 144px detail link', () => {
+    render(<TaskTable tasks={[task]} />);
+
+    const mobileList = screen.getByRole('list', { name: /task cards/i });
+    const detailLinks = within(mobileList).getAllByRole('link');
+
+    expect(detailLinks).toHaveLength(1);
+    expect(detailLinks[0]).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
+    expect(detailLinks[0]).toHaveClass('h-36');
+    expect(within(mobileList).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/^auction$/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/^open$/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/2 bids/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/^due$/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/^reward$/i)).toBeInTheDocument();
+    expect(within(mobileList).getByText(/view task/i)).toBeInTheDocument();
+  });
+
+  it('keeps compact task facts in the mobile detail link accessible name', () => {
+    render(<TaskTable tasks={[task]} />);
+
+    const mobileList = screen.getByRole('list', { name: /task cards/i });
+    const detailLink = within(mobileList).getByRole('link');
+
+    expect(detailLink).toHaveAccessibleName(/auction.*open.*2 bids.*reward.*due.*view task/i);
+  });
+
   it('exposes sort controls that preserve the active filters', () => {
     render(
       <TaskListPageContent
@@ -376,6 +412,7 @@ describe('Task marketplace components', () => {
           selectedMode: 'auction',
           selectedSort: 'newest',
           selectedStatus: 'ALL',
+          selectedView: 'gallery',
           taskDropId: 'launch-drop',
         }}
         tasks={[task]}
@@ -384,7 +421,7 @@ describe('Task marketplace components', () => {
 
     expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc'
+      '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
   });
 
@@ -396,6 +433,7 @@ describe('Task marketplace components', () => {
           selectedMode: 'auction',
           selectedSort: 'newest',
           selectedStatus: 'open',
+          selectedView: 'gallery',
           taskDropId: 'launch-drop',
         }}
         pagination={{
@@ -415,15 +453,15 @@ describe('Task marketplace components', () => {
     );
     expect(within(pagination).getByRole('link', { name: /go to previous page/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&cursor=2026-06-11T09%3A00%3A00.000Z'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&view=gallery&cursor=2026-06-11T09%3A00%3A00.000Z'
     );
     expect(within(pagination).getByRole('link', { name: /go to next page/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&view=gallery&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
     );
     expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&sort=reward_desc'
+      '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
   });
 
@@ -1151,6 +1189,7 @@ describe('Task marketplace components', () => {
 
   it('lets disconnected viewers connect from the review summary', async () => {
     const user = userEvent.setup();
+    mockAuth.authenticated = true;
 
     render(
       <TaskDetailPanel
@@ -1202,6 +1241,7 @@ describe('Task marketplace components', () => {
 
   it('lets a wrong connected wallet switch from the review summary', async () => {
     const user = userEvent.setup();
+    mockAuth.authenticated = true;
     mockAccount.address = '0x9999999999999999999999999999999999999999';
     mockAccount.isConnected = true;
 

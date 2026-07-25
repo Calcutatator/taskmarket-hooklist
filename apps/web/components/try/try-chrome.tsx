@@ -5,6 +5,7 @@ import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
 import { isPrivyConfigured } from '@/lib/privy-config';
+import { rememberAuthReturnIntent } from '@/lib/auth-return-intent';
 
 const taskmarketIconSrc = '/taskmarket-final-icon-transparent.svg';
 
@@ -77,7 +78,10 @@ function TryHeaderContent({
           ) : (
             <Button
               disabled={!walletConfigurationAvailable || !ready}
-              onClick={() => login()}
+              onClick={() => {
+                rememberAuthReturnIntent();
+                login();
+              }}
               size="sm"
               type="button"
               variant="terminal"

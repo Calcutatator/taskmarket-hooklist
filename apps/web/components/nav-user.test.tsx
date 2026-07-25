@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { act, render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { NavUser } from './nav-user';
@@ -13,6 +13,8 @@ const { connectOrCreateWallet, login, logout, walletState } = vi.hoisted(() => (
     connector: undefined as { name: string } | undefined,
     isConnected: false,
     privyAddress: undefined as `0x${string}` | undefined,
+    ready: true,
+    walletsReady: true,
   },
 }));
 
@@ -34,7 +36,7 @@ vi.mock('@privy-io/react-auth', () => ({
       connectOrCreateWallet,
       login,
       logout,
-      ready: true,
+      ready: walletState.ready,
       user: authenticated ? { google: { email: 'user@example.com' } } : null,
     };
   },
@@ -42,7 +44,7 @@ vi.mock('@privy-io/react-auth', () => ({
     const address = walletState.privyAddress ?? walletState.address;
 
     return {
-      ready: true,
+      ready: walletState.walletsReady,
       wallets: address
         ? [
             {
@@ -102,6 +104,10 @@ describe('NavUser', () => {
     walletState.connector = undefined;
     walletState.isConnected = false;
     walletState.privyAddress = undefined;
+    walletState.ready = true;
+    walletState.walletsReady = true;
+    window.localStorage.clear();
+    window.sessionStorage.clear();
   });
 
   it('shows the connected wallet details and logs out from the account menu', async () => {
@@ -122,8 +128,12 @@ describe('NavUser', () => {
     expect(screen.getByRole('button', { name: /add usdc/i })).toBeEnabled();
     expect(screen.getByRole('button', { name: /switch wallet/i })).toBeEnabled();
 
+    window.localStorage.setItem('taskmarket:legal-receipt', 'receipt-1');
+    window.sessionStorage.setItem('taskmarket:task-access:private-task', 'grant-1');
     await user.click(screen.getByRole('button', { name: /log out/i }));
     expect(logout).toHaveBeenCalled();
+    expect(window.localStorage.getItem('taskmarket:legal-receipt')).toBeNull();
+    expect(window.sessionStorage.getItem('taskmarket:task-access:private-task')).toBeNull();
   });
 
   it('shows an explicit disconnected wallet state without avatar requests', () => {
@@ -142,6 +152,48 @@ describe('NavUser', () => {
 
     expect(login).toHaveBeenCalled();
     expect(connectOrCreateWallet).not.toHaveBeenCalled();
+  });
+
+  it('offers wallet creation to an authenticated user without a wallet', async () => {
+    const user = userEvent.setup();
+    walletState.authenticated = true;
+
+    render(<NavUser />);
+
+    await user.click(screen.getByRole('button', { name: /^connect wallet$/i }));
+
+    expect(connectOrCreateWallet).toHaveBeenCalledTimes(1);
+    expect(login).not.toHaveBeenCalled();
+  });
+
+  it('offers recovery when authenticated wallets stop hydrating', async () => {
+    vi.useFakeTimers();
+    walletState.authenticated = true;
+    walletState.walletsReady = false;
+
+    render(<NavUser />);
+
+    expect(screen.getByRole('button', { name: /^loading wallet$/i })).toBeDisabled();
+    expect(screen.queryByRole('button', { name: /^connect wallet$/i })).not.toBeInTheDocument();
+
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+
+    expect(screen.getByRole('button', { name: /^retry wallet$/i })).toBeEnabled();
+    vi.useRealTimers();
+  });
+
+  it('offers recovery when Privy readiness times out', async () => {
+    vi.useFakeTimers();
+    walletState.ready = false;
+
+    render(<NavUser />);
+
+    expect(screen.getByRole('button', { name: /^loading$/i })).toBeDisabled();
+
+    await act(() => vi.advanceTimersByTimeAsync(8000));
+
+    expect(screen.getByRole('button', { name: /^retry sign in$/i })).toBeEnabled();
+    vi.useRealTimers();
   });
 
   it('shows a Privy-authenticated wallet before wagmi reports a connection', () => {

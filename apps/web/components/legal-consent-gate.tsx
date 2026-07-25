@@ -15,8 +15,9 @@ import {
   DialogHeader,
   DialogTitle,
 } from '@/components/ui/dialog';
+import { clearClientAuthState } from '@/lib/clear-client-auth-state';
 import { acceptWebLegalBundle, getLegalStatus } from '@/lib/legal-api';
-import { clearLegalReceipt, setLegalReceipt } from '@/lib/legal-receipt';
+import { setLegalReceipt } from '@/lib/legal-receipt';
 
 type GateState =
   | { kind: 'idle' | 'checking' | 'accepted' | 'limited' }
@@ -29,6 +30,48 @@ const initialChecks = {
   risk: false,
   terms: false,
 };
+
+function ConsentRow({
+  checked,
+  children,
+  id,
+  onCheckedChange,
+  testId,
+}: {
+  checked: boolean;
+  children: React.ReactNode;
+  id: string;
+  onCheckedChange: (checked: boolean) => void;
+  testId: string;
+}) {
+  return (
+    <div
+      className="relative flex min-h-11 items-start gap-3 rounded-lg px-3 py-3 transition-colors hover:bg-muted/45 focus-within:bg-muted/45"
+      data-testid={testId}
+    >
+      <label
+        className="absolute inset-0 cursor-pointer rounded-lg"
+        data-testid={`${testId}-target`}
+        htmlFor={id}
+      >
+        <span className="sr-only">Toggle this legal acknowledgement</span>
+      </label>
+      <Checkbox
+        aria-labelledby={`${id}-label`}
+        checked={checked}
+        className="pointer-events-none relative z-10 mt-0.5"
+        id={id}
+        onCheckedChange={(value) => onCheckedChange(value === true)}
+      />
+      <span
+        className="pointer-events-none relative z-10 min-w-0 flex-1 leading-5"
+        id={`${id}-label`}
+      >
+        {children}
+      </span>
+    </div>
+  );
+}
 
 export function LegalConsentGate({ children }: { children: React.ReactNode }) {
   const { authenticated, logout, ready } = usePrivy();
@@ -47,7 +90,7 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
     }
     if (!ready) return;
     if (!authenticated) {
-      clearLegalReceipt();
+      clearClientAuthState();
       limitedBundleVersion.current = null;
       limitedAfterError.current = false;
       setState({ kind: 'idle' });
@@ -132,7 +175,7 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
   }
 
   async function signOutAndRead(): Promise<void> {
-    clearLegalReceipt();
+    clearClientAuthState();
     await logout();
   }
 
@@ -189,95 +232,83 @@ export function LegalConsentGate({ children }: { children: React.ReactNode }) {
                 </DialogDescription>
               </DialogHeader>
 
-              <div className="grid gap-3 rounded-xl border border-border/70 bg-background/45 p-4 text-sm">
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    aria-labelledby="legal-terms-label"
-                    checked={checks.terms}
-                    id="legal-terms"
-                    onCheckedChange={(checked) =>
-                      setChecks((current) => ({ ...current, terms: checked === true }))
-                    }
-                  />
-                  <span id="legal-terms-label">
-                    I agree to the{' '}
-                    <a
-                      className="font-semibold text-primary underline-offset-4 hover:underline"
-                      href={documentUrls.terms_of_service ?? '/legal/terms'}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Terms of Service
-                    </a>
-                    .
-                  </span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    aria-labelledby="legal-acceptable-use-label"
-                    checked={checks.acceptableUse}
-                    id="legal-acceptable-use"
-                    onCheckedChange={(checked) =>
-                      setChecks((current) => ({ ...current, acceptableUse: checked === true }))
-                    }
-                  />
-                  <span id="legal-acceptable-use-label">
-                    I agree to the{' '}
-                    <a
-                      className="font-semibold text-primary underline-offset-4 hover:underline"
-                      href={documentUrls.acceptable_use_policy ?? '/legal/acceptable-use'}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Acceptable Use Policy
-                    </a>
-                    .
-                  </span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    aria-labelledby="legal-risk-label"
-                    checked={checks.risk}
-                    id="legal-risk"
-                    onCheckedChange={(checked) =>
-                      setChecks((current) => ({ ...current, risk: checked === true }))
-                    }
-                  />
-                  <span id="legal-risk-label">
-                    I acknowledge the{' '}
-                    <a
-                      className="font-semibold text-primary underline-offset-4 hover:underline"
-                      href={documentUrls.risk_disclosure ?? '/legal/risks'}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Risk Disclosure
-                    </a>
-                    , including smart-contract, stablecoin, agent, and counterparty risks.
-                  </span>
-                </div>
-                <div className="flex items-start gap-3">
-                  <Checkbox
-                    aria-labelledby="legal-privacy-label"
-                    checked={checks.privacy}
-                    id="legal-privacy"
-                    onCheckedChange={(checked) =>
-                      setChecks((current) => ({ ...current, privacy: checked === true }))
-                    }
-                  />
-                  <span id="legal-privacy-label">
-                    I confirm that I received the{' '}
-                    <a
-                      className="font-semibold text-primary underline-offset-4 hover:underline"
-                      href={documentUrls.privacy_policy ?? '/legal/privacy'}
-                      rel="noreferrer"
-                      target="_blank"
-                    >
-                      Privacy Policy
-                    </a>
-                    . This is an acknowledgement of notice, not blanket consent to all processing.
-                  </span>
-                </div>
+              <div className="grid gap-1 rounded-xl border border-border/70 bg-background/45 p-1 text-sm sm:p-2">
+                <ConsentRow
+                  checked={checks.terms}
+                  id="legal-terms"
+                  onCheckedChange={(checked) =>
+                    setChecks((current) => ({ ...current, terms: checked }))
+                  }
+                  testId="legal-consent-terms"
+                >
+                  I agree to the{' '}
+                  <a
+                    className="pointer-events-auto relative z-20 font-semibold text-primary underline-offset-4 hover:underline"
+                    href={documentUrls.terms_of_service ?? '/legal/terms'}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Terms of Service
+                  </a>
+                  .
+                </ConsentRow>
+                <ConsentRow
+                  checked={checks.acceptableUse}
+                  id="legal-acceptable-use"
+                  onCheckedChange={(checked) =>
+                    setChecks((current) => ({ ...current, acceptableUse: checked }))
+                  }
+                  testId="legal-consent-acceptable-use"
+                >
+                  I agree to the{' '}
+                  <a
+                    className="pointer-events-auto relative z-20 font-semibold text-primary underline-offset-4 hover:underline"
+                    href={documentUrls.acceptable_use_policy ?? '/legal/acceptable-use'}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Acceptable Use Policy
+                  </a>
+                  .
+                </ConsentRow>
+                <ConsentRow
+                  checked={checks.risk}
+                  id="legal-risk"
+                  onCheckedChange={(checked) =>
+                    setChecks((current) => ({ ...current, risk: checked }))
+                  }
+                  testId="legal-consent-risk"
+                >
+                  I acknowledge the{' '}
+                  <a
+                    className="pointer-events-auto relative z-20 font-semibold text-primary underline-offset-4 hover:underline"
+                    href={documentUrls.risk_disclosure ?? '/legal/risks'}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Risk Disclosure
+                  </a>
+                  , including smart-contract, stablecoin, agent, and counterparty risks.
+                </ConsentRow>
+                <ConsentRow
+                  checked={checks.privacy}
+                  id="legal-privacy"
+                  onCheckedChange={(checked) =>
+                    setChecks((current) => ({ ...current, privacy: checked }))
+                  }
+                  testId="legal-consent-privacy"
+                >
+                  I confirm that I received the{' '}
+                  <a
+                    className="pointer-events-auto relative z-20 font-semibold text-primary underline-offset-4 hover:underline"
+                    href={documentUrls.privacy_policy ?? '/legal/privacy'}
+                    rel="noreferrer"
+                    target="_blank"
+                  >
+                    Privacy Policy
+                  </a>
+                  . This is an acknowledgement of notice, not blanket consent to all processing.
+                </ConsentRow>
               </div>
 
               <p className="rounded-lg border border-border/70 bg-muted/35 p-3 text-sm leading-6 text-foreground">

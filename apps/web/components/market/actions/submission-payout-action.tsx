@@ -1,7 +1,6 @@
 'use client';
 
 import type { PendingAction, TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
-import { usePrivy } from '@privy-io/react-auth';
 import { useState } from 'react';
 import { useAccount } from 'wagmi';
 
@@ -12,6 +11,7 @@ import {
   usePaidActionFundingPrompt,
 } from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
+import { usePrivyAccountState } from '@/components/privy-account-control';
 import { compactAddress, formatUsdcUnits } from '@/lib/format';
 import { isPrivyConfigured } from '@/lib/privy-config';
 
@@ -131,17 +131,41 @@ export function PrivyWalletActionButton({ label }: { label: string }) {
 }
 
 function PrivyWalletActionButtonInner({ label }: { label: string }) {
-  const { connectOrCreateWallet, ready } = usePrivy();
+  const { beginWalletAccess, connectOrCreateWallet, readyTimedOut, walletActionStatus } =
+    usePrivyAccountState();
+  const loading = walletActionStatus === 'initializing' || walletActionStatus === 'wallet-loading';
+  const buttonLabel =
+    walletActionStatus === 'initializing'
+      ? readyTimedOut
+        ? 'Retry sign in'
+        : 'Loading sign in'
+      : walletActionStatus === 'wallet-loading'
+        ? readyTimedOut
+          ? 'Retry wallet'
+          : 'Loading wallet'
+        : walletActionStatus === 'signed-out'
+          ? 'Sign in'
+          : walletActionStatus === 'walletless'
+            ? 'Connect wallet'
+            : label;
 
   return (
     <Button
-      disabled={!ready}
-      onClick={() => connectOrCreateWallet()}
+      disabled={loading && !readyTimedOut}
+      onClick={() => {
+        if (loading && readyTimedOut) {
+          window.location.reload();
+        } else if (walletActionStatus === 'connected') {
+          void connectOrCreateWallet();
+        } else {
+          beginWalletAccess();
+        }
+      }}
       size="sm"
       type="button"
       variant="outline"
     >
-      {label}
+      {buttonLabel}
     </Button>
   );
 }

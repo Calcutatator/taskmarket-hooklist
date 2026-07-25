@@ -10,6 +10,7 @@ export const TASK_SORT_OPTIONS = [
 ] as const;
 
 export type TaskSortValue = (typeof TASK_SORT_OPTIONS)[number]['value'];
+export type TaskListView = 'table' | 'gallery';
 
 const TASK_SORT_VALUES = TASK_SORT_OPTIONS.map(
   (option) => option.value
@@ -21,6 +22,10 @@ function parseSort(value?: string): TaskSortValue {
   return TASK_SORT_VALUES.includes(value as TaskSortValue)
     ? (value as TaskSortValue)
     : DEFAULT_TASK_SORT;
+}
+
+function parseView(value?: string): TaskListView {
+  return value === 'gallery' ? 'gallery' : 'table';
 }
 
 // Query params are untrusted -- a stale bookmark, crafted URL, or crawler can put
@@ -46,6 +51,7 @@ export type TaskSearchParams = {
   status?: string;
   tags?: string;
   taskDropId?: string;
+  view?: string;
   worker?: string;
 };
 
@@ -66,6 +72,7 @@ export type ParsedTaskFilters = {
   selectedMode: string;
   selectedSort: TaskSortValue;
   selectedStatus: string;
+  selectedView: TaskListView;
   sort?: TaskSortValue;
   status?: string;
   tags?: string[];
@@ -151,6 +158,7 @@ export function parseTaskFilters(
     selectedMode: params.mode ?? 'ALL',
     selectedSort,
     selectedStatus: status ?? 'ALL',
+    selectedView: parseView(params.view),
     sort: selectedSort === DEFAULT_TASK_SORT ? undefined : selectedSort,
     status: status === 'ALL' ? undefined : status,
     tags: parseTags(params.tags),
@@ -200,6 +208,9 @@ export function taskFiltersHref(
   }
   if (next.worker) {
     params.set('worker', next.worker);
+  }
+  if (next.view === 'gallery') {
+    params.set('view', next.view);
   }
   if (next.cursor) {
     params.set('cursor', next.cursor);

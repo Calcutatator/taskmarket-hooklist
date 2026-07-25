@@ -261,9 +261,33 @@ export function DashboardProtocolContent() {
         </div>
       </section>
 
+      <nav
+        aria-label="Protocol sections"
+        className="sticky top-12 z-20 overflow-x-auto border-b border-border/58 bg-background/92 px-4 backdrop-blur sm:px-6 lg:px-8"
+      >
+        <div className="mx-auto flex w-max min-w-full max-w-7xl items-center gap-1 py-2">
+          {[
+            ['Standards', '#standards'],
+            ['Internal EIPs', '#internal-eips'],
+            ['Flow', '#settlement-flow'],
+            ['Mode selectors', '#mode-selectors'],
+            ['Contracts', '#deployed-contracts'],
+            ['Safety', '#safety'],
+          ].map(([label, href]) => (
+            <a
+              className="inline-flex min-h-11 shrink-0 items-center rounded-md px-3 font-mono text-xs font-semibold uppercase tracking-wide text-muted-foreground transition-colors hover:bg-primary/10 hover:text-primary focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring"
+              href={href}
+              key={href}
+            >
+              {label}
+            </a>
+          ))}
+        </div>
+      </nav>
+
       <section
         aria-labelledby="dashboard-protocol-standards-title"
-        className="border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        className="scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
         id="standards"
       >
         <div className="mx-auto grid w-full max-w-7xl gap-8">
@@ -288,7 +312,7 @@ export function DashboardProtocolContent() {
 
       <section
         aria-labelledby="dashboard-protocol-flow-title"
-        className="border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        className="scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
         id="settlement-flow"
       >
         <div className="mx-auto grid w-full max-w-7xl gap-8">
@@ -307,8 +331,10 @@ export function DashboardProtocolContent() {
 
       <section
         aria-labelledby="dashboard-protocol-surface-title"
-        className="border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        className="relative scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        id="internal-eips"
       >
+        <span aria-hidden className="absolute -top-24" id="interfaces" />
         <div className="mx-auto grid w-full max-w-7xl gap-8">
           <SectionHeading
             kicker="Internal interfaces"
@@ -317,9 +343,55 @@ export function DashboardProtocolContent() {
           />
           <Card>
             <CardContent className="pt-6">
-              {internalInterfaces.map((protocolInterface) => (
-                <InterfaceRow key={protocolInterface.label} {...protocolInterface} />
-              ))}
+              <div
+                className="divide-y divide-border/62 md:hidden"
+                data-testid="dashboard-protocol-mobile-interfaces"
+              >
+                {internalInterfaces.map((protocolInterface) => (
+                  <details key={protocolInterface.label}>
+                    <summary className="flex min-h-11 cursor-pointer list-none items-center py-3 font-mono text-sm font-semibold tracking-tight marker:content-none">
+                      {protocolInterface.label}
+                    </summary>
+                    <p className="pb-4 text-sm leading-6 text-muted-foreground">
+                      {protocolInterface.body}
+                    </p>
+                  </details>
+                ))}
+              </div>
+              <div className="hidden md:block">
+                {internalInterfaces.map((protocolInterface) => (
+                  <InterfaceRow key={protocolInterface.label} {...protocolInterface} />
+                ))}
+              </div>
+            </CardContent>
+          </Card>
+        </div>
+      </section>
+
+      <section
+        aria-labelledby="dashboard-protocol-selectors-title"
+        className="scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        id="mode-selectors"
+      >
+        <div className="mx-auto grid w-full max-w-7xl gap-8">
+          <SectionHeading
+            kicker="Selectors"
+            subtitle="Canonical selectors let clients detect task mechanics before sending a transaction."
+            title="Mode selectors"
+          />
+          <Card>
+            <CardHeader>
+              <CardTitle id="dashboard-protocol-selectors-title">Advertised capabilities</CardTitle>
+            </CardHeader>
+            <CardContent>
+              <p className="mb-4 text-sm leading-6 text-muted-foreground">
+                Canonical selectors any TMP-compatible contract advertises via ERC-165 and ITMPMode.
+              </p>
+              <div className="flex flex-wrap gap-2">
+                {modeSelectors.map((selector) => (
+                  <SelectorPill key={selector} selector={selector} />
+                ))}
+              </div>
             </CardContent>
           </Card>
         </div>
@@ -327,7 +399,7 @@ export function DashboardProtocolContent() {
 
       <section
         aria-labelledby="dashboard-protocol-contracts-title"
-        className="border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        className="scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
         id="deployed-contracts"
       >
         <div className="mx-auto grid w-full max-w-7xl gap-8">
@@ -365,28 +437,18 @@ export function DashboardProtocolContent() {
 
       <section
         aria-labelledby="dashboard-protocol-rules-title"
-        className="border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        className="scroll-mt-24 border-b border-border/58 px-4 py-16 sm:px-6 sm:py-20 lg:px-8"
+        id="safety"
       >
-        <div className="mx-auto grid w-full max-w-7xl gap-8 lg:grid-cols-[minmax(0,1fr)_minmax(20rem,0.85fr)]">
+        <div className="mx-auto grid w-full max-w-7xl gap-8">
+          <SectionHeading
+            kicker="Safety"
+            subtitle="Settlement and refund invariants that protect every funded task."
+            title="Safety rules"
+          />
           <Card>
             <CardHeader>
-              <CardTitle>Mode selectors</CardTitle>
-            </CardHeader>
-            <CardContent>
-              <p className="mb-4 text-sm leading-6 text-muted-foreground">
-                Canonical selectors any TMP-compatible contract advertises via ERC-165 and ITMPMode.
-              </p>
-              <div className="flex flex-wrap gap-2">
-                {modeSelectors.map((selector) => (
-                  <SelectorPill key={selector} selector={selector} />
-                ))}
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card>
-            <CardHeader>
-              <CardTitle>Safety rules</CardTitle>
+              <CardTitle id="dashboard-protocol-rules-title">Fund protection</CardTitle>
             </CardHeader>
             <CardContent>
               <ul>

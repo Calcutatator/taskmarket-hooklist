@@ -150,7 +150,44 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
           </p>
         </div>
 
-        <div className="grid grid-cols-[minmax(0,1fr)] sm:grid-cols-2 xl:grid-cols-4">
+        <div className="divide-y divide-border/58 sm:hidden" data-testid="mobile-footer-columns">
+          {footerColumns.map(([title, links]) => (
+            <details key={title}>
+              <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between px-6 py-3 font-mono text-[0.68rem] font-semibold uppercase tracking-widest text-primary marker:content-none">
+                {title}
+                <span aria-hidden className="text-base text-muted-foreground">
+                  +
+                </span>
+              </summary>
+              <nav
+                aria-label={`${title} mobile footer links`}
+                className="grid grid-cols-[minmax(0,1fr)] gap-1 px-6 pb-4"
+              >
+                {links.map(([label, href]) =>
+                  href.startsWith('/skill.md') ? (
+                    <a
+                      className="flex min-h-11 items-center text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
+                      href={href}
+                      key={`${label}-${href}`}
+                    >
+                      {label}
+                    </a>
+                  ) : (
+                    <Link
+                      className="flex min-h-11 items-center text-sm font-medium tracking-tight text-foreground transition-colors hover:text-primary"
+                      href={href as Route}
+                      key={`${label}-${href}`}
+                    >
+                      {label}
+                    </Link>
+                  )
+                )}
+              </nav>
+            </details>
+          ))}
+        </div>
+
+        <div className="hidden grid-cols-[minmax(0,1fr)] sm:grid sm:grid-cols-2 xl:grid-cols-4">
           {footerColumns.map(([title, links], index) => (
             <div
               className={`grid grid-cols-[minmax(0,1fr)] content-start gap-4 border-border/58 p-6 sm:p-8 lg:p-12 ${
@@ -228,7 +265,7 @@ export function PublicSiteFooter({ stats = {} }: { stats?: LandingStats }) {
 
       <div
         aria-hidden="true"
-        className="relative isolate overflow-hidden border-t border-border/58 bg-background/74"
+        className="relative isolate hidden overflow-hidden border-t border-border/58 bg-background/74 sm:block"
       >
         <span
           className="task-market-cta-dither"

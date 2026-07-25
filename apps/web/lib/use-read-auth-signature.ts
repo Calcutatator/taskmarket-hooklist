@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { useSignMessage } from 'wagmi';
 import {
   buildReadAuthMessage,
@@ -17,11 +17,26 @@ import { clearCachedReadAuthHeaders, setCachedReadAuthHeaders } from './read-aut
 // callers still run their query, just without caller-scoped data, same as any
 // other anonymous reader. Returns whether a verified signature is currently
 // cached, so callers can invalidate/refetch once it becomes available.
-export function useReadAuthSignature(address: `0x${string}` | undefined): boolean {
+export type ReadAuthSignatureState = {
+  error: string | null;
+  ready: boolean;
+  requestSignature: () => void;
+  status: 'idle' | 'signing' | 'ready' | 'error';
+};
+
+export function useReadAuthSignatureState(
+  address: `0x${string}` | undefined,
+  { autoStart = true }: { autoStart?: boolean } = {}
+): ReadAuthSignatureState {
   const { signMessageAsync } = useSignMessage();
   const [readyFor, setReadyFor] = useState<string | undefined>(undefined);
+  const [attempt, setAttempt] = useState(autoStart ? 1 : 0);
+  const [requestedFor, setRequestedFor] = useState<string | undefined>(undefined);
+  const [status, setStatus] = useState<ReadAuthSignatureState['status']>('idle');
+  const [error, setError] = useState<string | null>(null);
   const requestIdRef = useRef(0);
   const pendingRef = useRef<{
+    attempt: number;
     address: `0x${string}`;
     normalizedAddress: string;
     promise: Promise<`0x${string}`>;
@@ -29,22 +44,48 @@ export function useReadAuthSignature(address: `0x${string}` | undefined): boolea
   } | null>(null);
   const normalizedAddress = address?.toLowerCase();
 
+  const requestSignature = useCallback(() => {
+    if (!normalizedAddress) return;
+    setRequestedFor(normalizedAddress);
+    setAttempt((current) => current + 1);
+  }, [normalizedAddress]);
+
   useEffect(() => {
     if (!address) {
       requestIdRef.current += 1;
       pendingRef.current = null;
       clearCachedReadAuthHeaders();
       setReadyFor(undefined);
+      setRequestedFor(undefined);
+      setError(null);
+      setStatus('idle');
+      return;
+    }
+
+    if (!autoStart && requestedFor !== normalizedAddress) {
+      requestIdRef.current += 1;
+      pendingRef.current = null;
+      clearCachedReadAuthHeaders();
+      setReadyFor(undefined);
+      setError(null);
+      setStatus('idle');
       return;
     }
 
     const currentNormalizedAddress = address.toLowerCase();
     let pending = pendingRef.current;
-    if (!pending || pending.normalizedAddress !== currentNormalizedAddress) {
+    if (
+      !pending ||
+      pending.normalizedAddress !== currentNormalizedAddress ||
+      pending.attempt !== attempt
+    ) {
       const requestId = ++requestIdRef.current;
       clearCachedReadAuthHeaders();
       setReadyFor(undefined);
+      setError(null);
+      setStatus('signing');
       pending = {
+        attempt,
         address,
         normalizedAddress: currentNormalizedAddress,
         promise: signMessageAsync({ message: buildReadAuthMessage(address) }),
@@ -63,11 +104,15 @@ export function useReadAuthSignature(address: `0x${string}` | undefined): boolea
           [READ_AUTH_SIGNATURE_HEADER]: signature,
         });
         setReadyFor(currentPending.normalizedAddress);
+        setError(null);
+        setStatus('ready');
       })
       .catch(() => {
         if (!active || requestIdRef.current !== currentPending.requestId) return;
         clearCachedReadAuthHeaders();
         setReadyFor(undefined);
+        setError('The wallet did not approve the verification request. Try again.');
+        setStatus('error');
       });
 
     // A wallet signature can settle after this consumer has unmounted. Keep the
@@ -76,7 +121,16 @@ export function useReadAuthSignature(address: `0x${string}` | undefined): boolea
     return () => {
       active = false;
     };
-  }, [address, normalizedAddress, signMessageAsync]);
+  }, [address, attempt, autoStart, normalizedAddress, requestedFor, signMessageAsync]);
 
-  return Boolean(normalizedAddress && readyFor === normalizedAddress);
+  return {
+    error,
+    ready: Boolean(normalizedAddress && readyFor === normalizedAddress),
+    requestSignature,
+    status,
+  };
+}
+
+export function useReadAuthSignature(address: `0x${string}` | undefined): boolean {
+  return useReadAuthSignatureState(address).ready;
 }

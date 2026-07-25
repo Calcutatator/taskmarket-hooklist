@@ -78,7 +78,7 @@ const publicRoutes = [
   { heading: /Leaderboard/i, path: '/dashboard/leaderboard' },
   { heading: /Task Market Protocol/i, path: '/dashboard/protocol' },
   { heading: /^Agent setup$/i, path: '/dashboard/for-agents' },
-  { heading: /Latest activity/i, path: '/dashboard' },
+  { heading: /Marketplace overview/i, path: '/dashboard' },
 ];
 
 for (const route of publicRoutes) {
@@ -131,7 +131,7 @@ test('shows weekly active agents alongside registered agents on the dashboard', 
   await expect(metrics.getByText('Registered agents', { exact: true })).toBeVisible();
 });
 
-test('keeps the primary marketplace path navigable from the landing page', async ({
+test('keeps the primary public marketplace path navigable from the landing page', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Primary landing nav is hidden on mobile.');
@@ -142,7 +142,7 @@ test('keeps the primary marketplace path navigable from the landing page', async
     .getByRole('navigation', { name: /^Primary$/i })
     .getByRole('link', { name: /^Tasks$/i })
     .click();
-  await expect(page).toHaveURL(/\/dashboard\/tasks$/);
+  await expect(page).toHaveURL(/\/tasks$/);
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();
@@ -154,6 +154,7 @@ test('keeps the top-level market routes public instead of redirecting them', asy
   await expect(
     page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
   ).toBeVisible();
+  await page.waitForLoadState('networkidle');
 
   await page.goto('/protocol');
   await expect(page).toHaveURL(/\/protocol$/);
@@ -199,7 +200,11 @@ test('guides task visitors into human or agent participation', async ({ page }) 
 
   const participation = page.getByTestId('task-participation');
   await expect(participation.getByRole('heading', { name: /Want to take this on/i })).toBeVisible();
-  await expect(participation.getByRole('button', { name: /Upload files/i })).toBeVisible();
+  await expect(participation.getByRole('button', { name: /Sign in unavailable/i })).toBeDisabled();
+  await expect(
+    participation.getByRole('button', { name: /Connect wallet to upload/i })
+  ).toHaveCount(0);
+  await expect(participation.getByRole('button', { name: /^Upload files$/i })).toHaveCount(0);
   await expect(participation.getByRole('link', { name: /How this works/i })).toHaveAttribute(
     'href',
     '/dashboard/task-types'
@@ -396,8 +401,8 @@ test('keeps primary mobile chrome controls at touch size', async ({ page }, test
 
 test('runs the /try prompt-to-brief path with loaded proof images and keyboard order', async ({
   page,
-}) => {
-  await page.goto('/try');
+}, testInfo) => {
+  await page.goto('/try', { waitUntil: 'networkidle' });
 
   const heroHeading = page.getByRole('heading', { name: /A custom infographic for \$1\./i });
   const topic = page.getByLabel('What should yours explain?', { exact: true }).first();
@@ -405,7 +410,16 @@ test('runs the /try prompt-to-brief path with loaded proof images and keyboard o
   await expect(heroHeading).toBeVisible();
   await expect(topic).toBeVisible();
   await page.keyboard.press('Tab');
-  await expect(page.getByRole('link', { name: /Skip to content/i })).toBeFocused();
+  const skipLink = page.getByRole('link', { name: /Skip to content/i });
+  if (
+    testInfo.project.name.includes('webkit') &&
+    !(await skipLink.evaluate((node) => node.matches(':focus')))
+  ) {
+    // Mobile Safari does not include links in sequential keyboard focus unless
+    // Full Keyboard Access is enabled, but the skip link must remain directly focusable.
+    await skipLink.focus();
+  }
+  await expect(skipLink).toBeFocused();
   const builderTop = await page
     .locator('#try-builder')
     .evaluate((node) => Math.round(node.getBoundingClientRect().top));
@@ -414,6 +428,13 @@ test('runs the /try prompt-to-brief path with loaded proof images and keyboard o
 
   await topic.focus();
   await page.keyboard.press('Tab');
+  if (
+    testInfo.project.name.includes('webkit') &&
+    !(await buildButton.evaluate((node) => node.matches(':focus')))
+  ) {
+    // The same Mobile Safari setting can omit form controls from sequential focus.
+    await buildButton.focus();
+  }
   await expect(buildButton).toBeFocused();
 
   await topic.fill('Why battery storage keeps getting cheaper');
@@ -447,7 +468,7 @@ test('explains when /try publication is unavailable without Privy', async ({ pag
     'This fallback is only rendered when Privy is not configured.'
   );
 
-  await page.goto('/try');
+  await page.goto('/try', { waitUntil: 'networkidle' });
   await page
     .getByLabel('What should yours explain?', { exact: true })
     .first()
@@ -456,6 +477,9 @@ test('explains when /try publication is unavailable without Privy', async ({ pag
     .getByRole('button', { name: /Build my brief/i })
     .first()
     .click();
+  await expect(page.getByLabel(/Infographic topic/i)).toHaveValue(
+    'How heat pumps move more energy than they consume'
+  );
   await page.getByLabel(/Target audience/i).fill('Homeowners comparing heating systems');
   await page.getByRole('button', { name: /Review and fund/i }).click();
 

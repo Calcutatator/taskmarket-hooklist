@@ -82,4 +82,30 @@ describe('task filters', () => {
     expect(filters.selectedStatus).toBe('open');
     expect(filters.status).toBe('open');
   });
+
+  it('uses the compact table as the deterministic default view', () => {
+    expect(parseTaskFilters({}).selectedView).toBe('table');
+    expect(parseTaskFilters({ view: 'mosaic' }).selectedView).toBe('table');
+  });
+
+  it('serializes only an explicit gallery view', () => {
+    expect(taskFiltersHref('/tasks', { view: 'table' })).toBe('/tasks');
+    expect(taskFiltersHref('/tasks', { view: 'gallery' })).toBe('/tasks?view=gallery');
+  });
+
+  it('preserves gallery with filters and drops cursors when they are explicitly reset', () => {
+    const href = taskFiltersHref(
+      '/tasks',
+      {
+        cursor: 'next-page',
+        cursorStack: 'first-page',
+        mode: 'auction',
+        sort: 'reward_desc',
+        view: 'gallery',
+      },
+      { cursor: '', cursorStack: '', status: 'open' }
+    );
+
+    expect(href).toBe('/tasks?mode=auction&status=open&sort=reward_desc&view=gallery');
+  });
 });

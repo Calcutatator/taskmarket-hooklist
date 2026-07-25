@@ -1,11 +1,8 @@
 import { render, screen } from '@testing-library/react';
-import userEvent from '@testing-library/user-event';
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import type { TaskResponse } from '@taskmarket/shared';
 
 import { TaskListBoard } from './task-thumbnail';
-
-const STORAGE_KEY = 'taskmarket.task-list-view';
 
 // TaskTable pulls in the full task detail/actions tree; the board test only cares
 // about the view-toggle island, so stub TaskTable to echo the view it receives.
@@ -45,69 +42,49 @@ const task: TaskResponse = {
   phase: 'active',
 };
 
-beforeEach(() => {
-  window.localStorage.clear();
-});
-
-afterEach(() => {
-  window.localStorage.clear();
-  vi.restoreAllMocks();
-});
-
 describe('TaskListBoard', () => {
-  it('defaults to the gallery view', async () => {
-    render(<TaskListBoard tasks={[task]} />);
-
-    // The gallery button is pressed by default and the table receives the gallery view.
-    expect(await screen.findByTestId('task-table')).toHaveTextContent('view:gallery');
-    expect(screen.getByRole('button', { name: /gallery view/i })).toHaveAttribute(
-      'aria-pressed',
-      'true'
-    );
-    expect(screen.getByRole('button', { name: /table view/i })).toHaveAttribute(
-      'aria-pressed',
-      'false'
-    );
-  });
-
-  it('persists the chosen view to localStorage when toggled', async () => {
-    const user = userEvent.setup();
-    render(<TaskListBoard tasks={[task]} />);
-
-    await user.click(screen.getByRole('button', { name: /table view/i }));
+  it('renders the compact table as the deterministic default view', () => {
+    render(<TaskListBoard currentFilters={{}} tasks={[task]} view="table" />);
 
     expect(screen.getByTestId('task-table')).toHaveTextContent('view:table');
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('table');
-
-    await user.click(screen.getByRole('button', { name: /gallery view/i }));
-
-    expect(screen.getByTestId('task-table')).toHaveTextContent('view:gallery');
-    expect(window.localStorage.getItem(STORAGE_KEY)).toBe('gallery');
-  });
-
-  it('restores a previously stored table view after mount', async () => {
-    window.localStorage.setItem(STORAGE_KEY, 'table');
-
-    render(<TaskListBoard tasks={[task]} />);
-
-    expect(await screen.findByText('view:table')).toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /table view/i })).toHaveAttribute(
-      'aria-pressed',
-      'true'
+    expect(screen.getByRole('link', { name: /gallery view/i })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: /table view/i })).toHaveAttribute(
+      'aria-current',
+      'page'
     );
   });
 
-  it('ignores an invalid stored value and stays on the gallery default', async () => {
-    window.localStorage.setItem(STORAGE_KEY, 'mosaic');
+  it('links between URL-backed views while preserving filters and sort but resetting pagination', () => {
+    render(
+      <TaskListBoard
+        basePath="/tasks"
+        currentFilters={{
+          cursor: 'next-page',
+          cursorStack: 'first-page',
+          mode: 'auction',
+          sort: 'reward_desc',
+          status: 'open',
+          view: 'gallery',
+        }}
+        tasks={[task]}
+        view="gallery"
+      />
+    );
 
-    render(<TaskListBoard tasks={[task]} />);
-
-    expect(await screen.findByText('view:gallery')).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /table view/i })).toHaveAttribute(
+      'href',
+      '/tasks?mode=auction&status=open&sort=reward_desc'
+    );
+    expect(screen.getByRole('link', { name: /gallery view/i })).toHaveAttribute(
+      'href',
+      '/tasks?mode=auction&status=open&sort=reward_desc&view=gallery'
+    );
+    expect(screen.getByTestId('task-table')).toHaveTextContent('view:gallery');
   });
 
   it('hides the toggle when there are no tasks to lay out', () => {
-    render(<TaskListBoard tasks={[]} />);
+    render(<TaskListBoard currentFilters={{}} tasks={[]} view="table" />);
 
-    expect(screen.queryByRole('button', { name: /gallery view/i })).not.toBeInTheDocument();
+    expect(screen.queryByRole('link', { name: /gallery view/i })).not.toBeInTheDocument();
   });
 });

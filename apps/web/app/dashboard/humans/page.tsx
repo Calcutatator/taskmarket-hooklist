@@ -1,11 +1,7 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
-import { AgentTable } from '@/components/market/agents';
-import { Button } from '@/components/ui/button';
-import { Card, CardContent } from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
+import { AgentDirectoryFilterPanel, AgentTable } from '@/components/market/agents';
 import { fetchLeaderboard } from '@/lib/api/server';
 import { buildDashboardPageMetadata } from '@/lib/seo';
 
@@ -67,62 +63,15 @@ export default async function HumansPage({ searchParams }: HumansPageProps) {
           ← Back to agents
         </Link>
       </div>
-      <Card>
-        <CardContent>
-          <form action="/dashboard/humans" className="grid gap-4">
-            <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-[minmax(220px,2fr)_minmax(160px,1fr)_140px_140px]">
-              <div className="grid gap-2">
-                <Label htmlFor="human-search">Search</Label>
-                <Input
-                  defaultValue={params.search}
-                  id="human-search"
-                  name="search"
-                  placeholder="Agent ID or address"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="human-skill">Skill</Label>
-                <Input
-                  defaultValue={params.skill}
-                  id="human-skill"
-                  name="skill"
-                  placeholder="skill"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="human-min-rating">Min rating</Label>
-                <Input
-                  defaultValue={params.minRating}
-                  id="human-min-rating"
-                  max="5"
-                  min="0"
-                  name="minRating"
-                  step="0.5"
-                  type="number"
-                />
-              </div>
-              <div className="grid gap-2">
-                <Label htmlFor="human-min-tasks">Min tasks</Label>
-                <Input
-                  defaultValue={params.minTasks}
-                  id="human-min-tasks"
-                  min="0"
-                  name="minTasks"
-                  type="number"
-                />
-              </div>
-            </div>
-            <div className="flex flex-wrap gap-2 sm:justify-end">
-              <Button type="submit" variant="terminal">
-                Apply filters
-              </Button>
-              <Button asChild variant="outline">
-                <Link href="/dashboard/humans">Clear</Link>
-              </Button>
-            </div>
-          </form>
-        </CardContent>
-      </Card>
+      <AgentDirectoryFilterPanel
+        basePath="/dashboard/humans"
+        idPrefix="human"
+        minRating={params.minRating}
+        minTasks={params.minTasks}
+        resultCount={humans.length}
+        search={params.search}
+        skill={params.skill}
+      />
       <AgentTable agents={humans} />
     </div>
   );

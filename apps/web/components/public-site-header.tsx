@@ -3,9 +3,11 @@
 import { MenuIcon } from 'lucide-react';
 import type { Route } from 'next';
 import Link from 'next/link';
+import { usePathname } from 'next/navigation';
 import { useState } from 'react';
 
 import { AnimatedTaskmarketLogo } from '@/components/animated-taskmarket-logo';
+import { PrivyHeaderAccountControl } from '@/components/privy-account-control';
 import { Button } from '@/components/ui/button';
 import {
   Sheet,
@@ -17,10 +19,11 @@ import {
 } from '@/components/ui/sheet';
 
 const navLinks: ReadonlyArray<readonly [string, Route]> = [
-  ['Tasks', '/dashboard/tasks'],
-  ['Agents', '/dashboard/agents'],
-  ['Humans', '/dashboard/humans'],
-  ['Protocol', '/dashboard/protocol'],
+  ['Tasks', '/tasks'],
+  ['Agents', '/agents'],
+  ['Humans', '/humans'],
+  ['Leaderboard', '/leaderboard'],
+  ['Protocol', '/protocol'],
 ];
 
 function BrandLink() {
@@ -33,6 +36,9 @@ function BrandLink() {
 
 export function PublicSiteHeader() {
   const [open, setOpen] = useState(false);
+  const pathname = usePathname();
+
+  const isActive = (href: Route) => pathname === href || pathname.startsWith(`${href}/`);
 
   return (
     <header className="task-market-glass-navbar relative z-[2] w-full bg-background/32 backdrop-blur-2xl">
@@ -40,11 +46,16 @@ export function PublicSiteHeader() {
         <BrandLink />
         <nav
           aria-label="Primary"
-          className="hidden items-center rounded-full border border-white/10 bg-white/[0.035] p-1 shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)] md:flex"
+          className="hidden items-center rounded-full border border-border/58 bg-background/32 p-1 shadow-[var(--shadow-control)] md:flex"
         >
           {navLinks.map(([label, href]) => (
             <Link
-              className="rounded-full px-3 py-1.5 text-sm font-medium tracking-tight text-muted-foreground transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:bg-white/[0.075] hover:text-foreground hover:shadow-[inset_0_1px_0_rgb(255_255_255_/_0.08)]"
+              aria-current={isActive(href) ? 'page' : undefined}
+              className={`rounded-full px-3 py-1.5 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:bg-surface-2/58 hover:text-foreground hover:shadow-[var(--shadow-control)] ${
+                isActive(href)
+                  ? 'bg-surface-2/58 text-foreground shadow-[var(--shadow-control)]'
+                  : 'text-muted-foreground'
+              }`}
               href={href}
               key={href}
             >
@@ -53,7 +64,8 @@ export function PublicSiteHeader() {
           ))}
         </nav>
         <div className="flex items-center gap-2">
-          <Button asChild size="sm" variant="terminal">
+          <PrivyHeaderAccountControl targetId="public-wallet-connect" />
+          <Button asChild className="hidden sm:inline-flex" size="sm" variant="terminal">
             <Link href="/dashboard">Dashboard</Link>
           </Button>
           <Sheet onOpenChange={setOpen} open={open}>
@@ -73,7 +85,10 @@ export function PublicSiteHeader() {
                 {navLinks.map(([label, href]) => (
                   <SheetClose asChild key={href}>
                     <Link
-                      className="rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-white/[0.06] hover:text-primary"
+                      aria-current={isActive(href) ? 'page' : undefined}
+                      className={`flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-surface-2/58 hover:text-primary ${
+                        isActive(href) ? 'bg-surface-2/58 text-primary' : ''
+                      }`}
                       href={href}
                     >
                       {label}
@@ -82,12 +97,15 @@ export function PublicSiteHeader() {
                 ))}
                 <SheetClose asChild>
                   <Link
-                    className="rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-white/[0.06] hover:text-primary"
+                    className="rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-surface-2/58 hover:text-primary"
                     href="/dashboard"
                   >
                     Dashboard
                   </Link>
                 </SheetClose>
+                <div className="mt-3 border-t border-border/58 pt-4">
+                  <PrivyHeaderAccountControl targetId="public-mobile-wallet-connect" />
+                </div>
               </nav>
             </SheetContent>
           </Sheet>

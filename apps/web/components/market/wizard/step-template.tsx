@@ -158,7 +158,7 @@ export function StepTemplate({
         })}
       </div>
 
-      <div className="sticky bottom-4 z-10 grid gap-4 rounded-xl border border-border/68 bg-surface/58 p-4 shadow-[var(--shadow-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
+      <div className="safe-area-sticky-bottom sticky z-10 grid gap-4 rounded-xl border border-border/68 bg-surface/58 p-4 shadow-[var(--shadow-control)] sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center">
         <div className="grid gap-1">
           <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
             {selectedTemplate.label}

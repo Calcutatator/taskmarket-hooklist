@@ -18,8 +18,8 @@ export default function AccountPage() {
       <header className="mb-6 grid gap-2">
         <h1 className="font-mono text-2xl font-black uppercase">Account</h1>
         <p className="text-sm text-muted-foreground">
-          Sign in by clicking Sign in (top-right of every page) - connect a wallet, or use email to
-          get one automatically.
+          Sign in with email, Google, or an existing wallet. If you are new, Taskmarket can create a
+          wallet for you automatically.
         </p>
         <p className="text-sm text-muted-foreground">
           Once signed in, register an onchain identity linked to your wallet. Identities created

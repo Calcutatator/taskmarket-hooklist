@@ -8,6 +8,11 @@ import {
   type WizardLockConfig,
 } from '@/components/market/create-task-wizard';
 import { formatUsdcUnits } from '@/lib/format';
+import {
+  getSessionStorageItem,
+  removeSessionStorageItem,
+  setSessionStorageItem,
+} from '@/lib/safe-session-storage';
 import type { TryDrop } from '@/lib/try/drops';
 import { emitTryFunnelEvent, type TryFunnelEventName } from '@/lib/try/events';
 
@@ -17,6 +22,7 @@ import { TryHero } from './try-hero';
 import { TryHowItWorks } from './try-how-it-works';
 
 const TRY_REWARD_USD = '1';
+const TRY_DRAFT_STORAGE_KEY = 'taskmarket:try-draft:v1';
 const TRY_PLATFORM_FEE_BPS = BigInt(process.env.NEXT_PUBLIC_PLATFORM_FEE_BPS ?? 750);
 const TRY_REWARD_BASE_UNITS = 1_000_000n;
 const TRY_WORKER_PAYOUT_USD = formatUsdcUnits(
@@ -47,6 +53,7 @@ export function TryExperience({ drops }: TryExperienceProps) {
   const [promptValue, setPromptValue] = useState('');
   const [submittedTopic, setSubmittedTopic] = useState('');
   const [wizardVersion, setWizardVersion] = useState(0);
+  const [draftRestored, setDraftRestored] = useState(false);
   const builderRef = useRef<HTMLElement>(null);
   const closingInputRef = useRef<HTMLInputElement>(null);
   const heroInputRef = useRef<HTMLInputElement>(null);
@@ -55,6 +62,43 @@ export function TryExperience({ drops }: TryExperienceProps) {
   useEffect(() => {
     emitTryFunnelEvent({ name: 'try_view' });
   }, []);
+
+  useEffect(() => {
+    try {
+      const stored = getSessionStorageItem(TRY_DRAFT_STORAGE_KEY);
+      if (stored) {
+        const draft = JSON.parse(stored) as {
+          promptValue?: unknown;
+          submittedTopic?: unknown;
+          version?: unknown;
+        };
+        if (draft.version === 1) {
+          if (typeof draft.promptValue === 'string') {
+            setPromptValue(draft.promptValue);
+          }
+          if (typeof draft.submittedTopic === 'string') {
+            setSubmittedTopic(draft.submittedTopic);
+          }
+        } else {
+          removeSessionStorageItem(TRY_DRAFT_STORAGE_KEY);
+        }
+      }
+    } catch {
+      removeSessionStorageItem(TRY_DRAFT_STORAGE_KEY);
+    } finally {
+      setDraftRestored(true);
+    }
+  }, []);
+
+  useEffect(() => {
+    if (!draftRestored) {
+      return;
+    }
+    setSessionStorageItem(
+      TRY_DRAFT_STORAGE_KEY,
+      JSON.stringify({ promptValue, submittedTopic, version: 1 })
+    );
+  }, [draftRestored, promptValue, submittedTopic]);
 
   useEffect(() => {
     const node = builderRef.current;
@@ -150,6 +194,9 @@ export function TryExperience({ drops }: TryExperienceProps) {
 
   const handleWizardEvent = useCallback((event: WizardFunnelEvent) => {
     emitTryFunnelEvent({ name: WIZARD_EVENT_NAMES[event.name], source: 'wizard' });
+    if (event.name === 'task_published') {
+      removeSessionStorageItem(TRY_DRAFT_STORAGE_KEY);
+    }
   }, []);
 
   const lock: WizardLockConfig = useMemo(

@@ -604,7 +604,7 @@ ui-ci:
 		pnpm --filter @taskmarket/web test:e2e
 
 ui-ci-install-browsers:
-	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps chromium
+	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps chromium webkit
 
 clean:
 	$(ENV_LOADER) && pnpm turbo clean

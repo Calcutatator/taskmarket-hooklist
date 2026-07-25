@@ -18,7 +18,7 @@ function DialogOverlay({
   return (
     <DialogPrimitive.Overlay
       className={cn(
-        'fixed inset-0 z-50 bg-background/80 data-[state=closed]:animate-out data-[state=open]:animate-in',
+        'fixed inset-0 z-50 h-app-viewport bg-background/80 data-[state=closed]:animate-out data-[state=open]:animate-in',
         className
       )}
       data-slot="dialog-overlay"
@@ -37,14 +37,14 @@ function DialogContent({
       <DialogOverlay />
       <DialogPrimitive.Content
         className={cn(
-          'fixed left-1/2 top-1/2 z-50 grid w-[calc(100%-2rem)] max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 rounded-xl border border-border/72 bg-card p-6 text-card-foreground shadow-[var(--shadow-elevated)]',
+          'safe-area-dialog-surface fixed left-1/2 top-1/2 z-50 grid max-w-lg -translate-x-1/2 -translate-y-1/2 gap-4 overflow-y-auto rounded-xl border border-border/72 bg-card p-6 text-card-foreground shadow-[var(--shadow-elevated)]',
           className
         )}
         data-slot="dialog-content"
         {...props}
       >
         {children}
-        <DialogPrimitive.Close className="absolute right-4 top-4 inline-flex size-8 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-colors hover:border-border/70 hover:bg-surface/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30">
+        <DialogPrimitive.Close className="absolute right-2 top-2 inline-flex size-11 items-center justify-center rounded-full border border-transparent text-muted-foreground transition-colors hover:border-border/70 hover:bg-surface/70 hover:text-foreground focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-ring/30 sm:right-4 sm:top-4 sm:size-8">
           <XIcon className="size-4" />
           <span className="sr-only">Close</span>
         </DialogPrimitive.Close>

@@ -89,6 +89,7 @@ export function DashboardActivityChart({
       title="Marketplace activity"
     >
       <TrendAreaChart
+        animate={false}
         data={chartData}
         series={SERIES}
         valueFormatter={(value) => formatNumber(value)}

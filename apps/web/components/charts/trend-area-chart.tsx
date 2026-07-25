@@ -5,7 +5,7 @@ import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis } from 'recharts';
 import type { CurveType } from 'recharts/types/shape/Curve';
 import type { DataKey } from 'recharts/types/util/types';
 
-import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
+import { useHydrationSafeMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import {
   ChartContainer,
   ChartLegend,
@@ -29,6 +29,7 @@ export type TrendAreaChartProps<T extends Record<string, unknown>> = {
   data: T[];
   xKey: keyof T & string;
   series: TrendSeries[];
+  animate?: boolean;
   height?: number;
   xTickFormatter?: (value: string) => string;
   valueFormatter?: (value: number) => string;
@@ -49,6 +50,7 @@ export function TrendAreaChart<T extends Record<string, unknown>>({
   data,
   xKey,
   series,
+  animate = true,
   height = DEFAULT_HEIGHT,
   xTickFormatter,
   valueFormatter,
@@ -58,7 +60,7 @@ export function TrendAreaChart<T extends Record<string, unknown>>({
   referenceLabel,
   className,
 }: TrendAreaChartProps<T>) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
 
   const visibleSeries = series.slice(0, MAX_SERIES);
   if (series.length > MAX_SERIES) {
@@ -131,7 +133,7 @@ export function TrendAreaChart<T extends Record<string, unknown>>({
             fill={`url(#fill-${entry.key})`}
             stroke={`var(--color-${entry.key})`}
             stackId={stacked ? 'stack' : undefined}
-            isAnimationActive={!motionDisabled}
+            isAnimationActive={animate && !motionDisabled}
           />
         ))}
         {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}

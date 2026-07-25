@@ -9,7 +9,8 @@ import {
 } from '@tabler/icons-react';
 
 import { FundWalletButton } from '@/components/market/fund-wallet-button';
-import { usePrivyAccountState } from '@/components/privy-account-control';
+import { usePrivyAccountState, type WalletAccessStatus } from '@/components/privy-account-control';
+import { clearClientAuthState } from '@/lib/clear-client-auth-state';
 import { Avatar, AvatarFallback } from '@/components/ui/avatar';
 import {
   DropdownMenu,
@@ -34,12 +35,13 @@ export function NavUser() {
   if (!isPrivyConfigured()) {
     return (
       <NavUserContent
+        beginWalletAccess={() => undefined}
         connectOrCreateWallet={() => undefined}
         connected={false}
         isMobile={isMobile}
-        login={() => undefined}
         logout={() => undefined}
-        ready={false}
+        readyTimedOut={false}
+        walletAccessStatus="unavailable"
         walletDetail="Not connected"
       />
     );
@@ -49,18 +51,27 @@ export function NavUser() {
 }
 
 function NavUserWithPrivy({ isMobile }: { isMobile: boolean }) {
-  const { address, connectOrCreateWallet, connected, login, logout, ready, walletDetail } =
-    usePrivyAccountState();
+  const {
+    address,
+    beginWalletAccess,
+    connectOrCreateWallet,
+    connected,
+    logout,
+    readyTimedOut,
+    walletAccessStatus,
+    walletDetail,
+  } = usePrivyAccountState();
 
   return (
     <NavUserContent
       address={address}
+      beginWalletAccess={beginWalletAccess}
       connectOrCreateWallet={connectOrCreateWallet}
       connected={connected}
       isMobile={isMobile}
-      login={login}
       logout={logout}
-      ready={ready}
+      readyTimedOut={readyTimedOut}
+      walletAccessStatus={walletAccessStatus}
       walletDetail={walletDetail}
     />
   );
@@ -68,21 +79,23 @@ function NavUserWithPrivy({ isMobile }: { isMobile: boolean }) {
 
 function NavUserContent({
   address,
+  beginWalletAccess,
   connectOrCreateWallet,
   connected,
   isMobile,
-  login,
   logout,
-  ready,
+  readyTimedOut,
+  walletAccessStatus,
   walletDetail,
 }: {
   address?: string;
+  beginWalletAccess: () => void;
   connectOrCreateWallet: () => void | Promise<void>;
   connected: boolean;
   isMobile: boolean;
-  login: () => void;
   logout: () => void | Promise<void>;
-  ready: boolean;
+  readyTimedOut: boolean;
+  walletAccessStatus: WalletAccessStatus | 'unavailable';
   walletDetail: string;
 }) {
   const walletLabel = connected && address ? compactAddress(address) : 'Wallet';
@@ -139,15 +152,46 @@ function NavUserContent({
                   <IconRefresh />
                   Switch wallet
                 </DropdownMenuItem>
-                <DropdownMenuItem onSelect={() => logout()}>
+                <DropdownMenuItem
+                  onSelect={() => {
+                    clearClientAuthState();
+                    void logout();
+                  }}
+                >
                   <IconLogout />
                   Log out
                 </DropdownMenuItem>
               </>
             ) : (
-              <DropdownMenuItem disabled={!ready} onSelect={() => login()}>
-                {ready ? <IconLogin /> : <IconWallet />}
-                Sign in
+              <DropdownMenuItem
+                disabled={
+                  walletAccessStatus === 'unavailable' ||
+                  ((walletAccessStatus === 'wallet-loading' ||
+                    walletAccessStatus === 'initializing') &&
+                    !readyTimedOut)
+                }
+                onSelect={
+                  (walletAccessStatus === 'initializing' ||
+                    walletAccessStatus === 'wallet-loading') &&
+                  readyTimedOut
+                    ? () => window.location.reload()
+                    : beginWalletAccess
+                }
+              >
+                {walletAccessStatus === 'signed-out' ? <IconLogin /> : <IconWallet />}
+                {walletAccessStatus === 'unavailable'
+                  ? 'Wallet unavailable'
+                  : walletAccessStatus === 'initializing'
+                    ? readyTimedOut
+                      ? 'Retry sign in'
+                      : 'Loading'
+                    : walletAccessStatus === 'wallet-loading'
+                      ? readyTimedOut
+                        ? 'Retry wallet'
+                        : 'Loading wallet'
+                      : walletAccessStatus === 'walletless'
+                        ? 'Connect wallet'
+                        : 'Sign in'}
               </DropdownMenuItem>
             )}
           </DropdownMenuContent>

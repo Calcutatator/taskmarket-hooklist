@@ -2,11 +2,11 @@
 
 import { useEffect, useRef, useState, type ReactNode } from 'react';
 import { useForm } from 'react-hook-form';
-import { usePrivy } from '@privy-io/react-auth';
 import { AnimatePresence, motion } from 'motion/react';
 import { useAccount } from 'wagmi';
 
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
+import { usePrivyAccountState, type WalletAccessStatus } from '@/components/privy-account-control';
 import { StepBrief } from '@/components/market/wizard/step-brief';
 import { StepPublish } from '@/components/market/wizard/step-publish';
 import { StepTaskDrop } from '@/components/market/wizard/step-task-drop';
@@ -30,6 +30,11 @@ import {
   taskTemplates,
 } from '@/lib/market/task-templates';
 import { isPrivyConfigured } from '@/lib/privy-config';
+import {
+  getSessionStorageItem,
+  removeSessionStorageItem,
+  setSessionStorageItem,
+} from '@/lib/safe-session-storage';
 
 export type WizardFormValues = CreateTaskFormValues & { templateId: TaskTemplate['id'] };
 
@@ -98,6 +103,52 @@ const WIZARD_STEPS = [
 
 const CAMPAIGN_STEPS = [{ label: 'Brief' }, { label: 'Fund & publish' }];
 const STEP_EASE = [0.16, 1, 0.3, 1] as const;
+const TASK_DRAFT_VERSION = 1;
+
+type StoredTaskDraft = {
+  campaignBriefState: WizardCampaignBriefState;
+  stepIndex: 0 | 1 | 2 | 3;
+  values: WizardFormValues;
+  version: typeof TASK_DRAFT_VERSION;
+};
+
+function taskDraftStorageKey(variant: WizardVariant, lock?: WizardLockConfig) {
+  if (!lock) {
+    return `taskmarket:create-task-draft:v${TASK_DRAFT_VERSION}:${variant}:custom`;
+  }
+
+  const scope = `${lock.templateId}\u0000${lock.reward}\u0000${lock.prefillFirstToken ?? ''}`;
+  let fingerprint = 2166136261;
+  for (let index = 0; index < scope.length; index += 1) {
+    fingerprint ^= scope.charCodeAt(index);
+    fingerprint = Math.imul(fingerprint, 16777619);
+  }
+
+  return `taskmarket:create-task-draft:v${TASK_DRAFT_VERSION}:${variant}:${lock.templateId}:${(fingerprint >>> 0).toString(36)}`;
+}
+
+function readTaskDraft(key: string): StoredTaskDraft | null {
+  try {
+    const stored = getSessionStorageItem(key);
+    if (!stored) {
+      return null;
+    }
+    const draft = JSON.parse(stored) as Partial<StoredTaskDraft>;
+    if (
+      draft.version !== TASK_DRAFT_VERSION ||
+      !draft.values ||
+      !draft.campaignBriefState ||
+      ![0, 1, 2, 3].includes(draft.stepIndex ?? -1)
+    ) {
+      removeSessionStorageItem(key);
+      return null;
+    }
+    return draft as StoredTaskDraft;
+  } catch {
+    removeSessionStorageItem(key);
+    return null;
+  }
+}
 
 function StepTransition({
   children,
@@ -186,13 +237,14 @@ export function CreateTaskWizard({
   if (!isPrivyConfigured()) {
     return (
       <CreateTaskWizardContent
-        connectOrCreateWallet={() => undefined}
+        beginWalletAccess={() => undefined}
         initialMarketStats={initialMarketStats}
         lock={lock}
         onDirtyChange={onDirtyChange}
         onFunnelEvent={onFunnelEvent}
         ready={false}
         variant={variant}
+        walletActionStatus="unavailable"
         walletConfigurationAvailable={false}
       />
     );
@@ -216,39 +268,42 @@ function CreateTaskWizardWithPrivy({
   onFunnelEvent,
   variant = 'default',
 }: CreateTaskWizardInternalProps) {
-  const { connectOrCreateWallet, ready } = usePrivy();
+  const { beginWalletAccess, ready, walletActionStatus } = usePrivyAccountState();
 
   return (
     <CreateTaskWizardContent
-      connectOrCreateWallet={connectOrCreateWallet}
+      beginWalletAccess={beginWalletAccess}
       initialMarketStats={initialMarketStats}
       lock={lock}
       onDirtyChange={onDirtyChange}
       onFunnelEvent={onFunnelEvent}
       ready={ready}
       variant={variant}
+      walletActionStatus={walletActionStatus}
       walletConfigurationAvailable
     />
   );
 }
 
 function CreateTaskWizardContent({
-  connectOrCreateWallet,
+  beginWalletAccess,
   initialMarketStats,
   lock,
   onDirtyChange,
   onFunnelEvent,
   ready,
   variant,
+  walletActionStatus,
   walletConfigurationAvailable,
 }: {
-  connectOrCreateWallet: () => void | Promise<void>;
+  beginWalletAccess: (returnTargetId?: string) => void;
   initialMarketStats: MarketStats | null;
   lock?: WizardLockConfig;
   onDirtyChange?: (dirty: boolean) => void;
   onFunnelEvent?: (event: WizardFunnelEvent) => void;
   ready: boolean;
   variant: WizardVariant;
+  walletActionStatus: WalletAccessStatus | 'unavailable';
   walletConfigurationAvailable: boolean;
 }) {
   const { address } = useAccount();
@@ -262,6 +317,8 @@ function CreateTaskWizardContent({
     initialCampaignBriefState(lock)
   );
   const [mounted, setMounted] = useState(false);
+  const draftStorageKey = taskDraftStorageKey(variant, lock);
+  const draftHydratedRef = useRef(false);
   const formRef = useRef<HTMLFormElement>(null);
   const headingRef = useRef<HTMLHeadingElement>(null);
   const lastConnectedWalletRef = useRef<string | undefined>(undefined);
@@ -272,8 +329,48 @@ function CreateTaskWizardContent({
   const { isDirty } = form.formState;
 
   useEffect(() => {
+    const draft = readTaskDraft(draftStorageKey);
+    if (draft) {
+      form.reset(
+        {
+          ...initialFormValues(lock),
+          ...draft.values,
+          accessPassword: '',
+        },
+        { keepDefaultValues: true }
+      );
+      setCampaignBriefState(draft.campaignBriefState);
+      setStepIndex(draft.stepIndex);
+    } else if (lock) {
+      form.reset(initialFormValues(lock), { keepDefaultValues: true });
+      setCampaignBriefState(initialCampaignBriefState(lock));
+      setStepIndex(1);
+    }
+    draftHydratedRef.current = true;
     setMounted(true);
-  }, []);
+  }, [draftStorageKey, form, lock]);
+
+  useEffect(() => {
+    function saveDraft() {
+      if (!draftHydratedRef.current) {
+        return;
+      }
+      const values = form.getValues();
+      setSessionStorageItem(
+        draftStorageKey,
+        JSON.stringify({
+          campaignBriefState,
+          stepIndex,
+          values: { ...values, accessPassword: '' },
+          version: TASK_DRAFT_VERSION,
+        } satisfies StoredTaskDraft)
+      );
+    }
+
+    saveDraft();
+    const subscription = form.watch(saveDraft);
+    return () => subscription.unsubscribe();
+  }, [campaignBriefState, draftStorageKey, form, stepIndex]);
 
   useEffect(() => {
     if (!address) {
@@ -532,9 +629,10 @@ function CreateTaskWizardContent({
             {stepIndex === 2 && variant !== 'campaign' ? (
               <>
                 <StepTaskDrop
-                  connectOrCreateWallet={connectOrCreateWallet}
+                  beginWalletAccess={beginWalletAccess}
                   fieldErrors={fieldErrors}
                   form={form}
+                  walletActionStatus={walletActionStatus}
                 />
                 <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-between">
                   <Button onClick={() => goToStep(1)} type="button" variant="ghost">
@@ -550,15 +648,17 @@ function CreateTaskWizardContent({
             {stepIndex === 3 ? (
               <>
                 <StepPublish
-                  connectOrCreateWallet={connectOrCreateWallet}
+                  beginWalletAccess={beginWalletAccess}
                   form={form}
                   marketStats={initialMarketStats}
                   onEditBrief={() => goToStep(1)}
                   onEditDrop={() => goToStep(2)}
                   onFunnelEvent={onFunnelEvent}
+                  onPublished={() => removeSessionStorageItem(draftStorageKey)}
                   onValidationError={handlePublishValidationError}
                   ready={mounted && ready}
                   variant={variant}
+                  walletActionStatus={walletActionStatus}
                   walletConfigurationAvailable={walletConfigurationAvailable}
                 />
                 {variant === 'campaign' ? null : (

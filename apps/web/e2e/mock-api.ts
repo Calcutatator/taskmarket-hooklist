@@ -19,6 +19,7 @@ import type {
   SubmissionResponse,
   TaskDetailResponse,
   TaskDropDirectoryResponse,
+  TaskDropPageData,
   TaskModeType,
   TaskResponse,
 } from '@taskmarket/shared';
@@ -1309,10 +1310,34 @@ function dataForProcedure(procedure: string, input: unknown) {
           (input as { agentId?: unknown }).agentId ?? (input as { address?: unknown }).address ?? ''
         )
       : '';
+  const taskDropId =
+    typeof input === 'object' && input !== null && 'taskDropId' in input
+      ? String((input as { taskDropId?: unknown }).taskDropId)
+      : '';
 
   switch (procedure) {
     case 'tasks.list':
       return filteredTasksFromInput(input);
+    case 'taskDrops.get': {
+      const directoryItem = taskDropDirectoryResponse.items.find(
+        (item) => item.drop.id === taskDropId
+      );
+      if (!directoryItem) return null;
+
+      return {
+        drop: directoryItem.drop,
+        tasks: tasks.slice(0, 6).map((taskItem) => ({
+          createdAt: taskItem.createdAt,
+          description: taskItem.description,
+          expiryTime: taskItem.expiryTime,
+          id: taskItem.id,
+          mode: taskItem.mode,
+          reward: taskItem.reward,
+          status: taskItem.status,
+          tags: taskItem.tags,
+        })),
+      } satisfies TaskDropPageData;
+    }
     case 'claims.getByTask':
       return claimsByTaskId.get(taskId) ?? null;
     case 'pitches.listByTask':

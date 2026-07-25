@@ -40,11 +40,14 @@ export function SiteHeader() {
 
   return (
     <header className="flex h-(--header-height) shrink-0 items-center gap-2 border-b border-border/58 bg-background/72 backdrop-blur transition-[width,height] ease-linear group-has-data-[collapsible=icon]/sidebar-wrapper:h-(--header-height)">
-      <div className="flex w-full items-center gap-1 px-4 lg:gap-2 lg:px-6">
+      <div className="flex min-w-0 w-full items-center gap-1 px-2 min-[361px]:px-4 lg:gap-2 lg:px-6">
         <SidebarTrigger className="-ml-1" />
-        <Separator orientation="vertical" className="mx-2 data-[orientation=vertical]:h-4" />
-        <h1 className="truncate text-base font-medium">{routeTitle(pathname)}</h1>
-        <div className="ml-auto flex items-center gap-2">
+        <Separator
+          orientation="vertical"
+          className="mx-2 max-[360px]:hidden data-[orientation=vertical]:h-4"
+        />
+        <h1 className="min-w-0 flex-1 truncate text-base font-medium">{routeTitle(pathname)}</h1>
+        <div className="flex shrink-0 items-center gap-2">
           <PrivyHeaderAccountControl />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a href="/skill.md" className="dark:text-foreground">
@@ -52,7 +55,7 @@ export function SiteHeader() {
             </a>
           </Button>
           {showPostTaskCta ? (
-            <Button asChild className="min-h-11 sm:min-h-9" size="sm">
+            <Button asChild className="min-h-11 max-[360px]:hidden sm:min-h-9" size="sm">
               <Link href="/dashboard/tasks/new">Post a task</Link>
             </Button>
           ) : null}

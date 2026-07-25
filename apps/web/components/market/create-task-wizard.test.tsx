@@ -6,15 +6,21 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { CreateTaskWizard } from './create-task-wizard';
 
 const {
+  authState,
   connectOrCreateWallet,
   exchangeRateData,
   fund,
+  login,
   router,
   signTypedDataAsync,
   switchChainAsync,
   taskDropRows,
   walletState,
 } = vi.hoisted(() => ({
+  authState: {
+    authenticated: false,
+    walletsReady: true,
+  },
   connectOrCreateWallet: vi.fn(),
   exchangeRateData: {
     current: undefined as
@@ -22,6 +28,7 @@ const {
       | undefined,
   },
   fund: vi.fn(),
+  login: vi.fn(),
   router: {
     push: vi.fn(),
   },
@@ -69,10 +76,14 @@ vi.mock('wagmi', () => ({
 vi.mock('@privy-io/react-auth', () => ({
   useFiatOnramp: () => ({ fund }),
   usePrivy: () => ({
-    authenticated: walletState.isConnected,
+    authenticated: authState.authenticated || walletState.isConnected,
     connectOrCreateWallet,
+    login,
+    logout: vi.fn(),
     ready: true,
+    user: null,
   }),
+  useWallets: () => ({ ready: authState.walletsReady, wallets: [] }),
 }));
 
 class ResizeObserverStub {
@@ -146,6 +157,7 @@ describe('CreateTaskWizard', () => {
     vi.unstubAllEnvs();
     vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
     connectOrCreateWallet.mockClear();
+    login.mockClear();
     fund.mockClear();
     router.push.mockClear();
     taskDropRows.length = 0;
@@ -155,11 +167,68 @@ describe('CreateTaskWizard', () => {
     switchChainAsync.mockResolvedValue(undefined);
     walletState.address = undefined;
     walletState.isConnected = false;
+    authState.authenticated = false;
+    authState.walletsReady = true;
     exchangeRateData.current = undefined;
+    window.sessionStorage.clear();
     vi.stubGlobal('fetch', vi.fn());
   });
 
-  it('connects a wallet inline before submitting a new task', async () => {
+  it('remains usable when session storage access is blocked', () => {
+    const error = new DOMException('Storage is unavailable', 'SecurityError');
+    const getItem = vi.spyOn(Storage.prototype, 'getItem').mockImplementation(() => {
+      throw error;
+    });
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw error;
+    });
+
+    try {
+      expect(() => render(<CreateTaskWizard initialMarketStats={null} />)).not.toThrow();
+      expect(screen.getByRole('button', { name: /write the brief/i })).toBeEnabled();
+    } finally {
+      getItem.mockRestore();
+      removeItem.mockRestore();
+    }
+  });
+
+  it('remains usable when saving a task draft exceeds the storage quota', async () => {
+    const user = userEvent.setup();
+    const setItem = vi.spyOn(Storage.prototype, 'setItem').mockImplementation(() => {
+      throw new DOMException('Storage quota exceeded', 'QuotaExceededError');
+    });
+
+    try {
+      expect(() => render(<CreateTaskWizard initialMarketStats={null} />)).not.toThrow();
+      await gotoBriefFromCustom(user);
+      await fillBrief(user);
+      expect(screen.getByLabelText(/description/i)).toHaveValue(VALID_BRIEF);
+    } finally {
+      setItem.mockRestore();
+    }
+  });
+
+  it('restores an unfinished task draft after the page is reloaded', async () => {
+    const user = userEvent.setup();
+    const firstRender = render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+    await fillBrief(user, {
+      description: 'Restore this mobile task brief after wallet handoff.',
+      reward: '42',
+    });
+    firstRender.unmount();
+
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    expect(await screen.findByRole('heading', { name: /write the brief/i })).toBeInTheDocument();
+    expect(screen.getByLabelText(/description/i)).toHaveValue(
+      'Restore this mobile task brief after wallet handoff.'
+    );
+    expect(screen.getByLabelText(/^reward/i)).toHaveValue(42);
+  });
+
+  it('signs in before connecting a wallet to submit a new task', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
@@ -167,11 +236,28 @@ describe('CreateTaskWizard', () => {
 
     // The publish button is disabled until the wizard mounts (a useEffect flips
     // `ready`), so wait for it to enable before clicking to avoid a no-op click.
+    const connectButton = screen.getByRole('button', { name: /sign in to post/i });
+    await waitFor(() => expect(connectButton).toBeEnabled());
+    await user.click(connectButton);
+
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(connectOrCreateWallet).not.toHaveBeenCalled();
+    expect(globalThis.fetch).not.toHaveBeenCalled();
+  });
+
+  it('connects a wallet after authentication before submitting a new task', async () => {
+    const user = userEvent.setup();
+    authState.authenticated = true;
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoPublishFromCustom(user);
+
     const connectButton = screen.getByRole('button', { name: /connect wallet to post/i });
     await waitFor(() => expect(connectButton).toBeEnabled());
     await user.click(connectButton);
 
-    expect(connectOrCreateWallet).toHaveBeenCalled();
+    expect(connectOrCreateWallet).toHaveBeenCalledTimes(1);
+    expect(login).not.toHaveBeenCalled();
     expect(globalThis.fetch).not.toHaveBeenCalled();
   });
 
@@ -355,7 +441,7 @@ describe('CreateTaskWizard', () => {
     expect(screen.getByText(/primary logo/i, { exact: false })).toBeInTheDocument();
   });
 
-  it('lets disconnected users connect from the existing-drop choice', async () => {
+  it('signs in before loading drops for a disconnected user', async () => {
     const user = userEvent.setup();
     render(<CreateTaskWizard initialMarketStats={null} />);
 
@@ -364,11 +450,12 @@ describe('CreateTaskWizard', () => {
     await user.click(screen.getByRole('button', { name: /continue to task drop/i }));
     await user.click(await screen.findByRole('radio', { name: /existing drop/i }));
 
-    const connectButton = screen.getByRole('button', { name: /connect wallet to load drops/i });
+    const connectButton = screen.getByRole('button', { name: /sign in to load drops/i });
     expect(connectButton).toBeEnabled();
     await user.click(connectButton);
 
-    expect(connectOrCreateWallet).toHaveBeenCalled();
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(connectOrCreateWallet).not.toHaveBeenCalled();
   });
 
   it('shows the selected existing drop name in the publish review', async () => {
@@ -783,12 +870,15 @@ describe('CreateTaskWizard', () => {
       />
     );
     await user.click(screen.getByRole('button', { name: /review and fund/i }));
-    const connectButton = screen.getByRole('button', { name: /connect to fund \$1/i });
+    const connectButton = screen.getByRole('button', { name: /sign in to fund \$1/i });
     await waitFor(() => expect(connectButton).toBeEnabled());
     await user.click(connectButton);
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'connect_started' });
+    expect(login).toHaveBeenCalledTimes(1);
+    expect(connectOrCreateWallet).not.toHaveBeenCalled();
 
     unmount();
+    window.sessionStorage.clear();
     onFunnelEvent.mockClear();
     walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
     walletState.isConnected = true;
@@ -818,7 +908,11 @@ describe('CreateTaskWizard', () => {
 
   it('emits payment and published events around a successful campaign checkout', async () => {
     const user = userEvent.setup();
-    const onFunnelEvent = vi.fn();
+    const onFunnelEvent = vi.fn((event: { name: string }) => {
+      if (event.name === 'task_published') {
+        throw new Error('Analytics unavailable');
+      }
+    });
     walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
     walletState.isConnected = true;
 
@@ -859,6 +953,67 @@ describe('CreateTaskWizard', () => {
     );
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'payment_started' });
     expect(onFunnelEvent).toHaveBeenCalledWith({ name: 'task_published' });
+  });
+
+  it('navigates once after publication when draft cleanup fails', async () => {
+    const user = userEvent.setup();
+    walletState.address = '0x1234567890abcdef1234567890abcdef12345678';
+    walletState.isConnected = true;
+    const removeItem = vi.spyOn(Storage.prototype, 'removeItem').mockImplementation(() => {
+      throw new DOMException('Storage is unavailable', 'SecurityError');
+    });
+    const fetchMock = vi
+      .fn()
+      .mockResolvedValueOnce({
+        ok: true,
+        json: async () => ({ balanceBaseUnits: '1000000', balanceUsdc: '1.000000' }),
+      })
+      .mockResolvedValueOnce({
+        json: async () => PAYMENT_TERMS,
+        ok: false,
+        status: 402,
+      })
+      .mockResolvedValueOnce({
+        json: async () => ({ taskId: '0xpublished' }),
+        ok: true,
+      });
+    vi.stubGlobal('fetch', fetchMock);
+
+    try {
+      render(
+        <CreateTaskWizard
+          initialMarketStats={null}
+          lock={{
+            prefillFirstToken: 'how solar panels turn light into power',
+            reward: '1',
+            templateId: 'infographic',
+          }}
+          variant="campaign"
+        />
+      );
+      await user.click(screen.getByRole('button', { name: /review and fund/i }));
+      await user.click(screen.getByRole('button', { name: /fund \$1 and publish/i }));
+
+      await waitFor(() =>
+        expect(router.push).toHaveBeenCalledWith('/dashboard/tasks/0xpublished?published=1')
+      );
+      expect(router.push).toHaveBeenCalledTimes(1);
+      expect(
+        fetchMock.mock.calls.filter(
+          ([url, init]) =>
+            url === '/api/tasks' &&
+            typeof init === 'object' &&
+            init !== null &&
+            'payment-signature' in ((init as RequestInit).headers as Record<string, string>)
+        )
+      ).toHaveLength(1);
+      expect(screen.queryByRole('alert')).not.toBeInTheDocument();
+      expect(
+        screen.queryByRole('button', { name: /fund \$1 and publish/i })
+      ).not.toBeInTheDocument();
+    } finally {
+      removeItem.mockRestore();
+    }
   });
 
   it('surfaces a campaign signature error and restores the retry action', async () => {

@@ -21,8 +21,50 @@ export default defineConfig({
       use: { ...devices['Desktop Chrome'] },
     },
     {
-      name: 'chromium-mobile',
-      use: { ...devices['Pixel 7'] },
+      name: 'chromium-mobile-320',
+      testMatch: '**/critical-mobile.spec.ts',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { height: 844, width: 320 },
+      },
+    },
+    {
+      name: 'chromium-mobile-390',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { height: 844, width: 390 },
+      },
+    },
+    {
+      name: 'chromium-mobile-430',
+      testMatch: '**/critical-mobile.spec.ts',
+      use: {
+        ...devices['Pixel 7'],
+        viewport: { height: 844, width: 430 },
+      },
+    },
+    {
+      name: 'webkit-mobile-320',
+      testMatch: '**/critical-mobile.spec.ts',
+      use: {
+        ...devices['iPhone 13'],
+        viewport: { height: 844, width: 320 },
+      },
+    },
+    {
+      name: 'webkit-mobile-390',
+      use: {
+        ...devices['iPhone 13'],
+        viewport: { height: 844, width: 390 },
+      },
+    },
+    {
+      name: 'webkit-mobile-430',
+      testMatch: '**/critical-mobile.spec.ts',
+      use: {
+        ...devices['iPhone 13'],
+        viewport: { height: 844, width: 430 },
+      },
     },
   ],
   reporter: process.env.CI

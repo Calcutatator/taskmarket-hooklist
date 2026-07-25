@@ -7,7 +7,7 @@ vi.mock('wagmi', () => ({
   useSignMessage: () => ({ signMessageAsync }),
 }));
 
-import { useReadAuthSignature } from './use-read-auth-signature';
+import { useReadAuthSignature, useReadAuthSignatureState } from './use-read-auth-signature';
 import { getCachedReadAuthHeaders } from './read-auth';
 
 const ADDRESS = '0x1111111111111111111111111111111111111111' as const;
@@ -45,6 +45,25 @@ describe('useReadAuthSignature', () => {
     await waitFor(() => expect(signMessageAsync).toHaveBeenCalledTimes(1));
     expect(result.current).toBe(false);
     expect(getCachedReadAuthHeaders()).toEqual({});
+  });
+
+  it('lets an explicit wallet verification recover after a rejected signature', async () => {
+    signMessageAsync
+      .mockRejectedValueOnce(new Error('User rejected'))
+      .mockResolvedValueOnce('0xsignature');
+    const { result } = renderHook(() => useReadAuthSignatureState(ADDRESS, { autoStart: false }));
+
+    expect(result.current.status).toBe('idle');
+    expect(signMessageAsync).not.toHaveBeenCalled();
+
+    act(() => result.current.requestSignature());
+    await waitFor(() => expect(result.current.status).toBe('error'));
+    expect(result.current.error).toMatch(/did not approve/i);
+
+    act(() => result.current.requestSignature());
+    await waitFor(() => expect(result.current.ready).toBe(true));
+    expect(result.current.status).toBe('ready');
+    expect(signMessageAsync).toHaveBeenCalledTimes(2);
   });
 
   it('signs only once per address across re-renders (cached for the session)', async () => {

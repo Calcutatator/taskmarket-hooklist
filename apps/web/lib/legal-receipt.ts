@@ -17,8 +17,12 @@ export function setLegalReceipt(receipt: string, bundleVersion: string): void {
 
 export function clearLegalReceipt(): void {
   if (typeof window === 'undefined') return;
-  window.localStorage.removeItem(LEGAL_RECEIPT_STORAGE_KEY);
-  window.localStorage.removeItem(LEGAL_BUNDLE_STORAGE_KEY);
+  try {
+    window.localStorage.removeItem(LEGAL_RECEIPT_STORAGE_KEY);
+    window.localStorage.removeItem(LEGAL_BUNDLE_STORAGE_KEY);
+  } catch {
+    // Logout must continue when browser storage is unavailable.
+  }
 }
 
 export function getLegalReceiptHeaders(): Record<string, string> {

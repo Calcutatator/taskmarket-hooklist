@@ -106,9 +106,12 @@ describe('LegalConsentGate', () => {
     expect(screen.getByText(bundle.acceptanceStatement)).toBeInTheDocument();
 
     const termsCheckbox = screen.getByRole('checkbox', { name: /agree to the Terms of Service/i });
+    const termsRow = screen.getByTestId('legal-consent-terms');
+    expect(termsRow).toHaveClass('min-h-11');
     await user.click(screen.getByRole('link', { name: 'Terms of Service' }));
     expect(termsCheckbox).not.toBeChecked();
-    await user.click(termsCheckbox);
+    await user.click(screen.getByTestId('legal-consent-terms-target'));
+    expect(termsCheckbox).toBeChecked();
     await user.click(screen.getByRole('checkbox', { name: /agree to the Acceptable Use Policy/i }));
     await user.click(screen.getByRole('checkbox', { name: /acknowledge the Risk Disclosure/i }));
     expect(accept).toBeDisabled();
@@ -148,6 +151,26 @@ describe('LegalConsentGate', () => {
     expect(screen.getByText('market recovery controls')).toBeInTheDocument();
     expect(screen.queryByRole('button', { name: 'Accept and continue' })).not.toBeInTheDocument();
     expect(logout).not.toHaveBeenCalled();
+  });
+
+  it('clears every client authorization cache before signing out', async () => {
+    const user = userEvent.setup();
+    localStorage.setItem('taskmarket:legal-receipt', 'receipt');
+    sessionStorage.setItem('taskmarket:auth-return-intent', '{}');
+    sessionStorage.setItem('taskmarket:task-access:private-task', 'grant');
+
+    render(
+      <LegalConsentGate>
+        <div>market</div>
+      </LegalConsentGate>
+    );
+
+    await user.click(await screen.findByRole('button', { name: 'Sign out' }));
+
+    expect(localStorage.getItem('taskmarket:legal-receipt')).toBeNull();
+    expect(sessionStorage.getItem('taskmarket:auth-return-intent')).toBeNull();
+    expect(sessionStorage.getItem('taskmarket:task-access:private-task')).toBeNull();
+    expect(logout).toHaveBeenCalledTimes(1);
   });
 
   it('supports acceptance rollout before write enforcement is enabled', async () => {

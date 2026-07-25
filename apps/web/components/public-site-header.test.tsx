@@ -1,11 +1,42 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import { PublicSiteHeader } from './public-site-header';
 
+const { login, navigation } = vi.hoisted(() => ({
+  login: vi.fn(),
+  navigation: { pathname: '/tasks' },
+}));
+
+vi.mock('next/navigation', () => ({
+  usePathname: () => navigation.pathname,
+}));
+
+vi.mock('wagmi', () => ({
+  useAccount: () => ({ address: undefined, isConnected: false }),
+}));
+
+vi.mock('@privy-io/react-auth', () => ({
+  usePrivy: () => ({
+    authenticated: false,
+    connectOrCreateWallet: vi.fn(),
+    login,
+    logout: vi.fn(),
+    ready: true,
+    user: null,
+  }),
+  useWallets: () => ({ ready: true, wallets: [] }),
+}));
+
 describe('PublicSiteHeader', () => {
-  it('links the primary navigation to the dashboard market routes', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    navigation.pathname = '/tasks';
+    vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
+  });
+
+  it('links the primary navigation to the public market routes', () => {
     render(<PublicSiteHeader />);
 
     const primaryNav = screen.getByRole('navigation', { name: /^primary$/i });
@@ -13,19 +44,27 @@ describe('PublicSiteHeader', () => {
     expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks'
+      '/tasks'
+    );
+    expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
+      'aria-current',
+      'page'
     );
     expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/dashboard/agents'
+      '/agents'
     );
     expect(within(primaryNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/dashboard/humans'
+      '/humans'
+    );
+    expect(within(primaryNav).getByRole('link', { name: /^leaderboard$/i })).toHaveAttribute(
+      'href',
+      '/leaderboard'
     );
     expect(within(primaryNav).getByRole('link', { name: /^protocol$/i })).toHaveAttribute(
       'href',
-      '/dashboard/protocol'
+      '/protocol'
     );
     expect(screen.getByRole('link', { name: /^dashboard$/i })).toHaveAttribute(
       'href',
@@ -45,11 +84,45 @@ describe('PublicSiteHeader', () => {
     const mobileNav = screen.getByRole('navigation', { name: /mobile primary/i });
     expect(within(mobileNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/dashboard/agents'
+      '/agents'
     );
     expect(within(mobileNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/dashboard/humans'
+      '/humans'
     );
+    expect(within(mobileNav).getByRole('button', { name: /^sign in$/i })).toBeEnabled();
+    const accountControlIds = Array.from(
+      document.querySelectorAll<HTMLElement>('[id$="wallet-connect"]')
+    ).map((element) => element.id);
+    expect(new Set(accountControlIds).size).toBe(accountControlIds.length);
+  });
+
+  it('marks a nested public route active in both navigation menus', async () => {
+    navigation.pathname = '/agents/42';
+    const user = userEvent.setup();
+    render(<PublicSiteHeader />);
+
+    expect(
+      within(screen.getByRole('navigation', { name: /^primary$/i })).getByRole('link', {
+        name: 'Agents',
+      })
+    ).toHaveAttribute('aria-current', 'page');
+
+    await user.click(screen.getByRole('button', { name: /open menu/i }));
+
+    expect(
+      within(screen.getByRole('navigation', { name: /mobile primary/i })).getByRole('link', {
+        name: 'Agents',
+      })
+    ).toHaveAttribute('aria-current', 'page');
+  });
+
+  it('lets a visitor start sign-in without leaving the public page', async () => {
+    const user = userEvent.setup();
+    render(<PublicSiteHeader />);
+
+    await user.click(screen.getByRole('button', { name: /^sign in$/i }));
+
+    expect(login).toHaveBeenCalledTimes(1);
   });
 });

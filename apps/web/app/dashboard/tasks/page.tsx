@@ -62,8 +62,11 @@ export default async function TasksPage({ searchParams }: TasksPageProps) {
         selectedMode: filters.selectedMode,
         selectedSort: filters.selectedSort,
         selectedStatus: filters.selectedStatus,
+        selectedView: filters.selectedView,
         tags: params.tags,
         taskDropId: filters.taskDropId,
+        requester: filters.requester,
+        worker: filters.worker,
       }}
       pagination={{
         currentCursor: params.cursor,

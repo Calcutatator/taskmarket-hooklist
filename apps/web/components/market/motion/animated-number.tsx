@@ -2,7 +2,7 @@
 
 import { AnimatePresence, motion } from 'motion/react';
 
-import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
+import { useHydrationSafeMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 
 const easeOut = [0.16, 1, 0.3, 1] as const;
 
@@ -23,7 +23,7 @@ export function AnimatedNumber({
   offset?: number;
   value: number | string;
 }) {
-  const motionDisabled = useMotionDisabled();
+  const motionDisabled = useHydrationSafeMotionDisabled();
   const display = format ? format(value) : String(value);
 
   if (motionDisabled) {
@@ -31,7 +31,7 @@ export function AnimatedNumber({
   }
 
   return (
-    <AnimatePresence mode="popLayout">
+    <AnimatePresence initial={false} mode="popLayout">
       <motion.span
         animate={{ opacity: 1, y: 0 }}
         className={className}

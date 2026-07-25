@@ -2,9 +2,8 @@ import type {
   ActivityFeedResponse,
   ActivityHeatmapResponse,
   BreakdownsResponse,
-  PlatformTimeSeriesResponse,
 } from '@taskmarket/shared';
-import type { Metadata } from 'next';
+import type { Metadata, Route } from 'next';
 import Link from 'next/link';
 
 import { AgentTable } from '@/components/market/agents';
@@ -12,10 +11,13 @@ import { DashboardActivityChart } from '@/components/market/dashboard-activity-c
 import { DashboardActivityFeed } from '@/components/market/dashboard-activity-feed';
 import { DashboardDistributionChart } from '@/components/market/dashboard-distribution-chart';
 import { DashboardHeatmap } from '@/components/market/dashboard-heatmap';
+import {
+  DashboardSectionNav,
+  parseDashboardSection,
+  type DashboardSection,
+} from '@/components/market/dashboard-section-nav';
 import { DashboardScope } from '@/components/market/dashboard-scope';
 import { PromoBanner } from '@/components/market/promo-banner';
-import { PromoCarousel } from '@/components/market/promo-carousel';
-import { PromoSideCard } from '@/components/market/promo-side-card';
 import { TaskTable } from '@/components/market/tasks';
 import { SectionCards } from '@/components/section-cards';
 import { Button } from '@/components/ui/button';
@@ -31,7 +33,7 @@ import {
   fetchTaskStats,
 } from '@/lib/api/server';
 import { derivePlatformKpiTrends } from '@/lib/charts/platform-trends';
-import { BANNER_SLOTS, CAROUSEL_SLOTS, SIDE_CARD_SLOTS } from '@/lib/market/promo-slots';
+import { BANNER_SLOTS } from '@/lib/market/promo-slots';
 import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
@@ -41,119 +43,258 @@ export const metadata: Metadata = buildDashboardPageMetadata({
   title: 'Console',
 });
 
-const EMPTY_BREAKDOWNS: BreakdownsResponse = { actorType: [], mode: [], status: [] };
-const EMPTY_ACTIVITY: ActivityFeedResponse = { items: [], nextCursor: null };
-const EMPTY_HEATMAP: ActivityHeatmapResponse = {
-  rowKeys: [],
-  colKeys: [],
-  cells: [],
-  maxCount: 0,
+type DashboardPageProps = {
+  searchParams: Promise<{ section?: string }>;
 };
 
-// Resolve a stats fetch to its data or a safe fallback so a single backend
-// outage degrades that one visual to its empty state instead of crashing the
-// whole dashboard render. The core Promise.all below still owns the page-level
-// fetches that must succeed for the shell to mean anything.
-async function safe<T>(promise: Promise<T>, fallback: T): Promise<T> {
+type LoadResult<T> = { data: T; failed: false } | { data: null; failed: true };
+
+const SECTION_TITLES: Record<DashboardSection, string> = {
+  overview: 'Marketplace overview',
+  activity: 'Marketplace activity',
+  tasks: 'Latest tasks',
+  agents: 'Reputation leaders',
+};
+
+async function load<T>(promise: Promise<T>): Promise<LoadResult<T>> {
   try {
-    return await promise;
+    return { data: await promise, failed: false };
   } catch {
-    return fallback;
+    return { data: null, failed: true };
   }
 }
 
-export default async function Page() {
-  const [taskStats, agentCount, marketStats, openTasks, recentTasks, agents] = await Promise.all([
-    fetchTaskStats(),
-    fetchAgentCount(),
-    safe(fetchMarketStats(), null),
-    fetchTasks({ limit: 20, status: 'open' }),
-    fetchTasks({ limit: 8 }),
-    fetchLeaderboard({ limit: 8, sort: 'reputation' }),
+function DashboardLoadError({
+  children,
+  retryHref,
+}: {
+  children: React.ReactNode;
+  retryHref: Route;
+}) {
+  return (
+    <section
+      className="grid gap-4 rounded-lg border border-destructive/40 bg-card/44 p-6"
+      role="alert"
+    >
+      <p className="text-sm text-destructive">{children}</p>
+      <Button asChild className="w-fit" variant="outline">
+        <Link href={retryHref}>Reload</Link>
+      </Button>
+    </section>
+  );
+}
+
+function SectionHeading({
+  eyebrow,
+  title,
+  action,
+}: {
+  eyebrow: string;
+  title: string;
+  action?: React.ReactNode;
+}) {
+  return (
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <p className="font-mono text-xs uppercase text-primary">{eyebrow}</p>
+        <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">{title}</h2>
+      </div>
+      {action}
+    </div>
+  );
+}
+
+async function OverviewSection() {
+  const [taskStats, agentCount, marketStats, platformSeries] = await Promise.all([
+    load(fetchTaskStats()),
+    load(fetchAgentCount()),
+    load(fetchMarketStats()),
+    load(fetchPlatformTimeSeries({ bucket: 'day', range: '30d' })),
   ]);
 
-  const [platformSeries, breakdowns, activityFeed, activityHeatmap] = await Promise.all([
-    safe<PlatformTimeSeriesResponse>(fetchPlatformTimeSeries({ bucket: 'day', range: '30d' }), []),
-    safe<BreakdownsResponse>(fetchBreakdowns(), EMPTY_BREAKDOWNS),
-    safe<ActivityFeedResponse>(fetchActivityFeed({ limit: 12 }), EMPTY_ACTIVITY),
-    safe<ActivityHeatmapResponse>(
-      fetchActivityHeatmap({ range: '30d', dimension: 'mode' }),
-      EMPTY_HEATMAP
-    ),
-  ]);
+  const canRenderMetrics =
+    !taskStats.failed && !agentCount.failed && !marketStats.failed && !platformSeries.failed;
 
-  const trends = derivePlatformKpiTrends(platformSeries);
-
-  const marketContent = (
+  return (
     <div className="flex flex-col gap-4 md:gap-6">
       <div className="px-4 lg:px-6">
         <PromoBanner slots={BANNER_SLOTS} />
       </div>
-      <SectionCards
-        activeAgentCount={marketStats?.activeAgents7d}
-        agentCount={agentCount}
-        agentsTrend={trends.agents}
-        openTaskCount={openTasks.tasks.length}
-        openTasksTrend={trends.openTasks}
-        rewardsTrend={trends.rewards}
-        taskCount={taskStats.count}
-        tasksTrend={trends.tasks}
-        totalRewards={taskStats.totalRewards}
-      />
-      <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
-        <DashboardActivityChart initialData={platformSeries} initialRange="30d" />
+      {canRenderMetrics ? (
+        <SectionCards
+          activeAgentCount={marketStats.data.activeAgents7d}
+          agentCount={agentCount.data}
+          agentsTrend={derivePlatformKpiTrends(platformSeries.data).agents}
+          openTaskCount={marketStats.data.openTasks}
+          openTasksTrend={derivePlatformKpiTrends(platformSeries.data).openTasks}
+          rewardsTrend={derivePlatformKpiTrends(platformSeries.data).rewards}
+          taskCount={taskStats.data.count}
+          tasksTrend={derivePlatformKpiTrends(platformSeries.data).tasks}
+          totalRewards={taskStats.data.totalRewards}
+        />
+      ) : (
+        <div className="px-4 lg:px-6">
+          <DashboardLoadError retryHref="/dashboard">
+            Could not load marketplace metrics right now.
+          </DashboardLoadError>
+        </div>
+      )}
+      <section className="grid gap-4 px-4 lg:px-6">
+        <SectionHeading eyebrow="Explore" title="Marketplace at a glance" />
+        <div className="grid gap-3 md:grid-cols-3">
+          {[
+            {
+              description: 'See live trends, mode distribution, and recent marketplace events.',
+              href: '/dashboard?section=activity' as Route,
+              label: 'View activity',
+            },
+            {
+              description: 'Review the latest work and continue into the full task marketplace.',
+              href: '/dashboard?section=tasks' as Route,
+              label: 'View tasks',
+            },
+            {
+              description: 'Compare the strongest reputation signals across active agents.',
+              href: '/dashboard?section=agents' as Route,
+              label: 'View agents',
+            },
+          ].map((item) => (
+            <Link
+              className="grid min-h-32 gap-2 rounded-lg border border-border/58 bg-card/44 p-5 transition-colors hover:bg-surface/50"
+              href={item.href}
+              key={item.label}
+            >
+              <span className="font-display text-xl font-semibold">{item.label}</span>
+              <span className="text-sm leading-6 text-muted-foreground">{item.description}</span>
+            </Link>
+          ))}
+        </div>
+      </section>
+    </div>
+  );
+}
+
+async function ActivitySection() {
+  const [platformSeries, breakdowns, activityFeed, activityHeatmap] = await Promise.all([
+    load(fetchPlatformTimeSeries({ bucket: 'day', range: '30d' })),
+    load<BreakdownsResponse>(fetchBreakdowns()),
+    load<ActivityFeedResponse>(fetchActivityFeed({ limit: 12 })),
+    load<ActivityHeatmapResponse>(fetchActivityHeatmap({ range: '30d', dimension: 'mode' })),
+  ]);
+  const retryHref = '/dashboard?section=activity' as Route;
+
+  return (
+    <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
+      {!platformSeries.failed ? (
+        <DashboardActivityChart initialData={platformSeries.data} initialRange="30d" />
+      ) : (
+        <DashboardLoadError retryHref={retryHref}>
+          Could not load marketplace activity trend.
+        </DashboardLoadError>
+      )}
+      {!activityHeatmap.failed ? (
         <DashboardHeatmap
-          initialData={activityHeatmap}
+          initialData={activityHeatmap.data}
           initialDimension="mode"
           initialRange="30d"
         />
-        <div className="grid gap-4 md:gap-6 @4xl/main:h-[34rem] @4xl/main:grid-cols-[minmax(0,1fr)_360px]">
-          <DashboardDistributionChart initialData={breakdowns} />
-          <DashboardActivityFeed initialData={activityFeed} />
-        </div>
+      ) : (
+        <DashboardLoadError retryHref={retryHref}>
+          Could not load the marketplace activity heat map.
+        </DashboardLoadError>
+      )}
+      <div className="grid gap-4 md:gap-6 @4xl/main:h-[34rem] @4xl/main:grid-cols-[minmax(0,1fr)_360px]">
+        {!breakdowns.failed ? (
+          <DashboardDistributionChart initialData={breakdowns.data} />
+        ) : (
+          <DashboardLoadError retryHref={retryHref}>
+            Could not load the task distribution.
+          </DashboardLoadError>
+        )}
+        {!activityFeed.failed ? (
+          <DashboardActivityFeed initialData={activityFeed.data} />
+        ) : (
+          <DashboardLoadError retryHref={retryHref}>
+            Could not load recent marketplace activity.
+          </DashboardLoadError>
+        )}
       </div>
-      <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
-        <section className="grid gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs uppercase text-primary">Tasks</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">
-                Latest activity
-              </h2>
-            </div>
-            <Button asChild variant="outline">
-              <Link href="/dashboard/tasks">View tasks</Link>
-            </Button>
-          </div>
-          <TaskTable tasks={recentTasks.tasks} />
-        </section>
-        <section className="grid gap-4">
-          <div className="flex flex-wrap items-end justify-between gap-3">
-            <div>
-              <p className="font-mono text-xs uppercase text-primary">Agents</p>
-              <h2 className="mt-2 font-display text-3xl font-semibold tracking-tight">
-                Reputation leaders
-              </h2>
-            </div>
-            <Button asChild variant="outline">
-              <Link href="/dashboard/agents">View agents</Link>
-            </Button>
-          </div>
-          <AgentTable agents={agents} />
-        </section>
-        <section className="grid gap-4 @4xl/main:grid-cols-[minmax(0,1fr)_320px]">
-          <div className="grid gap-4">
-            <div>
-              <p className="font-mono text-xs uppercase text-primary">Explore</p>
-              <h2 className="mt-2 font-display text-xl font-semibold tracking-tight">
-                More on Taskmarket
-              </h2>
-            </div>
-            <PromoCarousel slots={CAROUSEL_SLOTS} />
-          </div>
-          <PromoSideCard slots={SIDE_CARD_SLOTS} />
-        </section>
-      </div>
+    </div>
+  );
+}
+
+async function TasksSection() {
+  const tasks = await load(fetchTasks({ limit: 6 }));
+
+  return (
+    <section className="grid gap-4 px-4 lg:px-6">
+      <SectionHeading
+        action={
+          <Button asChild variant="outline">
+            <Link href="/dashboard/tasks">View all tasks</Link>
+          </Button>
+        }
+        eyebrow="Tasks"
+        title="Latest marketplace work"
+      />
+      {!tasks.failed ? (
+        <TaskTable tasks={tasks.data.tasks} />
+      ) : (
+        <DashboardLoadError retryHref="/dashboard?section=tasks">
+          Could not load the latest tasks.
+        </DashboardLoadError>
+      )}
+    </section>
+  );
+}
+
+async function AgentsSection() {
+  const agents = await load(fetchLeaderboard({ limit: 5, sort: 'reputation' }));
+
+  return (
+    <section className="grid gap-4 px-4 lg:px-6">
+      <SectionHeading
+        action={
+          <Button asChild variant="outline">
+            <Link href="/dashboard/agents">View all agents</Link>
+          </Button>
+        }
+        eyebrow="Agents"
+        title="Top reputation signals"
+      />
+      {!agents.failed ? (
+        <AgentTable agents={agents.data} />
+      ) : (
+        <DashboardLoadError retryHref="/dashboard?section=agents">
+          Could not load reputation leaders.
+        </DashboardLoadError>
+      )}
+    </section>
+  );
+}
+
+async function renderSection(section: DashboardSection) {
+  switch (section) {
+    case 'activity':
+      return ActivitySection();
+    case 'tasks':
+      return TasksSection();
+    case 'agents':
+      return AgentsSection();
+    default:
+      return OverviewSection();
+  }
+}
+
+export default async function Page({ searchParams }: DashboardPageProps) {
+  const params = await searchParams;
+  const section = parseDashboardSection(params.section);
+  const content = await renderSection(section);
+
+  const marketContent = (
+    <div className="flex flex-col gap-4 md:gap-6">
+      <DashboardSectionNav section={section} />
+      {content}
     </div>
   );
 
@@ -161,7 +302,7 @@ export default async function Page() {
     <div className="flex flex-1 flex-col">
       <div className="@container/main flex flex-1 flex-col gap-2">
         <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
-          <DashboardScope marketContent={marketContent} />
+          <DashboardScope marketContent={marketContent} marketTitle={SECTION_TITLES[section]} />
         </div>
       </div>
     </div>

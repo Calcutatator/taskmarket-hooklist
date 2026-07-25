@@ -8,14 +8,16 @@ import {
   IconWallet,
 } from '@tabler/icons-react';
 import { usePrivy, useWallets, type User } from '@privy-io/react-auth';
-import { useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { useAccount } from 'wagmi';
 
 import { FundWalletButton } from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { rememberAuthReturnIntent, resumeAuthReturnIntent } from '@/lib/auth-return-intent';
 import { compactAddress } from '@/lib/format';
 import { isPrivyConfigured } from '@/lib/privy-config';
+import { clearClientAuthState } from '@/lib/clear-client-auth-state';
 
 function sameAddress(left?: string | null, right?: string | null) {
   return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
@@ -31,6 +33,13 @@ export function privyUserLabel(user?: User | null, fallback = 'Privy account') {
   );
 }
 
+export type WalletAccessStatus =
+  | 'initializing'
+  | 'signed-out'
+  | 'wallet-loading'
+  | 'walletless'
+  | 'connected';
+
 export function usePrivyAccountState() {
   const { address: wagmiAddress, isConnected } = useAccount();
   const { authenticated, connectOrCreateWallet, login, logout, ready, user } = usePrivy();
@@ -44,15 +53,62 @@ export function usePrivyAccountState() {
   const activeWallet =
     wallets.find((wallet) => sameAddress(wallet.address, wagmiAddress)) ?? wallets[0];
   const address = wagmiAddress ?? activeWallet?.address;
-  const connected = mounted && ready && authenticated && Boolean(address);
+  const walletAccessStatus: WalletAccessStatus =
+    !mounted || !ready
+      ? 'initializing'
+      : !authenticated
+        ? 'signed-out'
+        : !address && !walletsReady
+          ? 'wallet-loading'
+          : !address
+            ? 'walletless'
+            : 'connected';
+  const walletActionStatus: WalletAccessStatus =
+    !mounted || !ready
+      ? 'initializing'
+      : !authenticated
+        ? 'signed-out'
+        : isConnected && wagmiAddress
+          ? 'connected'
+          : !walletsReady
+            ? 'wallet-loading'
+            : 'walletless';
+  const connected = walletAccessStatus === 'connected';
   const walletDetail = connected
     ? privyUserLabel(user, activeWallet?.walletClientType ?? 'Connected wallet')
-    : 'Not connected';
+    : walletAccessStatus === 'initializing'
+      ? 'Loading authentication'
+      : walletAccessStatus === 'wallet-loading'
+        ? 'Loading wallet'
+        : 'Not connected';
+  const authAndWalletReady =
+    ready && (!authenticated || walletsReady || Boolean(isConnected && wagmiAddress));
+  const readyTimedOut = usePrivyReadyTimedOut(authAndWalletReady);
+  const beginWalletAccess = useCallback(
+    (returnTargetId?: string) => {
+      if (walletActionStatus !== 'signed-out' && walletActionStatus !== 'walletless') return;
+
+      rememberAuthReturnIntent(returnTargetId);
+      if (walletActionStatus === 'walletless') {
+        void connectOrCreateWallet();
+      } else {
+        login();
+      }
+    },
+    [connectOrCreateWallet, login, walletActionStatus]
+  );
+
+  useEffect(() => {
+    if (walletActionStatus === 'connected') {
+      resumeAuthReturnIntent();
+    }
+  }, [walletActionStatus]);
 
   return {
     activeWallet,
     address,
     authenticated,
+    beginWalletAccess,
     connectOrCreateWallet,
     connected,
     isConnected,
@@ -60,41 +116,46 @@ export function usePrivyAccountState() {
     logout,
     mounted,
     ready,
+    readyTimedOut,
     user,
+    walletActionStatus,
+    walletAccessStatus,
     walletDetail,
     wallets,
     walletsReady,
   };
 }
 
-export function PrivyHeaderAccountControl() {
+export function PrivyHeaderAccountControl({
+  targetId = 'wallet-connect',
+}: {
+  targetId?: string;
+} = {}) {
   if (!isPrivyConfigured()) {
     return (
       <Button
         className="min-h-11 sm:min-h-9"
         disabled
-        id="wallet-connect"
+        id={targetId}
         size="sm"
+        title="Sign in is unavailable because authentication is not configured."
         type="button"
         variant="outline"
       >
         <IconLogin className="size-4" />
-        Sign in
+        Sign in unavailable
       </Button>
     );
   }
 
-  return <PrivyHeaderAccountControlInner />;
+  return <PrivyHeaderAccountControlInner targetId={targetId} />;
 }
 
-// If Privy has not reported ready within this window we treat the SDK as unavailable
-// (e.g. a misconfigured app-id or a blocked network request) and surface an explicit
-// disabled affordance instead of spinning forever.
+// If Privy has not reported ready within this window, offer an explicit recovery
+// action instead of leaving the user in a loading state indefinitely.
 const PRIVY_READY_TIMEOUT_MS = 8000;
 
-function PrivyHeaderAccountControlInner() {
-  const { address, connectOrCreateWallet, connected, login, logout, ready } =
-    usePrivyAccountState();
+function usePrivyReadyTimedOut(ready: boolean) {
   const [readyTimedOut, setReadyTimedOut] = useState(false);
 
   useEffect(() => {
@@ -107,19 +168,136 @@ function PrivyHeaderAccountControlInner() {
     return () => clearTimeout(timer);
   }, [ready]);
 
-  if (!ready) {
+  return readyTimedOut;
+}
+
+export function PrivyWalletAccessButton({
+  className,
+  label = 'Sign in',
+  returnTargetId,
+  walletlessLabel = 'Connect wallet',
+}: {
+  className?: string;
+  label?: string;
+  returnTargetId?: string;
+  walletlessLabel?: string;
+}) {
+  if (!isPrivyConfigured()) {
+    return (
+      <Button
+        className={className}
+        disabled
+        title="Sign in is unavailable because authentication is not configured."
+        type="button"
+        variant="outline"
+      >
+        <IconLogin className="size-4" />
+        Sign in unavailable
+      </Button>
+    );
+  }
+
+  return (
+    <PrivyWalletAccessButtonInner
+      className={className}
+      label={label}
+      returnTargetId={returnTargetId}
+      walletlessLabel={walletlessLabel}
+    />
+  );
+}
+
+function PrivyWalletAccessButtonInner({
+  className,
+  label,
+  returnTargetId,
+  walletlessLabel,
+}: {
+  className?: string;
+  label: string;
+  returnTargetId?: string;
+  walletlessLabel: string;
+}) {
+  const { beginWalletAccess, readyTimedOut, walletActionStatus } = usePrivyAccountState();
+
+  if (
+    (walletActionStatus === 'initializing' || walletActionStatus === 'wallet-loading') &&
+    readyTimedOut
+  ) {
+    const walletTimedOut = walletActionStatus === 'wallet-loading';
+
+    return (
+      <Button
+        className={className}
+        onClick={() => window.location.reload()}
+        title="Authentication did not finish loading."
+        type="button"
+        variant="outline"
+      >
+        <IconRefresh className="size-4" />
+        {walletTimedOut ? 'Retry wallet' : 'Retry sign in'}
+      </Button>
+    );
+  }
+
+  const disabled =
+    walletActionStatus === 'initializing' ||
+    walletActionStatus === 'wallet-loading' ||
+    walletActionStatus === 'connected';
+  const buttonLabel =
+    walletActionStatus === 'initializing'
+      ? 'Loading sign in'
+      : walletActionStatus === 'wallet-loading'
+        ? 'Loading wallet'
+        : walletActionStatus === 'walletless'
+          ? walletlessLabel
+          : walletActionStatus === 'connected'
+            ? 'Wallet connected'
+            : label;
+
+  return (
+    <Button
+      aria-busy={walletActionStatus === 'initializing' || walletActionStatus === 'wallet-loading'}
+      className={className}
+      disabled={disabled}
+      id={returnTargetId}
+      onClick={() => beginWalletAccess(returnTargetId)}
+      type="button"
+      variant="outline"
+    >
+      {walletActionStatus === 'walletless' || walletActionStatus === 'connected' ? (
+        <IconWallet className="size-4" />
+      ) : (
+        <IconLogin className="size-4" />
+      )}
+      {buttonLabel}
+    </Button>
+  );
+}
+
+function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
+  const {
+    address,
+    beginWalletAccess,
+    connectOrCreateWallet,
+    logout,
+    readyTimedOut,
+    walletAccessStatus,
+  } = usePrivyAccountState();
+
+  if (walletAccessStatus === 'initializing') {
     if (readyTimedOut) {
       return (
         <Button
           className="min-h-11 sm:min-h-9"
-          disabled
+          onClick={() => window.location.reload()}
           size="sm"
-          title="Sign in is temporarily unavailable. Refresh the page to try again."
+          title="Authentication did not finish loading."
           type="button"
           variant="outline"
         >
-          <IconLogin className="size-4" />
-          Sign in unavailable
+          <IconRefresh className="size-4" />
+          Retry sign in
         </Button>
       );
     }
@@ -131,18 +309,51 @@ function PrivyHeaderAccountControlInner() {
     );
   }
 
-  if (!connected || !address) {
+  if (walletAccessStatus === 'wallet-loading') {
+    if (readyTimedOut) {
+      return (
+        <Button
+          className="min-h-11 sm:min-h-9"
+          onClick={() => window.location.reload()}
+          size="sm"
+          title="Wallets did not finish loading."
+          type="button"
+          variant="outline"
+        >
+          <IconRefresh className="size-4" />
+          Retry wallet
+        </Button>
+      );
+    }
+
     return (
       <Button
+        aria-busy
         className="min-h-11 sm:min-h-9"
-        id="wallet-connect"
-        onClick={() => login()}
+        disabled
         size="sm"
         type="button"
         variant="outline"
       >
-        <IconLogin className="size-4" />
-        Sign in
+        Loading wallet
+      </Button>
+    );
+  }
+
+  if (walletAccessStatus === 'signed-out' || walletAccessStatus === 'walletless' || !address) {
+    const walletless = walletAccessStatus === 'walletless';
+
+    return (
+      <Button
+        className="min-h-11 sm:min-h-9"
+        id={targetId}
+        onClick={() => beginWalletAccess(targetId)}
+        size="sm"
+        type="button"
+        variant="outline"
+      >
+        {walletless ? <IconWallet className="size-4" /> : <IconLogin className="size-4" />}
+        {walletless ? 'Connect wallet' : 'Sign in'}
       </Button>
     );
   }
@@ -153,7 +364,7 @@ function PrivyHeaderAccountControlInner() {
         <Button
           aria-label={`Wallet ${compactAddress(address)}`}
           className="min-h-11 sm:min-h-9"
-          id="wallet-connect"
+          id={targetId}
           size="sm"
           type="button"
           variant="outline"
@@ -182,7 +393,10 @@ function PrivyHeaderAccountControlInner() {
           </Button>
           <Button
             className="w-full justify-start"
-            onClick={() => logout()}
+            onClick={() => {
+              clearClientAuthState();
+              void logout();
+            }}
             size="sm"
             type="button"
             variant="outline"
