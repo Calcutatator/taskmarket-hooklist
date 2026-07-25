@@ -2,7 +2,10 @@
 
 import { useEffect } from 'react';
 
-export function ScrollSnapShell({ children }: Readonly<{ children: React.ReactNode }>) {
+export function ScrollSnapShell({
+  children,
+  enabled = true,
+}: Readonly<{ children: React.ReactNode; enabled?: boolean }>) {
   useEffect(() => {
     const root = document.documentElement;
     const previousScrollBehavior = root.style.scrollBehavior;
@@ -16,7 +19,8 @@ export function ScrollSnapShell({ children }: Readonly<{ children: React.ReactNo
     function applyMotionPreference() {
       const reducedMotion = media?.matches ?? false;
       root.style.scrollBehavior = reducedMotion ? 'auto' : 'smooth';
-      root.style.scrollSnapType = reducedMotion || !snapActivated ? 'none' : 'y proximity';
+      root.style.scrollSnapType =
+        !enabled || reducedMotion || !snapActivated ? 'none' : 'y proximity';
     }
 
     function activateSnap() {
@@ -35,9 +39,12 @@ export function ScrollSnapShell({ children }: Readonly<{ children: React.ReactNo
 
     applyMotionPreference();
     media?.addEventListener('change', applyMotionPreference);
-    window.addEventListener('keydown', activateSnapFromKeyboard);
-    window.addEventListener('touchstart', activateSnap, { passive: true });
-    window.addEventListener('wheel', activateSnap, { passive: true });
+
+    if (enabled) {
+      window.addEventListener('keydown', activateSnapFromKeyboard);
+      window.addEventListener('touchstart', activateSnap, { passive: true });
+      window.addEventListener('wheel', activateSnap, { passive: true });
+    }
 
     return () => {
       media?.removeEventListener('change', applyMotionPreference);
@@ -47,10 +54,10 @@ export function ScrollSnapShell({ children }: Readonly<{ children: React.ReactNo
       root.style.scrollBehavior = previousScrollBehavior;
       root.style.scrollSnapType = previousScrollSnapType;
     };
-  }, []);
+  }, [enabled]);
 
   return (
-    <div className="taskdrop-b" style={{ scrollSnapType: 'y proximity' }}>
+    <div className="taskdrop-b" style={enabled ? { scrollSnapType: 'y proximity' } : undefined}>
       {children}
     </div>
   );

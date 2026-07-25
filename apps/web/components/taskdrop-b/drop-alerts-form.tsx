@@ -13,12 +13,15 @@ export function DropAlertsForm() {
 
   return (
     <>
-      <form className="mt-5 flex flex-wrap gap-2.5" onSubmit={submit}>
+      <form
+        className="mt-2.5 flex min-w-0 flex-wrap items-center gap-2 rounded-xl border border-[#16602D] bg-[#1E7A3A] p-2"
+        onSubmit={submit}
+      >
         <label className="sr-only" htmlFor="taskdrop-b-email">
           Email address
         </label>
         <input
-          className="min-w-50 flex-1 rounded-[11px] border-0 bg-white px-4 py-3.5 text-[15px] text-[#2C1F1A] placeholder:text-[#2C1F1A]/60 focus:ring-2 focus:ring-[#FF3D7E] focus:outline-none"
+          className="min-h-11 min-w-0 flex-1 basis-[150px] rounded-lg border-0 bg-transparent px-2 py-2 text-[15px] text-white placeholder:text-white/90 focus:ring-2 focus:ring-[#FFF6E8] focus:outline-none"
           id="taskdrop-b-email"
           name="email"
           placeholder="you@email.com"
@@ -26,13 +29,13 @@ export function DropAlertsForm() {
           type="email"
         />
         <button
-          className="taskdrop-b-display cursor-pointer rounded-[11px] border-0 bg-[#FFF6E8] px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] text-[#2C1F1A]"
+          className="taskdrop-b-display min-h-11 shrink-0 cursor-pointer rounded-lg border-0 bg-[#E74079] px-4 pt-[11px] pb-2 text-lg tracking-[0.05em] text-[#FFF6E8]"
           type="submit"
         >
           SIGN ME UP
         </button>
       </form>
-      <p aria-live="polite" className="mt-2 min-h-5 text-[12.5px]">
+      <p aria-live="polite" className="mt-1.5 min-h-5 text-[12.5px] opacity-90">
         {message}
       </p>
     </>

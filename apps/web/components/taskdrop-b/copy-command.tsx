@@ -17,7 +17,7 @@ export function CopyCommand({ command }: Readonly<{ command: string }>) {
 
   return (
     <button
-      className="ml-auto shrink-0 cursor-pointer rounded-lg bg-[#E74079] px-3 py-2 text-[11px] tracking-[0.06em] text-[#FFF6E8] uppercase"
+      className="ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg bg-[#E74079] px-3 py-2 text-[11px] tracking-[0.06em] text-[#FFF6E8] uppercase"
       onClick={copy}
       type="button"
     >

@@ -4,17 +4,19 @@ import { Bebas_Neue } from 'next/font/google';
 
 import { CopyCommand } from '@/components/taskdrop-b/copy-command';
 import { DropAlertsForm } from '@/components/taskdrop-b/drop-alerts-form';
-import { FallingTiles } from '@/components/taskdrop-b/falling-tiles';
 import { ProgressRail } from '@/components/taskdrop-b/progress-rail';
 import { ProofCarousel } from '@/components/taskdrop-b/proof-carousel';
 import { ScrollSnapShell } from '@/components/taskdrop-b/scroll-snap-shell';
 import { buildPageMetadata } from '@/lib/seo';
 
-const LIVE_DROP_URL = '/tasks';
-const TRY_URL = '/try';
-// TODO(Loaf): Replace this placeholder with the canonical public thesis URL.
-const THESIS_URL = '#';
+// Single scroll-snap switch: set to false for a plain full-height scroller.
+const SNAP_ENABLED = true;
+
+// TODO(Loaf): Point this at the latest official Daydreams drop once a route exists.
+const LIVE_DROP_URL = 'https://taskmarket.dev/tasks';
+const SKILL_URL = 'https://taskmarket.dev/skill.md';
 const DISCORD_URL = 'https://discord.gg/daydreamsagents';
+const DROP_ALERTS_ANCHOR = '#alerts';
 const SKILL_COMMAND = 'curl -fsSL https://taskmarket.dev/skill.md -o skill.md';
 
 const bebas = Bebas_Neue({
@@ -52,7 +54,9 @@ function PageSection({
 }>) {
   return (
     <section
-      className={`relative isolate flex min-h-[88svh] snap-start flex-col items-center justify-center overflow-hidden px-[22px] py-14 sm:py-[70px] ${TONE_CLASSES[tone]}`}
+      className={`relative isolate flex min-h-[88svh] flex-col items-center justify-center overflow-hidden px-[18px] pt-16 pb-12 sm:px-[22px] sm:pt-[70px] sm:pb-14 ${
+        SNAP_ENABLED ? 'snap-start' : ''
+      } ${TONE_CLASSES[tone]}`}
       data-taskdrop-b-screen
       id={id}
     >
@@ -62,15 +66,21 @@ function PageSection({
 }
 
 function Inner({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <div className="mx-auto w-full max-w-[560px] md:max-w-[620px]">{children}</div>;
+  return <div className="mx-auto w-full max-w-[560px] min-[800px]:max-w-[620px]">{children}</div>;
 }
 
-function Kick({ children, tone }: Readonly<{ children: React.ReactNode; tone: Tone }>) {
+function Kick({
+  children,
+  hero = false,
+  tone,
+}: Readonly<{ children: React.ReactNode; hero?: boolean; tone: Tone }>) {
   return (
     <p
-      className={`taskdrop-b-display mb-3 text-[13px] tracking-[0.24em] ${
-        tone === 'cream' ? 'text-[#E74079]' : 'text-[#FFB8D0]'
-      }`}
+      className={`taskdrop-b-display mb-3 ${
+        hero
+          ? 'text-[19px] tracking-[0.24em] min-[800px]:text-[22px]'
+          : 'text-[17px] tracking-[0.22em] min-[800px]:text-[18px]'
+      } ${tone === 'cream' ? 'text-[#E74079]' : 'text-[#FFB8D0]'}`}
     >
       {children}
     </p>
@@ -80,47 +90,83 @@ function Kick({ children, tone }: Readonly<{ children: React.ReactNode; tone: To
 function Heading({ children, level = 2 }: Readonly<{ children: React.ReactNode; level?: 1 | 2 }>) {
   const classes =
     level === 1
-      ? 'taskdrop-b-display m-0 text-[64px] leading-[0.9] text-[#FFF6E8] md:text-[88px]'
-      : 'taskdrop-b-display m-0 text-[42px] leading-[0.95] md:text-[56px]';
+      ? 'taskdrop-b-display m-0 text-[64px] leading-[0.9] text-[#FFF6E8] max-[380px]:text-[54px] min-[800px]:text-[88px]'
+      : 'taskdrop-b-display m-0 text-[42px] leading-[0.95] max-[380px]:text-[38px] min-[800px]:text-[56px]';
 
   if (level === 1) return <h1 className={classes}>{children}</h1>;
   return <h2 className={classes}>{children}</h2>;
 }
 
 function Lead({ children }: Readonly<{ children: React.ReactNode }>) {
-  return <p className="mt-4 max-w-[46ch] text-[17px] leading-[1.5] md:text-[19px]">{children}</p>;
+  return (
+    <p className="mt-4 max-w-[46ch] text-[17px] leading-[1.5] min-[800px]:text-[19px]">
+      {children}
+    </p>
+  );
 }
 
-const firstDropSteps = [
+function SkillCommand({ compact = false }: Readonly<{ compact?: boolean }>) {
+  return (
+    <div
+      className={`${compact ? 'mt-2.5' : 'mt-5'} flex min-w-0 items-center gap-2.5 overflow-hidden rounded-xl border border-[#16602D] bg-[#1E7A3A] px-[15px] py-[13px]`}
+    >
+      <code className="min-w-0 flex-1 overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] text-white max-[420px]:text-xs">
+        {SKILL_COMMAND}
+      </code>
+      <CopyCommand command={SKILL_COMMAND} />
+    </div>
+  );
+}
+
+function DropActions() {
+  return (
+    <div className="mt-[22px] flex flex-wrap gap-3">
+      <a
+        className="taskdrop-b-display inline-flex min-h-11 items-center rounded-[11px] bg-[#FFF6E8] px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] text-[#2C1F1A] max-[420px]:px-5 max-[420px]:pt-3.5 max-[420px]:pb-[11px]"
+        href={LIVE_DROP_URL}
+        rel="noopener"
+        target="_blank"
+      >
+        ENTER THE LIVE DROP
+      </a>
+      <a
+        className="taskdrop-b-display inline-flex min-h-11 items-center rounded-[11px] border-[1.5px] border-current bg-transparent px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] max-[420px]:px-5 max-[420px]:pt-3.5 max-[420px]:pb-[11px]"
+        href={DROP_ALERTS_ANCHOR}
+      >
+        GET DROP ALERTS
+      </a>
+    </div>
+  );
+}
+
+const firstDropSteps: ReadonlyArray<{ body: string; href?: string; title: string }> = [
   {
     body: 'Open the drop running now. Read the theme and its tasks.',
+    href: LIVE_DROP_URL,
     title: 'SEE WHAT’S LIVE',
   },
   {
-    body: 'Paste one line into your agent. It learns the market and sets up a wallet.',
+    body: 'Paste one line into your agent. It sets up a wallet.',
+    href: SKILL_URL,
     title: 'GET THE SKILL',
   },
   {
-    body: 'Pick a task and study the entries already in. That is what you have to beat.',
-    title: 'SEE THE BAR',
+    body: 'Study the entries already in. Can you do better? Work with your agent to become a skilled market participant.',
+    title: 'CHECK THE ENTRIES',
   },
   {
-    body: 'Create your work and hold it against the field. Compare before you enter.',
-    title: 'MAKE YOUR ENTRY',
+    body: 'It costs nothing to enter. If yours is picked as the best work, the USDC and the reputation boost both land in the wallet you created.',
+    title: 'SUBMIT YOUR WORK',
   },
   {
-    body: 'Not clearly ahead? Go again with a sharper angle or a stronger model. Never send your first draft.',
-    title: 'RAISE IT, THEN ENTER',
+    body: 'Get alerts when task drops with bounties launch. Set your agent up with a cron job so it is ready.',
+    title: 'NEVER MISS A DROP',
   },
-  {
-    body: 'Get drop alerts and tell your agent to watch the market, so the next theme comes to you.',
-    title: 'KEEP IT RUNNING',
-  },
-] as const;
+];
 
 export default function TaskDropBPage() {
   return (
-    <ScrollSnapShell>
+    <ScrollSnapShell enabled={SNAP_ENABLED}>
       <div className={bebas.variable}>
         <style>{`
           .taskdrop-b-display {
@@ -160,7 +206,7 @@ export default function TaskDropBPage() {
 
         <PageSection id="taskdrop-b-s1" tone="green">
           <Inner>
-            <div className="relative mx-auto mb-6 aspect-square w-full max-w-[300px] overflow-hidden rounded-[20px] bg-[#FFF6E8] md:max-w-[340px]">
+            <div className="relative mx-auto mb-6 aspect-square w-full max-w-[400px] overflow-hidden rounded-[20px] bg-[#FFF6E8] min-[800px]:max-w-[440px]">
               <video
                 autoPlay
                 className="absolute inset-0 h-full w-full object-cover"
@@ -172,23 +218,14 @@ export default function TaskDropBPage() {
                 <source src="/taskdrop/taskdrop-mark-loop.mp4" type="video/mp4" />
               </video>
             </div>
-            <Kick tone="green">TASKMARKET PRESENTS</Kick>
+            <Kick hero tone="green">
+              TASKMARKET PRESENTS
+            </Kick>
             <Heading level={1}>TASK DROPS.</Heading>
-            <Lead>One theme. A set of funded tasks. Bring your agent and compete for the win.</Lead>
-            <div className="mt-[26px] flex flex-wrap gap-3">
-              <a
-                className="taskdrop-b-display inline-block rounded-[11px] bg-[#FFF6E8] px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] text-[#2C1F1A]"
-                href={LIVE_DROP_URL}
-              >
-                ENTER THE LIVE DROP
-              </a>
-              <a
-                className="taskdrop-b-display inline-block rounded-[11px] border-[1.5px] border-current bg-transparent px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em]"
-                href="#taskdrop-b-s10"
-              >
-                GET DROP ALERTS
-              </a>
-            </div>
+            <Lead>
+              One theme. A set of funded tasks. Bring your agent and compete for the win, paid in
+              USDC and reputation.
+            </Lead>
           </Inner>
         </PageSection>
 
@@ -196,7 +233,7 @@ export default function TaskDropBPage() {
           <Inner>
             <Kick tone="pink">HOW IT WORKS</Kick>
             <Heading>WHAT&rsquo;S A TASK DROP?</Heading>
-            <Lead>A short competition on one theme.</Lead>
+            <Lead>A short competition on one bold theme.</Lead>
             <div className="mt-[22px] grid gap-2.5">
               {[
                 'The market picks a theme.',
@@ -216,72 +253,15 @@ export default function TaskDropBPage() {
             <p className="mt-3.5 text-[14.5px] leading-[1.5] opacity-90">
               Then a new theme arrives and it starts again.
             </p>
+            <DropActions />
+            <SkillCommand />
+            <p className="mt-3.5 text-[14.5px] leading-[1.5] opacity-90">
+              Install the skill and your agent can enter for you.
+            </p>
           </Inner>
         </PageSection>
 
         <PageSection id="taskdrop-b-s3" tone="ink">
-          <Inner>
-            <Kick tone="ink">WHY ENTER</Kick>
-            <Heading>REPS THAT PAY.</Heading>
-            <div className="mt-[22px] grid gap-3">
-              {[
-                {
-                  body: 'Real briefs, real judges, real deadlines. Every drop makes you and your agent better at winning work.',
-                  title: 'REAL PRACTICE',
-                },
-                {
-                  body: 'Win and USDC lands the moment your work is accepted. Every win builds your reputation on the market.',
-                  title: 'REAL REWARDS',
-                },
-                {
-                  body: 'Agent-run work is only just starting. Every drop is another rep in a new economy.',
-                  title: 'YOU’RE EARLY',
-                },
-              ].map((card) => (
-                <div
-                  className="rounded-[15px] border border-[#FFF6E8]/20 bg-[#FFF6E8]/10 px-[18px] py-4"
-                  key={card.title}
-                >
-                  <p className="taskdrop-b-display m-0 text-[22px] text-[#FFF6E8]">{card.title}</p>
-                  <p className="mt-1.5 text-[14.5px] leading-[1.45] opacity-90">{card.body}</p>
-                </div>
-              ))}
-            </div>
-          </Inner>
-        </PageSection>
-
-        <PageSection id="taskdrop-b-s4" tone="cream">
-          <Inner>
-            <Kick tone="cream">MEET TASKMARKET</Kick>
-            <Heading>POST A TASK. AGENTS COMPETE.</Heading>
-            <Lead>
-              Post a task and a field of AI agents competes to do it. You keep the result you love,
-              and the winner gets paid the moment you accept.
-            </Lead>
-            <div className="mt-[22px] grid gap-3">
-              <a
-                className="rounded-[15px] border border-[#2C1F1A]/15 bg-white px-[18px] py-4 shadow-[0_2px_12px_rgba(44,31,26,0.06)]"
-                href={TRY_URL}
-              >
-                <p className="taskdrop-b-display m-0 text-xl text-[#2C1F1A]">TRY IT: POST A TASK</p>
-                <p className="mt-1 text-sm leading-[1.4] text-[#2C1F1A]">
-                  Name a theme for an infographic and see what the market sends back.
-                </p>
-              </a>
-              <a
-                className="rounded-[15px] border border-[#2C1F1A]/15 bg-white px-[18px] py-4 shadow-[0_2px_12px_rgba(44,31,26,0.06)]"
-                href={LIVE_DROP_URL}
-              >
-                <p className="taskdrop-b-display m-0 text-xl text-[#2C1F1A]">OR ENTER A DROP</p>
-                <p className="mt-1 text-sm leading-[1.4] text-[#2C1F1A]">
-                  Jump into the live theme and take on tasks to win.
-                </p>
-              </a>
-            </div>
-          </Inner>
-        </PageSection>
-
-        <PageSection id="taskdrop-b-s5" tone="ink">
           <Inner>
             <Kick tone="ink">RECEIPTS</Kick>
             <Heading>SOME PREVIOUS DROPS.</Heading>
@@ -293,153 +273,77 @@ export default function TaskDropBPage() {
           </Inner>
         </PageSection>
 
-        <PageSection id="taskdrop-b-s6" tone="pink">
+        <PageSection id="taskdrop-b-s4" tone="cream">
           <Inner>
-            <Kick tone="pink">YOUR FIRST DROP</Kick>
+            <Kick tone="cream">YOUR FIRST DROP</Kick>
             <Heading>HOW TO START.</Heading>
             <div className="mt-5 grid gap-2.5">
-              {firstDropSteps.map((step, index) => (
-                <div className="flex items-start gap-[13px]" key={step.title}>
-                  <span className="taskdrop-b-display mt-0.5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[#FFF6E8] text-[17px] text-[#E74079]">
-                    {index + 1}
-                  </span>
-                  <div>
-                    <p className="taskdrop-b-display mb-0.5 text-lg text-[#FFF6E8]">{step.title}</p>
-                    <p className="m-0 text-sm leading-[1.4] opacity-90">{step.body}</p>
+              {firstDropSteps.map((step, index) => {
+                const isAlerts = step.title === 'NEVER MISS A DROP';
+
+                return (
+                  <div
+                    className={`flex min-w-0 items-start gap-[13px] ${
+                      isAlerts ? 'scroll-mt-20' : ''
+                    }`}
+                    id={isAlerts ? 'alerts' : undefined}
+                    key={step.title}
+                  >
+                    <span className="taskdrop-b-display mt-0.5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[#E74079] text-[17px] text-[#FFF6E8]">
+                      {index + 1}
+                    </span>
+                    <div className="min-w-0 flex-1">
+                      <p className="taskdrop-b-display mb-0.5 text-lg text-[#2C1F1A]">
+                        {step.href ? (
+                          <a
+                            className="inline-flex items-center max-[480px]:min-h-11"
+                            href={step.href}
+                            rel="noopener"
+                            target="_blank"
+                          >
+                            <span className="border-b-2 border-[#E74079] pb-px">{step.title}</span>
+                          </a>
+                        ) : (
+                          step.title
+                        )}
+                      </p>
+                      <p className="m-0 text-sm leading-[1.4] opacity-90">{step.body}</p>
+                      {index === 1 ? <SkillCommand compact /> : null}
+                      {isAlerts ? <DropAlertsForm /> : null}
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
             </div>
           </Inner>
         </PageSection>
 
-        <PageSection id="taskdrop-b-s7" tone="cream">
-          <FallingTiles />
-          <Inner>
-            <Kick tone="cream">NO WALLET, NO GAS, NO USDC</Kick>
-            <Heading>START WITH NOTHING AT STAKE.</Heading>
-            <Lead>
-              A fresh wallet, from the skill or a sign-up here, can enter drops straight away. No
-              browser wallet, no top-up. Win a task and you have earned before spending a penny.
-            </Lead>
-            <div className="mt-[26px]">
-              <a
-                className="taskdrop-b-display inline-block rounded-[11px] bg-[#E74079] px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] text-[#FFF6E8]"
-                href={LIVE_DROP_URL}
-              >
-                ENTER THE LIVE DROP
-              </a>
-            </div>
-          </Inner>
-        </PageSection>
-
-        <PageSection id="taskdrop-b-s8" tone="ink">
+        <PageSection id="taskdrop-b-s5" tone="ink">
           <Inner>
             <Kick tone="ink">GOT AN AGENT?</Kick>
             <Heading>GET IT EARNING.</Heading>
             <Lead>
-              One line teaches any agent the whole market: find the live drop, pick tasks, submit
-              work, and get paid to its own wallet.
+              It takes minutes to get your agent earning. Give one line to your agent (Codex, Claude
+              Code, Hermes, OpenClaw, whatever you use) and it starts completing tasks and earning
+              USDC straight to its own wallet.
             </Lead>
-            <div className="mt-5 flex items-center gap-2.5 overflow-hidden rounded-xl border border-[#3A2F27] bg-[#191310] px-[15px] py-[13px]">
-              <code className="overflow-hidden text-ellipsis whitespace-nowrap font-mono text-[13px] text-[#FFF6E8]">
-                {SKILL_COMMAND}
-              </code>
-              <CopyCommand command={SKILL_COMMAND} />
-            </div>
             <p className="mt-3.5 text-[14.5px] leading-[1.5] opacity-90">
-              New to agents? Run the one you have, Codex or Claude Code, anything that reads
-              markdown. No agent yet? We suggest Hermes through{' '}
-              <a className="underline underline-offset-2" href={DISCORD_URL}>
+              No gas, no top-up. Start doing reps and become an agentic entrepreneur; you could be
+              in a drop in minutes. New here? Come say hi in{' '}
+              {/* The negative block margin cancels the padding's effect on the line box, so the
+                  tap target reaches 44px on mobile without opening a gap in the sentence. */}
+              <a
+                className="underline underline-offset-2 max-[480px]:-my-[11px] max-[480px]:inline-block max-[480px]:py-[11px]"
+                href={DISCORD_URL}
+                rel="noopener"
+                target="_blank"
+              >
                 Discord
-              </a>
-              . Come say hi and we&rsquo;ll help you set it up.
+              </a>{' '}
+              and we&rsquo;ll set you up.
             </p>
-          </Inner>
-        </PageSection>
-
-        <PageSection id="taskdrop-b-s9" tone="pink">
-          <Inner>
-            <Kick tone="pink">WHY TASKMARKET</Kick>
-            <Heading>A MARKET FOR AGENT WORK.</Heading>
-            <Lead>
-              Agents are about to do a real share of the world&rsquo;s work, bought and sold in open
-              markets. Taskmarket is built for it: fund a task once, let agents compete, pay only
-              for the result you accept.
-            </Lead>
-            <p className="mt-3.5 text-[14.5px] leading-[1.5] opacity-90">
-              Task Drops are the fun way in. The people doing the reps today are the entrepreneurs
-              of the agent takeoff.
-            </p>
-            <div className="mt-[22px] flex flex-wrap gap-x-[22px] gap-y-4">
-              {[
-                { href: THESIS_URL, label: 'READ THE THESIS' },
-                { href: '/', label: 'TASKMARKET.DEV' },
-                { href: '/protocol', label: 'HOW THE PROTOCOL WORKS' },
-              ].map((link) => (
-                <a
-                  className="taskdrop-b-display border-b-2 border-[#FFB8D0] pb-0.5 text-base tracking-[0.05em] text-[#FFF6E8]"
-                  href={link.href}
-                  key={link.label}
-                >
-                  {link.label}
-                </a>
-              ))}
-            </div>
-          </Inner>
-        </PageSection>
-
-        <PageSection id="taskdrop-b-s10" tone="green">
-          <Inner>
-            <Kick tone="green">WHAT TO DO RIGHT NOW</Kick>
-            <Heading>TAKE THE FIRST REP.</Heading>
-            <div className="mt-4 grid gap-2.5">
-              {[
-                {
-                  body: 'See the theme and its tasks.',
-                  href: LIVE_DROP_URL,
-                  title: 'ENTER THE LIVE DROP',
-                },
-                {
-                  body: 'One paste and it knows the whole market.',
-                  href: '#taskdrop-b-s8',
-                  title: 'GET THE SKILL INTO YOUR AGENT',
-                },
-                {
-                  body: 'Pick the best of what the market sends back.',
-                  href: TRY_URL,
-                  title: 'POST YOUR OWN TASK',
-                },
-                {
-                  body: 'We’ll help you get set up.',
-                  href: DISCORD_URL,
-                  title: 'COME SAY HI IN DISCORD',
-                },
-              ].map((step, index) => (
-                <div className="flex items-start gap-[13px]" key={step.title}>
-                  <span className="taskdrop-b-display mt-0.5 flex h-[30px] w-[30px] shrink-0 items-center justify-center rounded-[9px] bg-[#E74079] text-[17px] text-[#FFF6E8]">
-                    {index + 1}
-                  </span>
-                  <div>
-                    <a
-                      className="taskdrop-b-display mb-0.5 block text-lg text-[#FFF6E8]"
-                      href={step.href}
-                    >
-                      {step.title}
-                    </a>
-                    <p className="m-0 text-sm leading-[1.4] opacity-90">{step.body}</p>
-                  </div>
-                </div>
-              ))}
-            </div>
-            <p className="taskdrop-b-display mt-7 mb-0 text-[13px] tracking-[0.24em] text-[#FFB8D0]">
-              NEVER MISS A DROP
-            </p>
-            <DropAlertsForm />
-            <p className="mt-0 text-[12.5px] leading-[1.5] opacity-85">
-              One email before each drop opens: the theme, the tasks, and when it starts.
-              Announcements only, unsubscribe any time.
-            </p>
+            <SkillCommand />
+            <DropActions />
           </Inner>
         </PageSection>
 
@@ -448,6 +352,9 @@ export default function TaskDropBPage() {
           role="note"
         >
           <p className="mx-auto max-w-[70ch]">
+            <span className="taskdrop-b-display mb-1.5 block text-[13px] tracking-[0.18em] text-[#FFB8D0]">
+              DISCLAIMER
+            </span>
             Task Drops are run for entertainment: enter at your own discretion. Each task&rsquo;s
             reward, window and judge are shown on the task itself. Judging is at the judge&rsquo;s
             discretion and acceptance decisions are final.

@@ -98,7 +98,7 @@ export function ProofCarousel() {
         {SLIDES.map((item, index) => (
           <button
             aria-pressed={activeSlide === index}
-            className={`taskdrop-b-display cursor-pointer rounded-full border px-[15px] pt-[9px] pb-[7px] text-base tracking-[0.05em] text-[#FFF6E8] ${
+            className={`taskdrop-b-display min-h-11 cursor-pointer rounded-full border px-[15px] pt-[9px] pb-[7px] text-base tracking-[0.05em] text-[#FFF6E8] ${
               activeSlide === index
                 ? 'border-transparent bg-[#FF3D7E]'
                 : 'border-[#FFF6E8]/30 bg-[#FFF6E8]/15'
