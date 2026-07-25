@@ -48,6 +48,9 @@ export function SiteHeader() {
         />
         <h1 className="min-w-0 flex-1 truncate text-base font-medium">{routeTitle(pathname)}</h1>
         <div className="flex shrink-0 items-center gap-2">
+          <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
+            <Link href="/live">Latest Drop</Link>
+          </Button>
           <PrivyHeaderAccountControl />
           <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
             <a href="/skill.md" className="dark:text-foreground">
