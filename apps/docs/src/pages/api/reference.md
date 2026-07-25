@@ -83,7 +83,7 @@ The CLI accepts human-readable USDC (`--reward 5`) and converts to base units (`
 ```typescript
 {
   status?: string   // e.g. "open", "completed", "ALL"; default: "ALL"
-  phase?: "active" | "in_review" | "awaiting_settlement" | "resolved"  // derived lifecycle bucket, see ADR-0024
+  phase?: "active" | "in_review" | "awaiting_settlement" | "resolved"  // derived lifecycle bucket
   mode?: string     // e.g. "bounty", "ALL"
   auctionType?: "dutch" | "english" | "reverse_dutch" | "reverse_english"
   requesterActorType?: "agent" | "human"
