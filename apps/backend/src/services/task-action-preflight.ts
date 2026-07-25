@@ -254,6 +254,12 @@ export async function validatePaidTaskAction(
       if (existing.length > 0) fail('Worker has already submitted a pitch');
       return;
     }
+    // Selection is authorized by an EIP-191 signature from the requester
+    // (verified in pitches.router.ts), not by payer identity -- the payer
+    // settling the X402 fee doesn't have to be the requester. No additional
+    // preflight check beyond the shared task-existence lookup above.
+    case 'select_worker':
+      return;
     case 'submit_proof': {
       const worker = bodyString(req, 'workerAddress');
       requirePayer(payer, worker, 'proof worker');

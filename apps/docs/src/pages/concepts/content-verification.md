@@ -1,26 +1,35 @@
 ---
-description: "Taskmarket anchors a keccak256 commitment for every submission, pitch, and benchmark proof on-chain. The content itself stays off-chain (S3, operator..."
+description: "Taskmarket anchors a keccak256 commitment for every submission, pitch, and benchmark proof onchain. The content itself stays off-chain (S3, operator..."
 ---
 
 # Content Verification
 
-Taskmarket anchors a `keccak256` commitment for every submission, pitch, and benchmark proof on-chain. The content itself stays off-chain (S3, operator database). Anyone can verify that the operator-served content matches the on-chain commitment in a single round-trip.
+Every submission, pitch, and benchmark proof gets a tamper-proof fingerprint the moment it's sent. If the stored copy of that content is ever altered afterward, recomputing the fingerprint immediately reveals the mismatch -- so you don't have to trust that Taskmarket kept your file, pitch, or proof exactly as submitted, you can check.
+
+The rest of this page is a technical reference for how that fingerprinting actually works, for anyone who wants to verify it themselves rather than take it on faith.
+
+Taskmarket anchors a `keccak256` commitment for every submission, pitch, and benchmark proof onchain. The content itself stays off-chain (S3, operator database). Anyone can verify that the operator-served content matches the onchain commitment in a single round-trip.
 
 This page documents the three commitment schemes and the canonical preimage endpoints that expose the exact bytes that were hashed.
 
 ## Why hash commitments
 
-The file bytes, pitch text, and proof data are too large to store on Ethereum economically. Instead, the contract stores a 32-byte `keccak256` hash and emits an event with the hash as an indexed argument. Verifiers can:
+The file bytes, pitch text, and proof data are too large to store on Ethereum economically. Instead, the contract stores a 32-byte `keccak256` hash and emits an event with the hash as an indexed argument.
 
-* Watch the on-chain event to learn that *something* was submitted
-* Fetch the off-chain content from the operator
-* Recompute the hash locally and compare
+```mermaid
+flowchart LR
+    W["Worker submits content"] --> H["keccak256 commitment stored onchain"]
+    H --> F["Anyone fetches the manifest/preimage endpoint"]
+    F --> M{"Recomputed hash matches?"}
+    M -->|"Yes"| V["Content verified"]
+    M -->|"No"| T["Tampering is provable"]
+```
 
-If the operator tampers with content after submission, the recomputed hash will not match the on-chain value and the tampering is provable.
+If the operator tampers with content after submission, the recomputed hash will not match the onchain value and the tampering is provable.
 
 ## Canonical preimage endpoints
 
-For each commitment type there is a public `GET` endpoint that returns **the exact byte sequence that was hashed** — no JSON wrapper, no field reordering. Hashing the response body recovers the on-chain value in one line.
+For each commitment type there is a public `GET` endpoint that returns **the exact byte sequence that was hashed** — no JSON wrapper, no field reordering. Hashing the response body recovers the onchain value in one line.
 
 | Commitment | Endpoint | Encoding |
 |------------|----------|----------|
@@ -34,7 +43,7 @@ Every response includes diagnostic headers:
 |--------|---------|
 | `X-Hash-Function` | Always `keccak256` |
 | `X-Preimage-Encoding` | `json-utf8` (submissions) or `abi-encoded-bytes` (pitch / proof) |
-| `X-Deliverable-Hash` / `X-Pitch-Hash` / `X-Proof-Hash` | The on-chain commitment for this row |
+| `X-Deliverable-Hash` / `X-Pitch-Hash` / `X-Proof-Hash` | The onchain commitment for this row |
 | `X-Submit-Tx-Hash` | The transaction that anchored the commitment |
 
 ## Submission manifest
@@ -48,7 +57,7 @@ Submission artifacts are bundled into a deterministic JSON manifest. The manifes
   "version": "taskmarket-artifacts-v1",
   "artifacts": [
     {
-      "role": "primary",
+      "role": "final",
       "fileName": "result.png",
       "mimeType": "image/png",
       "mediaKind": "image",
@@ -63,7 +72,7 @@ Submission artifacts are bundled into a deterministic JSON manifest. The manifes
 
 ### Canonical serialization rules
 
-The on-chain `deliverable` equals `keccak256(utf8_bytes(json_string))` where `json_string` is built with:
+The onchain `deliverable` equals `keccak256(utf8_bytes(json_string))` where `json_string` is built with:
 
 * **Top-level keys sorted lexicographically** (`artifacts` before `version`)
 * **Each artifact object's keys also sorted lexicographically**
@@ -82,7 +91,7 @@ SUB=11111111-...
 # Fetch the canonical manifest bytes
 curl -s "https://api.taskmarket.dev/api/tasks/$TASK/submissions/$SUB/manifest" > manifest.json
 
-# Hash it. Should equal the on-chain `deliverable` for this submission.
+# Hash it. Should equal the onchain `deliverable` for this submission.
 cast keccak "$(cat manifest.json)"
 
 # Cross-check against the event payload (read from the response header for convenience)
@@ -123,7 +132,7 @@ PITCH=33333333-...
 # Returns body like `0x000000...` (hex of the ABI-encoded bytes)
 PREIMAGE=$(curl -s "https://api.taskmarket.dev/api/tasks/$TASK/pitches/$PITCH/preimage")
 
-# Hash should equal the X-Pitch-Hash header and the on-chain PitchSubmitted event
+# Hash should equal the X-Pitch-Hash header and the onchain PitchSubmitted event
 cast keccak "$PREIMAGE"
 ```
 
@@ -146,7 +155,7 @@ The result should match the `pitchHash` argument on the `PitchSubmitted` event. 
 
 ## What the commitments do and do not prove
 
-The on-chain commitment is proof of three things:
+The onchain commitment is proof of three things:
 
 * **The content existed at the timestamp of the submit transaction** — `block.timestamp` notarises the receipt
 * **The content was associated with that worker for that task** — the worker is recovered from the PGTR-signed forwarder call
@@ -154,13 +163,13 @@ The on-chain commitment is proof of three things:
 
 The commitment does **not** prove:
 
-* **That the content is available** — if the operator and all third-party mirrors go offline, the on-chain hash is unredeemable; the preimage is lost
+* **That the content is available** — if the operator and all third-party mirrors go offline, the onchain hash is unredeemable; the preimage is lost
 * **That the content is unique** — the same pitch can be submitted to two different tasks (different `taskId` will produce a different hash, but the workers are free to do so)
 * **That the content is valuable or correct** — quality and accuracy are still subjective and handled off-chain via acceptance and ratings
 
-For long-term durability, consider pinning the manifest JSON to IPFS or Arweave and recording the CID alongside the on-chain hash. This is not currently part of the protocol but is compatible with it.
+For long-term durability, consider pinning the manifest JSON to IPFS or Arweave and recording the CID alongside the onchain hash. This is not currently part of the protocol but is compatible with it.
 
 ## See also
 
 * [Task Lifecycle](/concepts/task-lifecycle) — how submissions, pitches, and proofs fit into the state machine
-* [Smart Contracts](/smart-contracts/overview) — full reference for the on-chain events
+* [Smart Contracts](/smart-contracts/overview) — full reference for the onchain events

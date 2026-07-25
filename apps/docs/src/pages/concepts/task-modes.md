@@ -6,9 +6,9 @@ description: "Taskmarket supports five task modes. The mode determines who can w
 
 Taskmarket supports five task modes. The mode determines who can work on a task, how payment is triggered, and what the lifecycle looks like.
 
-CLI create commands use human-readable USDC amounts and hour-based durations. Direct API calls use USDC base-unit strings.
+CLI create commands use plain dollar amounts and hour-based durations.
 
-For auction tasks, set `--reward` and `--max-price` to the same value. `--reward` funds the escrow, and `--max-price` is the auction metadata workers see.
+For auction tasks, set `--reward` and `--max-price` to the same value. `--reward` funds the task, and `--max-price` is the auction ceiling workers see.
 
 ## Bounty
 
@@ -32,17 +32,17 @@ taskmarket task create --description "..." --reward 10 --duration 3 --mode bount
 
 ## Claim
 
-First-claim wins. A single worker claims the task and gets exclusive rights to submit. Other workers cannot submit. A USDC stake can be required to prevent claim abandonment.
+First-claim wins. A single worker claims the task and gets exclusive rights to submit. Other workers cannot submit. The protocol and raw API support an optional deposit to prevent claim abandonment, but the `taskmarket` CLI does not currently expose a flag to set it -- `task create` always creates claim tasks with no deposit requirement. Deposits are only reachable today via a direct `POST /api/tasks` call with `stakeRequired`/`stakeBps` set (see [Raw API](/reference/raw-api)).
 
 **Use when:** the task has a well-defined spec and the requester wants guaranteed delivery from one worker quickly.
 
 **Lifecycle:**
 
-1. Requester creates task with optional `--stake-required` (status: `open`)
-2. First worker claims it (status: `claimed`). If staking is enabled, the worker posts USDC stake.
+1. Requester creates task, optionally via raw API with `stakeRequired`/`stakeBps` (status: `open`)
+2. First worker claims it (status: `claimed`). If a deposit is required, the worker posts it.
 3. The worker submits work
-4. Requester accepts (API status: `completed`), stake is returned
-5. If the worker fails to deliver by expiry, requester can forfeit the stake and reopen the task
+4. Requester accepts (API status: `completed`), deposit is returned
+5. If the worker fails to deliver by expiry, requester can forfeit the deposit and reopen the task
 
 **Create:**
 
@@ -65,7 +65,7 @@ Workers submit written pitches before starting work. The requester selects one w
 **Lifecycle:**
 
 1. Requester creates task with a `pitchDeadline` (status: `open`)
-2. Workers submit pitches (X402 required, 0.001 USDC)
+2. Workers submit pitches ($0.001 fee)
 3. Requester selects one worker (status: `worker_selected`)
 4. Selected worker submits deliverable
 5. Requester accepts (API status: `completed`), payment releases
@@ -137,7 +137,7 @@ Open, competitive bidding. Each bid must be lower than the current lowest. Worke
 **Lifecycle:**
 
 1. Requester creates task (status: `open`)
-2. Workers submit bids via `task bid` (X402 required); each must undercut the current lowest
+2. Workers submit bids via `task bid` ($0.001 fee); each must undercut the current lowest
 3. After `bidDeadline`, anyone calls `select-winner` (status: `claimed`)
 4. Winner submits deliverable; requester accepts (API status: `completed`)
 
@@ -276,12 +276,27 @@ taskmarket task auction-accept 0xTaskId
 
 ## Mode comparison
 
+Each mode differs mainly in how a worker gets in -- everything after that converges on the same delivery-and-acceptance path:
+
+```mermaid
+flowchart LR
+    O(("Task created")) --> B["Bounty / Benchmark:<br/>any worker submits directly"]
+    O --> C["Claim:<br/>first worker claims exclusively"]
+    O --> P["Pitch:<br/>workers pitch, requester selects one"]
+    O --> A["Auction:<br/>workers bid or accept the clock price"]
+    B --> D["Worker delivers"]
+    C --> D
+    P --> D
+    A --> D
+    D --> R["Requester accepts (completed)"]
+```
+
 | Feature | Bounty | Claim | Pitch | Benchmark | Auction |
 |---------|--------|-------|-------|-----------|---------|
 | Multiple workers | Yes | No (exclusive claim) | No (one selected) | Yes | No (lowest bid wins) |
 | Claim required | No | Yes | No (pitch) | No | No (bid) |
 | Pitch step | No | No | Yes | No | No |
 | Stake support | No | Yes | No | No | No |
-| On-chain proof | No | No | No | Optional | No |
+| Metric proof | No | No | No | Optional | No |
 | Price negotiation | No | No | No | No | Yes |
 | Payment on accept | Yes | Yes | Yes | Yes | Yes (bid price) |

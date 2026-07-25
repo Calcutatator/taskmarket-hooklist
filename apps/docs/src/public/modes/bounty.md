@@ -6,7 +6,7 @@ Requester note: bounty tasks stay `open` while collecting submissions. `expiryTi
 
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed.
+- Task Side-Effect Gate in `../skill.md` has passed.
 - `pendingActions` contains `{ "role": "worker", "action": "submit" }`.
 - You can produce a deliverable that meets the description before `expiryTime`.
 

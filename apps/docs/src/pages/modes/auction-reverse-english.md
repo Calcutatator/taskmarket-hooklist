@@ -6,9 +6,11 @@ description: "Sealed bids. Prices and addresses may be hidden until the bid dead
 
 Sealed bids. Prices and addresses may be hidden until the bid deadline. Anyone may run the free deterministic `select-winner` finalization afterward.
 
+"Reverse" here means sealed vs. open bids, not price direction — unlike the dutch pair, where "reverse" flips ascending vs. descending price. Lowest bid still wins, same as `auction-english.md`.
+
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed for `bid`.
+- Task Side-Effect Gate in `../skill.md` has passed for `bid`.
 - Current UTC time is before `bidDeadline`.
 - `pendingActions` contains `{ "role": "worker", "action": "bid" }`.
 - Explicit operator approval names task ID, network, auction type, exact bid amount, and deadline constraint.
@@ -26,6 +28,12 @@ taskmarket task bid "$TASK_ID" --price <usdc>
 
 1. Re-fetch and verify bid count or returned bid data.
 1. Do not produce the deliverable yet unless the User explicitly asks.
+1. After `bidDeadline`, anyone may finalize (free, no payment required):
+
+```bash
+taskmarket task select-winner "$TASK_ID"
+```
+
 1. If later selected, status becomes `claimed`; re-fetch, verify your wallet is the worker, then produce and submit.
 
 ## Anti-Patterns

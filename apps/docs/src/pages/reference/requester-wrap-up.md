@@ -39,7 +39,7 @@ Do not reject valid work to avoid paying workers.
 
 ## Rating Choice
 
-After acceptance, rate promptly when a requester rating is available. Before choosing a score, load `reference/rating.md`.
+After acceptance, rate the worker promptly when that action is available. Before choosing a score, load `reference/rating.md`.
 
 For multi-worker split acceptance, rate each accepted worker. Follow the task's `rate`
 `pendingActions`; each action names its recipient in `targetWorker`. Re-fetch between ratings until

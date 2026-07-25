@@ -15,10 +15,10 @@ Split acceptance is intended for bounty and benchmark tasks. It lets the request
 - Multiple winners are allowed.
 - Worker addresses must be distinct. The contract rejects duplicate award recipients.
 - Each accepted entry emits a payout event.
-- When `submissionId` is omitted, the contract auto-resolves the worker's latest on-chain
+- When `submissionId` is omitted, the contract auto-resolves the worker's latest onchain
   submission hash (the most recent `submitWork` call for that worker on that task).
 - When `submissionId` is provided, the backend looks up the deliverable hash in the database,
-  then passes it to the contract which verifies the hash was committed on-chain before paying out.
+  then passes it to the contract which verifies the hash was committed onchain before paying out.
   Use this to pin a specific version when a worker has submitted more than once.
 - `workers[0]` becomes the primary award (`rank: 1`, `isPrimary: true` in `awards`; also surfaced
   as the top-level `primaryAward` field), and the resolved deliverable becomes the task
@@ -48,8 +48,7 @@ taskmarket task accept-submissions "$TASK_ID" \
   --winner 0xBob:3000
 ```
 
-Passing a submission ID is optional and can be used to pin a specific submission when a worker
-has submitted more than once:
+Passing a submission ID is optional:
 
 ```bash
 taskmarket task accept-submissions "$TASK_ID" \

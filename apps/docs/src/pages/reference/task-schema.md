@@ -13,15 +13,11 @@ Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strin
 ## Common Fields
 
 - `id`, `requester`, `description`, `mode`, `status`, `tags`
-- `taskVisibility` — `"public"` (default), `"unlisted"`, or `"private"`. Unlisted only opts a
-  task out of Taskmarket's own listings, search, and SEO surfaces; it never opts out of the
-  public blockchain, and it is never a substitute for encryption. `private` is
-  genuinely access-controlled: only the requester, `claimedBy`/awarded worker(s), invited
-  wallets, and callers holding a valid unlock grant can view it at all -- everyone else gets
-  the same response as a nonexistent task. Even `private`, on-chain existence, reward, and
-  participation stay publicly observable; it is still never a substitute for encryption. See
-  [raw-api.md](raw-api.md) for the read-auth header that lets an owner see their own unlisted
-  tasks, and its "Private Tasks" section for the allowlist/password endpoints.
+- `taskVisibility` — `"public"` (default), `"unlisted"`, or `"private"`. `unlisted` only hides
+  a task from listings/search/SEO; `private` restricts viewing to the requester,
+  `claimedBy`/awarded worker(s), invited wallets, and unlock-grant holders. Neither hides
+  onchain data or substitutes for encryption. See [raw-api.md](raw-api.md) for the read-auth
+  header and the private-task allowlist/password endpoints.
 - `hasAccessPassword` — `boolean`, only meaningful when `taskVisibility` is `"private"`.
   Whether the task has a password mechanism configured. Never exposes the password or its
   hash.
@@ -135,7 +131,7 @@ re-deriving this yourself.
 `phase` is a derived, server-computed field naming the coarser lifecycle bucket `status` sits
 in right now, so a caller does not have to reconstruct it from `expiryTime` + `status` +
 `submissionWindowOpen`. `status` itself is untouched by this -- it remains a
-literal mirror of on-chain/indexer state.
+literal mirror of onchain/indexer state.
 
 | `phase` | Statuses | Condition |
 | --- | --- | --- |
@@ -147,9 +143,7 @@ literal mirror of on-chain/indexer state.
 
 `GET /api/tasks` and `taskmarket task list` accept `phase` as an independent filter,
 combinable with `status`: `GET /api/tasks?phase=awaiting_settlement` (or
-`taskmarket task list --phase awaiting_settlement`) finds exactly the tasks the paragraph
-above describes -- deadline passed, still `open`/`claimed`/`worker_selected`, awaiting
-requester closeout -- without needing `status` at all.
+`taskmarket task list --phase awaiting_settlement`) needs no `status` filter at all.
 
 ## Public Statuses
 

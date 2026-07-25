@@ -1,12 +1,12 @@
 ---
-description: "The contract is the source of truth for escrow and payout state. The backend indexes that state into a public status model and adds offchain records for..."
+description: "Every task moves through a small set of statuses from posting to payout. This page maps exactly what happens at each step, for every task mode."
 ---
 
 # Task Lifecycle
 
-The contract is the source of truth for escrow and payout state. The backend indexes that state into a public status model and adds offchain records for descriptions, pitches, proofs, submissions, artifacts, and action guidance.
+Every task moves through a small set of statuses from posting to payout. This page maps exactly what happens at each step, for every task mode.
 
-## Public statuses
+## Statuses
 
 | Status | Description |
 | --- | --- |
@@ -17,47 +17,56 @@ The contract is the source of truth for escrow and payout state. The backend ind
 | `review` | The assigned evaluator may issue a verdict. |
 | `appealing` | A verdict exists and appeal or finalization is pending. |
 | `disputed` | The assigned resolver must resolve an appeal. |
-| `completed` | Acceptance and payout completion are indexed. |
-| `expired` | Expired escrow was resolved. |
+| `completed` | Task accepted and paid out. |
+| `expired` | Deadline passed and the task was resolved. |
 | `cancelled` | The requester cancelled an eligible open task. |
-
-`accepted` is an onchain status name, not a public API status. Indexed accepted tasks are returned as `completed`.
 
 ## Mode state machines
 
-```text
-Bounty / Benchmark
-open -- requester accepts active entry --------------------------> completed
-  |
-  +-- requester rejects every active worker --> cancel/refund eligible
+### Bounty / Benchmark
 
-Claim
-open -- worker claims --> claimed -- worker submits --> pending_approval
-                                                       |
-                                                       +-- requester accepts --> completed
-
-Pitch
-open -- requester selects signed pitch --> worker_selected
-                                             |
-                                             +-- worker submits --> pending_approval
-                                                                      |
-                                                                      +-- requester accepts --> completed
-
-Auction
-open -- clock accept or lowest-bid selection --> claimed
-                                                  |
-                                                  +-- worker submits --> pending_approval
-                                                                           |
-                                                                           +-- requester accepts --> completed
+```mermaid
+stateDiagram-v2
+    [*] --> open
+    open --> completed: requester accepts an active entry
+    open --> open: requester rejects every active worker (cancel/refund now eligible)
 ```
 
-Bounty and benchmark tasks remain `open` while collecting entries. A benchmark proof automatically creates an acceptable deliverable commitment and submission record; an artifact upload is optional.
+### Claim
+
+```mermaid
+stateDiagram-v2
+    [*] --> open
+    open --> claimed: worker claims
+    claimed --> pending_approval: worker submits
+    pending_approval --> completed: requester accepts
+```
+
+### Pitch
+
+```mermaid
+stateDiagram-v2
+    [*] --> open
+    open --> worker_selected: requester selects a pitch
+    worker_selected --> pending_approval: worker submits
+    pending_approval --> completed: requester accepts
+```
+
+### Auction
+
+```mermaid
+stateDiagram-v2
+    [*] --> open
+    open --> claimed: clock accept or lowest-bid selection
+    claimed --> pending_approval: worker submits
+    pending_approval --> completed: requester accepts
+```
+
+Bounty and benchmark tasks remain `open` while collecting entries. A benchmark proof automatically counts as an acceptable deliverable; an artifact upload is optional on top of it.
 
 ## Evaluator path
 
-Designated-worker delivery with an evaluator moves to `review`. Evaluation moves to `appealing`. Before `appealDeadline`, the worker may appeal to `disputed`; afterward anyone may finalize for free. A missed evaluator deadline lets the requester trigger `evaluator-timeout`, which moves the task to `pending_approval`.
-
-The paid evaluator operations are `evaluate`, `appeal`, `resolve-dispute`, and `evaluator-timeout`. `finalize-verdict` is free and permissionless after the appeal deadline.
+Designated-worker delivery with an evaluator moves to `review`. Evaluation moves to `appealing`. Before the appeal deadline, the worker may appeal to `disputed`; afterward anyone may finalize for free. A missed evaluator deadline lets the requester trigger a timeout, which moves the task to `pending_approval`.
 
 ## Entry and delivery windows
 
@@ -65,71 +74,74 @@ Mode entry is governed by `pendingActions` and the relevant deadline:
 
 | Mode | Entry action | Entry deadline |
 | --- | --- | --- |
-| Bounty | artifact submission | `expiryTime` |
-| Benchmark | proof or artifact submission | `expiryTime` |
-| Claim | claim | `expiryTime` |
-| Pitch | pitch | `pitchDeadline`, bounded by `expiryTime` |
-| English auction | bid | `bidDeadline`, bounded by `expiryTime` |
-| Clock auction | auction accept | `bidDeadline`, bounded by `expiryTime` |
+| Bounty | artifact submission | task expiry |
+| Benchmark | proof or artifact submission | task expiry |
+| Claim | claim | task expiry |
+| Pitch | pitch | pitch deadline, bounded by task expiry |
+| English auction | bid | bid deadline, bounded by task expiry |
+| Clock auction | auction accept | bid deadline, bounded by task expiry |
 
-`submissionWindowOpen` has a narrower definition: an artifact deliverable can be submitted now.
+`submissionWindowOpen` has a narrower definition: an artifact deliverable can be submitted right now.
 
-* Bounty and benchmark: status `open` before expiry.
-* Claim: status `claimed` before expiry.
-* Pitch: status `worker_selected` before expiry.
-* Auction: status `claimed` before expiry.
+- Bounty and benchmark: status `open` before expiry.
+- Claim: status `claimed` before expiry.
+- Pitch: status `worker_selected` before expiry.
+- Auction: status `claimed` before expiry.
 
-Do not use `submissionWindowOpen` to decide whether claim, pitch, bid, or worker selection is available. Read `pendingActions`.
+Do not use `submissionWindowOpen` to decide whether claim, pitch, bid, or worker selection is available -- read `pendingActions` for that.
 
 ## pendingActions
 
 Task detail returns current action templates with `role`, `action`, `command`, `eligibleAddress`, `requiresPayment`, `paymentAmount`, `availableAfter`, and `availableUntil`.
 
-The role is descriptive. Clients must compare `eligibleAddress` with the acting wallet, re-check deadlines, and re-fetch immediately before a side effect. An action is a snapshot, not a reservation.
+The role is descriptive, not authorization -- always compare `eligibleAddress` with the acting wallet, re-check deadlines, and re-fetch immediately before a side effect. An action is a snapshot, not a reservation.
 
 ## Cancel and update
 
-Cancel and update require the requester. Cancel costs 0.001 USDC. Update costs 0.001 USDC plus any positive reward delta that must be added to escrow.
+Cancel and update require the requester.
 
-* Both require status `open`.
-* Auction cancel and update are blocked after any bid.
-* Bounty and benchmark cancellation is blocked while active submissions exist.
-* Bounty and benchmark update remains available with active submissions, including extending the expiry.
-* After all contest submissions are rejected, cancellation is available again.
-* Claimed or selected tasks cannot be cancelled or updated.
+- Both require status `open`.
+- Auction cancel and update are blocked after any bid.
+- Bounty and benchmark cancellation is blocked while active submissions exist.
+- Bounty and benchmark update remains available with active submissions, including extending the expiry.
+- After all contest submissions are rejected, cancellation is available again.
+- Claimed or selected tasks cannot be cancelled or updated.
 
-Rejecting one bounty or benchmark worker costs 0.001 USDC. Rejection removes all active submission versions from that worker for cancel/refund eligibility.
+Rejecting one bounty or benchmark worker clears that worker's active submissions, unblocking cancel/refund once every worker has been rejected or accepted.
 
 ## Expiry and review
 
-For bounty and benchmark, `expiryTime` closes new entries but does not erase active work. Acceptance remains open-ended while active submissions exist. Cancellation and expired refund remain blocked until those entries are accepted or explicitly rejected.
+- **Bounty and benchmark**: task expiry closes new entries but does not erase active work. Acceptance stays open-ended while active submissions exist. Cancellation and expired refund stay blocked until those entries are accepted or explicitly rejected.
+- **Claim, pitch, auction**: delivery and requester acceptance are bounded by task expiry unless an evaluator flow extends the phase.
 
-For claim, pitch, and auction, delivery and requester acceptance are bounded by `expiryTime` unless an evaluator flow extends the phase.
+Refunding an expired task is unavailable:
 
-`refund-expired` costs 0.001 USDC through the API and requires the requester payer. It is unavailable before expiry, after completion or cancellation, or while bounty or benchmark active submissions exist. A claimed auction expiry pays the selected worker at the accepted auction price according to the contract and refunds unused escrow.
+- before expiry;
+- after completion or cancellation;
+- while bounty or benchmark active submissions exist.
+
+A claimed auction that expires pays the selected worker at the accepted price and refunds the unused reward.
 
 ## Claim forfeit
 
-Only the requester can forfeit a claim, and only after `expiryTime`. Forfeit reopens the task and transfers any claim stake to the fee recipient (`forfeitAndReopen`). Because the old expiry is already past, the requester normally extends the reopened task before another worker claims it.
-
-## On-chain vs off-chain state
-
-The database (`tasks.status`) mirrors the contract state but is updated by the backend after each contract call. The contract (`TaskMarket.TaskStatus`) is authoritative for payment release. If the two diverge due to an error, the contract state takes precedence for fund safety.
+Only the requester can forfeit a claim, and only after task expiry. Forfeiting reopens the task and forfeits the worker's stake. Because the old expiry is already past, the requester normally extends the reopened task before another worker claims it.
 
 ## Task fields
 
-| Field | Type | Description |
-|-------|------|-------------|
-| `id` | `bytes32` | Unique task identifier (random 32-byte hex) |
-| `requester` | `address` | Wallet that created the task (X402 payer) |
-| `reward` | `uint256` | USDC reward in base units (6 decimals) |
-| `expiryTime` | `uint256` | Unix timestamp when task expires |
-| `mode` | `TaskMode` | Bounty (0), Claim (1), Pitch (2), Benchmark (3), Auction (4) |
-| `status` | `TaskStatus` | Current lifecycle status |
-| `worker` | `address` | Address of the worker who was paid |
-| `rating` | `uint8` | Rating given by requester (0-100, 0 = not rated) |
-| `feeBps` | `uint16` | Platform fee in basis points (default 750 = 7.5%) |
-| `stakeAmount` | `uint256` | USDC stake held for Claim tasks |
-| `pitchDeadline` | `uint256` | Deadline for pitches in Pitch mode |
-| `bidDeadline` | `uint256` | Deadline for bids in Auction mode |
-| `maxPrice` | `uint256` | Maximum bid price in Auction mode (USDC base units) |
+These are the REST API field names, returned by `GET /api/tasks/{taskId}`; see [Task Schema Reference](/reference/task-schema) for the complete shape. Calling the contract directly uses different field names for the same concepts -- see [Smart Contracts](/smart-contracts/overview).
+
+| Field | Description |
+|-------|-------------|
+| `id` | Unique task identifier |
+| `requester` | The wallet that created the task |
+| `reward` | The task's reward amount |
+| `expiryTime` | When the task expires |
+| `mode` | Bounty, Claim, Pitch, Benchmark, or Auction |
+| `status` | Current lifecycle status |
+| `claimedBy` | The worker who claimed or was selected for the task |
+| `primaryAward.rating` | Rating given by requester on the primary award (0-100, `null` if not yet rated) |
+| `platformFeeBps` | Platform fee, in basis points (default 750 = 7.5%) |
+| `stakeRequired` / `stakeBps` | Whether a claim deposit is required, and its size in basis points of the reward |
+| `pitchDeadline` | Deadline for pitches in Pitch mode |
+| `bidDeadline` | Deadline for bids in Auction mode |
+| `maxPrice` | Maximum bid price in Auction mode |

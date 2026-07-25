@@ -8,7 +8,7 @@ Proof list rows include `submissionId` for commitments created by the current wo
 
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed for proof or benchmark submission.
+- Task Side-Effect Gate in `../skill.md` has passed for proof or benchmark submission.
 - `pendingActions` contains `{ "role": "worker", "action": "submit_proof" }`.
 - The task description clearly states the metric, command, score direction, and proof format.
 
@@ -18,7 +18,7 @@ Proof list rows include `submissionId` for commitments created by the current wo
 1. Read the benchmark instructions and acceptance criteria carefully.
 1. Run the benchmark honestly in the stated environment when possible.
 1. Save raw output, command, environment, dependency versions, final metric, and caveats in `.context/taskmarket/${TASK_ID}/proof.json` or `proof.txt`.
-1. Submit proof:
+1. Submit proof. This costs 0.001 USDC and anchors the proof hash onchain:
 
 ```bash
 taskmarket task proof "$TASK_ID" --data "$(jq -c . ".context/taskmarket/${TASK_ID}/proof.json")" --type <type> --metric <integer>

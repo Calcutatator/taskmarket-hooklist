@@ -24,16 +24,11 @@ they answer different questions and change for different reasons:
   nothing to do with how generous the bonus is -- it only answers "how many
   tokens is $1 worth right now." The protocol owner updates it as the market
   price moves (typically on a >20% price move or weekly, whichever comes
-  first). It is not derived from an on-chain oracle.
-
-Changing one never silently changes the other's effective meaning. If DREAMS
-doubles in price, `dreamsPerUsdc` halves and the USD value of every bonus stays
-the same. If the protocol wants to be more or less generous with incentives,
-`bonusBps` changes and the exchange rate is untouched.
+  first). It is not derived from an onchain oracle.
 
 ## Reward formula
 
-Applied in this order, mirrored exactly on-chain and in every off-chain
+Applied in this order, mirrored exactly onchain and in every off-chain
 estimate:
 
 ```text
@@ -82,16 +77,50 @@ still move between when you view the estimate and when the task completes.
 ## Claimable escrow model
 
 Tokens are NOT pushed directly to your wallet at task completion. Instead they
-accumulate in the `TaskTokenRewardHook` contract as a claimable balance. You
-withdraw them explicitly when ready.
+accumulate in the `TaskTokenRewardHook` contract as a claimable balance until
+you withdraw them.
+
+Check your balance:
 
 ```bash
-taskmarket stats             # shows pendingDreamsRewards, pendingDreamsUsd, dreamsPerUsdc
+taskmarket stats
+# pendingDreamsRewards reads "0" if unconfigured; pendingDreamsUsd and dreamsPerUsdc are null
+```
+
+```text
+GET /api/wallet/dreams-balance?address=<address>
+# -> { claimableBaseUnits: "500000000000000000000" }
+```
+
+Withdraw:
+
+```bash
 taskmarket wallet withdraw-dreams [--destination <addr>]
 ```
 
-If no `--destination` is given, rewards go to your registered withdrawal address
-(set once with `taskmarket wallet set-withdrawal-address <addr>`).
+Without `--destination`, rewards go to your registered withdrawal address (set
+once with `taskmarket wallet set-withdrawal-address <addr>`). The command
+signs `taskmarket:withdraw-dreams:<destination>:<nonce>:<validBefore>` with
+your wallet key; the backend then calls `withdrawFor(wallet, destination)` on
+the hook contract using its own server wallet (no ETH needed from yours). The
+nonce is single-use and the signature expires 5 minutes after signing, so it
+cannot be replayed.
+
+```json
+{
+  "ok": true,
+  "data": {
+    "txHash": "0x...",
+    "destination": "0x...",
+    "claimedBaseUnits": "500000000000000000000",
+    "claimedDreams": "500",
+    "dreamsPerUsdc": "347000000000000000000",
+    "usdEquivalent": "1440115"
+  }
+}
+```
+
+`dreamsPerUsdc` and `usdEquivalent` (USDC base units) show the rate the withdrawal was valued at.
 
 ## Wallet-age ramp
 
@@ -143,56 +172,6 @@ task may be reduced or skipped entirely -- the underlying USDC task payment is
 never affected, only the DREAMS bonus on top of it. Caps reset on a rolling
 epoch (currently weekly). This is why the estimates shown before completion
 are estimates, not guarantees.
-
-## Viewing your pending balance
-
-```bash
-taskmarket stats
-```
-
-The `pendingDreamsRewards` field in the stats output shows your accumulated,
-unclaimed balance in DREAMS (formatted as a decimal string). `pendingDreamsUsd`
-shows the USD-equivalent value at the current rate, and `dreamsPerUsdc` shows
-the rate itself. All three are `null` when the rewards system is not
-configured on this server.
-
-You can also query directly:
-
-```text
-GET /api/wallet/dreams-balance?address=<address>
-# -> { claimableBaseUnits: "500000000000000000000" }
-```
-
-## Withdrawing rewards
-
-```bash
-taskmarket wallet withdraw-dreams
-```
-
-This signs `taskmarket:withdraw-dreams:<destination>:<nonce>:<validBefore>` with
-your wallet key and POSTs to the backend, which calls `withdrawFor(wallet,
-destination)` on the hook contract using the backend server wallet (no ETH
-needed from your wallet). The nonce is single-use and the authorization
-expires 5 minutes after signing, so a captured signature cannot be replayed.
-
-Output:
-
-```json
-{
-  "ok": true,
-  "data": {
-    "txHash": "0x...",
-    "destination": "0x...",
-    "claimedBaseUnits": "500000000000000000000",
-    "claimedDreams": "500",
-    "dreamsPerUsdc": "347000000000000000000",
-    "usdEquivalent": "1440115"
-  }
-}
-```
-
-`dreamsPerUsdc` and `usdEquivalent` (USDC base units) show the rate the
-withdrawal was valued at, for transparency at payout time.
 
 ## DREAMS token
 

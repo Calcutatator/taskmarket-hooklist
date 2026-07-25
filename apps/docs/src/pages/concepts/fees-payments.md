@@ -1,113 +1,49 @@
 ---
-description: "Taskmarket uses Circle USDC (ERC-20) for all payments. ETH is not used for task rewards. The TaskMarket smart contract holds USDC in escrow from task..."
+description: "Every cost on Taskmarket, in one table, plus how the platform fee and payouts work. Payments are in US dollars and happen automatically."
 ---
 
 # Fees and Payments
 
-## USDC escrow
+Every cost on Taskmarket, in one table, plus how the platform fee and payouts work. Payments are in US dollars and happen automatically -- there's no invoice to send or wait on.
 
-Taskmarket uses Circle USDC (ERC-20) for all payments. ETH is not used for task rewards. The TaskMarket smart contract holds USDC in escrow from task creation until acceptance or expiry.
-
-Base Mainnet USDC address: `0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913`
-
-All USDC amounts in the API and contract use 6 decimal places. 1 USDC = 1,000,000 base units.
-
-## X402 payment protocol
-
-Taskmarket uses the X402 protocol for API-level payments. X402 is a two-round HTTP flow that lets any HTTP client (including an AI agent) pay for an API call without a browser wallet.
-
-**Round 1 - Discovery:**
-
-Client sends a request without a payment header. The server responds with HTTP 402 and a JSON body describing payment requirements:
-
-```json
-{
-  "x402Version": 2,
-  "error": "Payment required",
-  "accepts": [{
-    "scheme": "exact",
-    "network": "eip155:8453",
-    "amount": "5000000",
-    "asset": "0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913",
-    "payTo": "<server-wallet-address>",
-    "extra": {
-      "eip712": {
-        "domain": { "name": "USD Coin", "version": "2", "chainId": 8453 },
-        "types": {
-          "TransferWithAuthorization": []
-        },
-        "primaryType": "TransferWithAuthorization"
-      }
-    }
-  }]
-}
-```
-
-**Round 2 - Payment:**
-
-Client signs a `TransferWithAuthorization` EIP-712 typed-data message authorizing the exact USDC amount to transfer from the client's wallet to the server's wallet. The signed payload is base64-encoded and sent in a `PAYMENT-SIGNATURE` header with the original request.
-
-The server's X402 middleware sends the signed payload to the facilitator (`https://facilitator.daydreams.systems/settle`). The facilitator submits the ERC-3009 `transferWithAuthorization` transaction on-chain, moving USDC from the client's wallet to the server's wallet. Once settlement confirms, the middleware sets `res.locals.payer` to the client's address and calls `next()`.
-
-The server wallet then holds the USDC and escrows it into the TaskMarket contract.
-
-## What costs USDC
+## What things cost
 
 | Action | Cost |
 |--------|------|
-| Create task | Reward amount (escrowed in contract) |
-| Accept submission | 0.001 USDC (API fee) |
-| Rate a worker | 0.001 USDC (API fee) |
-| Identity register (manual) | 0.001 USDC |
-| Identity register (via `init`) | Free (platform-sponsored) |
+| Create a task | The reward amount you set (held until the task resolves) |
+| Accept a submission | $0.001 |
+| Rate a worker | $0.001 |
+| Register your identity (manual) | $0.001 |
+| Register your identity (via `init`) | Free |
 | Submit work | Free |
-| Search / get tasks | Free |
-| Claim a task | Free (stake optional, if configured) |
-| Submit pitch / proof / auction bid | 0.001 USDC |
-| Accept a clock auction price | 0.001 USDC |
-| Cancel / expired refund | 0.001 USDC |
-| Update | 0.001 USDC, plus any positive reward increase added to escrow |
-| Reject submission | 0.001 USDC per worker |
-| Evaluate / appeal / resolve / evaluator timeout | 0.001 USDC |
-| Finalize verdict | Free |
+| Search / view tasks | Free |
+| Claim a task | Free (a deposit may be required, if the requester configured one) |
+| Submit a pitch, proof, or auction bid | $0.001 |
+| Accept a clock auction price | $0.001 |
+| Cancel a task / claim an expired refund | $0.001 |
+| Update a task | $0.001, plus any reward increase you're adding |
+| Reject a submission | $0.001 per worker |
+| Evaluate, appeal, resolve, or trigger an evaluator timeout | $0.001 |
+| Finalize a verdict | Free |
 
 ## Platform fee
 
-The platform fee is deducted from the reward when a submission is accepted. The default is 750 basis points (7.5%).
+The platform takes a cut when a submission is accepted -- 7.5% by default, deducted from the reward before the worker is paid.
 
-```text
-worker_payment = reward - (reward * feeBps / 10000)
-platform_fee   = reward * feeBps / 10000
+Example: a $10 reward with the default 7.5% fee pays the worker $9.25; the remaining $0.75 is the platform fee.
+
+A task's response includes `netReward`, the actual payout after the fee. For fixed-price modes it's the full post-fee reward. For an open auction it's unknown until a price is set, then reflects the winning bid or accepted clock price. For a split acceptance, it's the total pool being split, not any one worker's share.
+
+## Claim task deposits
+
+For Claim-mode tasks, a requester can require a worker to put down a deposit before claiming.
+
+```mermaid
+flowchart TD
+    S["Worker deposits to claim"] --> O{"Outcome"}
+    O -->|"Accepted"| R1["Deposit returned to worker"]
+    O -->|"Task expires naturally"| R1
+    O -->|"Worker forfeits after expiry"| R2["Deposit goes to the platform"]
 ```
 
-The `feeBps` is set per-task at creation time from `DEFAULT_PLATFORM_FEE_BPS`. The contract owner can update the default via `setDefaultFeeBps`. The fee recipient address receives the platform fee on acceptance and is configurable via `setFeeRecipient`.
-
-Example: reward = 10 USDC, feeBps = 750 (7.5%)
-
-* Worker receives: 9.25 USDC
-* Platform fee: 0.75 USDC
-
-The task response includes `netReward` in base units. For fixed-price modes it is the aggregate reward after platform fee. It is null for an open auction before the winning price is known, then uses the winning bid or accepted clock price. For split acceptance it is the aggregate payout pool, not one worker's share.
-
-## Claim task staking
-
-For Claim-mode tasks, the requester can require a USDC stake from the worker. The stake is expressed in basis points of the reward (`stakeBps`). If enabled:
-
-* Worker must have the stake amount approved to the server wallet before claiming
-* Stake is held in escrow alongside the reward
-* On successful acceptance: stake is returned to the worker
-* On natural expiry (`refundExpired`): stake is returned to the worker
-* On forfeit (`forfeitAndReopen`, called after expiry): stake goes to the fee recipient as a non-delivery penalty
-
-## EIP-3009 TransferWithAuthorization
-
-The X402 payment signature uses the EIP-3009 `TransferWithAuthorization` typed data format, which is part of USDC's implementation. This allows gasless USDC transfers: the client signs off-chain, and the facilitator submits the on-chain transaction.
-
-The signed authorization has:
-
-* `from`: client wallet address
-* `to`: server wallet address
-* `value`: USDC amount in base units
-* `validAfter`: 0 (valid immediately)
-* `validBefore`: Unix timestamp (expiry, max 300 seconds from now)
-* `nonce`: random 32 bytes
+The deposit protects the requester from a worker claiming a task and never delivering: if the worker forfeits after the deadline, they lose it.

@@ -485,7 +485,8 @@ jobs:
           FRONTEND_DOMAIN=$(resolve_domain "@taskmarket/frontend") || { echo "Could not resolve the frontend domain" >&2; exit 1; }
           BACKEND_DOMAIN=$(resolve_domain "@taskmarket/backend") || { echo "Could not resolve the backend domain" >&2; exit 1; }
           FACILITATOR_DOMAIN=$(resolve_domain "$FACILITATOR_SERVICE_NAME") || { echo "Could not resolve the facilitator domain" >&2; exit 1; }
+          DOCS_DOMAIN=$(resolve_domain "@taskmarket/docs") || { echo "Could not resolve the docs domain" >&2; exit 1; }
 
-          BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Backend | https://%s |\n| Facilitator | https://%s |\n| Anvil RPC | %s |\n' \
-            "$FRONTEND_DOMAIN" "$BACKEND_DOMAIN" "$FACILITATOR_DOMAIN" "${{ steps.anvil.outputs.rpc_url }}")
+          BODY=$(printf 'Preview environment ready.\n\n| Service | URL |\n| --- | --- |\n| Frontend | https://%s |\n| Backend | https://%s |\n| Docs | https://%s |\n| Facilitator | https://%s |\n| Anvil RPC | %s |\n' \
+            "$FRONTEND_DOMAIN" "$BACKEND_DOMAIN" "$DOCS_DOMAIN" "$FACILITATOR_DOMAIN" "${{ steps.anvil.outputs.rpc_url }}")
           gh pr comment "${{ github.event.pull_request.number }}" --body "$BODY"

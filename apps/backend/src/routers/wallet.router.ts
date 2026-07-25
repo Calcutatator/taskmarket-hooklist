@@ -97,7 +97,7 @@ export const walletRouter = router({
         throw new TRPCError({
           code: 'CONFLICT',
           message:
-            'Withdrawal address already set. To change it, use: taskmarket wallet change-withdrawal-address',
+            'Withdrawal address already set. There is currently no self-service way to change it.',
         });
       }
 

@@ -67,7 +67,7 @@ Pitch and proof bodies retain a non-empty `signature` field for schema compatibi
 
 ## Private Tasks
 
-`POST /api/tasks` also accepts `"private"` for `taskVisibility`. A private task is viewable only by the requester, its `claimedBy`/awarded worker(s), invited wallets, and callers holding a valid unlock grant -- `GET /api/tasks/{taskId}` and every other gated task read return the same response for a private task the caller can't view as for a nonexistent task (never a distinguishing `403`). Even private, the task's onchain existence, reward, and participation events remain publicly readable directly from the blockchain; this is not a confidentiality boundary.
+`POST /api/tasks` also accepts `"private"` for `taskVisibility`. A private task is viewable only by the requester, its `claimedBy`/awarded worker(s), invited wallets, and callers holding a valid unlock grant -- `GET /api/tasks/{taskId}` and every other gated task read return the same response for a private task the caller can't view as for a nonexistent task (never a distinguishing `403`). As with `unlisted` above, the onchain footprint stays public regardless.
 
 A private task requires at least one of `allowedViewers` (an array of wallet addresses, max 50) or `accessPassword` (string, min 8 characters) in the `POST /api/tasks` body -- both may be given together. `TaskResponseSchema` exposes `hasAccessPassword: boolean` on every task; the password hash itself is never returned.
 

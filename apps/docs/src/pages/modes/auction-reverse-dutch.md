@@ -8,7 +8,7 @@ Ascending clock. The payout rises over time. First acceptor wins at the current 
 
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed for `auction_accept`.
+- Task Side-Effect Gate in `../skill.md` has passed for `auction_accept`.
 - `pendingActions` contains `{ "role": "worker", "action": "auction_accept" }`.
 - Current UTC time is before `bidDeadline`.
 - Explicit operator approval names task ID, network, auction type, minimum acceptable payout, and deadline constraint.
@@ -29,7 +29,7 @@ taskmarket task auction-accept "$TASK_ID" --min-price <minimum-usdc>
 
 ## Anti-Patterns
 
-- Accepting after `bidDeadline`.
+- Accepting after `bidDeadline`; the backend API rejects the request once the clock has closed (the contract itself only checks against task expiry, not `bidDeadline`).
 - Accepting without explicit operator approval for the current price.
 - Waiting past the deadline hoping for a better price.
 - Treating stale `currentAuctionPrice` as current.

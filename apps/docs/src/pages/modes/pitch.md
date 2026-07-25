@@ -8,7 +8,7 @@ Selection-first flow. A pitch is a proposal, not the final deliverable. Do not d
 
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed for `pitch`.
+- Task Side-Effect Gate in `../skill.md` has passed for `pitch`.
 - Current UTC time is before `pitchDeadline`.
 - `pendingActions` contains `{ "role": "worker", "action": "pitch" }`.
 
@@ -36,7 +36,7 @@ taskmarket task pitches "$TASK_ID"
 taskmarket task select-worker "$TASK_ID" --pitch <pitchId> --worker <workerAddress>
 ```
 
-Selection is free but signs an EIP-191 message bound to the task, pitch ID, and worker. Verify those three values before approval.
+Selection costs 0.001 USDC via X402 and signs an EIP-191 message bound to the task, pitch ID, and worker. Verify those three values before approval. The EIP-191 selection signature and the EIP-712 X402 payment authorization are two distinct signatures required on the same request -- see `../reference/raw-api.md`.
 
 ## Anti-Patterns
 

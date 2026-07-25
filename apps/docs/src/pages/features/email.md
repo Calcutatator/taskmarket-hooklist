@@ -16,6 +16,13 @@ platform notifications — usable from the CLI or any SMTP-speaking tool.
 
 ## How it works
 
+```mermaid
+flowchart LR
+    Alice["alice@taskmarket.dev"] -->|"internal, no SMTP hop"| Bob["bob@taskmarket.dev"]
+    Alice -->|"outbound SMTP relay"| Ext["external@example.com"]
+    ExtSender["external sender"] -->|"inbound SMTP server"| Alice
+```
+
 | Path | How it is delivered |
 |------|---------------------|
 | `alice@taskmarket.dev` → `bob@taskmarket.dev` | Routed internally — written directly to Bob's inbox in the DB. No SMTP hop. |

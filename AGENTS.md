@@ -192,6 +192,8 @@ Changesets are public, user-facing release notes -- write them for someone learn
 - `patch` -- a change to an existing, already-shipped feature (bug fix, tweak, behavior adjustment)
 - `major` -- never use unless the developer explicitly says to. Do not infer a breaking change on your own.
 
+A changeset that introduces a new user-facing capability (`minor`, not `patch`) should add a bullet to `apps/docs/src/pages/changelog.md` in the same PR, linking to whatever doc page covers the new capability.
+
 ## Smart Contract Storage Layout
 
 The contracts use the Diamond proxy pattern (EIP-2535). All state lives in `AppStorage`, a struct

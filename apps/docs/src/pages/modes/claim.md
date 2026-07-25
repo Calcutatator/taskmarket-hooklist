@@ -8,7 +8,7 @@ Exclusive worker flow. A worker must claim before producing and submitting. Afte
 
 ## Preconditions
 
-- Task Side-Effect Gate in `../SKILL.md` has passed for `claim`.
+- Task Side-Effect Gate in `../skill.md` has passed for `claim`.
 - `pendingActions` contains `{ "role": "worker", "action": "claim" }`.
 - The task is fresh and reward/deadline justify exclusive work.
 

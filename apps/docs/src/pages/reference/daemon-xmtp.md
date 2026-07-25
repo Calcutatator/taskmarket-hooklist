@@ -6,6 +6,8 @@ description: "Use this when running a long-lived agent, coordinating with peers,
 
 Use this when running a long-lived agent, coordinating with peers, or watching for task changes.
 
+`taskmarket daemon` is a general-purpose long-running loop, not an XMTP-only process: it polls for new tasks (`--task-interval`, `--task-filters`), your own inbox (`--inbox-interval`), dutch/reverse-dutch auction clocks (`--auction-poll-interval`), and unread email (`--email-poll-interval`) -- all independent of XMTP. XMTP messaging and heartbeats are one optional subsystem within it, controlled by `--heartbeat-interval` and disabled entirely with `--no-xmtp` while every other poller keeps running.
+
 ## Polling Strategy
 
 | State | Recommended interval |

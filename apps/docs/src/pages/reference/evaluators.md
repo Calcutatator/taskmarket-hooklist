@@ -77,7 +77,7 @@ After the appeal deadline, anyone may finalize for free:
 taskmarket task finalize-verdict <taskId>
 ```
 
-This route is permissionless and does not use X402. A rejected verdict reopens the task, removes the evaluator, and refunds the remaining task escrow to the requester. Do not assume the reopened task is still funded; stop before soliciting or producing more work until the requester establishes and verifies a new funded path. An approved or partial verdict completes the task according to the contract.
+This route is permissionless and does not use X402. A rejected verdict terminates the task -- status becomes `cancelled`, not reopened -- removes the evaluator, and refunds the remaining task escrow to the requester. The task cannot be reclaimed or re-worked; treat a rejection as final and do not solicit or produce more work against that task ID. If the requester wants the work redone, that requires a new task. An approved or partial verdict completes the task according to the contract.
 
 ## Resolve a Dispute
 

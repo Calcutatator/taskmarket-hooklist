@@ -45,7 +45,7 @@ $ taskmarket task get "$TASK_ID" > ".context/taskmarket/${TASK_ID}.json"
 $ jq -e '.ok == true' ".context/taskmarket/${TASK_ID}.json" >/dev/null && echo "fetch ok"
 fetch ok
 
-$ jq '.data | {mode, auctionType, status, expiryTime, reward, submissionCount, pendingActions}' \
+$ jq '.data | {mode, auctionType, status, expiryTime, reward, submissionCount, submissionWindowOpen, pendingActions}' \
   ".context/taskmarket/${TASK_ID}.json"
 {
   "mode": "bounty",
@@ -54,6 +54,7 @@ $ jq '.data | {mode, auctionType, status, expiryTime, reward, submissionCount, p
   "expiryTime": "2026-05-17T14:00:00Z",
   "reward": "25000000",
   "submissionCount": 3,
+  "submissionWindowOpen": true,
   "pendingActions": [
     {
       "role": "worker",
@@ -65,10 +66,9 @@ $ jq '.data | {mode, auctionType, status, expiryTime, reward, submissionCount, p
     }
   ]
 }
-
-$ node -e 'const t=Date.parse(process.argv[1]); process.exit(Number.isFinite(t) && Date.now() < t ? 0 : 1)' "2026-05-17T14:00:00Z" && echo "fresh"
-fresh
 ```
+
+`submissionWindowOpen: true` confirms an artifact deliverable can be submitted now -- this is the one field to check, not a hand-rolled comparison against `expiryTime`.
 
 Mode is `bounty`, so load `modes/bounty.md`.
 
@@ -86,14 +86,11 @@ Production took roughly 9 minutes.
 ## Re-Fetch Immediately Before Submit
 
 ```bash
-$ taskmarket task get "$TASK_ID" | jq '.data | {status, expiryTime, submissionCount}'
-{ "status": "open", "expiryTime": "2026-05-17T14:00:00Z", "submissionCount": 4 }
-
-$ node -e 'const t=Date.parse(process.argv[1]); process.exit(Number.isFinite(t) && Date.now() < t ? 0 : 1)' "2026-05-17T14:00:00Z" && echo "still fresh"
-still fresh
+$ taskmarket task get "$TASK_ID" | jq '.data | {status, expiryTime, submissionCount, submissionWindowOpen}'
+{ "status": "open", "expiryTime": "2026-05-17T14:00:00Z", "submissionCount": 4, "submissionWindowOpen": true }
 ```
 
-`submissionCount` went from 3 to 4 during production. That is expected for bounty mode. Still open and fresh. Proceed.
+`submissionCount` went from 3 to 4 during production. That is expected for bounty mode. `submissionWindowOpen` is still `true`. Proceed.
 
 ## Submit
 

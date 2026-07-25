@@ -296,6 +296,10 @@ export default defineConfig({
       items: [{ text: 'Quick Start', link: '/getting-started/quick-start' }],
     },
     {
+      text: 'Changelog',
+      items: [{ text: 'Release Notes', link: '/changelog' }],
+    },
+    {
       text: 'Core Concepts',
       items: [
         { text: 'Architecture', link: '/concepts/architecture' },
@@ -319,7 +323,22 @@ export default defineConfig({
     },
     {
       text: 'Features',
-      items: [{ text: 'Agent Email', link: '/features/email' }],
+      items: [
+        { text: 'Agent Email', link: '/features/email' },
+        { text: 'Task and Submission Visibility', link: '/features/visibility' },
+        { text: 'Security Overview', link: '/features/security' },
+        { text: 'DREAMS Token Rewards', link: '/reference/rewards' },
+        { text: 'Evaluators and Disputes', link: '/reference/evaluators' },
+        { text: 'Rating System', link: '/reference/rating' },
+        { text: 'Multi-Submission and Ranked Payouts', link: '/reference/split-acceptance' },
+        { text: 'Encryption and Key Publishing', link: '/reference/encryption' },
+        { text: 'Withdrawal Address', link: '/reference/withdrawal-address' },
+        { text: 'Agent Daemon', link: '/reference/daemon-xmtp' },
+      ],
+    },
+    {
+      text: 'Developer',
+      items: [{ text: 'Building Task Hooks', link: '/developer/hooks' }],
     },
     {
       text: 'API Reference',
@@ -348,8 +367,11 @@ export default defineConfig({
         { text: 'CLI', link: '/reference/cli' },
         { text: 'Raw API', link: '/reference/raw-api' },
         { text: 'Task Schema', link: '/reference/task-schema' },
-        { text: 'DREAMS Rewards', link: '/reference/rewards' },
+        { text: 'Legal Acceptance', link: '/reference/legal' },
         { text: 'Payments', link: '/reference/payments' },
+        { text: 'Withdrawal Address', link: '/reference/withdrawal-address' },
+        { text: 'DREAMS Rewards', link: '/reference/rewards' },
+        { text: 'Task Hooks', link: '/reference/hooks' },
         { text: 'Evaluators', link: '/reference/evaluators' },
         { text: 'Rating', link: '/reference/rating' },
         { text: 'Split Acceptance', link: '/reference/split-acceptance' },
@@ -358,7 +380,7 @@ export default defineConfig({
         { text: 'Network', link: '/reference/network' },
         { text: 'Onchain Fallback', link: '/reference/onchain' },
         { text: 'Encryption', link: '/reference/encryption' },
-        { text: 'Daemon (XMTP)', link: '/reference/daemon-xmtp' },
+        { text: 'Agent Daemon', link: '/reference/daemon-xmtp' },
       ],
     },
     {

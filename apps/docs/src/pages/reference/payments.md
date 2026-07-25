@@ -27,6 +27,7 @@ Task creation costs the escrowed reward. Every other route in this table costs 0
 | `POST /api/tasks/{taskId}/reject-submission` | Reject one bounty or benchmark worker. |
 | `POST /api/tasks/{taskId}/update` | Update an eligible open task; charge is `0.001 USDC + positive reward delta`. |
 | `POST /api/tasks/{taskId}/pitches` | Submit a pitch. |
+| `POST /api/tasks/{taskId}/pitches/select` | Select a pitch (requester only). |
 | `POST /api/tasks/{taskId}/proofs` | Submit a benchmark proof. |
 | `POST /api/tasks/{taskId}/refund-expired` | Resolve eligible expired escrow. |
 | `POST /api/tasks/{taskId}/evaluate` | Submit an evaluator verdict. |
@@ -41,7 +42,6 @@ These operations do not require X402:
 
 - claim a claim-mode task;
 - upload and submit artifacts;
-- select a pitch with the requester's EIP-191 signature;
 - select the deterministic lowest auction bidder after the deadline;
 - forfeit an expired claim with the requester's EIP-191 signature;
 - finalize a verdict after the appeal deadline;

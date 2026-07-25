@@ -147,6 +147,16 @@ describe('paid task action preflight', () => {
       followupRows: [[]],
     },
     {
+      // No payer restriction: selection is authorized by an EIP-191 signature
+      // from the requester, checked downstream in pitches.router.ts, not by
+      // X402 payer identity -- an arbitrary non-requester payer must still
+      // pass this preflight.
+      action: 'select_worker',
+      task: task({ mode: 'pitch', status: 'open' }),
+      body: { pitchId: 'pitch-1', workerAddress: WORKER, signature: '0xsig' },
+      payer: WORKER,
+    },
+    {
       action: 'rate',
       task: task({ status: 'completed' }),
       body: { worker: WORKER, rating: 100 },

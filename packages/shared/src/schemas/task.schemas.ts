@@ -81,6 +81,7 @@ export const PAID_PENDING_ACTION_NAMES = [
   'refund_expired',
   'reject_submission',
   'resolve_dispute',
+  'select_worker',
   'submit_proof',
   'update',
 ] as const satisfies readonly (typeof PendingActionName.options)[number][];

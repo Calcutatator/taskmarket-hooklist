@@ -551,6 +551,7 @@ const paidTaskRouteHandlers: Record<PaidTaskAction, PaidTaskRouteHandler> = {
     description: 'Reject submission',
   },
   resolve_dispute: { schema: ResolveDisputeInputSchema, description: 'Resolve task dispute' },
+  select_worker: { schema: PitchSelectSchema, description: 'Select pitch' },
   submit_proof: { schema: ProofSubmitSchema, description: 'Submit proof' },
   update: {
     schema: UpdateTaskInputSchema,
@@ -572,12 +573,6 @@ for (const action of Object.keys(PAID_TASK_ACTION_ROUTES) as PaidTaskAction[]) {
     })
   );
 }
-
-app.post(
-  '/api/tasks/:taskId/pitches/select',
-  validateBody(PitchSelectSchema),
-  x402Middleware({ getAmount: () => STANDARD_X402_ACTION_AMOUNT, description: 'Select pitch' })
-);
 app.post(
   IDENTITY_REGISTER_ROUTE,
   x402Middleware({

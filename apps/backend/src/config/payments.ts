@@ -19,6 +19,7 @@ export const PAID_TASK_ACTION_ROUTES = {
   refund_expired: '/api/tasks/:taskId/refund-expired',
   reject_submission: '/api/tasks/:taskId/reject-submission',
   resolve_dispute: '/api/tasks/:taskId/resolve-dispute',
+  select_worker: '/api/tasks/:taskId/pitches/select',
   submit_proof: '/api/tasks/:taskId/proofs',
   update: '/api/tasks/:taskId/update',
 } as const satisfies Record<PaidPendingActionNameValue, string>;
