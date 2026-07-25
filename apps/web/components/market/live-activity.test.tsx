@@ -1,14 +1,27 @@
 import { render, screen } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BidResponse, TaskDetailResponse } from '@taskmarket/shared';
+import type { BidResponse, SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared';
 
 import { LiveActivityPanel } from './live-activity';
 
-const { bidsState, mockAccount, reducedMotionState, toastSpy } = vi.hoisted(() => ({
+const {
+  authenticatedSubmissionsQuerySpy,
+  bidsState,
+  mockAccount,
+  readAuthReadyState,
+  readAuthSignatureSpy,
+  reducedMotionState,
+  submissionsState,
+  toastSpy,
+} = vi.hoisted(() => ({
+  authenticatedSubmissionsQuerySpy: vi.fn(),
   bidsState: { value: [] as unknown[] },
   mockAccount: { address: undefined as string | undefined },
+  readAuthReadyState: { value: false },
+  readAuthSignatureSpy: vi.fn(),
   reducedMotionState: { value: true },
+  submissionsState: { value: [] as SubmissionResponse[] },
   toastSpy: vi.fn(),
 }));
 
@@ -17,6 +30,7 @@ function stubQuery(_input: unknown, options?: { initialData?: unknown }) {
 }
 
 vi.mock('@/lib/api/client', () => ({
+  READ_AUTH_CONTEXT_KEY: 'taskmarketReadAuth',
   trpc: {
     bids: {
       listByTask: {
@@ -30,7 +44,32 @@ vi.mock('@/lib/api/client', () => ({
     },
     pitches: { listByTask: { useQuery: stubQuery } },
     proofs: { listByTask: { useQuery: stubQuery } },
-    submissions: { listByTask: { useQuery: stubQuery } },
+    submissions: {
+      listByTask: {
+        useQuery: (_input: unknown, options?: { enabled?: boolean; initialData?: unknown }) => ({
+          data: options?.enabled ? submissionsState.value : options?.initialData,
+        }),
+      },
+    },
+    useUtils: (() => {
+      const utils = {
+        client: {
+          submissions: {
+            listByTask: {
+              query: authenticatedSubmissionsQuerySpy,
+            },
+          },
+        },
+      };
+      return () => utils;
+    })(),
+  },
+}));
+
+vi.mock('@/lib/use-read-auth-signature', () => ({
+  useReadAuthSignature: (address: string | undefined) => {
+    readAuthSignatureSpy(address);
+    return readAuthReadyState.value;
   },
 }));
 
@@ -121,6 +160,18 @@ function bid(id: string, worker: string): BidResponse {
   };
 }
 
+function submission(id: string, worker: string): SubmissionResponse {
+  return {
+    artifacts: [],
+    fileUrl: `ipfs://${id}`,
+    id,
+    signature: '0xsignature',
+    submittedAt: new Date().toISOString(),
+    taskId: task.id,
+    workerAddress: worker,
+  };
+}
+
 function renderPanel(overrides?: {
   task?: Partial<TaskDetailResponse>;
   initialBids?: BidResponse[];
@@ -138,9 +189,14 @@ function renderPanel(overrides?: {
 
 beforeEach(() => {
   vi.useFakeTimers();
+  authenticatedSubmissionsQuerySpy.mockReset();
+  authenticatedSubmissionsQuerySpy.mockImplementation(async () => submissionsState.value);
   bidsState.value = [];
   mockAccount.address = undefined;
+  readAuthReadyState.value = false;
+  readAuthSignatureSpy.mockClear();
   reducedMotionState.value = true;
+  submissionsState.value = [];
   toastSpy.mockClear();
 });
 
@@ -150,6 +206,173 @@ afterEach(() => {
 });
 
 describe('LiveActivityPanel', () => {
+  it.each([
+    ['disconnects', undefined],
+    ['switches accounts', '0x9999999999999999999999999999999999999999'],
+  ])(
+    'renders gated terminal submissions after auth and clears them when the wallet %s',
+    async (_, nextAddress) => {
+      mockAccount.address = REQUESTER;
+      submissionsState.value = [
+        {
+          artifacts: [],
+          fileUrl: 'ipfs://deliverable',
+          id: 'submission-1',
+          signature: '0xsignature',
+          submittedAt: new Date().toISOString(),
+          taskId: task.id,
+          workerAddress: '0x2222222222222222222222222222222222222222',
+        },
+      ];
+      const gatedTask = {
+        ...task,
+        auctionType: null,
+        mode: 'bounty' as const,
+        status: 'completed' as const,
+        submissionCount: 1,
+        submissionVisibility: 'never' as const,
+      };
+      const panel = () => (
+        <LiveActivityPanel
+          initialModeData={{ submissions: [] }}
+          marketStats={null}
+          profileBasePath="/dashboard/agents"
+          task={gatedTask}
+        />
+      );
+
+      const { rerender } = render(panel());
+
+      expect(readAuthSignatureSpy).toHaveBeenLastCalledWith(REQUESTER);
+      expect(screen.queryByLabelText('Submission from 0x2222...2222')).not.toBeInTheDocument();
+
+      readAuthReadyState.value = true;
+      await act(async () => {
+        rerender(panel());
+        await Promise.resolve();
+      });
+
+      expect(screen.getByLabelText('Submission from 0x2222...2222')).toBeInTheDocument();
+      expect(authenticatedSubmissionsQuerySpy).toHaveBeenCalledWith(
+        {
+          includePreviewUrls: 'media',
+          taskId: task.id,
+        },
+        {
+          context: { taskmarketReadAuth: true },
+          signal: expect.any(AbortSignal),
+        }
+      );
+
+      mockAccount.address = nextAddress;
+      readAuthReadyState.value = false;
+      rerender(panel());
+
+      expect(screen.queryByLabelText('Submission from 0x2222...2222')).not.toBeInTheDocument();
+    }
+  );
+
+  it('ignores an authenticated response that resolves after an account switch', async () => {
+    let resolveSubmissions: ((submissions: SubmissionResponse[]) => void) | undefined;
+    authenticatedSubmissionsQuerySpy.mockImplementationOnce(
+      () =>
+        new Promise<SubmissionResponse[]>((resolve) => {
+          resolveSubmissions = resolve;
+        })
+    );
+    mockAccount.address = REQUESTER;
+    readAuthReadyState.value = true;
+    const gatedTask = {
+      ...task,
+      auctionType: null,
+      mode: 'bounty' as const,
+      status: 'completed' as const,
+      submissionCount: 1,
+      submissionVisibility: 'never' as const,
+    };
+    const panel = () => (
+      <LiveActivityPanel
+        initialModeData={{ submissions: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        task={gatedTask}
+      />
+    );
+    const { rerender } = render(panel());
+
+    expect(authenticatedSubmissionsQuerySpy).toHaveBeenCalledTimes(1);
+    mockAccount.address = '0x9999999999999999999999999999999999999999';
+    readAuthReadyState.value = false;
+    rerender(panel());
+
+    await act(async () => {
+      resolveSubmissions?.([
+        {
+          artifacts: [],
+          fileUrl: 'ipfs://deliverable',
+          id: 'submission-1',
+          signature: '0xsignature',
+          submittedAt: new Date().toISOString(),
+          taskId: task.id,
+          workerAddress: '0x2222222222222222222222222222222222222222',
+        },
+      ]);
+    });
+
+    expect(screen.queryByLabelText('Submission from 0x2222...2222')).not.toBeInTheDocument();
+  });
+
+  it('announces gated submissions arriving after the authenticated baseline', async () => {
+    const firstSubmission = submission(
+      'submission-1',
+      '0x2222222222222222222222222222222222222222'
+    );
+    const secondSubmission = submission(
+      'submission-2',
+      '0x3333333333333333333333333333333333333333'
+    );
+    mockAccount.address = REQUESTER;
+    readAuthReadyState.value = true;
+    submissionsState.value = [firstSubmission];
+
+    render(
+      <LiveActivityPanel
+        initialModeData={{ submissions: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        task={{
+          ...task,
+          auctionType: null,
+          mode: 'bounty',
+          submissionCount: 1,
+          submissionVisibility: 'never',
+        }}
+      />
+    );
+
+    await act(async () => {
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('Submission from 0x2222...2222')).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    submissionsState.value = [firstSubmission, secondSubmission];
+    await act(async () => {
+      vi.advanceTimersByTime(9_000);
+      await Promise.resolve();
+    });
+    expect(screen.getByLabelText('Submission from 0x3333...3333')).toBeInTheDocument();
+
+    act(() => {
+      vi.advanceTimersByTime(1_500);
+    });
+
+    expect(toastSpy).toHaveBeenCalledWith('New submission from 0x3333...3333');
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      'New submission from 0x3333...3333'
+    );
+  });
+
   it('shows the Live indicator and feed for the requester on a live task', () => {
     mockAccount.address = REQUESTER;
     bidsState.value = [bid('bid-1', '0x2222222222222222222222222222222222222222')];

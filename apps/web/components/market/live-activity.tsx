@@ -24,9 +24,10 @@ import {
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { NativeSelect } from '@/components/ui/native-select';
-import { trpc } from '@/lib/api/client';
+import { READ_AUTH_CONTEXT_KEY, trpc } from '@/lib/api/client';
 import type { MarketStats } from '@/lib/api/server';
 import { compactAddress } from '@/lib/format';
+import { useReadAuthSignature } from '@/lib/use-read-auth-signature';
 import { cn } from '@/lib/utils';
 import { useAccount } from 'wagmi';
 
@@ -146,9 +147,8 @@ type LiveModeData = {
 };
 
 // Call every per-mode query unconditionally (rules of hooks). Only the active
-// mode's query is enabled (and only for the requester on a live task), so a page
-// runs at most one polling query. Each query seeds from the SSR mode data so the
-// first paint never flashes.
+// mode's query is enabled, so a page runs at most one polling query. Each query
+// seeds from the SSR mode data so the first paint never flashes.
 export function useLiveModeData(
   task: TaskDetailResponse | TaskResponse,
   initialModeData: TaskModeData | undefined,
@@ -361,10 +361,17 @@ export function LiveActivityPanel({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const { address } = useAccount();
+  const readAuthReady = useReadAuthSignature(
+    task.submissionVisibility === 'public' ? undefined : address
+  );
   const motionDisabled = useMotionDisabled();
+  const utils = trpc.useUtils();
 
   const isRequester = Boolean(address && address.toLowerCase() === task.requester.toLowerCase());
   const terminal = isTerminalStatus(task);
+  const authenticatedAddress = readAuthReady ? address?.toLowerCase() : undefined;
+  const usesScopedSubmissions =
+    activeMode(task) === 'submissions' && task.submissionVisibility !== 'public';
   // Anyone viewing a non-terminal task polls the live feed and watches new work
   // stream in. The per-mode lists and the SSR seed are already public, so this
   // exposes no new data. Only the requester gets the new-activity toasts and the
@@ -372,13 +379,85 @@ export function LiveActivityPanel({
   const pollEnabled = !terminal;
   const requesterAffordances = isRequester && !terminal;
 
-  const data = useLiveModeData(task, initialModeData, pollEnabled);
+  // Authenticated submissions use a local request below, never the shared query
+  // cache. Other modes, and public submissions, keep their normal live query.
+  const data = useLiveModeData(task, initialModeData, pollEnabled && !usesScopedSubmissions);
+  const [scopedSubmissions, setScopedSubmissions] = useState<{
+    address: string;
+    data: TaskModeData['submissions'];
+    taskId: string;
+  } | null>(null);
+  const scopedSeedKeyRef = useRef<string | null>(null);
+  const scopedSeedIdsRef = useRef<Set<string>>(new Set());
+
+  useEffect(() => {
+    if (!authenticatedAddress || !usesScopedSubmissions) return;
+
+    const input = {
+      includePreviewUrls: 'media' as const,
+      taskId: task.id,
+    };
+    const controller = new AbortController();
+    const scopedAddress = authenticatedAddress;
+    const scopedKey = `${task.id}:${scopedAddress}`;
+    let disposed = false;
+    let fetching = false;
+
+    async function load() {
+      if (fetching) return;
+      fetching = true;
+      try {
+        const submissions = await utils.client.submissions.listByTask.query(input, {
+          context: { [READ_AUTH_CONTEXT_KEY]: true },
+          signal: controller.signal,
+        });
+        if (!disposed) {
+          // The first authenticated response establishes the requester's
+          // private baseline. Only later polls should announce new arrivals.
+          if (scopedSeedKeyRef.current !== scopedKey) {
+            scopedSeedKeyRef.current = scopedKey;
+            scopedSeedIdsRef.current = new Set(
+              (submissions ?? []).map((submission) => submission.id)
+            );
+          }
+          setScopedSubmissions({
+            address: scopedAddress,
+            data: submissions,
+            taskId: task.id,
+          });
+        }
+      } catch {
+        // A route change or aborted request falls back to the anonymous seed.
+      } finally {
+        fetching = false;
+      }
+    }
+
+    void load();
+    const interval = terminal ? undefined : window.setInterval(() => void load(), POLL_INTERVAL_MS);
+
+    return () => {
+      disposed = true;
+      controller.abort();
+      if (interval !== undefined) window.clearInterval(interval);
+    };
+  }, [authenticatedAddress, terminal, task.id, usesScopedSubmissions, utils.client]);
 
   const [reviewSort, setReviewSort] = useState<ReviewSort>('newest');
   const [reviewView, setReviewView] = useState<ReviewView>('gallery');
   const [page, setPage] = useState(1);
 
-  const submissions = sortByReview(data.submissions ?? [], reviewSort);
+  const authenticatedSubmissions =
+    scopedSubmissions &&
+    scopedSubmissions.address === authenticatedAddress &&
+    scopedSubmissions.taskId === task.id
+      ? scopedSubmissions.data
+      : undefined;
+  const visibleSubmissions =
+    task.submissionVisibility === 'public'
+      ? (data.submissions ?? [])
+      : (authenticatedSubmissions ?? initialModeData?.submissions ?? []);
+  const submissions = sortByReview(visibleSubmissions, reviewSort);
   const pitches = data.pitches ?? [];
   const proofs = data.proofs ?? [];
   const bids = data.bids ?? [];
@@ -414,7 +493,8 @@ export function LiveActivityPanel({
     setGalleryOpen(true);
   };
 
-  const items = liveItems(task, data);
+  const activityData = usesScopedSubmissions ? { ...data, submissions: visibleSubmissions } : data;
+  const items = liveItems(task, activityData);
   const itemsRef = useRef(items);
   itemsRef.current = items;
   // Stable signature of the current id set; the effect keys on this string so it
@@ -453,12 +533,13 @@ export function LiveActivityPanel({
       return;
     }
 
-    const fresh = current.filter((item) => !seenIdsRef.current.has(item.id));
+    const unseen = current.filter((item) => !seenIdsRef.current.has(item.id));
+    unseen.forEach((item) => seenIdsRef.current.add(item.id));
+    const fresh = unseen.filter((item) => !scopedSeedIdsRef.current.has(item.id));
     if (fresh.length === 0) {
       return;
     }
 
-    fresh.forEach((item) => seenIdsRef.current.add(item.id));
     pendingRef.current.push(...fresh);
 
     if (timerRef.current) {

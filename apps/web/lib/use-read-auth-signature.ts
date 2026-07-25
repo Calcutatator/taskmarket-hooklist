@@ -19,34 +19,64 @@ import { clearCachedReadAuthHeaders, setCachedReadAuthHeaders } from './read-aut
 // cached, so callers can invalidate/refetch once it becomes available.
 export function useReadAuthSignature(address: `0x${string}` | undefined): boolean {
   const { signMessageAsync } = useSignMessage();
-  const [ready, setReady] = useState(false);
-  const attemptedForRef = useRef<string | undefined>(undefined);
+  const [readyFor, setReadyFor] = useState<string | undefined>(undefined);
+  const requestIdRef = useRef(0);
+  const pendingRef = useRef<{
+    address: `0x${string}`;
+    normalizedAddress: string;
+    promise: Promise<`0x${string}`>;
+    requestId: number;
+  } | null>(null);
+  const normalizedAddress = address?.toLowerCase();
 
   useEffect(() => {
     if (!address) {
+      requestIdRef.current += 1;
+      pendingRef.current = null;
       clearCachedReadAuthHeaders();
-      setReady(false);
-      attemptedForRef.current = undefined;
+      setReadyFor(undefined);
       return;
     }
-    if (attemptedForRef.current === address) {
-      return;
+
+    const currentNormalizedAddress = address.toLowerCase();
+    let pending = pendingRef.current;
+    if (!pending || pending.normalizedAddress !== currentNormalizedAddress) {
+      const requestId = ++requestIdRef.current;
+      clearCachedReadAuthHeaders();
+      setReadyFor(undefined);
+      pending = {
+        address,
+        normalizedAddress: currentNormalizedAddress,
+        promise: signMessageAsync({ message: buildReadAuthMessage(address) }),
+        requestId,
+      };
+      pendingRef.current = pending;
     }
-    attemptedForRef.current = address;
-    setReady(false);
-    signMessageAsync({ message: buildReadAuthMessage(address) })
+
+    let active = true;
+    const currentPending = pending;
+    currentPending.promise
       .then((signature) => {
-        setCachedReadAuthHeaders(address, {
-          [READ_AUTH_ADDRESS_HEADER]: address,
+        if (!active || requestIdRef.current !== currentPending.requestId) return;
+        setCachedReadAuthHeaders(currentPending.address, {
+          [READ_AUTH_ADDRESS_HEADER]: currentPending.address,
           [READ_AUTH_SIGNATURE_HEADER]: signature,
         });
-        setReady(true);
+        setReadyFor(currentPending.normalizedAddress);
       })
       .catch(() => {
+        if (!active || requestIdRef.current !== currentPending.requestId) return;
         clearCachedReadAuthHeaders();
-        setReady(false);
+        setReadyFor(undefined);
       });
-  }, [address, signMessageAsync]);
 
-  return ready;
+    // A wallet signature can settle after this consumer has unmounted. Keep the
+    // pending promise reusable across React's effect replay, but prevent this
+    // effect instance from mutating the process-wide auth cache once disposed.
+    return () => {
+      active = false;
+    };
+  }, [address, normalizedAddress, signMessageAsync]);
+
+  return Boolean(normalizedAddress && readyFor === normalizedAddress);
 }

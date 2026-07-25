@@ -15,12 +15,24 @@ function stubQuery(_input: unknown, options?: { initialData?: unknown }) {
 }
 
 vi.mock('@/lib/api/client', () => ({
+  READ_AUTH_CONTEXT_KEY: 'taskmarketReadAuth',
   trpc: {
     bids: { listByTask: { useQuery: stubQuery } },
     pitches: { listByTask: { useQuery: stubQuery } },
     proofs: { listByTask: { useQuery: stubQuery } },
     submissions: { listByTask: { useQuery: stubQuery } },
+    useUtils: () => ({
+      submissions: {
+        listByTask: {
+          invalidate: vi.fn(),
+        },
+      },
+    }),
   },
+}));
+
+vi.mock('@/lib/use-read-auth-signature', () => ({
+  useReadAuthSignature: () => false,
 }));
 
 vi.mock('sonner', () => ({
