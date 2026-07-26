@@ -70,6 +70,7 @@ describe('PublicSiteHeader', () => {
       'href',
       '/dashboard'
     );
+    expect(screen.getByRole('link', { name: /^latest drop$/i })).toHaveAttribute('href', '/live');
   });
 
   it('reveals the navigation links from the mobile menu trigger', async () => {
@@ -89,6 +90,10 @@ describe('PublicSiteHeader', () => {
     expect(within(mobileNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
       '/humans'
+    );
+    expect(within(mobileNav).getByRole('link', { name: /^latest drop$/i })).toHaveAttribute(
+      'href',
+      '/live'
     );
     expect(within(mobileNav).getByRole('button', { name: /^sign in$/i })).toBeEnabled();
     const accountControlIds = Array.from(

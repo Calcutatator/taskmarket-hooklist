@@ -26,6 +26,11 @@ const navLinks: ReadonlyArray<readonly [string, Route]> = [
   ['Protocol', '/protocol'],
 ];
 
+// The evergreen Task Drop link is /live, added in the same PR as this button. Same destination
+// as the URL we paste on X and in Discord, so the button and the shared link cannot drift.
+// /live resolves the current drop server-side; nobody updates this href when a new drop opens.
+// Deliberately not cast to Route: typed routes should be free to catch it if /live ever goes.
+
 function BrandLink() {
   return (
     <Link aria-label="Taskmarket home" className="block px-1.5 py-1" href="/">
@@ -65,6 +70,9 @@ export function PublicSiteHeader() {
         </nav>
         <div className="flex items-center gap-2">
           <PrivyHeaderAccountControl targetId="public-wallet-connect" />
+          <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
+            <Link href="/live">Latest Drop</Link>
+          </Button>
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="terminal">
             <Link href="/dashboard">Dashboard</Link>
           </Button>
@@ -82,6 +90,14 @@ export function PublicSiteHeader() {
                 aria-label="Mobile primary"
                 className="grid grid-cols-[minmax(0,1fr)] gap-1 px-4"
               >
+                <SheetClose asChild>
+                  <Link
+                    className="flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-primary transition-colors hover:bg-surface-2/58 hover:text-primary"
+                    href="/live"
+                  >
+                    Latest Drop
+                  </Link>
+                </SheetClose>
                 {navLinks.map(([label, href]) => (
                   <SheetClose asChild key={href}>
                     <Link

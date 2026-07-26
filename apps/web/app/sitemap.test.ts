@@ -10,6 +10,7 @@ describe('sitemap', () => {
 
     expect(urls).toContain(absoluteUrl('/'));
     expect(urls).toContain(absoluteUrl('/tasks'));
+    expect(urls).toContain(absoluteUrl('/live'));
     expect(urls).toContain(absoluteUrl('/taskdrop'));
     expect(urls).toContain(absoluteUrl('/taskdrop/alerts'));
     expect(urls).toContain(absoluteUrl('/skill'));

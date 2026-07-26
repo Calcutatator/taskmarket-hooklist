@@ -112,6 +112,7 @@ describe('SiteHeader', () => {
       'href',
       '/skill.md'
     );
+    expect(screen.getByRole('link', { name: /^latest drop$/i })).toHaveAttribute('href', '/live');
     expect(screen.queryByRole('link', { name: /^skill\.md$/i })).not.toBeInTheDocument();
   });
 
