@@ -17,6 +17,11 @@ const staticEntries: MetadataRoute.Sitemap = [
     url: absoluteUrl('/tasks'),
   },
   {
+    changeFrequency: 'hourly',
+    priority: 0.9,
+    url: absoluteUrl('/live'),
+  },
+  {
     changeFrequency: 'daily',
     priority: 0.8,
     url: absoluteUrl('/taskdrop'),
