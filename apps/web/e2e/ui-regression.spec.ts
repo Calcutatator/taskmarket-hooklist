@@ -180,6 +180,28 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expect(taskSidebar.getByRole('heading', { name: /Review status/i })).toBeVisible();
   await expect(taskSidebar.getByText(/Only requester .* can release escrow/i)).toBeVisible();
 
+  await comparison.getByRole('button', { name: /Open candidate-a\.png preview/i }).click();
+  const previewImage = page.getByRole('dialog').getByRole('img', { name: 'candidate-a.png' });
+  const portraitPreviewUrl =
+    'data:image/svg+xml,%3Csvg xmlns=%22http://www.w3.org/2000/svg%22 width=%22400%22 height=%22800%22/%3E';
+  const previewLayout = await previewImage.evaluate(async (image, src) => {
+    const imageElement = image as HTMLImageElement;
+    imageElement.src = src;
+    await imageElement.decode();
+
+    const frame = imageElement.parentElement;
+    return {
+      fitsFrame: Boolean(
+        frame &&
+        imageElement.clientHeight <= frame.clientHeight &&
+        imageElement.clientWidth <= frame.clientWidth
+      ),
+      isPortrait: imageElement.naturalHeight > imageElement.naturalWidth,
+      objectFit: getComputedStyle(imageElement).objectFit,
+    };
+  }, portraitPreviewUrl);
+  expect(previewLayout).toEqual({ fitsFrame: true, isPortrait: true, objectFit: 'contain' });
+
   await expectNoHorizontalOverflow(page);
 });
 

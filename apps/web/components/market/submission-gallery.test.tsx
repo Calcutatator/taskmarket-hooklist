@@ -210,6 +210,7 @@ describe('SubmissionGalleryDialog', () => {
       'https://files.example.com/poster-a.png'
     );
     expect(within(dialog).getByAltText('poster-a.png')).toHaveClass(
+      'min-h-0',
       'h-full',
       'w-full',
       'object-contain'
