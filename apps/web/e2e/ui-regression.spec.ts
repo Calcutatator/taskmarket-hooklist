@@ -85,7 +85,9 @@ for (const route of publicRoutes) {
   test(`renders ${route.path} without client errors or horizontal overflow`, async ({ page }) => {
     await page.goto(route.path);
 
-    await expect(page.getByRole('heading', { name: route.heading }).first()).toBeVisible();
+    await expect(
+      page.getByRole('heading', { name: route.heading }).filter({ visible: true }).first()
+    ).toBeVisible();
     await expect(page.locator('body')).not.toContainText(/Application error|Internal Server Error/);
 
     await expectNoHorizontalOverflow(page);
