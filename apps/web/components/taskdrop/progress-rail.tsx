@@ -8,7 +8,7 @@ export function ProgressRail() {
   const [activeScreen, setActiveScreen] = useState(0);
 
   useEffect(() => {
-    const screens = Array.from(document.querySelectorAll<HTMLElement>('[data-taskdrop-b-screen]'));
+    const screens = Array.from(document.querySelectorAll<HTMLElement>('[data-taskdrop-screen]'));
 
     if (typeof window.IntersectionObserver !== 'function') return;
 
@@ -33,7 +33,7 @@ export function ProgressRail() {
       typeof window.matchMedia === 'function' &&
       window.matchMedia('(prefers-reduced-motion: reduce)').matches;
 
-    document.getElementById(`taskdrop-b-s${index + 1}`)?.scrollIntoView({
+    document.getElementById(`taskdrop-s${index + 1}`)?.scrollIntoView({
       behavior: reducedMotion ? 'auto' : 'smooth',
       block: 'start',
     });

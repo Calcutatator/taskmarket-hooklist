@@ -57,7 +57,7 @@ export function ScrollSnapShell({
   }, [enabled]);
 
   return (
-    <div className="taskdrop-b" style={enabled ? { scrollSnapType: 'y proximity' } : undefined}>
+    <div className="taskdrop" style={enabled ? { scrollSnapType: 'y proximity' } : undefined}>
       {children}
     </div>
   );

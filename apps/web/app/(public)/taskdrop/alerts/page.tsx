@@ -8,7 +8,7 @@ import { buildPageMetadata } from '@/lib/seo';
 /**
  * /taskdrop/alerts — the shareable signup link for Task Drops.
  *
- * The /taskdrop page already carries this form at its #drop-alerts anchor, but an anchor
+ * The /taskdrop page already carries an inline version of this form at its #alerts anchor, but an anchor
  * cannot have its own link preview: paste it and you get the /taskdrop card. This is the link
  * we post between drops, in Discord, and anywhere the ask is "get on the list" rather than
  * "come and compete". Same form, its own card.

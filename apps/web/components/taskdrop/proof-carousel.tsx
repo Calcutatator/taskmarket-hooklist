@@ -98,7 +98,7 @@ export function ProofCarousel() {
         {SLIDES.map((item, index) => (
           <button
             aria-pressed={activeSlide === index}
-            className={`taskdrop-b-display min-h-11 cursor-pointer rounded-full border px-[15px] pt-[9px] pb-[7px] text-base tracking-[0.05em] text-[#FFF6E8] ${
+            className={`taskdrop-display min-h-11 cursor-pointer rounded-full border px-[15px] pt-[9px] pb-[7px] text-base tracking-[0.05em] text-[#FFF6E8] ${
               activeSlide === index
                 ? 'border-transparent bg-[#FF3D7E]'
                 : 'border-[#FFF6E8]/30 bg-[#FFF6E8]/15'
@@ -114,22 +114,33 @@ export function ProofCarousel() {
           </button>
         ))}
       </div>
-      <div className="grid grid-cols-3 gap-2 max-[420px]:gap-1.5">
-        {slide.pieces.map((piece) => (
-          <figure
-            className="relative m-0 aspect-square overflow-hidden rounded-[11px] bg-white"
-            key={piece.src}
-          >
-            <Image
-              alt={piece.alt}
-              className="object-cover"
-              fill
-              sizes="(max-width: 660px) 33vw, 200px"
-              src={piece.src}
-            />
-          </figure>
-        ))}
-      </div>
+      {/* Every drop's grid is mounted and every thumbnail loads eagerly, so switching tabs is a
+          CSS toggle with nothing left to fetch. Rendering only the active grid meant each
+          auto-advance flashed six empty white cards while that drop's images loaded. */}
+      {SLIDES.map((item, index) => (
+        <div
+          className={`grid grid-cols-3 gap-2 max-[420px]:gap-1.5 ${
+            index === activeSlide ? '' : 'hidden'
+          }`}
+          key={item.label}
+        >
+          {item.pieces.map((piece) => (
+            <figure
+              className="relative m-0 aspect-square overflow-hidden rounded-[11px] bg-white"
+              key={piece.src}
+            >
+              <Image
+                alt={piece.alt}
+                className="object-cover"
+                fill
+                loading="eager"
+                sizes="(max-width: 660px) 33vw, 200px"
+                src={piece.src}
+              />
+            </figure>
+          ))}
+        </div>
+      ))}
       <p className="mt-3.5 text-[14.5px] leading-6 opacity-90">{slide.caption}</p>
     </>
   );

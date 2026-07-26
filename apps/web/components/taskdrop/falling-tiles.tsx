@@ -22,12 +22,12 @@ export function FallingTiles() {
     <div aria-hidden="true" className="pointer-events-none absolute inset-0 -z-10 overflow-hidden">
       {TILES.map((tile) => (
         <span
-          className="taskdrop-b-tile absolute -top-8 h-3.5 w-3.5 rounded-[3px] bg-[#E74079] opacity-75"
+          className="taskdrop-tile absolute -top-8 h-3.5 w-3.5 rounded-[3px] bg-[#E74079] opacity-75"
           key={tile.left}
           style={
             {
-              '--taskdrop-b-delay': `${tile.delay}s`,
-              '--taskdrop-b-duration': `${tile.duration}s`,
+              '--taskdrop-delay': `${tile.delay}s`,
+              '--taskdrop-duration': `${tile.duration}s`,
               left: `${tile.left}%`,
             } as CSSProperties
           }
