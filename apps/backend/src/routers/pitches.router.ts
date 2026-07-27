@@ -14,7 +14,47 @@ import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
-import { resolveTaskViewability } from '../lib/task-visibility';
+import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
+import type { Context } from '../context';
+
+/**
+ * Phase 3 (ADR-0030) parity fix (F3): `submit` must enforce the same private-task
+ * standing check as this router's own `listByTask` reader (resolveTaskViewability),
+ * instead of letting any signed/paying worker pitch on a `taskVisibility: 'private'`
+ * task. Deliberately narrower than the general-purpose `canView` helper: standing here
+ * is requester / task.claimedBy / an awarded worker (task_awards) / an allowlisted
+ * wallet (task_allowed_viewers) only -- a bare `taskAccessGrant` (the view-only,
+ * password-derived bearer credential from `taskAccess.verifyPassword`) is never
+ * sufficient, since that credential exists purely for read/view access and was never
+ * meant to authorize a write/participation action like submitting a pitch.
+ *
+ * Must run AFTER the caller's identity is cryptographically resolved (the X402 payer
+ * check that payer === input.workerAddress), never before -- checking earlier would
+ * let an attacker probe arbitrary candidate addresses and use the
+ * FORBIDDEN-vs-payment-error response difference as a private-task membership oracle.
+ */
+async function assertCanParticipateInPrivateTask(
+  db: Context['db'],
+  task: { id: string; taskVisibility: string; requester: string; claimedBy: string | null },
+  address: string
+): Promise<void> {
+  if (task.taskVisibility !== 'private') return;
+
+  const normalized = address.toLowerCase();
+  if (normalized === task.requester.toLowerCase()) return;
+  if (task.claimedBy && normalized === task.claimedBy.toLowerCase()) return;
+
+  const { allowedViewerAddresses, awardedWorkerAddresses } = await fetchPrivateViewabilityContext(
+    db,
+    task.id
+  );
+  if (awardedWorkerAddresses.has(normalized) || allowedViewerAddresses.has(normalized)) return;
+
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'Not authorized to submit a pitch on this private task',
+  });
+}
 
 export const pitchesRouter = router({
   submit: publicProcedure
@@ -88,6 +128,11 @@ export const pitchesRouter = router({
           message: 'Payer must match workerAddress',
         });
       }
+
+      // F3: gate participation on a private task the same way listByTask gates
+      // reads -- must run after the payer check above so the caller's identity is
+      // already cryptographically verified before we branch on it.
+      await assertCanParticipateInPrivateTask(ctx.db, task, payer);
 
       const pitchHash = buildPitchHash(
         input.taskId as `0x${string}`,

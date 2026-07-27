@@ -11,7 +11,11 @@ import {
 } from '../services/contract';
 import { computeClockPrice } from '../lib/auction';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
-import { resolveTaskViewability } from '../lib/task-visibility';
+import {
+  canView,
+  fetchPrivateViewabilityContext,
+  resolveTaskViewability,
+} from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
 import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
@@ -44,6 +48,27 @@ export const bidsRouter = router({
       }
 
       const task = taskResult[0];
+
+      // Phase 3 (ADR-0030) gates who may even VIEW a private task, but placing a bid
+      // is a write action, not a read: unlike `listByTask` (below), which reuses
+      // `canView` as-is, a bare `taskAccessGrant` (the view-only password credential
+      // minted by taskAccess.verifyPassword -- see lib/task-visibility.ts) must NOT be
+      // sufficient to bid. That credential is handed out purely for previewing a
+      // private task and is never wallet-bound, so treating it as bid authorization
+      // would let anyone who merely knows the share password place a real bid under
+      // any address they control. Deliberately omitting `taskAccessGrant` from the
+      // context passed to `canView` here (rather than forwarding ctx.taskAccessGrant)
+      // is what keeps the grant read-only: only the requester, an allowlisted wallet,
+      // or an already-claimed/awarded worker address may bid on a private task.
+      if (task.taskVisibility === 'private') {
+        const viewability = await fetchPrivateViewabilityContext(ctx.db, task.id);
+        if (!canView(task, { address: workerAddress }, viewability)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Not authorized to bid on this private task',
+          });
+        }
+      }
 
       if (task.mode !== 'auction') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not an Auction task' });
@@ -367,6 +392,28 @@ export const bidsRouter = router({
       }
 
       const task = taskResult[0];
+
+      // Phase 3 (ADR-0030) gates who may even VIEW a private task, but accepting a
+      // dutch/reverse_dutch auction is a write action, not a read -- the same reasoning
+      // as `submit`'s identical check above for english/reverse_english bids. A bare
+      // `taskAccessGrant` (the view-only password credential minted by
+      // taskAccess.verifyPassword -- see lib/task-visibility.ts) must NOT be sufficient
+      // to accept: that credential is handed out purely for previewing a private task
+      // and is never wallet-bound, so treating it as accept authorization would let
+      // anyone who merely knows the share password claim a real auction task under any
+      // address they control. Deliberately omitting `taskAccessGrant` from the context
+      // passed to `canView` here (rather than forwarding ctx.taskAccessGrant) is what
+      // keeps the grant read-only: only the requester, an allowlisted wallet, or an
+      // already-claimed/awarded worker address may accept a private auction task.
+      if (task.taskVisibility === 'private') {
+        const viewability = await fetchPrivateViewabilityContext(ctx.db, task.id);
+        if (!canView(task, { address: workerAddress }, viewability)) {
+          throw new TRPCError({
+            code: 'FORBIDDEN',
+            message: 'Not authorized to accept this private task',
+          });
+        }
+      }
 
       if (task.mode !== 'auction') {
         throw new TRPCError({ code: 'BAD_REQUEST', message: 'Not an auction task' });

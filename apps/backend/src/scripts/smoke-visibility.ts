@@ -20,6 +20,18 @@
  * composed into a retrofitted sibling endpoint (bids.listByTask), not just
  * tasks.get itself.
  *
+ * Part C (steps 20-26, PR #314): Part A/B only ever exercise the READ side of
+ * private-task access control -- viewing. They never attempt an uninvited
+ * outsider actually participating in a private task by submitting, bidding,
+ * pitching, proving, or claiming. That write-path gap (an outsider who merely
+ * learns a private task's id could still act on it, since the on-chain escrow
+ * contract has no concept of privacy) is what PR #314 closed at five separate
+ * endpoints, and it was previously only unit-tested with a mocked DB/context --
+ * never end to end against a live backend. Part C covers all five endpoints,
+ * both the rejected (outsider) and accepted (allowlisted worker) side of each,
+ * plus a regression check for the pre-auth-oracle fix in #314's follow-up
+ * commit (step 26).
+ *
  * Steps:
  *  1. Create one unlisted task and one public control task (requester)
  *  2. List/search (GET /api/tasks) as a third party -- unlisted task absent,
@@ -63,12 +75,35 @@
  *  19. Spot-check a retrofitted sibling endpoint: bids.listByTask on the
  *      auction-mode both-mechanisms task -- an outsider gets an empty list,
  *      the requester's own signed read does not
+ *  20. An outsider cannot submit work on a private (allowlist-only) bounty
+ *      task; the allowlisted worker can
+ *  21. An outsider cannot bid on a private (both-mechanisms, english) auction
+ *      task; the allowlisted worker can
+ *  22. An outsider cannot auction-accept a private dutch-auction task; the
+ *      allowlisted worker can -- this endpoint had zero private-task check
+ *      before #314
+ *  23. An outsider cannot submit a pitch on a private pitch task; the
+ *      allowlisted worker can
+ *  24. An outsider cannot submit a proof on a private benchmark task; the
+ *      allowlisted worker can
+ *  25. An outsider cannot claim a private claim task; the allowlisted worker
+ *      can, and the task moves to 'claimed'
+ *  26. Regression check for the claimedBy pre-auth oracle fix: an outsider
+ *      submitting with a signature that does not match their claimed address
+ *      gets a signature error, not the claimedBy-mismatch or private-task
+ *      FORBIDDEN message -- confirming an attacker can't distinguish "wrong
+ *      worker" from "bad signature" without first proving key ownership
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-visibility.ts
  */
-import { buildReadAuthMessage, TASK_ACCESS_GRANT_HEADER } from '@taskmarket/shared';
+import {
+  buildReadAuthMessage,
+  buildSubmitMessage,
+  buildClaimMessage,
+  TASK_ACCESS_GRANT_HEADER,
+} from '@taskmarket/shared';
 import {
   log,
   ok,
@@ -79,6 +114,7 @@ import {
   randomAccount,
   readAuthHeaders,
   pollTaskStatus,
+  fundWithUsdc,
   API_URL,
 } from './_x402';
 
@@ -94,6 +130,34 @@ type InboxResponse = {
 
 const PRIVATE_PASSWORD = 'correct horse battery staple';
 
+/**
+ * Runs `fn`, asserting it rejects with an error whose message contains
+ * `expectedSubstring` -- the shared shape behind Part C's write-path
+ * authorization checks (each one is "call an endpoint, expect FORBIDDEN with
+ * this exact message", same pattern steps 15/16 use inline for the
+ * password-verify checks, generalized since Part C repeats it five times).
+ */
+async function assertRejects(
+  fn: () => Promise<unknown>,
+  expectedSubstring: string,
+  label: string
+): Promise<void> {
+  try {
+    await fn();
+  } catch (err) {
+    if (err instanceof Error && err.message.includes(expectedSubstring)) {
+      ok(label, true);
+      return;
+    }
+    throw new Error(
+      `${label}: expected an error containing "${expectedSubstring}", got: ${err instanceof Error ? err.message : err}`
+    );
+  }
+  throw new Error(
+    `${label}: expected a rejection containing "${expectedSubstring}", but the call succeeded`
+  );
+}
+
 async function main() {
   const { requester, worker } = getAccounts();
 
@@ -103,7 +167,7 @@ async function main() {
   console.log('api:      ', API_URL);
 
   // 1. Create one unlisted task and one public control task.
-  log('1/19', 'Creating unlisted task...');
+  log('1/26', 'Creating unlisted task...');
   const { taskId: unlistedId } = (await x402Post(
     '/api/tasks',
     {
@@ -118,7 +182,7 @@ async function main() {
   )) as { taskId: string };
   ok('unlisted taskId', unlistedId);
 
-  log('1b/19', 'Creating public control task...');
+  log('1b/26', 'Creating public control task...');
   const { taskId: publicId } = (await x402Post(
     '/api/tasks',
     {
@@ -135,7 +199,7 @@ async function main() {
   // 2. List/search as a third party. No tags filter -- array query-param
   // encoding for the openapi bridge isn't exercised elsewhere in these smoke
   // tests, so this checks membership by ID over the unfiltered page instead.
-  log('2/19', 'Listing tasks (GET /api/tasks) as a third party...');
+  log('2/26', 'Listing tasks (GET /api/tasks) as a third party...');
   const list = (await get('/api/tasks?limit=100')) as TaskListResponse;
   const unlistedInList = list.tasks.some((t) => t.id === unlistedId);
   const publicInList = list.tasks.some((t) => t.id === publicId);
@@ -145,14 +209,14 @@ async function main() {
   ok('public control task present in tasks.list', publicInList);
 
   // 3. Direct fetch by ID stays reachable regardless of visibility.
-  log('3/19', 'Fetching unlisted task directly by ID...');
+  log('3/26', 'Fetching unlisted task directly by ID...');
   const direct = (await get(`/api/tasks/${unlistedId}`)) as { id: string };
   if (direct.id !== unlistedId)
     throw new Error('Direct fetch by ID did not return the unlisted task');
   ok('unlisted task reachable by direct ID', true);
 
   // 4. Requester's own inbox, unauthenticated -- no free pass.
-  log('4/19', "Checking requester's own inbox with no read-auth header...");
+  log('4/26', "Checking requester's own inbox with no read-auth header...");
   const inboxNoAuth = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(requester.address)}`
   )) as InboxResponse;
@@ -167,7 +231,7 @@ async function main() {
   );
 
   // 5. Requester's own inbox, with a valid read-auth header (ADR-0016/ADR-0022).
-  log('5/19', 'Checking inbox with a valid read-auth header...');
+  log('5/26', 'Checking inbox with a valid read-auth header...');
   const inboxAuthed = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(requester.address)}`,
     { headers: await readAuthHeaders(requester) }
@@ -180,7 +244,7 @@ async function main() {
 
   // 6. A signature from a different account must not unlock it.
   log(
-    '6/19',
+    '6/26',
     'Checking inbox with a mismatched read-auth header (signed by worker, not requester)...'
   );
   const mismatchedSignature = await worker.signMessage({
@@ -204,7 +268,7 @@ async function main() {
   // 7. Worker submits to the unlisted task and is accepted, linking
   // worker.address to it via a task_awards row (the same isWorker match
   // agents.inbox's asWorker query uses).
-  log('7/19', 'Worker submitting to the unlisted task...');
+  log('7/26', 'Worker submitting to the unlisted task...');
   const submitSig = await worker.signMessage({ message: `taskmarket:submit:${unlistedId}` });
   await post(`/api/tasks/${unlistedId}/submissions`, {
     taskId: unlistedId,
@@ -221,7 +285,7 @@ async function main() {
   });
   ok('worker submitted to unlisted task', true);
 
-  log('7b/19', 'Requester accepting the submission (X402)...');
+  log('7b/26', 'Requester accepting the submission (X402)...');
   await x402Post(
     `/api/tasks/${unlistedId}/accept`,
     { taskId: unlistedId, worker: worker.address },
@@ -232,7 +296,7 @@ async function main() {
 
   // 8. Worker's own inbox, unauthenticated -- no free pass for being the
   // linked worker either.
-  log('8/19', "Checking worker's own inbox with no read-auth header...");
+  log('8/26', "Checking worker's own inbox with no read-auth header...");
   const workerInboxNoAuth = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(worker.address)}`
   )) as InboxResponse;
@@ -244,7 +308,7 @@ async function main() {
 
   // 9. Worker's own inbox, with a valid read-auth header -- unlisted task
   // now appears in asWorker.
-  log('9/19', "Checking worker's own inbox with a valid read-auth header...");
+  log('9/26', "Checking worker's own inbox with a valid read-auth header...");
   const workerInboxAuthed = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(worker.address)}`,
     { headers: await readAuthHeaders(worker) }
@@ -261,7 +325,7 @@ async function main() {
   console.log('outsider:', outsider.address, '(signed, but never allowlisted or invited)');
 
   // 10. Create three private tasks and a fresh public control task.
-  log('10/19', 'Creating allowlist-only private task...');
+  log('10/26', 'Creating allowlist-only private task...');
   const { taskId: allowlistOnlyId } = (await x402Post(
     '/api/tasks',
     {
@@ -277,7 +341,7 @@ async function main() {
   )) as { taskId: string };
   ok('allowlist-only taskId', allowlistOnlyId);
 
-  log('10b/19', 'Creating password-only private task...');
+  log('10b/26', 'Creating password-only private task...');
   const { taskId: passwordOnlyId } = (await x402Post(
     '/api/tasks',
     {
@@ -294,8 +358,8 @@ async function main() {
   ok('password-only taskId', passwordOnlyId);
 
   log(
-    '10c/19',
-    'Creating both-mechanisms private task (auction mode, for the sibling endpoint spot-check)...'
+    '10c/26',
+    'Creating both-mechanisms private task (auction mode, for the sibling endpoint spot-check and Part C bid test)...'
   );
   const { taskId: bothId } = (await x402Post(
     '/api/tasks',
@@ -306,7 +370,11 @@ async function main() {
       duration: 1,
       mode: 'auction',
       auctionType: 'english',
-      bidDeadline: 30 / 3600,
+      // 10 minutes, not the usual 30s smoke-test window -- this task's bid
+      // deadline also has to still be open by Part C's step 21 (bids.submit
+      // write-auth check), which runs after the rest of Part B's password/grant
+      // steps.
+      bidDeadline: 10 / 60,
       taskVisibility: 'private',
       allowedViewers: [worker.address],
       accessPassword: PRIVATE_PASSWORD,
@@ -316,7 +384,7 @@ async function main() {
   )) as { taskId: string };
   ok('both-mechanisms taskId', bothId);
 
-  log('10d/19', 'Creating a second public control task...');
+  log('10d/26', 'Creating a second public control task...');
   const { taskId: publicId2 } = (await x402Post(
     '/api/tasks',
     {
@@ -334,7 +402,7 @@ async function main() {
   // both public control tasks (and the already-completed unlisted task,
   // which stays absent regardless of status) do not include the private
   // ones.
-  log('11/19', 'Listing tasks (GET /api/tasks) as a third party...');
+  log('11/26', 'Listing tasks (GET /api/tasks) as a third party...');
   const privateList = (await get('/api/tasks?limit=100')) as TaskListResponse;
   const privateListedIds = new Set(privateList.tasks.map((t) => t.id));
   for (const id of [allowlistOnlyId, passwordOnlyId, bothId]) {
@@ -347,7 +415,7 @@ async function main() {
   ok('public control tasks present in tasks.list', true);
 
   // 12. Requester's own inbox, signed -- sees all three private tasks.
-  log('12/19', "Checking requester's own inbox with a valid read-auth header...");
+  log('12/26', "Checking requester's own inbox with a valid read-auth header...");
   const requesterInbox = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(requester.address)}`,
     { headers: await readAuthHeaders(requester) }
@@ -362,7 +430,7 @@ async function main() {
 
   // 13. Allowlisted worker's inbox -- sees the two allowlist tasks via
   // invitedPrivateTasks, but not the password-only one.
-  log('13/19', "Checking allowlisted worker's inbox with a valid read-auth header...");
+  log('13/26', "Checking allowlisted worker's inbox with a valid read-auth header...");
   const workerInboxForPrivate = (await get(
     `/api/agents/inbox?address=${encodeURIComponent(worker.address)}`,
     { headers: await readAuthHeaders(worker) }
@@ -381,7 +449,7 @@ async function main() {
 
   // 14. A validly-signed but non-allowlisted caller still can't view any of
   // the three -- proves canView isn't fooled by "any authenticated caller".
-  log('14/19', 'Fetching all three private tasks as a signed-but-uninvited outsider...');
+  log('14/26', 'Fetching all three private tasks as a signed-but-uninvited outsider...');
   const outsiderHeaders = await readAuthHeaders(outsider);
   for (const id of [allowlistOnlyId, passwordOnlyId, bothId]) {
     const fetched = (await get(`/api/tasks/${id}`, { headers: outsiderHeaders })) as unknown;
@@ -393,7 +461,7 @@ async function main() {
 
   // 15. Wrong password is rejected generically; a nonexistent task returns
   // the exact same error (no existence leak).
-  log('15/19', 'Verifying a wrong password is rejected...');
+  log('15/26', 'Verifying a wrong password is rejected...');
   let wrongPasswordRejected = false;
   try {
     await post(`/api/tasks/${passwordOnlyId}/private-access/verify`, {
@@ -406,7 +474,7 @@ async function main() {
   if (!wrongPasswordRejected) throw new Error('Wrong password was not rejected as expected');
   ok('wrong password rejected with a generic error', true);
 
-  log('15b/19', 'Confirming the same generic error for a nonexistent task...');
+  log('15b/26', 'Confirming the same generic error for a nonexistent task...');
   let nonexistentRejected = false;
   try {
     await post(`/api/tasks/does-not-exist-${Date.now()}/private-access/verify`, {
@@ -424,7 +492,7 @@ async function main() {
   // 15 -- keep guessing wrong until the endpoint starts returning
   // TOO_MANY_REQUESTS, with a generous upper bound so this doesn't hang if
   // the limit is ever raised.
-  log('16/19', 'Confirming repeated wrong guesses hit the rate limit...');
+  log('16/26', 'Confirming repeated wrong guesses hit the rate limit...');
   let rateLimited = false;
   for (let i = 0; i < 20 && !rateLimited; i++) {
     try {
@@ -448,7 +516,7 @@ async function main() {
   // 17. Correct password against a DIFFERENT task (bothId, not rate-limited
   // above) issues a grant; an otherwise-anonymous request carrying just the
   // grant header can now fetch that task directly.
-  log('17/19', 'Verifying the correct password issues a grant (both-mechanisms task)...');
+  log('17/26', 'Verifying the correct password issues a grant (both-mechanisms task)...');
   const { grant } = (await post(`/api/tasks/${bothId}/private-access/verify`, {
     taskId: bothId,
     password: PRIVATE_PASSWORD,
@@ -465,7 +533,7 @@ async function main() {
 
   // 18. That same grant is task-scoped -- it does not unlock a different
   // private task.
-  log('18/19', 'Confirming the grant does not unlock a different private task...');
+  log('18/26', 'Confirming the grant does not unlock a different private task...');
   const crossTaskFetch = (await get(`/api/tasks/${allowlistOnlyId}`, {
     headers: { [TASK_ACCESS_GRANT_HEADER]: grant },
   })) as unknown;
@@ -477,7 +545,7 @@ async function main() {
   // 19. Spot-check a retrofitted sibling endpoint: bids.listByTask on the
   // auction-mode both-mechanisms task. The canView gate composes as an AND
   // with the existing sealed-bid logic, not a replacement for it.
-  log('19/19', 'Spot-checking bids.listByTask on the auction-mode private task...');
+  log('19/26', 'Spot-checking bids.listByTask on the auction-mode private task...');
   const outsiderBids = (await get(`/api/tasks/${bothId}/bids`, {
     headers: outsiderHeaders,
   })) as unknown[];
@@ -494,13 +562,341 @@ async function main() {
   }
   ok('bids.listByTask does not deny the requester on their own private task', true);
 
+  // === Part C: private-task write-path authorization (PR #314) ===
+  console.log('\n--- Part C: private-task write-path authorization (PR #314) ---');
+
+  // Fund the outsider with mock USDC before any of Part C's X402-gated attempts
+  // (bid, auction-accept, pitch, proof) -- see fundWithUsdc's doc comment.
+  log('20-pre/26', 'Funding the outsider account with mock USDC for X402 payment settlement...');
+  await fundWithUsdc(requester, outsider.address, 1_000_000_000_000n);
+  ok('outsider funded with mock USDC', outsider.address);
+
+  // 20. An outsider cannot submit work on the allowlist-only private (bounty
+  // mode) task; the allowlisted worker can.
+  log('20/26', 'Outsider attempting to submit work on the allowlist-only private task...');
+  const outsiderSubmitSig = await outsider.signMessage({
+    message: buildSubmitMessage(allowlistOnlyId),
+  });
+  await assertRejects(
+    () =>
+      post(`/api/tasks/${allowlistOnlyId}/submissions`, {
+        taskId: allowlistOnlyId,
+        workerAddress: outsider.address,
+        artifacts: [
+          {
+            fileName: 'submission.txt',
+            mimeType: 'text/plain',
+            role: 'attachment',
+            file: Buffer.from('outsider should not be able to submit this').toString('base64'),
+          },
+        ],
+        signature: outsiderSubmitSig,
+      }),
+    'Not authorized to submit to this private task',
+    'outsider rejected submitting to the allowlist-only private task'
+  );
+
+  log('20b/26', 'Allowlisted worker submitting work on the allowlist-only private task...');
+  const workerSubmitSig = await worker.signMessage({
+    message: buildSubmitMessage(allowlistOnlyId),
+  });
+  const { submissionId: allowlistSubmissionId } = (await post(
+    `/api/tasks/${allowlistOnlyId}/submissions`,
+    {
+      taskId: allowlistOnlyId,
+      workerAddress: worker.address,
+      artifacts: [
+        {
+          fileName: 'submission.txt',
+          mimeType: 'text/plain',
+          role: 'attachment',
+          file: Buffer.from('allowlisted worker submission').toString('base64'),
+        },
+      ],
+      signature: workerSubmitSig,
+    }
+  )) as { success: boolean; submissionId: string };
+  ok('allowlisted worker submitted to the allowlist-only private task', allowlistSubmissionId);
+
+  // 21. An outsider cannot bid on the both-mechanisms private (english
+  // auction) task; the allowlisted worker can.
+  log('21/26', 'Outsider attempting to bid on the both-mechanisms private auction task...');
+  await assertRejects(
+    () => x402Post(`/api/tasks/${bothId}/bids`, { taskId: bothId, price: '500' }, outsider),
+    'Not authorized to bid on this private task',
+    'outsider rejected bidding on the both-mechanisms private task'
+  );
+
+  log('21b/26', 'Allowlisted worker bidding on the both-mechanisms private task...');
+  const workerBid = (await x402Post(
+    `/api/tasks/${bothId}/bids`,
+    { taskId: bothId, price: '400' },
+    worker
+  )) as { success: boolean; bidId: string };
+  if (!workerBid.success) {
+    throw new Error('Allowlisted worker bid on the both-mechanisms private task did not succeed');
+  }
+  ok('allowlisted worker bid on the both-mechanisms private task', workerBid.bidId);
+
+  // 22. bothId is english mode, which doesn't use auction-accept -- a
+  // dedicated dutch-auction private task is needed to cover
+  // bids.auctionAccept, the endpoint that had zero private-task check at all
+  // before #314.
+  log('22/26', 'Creating a private dutch-auction task...');
+  const { taskId: dutchPrivateId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Visibility smoke test — private, dutch auction',
+      reward: '1000',
+      maxPrice: '1000',
+      duration: 1,
+      mode: 'auction',
+      auctionType: 'dutch',
+      auctionFloorPrice: '100',
+      bidDeadline: 10 / 60,
+      taskVisibility: 'private',
+      allowedViewers: [worker.address],
+      tags: ['smoke-visibility'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('dutch-auction private taskId', dutchPrivateId);
+
+  log('22b/26', 'Outsider attempting to auction-accept the private dutch-auction task...');
+  await assertRejects(
+    () =>
+      x402Post(`/api/tasks/${dutchPrivateId}/bids/accept`, { taskId: dutchPrivateId }, outsider),
+    'Not authorized to accept this private task',
+    'outsider rejected auction-accepting the private dutch-auction task'
+  );
+
+  log('22c/26', 'Allowlisted worker accepting the current clock price...');
+  const acceptResult = (await x402Post(
+    `/api/tasks/${dutchPrivateId}/bids/accept`,
+    { taskId: dutchPrivateId },
+    worker
+  )) as { success: boolean; acceptedPrice: string; workerAddress: string };
+  ok('allowlisted worker accepted the private dutch-auction task', acceptResult.acceptedPrice);
+
+  const claimedDutchTask = (await get(`/api/tasks/${dutchPrivateId}`, {
+    headers: await readAuthHeaders(requester),
+  })) as {
+    status: string;
+    claimedBy: string | null;
+  };
+  if (claimedDutchTask.status !== 'claimed') {
+    throw new Error(
+      `Expected the private dutch-auction task to be claimed after accept. Got: ${claimedDutchTask.status}`
+    );
+  }
+  ok('private dutch-auction task moved to claimed', claimedDutchTask.claimedBy);
+
+  // 23. An outsider cannot submit a pitch on a private pitch task; the
+  // allowlisted worker can.
+  log('23/26', 'Creating a private pitch task...');
+  const { taskId: pitchPrivateId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Visibility smoke test — private, pitch',
+      reward: '1000',
+      duration: 1,
+      mode: 'pitch',
+      taskVisibility: 'private',
+      allowedViewers: [worker.address],
+      tags: ['smoke-visibility'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('pitch private taskId', pitchPrivateId);
+
+  log('23b/26', 'Outsider attempting to submit a pitch on the private pitch task...');
+  await assertRejects(
+    () =>
+      x402Post(
+        `/api/tasks/${pitchPrivateId}/pitches`,
+        {
+          taskId: pitchPrivateId,
+          workerAddress: outsider.address,
+          pitchText: 'Outsider pitch that should be rejected',
+          signature: '0x',
+        },
+        outsider
+      ),
+    'Not authorized to submit a pitch on this private task',
+    'outsider rejected pitching on the private pitch task'
+  );
+
+  log('23c/26', 'Allowlisted worker submitting a pitch on the private pitch task...');
+  const { pitchId: privatePitchId } = (await x402Post(
+    `/api/tasks/${pitchPrivateId}/pitches`,
+    {
+      taskId: pitchPrivateId,
+      workerAddress: worker.address,
+      pitchText: 'Allowlisted worker pitch',
+      signature: '0x',
+    },
+    worker
+  )) as { pitchId: string };
+  ok('allowlisted worker pitched on the private pitch task', privatePitchId);
+
+  // 24. An outsider cannot submit a proof on a private benchmark task; the
+  // allowlisted worker can.
+  log('24/26', 'Creating a private benchmark task...');
+  const { taskId: benchmarkPrivateId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Visibility smoke test — private, benchmark',
+      reward: '1000',
+      duration: 1,
+      mode: 'benchmark',
+      taskVisibility: 'private',
+      allowedViewers: [worker.address],
+      tags: ['smoke-visibility'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('benchmark private taskId', benchmarkPrivateId);
+
+  log('24b/26', 'Outsider attempting to submit a proof on the private benchmark task...');
+  await assertRejects(
+    () =>
+      x402Post(
+        `/api/tasks/${benchmarkPrivateId}/proofs`,
+        {
+          taskId: benchmarkPrivateId,
+          workerAddress: outsider.address,
+          proofData: 'outsider proof that should be rejected',
+          proofType: 'api_data',
+          signature: '0x',
+        },
+        outsider
+      ),
+    'Not authorized to submit a proof on this private task',
+    'outsider rejected proving on the private benchmark task'
+  );
+
+  log('24c/26', 'Allowlisted worker submitting a proof on the private benchmark task...');
+  const { proofId: privateProofId } = (await x402Post(
+    `/api/tasks/${benchmarkPrivateId}/proofs`,
+    {
+      taskId: benchmarkPrivateId,
+      workerAddress: worker.address,
+      proofData: 'allowlisted worker proof',
+      proofType: 'api_data',
+      signature: '0x',
+    },
+    worker
+  )) as { proofId: string };
+  ok('allowlisted worker proved on the private benchmark task', privateProofId);
+
+  // 25. An outsider cannot claim a private claim task; the allowlisted worker
+  // can, and the task moves to 'claimed'.
+  log('25/26', 'Creating a private claim task...');
+  const { taskId: claimPrivateId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Visibility smoke test — private, claim',
+      reward: '1000',
+      duration: 1,
+      mode: 'claim',
+      taskVisibility: 'private',
+      allowedViewers: [worker.address],
+      tags: ['smoke-visibility'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('claim private taskId', claimPrivateId);
+
+  log('25b/26', 'Outsider attempting to claim the private claim task...');
+  const outsiderClaimSig = await outsider.signMessage({
+    message: buildClaimMessage(claimPrivateId),
+  });
+  await assertRejects(
+    () =>
+      post(`/api/tasks/${claimPrivateId}/claim`, {
+        taskId: claimPrivateId,
+        workerAddress: outsider.address,
+        signature: outsiderClaimSig,
+      }),
+    'Not authorized to claim this private task',
+    'outsider rejected claiming the private claim task'
+  );
+
+  log('25c/26', 'Allowlisted worker claiming the private claim task...');
+  const workerClaimSig = await worker.signMessage({ message: buildClaimMessage(claimPrivateId) });
+  const { claimId: privateClaimId } = (await post(`/api/tasks/${claimPrivateId}/claim`, {
+    taskId: claimPrivateId,
+    workerAddress: worker.address,
+    signature: workerClaimSig,
+  })) as { claimId: string };
+  ok('allowlisted worker claimed the private claim task', privateClaimId);
+
+  const claimedTask = (await get(`/api/tasks/${claimPrivateId}`, {
+    headers: await readAuthHeaders(requester),
+  })) as {
+    status: string;
+    claimedBy: string | null;
+  };
+  if (
+    claimedTask.status !== 'claimed' ||
+    claimedTask.claimedBy?.toLowerCase() !== worker.address.toLowerCase()
+  ) {
+    throw new Error(
+      `Expected the private claim task to move to claimed with claimedBy the allowlisted worker. Got: ${JSON.stringify(claimedTask)}`
+    );
+  }
+  ok('private claim task moved to claimed, claimedBy the allowlisted worker', true);
+
+  // 26. Regression check for the claimedBy pre-auth oracle fix (the follow-up
+  // commit already pushed to #314, not just its original F1 scope). On the
+  // now-claimed private claim task, an outsider submits with
+  // workerAddress=outsider.address but a signature that does NOT correspond
+  // to it (signed by worker instead). Before the fix, submissions.submit
+  // compared task.claimedBy against the caller-supplied workerAddress BEFORE
+  // verifying the signature -- so an attacker could learn "this address isn't
+  // the assigned worker" (the claimedBy-mismatch error) or "this address has
+  // no standing" (the new FORBIDDEN check) for an address they never proved
+  // they controlled. The fix moved signature verification first; this
+  // asserts that ordering holds by requiring the signature error specifically
+  // -- assertRejects fails the run if either pre-auth-oracle message comes
+  // back instead.
+  log(
+    '26/26',
+    'Regression: outsider submitting with a signature that does not match their claimed address...'
+  );
+  const mismatchedSubmitSig = await worker.signMessage({
+    message: buildSubmitMessage(claimPrivateId),
+  });
+  await assertRejects(
+    () =>
+      post(`/api/tasks/${claimPrivateId}/submissions`, {
+        taskId: claimPrivateId,
+        workerAddress: outsider.address,
+        artifacts: [
+          {
+            fileName: 'submission.txt',
+            mimeType: 'text/plain',
+            role: 'attachment',
+            file: Buffer.from('mismatched signature regression check').toString('base64'),
+          },
+        ],
+        signature: mismatchedSubmitSig,
+      }),
+    'Signature does not match worker address',
+    'outsider with a mismatched signature gets a signature error, not a claimedBy/FORBIDDEN oracle'
+  );
+
   console.log('\n=== Task visibility smoke test passed ===');
-  console.log('unlistedTaskId:      ', unlistedId);
-  console.log('publicTaskId:        ', publicId);
-  console.log('allowlistOnlyTaskId: ', allowlistOnlyId);
-  console.log('passwordOnlyTaskId:  ', passwordOnlyId);
-  console.log('bothMechanismsTaskId:', bothId);
-  console.log('publicTaskId2:       ', publicId2);
+  console.log('unlistedTaskId:        ', unlistedId);
+  console.log('publicTaskId:          ', publicId);
+  console.log('allowlistOnlyTaskId:   ', allowlistOnlyId);
+  console.log('passwordOnlyTaskId:    ', passwordOnlyId);
+  console.log('bothMechanismsTaskId:  ', bothId);
+  console.log('publicTaskId2:         ', publicId2);
+  console.log('dutchPrivateTaskId:    ', dutchPrivateId);
+  console.log('pitchPrivateTaskId:    ', pitchPrivateId);
+  console.log('benchmarkPrivateTaskId:', benchmarkPrivateId);
+  console.log('claimPrivateTaskId:    ', claimPrivateId);
 }
 
 main().catch((err) => {

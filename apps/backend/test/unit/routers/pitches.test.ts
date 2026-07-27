@@ -160,6 +160,80 @@ describe('pitches router', () => {
     });
   });
 
+  describe('submit - private task standing (F3)', () => {
+    const OUTSIDER = '0x9999999999999999999999999999999999999999';
+    const ALLOWED = '0x0000000000000000000000000000000000000002';
+
+    function privateSubmitInput(workerAddress: string) {
+      return { taskId: TASK_ID, workerAddress, pitchText: 'My pitch', signature: '0xsig' };
+    }
+
+    it('throws FORBIDDEN when an outsider with zero standing submits a pitch', async () => {
+      const ctx = createMockCtx(OUTSIDER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // no duplicate pitch
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.submit(privateSubmitInput(OUTSIDER))).rejects.toThrow(
+        'Not authorized to submit a pitch on this private task'
+      );
+    });
+
+    it('throws FORBIDDEN for an outsider even when holding a taskAccessGrant for this task', async () => {
+      const ctx = createMockCtx(OUTSIDER, undefined, { taskId: TASK_ID });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // no duplicate pitch
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.submit(privateSubmitInput(OUTSIDER))).rejects.toThrow(
+        'Not authorized to submit a pitch on this private task'
+      );
+    });
+
+    it('allows an allowlisted wallet to submit a pitch on a private task', async () => {
+      const ctx = createMockCtx(ALLOWED);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // no duplicate pitch
+        .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED }])) // allowlisted
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = pitchesRouter.createCaller(ctx);
+      const result = await caller.submit(privateSubmitInput(ALLOWED));
+      expect(result.success).toBe(true);
+    });
+
+    it('allows an awarded worker to submit a pitch on a private task', async () => {
+      const ctx = createMockCtx(ALLOWED);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // no duplicate pitch
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([{ workerAddress: ALLOWED }])); // awarded
+
+      const caller = pitchesRouter.createCaller(ctx);
+      const result = await caller.submit(privateSubmitInput(ALLOWED));
+      expect(result.success).toBe(true);
+    });
+
+    it('allows the task requester to submit a pitch on their own private task', async () => {
+      const ctx = createMockCtx(REQUESTER);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])); // no duplicate pitch; requester short-circuits before allowlist query
+
+      const caller = pitchesRouter.createCaller(ctx);
+      const result = await caller.submit(privateSubmitInput(REQUESTER));
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('listByTask', () => {
     it('returns pitches with worker stats', async () => {
       const ctx = createMockCtx();

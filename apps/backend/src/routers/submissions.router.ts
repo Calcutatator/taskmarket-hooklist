@@ -18,6 +18,7 @@ import {
   devices,
   artifacts,
   taskAwards,
+  taskAllowedViewers,
   type Agent,
   type Artifact,
   type NewArtifact,
@@ -224,6 +225,67 @@ async function assertSubmissionVisible(
   }
 }
 
+/**
+ * Confirms `workerAddress` has standing to submit work on a private task: the
+ * requester, the pre-assigned `claimedBy`, a `task_awards`-linked worker, or an
+ * explicitly allowlisted viewer (`task_allowed_viewers`). Deliberately does NOT
+ * accept a `taskAccessGrant` -- that's the password-only *view* grant used by
+ * `canView`'s viewability context, which proves someone can see a private task's
+ * read surface, not that they're one of its participants; treating it as standing
+ * here would let anyone holding the task's share link/password submit deliverables
+ * on an invite-only task.
+ *
+ * Public/unlisted tasks return immediately -- this only ever restricts
+ * `taskVisibility === 'private'` tasks, the same scope as `canView`'s truth table.
+ *
+ * Callers MUST invoke this only after `verifySignedAddressOrThrow` has confirmed
+ * the caller actually controls `workerAddress`. Calling it beforehand would let an
+ * unauthenticated caller submit arbitrary candidate addresses and use the
+ * FORBIDDEN-vs-signature-error response difference as an oracle for which wallets
+ * have standing on a private task.
+ */
+async function assertCanSubmitToTask(
+  db: Context['db'],
+  task: { id: string; taskVisibility: string; requester: string; claimedBy: string | null },
+  workerAddress: string
+): Promise<void> {
+  if (task.taskVisibility !== 'private') return;
+
+  const address = workerAddress.toLowerCase();
+  if (address === task.requester.toLowerCase()) return;
+  if (task.claimedBy && address === task.claimedBy.toLowerCase()) return;
+
+  const [awardRows, viewerRows] = await Promise.all([
+    db
+      .select({ workerAddress: taskAwards.workerAddress })
+      .from(taskAwards)
+      .where(
+        and(
+          eq(taskAwards.taskId, task.id),
+          sql`lower(${taskAwards.workerAddress}) = lower(${workerAddress})`
+        )
+      )
+      .limit(1),
+    db
+      .select({ viewerAddress: taskAllowedViewers.viewerAddress })
+      .from(taskAllowedViewers)
+      .where(
+        and(
+          eq(taskAllowedViewers.taskId, task.id),
+          sql`lower(${taskAllowedViewers.viewerAddress}) = lower(${workerAddress})`
+        )
+      )
+      .limit(1),
+  ]);
+
+  if (awardRows.length > 0 || viewerRows.length > 0) return;
+
+  throw new TRPCError({
+    code: 'FORBIDDEN',
+    message: 'Not authorized to submit to this private task',
+  });
+}
+
 function toArtifactResponse(
   row: Artifact,
   workerAddress: string,
@@ -280,31 +342,13 @@ export const submissionsRouter = router({
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not claimed' });
         }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only worker can submit',
-          });
-        }
       } else if (task.mode === 'pitch') {
         if (task.status !== 'worker_selected') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
         }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only selected worker can submit',
-          });
-        }
       } else if (task.mode === 'auction') {
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
-        }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only the winning bidder can submit',
-          });
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         const now = new Date();
@@ -333,6 +377,34 @@ export const submissionsRouter = router({
             message: 'Signature does not match worker address',
           }),
       });
+
+      // Only compared once the caller has cryptographically proven ownership of
+      // workerAddress above -- comparing task.claimedBy against an unauthenticated
+      // input.workerAddress would let an attacker submit an arbitrary candidate
+      // address and use the UNAUTHORIZED-vs-signature-error response difference as
+      // an oracle for whether that address is the task's assigned worker, with no
+      // valid signature required.
+      if (task.mode === 'claim' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only worker can submit',
+        });
+      } else if (task.mode === 'pitch' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only selected worker can submit',
+        });
+      } else if (task.mode === 'auction' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only the winning bidder can submit',
+        });
+      }
+
+      // Only checked once the caller has cryptographically proven ownership of
+      // workerAddress above -- see assertCanSubmitToTask's doc comment for why
+      // ordering this before the signature check would create an oracle.
+      await assertCanSubmitToTask(ctx.db, task, input.workerAddress);
 
       const storage = getStorageBackend();
       const submissionId = randomUUID();
@@ -499,31 +571,13 @@ export const submissionsRouter = router({
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Task not claimed' });
         }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only worker can submit',
-          });
-        }
       } else if (task.mode === 'pitch') {
         if (task.status !== 'worker_selected') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Worker not selected' });
         }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only selected worker can submit',
-          });
-        }
       } else if (task.mode === 'auction') {
         if (task.status !== 'claimed') {
           throw new TRPCError({ code: 'BAD_REQUEST', message: 'Auction winner not yet selected' });
-        }
-        if (task.claimedBy !== input.workerAddress) {
-          throw new TRPCError({
-            code: 'UNAUTHORIZED',
-            message: 'Only the winning bidder can submit',
-          });
         }
       } else if (task.mode === 'bounty' || task.mode === 'benchmark') {
         const now = new Date();
@@ -552,6 +606,34 @@ export const submissionsRouter = router({
             message: 'Signature does not match worker address',
           }),
       });
+
+      // Only compared once the caller has cryptographically proven ownership of
+      // workerAddress above -- comparing task.claimedBy against an unauthenticated
+      // input.workerAddress would let an attacker submit an arbitrary candidate
+      // address and use the UNAUTHORIZED-vs-signature-error response difference as
+      // an oracle for whether that address is the task's assigned worker, with no
+      // valid signature required.
+      if (task.mode === 'claim' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only worker can submit',
+        });
+      } else if (task.mode === 'pitch' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only selected worker can submit',
+        });
+      } else if (task.mode === 'auction' && task.claimedBy !== input.workerAddress) {
+        throw new TRPCError({
+          code: 'UNAUTHORIZED',
+          message: 'Only the winning bidder can submit',
+        });
+      }
+
+      // Only checked once the caller has cryptographically proven ownership of
+      // workerAddress above -- see assertCanSubmitToTask's doc comment for why
+      // ordering this before the signature check would create an oracle.
+      await assertCanSubmitToTask(ctx.db, task, input.workerAddress);
 
       const storage = getStorageBackend();
       const submissionId = randomUUID();

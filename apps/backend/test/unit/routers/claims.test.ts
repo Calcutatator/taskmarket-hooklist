@@ -116,6 +116,83 @@ describe('claims router', () => {
     });
   });
 
+  describe('claim - private task standing (F6)', () => {
+    const OUTSIDER = '0x9999999999999999999999999999999999999999';
+    const ALLOWED = '0x0000000000000000000000000000000000000002';
+
+    function privateClaimInput(workerAddress: string) {
+      return { taskId: TASK_ID, workerAddress, signature: '0xsig' };
+    }
+
+    it('throws FORBIDDEN when an outsider with zero standing tries to claim a private task', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = claimsRouter.createCaller(ctx);
+      await expect(caller.claim(privateClaimInput(OUTSIDER))).rejects.toThrow(
+        'Not authorized to claim this private task'
+      );
+    });
+
+    it('throws FORBIDDEN for an outsider even when holding a taskAccessGrant for this task', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+      const ctx = createMockCtx(undefined, undefined, { taskId: TASK_ID });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = claimsRouter.createCaller(ctx);
+      await expect(caller.claim(privateClaimInput(OUTSIDER))).rejects.toThrow(
+        'Not authorized to claim this private task'
+      );
+    });
+
+    it('allows an allowlisted wallet to claim a private task', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED }])) // allowlisted
+        .mockReturnValueOnce(makeChain([])); // no awards
+
+      const caller = claimsRouter.createCaller(ctx);
+      const result = await caller.claim(privateClaimInput(ALLOWED));
+      expect(result.success).toBe(true);
+    });
+
+    it('allows an awarded worker to claim a private task', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
+        .mockReturnValueOnce(makeChain([])) // allowlist empty
+        .mockReturnValueOnce(makeChain([{ workerAddress: ALLOWED }])); // awarded
+
+      const caller = claimsRouter.createCaller(ctx);
+      const result = await caller.claim(privateClaimInput(ALLOWED));
+      expect(result.success).toBe(true);
+    });
+
+    it('allows the task requester to claim their own private task', async () => {
+      const REQUESTER_ADDR = '0xRequester';
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(REQUESTER_ADDR as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeTask({ taskVisibility: 'private', requester: REQUESTER_ADDR })])
+      );
+      // requester short-circuits before any allowlist/award query
+
+      const caller = claimsRouter.createCaller(ctx);
+      const result = await caller.claim(privateClaimInput(REQUESTER_ADDR));
+      expect(result.success).toBe(true);
+    });
+  });
+
   describe('getByTask', () => {
     it('returns null when no claim exists', async () => {
       const ctx = createMockCtx();

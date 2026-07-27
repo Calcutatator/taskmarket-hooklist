@@ -3,7 +3,8 @@
  */
 import { randomBytes } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
-import { toHex } from 'viem';
+import { createPublicClient, createWalletClient, http, parseAbi, toHex, type Chain } from 'viem';
+import { anvil, baseSepolia } from 'viem/chains';
 import { buildDeviceRegisterMessage, buildReadAuthMessage } from '@taskmarket/shared';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
@@ -237,6 +238,41 @@ export async function registerDevice(
     deviceId: string;
     apiToken: string;
   };
+}
+
+const MOCK_USDC_ABI = parseAbi(['function mint(address to, uint256 amount) external']);
+
+/**
+ * Mints mock USDC directly to `recipient` -- MockUSDC.mint is permissionless (see
+ * MockUSDC.sol), the same fact cloud-env-setup.sh relies on to fund the
+ * requester/worker/etc. accounts. Useful for any smoke test that needs to hand USDC
+ * to a throwaway randomAccount() before it can pass through an X402-gated endpoint --
+ * without it, settlement fails with "insufficient_funds" before the endpoint's own
+ * logic (e.g. an authorization check) is ever reached. `payer` only needs ETH for gas
+ * (any of the pre-funded smoke-test accounts), not USDC of its own.
+ */
+export async function fundWithUsdc(
+  payer: Account,
+  recipient: string,
+  amount: bigint
+): Promise<void> {
+  const rpcUrl = process.env.BASE_RPC_URL ?? 'http://127.0.0.1:8545';
+  const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
+  const chain: Chain = chainId === 31337 ? anvil : baseSepolia;
+  const usdc = process.env.USDC_TOKEN_ADDRESS;
+  if (!usdc) {
+    throw new Error('USDC_TOKEN_ADDRESS is required to fund an account with mock USDC');
+  }
+
+  const walletClient = createWalletClient({ account: payer, chain, transport: http(rpcUrl) });
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  const hash = await walletClient.writeContract({
+    address: usdc as `0x${string}`,
+    abi: MOCK_USDC_ABI,
+    functionName: 'mint',
+    args: [recipient as `0x${string}`, amount],
+  });
+  await publicClient.waitForTransactionReceipt({ hash });
 }
 
 /**

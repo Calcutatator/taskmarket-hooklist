@@ -6,6 +6,8 @@ vi.mock('../../../src/lib/storage', () => ({
   getStorageBackend: vi.fn().mockReturnValue({
     upload: vi.fn().mockResolvedValue('file://test/submissions/task1/file'),
     getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.example.com/file'),
+    headObject: vi.fn().mockResolvedValue({ contentLength: 123 }),
+    storageUriForKey: vi.fn((key: string) => `file://test/${key}`),
   }),
 }));
 
@@ -271,7 +273,11 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Task not claimed');
     });
 
-    it('throws when claim task worker is a different worker', async () => {
+    it('throws when claim task worker is a different worker (valid signature, still rejected)', async () => {
+      // The claimedBy comparison now runs AFTER signature verification (pre-auth
+      // oracle fix) -- a valid signature over WORKER must still be rejected when
+      // WORKER isn't the task's assigned worker, same as before the reorder.
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: '0xOtherWorker' })])
@@ -296,7 +302,11 @@ describe('submissions router', () => {
       expect(ctx.db.update).toHaveBeenCalledOnce();
     });
 
-    it('throws when pitch task worker is different', async () => {
+    it('throws when pitch task worker is different (valid signature, still rejected)', async () => {
+      // Same reorder as the claim-mode case above: signature verification runs
+      // before the claimedBy comparison now, but a valid signature over a
+      // non-selected worker is still rejected.
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([
@@ -338,6 +348,325 @@ describe('submissions router', () => {
       await expect(caller.submit(baseSubmitInput)).rejects.toThrow(
         'Signature does not match worker address'
       );
+    });
+
+    describe('claimedBy pre-auth oracle ordering', () => {
+      // Regression coverage for the claimedBy pre-auth oracle finding: comparing
+      // task.claimedBy against input.workerAddress before the caller has proven
+      // they control that address would let an attacker submit an arbitrary
+      // candidate address with no valid signature and use the
+      // signature-error-vs-claimedBy-mismatch-error distinction to learn whether
+      // that address is the task's assigned worker. The fix moves the claimedBy
+      // comparison to run after verifySignedAddressOrThrow succeeds, for every mode
+      // branch that has it (claim/pitch/auction).
+      const OTHER_WORKER = '0xOtherWorkerAddr00000000000000000000001';
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (claim mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (pitch mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([
+            makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: OTHER_WORKER }),
+          ])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (auction mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submit(baseSubmitInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('submits successfully for the winning bidder on an auction task once selected', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submit(baseSubmitInput);
+
+        expect(result.success).toBe(true);
+        // auction task flips to pending_approval after submission so requester can accept
+        expect(ctx.db.update).toHaveBeenCalledOnce();
+      });
+
+      it('rejects a valid-signature caller who is not the winning bidder on an auction task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submit(baseSubmitInput)).rejects.toThrow(
+          'Only the winning bidder can submit'
+        );
+      });
+    });
+
+    describe('private task submission standing', () => {
+      const ALLOWED_VIEWER = '0xAllowedViewer0000000000000000000000001';
+      const OUTSIDER = '0xOutsider000000000000000000000000000001';
+
+      it('rejects an outsider submitting to a private bounty task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'bounty', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([])) // task_awards: no match
+          .mockReturnValueOnce(makeChain([])); // task_allowed_viewers: no match
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submit({ ...baseSubmitInput, workerAddress: OUTSIDER })
+        ).rejects.toThrow('Not authorized to submit to this private task');
+      });
+
+      it('rejects a taskAccessGrant holder (view-only) submitting to a private benchmark task', async () => {
+        // A valid password-derived taskAccessGrant proves view access, not
+        // submission standing -- must not be accepted as a substitute here.
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+        const ctx = createMockCtx(undefined, undefined, { taskId: TASK_ID });
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([]))
+          .mockReturnValueOnce(makeChain([]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submit({ ...baseSubmitInput, workerAddress: OUTSIDER })
+        ).rejects.toThrow('Not authorized to submit to this private task');
+      });
+
+      it('allows the pre-assigned claimedBy worker to submit to a private bounty task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              mode: 'bounty',
+              status: 'open',
+              taskVisibility: 'private',
+              claimedBy: WORKER,
+            }),
+          ])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submit(baseSubmitInput);
+
+        expect(result.success).toBe(true);
+      });
+
+      it('allows an allowlisted viewer to submit to a private benchmark task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED_VIEWER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([])) // task_awards: no match
+          .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED_VIEWER }]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submit({
+          ...baseSubmitInput,
+          workerAddress: ALLOWED_VIEWER,
+        });
+
+        expect(result.success).toBe(true);
+      });
+    });
+  });
+
+  describe('submitFromKeys', () => {
+    const ARTIFACT_KEY = `submissions/${TASK_ID}/pending/submission.txt`;
+    const baseFromKeysInput = {
+      taskId: TASK_ID,
+      workerAddress: WORKER,
+      signature: '0xsig',
+      artifacts: [
+        {
+          artifactKey: ARTIFACT_KEY,
+          fileName: 'submission.txt',
+          mimeType: 'text/plain',
+          role: 'attachment' as const,
+          sizeBytes: 123,
+          sha256Hash: 'a'.repeat(64),
+          keccak256Hash: `0x${'b'.repeat(64)}`,
+        },
+      ],
+    };
+
+    describe('private task submission standing', () => {
+      const ALLOWED_VIEWER = '0xAllowedViewer0000000000000000000000002';
+      const OUTSIDER = '0xOutsider000000000000000000000000000002';
+
+      it('rejects an outsider submitting to a private bounty task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'bounty', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([])) // task_awards: no match
+          .mockReturnValueOnce(makeChain([])); // task_allowed_viewers: no match
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submitFromKeys({ ...baseFromKeysInput, workerAddress: OUTSIDER })
+        ).rejects.toThrow('Not authorized to submit to this private task');
+      });
+
+      it('rejects a taskAccessGrant holder (view-only) submitting to a private benchmark task', async () => {
+        // A valid password-derived taskAccessGrant proves view access, not
+        // submission standing -- must not be accepted as a substitute here.
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OUTSIDER as `0x${string}`);
+        const ctx = createMockCtx(undefined, undefined, { taskId: TASK_ID });
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([]))
+          .mockReturnValueOnce(makeChain([]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submitFromKeys({ ...baseFromKeysInput, workerAddress: OUTSIDER })
+        ).rejects.toThrow('Not authorized to submit to this private task');
+      });
+
+      it('allows the pre-assigned claimedBy worker to submit to a private bounty task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([
+            makeTask({
+              mode: 'bounty',
+              status: 'open',
+              taskVisibility: 'private',
+              claimedBy: WORKER,
+            }),
+          ])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submitFromKeys(baseFromKeysInput);
+
+        expect(result.success).toBe(true);
+      });
+
+      it('allows an allowlisted viewer to submit to a private benchmark task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(ALLOWED_VIEWER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
+          )
+          .mockReturnValueOnce(makeChain([])) // task_awards: no match
+          .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED_VIEWER }]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submitFromKeys({
+          ...baseFromKeysInput,
+          workerAddress: ALLOWED_VIEWER,
+        });
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe('claimedBy pre-auth oracle ordering', () => {
+      // Same regression coverage as submit's block above, adapted for
+      // submitFromKeys -- the claimedBy comparison must run after signature
+      // verification here too, for every mode branch that has it.
+      const OTHER_WORKER = '0xOtherWorkerAddr00000000000000000000002';
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (claim mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (pitch mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([
+            makeTask({ mode: 'pitch', status: 'worker_selected', claimedBy: OTHER_WORKER }),
+          ])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('rejects an unsigned candidate address with a signature error, not a claimedBy-mismatch error (auction mode)', async () => {
+        vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('bad sig'));
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'auction', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow('Invalid signature');
+      });
+
+      it('submits successfully for the pre-assigned worker on a claim task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submitFromKeys(baseFromKeysInput);
+
+        expect(result.success).toBe(true);
+      });
+
+      it('rejects a valid-signature caller who is not the assigned worker on a claim task', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: OTHER_WORKER })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow(
+          'Only worker can submit'
+        );
+      });
     });
   });
 

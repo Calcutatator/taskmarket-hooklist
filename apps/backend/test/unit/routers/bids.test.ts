@@ -54,6 +54,7 @@ function makeTask(overrides: Record<string, unknown> = {}) {
     status: 'open',
     tags: [],
     mode: 'auction',
+    taskVisibility: 'public',
     stakeRequired: 0,
     stakeBps: 0,
     pitchDeadline: null,
@@ -289,6 +290,61 @@ describe('bids router', () => {
       const [{ target, set }] = vi.mocked(bidInsert.onConflictDoUpdate).mock.calls[0];
       expect(target).toEqual([bidsTable.taskId, bidsTable.workerAddress]);
       expect(set).toEqual(expect.objectContaining({ price: submitInput.price }));
+    });
+
+    describe('private task authorization', () => {
+      const PRIVATE_REQUESTER = '0xPrivateRequester00000000000000000000009';
+      const privateTask = makeTask({ taskVisibility: 'private', requester: PRIVATE_REQUESTER });
+
+      it('rejects an outsider who only holds a taskAccessGrant (view-only) with FORBIDDEN', async () => {
+        // A taskAccessGrant is a bearer credential minted by taskAccess.verifyPassword
+        // for VIEWING a private task -- it must never be sufficient to place a bid.
+        // WORKER here has no allowlist/award/requester standing on this task.
+        const ctx = createMockCtx(WORKER, undefined, { taskId: TASK_ID });
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateTask])) // task lookup
+          .mockReturnValueOnce(makeChain([])) // allowlist (task_allowed_viewers) — empty
+          .mockReturnValueOnce(makeChain([])); // awards (task_awards) — empty
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(caller.submit(submitInput)).rejects.toThrow(
+          'Not authorized to bid on this private task'
+        );
+        expect(contractSubmitBid).not.toHaveBeenCalled();
+      });
+
+      it('allows an allowlisted wallet address to bid on a private task', async () => {
+        const ctx = createMockCtx(WORKER);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateTask])) // task lookup
+          .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }])) // allowlist contains WORKER
+          .mockReturnValueOnce(makeChain([])) // awards — empty
+          .mockReturnValueOnce(makeChain([])); // no current lowest bid (english)
+        ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        const result = await caller.submit(submitInput);
+
+        expect(result.success).toBe(true);
+        expect(contractSubmitBid).toHaveBeenCalledOnce();
+      });
+
+      it('allows the task requester to bid on their own private task', async () => {
+        const requesterAsWorker = PRIVATE_REQUESTER;
+        const ctx = createMockCtx(requesterAsWorker);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateTask])) // task lookup
+          .mockReturnValueOnce(makeChain([])) // allowlist — empty
+          .mockReturnValueOnce(makeChain([])) // awards — empty
+          .mockReturnValueOnce(makeChain([])); // no current lowest bid (english)
+        ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        const result = await caller.submit({ taskId: TASK_ID, price: '3000000' });
+
+        expect(result.success).toBe(true);
+        expect(contractSubmitBid).toHaveBeenCalledOnce();
+      });
     });
   });
 
@@ -672,6 +728,76 @@ describe('bids router', () => {
       // At ~50% progress: startPrice + ~50% * (maxPrice - startPrice) ≈ 3000000
       expect(Number(result.acceptedPrice)).toBeGreaterThanOrEqual(3000000);
       expect(Number(result.acceptedPrice)).toBeLessThan(3050000);
+    });
+
+    describe('private task authorization', () => {
+      const PRIVATE_REQUESTER = '0xPrivateRequester00000000000000000000009';
+      const privateDutchTask = makeTask({
+        taskVisibility: 'private',
+        requester: PRIVATE_REQUESTER,
+        auctionType: 'dutch',
+        maxPrice: '5000000',
+        auctionFloorPrice: '1000000',
+        createdAt: new Date(Date.now() - 3600000),
+        bidDeadline: new Date(Date.now() + 3600000),
+      });
+
+      it('rejects an outsider who only holds a taskAccessGrant (view-only) with FORBIDDEN', async () => {
+        // A taskAccessGrant is a bearer credential minted by taskAccess.verifyPassword
+        // for VIEWING a private task -- it must never be sufficient to claim a dutch/
+        // reverse_dutch auction. WORKER here has no allowlist/award/requester standing.
+        const ctx = createMockCtx(WORKER, undefined, { taskId: TASK_ID });
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateDutchTask])) // task lookup
+          .mockReturnValueOnce(makeChain([])) // allowlist (task_allowed_viewers) — empty
+          .mockReturnValueOnce(makeChain([])); // awards (task_awards) — empty
+
+        const caller = bidsRouter.createCaller(ctx);
+        await expect(caller.auctionAccept(ACCEPT_INPUT)).rejects.toThrow(
+          'Not authorized to accept this private task'
+        );
+        expect(contractAcceptAuction).not.toHaveBeenCalled();
+      });
+
+      it('allows an allowlisted wallet address to accept a private dutch auction task', async () => {
+        const ctx = createMockCtx(WORKER);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateDutchTask])) // task lookup
+          .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }])) // allowlist contains WORKER
+          .mockReturnValueOnce(makeChain([])); // awards — empty
+        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        const result = await caller.auctionAccept(ACCEPT_INPUT);
+
+        expect(result.success).toBe(true);
+        expect(contractAcceptAuction).toHaveBeenCalledOnce();
+      });
+
+      it('allows the task requester to accept their own private reverse_dutch auction task', async () => {
+        const privateReverseDutchTask = makeTask({
+          taskVisibility: 'private',
+          requester: PRIVATE_REQUESTER,
+          auctionType: 'reverse_dutch',
+          maxPrice: '5000000',
+          auctionStartPrice: '1000000',
+          auctionFloorPrice: null,
+          createdAt: new Date(Date.now() - 3600000),
+          bidDeadline: new Date(Date.now() + 3600000),
+        });
+        const ctx = createMockCtx(PRIVATE_REQUESTER);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([privateReverseDutchTask])) // task lookup
+          .mockReturnValueOnce(makeChain([])) // allowlist — empty
+          .mockReturnValueOnce(makeChain([])); // awards — empty
+        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+
+        const caller = bidsRouter.createCaller(ctx);
+        const result = await caller.auctionAccept(ACCEPT_INPUT);
+
+        expect(result.success).toBe(true);
+        expect(contractAcceptAuction).toHaveBeenCalledOnce();
+      });
     });
   });
 
