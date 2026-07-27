@@ -40,8 +40,11 @@ describe('PublicSiteHeader', () => {
     render(<PublicSiteHeader />);
 
     const primaryNav = screen.getByRole('navigation', { name: /^primary$/i });
+    const brandLogo = screen.getByRole('link', { name: /taskmarket/i }).firstElementChild;
 
     expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
+    expect(brandLogo).toHaveClass('block');
+    expect(brandLogo).not.toHaveClass('inline-block');
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks'

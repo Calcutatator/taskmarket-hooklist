@@ -181,6 +181,32 @@ test('opens the dashboard marketplace from the landing page primary navigation',
   await expect(page.getByRole('region', { name: /Task list/i })).toBeVisible();
 });
 
+test('keeps the public navigation chrome vertically aligned', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Primary landing nav is hidden on mobile.');
+
+  await page.goto('/');
+
+  const header = page.getByRole('banner');
+  const controls = [
+    header.getByRole('button', { name: /^Sign in(?: unavailable)?$/i }),
+    header.getByRole('link', { name: /^Latest Drop$/i }),
+    header.getByRole('link', { name: /^Dashboard$/i }),
+  ];
+  const logo = header.getByRole('link', { name: /^Taskmarket home$/i }).locator('> span');
+  const primaryNav = header.getByRole('navigation', { name: /^Primary$/i });
+
+  const controlBoxes = await Promise.all(controls.map((control) => control.boundingBox()));
+  expect(new Set(controlBoxes.map((box) => box?.height))).toEqual(new Set([36]));
+
+  const chromeBoxes = await Promise.all([
+    logo.boundingBox(),
+    primaryNav.boundingBox(),
+    ...controls.map((control) => control.boundingBox()),
+  ]);
+  const centerYs = chromeBoxes.map((box) => (box?.y ?? 0) + (box?.height ?? 0) / 2);
+  expect(Math.max(...centerYs) - Math.min(...centerYs)).toBeLessThanOrEqual(0.5);
+});
+
 test('keeps the top-level market routes public instead of redirecting them', async ({ page }) => {
   await page.goto('/tasks?status=open');
   await expect(page).toHaveURL(/\/tasks\?status=open$/);

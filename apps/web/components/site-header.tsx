@@ -52,7 +52,7 @@ export function SiteHeader() {
         <h1 className="min-w-0 flex-1 truncate text-base font-medium">{routeTitle(pathname)}</h1>
         <ButtonGroup
           aria-label="Dashboard actions"
-          className="shrink-0 gap-2 [&>*]:rounded-full! [&>*]:border-l! [&>[data-slot=button]]:px-3.5 [&>[data-slot=button]]:py-0 sm:[&>[data-slot=button]]:h-9 sm:[&>[data-slot=button]]:min-h-9"
+          className="shrink-0 gap-2 [&>*]:rounded-full! [&>*]:border-l! [&>[data-slot=button]]:px-3.5 [&>[data-slot=button]]:py-0"
         >
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
             <Link href="/dashboard/drops">Latest Drop</Link>
@@ -63,7 +63,7 @@ export function SiteHeader() {
             command={skillInstallCommand()}
           />
           {showPostTaskCta ? (
-            <Button asChild className="min-h-11 max-[360px]:hidden sm:min-h-9" size="sm">
+            <Button asChild className="max-[360px]:hidden" size="sm">
               <Link href="/dashboard/tasks/new">Post a task</Link>
             </Button>
           ) : null}

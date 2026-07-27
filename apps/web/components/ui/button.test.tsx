@@ -4,6 +4,15 @@ import path from 'node:path';
 import { describe, expect, it } from 'vitest';
 
 describe('button source', () => {
+  it('keeps compact buttons touch-sized on mobile and honors their desktop heights', () => {
+    const source = readFileSync(path.join(__dirname, 'button.tsx'), 'utf8');
+
+    expect(source).toContain("default: 'min-h-11 px-4 py-2 has-[>svg]:px-3.5 sm:h-10 sm:min-h-0'");
+    expect(source).toContain("sm: 'min-h-11 gap-1.5 px-3.5 has-[>svg]:px-3 sm:h-9 sm:min-h-0'");
+    expect(source).toContain('sm:h-7 sm:min-h-0');
+    expect(source).toContain('sm:h-9 sm:min-h-0');
+  });
+
   it('uses a 44px touch target for icon-xs below the md breakpoint', () => {
     const source = readFileSync(path.join(__dirname, 'button.tsx'), 'utf8');
     expect(source).toContain("'icon-xs': \"size-11 md:size-7");

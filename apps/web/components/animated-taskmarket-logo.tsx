@@ -232,7 +232,7 @@ export function AnimatedTaskmarketLogo({ className = '' }: { className?: string 
 
   return (
     <span
-      className={`relative inline-block h-7 w-[118px] shrink-0 sm:h-8 sm:w-[135px] ${className}`}
+      className={`relative block h-7 w-[118px] shrink-0 sm:h-8 sm:w-[135px] ${className}`}
       ref={rootRef}
     >
       <img

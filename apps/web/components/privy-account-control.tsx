@@ -289,7 +289,6 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
     if (readyTimedOut) {
       return (
         <Button
-          className="min-h-11 sm:min-h-9"
           onClick={() => window.location.reload()}
           size="sm"
           title="Authentication did not finish loading."
@@ -303,7 +302,7 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
     }
 
     return (
-      <Button className="min-h-11 sm:min-h-9" disabled size="sm" type="button" variant="outline">
+      <Button disabled size="sm" type="button" variant="outline">
         Loading
       </Button>
     );
@@ -313,7 +312,6 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
     if (readyTimedOut) {
       return (
         <Button
-          className="min-h-11 sm:min-h-9"
           onClick={() => window.location.reload()}
           size="sm"
           title="Wallets did not finish loading."
@@ -327,14 +325,7 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
     }
 
     return (
-      <Button
-        aria-busy
-        className="min-h-11 sm:min-h-9"
-        disabled
-        size="sm"
-        type="button"
-        variant="outline"
-      >
+      <Button aria-busy disabled size="sm" type="button" variant="outline">
         Loading wallet
       </Button>
     );
@@ -345,7 +336,6 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
 
     return (
       <Button
-        className="min-h-11 sm:min-h-9"
         id={targetId}
         onClick={() => beginWalletAccess(targetId)}
         size="sm"
@@ -363,7 +353,6 @@ function PrivyHeaderAccountControlInner({ targetId }: { targetId: string }) {
       <PopoverTrigger asChild>
         <Button
           aria-label={`Wallet ${compactAddress(address)}`}
-          className="min-h-11 sm:min-h-9"
           id={targetId}
           size="sm"
           type="button"
