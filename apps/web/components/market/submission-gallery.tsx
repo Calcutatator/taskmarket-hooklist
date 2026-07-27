@@ -6,7 +6,7 @@ import { useEffect, useState, type KeyboardEvent } from 'react';
 
 import { ArtifactMetadata } from '@/components/market/artifact-preview-button';
 import { RelativeTime } from '@/components/market/motion/relative-time';
-import { ActorLink, isMediaArtifact } from '@/components/market/tasks';
+import { ActorLink } from '@/components/market/tasks';
 import {
   usableArtifactPreviewUrl,
   useArtifactPreviewUrl,
@@ -20,6 +20,7 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import { compactAddress } from '@/lib/format';
+import { isMediaArtifact } from '@/lib/market/task-cover';
 
 export type SubmissionMediaEntry = {
   artifact: ArtifactResponse;

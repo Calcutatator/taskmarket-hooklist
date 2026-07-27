@@ -1,6 +1,6 @@
 import type { TaskDropDirectoryItem, TaskDropPageData } from '@taskmarket/shared';
 
-import { formatUsdcUnits } from '@/lib/format';
+import { formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
 
 /**
  * Copy for the Task Drop link-preview card, shared by /drops/[dropId] and /live so a
@@ -33,19 +33,6 @@ const FALLBACK: DropCardCopy = {
   description: 'One theme, funded tasks, and the whole market competing.',
   title: 'The latest Task Drop.',
 };
-
-function sumRewards(tasks: ReadonlyArray<{ reward: string }>) {
-  let total = 0n;
-  for (const task of tasks) {
-    try {
-      total += BigInt(task.reward);
-    } catch {
-      // A malformed reward should never cost us the whole card.
-    }
-  }
-
-  return total.toString();
-}
 
 /**
  * Counts the tasks someone could actually still enter.
@@ -106,7 +93,11 @@ export function dropCardCopy(
 
   return {
     ...badgeFor(openCount),
-    description: describe(openCount, data.tasks.length, sumRewards(data.tasks)),
+    description: describe(
+      openCount,
+      data.tasks.length,
+      sumUsdcBaseUnits(data.tasks.map((task) => task.reward))
+    ),
     title: data.drop.name,
   };
 }

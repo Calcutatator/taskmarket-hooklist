@@ -2,14 +2,13 @@
 
 import type { ArtifactResponse, TaskModeType, TaskResponse } from '@taskmarket/shared';
 import { BadgeCheck, Gauge, Gavel, MessageSquareQuote, Play, Target } from 'lucide-react';
-import { useRef, useState, type CSSProperties, type ComponentType } from 'react';
+import { useRef, useState, type ComponentType } from 'react';
 
 import {
   RewardAmount,
   activityCount,
   activityLabel,
   taskHasActivity,
-  taskTitle,
 } from '@/components/market/tasks';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
@@ -19,6 +18,8 @@ import {
   taskStatusBadgeVariant,
   taskStatusLabel,
 } from '@/lib/market/task-badges';
+import { isMediaArtifact, taskCoverPlaceholderStyle } from '@/lib/market/task-cover';
+import { taskTitle } from '@/lib/market/task-title';
 import { trpc } from '@/lib/api/client';
 
 // Gallery cover for a task listing. Unlike ArtifactMediaTile (a detail-view component that
@@ -27,10 +28,6 @@ import { trpc } from '@/lib/api/client';
 // rectangular and scannable like Behance/Cosmos. Phase 3 will add a backend cover field; until
 // then a task with submission media lazily fetches its first preview, and text-only tasks get a
 // deterministic placeholder so no card is ever an empty box.
-
-function isMediaArtifact(artifact: ArtifactResponse) {
-  return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
-}
 
 // Whether the visitor's device is a real pointer (so hover-autoplay is meaningful) and motion
 // is allowed. Guarded for SSR where window/matchMedia do not exist.
@@ -118,32 +115,11 @@ const MODE_GLYPH: Record<TaskModeType, ComponentType<{ className?: string }>> = 
   auction: Gavel,
 };
 
-// Tiny FNV-1a hash so the placeholder field colour is deterministic per task id (no deps).
-function hashToIndex(value: string, buckets: number) {
-  let hash = 0x811c9dc5;
-  for (let i = 0; i < value.length; i += 1) {
-    hash ^= value.charCodeAt(i);
-    hash = Math.imul(hash, 0x01000193);
-  }
-  return Math.abs(hash) % buckets;
-}
-
-function placeholderFieldStyle(taskId: string): CSSProperties {
-  const chart = `var(--chart-${hashToIndex(taskId, 5) + 1})`;
-  return {
-    background: [
-      `radial-gradient(ellipse at 72% 28%, color-mix(in oklab, ${chart} 40%, transparent), transparent 55%)`,
-      `radial-gradient(ellipse at 18% 80%, color-mix(in oklab, ${chart} 22%, transparent), transparent 60%)`,
-      'var(--surface)',
-    ].join(', '),
-  };
-}
-
 function TaskPlaceholderCover({ task }: { task: TaskResponse }) {
   const Glyph = MODE_GLYPH[task.mode] ?? Target;
 
   return (
-    <div aria-hidden className="absolute inset-0" style={placeholderFieldStyle(task.id)}>
+    <div aria-hidden className="absolute inset-0" style={taskCoverPlaceholderStyle(task.id)}>
       <Glyph className="absolute -right-4 -top-4 size-28 text-foreground/12" />
     </div>
   );

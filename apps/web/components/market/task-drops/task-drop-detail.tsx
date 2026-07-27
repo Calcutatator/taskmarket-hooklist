@@ -14,18 +14,11 @@ import { TaskDropSubscribeForm } from '@/components/market/task-drop-subscribe-f
 import { Badge } from '@/components/ui/badge';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { taskStatusLabel, type BadgeVariant } from '@/lib/market/task-badges';
-import { formatTimeLeft, formatUsdcUnits } from '@/lib/format';
+import { formatTimeLeft, formatUsdcUnits, sumUsdcBaseUnits } from '@/lib/format';
+import { taskTitle } from '@/lib/market/task-title';
 
 const DELIVERY_WINDOW_STATUSES = new Set(['open', 'claimed', 'worker_selected']);
 const CLOSED_TASK_STATUSES = new Set(['completed', 'expired', 'cancelled']);
-
-function taskTitle(description: string) {
-  const firstLine = description.split('\n').find(Boolean)?.trim();
-  if (!firstLine) {
-    return 'Untitled task';
-  }
-  return firstLine.length > 90 ? `${firstLine.slice(0, 87).trimEnd()}...` : firstLine;
-}
 
 function isBeforeDeadline(task: TaskDropTask, now: Date) {
   const expiry = new Date(task.expiryTime).getTime();
@@ -34,16 +27,6 @@ function isBeforeDeadline(task: TaskDropTask, now: Date) {
 
 function isAvailableTask(task: TaskDropTask, now: Date) {
   return DELIVERY_WINDOW_STATUSES.has(task.status) && isBeforeDeadline(task, now);
-}
-
-function sumRewards(tasks: TaskDropTask[]) {
-  return tasks.reduce((total, task) => {
-    try {
-      return total + BigInt(task.reward);
-    } catch {
-      return total;
-    }
-  }, 0n);
 }
 
 function formatDeadline(value: string | null) {
@@ -77,7 +60,7 @@ function TaskCard({
   taskHrefBase: '/tasks' | '/dashboard/tasks';
 }) {
   const available = isAvailableTask(task, now);
-  const title = taskTitle(task.description);
+  const title = taskTitle(task);
   const deadline = formatTimeLeft(task.expiryTime, now.getTime());
 
   return (
@@ -254,7 +237,7 @@ export function TaskDropDetail({
             Reward pool
           </dt>
           <dd className="font-display text-xl font-semibold text-foreground">
-            {formatUsdcUnits(sumRewards(data.tasks).toString())}
+            {formatUsdcUnits(sumUsdcBaseUnits(data.tasks.map((task) => task.reward)))}
           </dd>
         </div>
         <div className="grid gap-1 border-l border-border/58 p-4 sm:border-l-0">

@@ -20,6 +20,14 @@ We use ESLint and Prettier to enforce code style. Run `make check-all` to verify
 - Semicolons required
 - 100 character line length
 
+### Frontend changes
+
+Before implementing or reviewing any change under `apps/web`, read
+[docs/FRONTEND_GUIDE.md](docs/FRONTEND_GUIDE.md) in full. The guide's semantic design token,
+component reuse, Server Component, interaction, accessibility, and validation requirements
+are merge requirements and blocking review findings. Follow the guide's validation matrix
+before opening or approving a pull request.
+
 ## Branch Naming
 
 - `feature/description` - New features

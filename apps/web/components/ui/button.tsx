@@ -20,6 +20,12 @@ const buttonVariants = cva(
         ghost:
           'border-transparent bg-transparent text-foreground hover:bg-accent/12 hover:text-foreground dark:hover:bg-accent/18',
         link: 'border-transparent text-primary underline-offset-4 hover:underline',
+        'taskdrop-accent':
+          'border-drop-accent bg-drop-accent text-drop-accent-foreground hover:-translate-y-0.5 hover:border-drop-accent/88 hover:bg-drop-accent/88 hover:text-drop-accent-foreground focus-visible:border-drop-accent focus-visible:ring-drop-accent/35',
+        'taskdrop-outline':
+          'border-border/64 bg-transparent text-foreground hover:-translate-y-0.5 hover:border-drop-accent/50 hover:bg-drop-accent/10 hover:text-foreground focus-visible:border-drop-accent focus-visible:ring-drop-accent/35',
+        'taskdrop-primary':
+          'border-drop-cta bg-drop-cta text-drop-cta-foreground hover:-translate-y-0.5 hover:border-drop-cta/90 hover:bg-drop-cta/90 hover:text-drop-cta-foreground focus-visible:border-drop-cta focus-visible:ring-drop-cta/35',
         terminal:
           'border-border/82 bg-surface/58 text-foreground shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.09)] hover:-translate-y-0.5 hover:border-primary/54 hover:bg-surface-2/60 hover:text-primary hover:shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.11)]',
         // Chips are high-frequency controls (filters, sort, view toggles); they change

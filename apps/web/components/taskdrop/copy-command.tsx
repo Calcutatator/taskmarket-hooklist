@@ -2,7 +2,13 @@
 
 import { useState } from 'react';
 
-export function CopyCommand({ command }: Readonly<{ command: string }>) {
+import { Button } from '@/components/ui/button';
+import { cn } from '@/lib/utils';
+
+export function CopyCommand({
+  className,
+  command,
+}: Readonly<{ className?: string; command: string }>) {
   const [copied, setCopied] = useState(false);
 
   async function copy() {
@@ -16,12 +22,16 @@ export function CopyCommand({ command }: Readonly<{ command: string }>) {
   }
 
   return (
-    <button
-      className="ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg bg-[#E74079] px-3 py-2 text-[11px] tracking-[0.06em] text-[#FFF6E8] uppercase"
+    <Button
+      className={cn(
+        'ml-auto inline-flex min-h-11 shrink-0 cursor-pointer items-center rounded-lg px-3 py-2 font-mono text-[11px] tracking-[0.06em] uppercase',
+        className
+      )}
       onClick={copy}
       type="button"
+      variant="taskdrop-accent"
     >
       {copied ? 'Copied' : 'Copy'}
-    </button>
+    </Button>
   );
 }

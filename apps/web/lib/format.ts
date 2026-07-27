@@ -1,5 +1,17 @@
 import { formatUsdcBaseUnits } from '@taskmarket/shared';
 
+export function sumUsdcBaseUnits(values: Iterable<string>) {
+  let total = 0n;
+  for (const value of values) {
+    try {
+      total += BigInt(value);
+    } catch {
+      // Ignore malformed values so one bad record does not hide an aggregate.
+    }
+  }
+  return total.toString();
+}
+
 export function formatUsdcUnits(value?: string | number | null) {
   if (value === null || value === undefined || value === '') {
     return '0 USDC';

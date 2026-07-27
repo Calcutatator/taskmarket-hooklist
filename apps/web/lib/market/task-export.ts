@@ -1,6 +1,7 @@
 import type { TaskDetailResponse, TaskResponse } from '@taskmarket/shared';
 
 import { formatUsdcUnits } from '@/lib/format';
+import { taskTitle } from '@/lib/market/task-title';
 
 // Pure, framework-free serializers for the "copy for your agent" affordance. They take
 // the same task + modeData shapes the detail panel renders and produce a clean JSON
@@ -16,10 +17,6 @@ export type TaskExportModeData = {
   proofs?: unknown[];
   submissions?: unknown[];
 };
-
-function taskTitle(task: Pick<TaskResponse, 'description' | 'id'>): string {
-  return task.description.split('\n')[0]?.slice(0, 80).trim() || `Task ${task.id}`;
-}
 
 // Body is everything after the first line; fall back to the full description when the
 // brief is a single line. Mirrors taskBody() in tasks.tsx.

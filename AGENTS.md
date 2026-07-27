@@ -6,10 +6,10 @@ Run all project commands through the Makefile. Run `make` to see available comma
 
 ## Codebase Patterns
 
-When implementing features, follow established patterns in these guides:
+When implementing or reviewing changes, follow the established patterns in these guides:
 
 **Backend**: tRPC routers, Drizzle schema, service layer (docs/BACKEND_GUIDE.md)
-**Frontend**: Components, routing, tRPC client, wallet integration (docs/FRONTEND_GUIDE.md)
+**Frontend**: Components, routing, tRPC client, wallet integration (docs/FRONTEND_GUIDE.md; mandatory for all `apps/web` changes)
 **CLI**: Command structure, wallet operations (docs/CLI_GUIDE.md)
 **Smart Contracts**: Solidity patterns, testing, deployment (docs/CONTRACTS_GUIDE.md)
 **Database**: Drizzle schema definition, migrations (docs/DB_GUIDE.md)
@@ -64,10 +64,38 @@ Any time you add or edit a file under `public/reference/`, `public/modes/`, `pub
 - Prefer simple solutions over clever ones
 - Follow existing patterns in the guides above before inventing new ones
 
-## Frontend/UI Changes: Run `make ui-ci` Before Pushing
+## Frontend Changes: Mandatory Guide and Review Gate
 
-Any `apps/web` UI change must pass `make ui-ci` (run `make ui-ci-install-browsers` once first)
-before pushing; if that's not feasible, check the PR's `ui` CI job before calling it done.
+Before creating, modifying, or reviewing any file under `apps/web`, read
+`docs/FRONTEND_GUIDE.md` in full. This is required even for small visual fixes and when a
+design or screenshot is supplied. A design describes the intended result; the frontend guide
+defines how it must be implemented.
+
+For every `apps/web` change:
+
+- Use semantic Tailwind color tokens from `apps/web/app/globals.css`. Do not add hardcoded
+  palette utilities or arbitrary color values such as `text-white`, `bg-black`,
+  `border-zinc-200`, or `bg-[#123456]`. Add a scoped semantic token first if an approved
+  design needs a new color.
+- Search the codebase and reuse existing `components/ui`, `components/market`, and shared
+  helpers before creating a local component or formatting utility. Do not duplicate buttons,
+  badges, copy controls, media renderers, title formatters, reward formatters, or equivalent
+  UI behavior.
+- Default pages, layouts, and public read fetching to Server Components. Isolate
+  `"use client"` to the smallest interactive leaf that requires browser, wallet, state, or
+  interaction APIs.
+- Use links for navigation and buttons for actions; never nest interactive elements. Preserve
+  visible keyboard focus, label icon-only controls, and honor reduced-motion preferences.
+- Follow App Router conventions under `apps/web/app` and the responsive, loading, error, and
+  accessibility requirements in the frontend guide.
+- Add or update the narrowest useful unit, component, or E2E regression coverage when
+  behavior changes.
+- Treat deviations from the frontend guide as blocking review findings, even when the page
+  appears visually correct.
+
+Follow the validation matrix in `docs/FRONTEND_GUIDE.md`. Any UI change must pass
+`make ui-ci` (run `make ui-ci-install-browsers` once first). If that is not feasible locally,
+verify that the PR's `ui` CI job passes before calling the work complete.
 
 ## Smoke Tests
 

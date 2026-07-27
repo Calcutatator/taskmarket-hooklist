@@ -25,6 +25,16 @@ The TanStack Router app in `apps/frontend` is deprecated. Do not add new
 features, routes, or UI work there; use `apps/web` for human web product work
 moving forward.
 
+### Frontend contribution requirements
+
+Before implementing or reviewing any `apps/web` change, contributors and coding agents must
+read the [Frontend Guide](docs/FRONTEND_GUIDE.md) in full. Its component reuse, semantic
+design token, Server Component, interaction, accessibility, and validation requirements are
+merge requirements, not optional recommendations.
+
+Hardcoded Tailwind colors, local copies of existing components or helpers, unnecessarily
+broad client boundaries, and skipped guide validation are blocking review findings.
+
 ### Packages
 
 - **packages/shared** - Shared Zod schemas and utilities
@@ -342,7 +352,8 @@ taskmarket/
 
 ## Contributing
 
-See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for development guidelines. Coding agents must also
+load the repository's [AGENTS.md](AGENTS.md) instructions before making changes.
 
 ## License
 

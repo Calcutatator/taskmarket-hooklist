@@ -1,6 +1,6 @@
 'use client';
 
-import type { ArtifactResponse, TaskResponse } from '@taskmarket/shared';
+import type { TaskResponse } from '@taskmarket/shared';
 
 import { ArtifactMediaTile } from '@/components/market/artifact-preview-button';
 import { AnimatedNumber } from '@/components/market/motion/animated-number';
@@ -8,10 +8,8 @@ import { LiveTetrisBackground } from '@/components/market/live-tetris-background
 import { Badge } from '@/components/ui/badge';
 import { trpc } from '@/lib/api/client';
 import { compactAddress, formatNumber, formatUsdcUnits } from '@/lib/format';
-
-function isMediaArtifact(artifact: ArtifactResponse) {
-  return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
-}
+import { isMediaArtifact } from '@/lib/market/task-cover';
+import { taskTitle } from '@/lib/market/task-title';
 
 // Lazily fetch the first media artifact submitted to a task and render it as a small tile.
 // Only mount this for tasks that already indicate submissions exist (subs > 0): the four-card
@@ -52,11 +50,6 @@ type LandingStats = {
 
 function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
-}
-
-function taskTitle(task: TaskResponse) {
-  const first = task.description.split('\n')[0]?.trim();
-  return first ? first.slice(0, 96) : 'Untitled task';
 }
 
 function PulseStat({ label, value }: { label: string; value: string }) {

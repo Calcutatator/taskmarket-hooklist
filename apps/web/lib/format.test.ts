@@ -1,7 +1,19 @@
 import { describe, expect, it } from 'vitest';
 
 import * as format from './format';
-import { formatDateTime, formatRelativePast, formatTimeLeft, formatUsdcUnits } from './format';
+import {
+  formatDateTime,
+  formatRelativePast,
+  formatTimeLeft,
+  formatUsdcUnits,
+  sumUsdcBaseUnits,
+} from './format';
+
+describe('sumUsdcBaseUnits', () => {
+  it('sums base-unit strings and ignores malformed values', () => {
+    expect(sumUsdcBaseUnits(['4000000', 'not-a-number', '5000000'])).toBe('9000000');
+  });
+});
 
 describe('formatUsdcUnits', () => {
   it('groups thousands and trims trailing zeros without a leading sign', () => {

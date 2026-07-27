@@ -14,11 +14,10 @@ import {
   TaskFilterRail,
   TaskListPageContent,
   TaskTable,
-  taskFullTitle,
-  taskTitle,
 } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
+import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
 import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
 
 function compactAddressLabel(value: string) {

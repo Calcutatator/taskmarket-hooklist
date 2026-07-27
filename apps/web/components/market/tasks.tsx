@@ -96,8 +96,10 @@ import {
   taskStatusBadgeVariant,
   taskStatusLabel,
 } from '@/lib/market/task-badges';
+import { isMediaArtifact } from '@/lib/market/task-cover';
 import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
+import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
 import type {
   ActiveFilter,
   TaskListView,
@@ -146,35 +148,6 @@ export type TaskModeData = {
   proofs?: ProofResponse[];
   submissions?: SubmissionResponse[];
 };
-
-const TASK_TITLE_MAX_LENGTH = 80;
-
-// Strip markdown noise (emphasis, backticks, heading markers) so raw briefs do not
-// leak "**Title**" into cards. Underscores stay: snake_case identifiers are content.
-function firstLineTitle(task: TaskResponse): string | null {
-  const firstLine = (task.description.split('\n')[0] ?? '')
-    .replace(/^#+\s*/, '')
-    .replace(/[*`]/g, '')
-    .trim();
-  return firstLine || null;
-}
-
-// Capped title for compact surfaces (cards, table rows, breadcrumb). A truncated
-// title previously cut off silently with no visual signal that text was missing --
-// an ellipsis marks it as truncated (see taskFullTitle for the untruncated value a
-// tooltip can use to show the rest).
-export function taskTitle(task: TaskResponse) {
-  const firstLine = firstLineTitle(task);
-  if (!firstLine) return `Task ${task.id}`;
-  if (firstLine.length <= TASK_TITLE_MAX_LENGTH) return firstLine;
-  return `${firstLine.slice(0, TASK_TITLE_MAX_LENGTH - 1)}…`;
-}
-
-// Untruncated title, e.g. for a hover tooltip on a capped taskTitle() so a reader can
-// always see the complete text without navigating away.
-export function taskFullTitle(task: TaskResponse) {
-  return firstLineTitle(task) ?? `Task ${task.id}`;
-}
 
 function taskBody(task: TaskResponse) {
   const description = task.description.trim();
@@ -1448,10 +1421,6 @@ export function CreateTaskPanel({ walletConnected }: { walletConnected: boolean 
       </CardContent>
     </Card>
   );
-}
-
-export function isMediaArtifact(artifact: ArtifactResponse) {
-  return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
 }
 
 // Deliberately slim: just role, name, and the View action. Mime type, size, and

@@ -170,7 +170,7 @@ const firstDropSteps: ReadonlyArray<{ body: string; href?: string; title: string
 export default function TaskDropPage() {
   return (
     <ScrollSnapShell enabled={SNAP_ENABLED}>
-      <div className={bebas.variable}>
+      <div className={`${bebas.variable} taskdrop-theme`}>
         <style>{`
           .taskdrop-display {
             font-family: var(--font-taskdrop), Impact, sans-serif;
