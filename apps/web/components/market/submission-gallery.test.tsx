@@ -130,13 +130,18 @@ function artifact(overrides: Partial<ArtifactResponse>): ArtifactResponse {
   };
 }
 
-function submission(id: string, worker: string, artifacts: ArtifactResponse[]): SubmissionResponse {
+function submission(
+  id: string,
+  worker: string,
+  artifacts: ArtifactResponse[],
+  submittedAt = '2026-01-02T00:00:00.000Z'
+): SubmissionResponse {
   return {
     artifacts,
     fileUrl: `ipfs://${id}`,
     id,
     signature: '0xsig',
-    submittedAt: new Date().toISOString(),
+    submittedAt,
     taskId: task.id,
     workerAddress: worker,
   };
@@ -169,9 +174,16 @@ const videoC = artifact({
   submissionId: 'sub-2',
 });
 
+// LiveActivityPanel sorts submissions newest-first. Fixed, distinct timestamps
+// keep the gallery order deterministic instead of depending on millisecond timing.
 const submissions = [
   submission('sub-1', '0x3333333333333333333333333333333333333333', [imageA, notesA]),
-  submission('sub-2', '0x4444444444444444444444444444444444444444', [imageB, videoC]),
+  submission(
+    'sub-2',
+    '0x4444444444444444444444444444444444444444',
+    [imageB, videoC],
+    '2026-01-01T00:00:00.000Z'
+  ),
 ];
 
 function renderPanel(initialSubmissions: SubmissionResponse[] = submissions) {
