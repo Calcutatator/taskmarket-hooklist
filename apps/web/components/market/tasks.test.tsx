@@ -19,6 +19,7 @@ import {
 } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
+import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
 
 function compactAddressLabel(value: string) {
   return compactAddress(value);
@@ -1343,6 +1344,175 @@ describe('Task marketplace components', () => {
     const dialog = await screen.findByRole('dialog');
     expect(within(dialog).getByRole('heading', { name: /Delivery/i })).toBeInTheDocument();
     expect(within(dialog).getByText(/Generated logo assets/i)).toBeInTheDocument();
+
+    fetchMock.mockRestore();
+  });
+
+  it('opens interactive HTML inside the artifact dialog without exposing the storage URL', async () => {
+    const htmlContent =
+      '<!doctype html><html><body><output id="result">4</output><script>document.body.dataset.ready = "true";</script></body></html>';
+    const presignedUrl = 'https://files.example.com/calculator.html';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('/artifacts/')) {
+        return {
+          json: async () => ({
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            previewUrl: presignedUrl,
+          }),
+          ok: true,
+        } as Response;
+      }
+      return { ok: true, text: async () => htmlContent } as Response;
+    });
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'calculator.html',
+        id: 'artifact-html',
+        mediaKind: 'text',
+        mimeType: 'text/html; charset=utf-8',
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /^view$/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    const frame = await within(dialog).findByTitle('Interactive preview of calculator.html');
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+    expect(frame).toHaveAttribute('allow', '');
+    expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
+    expect(frame).not.toHaveAttribute('src');
+    expect(frame.getAttribute('srcdoc')).toContain("default-src 'none'");
+    expect(frame.getAttribute('srcdoc')).toContain('document.body.dataset.ready');
+    expect(
+      within(dialog).getByText(/untrusted interactive html.*do not enter passwords/i)
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByRole('link', { name: /open artifact/i })).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledWith(
+      presignedUrl,
+      expect.objectContaining({ signal: expect.any(AbortSignal) })
+    );
+
+    await user.click(within(dialog).getByRole('button', { name: /close/i }));
+    expect(screen.queryByTitle('Interactive preview of calculator.html')).not.toBeInTheDocument();
+
+    fetchMock.mockRestore();
+  });
+
+  it('does not fetch an HTML artifact body over the 5 MiB preview limit', async () => {
+    const presignedUrl = 'https://files.example.com/oversized.html';
+    const fetchMock = mockPreviewFetch(presignedUrl);
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'oversized.html',
+        id: 'artifact-html-oversized',
+        mediaKind: 'unknown',
+        mimeType: 'application/octet-stream',
+        sizeBytes: 5_242_881,
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /^view$/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      within(dialog).getByText(/exceeds the 5 mb interactive preview limit/i)
+    ).toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+    expect(fetchMock).not.toHaveBeenCalledWith(presignedUrl, expect.anything());
+
+    fetchMock.mockRestore();
+  });
+
+  it('does not render an HTML body that exceeds the limit despite smaller metadata', async () => {
+    const presignedUrl = 'https://files.example.com/mismatched-size.html';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('/artifacts/')) {
+        return {
+          json: async () => ({
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            previewUrl: presignedUrl,
+          }),
+          ok: true,
+        } as Response;
+      }
+      return {
+        ok: true,
+        text: async () => 'x'.repeat(MAX_INTERACTIVE_HTML_BYTES + 1),
+      } as Response;
+    });
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'mismatched-size.html',
+        id: 'artifact-html-mismatched-size',
+        mediaKind: 'text',
+        mimeType: 'text/html',
+        sizeBytes: 1024,
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /^view$/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText(/exceeds the 5 mb interactive preview limit/i)
+    ).toBeInTheDocument();
+    expect(within(dialog).queryByTitle(/interactive preview/i)).not.toBeInTheDocument();
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+
+    fetchMock.mockRestore();
+  });
+
+  it('retries a failed HTML body fetch inside the dialog', async () => {
+    const presignedUrl = 'https://files.example.com/retry.html';
+    let bodyAttempts = 0;
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockImplementation(async (url) => {
+      if (typeof url === 'string' && url.includes('/artifacts/')) {
+        return {
+          json: async () => ({
+            expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+            previewUrl: presignedUrl,
+          }),
+          ok: true,
+        } as Response;
+      }
+
+      bodyAttempts += 1;
+      if (bodyAttempts === 1) {
+        return { ok: false, status: 503 } as Response;
+      }
+      return {
+        ok: true,
+        text: async () => '<html><body>Recovered calculator</body></html>',
+      } as Response;
+    });
+    const user = userEvent.setup();
+
+    renderBountyArtifacts([
+      makeArtifact({
+        fileName: 'retry.html',
+        id: 'artifact-html-retry',
+        mediaKind: 'text',
+        mimeType: 'text/html',
+      }),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /^view$/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(
+      await within(dialog).findByText(/failed to load html preview.*503/i)
+    ).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: /^retry$/i }));
+    expect(
+      await within(dialog).findByTitle('Interactive preview of retry.html')
+    ).toBeInTheDocument();
+    expect(bodyAttempts).toBe(2);
 
     fetchMock.mockRestore();
   });

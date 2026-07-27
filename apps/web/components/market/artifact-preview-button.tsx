@@ -1,7 +1,15 @@
 'use client';
 
 import type { ArtifactResponse } from '@taskmarket/shared';
-import { FileArchive, FileIcon, FileText, ImageIcon, Play, VideoIcon } from 'lucide-react';
+import {
+  AlertTriangle,
+  FileArchive,
+  FileIcon,
+  FileText,
+  ImageIcon,
+  Play,
+  VideoIcon,
+} from 'lucide-react';
 import { useEffect, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 
@@ -17,6 +25,12 @@ import {
   usableArtifactPreviewUrl,
   useArtifactPreviewUrl,
 } from '@/components/market/use-artifact-preview-url';
+import {
+  MAX_INTERACTIVE_HTML_BYTES,
+  buildSandboxedHtmlDocument,
+  canRenderInteractiveHtml,
+  isInteractiveHtmlArtifact,
+} from '@/lib/sandboxed-html';
 
 type Props = {
   artifact: ArtifactResponse;
@@ -180,6 +194,108 @@ function TextPreview({
   );
 }
 
+function InteractiveHtmlPreview({
+  artifact,
+  previewUrl,
+}: {
+  artifact: ArtifactResponse;
+  previewUrl: string;
+}) {
+  const [sandboxDocument, setSandboxDocument] = useState<string | null>(null);
+  const [bodyExceedsLimit, setBodyExceedsLimit] = useState(false);
+  const [fetchError, setFetchError] = useState<string | null>(null);
+  const [attempt, setAttempt] = useState(0);
+  const declaredSizeExceedsLimit = !canRenderInteractiveHtml(artifact);
+
+  useEffect(() => {
+    if (declaredSizeExceedsLimit) {
+      setSandboxDocument(null);
+      setBodyExceedsLimit(false);
+      setFetchError(null);
+      return;
+    }
+
+    const controller = new AbortController();
+    setSandboxDocument(null);
+    setBodyExceedsLimit(false);
+    setFetchError(null);
+
+    fetch(previewUrl, { signal: controller.signal })
+      .then((response) => {
+        if (!response.ok) {
+          throw new Error(`Request failed (${response.status})`);
+        }
+        return response.text();
+      })
+      .then((html) => {
+        if (new Blob([html]).size > MAX_INTERACTIVE_HTML_BYTES) {
+          setBodyExceedsLimit(true);
+          return;
+        }
+        setSandboxDocument(buildSandboxedHtmlDocument(html));
+      })
+      .catch((error: unknown) => {
+        if (error instanceof DOMException && error.name === 'AbortError') {
+          return;
+        }
+        setFetchError(error instanceof Error ? error.message : 'Failed to load HTML preview');
+      });
+
+    return () => controller.abort();
+  }, [attempt, declaredSizeExceedsLimit, previewUrl]);
+
+  if (declaredSizeExceedsLimit || bodyExceedsLimit) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
+        This HTML file exceeds the 5 MB interactive preview limit.
+      </div>
+    );
+  }
+
+  if (fetchError) {
+    return (
+      <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+        <p>Failed to load HTML preview: {fetchError}</p>
+        <Button onClick={() => setAttempt((value) => value + 1)} size="sm" type="button">
+          Retry
+        </Button>
+      </div>
+    );
+  }
+
+  if (!sandboxDocument) {
+    return (
+      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
+        Loading interactive HTML preview...
+      </div>
+    );
+  }
+
+  return (
+    <div className="grid gap-3">
+      <div
+        aria-label="Untrusted HTML warning"
+        className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/32 p-3 text-xs text-muted-foreground"
+        role="note"
+      >
+        <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
+        <p>
+          Untrusted interactive HTML. Do not enter passwords, approve wallet requests, or provide
+          sensitive information.
+        </p>
+      </div>
+      <iframe
+        allow=""
+        className="h-[65vh] w-full rounded-xl border border-border/60 bg-background/52"
+        referrerPolicy="no-referrer"
+        sandbox="allow-scripts"
+        srcDoc={sandboxDocument}
+        title={`Interactive preview of ${artifact.fileName}`}
+      />
+    </div>
+  );
+}
+
 function ArtifactPreviewContent({
   artifact,
   previewUrl,
@@ -193,6 +309,10 @@ function ArtifactPreviewContent({
         Loading artifact preview...
       </div>
     );
+  }
+
+  if (isInteractiveHtmlArtifact(artifact)) {
+    return <InteractiveHtmlPreview artifact={artifact} previewUrl={previewUrl} />;
   }
 
   if (artifact.mediaKind === 'image') {
@@ -262,6 +382,7 @@ export function ArtifactPreviewTrigger({
   taskId,
 }: ArtifactPreviewTriggerProps) {
   const [open, setOpen] = useState(false);
+  const interactiveHtml = isInteractiveHtmlArtifact(artifact);
   const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact, {
     expiresAt: initialPreviewExpiresAt,
     url: initialPreviewUrl,
@@ -306,7 +427,7 @@ export function ArtifactPreviewTrigger({
             <ArtifactPreviewContent artifact={artifact} previewUrl={previewUrl} />
           )}
 
-          <ArtifactMetadata artifact={artifact} previewUrl={previewUrl} />
+          <ArtifactMetadata artifact={artifact} previewUrl={interactiveHtml ? null : previewUrl} />
         </DialogContent>
       </Dialog>
     </>

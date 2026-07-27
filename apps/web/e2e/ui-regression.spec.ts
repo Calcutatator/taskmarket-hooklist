@@ -50,6 +50,12 @@ test.beforeEach(async ({ page }) => {
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
+      if (
+        message.text().includes('preview-network-block.test') &&
+        message.text().includes('Content Security Policy')
+      ) {
+        return;
+      }
       failures.push(message.text());
     }
   });
@@ -205,6 +211,49 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   expect(previewLayout).toEqual({ fitsFrame: true, isPortrait: true, objectFit: 'contain' });
 
   await expectNoHorizontalOverflow(page);
+});
+
+test('runs submitted HTML inline while isolating it from the platform and network', async ({
+  page,
+}) => {
+  let blockedNetworkRequests = 0;
+  page.on('request', (request) => {
+    if (new URL(request.url()).hostname === 'preview-network-block.test') {
+      blockedNetworkRequests += 1;
+    }
+  });
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await comparison.getByText(/^Supporting files \(\d+\)$/i).click();
+  await comparison
+    .getByText('candidate-a-calculator.html', { exact: true })
+    .locator('../..')
+    .getByRole('button', { name: /^View$/ })
+    .click();
+
+  const dialog = page.getByRole('dialog');
+  const frameElement = dialog.getByTitle('Interactive preview of candidate-a-calculator.html');
+  await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(frameElement).toHaveAttribute('allow', '');
+  await expect(frameElement).toHaveAttribute('referrerpolicy', 'no-referrer');
+  await expect(dialog.getByRole('link', { name: /Open artifact/i })).toHaveCount(0);
+
+  const frame = page.frameLocator(
+    'iframe[title="Interactive preview of candidate-a-calculator.html"]'
+  );
+  await expect(frame.getByRole('heading', { name: 'Submission calculator' })).toBeVisible();
+  await expect(frame.getByText('Parent access blocked')).toBeVisible();
+  await expect(frame.getByText('Network access blocked')).toBeVisible();
+  await frame.getByLabel('First number').fill('7');
+  await frame.getByLabel('Second number').fill('8');
+  await frame.getByRole('button', { name: 'Add numbers' }).click();
+  await expect(frame.getByRole('status')).toHaveText('15');
+  expect(blockedNetworkRequests).toBe(0);
+
+  await dialog.getByRole('button', { name: /Close/i }).click();
+  await expect(frameElement).toHaveCount(0);
 });
 
 test('surfaces the live status banner on an open task and stays hydration-clean', async ({

@@ -599,6 +599,15 @@ const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
             textPreview: 'Reviewed duplicate settlement receipts and reconciled agent addresses.',
           }),
           artifact({
+            fileName: 'candidate-a-calculator.html',
+            id: 'e2e-artifact-html',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+            role: 'preview',
+            submissionId: 'e2e-submission-1',
+            taskId: 'e2e-pending-review',
+          }),
+          artifact({
             fileName: 'evidence-bundle.zip',
             id: 'e2e-artifact-archive',
             mediaKind: 'archive',
@@ -1222,6 +1231,53 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
     return 'data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb20=';
   }
 
+  if (
+    artifactItem.mimeType.toLowerCase().split(';', 1)[0] === 'text/html' ||
+    /\.html?$/i.test(artifactItem.fileName)
+  ) {
+    const html = `<!doctype html>
+      <html>
+        <head>
+          <style>
+            body { font-family: sans-serif; padding: 24px; }
+            label, output, button { display: block; margin-top: 12px; }
+          </style>
+        </head>
+        <body>
+          <h1>Submission calculator</h1>
+          <label>First number <input id="first-number" value="2"></label>
+          <label>Second number <input id="second-number" value="3"></label>
+          <button id="calculate" type="button">Add numbers</button>
+          <output id="calculator-result" aria-live="polite"></output>
+          <p id="parent-isolation"></p>
+          <p id="network-isolation"></p>
+          <script>
+            document.querySelector('#calculate').addEventListener('click', () => {
+              const first = Number(document.querySelector('#first-number').value);
+              const second = Number(document.querySelector('#second-number').value);
+              document.querySelector('#calculator-result').textContent = String(first + second);
+            });
+
+            try {
+              window.parent.document.body;
+              document.querySelector('#parent-isolation').textContent = 'Parent access allowed';
+            } catch {
+              document.querySelector('#parent-isolation').textContent = 'Parent access blocked';
+            }
+
+            fetch('https://preview-network-block.test/ping')
+              .then(() => {
+                document.querySelector('#network-isolation').textContent = 'Network access allowed';
+              })
+              .catch(() => {
+                document.querySelector('#network-isolation').textContent = 'Network access blocked';
+              });
+          </script>
+        </body>
+      </html>`;
+    return `data:text/html;charset=utf-8,${encodeURIComponent(html)}`;
+  }
+
   return undefined;
 }
 
@@ -1495,7 +1551,9 @@ export async function startMockApiServer(
         response,
         artifactItem
           ? {
-              previewUrl: `https://files.example.com/mock/${encodeURIComponent(artifactItem.fileName)}`,
+              previewUrl:
+                mockPreviewUrl(artifactItem) ??
+                `https://files.example.com/mock/${encodeURIComponent(artifactItem.fileName)}`,
             }
           : { error: 'Not found' },
         artifactItem ? 200 : 404
