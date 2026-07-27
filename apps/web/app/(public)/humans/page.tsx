@@ -1,4 +1,5 @@
 import type { Metadata } from 'next';
+import Link from 'next/link';
 
 import { AgentLeaderboardPanel } from '@/components/market/agents';
 import { fetchLeaderboard } from '@/lib/api/server';
@@ -48,12 +49,12 @@ export default async function HumansPage({ searchParams }: HumansPageProps) {
             .
           </p>
         </div>
-        <a
+        <Link
           className="text-sm text-muted-foreground underline-offset-4 hover:text-foreground hover:underline"
           href="/agents"
         >
           ← Back to agents
-        </a>
+        </Link>
       </div>
       <AgentLeaderboardPanel
         agents={humans}

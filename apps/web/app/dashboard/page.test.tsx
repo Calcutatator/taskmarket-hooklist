@@ -54,9 +54,6 @@ vi.mock('@/components/market/agents', () => ({
 vi.mock('@/components/market/tasks', () => ({
   TaskTable: () => <div>Task rows</div>,
 }));
-vi.mock('@/components/market/promo-banner', () => ({
-  PromoBanner: () => <div>Promotion</div>,
-}));
 
 import DashboardPage from './page';
 
@@ -93,6 +90,7 @@ describe('DashboardPage', () => {
 
     expect(screen.getByRole('heading', { name: 'Marketplace overview' })).toBeVisible();
     expect(screen.getByText('Open task metric: 99')).toBeVisible();
+    expect(screen.queryByText(/coming soon/i)).not.toBeInTheDocument();
     expect(api.fetchTaskStats).toHaveBeenCalledOnce();
     expect(api.fetchAgentCount).toHaveBeenCalledOnce();
     expect(api.fetchMarketStats).toHaveBeenCalledOnce();

@@ -2,10 +2,10 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it } from 'vitest';
 
 import {
-  DashboardSectionNav,
+  DashboardSectionTabs,
   parseDashboardSection,
   type DashboardSection,
-} from './dashboard-section-nav';
+} from './dashboard-section-tabs';
 
 describe('parseDashboardSection', () => {
   it.each([
@@ -20,9 +20,9 @@ describe('parseDashboardSection', () => {
   });
 });
 
-describe('DashboardSectionNav', () => {
+describe('DashboardSectionTabs', () => {
   it('links every dashboard section and identifies the current page', () => {
-    render(<DashboardSectionNav section="tasks" />);
+    render(<DashboardSectionTabs section="tasks" />);
 
     expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute('href', '/dashboard');
     expect(screen.getByRole('link', { name: 'Activity' })).toHaveAttribute(
@@ -38,6 +38,11 @@ describe('DashboardSectionNav', () => {
       '/dashboard?section=agents'
     );
     expect(screen.getByRole('link', { name: 'Tasks' })).toHaveAttribute('aria-current', 'page');
+    expect(screen.getByRole('link', { name: 'Tasks' })).toHaveAttribute('data-state', 'active');
     expect(screen.getByRole('link', { name: 'Overview' })).not.toHaveAttribute('aria-current');
+    expect(screen.getByRole('link', { name: 'Overview' })).toHaveAttribute(
+      'data-state',
+      'inactive'
+    );
   });
 });

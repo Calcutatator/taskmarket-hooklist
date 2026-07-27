@@ -1,6 +1,8 @@
 'use client';
 
 import type { TaskResponse } from '@taskmarket/shared';
+import type { Route } from 'next';
+import Link from 'next/link';
 
 import { ArtifactMediaTile } from '@/components/market/artifact-preview-button';
 import { AnimatedNumber } from '@/components/market/motion/animated-number';
@@ -118,13 +120,13 @@ function TaskPulseCard({ detailBasePath, task }: { detailBasePath: string; task:
         </div>
       ) : null}
 
-      <a
+      <Link
         className="block truncate font-sans text-sm font-semibold tracking-tight text-foreground transition-colors hover:text-primary"
-        href={href}
+        href={href as Route}
         title={taskTitle(task)}
       >
         {taskTitle(task)}
-      </a>
+      </Link>
 
       <div className="grid grid-cols-[minmax(0,1fr)] gap-3 border-t border-border/58 pt-3 sm:grid-cols-[auto_1fr] sm:items-end">
         <div>

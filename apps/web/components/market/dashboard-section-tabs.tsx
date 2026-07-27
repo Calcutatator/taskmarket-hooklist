@@ -1,3 +1,7 @@
+import type { Route } from 'next';
+import Link from 'next/link';
+
+import { tabsListVariants, tabsTriggerVariants } from '@/components/ui/tabs-variants';
 import { cn } from '@/lib/utils';
 
 export type DashboardSection = 'overview' | 'activity' | 'tasks' | 'agents';
@@ -5,7 +9,7 @@ export type DashboardSection = 'overview' | 'activity' | 'tasks' | 'agents';
 const DASHBOARD_SECTIONS: {
   value: DashboardSection;
   label: string;
-  href: string;
+  href: Route;
 }[] = [
   { value: 'overview', label: 'Overview', href: '/dashboard' },
   { value: 'activity', label: 'Activity', href: '/dashboard?section=activity' },
@@ -19,29 +23,30 @@ export function parseDashboardSection(value?: string): DashboardSection {
     : 'overview';
 }
 
-export function DashboardSectionNav({ section }: { section: DashboardSection }) {
+export function DashboardSectionTabs({ section }: { section: DashboardSection }) {
   return (
     <nav
       aria-label="Dashboard sections"
-      className="overflow-x-auto border-y border-border/58 px-4 lg:px-6"
+      className="group/tabs overflow-x-auto border-y border-border/58 px-4 lg:px-6"
+      data-orientation="horizontal"
     >
-      <div className="flex min-w-max gap-1 py-2">
+      <div
+        className={cn(tabsListVariants(), 'my-2 min-w-max')}
+        data-orientation="horizontal"
+        data-variant="default"
+      >
         {DASHBOARD_SECTIONS.map((item) => {
           const isCurrent = item.value === section;
           return (
-            <a
+            <Link
               aria-current={isCurrent ? 'page' : undefined}
-              className={cn(
-                'inline-flex min-h-11 items-center rounded-md px-4 font-mono text-xs uppercase tracking-wide transition-colors',
-                isCurrent
-                  ? 'bg-primary text-primary-foreground'
-                  : 'text-muted-foreground hover:bg-surface/60 hover:text-foreground'
-              )}
+              className={tabsTriggerVariants()}
+              data-state={isCurrent ? 'active' : 'inactive'}
               href={item.href}
               key={item.value}
             >
               {item.label}
-            </a>
+            </Link>
           );
         })}
       </div>

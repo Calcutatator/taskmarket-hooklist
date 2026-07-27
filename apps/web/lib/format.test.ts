@@ -44,6 +44,14 @@ describe('formatUsdcUnits', () => {
   });
 });
 
+describe('formatUsdcStatUnits', () => {
+  it('formats marketplace stats to exactly two USDC decimal places', () => {
+    expect(format.formatUsdcStatUnits('1027225245')).toBe('1,027.23 USDC');
+    expect(format.formatUsdcStatUnits('25000000')).toBe('25.00 USDC');
+    expect(format.formatUsdcStatUnits('not-a-number')).toBe('0.00 USDC');
+  });
+});
+
 describe('formatReward removal', () => {
   it('no longer exports formatReward', () => {
     expect('formatReward' in format).toBe(false);

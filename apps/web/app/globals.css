@@ -382,6 +382,32 @@ body {
     linear-gradient(90deg, var(--background) 0%, transparent 24%, transparent 88%);
 }
 
+.skill-install-snippet--highlighted {
+  border-color: color-mix(in oklab, var(--primary) 72%, var(--border));
+  background-color: color-mix(in oklab, var(--background) 76%, var(--primary) 8%);
+  box-shadow:
+    0 0 0 1px color-mix(in oklab, var(--primary) 18%, transparent),
+    0 0 28px color-mix(in oklab, var(--primary) 20%, transparent);
+  animation: skill-install-border-pulse 2.6s ease-in-out infinite;
+}
+
+@keyframes skill-install-border-pulse {
+  0%,
+  100% {
+    border-color: color-mix(in oklab, var(--primary) 58%, var(--border));
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--primary) 12%, transparent),
+      0 0 20px color-mix(in oklab, var(--primary) 12%, transparent);
+  }
+
+  50% {
+    border-color: color-mix(in oklab, var(--primary) 96%, var(--border));
+    box-shadow:
+      0 0 0 1px color-mix(in oklab, var(--primary) 30%, transparent),
+      0 0 34px color-mix(in oklab, var(--primary) 28%, transparent);
+  }
+}
+
 .task-market-hero-wave {
   position: absolute;
   inset: -2% -9% -12%;
@@ -889,6 +915,7 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .skill-install-snippet--highlighted,
   .task-market-flow::before,
   .task-market-flow-card,
   .task-market-flow-card::after,

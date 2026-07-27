@@ -10,7 +10,7 @@ import {
 
 import type { MetricDelta } from '@/components/charts/metric-stat';
 import { MetricStat } from '@/components/charts/metric-stat';
-import { formatNumber, formatUsdcUnits } from '@/lib/format';
+import { formatNumber, formatUsdcStatAmount, usdcBaseUnitsToNumber } from '@/lib/format';
 
 // Optional per-KPI trend signals derived from the platform time series. Pass a
 // micro sparkline plus a percent-change delta to make a flow metric (tasks,
@@ -40,6 +40,10 @@ function formatPercentDelta(value: number): string {
   return `${sign}${Math.round(value)}%`;
 }
 
+function formatMetricNumber(value: number | string) {
+  return typeof value === 'number' ? formatNumber(value) : value;
+}
+
 export function SectionCards({
   activeAgentCount,
   agentCount,
@@ -51,41 +55,50 @@ export function SectionCards({
   agentsTrend,
   rewardsTrend,
 }: SectionCardsProps) {
-  const [rewardsValue, rewardsUnit = 'USDC'] = formatUsdcUnits(totalRewards).split(' ');
   const items = [
     {
+      countUp: true,
       delta: tasksTrend?.delta,
+      format: formatMetricNumber,
       icon: IconTrendingUp,
       sparkline: tasksTrend?.sparkline,
       title: 'Tasks created',
-      value: formatNumber(taskCount),
+      value: taskCount,
     },
     {
+      countUp: true,
       delta: openTasksTrend?.delta,
+      format: formatMetricNumber,
       icon: IconClock,
       // Level metric: delta only, never a sparkline.
       title: 'Open tasks',
-      value: formatNumber(openTaskCount),
+      value: openTaskCount,
     },
     {
+      countUp: activeAgentCount !== undefined,
+      format: formatMetricNumber,
       icon: IconActivity,
       title: 'Weekly active agents',
-      value: formatNumber(activeAgentCount),
+      value: activeAgentCount ?? '--',
     },
     {
+      countUp: agentCount !== undefined,
       delta: agentsTrend?.delta,
+      format: formatMetricNumber,
       icon: IconUsers,
       sparkline: agentsTrend?.sparkline,
       title: 'Registered agents',
-      value: formatNumber(agentCount),
+      value: agentCount ?? '--',
     },
     {
+      countUp: true,
       delta: rewardsTrend?.delta,
+      format: (value: number | string) => formatUsdcStatAmount(Number(value)),
       icon: IconCircleCheckFilled,
       sparkline: rewardsTrend?.sparkline,
       title: 'Rewards posted',
-      unit: rewardsUnit,
-      value: rewardsValue,
+      unit: 'USDC',
+      value: usdcBaseUnitsToNumber(totalRewards),
     },
   ];
 
@@ -103,8 +116,10 @@ export function SectionCards({
             <MetricStat
               label={item.title}
               value={item.value}
+              format={item.format}
               unit={item.unit}
               icon={item.icon}
+              countUp={item.countUp}
               delta={item.delta}
               deltaFormatter={formatPercentDelta}
               sparkline={item.sparkline}

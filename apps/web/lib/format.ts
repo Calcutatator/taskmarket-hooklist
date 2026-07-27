@@ -34,6 +34,32 @@ export function formatUsdcUnits(value?: string | number | null) {
   return `${formatUsdcBaseUnits(baseUnits, { trimTrailingZeros: true, groupThousands: true })} USDC`;
 }
 
+export function usdcBaseUnitsToNumber(value?: string | number | null) {
+  if (value === null || value === undefined || value === '') return 0;
+
+  try {
+    const baseUnits = typeof value === 'number' ? BigInt(Math.round(value)) : BigInt(value.trim());
+    return Number(baseUnits) / 1_000_000;
+  } catch {
+    return 0;
+  }
+}
+
+export function formatUsdcStatAmount(value?: number | null) {
+  if (value === null || value === undefined || !Number.isFinite(value)) {
+    return '0.00';
+  }
+
+  return new Intl.NumberFormat('en-US', {
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(value);
+}
+
+export function formatUsdcStatUnits(value?: string | number | null) {
+  return `${formatUsdcStatAmount(usdcBaseUnitsToNumber(value))} USDC`;
+}
+
 export function formatNumber(value?: number | null) {
   if (value === null || value === undefined) {
     return '--';

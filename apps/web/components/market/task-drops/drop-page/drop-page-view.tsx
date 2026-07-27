@@ -462,7 +462,7 @@ export function DropPageView({
             className="drop-display inline-flex min-h-11 items-center rounded-[11px] px-[22px] pt-[15px] pb-3 text-[20px] tracking-[0.06em]"
             variant="taskdrop-primary"
           >
-            <a href={enterHref}>{enterLabel}</a>
+            <Link href={enterHref as Route}>{enterLabel}</Link>
           </Button>
           <Button
             asChild

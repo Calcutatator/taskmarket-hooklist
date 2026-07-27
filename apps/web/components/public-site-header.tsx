@@ -18,18 +18,13 @@ import {
   SheetTrigger,
 } from '@/components/ui/sheet';
 
-const navLinks: ReadonlyArray<readonly [string, Route]> = [
-  ['Tasks', '/tasks'],
-  ['Agents', '/agents'],
-  ['Humans', '/humans'],
-  ['Leaderboard', '/leaderboard'],
-  ['Protocol', '/protocol'],
+const navLinks: ReadonlyArray<readonly [string, Route, Route]> = [
+  ['Tasks', '/dashboard/tasks', '/tasks'],
+  ['Agents', '/dashboard/agents', '/agents'],
+  ['Humans', '/dashboard/humans', '/humans'],
+  ['Leaderboard', '/dashboard/leaderboard', '/leaderboard'],
+  ['Protocol', '/dashboard/protocol', '/protocol'],
 ];
-
-// The evergreen Task Drop link is /live, added in the same PR as this button. Same destination
-// as the URL we paste on X and in Discord, so the button and the shared link cannot drift.
-// /live resolves the current drop server-side; nobody updates this href when a new drop opens.
-// Deliberately not cast to Route: typed routes should be free to catch it if /live ever goes.
 
 function BrandLink() {
   return (
@@ -43,7 +38,11 @@ export function PublicSiteHeader() {
   const [open, setOpen] = useState(false);
   const pathname = usePathname();
 
-  const isActive = (href: Route) => pathname === href || pathname.startsWith(`${href}/`);
+  const isActive = (href: Route, publicHref: Route) =>
+    pathname === href ||
+    pathname.startsWith(`${href}/`) ||
+    pathname === publicHref ||
+    pathname.startsWith(`${publicHref}/`);
 
   return (
     <header className="task-market-glass-navbar relative z-[2] w-full bg-background/32 backdrop-blur-2xl">
@@ -53,11 +52,11 @@ export function PublicSiteHeader() {
           aria-label="Primary"
           className="hidden items-center rounded-full border border-border/58 bg-background/32 p-1 shadow-[var(--shadow-control)] md:flex"
         >
-          {navLinks.map(([label, href]) => (
+          {navLinks.map(([label, href, publicHref]) => (
             <Link
-              aria-current={isActive(href) ? 'page' : undefined}
+              aria-current={isActive(href, publicHref) ? 'page' : undefined}
               className={`rounded-full px-3 py-1.5 text-sm font-medium tracking-tight transition-[color,background-color,box-shadow] duration-300 ease-[var(--ease-premium)] hover:bg-surface-2/58 hover:text-foreground hover:shadow-[var(--shadow-control)] ${
-                isActive(href)
+                isActive(href, publicHref)
                   ? 'bg-surface-2/58 text-foreground shadow-[var(--shadow-control)]'
                   : 'text-muted-foreground'
               }`}
@@ -71,7 +70,7 @@ export function PublicSiteHeader() {
         <div className="flex items-center gap-2">
           <PrivyHeaderAccountControl targetId="public-wallet-connect" />
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
-            <Link href="/live">Latest Drop</Link>
+            <Link href="/dashboard/drops">Latest Drop</Link>
           </Button>
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="terminal">
             <Link href="/dashboard">Dashboard</Link>
@@ -93,17 +92,17 @@ export function PublicSiteHeader() {
                 <SheetClose asChild>
                   <Link
                     className="flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-primary transition-colors hover:bg-surface-2/58 hover:text-primary"
-                    href="/live"
+                    href="/dashboard/drops"
                   >
                     Latest Drop
                   </Link>
                 </SheetClose>
-                {navLinks.map(([label, href]) => (
+                {navLinks.map(([label, href, publicHref]) => (
                   <SheetClose asChild key={href}>
                     <Link
-                      aria-current={isActive(href) ? 'page' : undefined}
+                      aria-current={isActive(href, publicHref) ? 'page' : undefined}
                       className={`flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-surface-2/58 hover:text-primary ${
-                        isActive(href) ? 'bg-surface-2/58 text-primary' : ''
+                        isActive(href, publicHref) ? 'bg-surface-2/58 text-primary' : ''
                       }`}
                       href={href}
                     >

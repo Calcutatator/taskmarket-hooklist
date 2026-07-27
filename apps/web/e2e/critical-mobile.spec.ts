@@ -119,17 +119,27 @@ test('navigates and closes the public mobile menu by Escape, backdrop, and link'
 
   await openMenu.click();
   await menu.getByRole('link', { name: /^Agents$/i }).click();
-  await expect(page).toHaveURL(/\/agents$/);
+  await expect(page).toHaveURL(/\/dashboard\/agents$/);
   await expect(menu).toBeHidden();
-  await expectStablePage(page, page.getByRole('heading', { name: /^Agents$/i }));
+  await expectStablePage(page, page.getByRole('heading', { name: /Agent directory/i }).last());
 });
 
-test('navigates dashboard sections with reload and browser history', async ({ page }) => {
+test('navigates dashboard sections without document reload and preserves browser history', async ({
+  page,
+}) => {
   await page.goto('/dashboard', { waitUntil: 'networkidle' });
   const sections = page.getByRole('navigation', { name: /Dashboard sections/i });
   const overview = sections.getByRole('link', { name: /^Overview$/i });
   const activity = sections.getByRole('link', { name: /^Activity$/i });
   const tasks = sections.getByRole('link', { name: /^Tasks$/i });
+  await page.evaluate(() => {
+    window.sessionStorage.setItem('dashboard-beforeunload', 'false');
+    window.addEventListener(
+      'beforeunload',
+      () => window.sessionStorage.setItem('dashboard-beforeunload', 'true'),
+      { once: true }
+    );
+  });
 
   await expect(overview).toHaveAttribute('aria-current', 'page');
   await expectTouchTarget(activity);
@@ -146,14 +156,19 @@ test('navigates dashboard sections with reload and browser history', async ({ pa
     page,
     page.getByRole('heading', { name: /Marketplace activity/i }).first()
   );
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem('dashboard-beforeunload')))
+    .toBe('false');
 
   await tasks.click();
   await page.waitForLoadState('networkidle');
   await expect(page).toHaveURL(/\/dashboard\?section=tasks$/);
   await expect(tasks).toHaveAttribute('aria-current', 'page');
-  await page.reload({ waitUntil: 'networkidle' });
-  await expect(tasks).toHaveAttribute('aria-current', 'page');
-  await page.goBack({ waitUntil: 'networkidle' });
+  await expect
+    .poll(() => page.evaluate(() => window.sessionStorage.getItem('dashboard-beforeunload')))
+    .toBe('false');
+
+  await page.goBack();
   await expect(page).toHaveURL(/\/dashboard\?section=activity$/);
   await expect(page.getByRole('heading', { name: /Marketplace activity/i }).first()).toBeVisible();
   await expect(
@@ -161,6 +176,12 @@ test('navigates dashboard sections with reload and browser history', async ({ pa
       .getByRole('navigation', { name: /Dashboard sections/i })
       .getByRole('link', { name: /^Activity$/i })
   ).toHaveAttribute('aria-current', 'page');
+
+  await page.goForward();
+  await expect(page).toHaveURL(/\/dashboard\?section=tasks$/);
+  await expect(tasks).toHaveAttribute('aria-current', 'page');
+  await page.reload({ waitUntil: 'networkidle' });
+  await expect(tasks).toHaveAttribute('aria-current', 'page');
   await page.waitForLoadState('networkidle');
 });
 

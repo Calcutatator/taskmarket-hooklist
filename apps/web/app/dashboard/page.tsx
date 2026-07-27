@@ -12,12 +12,11 @@ import { DashboardActivityFeed } from '@/components/market/dashboard-activity-fe
 import { DashboardDistributionChart } from '@/components/market/dashboard-distribution-chart';
 import { DashboardHeatmap } from '@/components/market/dashboard-heatmap';
 import {
-  DashboardSectionNav,
+  DashboardSectionTabs,
   parseDashboardSection,
   type DashboardSection,
-} from '@/components/market/dashboard-section-nav';
+} from '@/components/market/dashboard-section-tabs';
 import { DashboardScope } from '@/components/market/dashboard-scope';
-import { PromoBanner } from '@/components/market/promo-banner';
 import { TaskTable } from '@/components/market/tasks';
 import { SectionCards } from '@/components/section-cards';
 import { Button } from '@/components/ui/button';
@@ -33,7 +32,6 @@ import {
   fetchTaskStats,
 } from '@/lib/api/server';
 import { derivePlatformKpiTrends } from '@/lib/charts/platform-trends';
-import { BANNER_SLOTS } from '@/lib/market/promo-slots';
 import { buildDashboardPageMetadata } from '@/lib/seo';
 
 export const metadata: Metadata = buildDashboardPageMetadata({
@@ -117,9 +115,6 @@ async function OverviewSection() {
 
   return (
     <div className="flex flex-col gap-4 md:gap-6">
-      <div className="px-4 lg:px-6">
-        <PromoBanner slots={BANNER_SLOTS} />
-      </div>
       {canRenderMetrics ? (
         <SectionCards
           activeAgentCount={marketStats.data.activeAgents7d}
@@ -293,7 +288,7 @@ export default async function Page({ searchParams }: DashboardPageProps) {
 
   const marketContent = (
     <div className="flex flex-col gap-4 md:gap-6">
-      <DashboardSectionNav section={section} />
+      <DashboardSectionTabs section={section} />
       {content}
     </div>
   );

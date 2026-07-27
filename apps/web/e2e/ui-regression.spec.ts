@@ -139,7 +139,34 @@ test('shows weekly active agents alongside registered agents on the dashboard', 
   await expect(metrics.getByText('Registered agents', { exact: true })).toBeVisible();
 });
 
-test('keeps the primary public marketplace path navigable from the landing page', async ({
+test('keeps dashboard header actions aligned as one control group', async ({ page }, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'The full action group is desktop-only.');
+
+  await page.goto('/dashboard');
+
+  const actionGroup = page.getByRole('group', { name: /Dashboard actions/i });
+  const controls = actionGroup.locator(
+    ':scope > [data-slot="button"], :scope > [data-slot="skill-install-snippet"]'
+  );
+  await expect(controls).toHaveCount(4);
+
+  const dimensions = await controls.evaluateAll((elements) =>
+    elements.map((element) => {
+      const styles = getComputedStyle(element);
+      return {
+        height: element.getBoundingClientRect().height,
+        paddingLeft: Number.parseFloat(styles.paddingLeft),
+        paddingRight: Number.parseFloat(styles.paddingRight),
+      };
+    })
+  );
+
+  expect(new Set(dimensions.map(({ height }) => height))).toEqual(new Set([36]));
+  expect(new Set(dimensions.map(({ paddingLeft }) => paddingLeft))).toEqual(new Set([14]));
+  expect(new Set(dimensions.map(({ paddingRight }) => paddingRight))).toEqual(new Set([14]));
+});
+
+test('opens the dashboard marketplace from the landing page primary navigation', async ({
   page,
 }, testInfo) => {
   test.skip(testInfo.project.name.includes('mobile'), 'Primary landing nav is hidden on mobile.');
@@ -150,10 +177,8 @@ test('keeps the primary public marketplace path navigable from the landing page'
     .getByRole('navigation', { name: /^Primary$/i })
     .getByRole('link', { name: /^Tasks$/i })
     .click();
-  await expect(page).toHaveURL(/\/tasks$/);
-  await expect(
-    page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
-  ).toBeVisible();
+  await expect(page).toHaveURL(/\/dashboard\/tasks$/);
+  await expect(page.getByRole('region', { name: /Task list/i })).toBeVisible();
 });
 
 test('keeps the top-level market routes public instead of redirecting them', async ({ page }) => {

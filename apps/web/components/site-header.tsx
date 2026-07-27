@@ -3,10 +3,13 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
+import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { PrivyHeaderAccountControl } from '@/components/privy-account-control';
 import { Button } from '@/components/ui/button';
+import { ButtonGroup } from '@/components/ui/button-group';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
+import { skillInstallCommand } from '@/lib/skill';
 
 function routeTitle(pathname: string | null) {
   const path = pathname ?? '/dashboard';
@@ -47,22 +50,24 @@ export function SiteHeader() {
           className="mx-2 max-[360px]:hidden data-[orientation=vertical]:h-4"
         />
         <h1 className="min-w-0 flex-1 truncate text-base font-medium">{routeTitle(pathname)}</h1>
-        <div className="flex shrink-0 items-center gap-2">
+        <ButtonGroup
+          aria-label="Dashboard actions"
+          className="shrink-0 gap-2 [&>*]:rounded-full! [&>*]:border-l! [&>[data-slot=button]]:px-3.5 [&>[data-slot=button]]:py-0 sm:[&>[data-slot=button]]:h-9 sm:[&>[data-slot=button]]:min-h-9"
+        >
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
-            <Link href="/live">Latest Drop</Link>
+            <Link href="/dashboard/drops">Latest Drop</Link>
           </Button>
           <PrivyHeaderAccountControl />
-          <Button variant="ghost" asChild size="sm" className="hidden sm:flex">
-            <a href="/skill.md" className="dark:text-foreground">
-              Agent skill file
-            </a>
-          </Button>
+          <SkillInstallSnippet
+            className="hidden h-9 w-44 max-w-none px-3.5 py-0 sm:flex xl:w-72"
+            command={skillInstallCommand()}
+          />
           {showPostTaskCta ? (
             <Button asChild className="min-h-11 max-[360px]:hidden sm:min-h-9" size="sm">
               <Link href="/dashboard/tasks/new">Post a task</Link>
             </Button>
           ) : null}
-        </div>
+        </ButtonGroup>
       </div>
     </header>
   );

@@ -36,7 +36,7 @@ describe('PublicSiteHeader', () => {
     vi.stubEnv('NEXT_PUBLIC_PRIVY_APP_ID', '0000000000000000000000000');
   });
 
-  it('links the primary navigation to the public market routes', () => {
+  it('links the primary navigation to the dashboard market routes', () => {
     render(<PublicSiteHeader />);
 
     const primaryNav = screen.getByRole('navigation', { name: /^primary$/i });
@@ -44,7 +44,7 @@ describe('PublicSiteHeader', () => {
     expect(screen.getByRole('link', { name: /taskmarket/i })).toHaveAttribute('href', '/');
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'href',
-      '/tasks'
+      '/dashboard/tasks'
     );
     expect(within(primaryNav).getByRole('link', { name: /^tasks$/i })).toHaveAttribute(
       'aria-current',
@@ -52,25 +52,28 @@ describe('PublicSiteHeader', () => {
     );
     expect(within(primaryNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/agents'
+      '/dashboard/agents'
     );
     expect(within(primaryNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/humans'
+      '/dashboard/humans'
     );
     expect(within(primaryNav).getByRole('link', { name: /^leaderboard$/i })).toHaveAttribute(
       'href',
-      '/leaderboard'
+      '/dashboard/leaderboard'
     );
     expect(within(primaryNav).getByRole('link', { name: /^protocol$/i })).toHaveAttribute(
       'href',
-      '/protocol'
+      '/dashboard/protocol'
     );
     expect(screen.getByRole('link', { name: /^dashboard$/i })).toHaveAttribute(
       'href',
       '/dashboard'
     );
-    expect(screen.getByRole('link', { name: /^latest drop$/i })).toHaveAttribute('href', '/live');
+    expect(screen.getByRole('link', { name: /^latest drop$/i })).toHaveAttribute(
+      'href',
+      '/dashboard/drops'
+    );
   });
 
   it('reveals the navigation links from the mobile menu trigger', async () => {
@@ -85,15 +88,15 @@ describe('PublicSiteHeader', () => {
     const mobileNav = screen.getByRole('navigation', { name: /mobile primary/i });
     expect(within(mobileNav).getByRole('link', { name: /^agents$/i })).toHaveAttribute(
       'href',
-      '/agents'
+      '/dashboard/agents'
     );
     expect(within(mobileNav).getByRole('link', { name: /^humans$/i })).toHaveAttribute(
       'href',
-      '/humans'
+      '/dashboard/humans'
     );
     expect(within(mobileNav).getByRole('link', { name: /^latest drop$/i })).toHaveAttribute(
       'href',
-      '/live'
+      '/dashboard/drops'
     );
     expect(within(mobileNav).getByRole('button', { name: /^sign in$/i })).toBeEnabled();
     const accountControlIds = Array.from(

@@ -81,12 +81,12 @@ async function expectLandingFirstPaint(page: Page) {
     name: /Fund one task\. Unleash a market of agents\./i,
   });
   const hero = heading.locator('xpath=ancestor::section');
+  const earnUsdc = hero.getByRole('link', { name: /^Earn USDC now$/i });
   const postTask = hero.getByRole('link', { name: /^Post a task$/i });
-  const watchMarket = hero.getByRole('link', { name: /^Watch open market$/i });
 
   await expectFullyOpaque(heading);
+  await expectFullyOpaque(earnUsdc);
   await expectFullyOpaque(postTask);
-  await expectFullyOpaque(watchMarket);
 }
 
 test.beforeAll(async () => {

@@ -3,6 +3,7 @@
 import { isValidElement, type ComponentType, type ReactNode } from 'react';
 
 import { AnimatedNumber } from '@/components/market/motion/animated-number';
+import { CountUpNumber } from '@/components/market/motion/count-up-number';
 import { Sparkline } from '@/components/charts/sparkline';
 import { formatNumber } from '@/lib/format';
 import { cn } from '@/lib/utils';
@@ -22,6 +23,7 @@ export type MetricStatProps = {
   icon?: ComponentType<{ className?: string }> | ReactNode;
   sparkline?: number[];
   animateValue?: boolean;
+  countUp?: boolean;
   className?: string;
 };
 
@@ -65,6 +67,7 @@ export function MetricStat({
   icon,
   sparkline,
   animateValue = true,
+  countUp = false,
   className,
 }: MetricStatProps) {
   const direction = delta?.direction ?? (delta ? (delta.value >= 0 ? 'up' : 'down') : undefined);
@@ -76,7 +79,12 @@ export function MetricStat({
       <div className="min-w-0 space-y-3">
         <dt className="text-[0.8125rem] font-medium text-muted-foreground">{label}</dt>
         <dd className="flex min-w-0 flex-wrap items-baseline gap-x-2 gap-y-1 font-mono text-3xl font-semibold leading-none tracking-normal text-foreground tabular-nums @[250px]/card:text-[2rem]">
-          {animateValue ? (
+          {animateValue && countUp && typeof value === 'number' ? (
+            <CountUpNumber
+              format={(nextValue) => (format ? format(nextValue) : String(nextValue))}
+              value={value}
+            />
+          ) : animateValue ? (
             <AnimatedNumber value={value} format={format} />
           ) : (
             <span>{format ? format(value) : value}</span>

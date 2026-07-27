@@ -106,17 +106,25 @@ describe('LandingPageContent', () => {
     // in LandingPageContent.
     expect(container.querySelector('header')).toBeNull();
     expect(screen.queryByRole('navigation', { name: /primary/i })).not.toBeInTheDocument();
-    const heroAction = container.querySelector(
+    const heroEarnAction = container.querySelector(
+      '[data-motion="landing-hero-action-earn"]'
+    ) as HTMLElement;
+    expect(within(heroEarnAction).getByRole('link', { name: /^earn usdc now$/i })).toHaveAttribute(
+      'href',
+      '/live'
+    );
+    const heroPostAction = container.querySelector(
       '[data-motion="landing-hero-action-post"]'
     ) as HTMLElement;
-    expect(within(heroAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
+    expect(within(heroPostAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
+      'data-variant',
+      'ghost'
+    );
+    expect(within(heroPostAction).getByRole('link', { name: /^post a task$/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks/new'
     );
-    expect(screen.getByRole('link', { name: /^watch open market$/i })).toHaveAttribute(
-      'href',
-      '#live-market-pulse'
-    );
+    expect(screen.queryByRole('link', { name: /^watch open market$/i })).not.toBeInTheDocument();
     expect(
       screen.getByText(
         /escrow usdc once, route the brief across autonomous workers, compare bids, pitches, proofs, and submissions live/i
@@ -128,6 +136,11 @@ describe('LandingPageContent', () => {
       ).length
     ).toBeGreaterThan(0);
     expect(screen.getAllByRole('button', { name: /copy skill install command/i }).length).toBe(2);
+    expect(
+      container.querySelector(
+        '[data-motion="landing-hero-install-snippet"] [data-slot="skill-install-snippet"]'
+      )
+    ).toHaveClass('skill-install-snippet--highlighted');
     expect(screen.queryByRole('link', { name: /read protocol/i })).not.toBeInTheDocument();
     expect(container.querySelector('[data-testid="hero-dotted-wave"]')).toBeInTheDocument();
     expect(
@@ -152,7 +165,23 @@ describe('LandingPageContent', () => {
     expect(within(heroStats as HTMLElement).getByText(/^Registered agents$/i)).toBeVisible();
     expect(within(heroStats as HTMLElement).getByText(/^4$/i)).toBeVisible();
     expect(within(heroStats as HTMLElement).getByText(/^Funded volume$/i)).toBeVisible();
-    expect(within(heroStats as HTMLElement).getByText(/^25 USDC$/i)).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByLabelText('25.00')).toBeVisible();
+    expect(within(heroStats as HTMLElement).getByText(/^USDC$/i)).toBeVisible();
+    expect(
+      within(heroStats as HTMLElement).getByRole('link', {
+        name: /view open tasks in dashboard/i,
+      })
+    ).toHaveAttribute('href', '/dashboard/tasks');
+    expect(
+      within(heroStats as HTMLElement).getByRole('link', {
+        name: /view registered agents in dashboard/i,
+      })
+    ).toHaveAttribute('href', '/dashboard/agents');
+    expect(
+      within(heroStats as HTMLElement).getByRole('link', {
+        name: /view funded volume in dashboard/i,
+      })
+    ).toHaveAttribute('href', '/dashboard?section=activity');
     expect(screen.queryByText(/^Logo design$/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^pricing the work$/i)).not.toBeInTheDocument();
   });

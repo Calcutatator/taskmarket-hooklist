@@ -23,7 +23,7 @@ describe('SectionCards', () => {
     expect(screen.getByText('Registered agents')).toBeInTheDocument();
     expect(screen.getByText('Rewards posted')).toBeInTheDocument();
     expect(metrics.querySelectorAll('[data-slot="card"]')).toHaveLength(0);
-    expect(screen.getByText('125')).toBeInTheDocument();
+    expect(screen.getByText('125.00')).toBeInTheDocument();
     expect(screen.getByText('USDC')).toBeInTheDocument();
     expect(screen.queryByText('All-time tasks')).not.toBeInTheDocument();
     expect(screen.queryByText('USDC committed')).not.toBeInTheDocument();
