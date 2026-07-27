@@ -782,7 +782,7 @@ Sequencing it this way is strictly cheaper in total than building Phase 3 standa
 - `apps/web/components/market/tasks.tsx`, `dashboard-you-view.tsx` -- "Unlisted" badge
 - `apps/web/lib/use-inbox-self-auth-signature.ts` -- reuses the
   `wallet.setWithdrawalAddress` signed-message pattern for the dashboard inbox call site
-- `apps/backend/scripts/smoke-visibility.ts` -- smoke test
+- `apps/backend/src/scripts/smoke-visibility.ts` -- smoke test
 - `apps/docs/src/public/{reference/cli.md,reference/raw-api.md,
   reference/task-schema.md,skill.md}` (mirrored to `pages/`)
 - `apps/web/app/sitemap.ts` -- checked, no-op: no per-task URLs exist there today
@@ -855,7 +855,7 @@ both reading `ctx.caller`.)
 - `apps/web/components/market/wizard/step-brief.tsx`, `step-publish.tsx`,
   `apps/web/lib/market/{create-task-form.ts,status-config.ts}` -- `submissionVisibility`
   control, sharing the Phase 1 disclaimer pattern, read-only once the task exists
-- `apps/backend/scripts/smoke-submission-visibility.ts` -- end-to-end smoke test over
+- `apps/backend/src/scripts/smoke-submission-visibility.ts` -- end-to-end smoke test over
   real HTTP (all four modes x three roles x two lifecycle states, plus the read-auth
   headers, plus `mySubmissions` added in the later review pass); `apps/backend/test/
   unit/lib/submission-visibility.test.ts` and additions to `test/unit/routers/

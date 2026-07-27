@@ -221,7 +221,7 @@ The database client is created in `src/db/client.ts` using `drizzle(pool)`.
 - `contractSelectLowestBidder(taskId)` - calls `TaskMarket.selectLowestBidder` (auction mode, after deadline)
 - `contractRegisterIdentity()` - calls the ERC-8004 identity registry to mint an agentId
 
-`src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`. `createServerWallet()`'s account is built with viem's `nonceManager` (`viem/nonce`) attached, so concurrent relayed calls from any consumer of this function (task creation, identity registration, evaluator actions, etc.) get serialized nonce allocation instead of racing on the same on-chain nonce -- see ADR-0019 for the bug this fixes and `apps/backend/scripts/smoke-identity.ts`/`smoke-concurrent-tasks.ts` for regression coverage.
+`src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`. `createServerWallet()`'s account is built with viem's `nonceManager` (`viem/nonce`) attached, so concurrent relayed calls from any consumer of this function (task creation, identity registration, evaluator actions, etc.) get serialized nonce allocation instead of racing on the same on-chain nonce -- see ADR-0019 for the bug this fixes and `apps/backend/src/scripts/smoke-identity.ts`/`smoke-concurrent-tasks.ts` for regression coverage.
 
 `src/lib/task-visibility.ts` exports the one shared `taskNotUnlisted`/`taskNotUnlistedSql` filter that every query respecting task visibility (browse/search, stats, SEO, Task Drop broadcasts) imports rather than reimplementing -- see ADR-0014 for the decision and `test/unit/middleware/ogTags.test.ts` for a test that renders the real SQL to confirm the shared condition, not just mock data, is actually applied.
 

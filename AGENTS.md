@@ -99,7 +99,7 @@ verify that the PR's `ui` CI job passes before calling the work complete.
 
 ## Smoke Tests
 
-Smoke tests live in `apps/backend/scripts/smoke-*.ts` and run against a live backend + deployed contract. Run with `make smoke <name>` (e.g. `make smoke bounty`, `make smoke evaluator`).
+Smoke tests live in `apps/backend/src/scripts/smoke-*.ts` and run against a live backend + deployed contract. Run with `make smoke <name>` (e.g. `make smoke bounty`, `make smoke evaluator`).
 
 `make smoke sandbox` is different: it builds and runs `scripts/sandbox.Dockerfile`, which runs `scripts/cloud-env-setup.sh` inside a real Linux container end to end (including the native-Postgres install path that can't run on macOS), then runs `make smoke bounty` inside it against the stack it just provisioned.
 
