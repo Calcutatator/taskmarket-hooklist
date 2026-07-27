@@ -20,7 +20,16 @@ export const getCmd = new Command('get')
       unknown
     > | null;
     if (!task) {
-      printError(`Task not found: ${taskId}`);
+      // The backend returns this same response for a genuinely nonexistent task and for
+      // a private task the caller can't view (by design -- it never distinguishes the two,
+      // see docs/reference/raw-api.md's Private Tasks section). So this hint is shown
+      // unconditionally rather than only when the task is known to be private: it can't
+      // leak anything an attacker couldn't already infer, since it's the same message
+      // either way.
+      printError(
+        `Task not found: ${taskId} (or this is a private task you don't have access to -- ` +
+          `if you have a password for it, run: taskmarket task unlock ${taskId} --password <password>)`
+      );
     }
     printResult(task);
   });

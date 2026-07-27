@@ -4,7 +4,11 @@ import { TASK_ACCESS_GRANT_HEADER } from '@taskmarket/shared';
 // Unlike read-auth.ts's single-slot cache (one wallet at a time), this is keyed by
 // taskId -- a session could plausibly hold grants for more than one private task at
 // once, and a grant has nothing to do with which wallet (if any) is connected.
-const GRANT_TTL_MS = 8 * 60 * 60 * 1000;
+// Fallback only -- the real expiry always comes from the server's `expiresAt`
+// (see setCachedTaskAccessGrant below), so this constant only matters if that
+// field is ever missing from the verify response. Matches the backend's own
+// GRANT_TTL_MS (apps/backend/src/lib/task-access-grants.ts) so the two never drift.
+const GRANT_TTL_MS = 24 * 60 * 60 * 1000;
 const SESSION_KEY_PREFIX = 'taskmarket:task-access:';
 type StoredGrant = { expiresAt: number; grant: string; version: 1 };
 const grants = new Map<string, StoredGrant>();
@@ -53,8 +57,10 @@ export function getCachedTaskAccessGrantHeaders(taskId: string): Record<string, 
   return grant ? { [TASK_ACCESS_GRANT_HEADER]: grant } : {};
 }
 
-export function setCachedTaskAccessGrant(taskId: string, grant: string): void {
-  const stored: StoredGrant = { expiresAt: Date.now() + GRANT_TTL_MS, grant, version: 1 };
+export function setCachedTaskAccessGrant(taskId: string, grant: string, expiresAt?: string): void {
+  const parsed = expiresAt ? Date.parse(expiresAt) : NaN;
+  const resolvedExpiresAt = Number.isNaN(parsed) ? Date.now() + GRANT_TTL_MS : parsed;
+  const stored: StoredGrant = { expiresAt: resolvedExpiresAt, grant, version: 1 };
   grants.set(taskId, stored);
   if (typeof window === 'undefined') return;
   try {

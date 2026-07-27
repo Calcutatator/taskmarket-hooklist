@@ -30,7 +30,7 @@ describe('private task access grants', () => {
     setCachedTaskAccessGrant('task-1', 'grant-1');
     setCachedTaskAccessGrant('task-2', 'grant-2');
 
-    vi.advanceTimersByTime(8 * 60 * 60 * 1000 + 1);
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 + 1);
     expect(getCachedTaskAccessGrant('task-1')).toBeUndefined();
 
     clearAllCachedTaskAccessGrants();
@@ -38,5 +38,29 @@ describe('private task access grants', () => {
     expect(
       Object.keys(sessionStorage).filter((key) => key.startsWith('taskmarket:task-access:'))
     ).toHaveLength(0);
+  });
+
+  it('uses the server-provided expiresAt instead of a fixed client TTL, matching the backend grant lifetime', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-25T00:00:00Z'));
+    setCachedTaskAccessGrant('task-1', 'grant-1', '2026-07-26T00:00:00Z');
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 - 1);
+    expect(getCachedTaskAccessGrant('task-1')).toBe('grant-1');
+
+    vi.advanceTimersByTime(2);
+    expect(getCachedTaskAccessGrant('task-1')).toBeUndefined();
+  });
+
+  it('falls back to the default TTL when expiresAt is missing or unparsable', () => {
+    vi.useFakeTimers();
+    vi.setSystemTime(new Date('2026-07-25T00:00:00Z'));
+    setCachedTaskAccessGrant('task-1', 'grant-1', 'not-a-date');
+
+    vi.advanceTimersByTime(24 * 60 * 60 * 1000 - 1);
+    expect(getCachedTaskAccessGrant('task-1')).toBe('grant-1');
+
+    vi.advanceTimersByTime(2);
+    expect(getCachedTaskAccessGrant('task-1')).toBeUndefined();
   });
 });

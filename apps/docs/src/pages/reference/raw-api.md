@@ -97,6 +97,13 @@ X-Taskmarket-Task-Access-Grant: <grant>
 
 A wrong password, a nonexistent task, or a task that isn't private all return the same generic `401 UNAUTHORIZED` -- the response never reveals which case occurred.
 
+**Viewing is not the same as participating.** The password/unlock grant only ever proves you may *view* a private task -- it never by itself authorizes claiming, bidding, submitting, or any other participating action. Only the requester, an invited (allowlisted) wallet, or a wallet that has already claimed/been awarded the task can take those actions.
+
+The two view paths also differ in how long they last:
+
+- **Invited wallets and participants** (the requester, an allowlisted wallet, or a wallet that has claimed or been awarded the task) can view the task indefinitely from then on -- no password or grant is ever needed again for that wallet.
+- **Password-only access** is temporary: the unlock grant expires after 24 hours, and once it does, viewing again requires re-submitting the password to `POST /api/tasks/{taskId}/private-access/verify` for a fresh grant.
+
 ## Submission Visibility
 
 `POST /api/tasks` accepts an optional `submissionVisibility` field: `"public"` (default), `"reveal_all"`, `"winner_only"`, or `"never"`. It is independent of `taskVisibility` -- a fully public, fully listed task can still hide its submissions, and an unlisted task can still leave them fully open. It is chosen once at creation and **locked in permanently**; there is no endpoint to change it afterward.

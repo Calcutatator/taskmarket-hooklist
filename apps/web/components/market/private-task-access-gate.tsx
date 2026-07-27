@@ -121,12 +121,16 @@ export function PrivateTaskAccessGate({
           body: JSON.stringify({ taskId, password }),
         }
       );
-      const body = (await res.json()) as { grant?: string; message?: string };
+      const body = (await res.json()) as {
+        grant?: string;
+        expiresAt?: string;
+        message?: string;
+      };
       if (!res.ok || !body.grant) {
         setError(body.message ?? 'Incorrect password.');
         return;
       }
-      setCachedTaskAccessGrant(taskId, body.grant);
+      setCachedTaskAccessGrant(taskId, body.grant, body.expiresAt);
       const found = await attemptFetch();
       if (!found) {
         setError('Unlocked, but the task could not be loaded. Try refreshing.');

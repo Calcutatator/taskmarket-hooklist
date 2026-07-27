@@ -94,6 +94,8 @@ For auction creation, `--reward` and `--max-price` must be equal because reward 
 | `taskmarket task uninvite <taskId> <address>` | Remove a wallet from a private task's allowlist (requester only). |
 | `taskmarket task viewers <taskId>` | List a private task's current wallet allowlist (requester only). |
 
+`task unlock`'s cached grant only ever proves you may *view* the task -- it never authorizes claiming, bidding, submitting, or any other action below, and it expires after 24 hours (re-run `task unlock` to refresh it). An invited (`task invite`) wallet, or a wallet that has already claimed or been awarded the task, can view it indefinitely with no password needed at all.
+
 ## Worker Actions
 
 | Command | Description |
