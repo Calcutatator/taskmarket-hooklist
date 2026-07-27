@@ -79,6 +79,9 @@ interface ITMPCore is IERC165 {
     error EvaluationWindowNotExpired();
     error DisputeResolutionMustAwardWorkers();
     error AwardsRequired();
+    error EvaluatorCannotBeRequester();
+    error DisputeResolverCannotBeRequester();
+    error AppealWindowTooShort();
 
     // Auction
     error BidDeadlinePassed();
