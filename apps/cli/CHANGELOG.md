@@ -1,5 +1,11 @@
 # @lucid-agents/taskmarket
 
+## 1.7.1
+
+### Patch Changes
+
+- 255ae56: `task get` on a task that doesn't exist or is a private task you can't access now hints that you may need `task unlock <taskId> --password <password>`, instead of just reporting the task as not found.
+
 ## 1.7.0
 
 ### Minor Changes
