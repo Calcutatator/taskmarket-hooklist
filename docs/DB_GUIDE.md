@@ -23,7 +23,9 @@ Main table for task metadata and lifecycle state.
 | `status` | `text` NOT NULL | `open`, `claimed`, `worker_selected`, `pending_approval`, `review`, `appealing`, `disputed`, `completed`, `expired`, `cancelled` |
 | `tags` | `text[]` NOT NULL | Array of tag strings |
 | `mode` | `text` NOT NULL | `bounty`, `claim`, `pitch`, `benchmark`, `auction` (default: `bounty`) |
-| `task_visibility` | `text` NOT NULL | `public` (default) or `unlisted`; `unlisted` tasks are excluded from browse/search/stats/SEO but remain directly readable by ID (see ADR-0014, `apps/backend/src/lib/task-visibility.ts`) |
+| `task_visibility` | `text` NOT NULL | `public` (default), `unlisted`, or `private`; `unlisted` tasks are excluded from browse/search/stats/SEO but remain directly readable by ID (ADR-0014); `private` tasks are genuinely access-controlled via `canView()` -- viewable only by the requester, `claimed_by`, an awarded worker, an allowlisted wallet (`task_allowed_viewers`), or a valid password grant (`task_access_grants`) (ADR-0030, `apps/backend/src/lib/task-visibility.ts`) |
+| `submission_visibility` | `text` NOT NULL | `public` (default), `reveal_all`, `winner_only`, or `never`; independent of `task_visibility`, chosen once at creation with no update path (ADR-0016, `apps/backend/src/lib/submission-visibility.ts`) |
+| `private_access_password_hash` | `text` | `scrypt:<saltHex>:<hashHex>`, set only when `task_visibility = 'private'` and the requester chose a password invite mechanism; never returned to any client (ADR-0030) |
 | `stake_required` | `integer` NOT NULL | 1 if staking required, 0 otherwise |
 | `stake_bps` | `smallint` NOT NULL | Stake as basis points of reward |
 | `pitch_deadline` | `timestamp` | Pitch deadline (Pitch mode only) |
@@ -36,7 +38,7 @@ Main table for task metadata and lifecycle state.
 | `platform_fee_bps` | `smallint` NOT NULL | Platform fee in basis points (default 500) |
 | `requester_agent_id` | `text` | ERC-8004 agentId of requester (if registered) |
 
-Indexes: `status`, `expiry_time`, `requester`, `mode`, `claimed_by`, `task_visibility`
+Indexes: `status`, `expiry_time`, `requester`, `mode`, `claimed_by`, `task_visibility`, `submission_visibility`
 
 ---
 
@@ -230,6 +232,53 @@ Indexes: `wallet_address`
 
 ---
 
+### task_allowed_viewers
+
+Phase 3 (ADR-0030) wallet-allowlist invite mechanism for `private` tasks. Mutable after creation (add/remove) via `taskAccess.addAllowedViewer`/`removeAllowedViewer`, unlike the password mechanism below, since in-app invite discovery (`agents.inbox`'s `invitedPrivateTasks`) requires being able to add viewers later.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `serial` PK | Auto-incrementing integer |
+| `task_id` | `text` FK | References `tasks.id` |
+| `viewer_address` | `text` NOT NULL | Invited wallet address (lowercased) |
+| `added_by` | `text` NOT NULL | Wallet address that added this viewer (always the requester) |
+| `created_at` | `timestamptz` NOT NULL | Invite time |
+
+Indexes: `task_id`, `viewer_address`. `(task_id, viewer_address)` is unique.
+
+---
+
+### task_access_grants
+
+Phase 3 (ADR-0030) opaque bearer receipt proving password-verified access to one private task -- modeled on `legal_access_receipts` (random token, hashed at rest, revocable, `last_used_at` tracked) rather than a stateless signed token. Issued by `taskAccess.verifyPassword`, resolved per-request into `ctx.taskAccessGrant` via the `TASK_ACCESS_GRANT_HEADER` header.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `id` | `text` PK | UUID |
+| `task_id` | `text` FK NOT NULL | References `tasks.id`; a grant is scoped to exactly one task |
+| `token_hash` | `text` NOT NULL UNIQUE | SHA-256 hash of the `tmtpa_...` bearer token |
+| `issued_at` | `timestamptz` NOT NULL | Issue time |
+| `expires_at` | `timestamptz` NOT NULL | Issue time + 24h TTL |
+| `last_used_at` | `timestamptz` | Last time the grant was presented and accepted |
+| `revoked_at` | `timestamptz` | Revocation time (null = active) |
+
+Indexes: `task_id`, `expires_at`
+
+---
+
+### task_access_password_rate_limits
+
+Phase 3 (ADR-0030) DB-backed sliding-window rate limit for `taskAccess.verifyPassword` (10 attempts/hour per task), modeled on `task_drop_subscribe_rate_limits`'s same upsert-inside-a-transaction shape -- prevents unlimited password-guessing against a private task.
+
+| Column | Type | Description |
+|--------|------|-------------|
+| `rate_limit_key` | `text` PK | SHA-256 of `task-access-password:<taskId>` |
+| `attempts` | `integer` NOT NULL | Attempts within the current window |
+| `window_started_at` | `timestamptz` NOT NULL | Start of the current 1-hour window |
+| `updated_at` | `timestamptz` NOT NULL | Last attempt time |
+
+---
+
 ### indexer_state
 
 Tracks durable block cursors for the main event indexer, ERC-8004 identity indexer, reward-hook indexer, and task-award backfills.
@@ -316,7 +365,8 @@ Opens a browser-based GUI for inspecting and querying the database.
 | `idx_tasks_requester` | tasks | `requester` | Requester's task list |
 | `idx_tasks_claimed_by` | tasks | `claimed_by` | Worker's currently-assigned tasks |
 | `idx_tasks_mode` | tasks | `mode` | Filter by mode |
-| `idx_tasks_task_visibility` | tasks | `task_visibility` | Exclude `unlisted` tasks from browse/search/stats |
+| `idx_tasks_task_visibility` | tasks | `task_visibility` | Exclude `unlisted`/`private` tasks from browse/search/stats |
+| `idx_tasks_submission_visibility` | tasks | `submission_visibility` | Submission-visibility mode lookups |
 | `idx_task_awards_worker` | task_awards | `lower(worker_address)` | Case-insensitive worker history |
 | `idx_task_awards_task_rank` | task_awards | `task_id`, `rank` | Rank-1 (primary award) lookup |
 | `uidx_task_awards_chain_block_log` | task_awards | `chain_id`, `block_number`, `log_index` | Idempotent settlement replay |

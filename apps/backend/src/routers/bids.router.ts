@@ -127,32 +127,31 @@ export const bidsRouter = router({
         });
       }
 
-      // Upsert: if worker already has a bid on this task, replace it (English and Reverse English).
-      // The DB unique constraint on (task_id, worker_address) enforces one bid per worker per task.
-      const existingBids = await ctx.db
-        .select()
-        .from(bids)
-        .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)))
-        .limit(1);
-
-      let bidId: string;
-      if (existingBids.length > 0) {
-        bidId = existingBids[0].id;
-        await ctx.db
-          .update(bids)
-          .set({ price: input.price, createdAt: new Date() })
-          .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)));
-      } else {
-        bidId = randomUUID();
-        await ctx.db.insert(bids).values({
-          id: bidId,
+      // Upsert: if worker already has a bid on this task, replace it (English and Reverse
+      // English) -- the bids_task_worker_unique constraint enforces one bid per worker
+      // per task. A single atomic upsert instead of a separate select-then-branch: the
+      // indexer's processBidSubmittedEvent (services/indexer.ts) reconciles the same
+      // on-chain BidSubmitted event with its own select-then-insert, and can win the race
+      // against this handler's write -- a plain insert here would then hit the same
+      // unique constraint and throw. onConflictDoUpdate resolves that the same way a
+      // genuine re-bid already does (price/createdAt updated on the existing row), and
+      // .returning() picks up whichever row's id actually persisted rather than trusting
+      // a locally-generated one that may never have been written.
+      const [bidRow] = await ctx.db
+        .insert(bids)
+        .values({
+          id: randomUUID(),
           taskId: input.taskId,
           workerAddress,
           price: input.price,
-        });
-      }
+        })
+        .onConflictDoUpdate({
+          target: [bids.taskId, bids.workerAddress],
+          set: { price: input.price, createdAt: new Date() },
+        })
+        .returning({ id: bids.id });
 
-      return { success: true, bidId };
+      return { success: true, bidId: bidRow.id };
     }),
 
   listByTask: optionalAuthProcedure

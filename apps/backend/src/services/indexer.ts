@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { createPublicClient, http, keccak256, parseAbiItem, slice, toBytes } from 'viem';
 import { base, baseSepolia } from 'viem/chains';
 import { normalizeAddress } from '@taskmarket/shared';
@@ -516,7 +517,10 @@ async function processSubmissionRejectedEvent(log: EventLog): Promise<void> {
   console.log(`SubmissionRejected event: task=${taskId} worker=${worker}`);
 }
 
-async function processBidSubmittedEvent(log: EventLog): Promise<void> {
+export async function processBidSubmittedEvent(
+  log: EventLog,
+  database: Database = db
+): Promise<void> {
   const { taskId, worker, price } = log.args;
 
   // The bids router writes the canonical row at submission time via
@@ -524,26 +528,28 @@ async function processBidSubmittedEvent(log: EventLog): Promise<void> {
   // constraint -- a re-bid updates that same row's price rather than adding a new
   // one. This handler is reconciliation only, for a bid placed on-chain without
   // going through the router: if no row exists yet for (taskId, worker), insert
-  // one keyed on tx hash so the DB and chain are eventually consistent. The
-  // existence check must match the same (taskId, worker) key as the constraint --
-  // checking price too would find no match on a re-bid (the router already moved
-  // the row to the new price) and then fail the insert on the unique constraint.
+  // one so the DB and chain are eventually consistent. Generates a random id (not
+  // log.transactionHash) so a bids.id is always UUID-shaped regardless of which
+  // side's insert actually lands -- the router's own insert also uses randomUUID,
+  // and letting the two diverge by format was avoidable, not load-bearing (nothing
+  // reads bids.id as a tx hash; the event's own tx hash is recorded in indexedEvents,
+  // keyed by (chainId, blockNumber, logIndex) rather than joinable to this bid row
+  // directly, not protocolEvents, which only covers admin/config events). onConflictDoNothing
+  // (rather than a separate existence check first) makes this atomic against the router's
+  // own write racing in between -- the router's insert is itself an upsert on the
+  // same (taskId, worker) key, so whichever side lands second here just no-ops
+  // instead of hitting the unique constraint.
   if (!log.transactionHash) return;
 
-  const existing = await db
-    .select({ id: bids.id })
-    .from(bids)
-    .where(and(eq(bids.taskId, taskId as string), eq(bids.workerAddress, worker as string)))
-    .limit(1);
-
-  if (existing.length === 0) {
-    await db.insert(bids).values({
-      id: log.transactionHash,
+  await database
+    .insert(bids)
+    .values({
+      id: randomUUID(),
       taskId: taskId as string,
       workerAddress: worker as string,
       price: (price as bigint).toString(),
-    });
-  }
+    })
+    .onConflictDoNothing();
 
   console.log(`BidSubmitted event: ${taskId} by ${worker}, price: ${price}`);
 }

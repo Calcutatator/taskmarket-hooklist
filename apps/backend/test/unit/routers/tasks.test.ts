@@ -449,6 +449,50 @@ describe('tasks router', () => {
         expect(ctx.db.insert).not.toHaveBeenCalled();
       });
     });
+
+    describe('chain-event indexer race', () => {
+      // services/indexer.ts's processTaskCreatedEvent also inserts a row for this id on
+      // the on-chain TaskCreated event (onConflictDoNothing on its side), with only
+      // on-chain-derivable fields populated, and can win the race against this insert.
+      it('upserts on conflict with the indexer instead of failing on a duplicate id', async () => {
+        const ctx = createMockCtx(PAYER);
+        const taskInsert = makeChain();
+        ctx.db.insert.mockReturnValueOnce(taskInsert);
+        const caller = tasksRouter.createCaller(ctx);
+
+        const result = await caller.create({
+          ...baseTaskInput,
+          taskVisibility: 'private',
+          submissionVisibility: 'winner_only',
+          accessPassword: 'super-secret-password',
+        });
+
+        expect(result.success).toBe(true);
+        expect(taskInsert.onConflictDoUpdate).toHaveBeenCalledOnce();
+        const [{ target, set }] = vi.mocked(taskInsert.onConflictDoUpdate).mock.calls[0];
+        expect(target).toBeDefined();
+        // Off-chain-only fields must be patched in on conflict, or a private/winner_only
+        // task silently falls back to the indexer's public/public defaults.
+        expect(set).toEqual(
+          expect.objectContaining({
+            description: baseTaskInput.description,
+            taskVisibility: 'private',
+            submissionVisibility: 'winner_only',
+            privateAccessPasswordHash: expect.any(String),
+          })
+        );
+        // Fields owned by other event handlers, or already derived by the indexer from
+        // the same on-chain event, must never be part of this merge.
+        expect(set).not.toHaveProperty('status');
+        expect(set).not.toHaveProperty('claimedBy');
+        expect(set).not.toHaveProperty('claimedAt');
+        expect(set).not.toHaveProperty('hookContract');
+        expect(set).not.toHaveProperty('reward');
+        expect(set).not.toHaveProperty('escrowTxHash');
+        expect(set).not.toHaveProperty('stakeRequired');
+        expect(set).not.toHaveProperty('stakeBps');
+      });
+    });
   });
 
   describe('get', () => {

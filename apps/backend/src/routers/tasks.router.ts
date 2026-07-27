@@ -435,41 +435,81 @@ export const tasksRouter = router({
           await tx.insert(taskDrops).values(inlineTaskDrop);
         }
 
-        await tx.insert(tasks).values({
-          id: taskId,
-          requester: payer,
-          requesterPubkey: normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '',
-          description: input.description,
-          reward: input.reward,
-          escrowTxHash,
-          expiryTime,
-          status: 'open',
-          tags: input.tags,
-          mode: input.mode ?? 'bounty',
-          taskVisibility,
-          submissionVisibility,
-          privateAccessPasswordHash,
-          stakeRequired: input.stakeRequired ? 1 : 0,
-          stakeBps: input.stakeBps ?? 0,
-          pitchDeadline: input.pitchDeadline
-            ? new Date(Date.now() + input.pitchDeadline * 1000)
-            : null,
-          bidDeadline: input.bidDeadline
-            ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
-            : null,
-          maxPrice: input.maxPrice ?? null,
-          auctionType: input.auctionType ?? null,
-          auctionStartPrice: input.auctionStartPrice ?? null,
-          auctionFloorPrice: input.auctionFloorPrice ?? null,
-          metricDescription: input.metricDescription ?? null,
-          metricTarget: input.metricTarget ?? null,
-          platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
-          requesterAgentId: requesterAgent[0]?.agentId ?? null,
-          chainId: config.CHAIN_ID,
-          contractAddress: config.CONTRACT_ADDRESS,
-          hookContract: input.hookContract ?? null,
-          taskDropId: resolvedTaskDropId,
-        });
+        const requesterPubkeyValue =
+          normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '';
+        const pitchDeadlineValue = input.pitchDeadline
+          ? new Date(Date.now() + input.pitchDeadline * 1000)
+          : null;
+        const bidDeadlineValue = input.bidDeadline
+          ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
+          : null;
+        const requesterAgentIdValue = requesterAgent[0]?.agentId ?? null;
+
+        await tx
+          .insert(tasks)
+          .values({
+            id: taskId,
+            requester: payer,
+            requesterPubkey: requesterPubkeyValue,
+            description: input.description,
+            reward: input.reward,
+            escrowTxHash,
+            expiryTime,
+            status: 'open',
+            tags: input.tags,
+            mode: input.mode ?? 'bounty',
+            taskVisibility,
+            submissionVisibility,
+            privateAccessPasswordHash,
+            stakeRequired: input.stakeRequired ? 1 : 0,
+            stakeBps: input.stakeBps ?? 0,
+            pitchDeadline: pitchDeadlineValue,
+            bidDeadline: bidDeadlineValue,
+            maxPrice: input.maxPrice ?? null,
+            auctionType: input.auctionType ?? null,
+            auctionStartPrice: input.auctionStartPrice ?? null,
+            auctionFloorPrice: input.auctionFloorPrice ?? null,
+            metricDescription: input.metricDescription ?? null,
+            metricTarget: input.metricTarget ?? null,
+            platformFeeBps: config.DEFAULT_PLATFORM_FEE_BPS,
+            requesterAgentId: requesterAgentIdValue,
+            chainId: config.CHAIN_ID,
+            contractAddress: config.CONTRACT_ADDRESS,
+            hookContract: input.hookContract ?? null,
+            taskDropId: resolvedTaskDropId,
+          })
+          // The chain-event indexer (services/indexer.ts's processTaskCreatedEvent) also
+          // inserts a row for this id on the on-chain TaskCreated event, with only
+          // on-chain-derivable fields populated (onConflictDoNothing on its side) -- it
+          // can win the race against this insert and leave a primary-key conflict here.
+          // onConflictDoUpdate patches in this handler's off-chain-only fields so the
+          // request always completes with the full, authoritative data regardless of
+          // which insert wins. Scoped to fields this handler is the sole source of truth
+          // for -- excludes status/claimedBy/claimedAt (owned by claim/settlement events),
+          // hookContract/evaluator* (reconciled by their own event handlers), and
+          // reward/escrowTxHash/expiryTime/mode/stakeRequired/stakeBps/chainId/
+          // contractAddress (already correctly derived by the indexer from the same event).
+          .onConflictDoUpdate({
+            target: tasks.id,
+            set: {
+              requesterPubkey: requesterPubkeyValue,
+              description: input.description,
+              tags: input.tags,
+              taskVisibility,
+              submissionVisibility,
+              privateAccessPasswordHash,
+              pitchDeadline: pitchDeadlineValue,
+              bidDeadline: bidDeadlineValue,
+              maxPrice: input.maxPrice ?? null,
+              auctionType: input.auctionType ?? null,
+              auctionStartPrice: input.auctionStartPrice ?? null,
+              auctionFloorPrice: input.auctionFloorPrice ?? null,
+              metricDescription: input.metricDescription ?? null,
+              metricTarget: input.metricTarget ?? null,
+              requesterAgentId: requesterAgentIdValue,
+              taskDropId: resolvedTaskDropId,
+            },
+          });
 
         if (taskDropReservationId) {
           await tx

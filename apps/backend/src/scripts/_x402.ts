@@ -31,6 +31,26 @@ export function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+// Anvil's instant-mining mode only advances block.timestamp on a real mined transaction,
+// so it stays frozen on a quiescent chain regardless of wall-clock sleeps. The relay
+// path's read-only simulateContract pre-check (services/contract.ts) evaluates against
+// that frozen timestamp, so a time-gated call (bid deadline, appeal window) can revert
+// forever even once the deadline has genuinely passed. Force-mining an empty block syncs
+// the timestamp to now before such a call. Anvil/Hardhat-only RPC method -- no-ops
+// against a real chain with ambient block production, where this is never needed.
+export async function nudgeChainForward(): Promise<void> {
+  const rpcUrl = process.env.BASE_RPC_URL || 'http://127.0.0.1:8545';
+  try {
+    await fetch(rpcUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'evm_mine', params: [] }),
+    });
+  } catch {
+    // Best-effort only.
+  }
+}
+
 export function fail(step: string, status: number, body: string): never {
   // Parse body to extract message for a cleaner error string.
   let message = body;

@@ -14,7 +14,7 @@
  * with a single bidder.
  */
 import { privateKeyToAccount } from 'viem/accounts';
-import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
+import { log, ok, get, post, x402Post, getAccounts, API_URL, nudgeChainForward } from './_x402';
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -84,6 +84,8 @@ async function main() {
   // 4. Wait for bid deadline, then select winner
   log('4/7', 'Waiting 32s for bid deadline to pass...');
   await new Promise((r) => setTimeout(r, 32000));
+  // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
+  await nudgeChainForward();
   log('4/7', 'Selecting lowest bidder...');
   const { workerAddress: winner } = (await post(`/api/tasks/${taskId}/bids/select-winner`, {
     taskId,

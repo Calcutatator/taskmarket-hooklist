@@ -223,7 +223,7 @@ The database client is created in `src/db/client.ts` using `drizzle(pool)`.
 
 `src/lib/wallet.ts` creates the server wallet from `SERVER_PRIVATE_KEY`. `createServerWallet()`'s account is built with viem's `nonceManager` (`viem/nonce`) attached, so concurrent relayed calls from any consumer of this function (task creation, identity registration, evaluator actions, etc.) get serialized nonce allocation instead of racing on the same on-chain nonce -- see ADR-0019 for the bug this fixes and `apps/backend/src/scripts/smoke-identity.ts`/`smoke-concurrent-tasks.ts` for regression coverage.
 
-`src/lib/task-visibility.ts` exports the one shared `taskNotUnlisted`/`taskNotUnlistedSql` filter that every query respecting task visibility (browse/search, stats, SEO, Task Drop broadcasts) imports rather than reimplementing -- see ADR-0014 for the decision and `test/unit/middleware/ogTags.test.ts` for a test that renders the real SQL to confirm the shared condition, not just mock data, is actually applied.
+`src/lib/task-visibility.ts` exports the one shared `taskDiscoverable`/`taskDiscoverableSql` filter that every query respecting task visibility (browse/search, stats, SEO, Task Drop broadcasts) imports rather than reimplementing -- see ADR-0014 for the original unlisted-only decision and ADR-0030 for Phase 3, which broadened the filter to also exclude `private` tasks (renamed from `taskNotUnlisted`). Same module's `canView()` is the per-task access-control predicate for `private` tasks (requester, `claimedBy`, an awarded worker, or an allowlisted/password-granted viewer) -- see `test/unit/lib/task-visibility.test.ts` and `test/unit/middleware/ogTags.test.ts` for a test that renders the real SQL to confirm the shared condition, not just mock data, is actually applied. `src/lib/submission-visibility.ts`'s `canViewSubmission()` is the separate role/mode gate for whether a caller can see one already-visible task's submissions (ADR-0016, ADR-0021), composed with `canView()` for Phase 3.
 
 ## Environment configuration
 
@@ -256,7 +256,7 @@ Key env vars:
 3. CORS (`CORS_ORIGIN` env var, default `*`)
 4. Morgan (HTTP logging)
 5. Body parsing (JSON + URL-encoded)
-6. `ogTagsMiddleware` (only when `SERVE_FRONTEND=true`) -- serves bot/crawler-only OG meta for the legacy SPA; excludes `unlisted` tasks via `taskNotUnlisted`
+6. `ogTagsMiddleware` (only when `SERVE_FRONTEND=true`) -- serves bot/crawler-only OG meta for the legacy SPA; excludes `unlisted` and `private` tasks via `taskDiscoverable`
 7. X402 guards (per-route, before OpenAPI middleware)
 8. `createOpenApiExpressMiddleware` at `/api` (tRPC as REST)
 9. tRPC middleware at `/trpc`

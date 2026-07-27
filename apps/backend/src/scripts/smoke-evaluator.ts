@@ -9,7 +9,18 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus, sleep } from './_x402';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  API_URL,
+  pollTaskStatus,
+  sleep,
+  nudgeChainForward,
+} from './_x402';
 
 async function pollStatus(taskId: string, expected: string[]): Promise<string> {
   const task = await pollTaskStatus<{ status: string }>(taskId, expected, {
@@ -135,6 +146,8 @@ async function scenarioA(
 
   log('6/8', '[A] Waiting 8s for appeal window to expire...');
   await sleep(8000);
+  // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
+  await nudgeChainForward();
 
   log('7/8', '[A] Calling finalizeVerdict (permissionless)...');
   const { txHash: finalizeTx } = (await post(`/api/tasks/${taskId}/finalize-verdict`, {
@@ -178,6 +191,8 @@ async function scenarioB(
 
   log('6/8', '[B] Waiting 8s for appeal window to expire...');
   await sleep(8000);
+  // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
+  await nudgeChainForward();
 
   log('7/8', '[B] Calling finalizeVerdict (permissionless)...');
   const { txHash: finalizeTx } = (await post(`/api/tasks/${taskId}/finalize-verdict`, {

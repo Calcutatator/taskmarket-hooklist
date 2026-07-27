@@ -33,9 +33,10 @@ vi.mock('../../../src/config/env', async (importOriginal) => {
   };
 });
 
-import { tasks } from '../../../src/db/schema';
+import { bids, tasks } from '../../../src/db/schema';
 import {
   processAuctionAcceptedEvent,
+  processBidSubmittedEvent,
   processEvaluatorTimedOutEvent,
   processTaskAppealedEvent,
   processTaskCancelledEvent,
@@ -99,6 +100,7 @@ describeWithDatabase('indexer status guard handlers', () => {
 
   afterEach(async () => {
     for (const taskId of taskIds.splice(0)) {
+      await database.delete(bids).where(eq(bids.taskId, taskId));
       await database.delete(tasks).where(eq(tasks.id, taskId));
     }
   });
@@ -326,6 +328,60 @@ describeWithDatabase('indexer status guard handlers', () => {
       database
     );
     expect(await statusOf(advancedTaskId)).toBe('worker_selected');
+  });
+
+  it('processBidSubmittedEvent inserts a reconciliation row when the router has not written one yet', async () => {
+    const taskId = await insertTask({ status: 'open', mode: 'auction' });
+    await processBidSubmittedEvent(
+      {
+        args: { taskId, worker: WORKER, price: 1000n },
+        eventName: 'BidSubmitted',
+        transactionHash: `0x${'c'.repeat(64)}`,
+      },
+      database
+    );
+    const rows = await database
+      .select({ id: bids.id, price: bids.price })
+      .from(bids)
+      .where(eq(bids.taskId, taskId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.price).toBe('1000');
+    // A random id, not the event's transactionHash -- keeps bids.id UUID-shaped
+    // regardless of whether the router or the indexer's insert lands first.
+    expect(rows[0]?.id).not.toBe(`0x${'c'.repeat(64)}`);
+    expect(rows[0]?.id).toMatch(/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/);
+  });
+
+  it('processBidSubmittedEvent does not throw or overwrite when bids.submit already won the race for this (taskId, worker)', async () => {
+    // Reproduces the real race: bids.router.ts's own upsert lands first for a worker's
+    // first bid on a task, keyed on the same bids_task_worker_unique (taskId,
+    // workerAddress) constraint this handler's insert targets.
+    const taskId = await insertTask({ status: 'open', mode: 'auction' });
+    await database.insert(bids).values({
+      id: 'router-written-bid',
+      taskId,
+      workerAddress: WORKER,
+      price: '2000',
+    });
+
+    await expect(
+      processBidSubmittedEvent(
+        {
+          args: { taskId, worker: WORKER, price: 1000n },
+          eventName: 'BidSubmitted',
+          transactionHash: `0x${'d'.repeat(64)}`,
+        },
+        database
+      )
+    ).resolves.not.toThrow();
+
+    const rows = await database
+      .select({ id: bids.id, price: bids.price })
+      .from(bids)
+      .where(eq(bids.taskId, taskId));
+    expect(rows).toHaveLength(1);
+    expect(rows[0]?.id).toBe('router-written-bid');
+    expect(rows[0]?.price).toBe('2000');
   });
 
   it('processTaskReopenedEvent applies from claimed, no-ops once already open (the ABA-adjacent case)', async () => {

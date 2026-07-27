@@ -184,8 +184,8 @@ describe('bids router', () => {
               createdAt: new Date(),
             },
           ])
-        )
-        .mockReturnValueOnce(makeChain([])); // no existing bid for this worker
+        );
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit({ taskId: TASK_ID, price: '2000000' });
@@ -222,8 +222,8 @@ describe('bids router', () => {
       const ctx = createMockCtx(WORKER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ auctionType: 'reverse_english' })]))
-        .mockReturnValueOnce(makeChain([])) // no existing bid — skip english lowest check
-        .mockReturnValueOnce(makeChain([])); // no existing bid for this worker (for upsert check)
+        .mockReturnValueOnce(makeChain([])); // no existing bid — skip english lowest check
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -234,10 +234,8 @@ describe('bids router', () => {
 
     it('submits bid successfully on happy path (english, no prior bids)', async () => {
       const ctx = createMockCtx(WORKER);
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])) // no current lowest (empty bids)
-        .mockReturnValueOnce(makeChain([])); // no existing bid for this worker
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest (empty bids)
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ id: BID_ID }]));
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.submit(submitInput);
@@ -257,10 +255,7 @@ describe('bids router', () => {
       );
       const ctx = createMockCtx(WORKER);
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
-      ctx.db.select
-        .mockReturnValueOnce(makeChain([makeTask()]))
-        .mockReturnValueOnce(makeChain([])) // no current lowest
-        .mockReturnValueOnce(makeChain([])); // no existing bid for this worker
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest
       ctx.db.update
         .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }])) // orphaned-payments claim
         .mockReturnValueOnce(makeChain()); // orphaned-payments final status
@@ -274,6 +269,26 @@ describe('bids router', () => {
       const insertedTables = ctx.db.insert.mock.calls.map(([table]: [unknown]) => table);
       expect(insertedTables).toEqual([orphanedPayments]);
       expect(insertedTables).not.toContain(bidsTable);
+    });
+
+    it('upserts on conflict with the indexer instead of failing on a duplicate (taskId, worker)', async () => {
+      // services/indexer.ts's processBidSubmittedEvent reconciles the same on-chain
+      // BidSubmitted event with its own insert (onConflictDoNothing on its side) and can
+      // win the race against this handler's write for a worker's first bid on a task.
+      const ctx = createMockCtx(WORKER);
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no current lowest
+      const bidInsert = makeChain([{ id: BID_ID }]);
+      ctx.db.insert.mockReturnValueOnce(bidInsert);
+
+      const caller = bidsRouter.createCaller(ctx);
+      const result = await caller.submit(submitInput);
+
+      expect(result.success).toBe(true);
+      expect(result.bidId).toBe(BID_ID);
+      expect(bidInsert.onConflictDoUpdate).toHaveBeenCalledOnce();
+      const [{ target, set }] = vi.mocked(bidInsert.onConflictDoUpdate).mock.calls[0];
+      expect(target).toEqual([bidsTable.taskId, bidsTable.workerAddress]);
+      expect(set).toEqual(expect.objectContaining({ price: submitInput.price }));
     });
   });
 

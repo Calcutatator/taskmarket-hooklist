@@ -11,7 +11,18 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-auction-types.ts
  */
-import { log, ok, get, post, x402Post, getAccounts, type Account, API_URL, sleep } from './_x402';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  type Account,
+  API_URL,
+  sleep,
+  nudgeChainForward,
+} from './_x402';
 
 // How long to wait after the bid deadline before asserting it has passed.
 // Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
@@ -64,6 +75,8 @@ async function smokeEnglish(requester: Account, worker: Account) {
   // is what actually catches that regression; verifying the bid list alone does not, since
   // that reads the router's own synchronous write, not indexer state.
   log('5/6', 'Selecting winner and completing the task...');
+  // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
+  await nudgeChainForward();
   const { workerAddress: winner } = (await post(`/api/tasks/${taskId}/bids/select-winner`, {
     taskId,
   })) as { workerAddress: string };

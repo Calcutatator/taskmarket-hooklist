@@ -14,9 +14,13 @@ Status: Phase 1 decided and shipped -- see ADR-0014 (task visibility, public-by-
   read-paths" and the Phase 2 shipped file list below. A further pass converged
   `agents.inbox` and `bids.myBids`'s bespoke self-auth schemes onto the general
   `ctx.caller` mechanism -- ADR-0023 (Accepted), implemented in the same PR (#210). Phase
-  3 (true private tasks) below remains an open proposal, not decided.
+  3 (true private tasks) is decided and shipped -- see ADR-0030 (wallet allowlist and/or
+  password invite mechanisms, `canView()` gating) and ADR-0031 (web SSR stays
+  unauthenticated; the private-task access gate runs client-side), both Accepted (PR
+  #267). The "Phase 3" section below is kept for its original design rationale but its
+  "not started" framing is stale -- see the Phase 3 shipped-file notes added inline.
 Owner: Taskmarket
-Last updated: 2026-07-22
+Last updated: 2026-07-24
 
 This is an RFC: a design proposal for discussion, not a decision record. Once a direction is
 chosen, the decision itself belongs in an ADR under `docs/adr/` (see `docs/adr/README.md`
@@ -873,7 +877,17 @@ both reading `ctx.caller`.)
   -- `Accepted`; `agents.inbox`/`bids.myBids` converge onto `ctx.caller` (see the Phase 3
   section below, superseded by this having landed in Phase 2 instead)
 
-### Phase 3 (true private tasks) -- not started, gated on a separate product decision
+### Phase 3 (true private tasks) -- decided and shipped (ADR-0030, ADR-0031, PR #267)
+
+The plan below is kept for its original design rationale; two points shipped differently
+than originally planned, corrected inline. Actual shipped shape: `canView()` gating (not
+`tasks.get`-only) was retrofitted across `tasks`/`bids`/`pitches`/`proofs`/`feedbacks`
+routers via the shared `resolveTaskViewability` helper (`apps/backend/src/lib/
+task-visibility.ts`); `'private'` was added to `task_visibility` (not a separate
+`visibility` column), plus the `task_allowed_viewers`, `task_access_grants`, and
+`task_access_password_rate_limits` tables (migration `0036_add_private_tasks.sql`); and
+`ogTags.ts`'s `/tasks/:taskId` prerender now reuses the same `taskDiscoverable` filter as
+every other discovery surface rather than a bespoke private-task check.
 
 - `apps/backend/src/routers/tasks.router.ts` -- `canView` gating on `get` (`NOT_FOUND`)
 - `apps/backend/src/routers/{bids,pitches,proofs,feedbacks}.router.ts` -- `canView`
@@ -882,8 +896,12 @@ both reading `ctx.caller`.)
   `allowedViewers`-style table for invited workers
 - `apps/backend/src/middleware/ogTags.ts` -- generic metadata for a private task's
   detail page, to avoid confirming existence via OG tags
-- `apps/web/lib/api/server.ts` -- general authenticated-fetch layer (gated fetch for
-  every relevant read, not just the two Phase 1/2 call sites)
+- Shipped instead of a general authenticated-fetch layer in `apps/web/lib/api/server.ts`:
+  per ADR-0031, SSR stays unauthenticated by design (a private task's first paint is a
+  generic 404-shaped state); `apps/web/components/market/private-task-access-gate.tsx`
+  renders client-side once a wallet signature or password grant resolves, backed by
+  `apps/web/lib/task-access-grants.ts` (per-taskId grant cache) and
+  `apps/web/lib/use-read-auth-signature.ts`.
 - **ADR-0023 (`Accepted`, implemented ahead of Phase 3, in Phase 2's PR #210):**
   converged `agents.inbox` (ADR-0015, now Superseded) and `bids.myBids` (ADR-0017, now
   Superseded)'s bespoke signed-message self-auth schemes onto the general `ctx.caller`
