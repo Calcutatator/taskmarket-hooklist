@@ -21,8 +21,13 @@ library LibTaskMarket {
     uint256 internal constant HOOK_MAX_RETURN_BYTES = 32;
     // Fixed gas stipend forwarded to every hook call, independent of the caller's own
     // remaining gas. Bounds plain compute/loop griefing by a hook; independent of, and in
-    // addition to, the bounded-copy guarantee in _safeHookCall below.
-    uint256 internal constant HOOK_GAS_STIPEND = 100_000;
+    // addition to, the bounded-copy guarantee in _safeHookCall below. Sized generously
+    // enough for a realistic production hook (TaskTokenRewardHook.checkClaim/checkComplete
+    // cold-writes several storage slots and makes two further nested external calls into
+    // EpochBudget/RewardVault, each with their own cold SSTORE writes) rather than the
+    // bare minimum -- it is still a hard, fixed cap, far below a full transaction's gas
+    // budget, so it does not weaken the DoS guard's intent.
+    uint256 internal constant HOOK_GAS_STIPEND = 1_000_000;
 
     // -------------------------------------------------------------------------
     // Errors (not in ITMPCore since they are implementation-specific)
