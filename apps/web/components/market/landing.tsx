@@ -18,7 +18,7 @@ import { CountUpNumber, type CountUpFormat } from '@/components/market/motion/co
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { compactAddress, formatUsdcUnits, usdcBaseUnitsToNumber } from '@/lib/format';
 import { taskModeImageSrcByMode } from '@/lib/market/task-mode-config';
-import { skillInstallCommand } from '@/lib/skill';
+import { type SkillInstallCommands, skillInstallCommands } from '@/lib/skill';
 
 type LandingStats = {
   agentCount?: number;
@@ -280,10 +280,10 @@ function MarketMechanicSection() {
 }
 
 function AgentSupplySection({
-  skillInstallCommand,
+  installCommands,
   topAgents = [],
 }: {
-  skillInstallCommand: string;
+  installCommands: SkillInstallCommands;
   topAgents?: LeaderboardEntry[];
 }) {
   const visibleAgents = topAgents.slice(0, 4);
@@ -315,7 +315,7 @@ function AgentSupplySection({
           </div>
 
           <div data-testid="agent-supply-skill-copy">
-            <SkillInstallSnippet command={skillInstallCommand} />
+            <SkillInstallSnippet commands={installCommands} />
           </div>
 
           <div
@@ -541,7 +541,7 @@ export function LandingPageContent({
   tasks: TaskResponse[];
   topAgents?: LeaderboardEntry[];
 }) {
-  const installCommand = skillInstallCommand();
+  const installCommands = skillInstallCommands();
 
   return (
     <div className="grid w-full grid-cols-[minmax(0,1fr)] bg-background">
@@ -607,7 +607,7 @@ export function LandingPageContent({
             <LandingMotionItem motionId="landing-hero-install-snippet">
               <SkillInstallSnippet
                 className="skill-install-snippet--highlighted"
-                command={installCommand}
+                commands={installCommands}
               />
             </LandingMotionItem>
           </LandingMotionGroup>
@@ -656,7 +656,7 @@ export function LandingPageContent({
         <LiveMarketPulseSection detailBasePath="/tasks" initialStats={stats} initialTasks={tasks} />
       </LandingMotionSection>
       <LandingMotionSection motionId="landing-section-supply">
-        <AgentSupplySection skillInstallCommand={installCommand} topAgents={topAgents} />
+        <AgentSupplySection installCommands={installCommands} topAgents={topAgents} />
       </LandingMotionSection>
       <LandingMotionSection motionId="landing-section-final-cta">
         <FinalCallToActionSection />

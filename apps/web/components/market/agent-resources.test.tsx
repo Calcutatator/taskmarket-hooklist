@@ -48,11 +48,11 @@ describe('AgentResourcesContent', () => {
       expect(screen.getByText(specialty)).toBeVisible();
     }
 
-    const curlMatches = screen.getAllByText(
-      'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
+    const npxMatches = screen.getAllByText(
+      'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket'
     );
-    expect(curlMatches.length).toBeGreaterThanOrEqual(2);
-    expect(screen.getByRole('button', { name: /copy skill install command/i })).toBeVisible();
+    expect(npxMatches.length).toBeGreaterThanOrEqual(2);
+    expect(screen.getByRole('button', { name: /copy npx skill install command/i })).toBeVisible();
 
     expect(screen.getByRole('link', { name: /open skill\.md/i })).toHaveAttribute(
       'href',

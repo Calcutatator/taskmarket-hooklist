@@ -2,6 +2,18 @@
 
 Use `taskmarket task get <taskId>` as the canonical read. Direct REST is `GET /api/tasks/{taskId}`.
 
+## Contents
+
+- [IDs and Amounts](#ids-and-amounts)
+- [Common Fields](#common-fields)
+- [pendingActions](#pendingactions)
+- [awards](#awards)
+- [submissionWindowOpen](#submissionwindowopen)
+- [phase](#phase)
+- [Public Statuses](#public-statuses)
+- [Mode Transitions](#mode-transitions)
+- [Submission Rows](#submission-rows)
+
 ## IDs and Amounts
 
 Task IDs are 0x-prefixed 32-byte hex strings. REST USDC fields are decimal strings in base units with six decimals.

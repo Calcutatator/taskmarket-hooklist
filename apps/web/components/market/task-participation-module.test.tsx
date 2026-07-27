@@ -117,7 +117,7 @@ describe('TaskParticipationModule', () => {
     expect(developerDetails).toHaveAttribute('open');
     expect(
       screen.getByText(
-        'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
+        "curl -fsSL 'http://localhost:3001/install-skill.sh?source=task-detail&taskId=task-1' | sh -s -- http://localhost:3001"
       )
     ).toBeVisible();
     expect(screen.getByText('taskmarket task list --status open')).toBeVisible();

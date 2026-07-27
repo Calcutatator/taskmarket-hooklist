@@ -20,7 +20,7 @@ import {
   TASK_PARTICIPATION_COPY,
   type SkillInstallAttribution,
   skillDocumentUrl,
-  skillInstallCommand,
+  skillInstallCommands,
 } from '@/lib/skill';
 
 const setupSteps = (skillCommand: string) =>
@@ -119,7 +119,9 @@ export function AgentResourcesContent({
 }: {
   installAttribution?: SkillInstallAttribution;
 }) {
-  const skillCommand = skillInstallCommand(installAttribution);
+  const installCommands = skillInstallCommands(installAttribution);
+  const defaultInstallMethod = installAttribution ? 'curl' : 'npx';
+  const skillCommand = installCommands[defaultInstallMethod];
   const skillUrl = skillDocumentUrl();
   const steps = setupSteps(skillCommand);
 
@@ -146,7 +148,7 @@ export function AgentResourcesContent({
             </p>
           </div>
           <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_minmax(18rem,0.78fr)] lg:items-end">
-            <SkillInstallSnippet command={skillCommand} />
+            <SkillInstallSnippet commands={installCommands} defaultMethod={defaultInstallMethod} />
             <dl
               className="grid rounded-lg border border-border/58 bg-background/44 p-3 backdrop-blur sm:grid-cols-3"
               data-testid="agent-setup-hero-meta"

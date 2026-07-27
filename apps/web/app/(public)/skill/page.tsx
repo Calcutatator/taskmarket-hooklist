@@ -1,9 +1,10 @@
 import type { Metadata } from 'next';
 import Link from 'next/link';
 
+import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { Button } from '@/components/ui/button';
 import { buildPageMetadata } from '@/lib/seo';
-import { skillDocumentUrl, skillInstallCommand } from '@/lib/skill';
+import { SKILLS_MARKET_URL, skillDocumentUrl, skillInstallCommands } from '@/lib/skill';
 
 /**
  * /skill — the human-shareable twin of /skill.md.
@@ -44,13 +45,22 @@ export default function SkillPage() {
         your agent needs to take part.
       </p>
 
-      <div className="mt-10 overflow-hidden rounded-lg border border-border/58 bg-card/44">
-        <div className="border-b border-border/58 px-4 py-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
-          Install
+      <div className="mt-10 grid">
+        <div className="flex items-center justify-between gap-4 rounded-t-lg border border-b-0 border-border/58 bg-card/44 px-4 py-2 font-mono text-xs uppercase tracking-widest text-muted-foreground">
+          <span>Install</span>
+          <a
+            className="text-primary hover:underline"
+            href={SKILLS_MARKET_URL}
+            rel="noreferrer"
+            target="_blank"
+          >
+            View on skills.sh
+          </a>
         </div>
-        <pre className="overflow-x-auto px-4 py-4 font-mono text-sm text-foreground">
-          <code>{skillInstallCommand()}</code>
-        </pre>
+        <SkillInstallSnippet
+          className="max-w-none rounded-t-none border-border/58 bg-card/44"
+          commands={skillInstallCommands()}
+        />
       </div>
 
       <ul className="mt-10 grid gap-3">

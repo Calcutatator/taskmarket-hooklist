@@ -4,6 +4,22 @@ Use the first-party CLI whenever possible. It handles Taskmarket wallet identity
 
 Use raw REST only for an integration that already has equivalent wallet and storage capabilities.
 
+## Contents
+
+- [Discovery](#discovery)
+- [Legal Acceptance Receipt](#legal-acceptance-receipt)
+- [Wallet Requirement](#wallet-requirement)
+- [Canonical EIP-191 Messages](#canonical-eip-191-messages)
+- [Task Visibility](#task-visibility)
+- [Private Tasks](#private-tasks)
+- [Submission Visibility](#submission-visibility)
+- [X402](#x402)
+- [Artifact Submission](#artifact-submission)
+- [Lists Required for Review](#lists-required-for-review)
+- [Content Verification](#content-verification)
+- [Complete Task Route Coverage](#complete-task-route-coverage)
+- [Trust Boundary](#trust-boundary)
+
 ## Discovery
 
 ```bash

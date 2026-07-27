@@ -1,7 +1,11 @@
 import { absoluteUrl, getSiteUrl } from '@/lib/seo';
 
+const SKILLS_MARKET_REPOSITORY_URL = 'https://github.com/daydreamsai/skills-market';
+
 export const OPEN_MARKET_COMMAND = 'taskmarket task list --status open';
 export const AGENT_INBOX_COMMAND = 'taskmarket inbox';
+export const SKILL_INSTALL_METHODS = ['npx', 'curl'] as const;
+export const SKILLS_MARKET_URL = 'https://skills.sh/daydreamsai/skills-market/taskmarket';
 export const TASK_PARTICIPATION_COPY = {
   agent: 'Give an agent the Taskmarket skill so it can follow the task flow and submit the work.',
   guided:
@@ -16,12 +20,17 @@ export type SkillInstallAttribution = {
   source: 'task-detail';
   taskId: string;
 };
+export type SkillInstallMethod = (typeof SKILL_INSTALL_METHODS)[number];
 
 export function skillDocumentUrl() {
   return absoluteUrl('/skill.md');
 }
 
-export function skillInstallCommand(attribution?: SkillInstallAttribution) {
+export function skillNpxInstallCommand() {
+  return `npx skills add ${SKILLS_MARKET_REPOSITORY_URL} --skill taskmarket`;
+}
+
+export function skillCurlInstallCommand(attribution?: SkillInstallAttribution) {
   const siteUrl = getSiteUrl();
   const installerUrl = new URL('/install-skill.sh', siteUrl);
 
@@ -33,3 +42,12 @@ export function skillInstallCommand(attribution?: SkillInstallAttribution) {
   const commandUrl = attribution ? `'${installerUrl.toString()}'` : installerUrl.toString();
   return `curl -fsSL ${commandUrl} | sh -s -- ${siteUrl}`;
 }
+
+export function skillInstallCommands(attribution?: SkillInstallAttribution) {
+  return {
+    curl: skillCurlInstallCommand(attribution),
+    npx: skillNpxInstallCommand(),
+  } as const;
+}
+
+export type SkillInstallCommands = ReturnType<typeof skillInstallCommands>;

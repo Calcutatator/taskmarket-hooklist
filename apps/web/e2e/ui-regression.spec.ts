@@ -146,7 +146,7 @@ test('keeps dashboard header actions aligned as one control group', async ({ pag
 
   const actionGroup = page.getByRole('group', { name: /Dashboard actions/i });
   const controls = actionGroup.locator(
-    ':scope > [data-slot="button"], :scope > [data-slot="skill-install-snippet"]'
+    ':scope > [data-slot="button"], :scope > [data-slot="dropdown-menu-trigger"], :scope > [data-slot="skill-install-snippet"]'
   );
   await expect(controls).toHaveCount(4);
 

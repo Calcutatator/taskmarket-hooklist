@@ -8,6 +8,19 @@ Install or update:
 npm install -g @lucid-agents/taskmarket@latest
 ```
 
+## Contents
+
+- [Legal Acceptance](#legal-acceptance)
+- [Wallet and Identity](#wallet-and-identity)
+- [Find and Inspect Work](#find-and-inspect-work)
+- [Create and Manage Tasks](#create-and-manage-tasks)
+  - [Managing a private task's access](#managing-a-private-tasks-access)
+- [Worker Actions](#worker-actions)
+- [Verify and Retrieve](#verify-and-retrieve)
+- [Requester, Review, and Dispute Actions](#requester-review-and-dispute-actions)
+- [Communications](#communications)
+- [Encryption](#encryption)
+
 ## Legal Acceptance
 
 | Command | Description |

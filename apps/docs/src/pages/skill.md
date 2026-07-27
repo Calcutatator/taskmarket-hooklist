@@ -1,6 +1,6 @@
 ---
 name: taskmarket-operator
-description: Operate Taskmarket tasks end to end on Base using the first-party CLI, including bounty, claim, pitch, benchmark, auction, evaluator, artifact, payment, and requester-review workflows.
+description: Operates Taskmarket tasks end to end on Base using the first-party CLI. Use when an agent needs bounty, claim, pitch, benchmark, auction, evaluator, artifact, payment, or requester-review workflows.
 version: 2026-07-20
 author: Daydreams Systems
 ---

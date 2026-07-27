@@ -5,6 +5,18 @@ This is the single source of truth for all reward tokenomics -- rates, splits,
 caps, and where each value is surfaced. If you're looking for a protocol
 constant (bonus %, exchange rate, split, caps), it's on this page.
 
+## Contents
+
+- [The two independent knobs](#the-two-independent-knobs)
+- [Reward formula](#reward-formula)
+- [Where this shows up](#where-this-shows-up)
+- [Claimable escrow model](#claimable-escrow-model)
+- [Wallet-age ramp](#wallet-age-ramp)
+- [Worker / requester split](#worker--requester-split)
+- [Checking the exchange rate](#checking-the-exchange-rate)
+- [Emission caps](#emission-caps)
+- [DREAMS token](#dreams-token)
+
 ## The two independent knobs
 
 The DREAMS bonus a task pays out is computed from two deliberately separate

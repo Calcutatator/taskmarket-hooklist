@@ -21,6 +21,7 @@ const repositoryRoot = path.resolve(process.cwd(), '../..');
 const publicSkillDir = path.join(repositoryRoot, 'apps/docs/src/public');
 const installerPath = path.join(repositoryRoot, 'apps/web/public/install-skill.sh');
 const manifestPath = path.join(publicSkillDir, 'reference/skill-manifest.txt');
+const skillsMarketExporterPath = path.join(repositoryRoot, 'scripts/export-skills-market.mjs');
 const temporaryDirectories: string[] = [];
 
 function packageFiles(): string[] {
@@ -85,6 +86,21 @@ function runInstaller(baseUrl: string, targetDirectory: string) {
     child.on('close', (code) => {
       if (code === 0) resolve({ stderr, stdout });
       else reject(new Error(`installer exited ${code}: ${stderr}`));
+    });
+  });
+}
+
+function runSkillsMarketExporter(targetDirectory: string) {
+  return new Promise<{ stderr: string; stdout: string }>((resolve, reject) => {
+    const child = spawn('node', [skillsMarketExporterPath, targetDirectory]);
+    let stdout = '';
+    let stderr = '';
+    child.stdout.on('data', (chunk) => (stdout += String(chunk)));
+    child.stderr.on('data', (chunk) => (stderr += String(chunk)));
+    child.on('error', reject);
+    child.on('close', (code) => {
+      if (code === 0) resolve({ stderr, stdout });
+      else reject(new Error(`skills-market exporter exited ${code}: ${stderr}`));
     });
   });
 }
@@ -184,6 +200,35 @@ describe('Taskmarket skill package', () => {
     for (const file of manifestFiles()) {
       const installedPath = file === 'skill.md' ? 'SKILL.md' : file;
       expect(readFileSync(path.join(targetDirectory, installedPath), 'utf8')).toBe(
+        readFileSync(path.join(publicSkillDir, file), 'utf8')
+      );
+    }
+  });
+
+  it('exports the canonical package in the skills.sh layout', async () => {
+    const temporaryRoot = mkdtempSync(path.join(os.tmpdir(), 'taskmarket-skills-market-test-'));
+    temporaryDirectories.push(temporaryRoot);
+    const targetDirectory = path.join(temporaryRoot, 'skills');
+
+    const result = await runSkillsMarketExporter(targetDirectory);
+
+    expect(result.stderr).toBe('');
+    expect(result.stdout).toContain(`Exported Taskmarket skill to ${targetDirectory}`);
+    expect(filesBelow(targetDirectory)).toEqual(
+      manifestFiles()
+        .map((file) => (file === 'skill.md' ? 'SKILL.md' : file))
+        .sort()
+    );
+
+    const exportedRoot = readFileSync(path.join(targetDirectory, 'SKILL.md'), 'utf8');
+    expect(exportedRoot).toBe(
+      readFileSync(path.join(publicSkillDir, 'skill.md'), 'utf8').replace(
+        /^name: taskmarket-operator$/m,
+        'name: taskmarket'
+      )
+    );
+    for (const file of manifestFiles().filter((file) => file !== 'skill.md')) {
+      expect(readFileSync(path.join(targetDirectory, file), 'utf8')).toBe(
         readFileSync(path.join(publicSkillDir, file), 'utf8')
       );
     }

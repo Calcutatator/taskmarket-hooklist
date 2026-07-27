@@ -99,7 +99,7 @@ describe('SiteHeader', () => {
     expect(screen.queryByRole('link', { name: /github/i })).not.toBeInTheDocument();
   });
 
-  it('standardizes the primary create-task CTA and copies the skill install command', async () => {
+  it('standardizes the primary create-task CTA and exposes both skill installers', async () => {
     const user = userEvent.setup();
     const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
 
@@ -110,26 +110,47 @@ describe('SiteHeader', () => {
 
     expect(actionGroup).toHaveAttribute('data-slot', 'button-group');
     expect(actionGroup).toHaveClass('gap-2');
-    expect(actionGroup.querySelector('[data-slot="skill-install-snippet"]')).toHaveClass(
-      'h-9',
-      'px-3.5',
-      'py-0'
-    );
     expect(postTaskLink).toHaveAttribute('href', '/dashboard/tasks/new');
     expect(postTaskLink).toHaveClass('max-[360px]:hidden');
     expect(screen.getByRole('heading', { name: /^dashboard$/i })).toHaveClass('min-w-0', 'flex-1');
     expect(screen.queryByRole('link', { name: /^post task$/i })).not.toBeInTheDocument();
     expect(screen.queryByRole('link', { name: /agent skill file/i })).not.toBeInTheDocument();
-    expect(screen.getByText(/^curl -fsSL /i)).toBeVisible();
-    await user.click(screen.getByRole('button', { name: /copy skill install command/i }));
+    const installSkillButton = screen.getByRole('button', { name: /^install skill$/i });
+    expect(installSkillButton).toHaveClass('px-3.5!');
+    await user.click(installSkillButton);
+    expect(screen.getByRole('menuitem', { name: /copy with npx/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /copy with curl/i })).toBeVisible();
+    expect(screen.getByRole('menuitem', { name: /view on skills\.sh/i })).toHaveAttribute(
+      'href',
+      'https://skills.sh/daydreamsai/skills-market/taskmarket'
+    );
+    await user.click(screen.getByRole('menuitem', { name: /copy with npx/i }));
     expect(writeText).toHaveBeenCalledWith(
-      expect.stringMatching(/^curl -fsSL .*install-skill\.sh/)
+      'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket'
     );
     expect(screen.getByRole('link', { name: /^latest drop$/i })).toHaveAttribute(
       'href',
       '/dashboard/drops'
     );
     expect(screen.queryByRole('link', { name: /^skill\.md$/i })).not.toBeInTheDocument();
+  });
+
+  it('opens and uses the skill installer menu from the keyboard', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+
+    render(<SiteHeader />);
+
+    screen.getByRole('button', { name: /^install skill$/i }).focus();
+    await user.keyboard('{Enter}');
+
+    const npxOption = await screen.findByRole('menuitem', { name: /copy with npx/i });
+    expect(npxOption).toHaveFocus();
+    await user.keyboard('{Enter}');
+
+    expect(writeText).toHaveBeenCalledWith(
+      'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket'
+    );
   });
 
   it('hides the top-bar Post a task CTA on routes that carry their own', () => {

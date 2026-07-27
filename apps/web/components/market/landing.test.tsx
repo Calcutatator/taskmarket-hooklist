@@ -132,10 +132,12 @@ describe('LandingPageContent', () => {
     ).toBeVisible();
     expect(
       screen.getAllByText(
-        'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
+        'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket'
       ).length
     ).toBeGreaterThan(0);
-    expect(screen.getAllByRole('button', { name: /copy skill install command/i }).length).toBe(2);
+    expect(screen.getAllByRole('button', { name: /copy npx skill install command/i }).length).toBe(
+      2
+    );
     expect(
       container.querySelector(
         '[data-motion="landing-hero-install-snippet"] [data-slot="skill-install-snippet"]'
@@ -381,7 +383,7 @@ describe('LandingPageContent', () => {
     expect(screen.getByText('1,825 USDC')).toBeVisible();
     expect(
       within(supplySectionElement).getByText(
-        'curl -fsSL http://localhost:3001/install-skill.sh | sh -s -- http://localhost:3001'
+        'npx skills add https://github.com/daydreamsai/skills-market --skill taskmarket'
       )
     ).toBeVisible();
     expect(

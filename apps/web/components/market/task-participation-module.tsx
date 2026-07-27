@@ -9,6 +9,7 @@ import { useAccount } from 'wagmi';
 
 import { SubmitArtifactsForm } from '@/components/market/actions/submit-artifacts-form';
 import { CopyButton } from '@/components/market/copy-button';
+import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import {
   PrivyWalletAccessButton,
   usePrivyAccountState,
@@ -29,7 +30,7 @@ import {
   OPEN_MARKET_COMMAND,
   TASK_PARTICIPATION_COPY,
   skillDocumentUrl,
-  skillInstallCommand,
+  skillInstallCommands,
 } from '@/lib/skill';
 import { isPrivyConfigured } from '@/lib/privy-config';
 
@@ -123,6 +124,7 @@ function TaskParticipationContent({
   const needsWalletForBrowserSubmit = isSubmit && !hasWallet;
   const showHumanPath = canSubmitInBrowser || needsWalletForBrowserSubmit;
   const skillUrl = skillDocumentUrl();
+  const installCommands = skillInstallCommands({ source: 'task-detail', taskId: task.id });
   const setupHref =
     `/dashboard/for-agents?source=task-detail&taskId=${encodeURIComponent(task.id)}` as Route;
 
@@ -261,7 +263,7 @@ function TaskParticipationContent({
             Install the marketplace skill, then run the command for this task or browse other open
             work.
           </p>
-          <CommandRow command={skillInstallCommand()} label="Install the skill" />
+          <SkillInstallSnippet commands={installCommands} defaultMethod="curl" />
           <CommandRow command={action.command} label="This task" />
           <CommandRow command={OPEN_MARKET_COMMAND} label="Browse open tasks" />
           <a

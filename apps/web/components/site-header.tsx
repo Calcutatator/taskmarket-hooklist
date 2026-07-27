@@ -3,13 +3,12 @@
 import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 
-import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
+import { SkillInstallMenu } from '@/components/market/skill-install-menu';
 import { PrivyHeaderAccountControl } from '@/components/privy-account-control';
 import { Button } from '@/components/ui/button';
 import { ButtonGroup } from '@/components/ui/button-group';
 import { Separator } from '@/components/ui/separator';
 import { SidebarTrigger } from '@/components/ui/sidebar';
-import { skillInstallCommand } from '@/lib/skill';
 
 function routeTitle(pathname: string | null) {
   const path = pathname ?? '/dashboard';
@@ -58,10 +57,7 @@ export function SiteHeader() {
             <Link href="/dashboard/drops">Latest Drop</Link>
           </Button>
           <PrivyHeaderAccountControl />
-          <SkillInstallSnippet
-            className="hidden h-9 w-44 max-w-none px-3.5 py-0 sm:flex xl:w-72"
-            command={skillInstallCommand()}
-          />
+          <SkillInstallMenu className="hidden sm:inline-flex" />
           {showPostTaskCta ? (
             <Button asChild className="max-[360px]:hidden" size="sm">
               <Link href="/dashboard/tasks/new">Post a task</Link>
