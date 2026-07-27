@@ -76,10 +76,10 @@ describe('composeBrief', () => {
     expect(result).not.toContain('\n\n\n');
   });
 
-  it('clamps the composed brief to 2000 characters', () => {
-    const template = templateWith([{ heading: 'Goal', body: 'x'.repeat(5000) }], []);
+  it('clamps the composed brief to 10000 characters', () => {
+    const template = templateWith([{ heading: 'Goal', body: 'x'.repeat(15000) }], []);
     const result = composeBrief(template, {});
-    expect(result.length).toBe(2000);
+    expect(result.length).toBe(10000);
   });
 });
 

@@ -5,8 +5,10 @@ import { and, eq, desc } from 'drizzle-orm';
 import { getAgentName } from '@taskmarket/shared';
 import { taskDiscoverable } from '../lib/task-visibility';
 import { logger } from '../lib/logger';
+import { truncateText } from '../lib/email-format';
 
 const SITE_URL = process.env.SITE_URL ?? 'http://localhost:3000';
+const TASK_DESCRIPTION_PREVIEW_LENGTH = 500;
 
 const BOT_PATTERNS = [
   'facebookexternalhit',
@@ -303,7 +305,7 @@ export async function ogTagsMiddleware(
         const title = `${task.description.slice(0, 60)} - Taskmarket`;
         const description = `${task.mode} task · ${formatUSDC(task.reward)} USDC reward · Status: ${task.status}`;
         const lines = [
-          `<p>${escapeHtml(task.description)}</p>`,
+          `<p>${escapeHtml(truncateText(task.description, TASK_DESCRIPTION_PREVIEW_LENGTH))}</p>`,
           '<ul>',
           `<li>Mode: ${escapeHtml(task.mode)}</li>`,
           `<li>Reward: ${escapeHtml(formatUSDC(task.reward))} USDC</li>`,

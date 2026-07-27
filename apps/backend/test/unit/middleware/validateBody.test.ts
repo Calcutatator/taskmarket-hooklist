@@ -49,12 +49,24 @@ describe('validateBody middleware', () => {
       expect(next).toHaveBeenCalledOnce();
     });
 
-    it('returns 400 when description exceeds 2000 chars', () => {
+    it('calls next() when description is exactly 10000 chars', () => {
+      const next = vi.fn();
+      const req = makeReq({
+        description: 'x'.repeat(10000),
+        reward: '5000000',
+        duration: 24,
+        tags: [],
+      });
+      middleware(req, mockRes(), next);
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('returns 400 when description exceeds 10000 chars', () => {
       const next = vi.fn();
       const res = mockRes();
       middleware(
         makeReq({
-          description: 'x'.repeat(2001),
+          description: 'x'.repeat(10001),
           reward: '5000000',
           duration: 24,
           tags: [],
@@ -109,10 +121,20 @@ describe('validateBody middleware', () => {
       expect(next).toHaveBeenCalledOnce();
     });
 
-    it('returns 400 when description exceeds 2000 chars', () => {
+    it('calls next() when description is exactly 10000 chars', () => {
+      const next = vi.fn();
+      middleware(
+        makeReq({ taskId: '0xabc', description: 'x'.repeat(10000) }),
+        mockRes(),
+        next
+      );
+      expect(next).toHaveBeenCalledOnce();
+    });
+
+    it('returns 400 when description exceeds 10000 chars', () => {
       const next = vi.fn();
       const res = mockRes();
-      middleware(makeReq({ taskId: '0xabc', description: 'x'.repeat(2001) }), res, next);
+      middleware(makeReq({ taskId: '0xabc', description: 'x'.repeat(10001) }), res, next);
       expect(res.statusCode).toBe(400);
       expect(next).not.toHaveBeenCalled();
     });

@@ -6,6 +6,8 @@ import {
   UsdcBaseUnitsSchema,
 } from './common.schemas';
 
+export const TASK_DESCRIPTION_MAX_LENGTH = 10_000;
+
 export const TaskMode = z.enum(['bounty', 'claim', 'pitch', 'benchmark', 'auction']);
 
 // 'unlisted' | 'public' | 'private'. 'private' (Phase 3, ADR-0030) is a genuinely
@@ -114,7 +116,10 @@ export const TaskAwardSchema = z.object({
 
 export const TaskCreateSchema = z
   .object({
-    description: z.string().min(1, 'Description is required').max(2000, 'Description is too long'),
+    description: z
+      .string()
+      .min(1, 'Description is required')
+      .max(TASK_DESCRIPTION_MAX_LENGTH, 'Description is too long'),
     reward: PositiveUsdcBaseUnitsSchema,
     duration: z.number().positive('Duration must be positive'),
     tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed'),
@@ -418,7 +423,7 @@ export const UpdateTaskInputSchema = z.object({
   pitchDeadline: z.number().int().positive().optional(),
   auctionFloorPrice: UsdcBaseUnitsSchema.optional(),
   auctionStartPrice: UsdcBaseUnitsSchema.optional(),
-  description: z.string().max(2000, 'Description is too long').optional(),
+  description: z.string().max(TASK_DESCRIPTION_MAX_LENGTH, 'Description is too long').optional(),
   tags: z.array(z.string()).max(10, 'Maximum 10 tags allowed').optional(),
   metricDescription: z.string().max(500).optional(),
 });

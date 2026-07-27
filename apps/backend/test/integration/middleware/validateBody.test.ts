@@ -146,10 +146,10 @@ describe('validateBody integration — routes block invalid bodies before x402',
       tags: [],
     };
 
-    it('returns 400 (not 402) when description exceeds 2000 chars', async () => {
+    it('returns 400 (not 402) when description exceeds 10000 chars', async () => {
       const res = await request(app)
         .post('/api/tasks')
-        .send({ ...validBody, description: 'x'.repeat(2001) });
+        .send({ ...validBody, description: 'x'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 
@@ -396,10 +396,17 @@ describe('validateBody integration — routes block invalid bodies before x402',
   });
 
   describe('POST /api/tasks/:taskId/update', () => {
-    it('returns 400 (not 402) when description exceeds 2000 chars', async () => {
+    it('returns 402 when description is exactly 10000 chars and no payment is provided', async () => {
       const res = await request(app)
         .post('/api/tasks/0xtask/update')
-        .send({ taskId: '0xtask', description: 'x'.repeat(2001) });
+        .send({ taskId: '0xtask', description: 'x'.repeat(10000) });
+      expect(res.status).toBe(402);
+    });
+
+    it('returns 400 (not 402) when description exceeds 10000 chars', async () => {
+      const res = await request(app)
+        .post('/api/tasks/0xtask/update')
+        .send({ taskId: '0xtask', description: 'x'.repeat(10001) });
       expect(res.status).toBe(400);
     });
 

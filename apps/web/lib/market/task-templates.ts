@@ -1,4 +1,4 @@
-import type { TaskModeType } from '@taskmarket/shared';
+import { TASK_DESCRIPTION_MAX_LENGTH, type TaskModeType } from '@taskmarket/shared';
 import { IconChartArcs, IconNotes, IconPalette, IconPencil } from '@tabler/icons-react';
 
 // A single light personalization input rendered under the brief. Its key is
@@ -31,9 +31,6 @@ export type TaskTemplate = {
   brief: BriefSection[];
   briefSource: 'static';
 };
-
-// Maximum brief length the server contract accepts for a task description.
-const BRIEF_MAX_LENGTH = 2_000;
 
 export const taskTemplates = [
   {
@@ -254,12 +251,12 @@ export function composeBriefWithPreset(
   if (!preset) {
     return base;
   }
-  return `${base}\n\n${preset.line}`.slice(0, BRIEF_MAX_LENGTH);
+  return `${base}\n\n${preset.line}`.slice(0, TASK_DESCRIPTION_MAX_LENGTH);
 }
 
 // Interpolate {{token}} placeholders (user value -> token defaultValue -> empty),
 // render each section as "heading\nbody", drop empties, normalize blank gaps,
-// trim, and clamp to the server brief limit. Pure, unit-tested.
+// trim, and clamp to the shared task-description limit. Pure, unit-tested.
 export function composeBrief(template: TaskTemplate, tokenValues: Record<string, string>): string {
   const resolve = (key: string): string => {
     const userValue = tokenValues[key];
@@ -290,5 +287,5 @@ export function composeBrief(template: TaskTemplate, tokenValues: Record<string,
     .replace(/\n{3,}/g, '\n\n')
     .trim();
 
-  return composed.slice(0, BRIEF_MAX_LENGTH);
+  return composed.slice(0, TASK_DESCRIPTION_MAX_LENGTH);
 }

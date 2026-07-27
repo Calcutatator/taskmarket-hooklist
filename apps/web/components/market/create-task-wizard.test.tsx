@@ -208,6 +208,16 @@ describe('CreateTaskWizard', () => {
     }
   });
 
+  it('allows task descriptions up to 10000 characters', async () => {
+    const user = userEvent.setup();
+    render(<CreateTaskWizard initialMarketStats={null} />);
+
+    await gotoBriefFromCustom(user);
+
+    expect(screen.getByLabelText(/description/i)).toHaveAttribute('maxlength', '10000');
+    expect(screen.getByText('0 / 10000')).toBeInTheDocument();
+  });
+
   it('restores an unfinished task draft after the page is reloaded', async () => {
     const user = userEvent.setup();
     const firstRender = render(<CreateTaskWizard initialMarketStats={null} />);

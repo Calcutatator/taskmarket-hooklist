@@ -3,6 +3,7 @@
 import { useEffect, useMemo, useRef, useState, type ChangeEvent } from 'react';
 import { Controller, type UseFormReturn } from 'react-hook-form';
 import { IconSparkles } from '@tabler/icons-react';
+import { TASK_DESCRIPTION_MAX_LENGTH } from '@taskmarket/shared';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -42,10 +43,6 @@ import type {
 // Flag for the forward-compatible AI brief seam. The button is built but not
 // rendered until real generation lands; flipping this to true wires it up.
 const AI_BRIEF_ENABLED = false;
-
-// Must match TaskCreateSchema's description max (packages/shared/src/schemas/task.schemas.ts)
-// and the Textarea's maxLength below -- keep all three in lockstep.
-const DESCRIPTION_MAX_LENGTH = 2000;
 
 const SUBMISSION_VISIBILITY_VALUES: Array<'public' | 'reveal_all' | 'winner_only' | 'never'> = [
   'public',
@@ -324,7 +321,7 @@ export function StepBrief({
                 </span>
               </Label>
               <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
-                {(descriptionValue ?? '').length} / {DESCRIPTION_MAX_LENGTH}
+                {(descriptionValue ?? '').length} / {TASK_DESCRIPTION_MAX_LENGTH}
               </span>
             </div>
             <Textarea
@@ -333,7 +330,7 @@ export function StepBrief({
               aria-required="true"
               className="min-h-48 resize-y text-base leading-6 md:text-sm"
               id="description"
-              maxLength={DESCRIPTION_MAX_LENGTH}
+              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
               {...descriptionRegistration}
               onChange={handleManualBriefChange}
             />
@@ -402,7 +399,7 @@ export function StepBrief({
               </Label>
               <div className="flex items-center gap-3">
                 <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
-                  {(descriptionValue ?? '').length} / {DESCRIPTION_MAX_LENGTH}
+                  {(descriptionValue ?? '').length} / {TASK_DESCRIPTION_MAX_LENGTH}
                 </span>
                 {AI_BRIEF_ENABLED ? (
                   <Button size="sm" type="button" variant="outline">
@@ -418,7 +415,7 @@ export function StepBrief({
               aria-required="true"
               className="min-h-48 resize-y text-base leading-6 md:text-sm"
               id="description"
-              maxLength={DESCRIPTION_MAX_LENGTH}
+              maxLength={TASK_DESCRIPTION_MAX_LENGTH}
               placeholder="Define the goal, input materials, acceptance criteria, review process, and delivery format."
               {...descriptionRegistration}
             />

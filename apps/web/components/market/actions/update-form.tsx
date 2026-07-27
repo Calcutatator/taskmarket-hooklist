@@ -4,6 +4,7 @@ import { CircleCheckIcon } from 'lucide-react';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
+import { TASK_DESCRIPTION_MAX_LENGTH } from '@taskmarket/shared';
 
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
@@ -265,10 +266,16 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
         </div>
       ) : null}
       <div className="grid gap-2">
-        <Label htmlFor="update-description">Description</Label>
+        <div className="flex items-center justify-between gap-3">
+          <Label htmlFor="update-description">Description</Label>
+          <span className="font-mono text-xs text-muted-foreground" aria-hidden="true">
+            {description.length} / {TASK_DESCRIPTION_MAX_LENGTH}
+          </span>
+        </div>
         <Textarea
           className="min-h-32"
           id="update-description"
+          maxLength={TASK_DESCRIPTION_MAX_LENGTH}
           onChange={(e) => setDescription(e.currentTarget.value)}
           rows={4}
           value={description}

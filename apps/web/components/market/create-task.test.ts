@@ -99,7 +99,7 @@ describe('validateCreateTask', () => {
   });
 
   it('flags an over-length description', () => {
-    const errors = validateCreateTask({ ...validValues(), description: 'x'.repeat(2001) });
+    const errors = validateCreateTask({ ...validValues(), description: 'x'.repeat(10001) });
     expect(errors?.description).toBeTruthy();
   });
 

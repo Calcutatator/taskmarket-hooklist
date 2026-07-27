@@ -208,6 +208,23 @@ describe('ogTagsMiddleware', () => {
     expect(res.body()).toContain('PUBLIC-TASK-MARKER');
   });
 
+  it('direct task-detail HTML renders a bounded preview of a long description', async () => {
+    const chain = makeChain([
+      {
+        ...PUBLIC_TASK,
+        description: `LONG-TASK-START ${'x'.repeat(600)} LONG-TASK-END`,
+      },
+    ]);
+    selectMock.mockReturnValue(chain);
+
+    const req = fakeReq(`/tasks/${PUBLIC_TASK.id}`, BOT_UA);
+    const res = fakeRes();
+    await ogTagsMiddleware(req, res, fakeNext());
+
+    expect(res.body()).toContain('LONG-TASK-START');
+    expect(res.body()).not.toContain('LONG-TASK-END');
+  });
+
   it('falls back to generic meta (not a crash) when the DB query throws', async () => {
     const chain = makeChain([]);
     chain.then = () => {
