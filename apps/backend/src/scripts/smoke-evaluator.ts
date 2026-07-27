@@ -5,11 +5,19 @@
  *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
  *   C. APPROVE verdict, worker appeals, dispute resolver settles → completed
  *
+ * EvaluatorFacet.assignEvaluator rejects evaluator == requester and
+ * disputeResolver == requester (self-assignment guard), so this test signs
+ * evaluate()/resolve-dispute() with a distinct EVALUATOR_PRIVATE_KEY account
+ * used as both evaluator and dispute resolver. It also enforces a minimum
+ * one-minute appeal window (MIN_APPEAL_WINDOW_SECS), so windows here are
+ * sized in whole minutes rather than a few seconds.
+ *
  * Usage:
- *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... EVALUATOR_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator.ts
  */
 import { createHash } from 'crypto';
+import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import {
   log,
@@ -27,6 +35,18 @@ import {
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
 }
+
+const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!evaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator now rejects evaluator == requester and disputeResolver == requester\n' +
+      '(self-assignment guard) -- set EVALUATOR_PRIVATE_KEY to a distinct account. Any\n' +
+      'freshly generated key works, same as WORKER_B_PRIVATE_KEY.'
+  );
+  process.exit(1);
+}
+const evaluator = privateKeyToAccount(evaluatorKey);
 
 async function pollStatus(taskId: string, expected: string[]): Promise<string> {
   const task = await pollTaskStatus<{ status: string }>(taskId, expected, {
@@ -69,8 +89,8 @@ async function setupReviewTask(opts: {
       duration: 300,
       mode: 'claim',
       tags: ['smoke-evaluator'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: evaluator.address,
+      disputeResolver: evaluator.address,
       evaluationWindowHours,
       appealWindowHours,
     },
@@ -134,7 +154,7 @@ async function scenarioA(
     worker,
     label: 'A',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.00139, // ~5 seconds
+    appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
   });
 
   log('5/8', '[A] Evaluator submitting APPROVE verdict...');
@@ -146,15 +166,15 @@ async function scenarioA(
       score: 900,
       confidence: 950,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
 
-  log('6/8', '[A] Waiting 8s for appeal window to expire...');
-  await sleep(8000);
+  log('6/8', '[A] Waiting 65s for appeal window to expire...');
+  await sleep(65000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
   await nudgeChainForward();
 
@@ -179,7 +199,7 @@ async function scenarioB(
     worker,
     label: 'B',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.00139, // ~5 seconds
+    appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
   });
 
   log('5/8', '[B] Evaluator submitting REJECT verdict...');
@@ -191,15 +211,15 @@ async function scenarioB(
       score: 0,
       confidence: 900,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
 
-  log('6/8', '[B] Waiting 8s for appeal window to expire...');
-  await sleep(8000);
+  log('6/8', '[B] Waiting 65s for appeal window to expire...');
+  await sleep(65000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
   await nudgeChainForward();
 
@@ -224,7 +244,7 @@ async function scenarioC(
     worker,
     label: 'C',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.01, // ~36 seconds — long enough for worker to appeal
+    appealWindowHours: 0.02, // ~72 seconds — above the 60s floor, long enough for worker to appeal
   });
 
   log('5/9', '[C] Evaluator submitting APPROVE verdict...');
@@ -236,7 +256,7 @@ async function scenarioC(
       score: 700,
       confidence: 800,
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('evaluate txHash', evalTx);
 
@@ -265,7 +285,7 @@ async function scenarioC(
       verdict: 'approve',
       awards: [{ worker: worker.address, amount: '900', rank: 1 }],
     },
-    requester
+    evaluator
   )) as { txHash: string };
   ok('resolve txHash', resolveTx);
 
@@ -280,6 +300,7 @@ async function main() {
   console.log('=== Taskmarket Smoke Test — Evaluator Flow ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
   const results: boolean[] = [];

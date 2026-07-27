@@ -14,8 +14,11 @@ contract EvaluatorFacet {
     bytes4 private constant BENCHMARK = TMP_BENCHMARK;
 
     /// @notice Protocol-level minimum appeal window. A shorter window (including zero)
-    ///         would close the worker's only recourse before it can ever fire.
-    uint32 public constant MIN_APPEAL_WINDOW_SECS = 1 hours;
+    ///         would close the worker's only recourse before it can ever fire. Set to one
+    ///         minute rather than something larger: the goal is eliminating the degenerate
+    ///         zero-length case, not mandating a specific dispute-window duration -- that
+    ///         remains the requester's choice, same as evaluationWindowSecs.
+    uint32 public constant MIN_APPEAL_WINDOW_SECS = 1 minutes;
 
     /// @notice Assign an evaluator to an open task.
     ///         Only the requester may call this, only while the task is Open.

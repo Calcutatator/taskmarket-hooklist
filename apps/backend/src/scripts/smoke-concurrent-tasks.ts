@@ -23,11 +23,17 @@
  * is lost by not parallelizing them here. Only the finalize-verdict calls are fired
  * concurrently, which is the step that actually exercises the shared transaction dispatcher.
  *
+ * EvaluatorFacet.assignEvaluator rejects evaluator == requester (self-assignment
+ * guard), so this test signs evaluate() with a distinct EVALUATOR_PRIVATE_KEY
+ * account. It never disputes, so no dispute resolver is assigned. It also enforces
+ * a minimum one-minute appeal window (MIN_APPEAL_WINDOW_SECS).
+ *
  * Usage:
- *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... EVALUATOR_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-concurrent-tasks.ts
  */
 import { createHash } from 'crypto';
+import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, pollTaskStatus, sleep, API_URL } from './_x402';
 
@@ -36,6 +42,18 @@ function contentHash(payload: string): string {
 }
 
 const CONCURRENCY = 3;
+
+const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
+if (!evaluatorKey) {
+  console.error(
+    'Missing EVALUATOR_PRIVATE_KEY.\n' +
+      'assignEvaluator now rejects evaluator == requester (self-assignment guard) -- set\n' +
+      'EVALUATOR_PRIVATE_KEY to a distinct account. Any freshly generated key works, same\n' +
+      'as WORKER_B_PRIVATE_KEY.'
+  );
+  process.exit(1);
+}
+const evaluator = privateKeyToAccount(evaluatorKey);
 
 async function setupAppealingTask(
   requester: ReturnType<typeof getAccounts>['requester'],
@@ -50,10 +68,9 @@ async function setupAppealingTask(
       duration: 300,
       mode: 'claim',
       tags: ['smoke-concurrent-tasks'],
-      evaluator: requester.address,
-      disputeResolver: requester.address,
+      evaluator: evaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
-      appealWindowHours: 0.00139, // ~5 seconds
+      appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
     },
     requester
   )) as { taskId: string };
@@ -88,7 +105,7 @@ async function setupAppealingTask(
   await x402Post(
     `/api/tasks/${taskId}/evaluate`,
     { taskId, verdict: 'approve', score: 900, confidence: 950 },
-    requester
+    evaluator
   );
 
   await pollTaskStatus<{ status: string }>(taskId, ['appealing'], { timeoutMs: 45_000 });
@@ -102,6 +119,7 @@ async function main() {
   console.log('=== Taskmarket Smoke Test — Concurrent Finalize Verdict ===');
   console.log('requester:', requester.address);
   console.log('worker:   ', worker.address);
+  console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
   log('1/3', `Setting up ${CONCURRENCY} tasks (sequentially) into the appealing state...`);
@@ -112,8 +130,8 @@ async function main() {
   }
   ok('tasks in appealing state', taskIds);
 
-  log('2/3', 'Waiting 8s for all appeal windows to expire...');
-  await sleep(8000);
+  log('2/3', 'Waiting 65s for all appeal windows to expire...');
+  await sleep(65000);
 
   log('3/3', `Calling finalize-verdict for all ${CONCURRENCY} tasks concurrently...`);
   const results = await Promise.all(

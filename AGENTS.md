@@ -183,7 +183,7 @@ Cover every meaningful branch, not just the happy path:
 - `REQUESTER_PRIVATE_KEY` — task creator / requester
 - `WORKER_PRIVATE_KEY` — primary worker
 - `WORKER_B_PRIVATE_KEY` — second worker (required for ranked-payout, optional for competitive auction). Any freshly generated key works — the backend's `SERVER_PRIVATE_KEY` relays and pays gas for every on-chain call via the forwarder, so worker/requester keys only ever sign off-chain EIP-712 messages and never need ETH or USDC of their own.
-- `EVALUATOR_PRIVATE_KEY` — external evaluator (optional; requester can act as evaluator if not set)
+- `EVALUATOR_PRIVATE_KEY` — external evaluator, required for any smoke test that assigns an evaluator or dispute resolver. `EvaluatorFacet.assignEvaluator` rejects `evaluator == requester` and `disputeResolver == requester` (self-assignment guard), so the requester can no longer act as evaluator -- any freshly generated key works, same as `WORKER_B_PRIVATE_KEY`.
 - `DEV_PRIVATE_KEY` — fallback if specific keys not set
 
 ### Verifying contract facts before writing
