@@ -1,6 +1,13 @@
 import { z } from 'zod';
 import { getCurrentLegalBundleActivationIssues } from '@taskmarket/shared';
 
+// Shared with devices.router.ts's deriveDeviceEncryptionKey, which refuses to derive a
+// device encryption key from this value regardless of NODE_ENV -- the superRefine check
+// below only runs for NODE_ENV === 'production', so a self-hosted/staging deployment
+// that never sets this would otherwise silently use a publicly-known key with no
+// runtime failure at all.
+export const DEFAULT_PLATFORM_MASTER_KEY = '0'.repeat(64);
+
 const strictBooleanFromEnv = z.preprocess((value) => {
   if (typeof value === 'boolean') {
     return value;
@@ -88,7 +95,7 @@ const envSchema = z
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),
     // EIP-712 domain name for USDC. Mainnet Base USDC = 'USD Coin'; Sepolia USDC = 'USDC'
     USDC_DOMAIN_NAME: z.string().default('USD Coin'),
-    PLATFORM_MASTER_KEY: z.string().min(32).default('0'.repeat(64)),
+    PLATFORM_MASTER_KEY: z.string().min(32).default(DEFAULT_PLATFORM_MASTER_KEY),
     XMTP_ENABLED: strictBooleanFromEnv.default(false),
     XMTP_POLICY_DEFAULT: z.enum(['allowlist', 'open']).default('open'),
     XMTP_STALE_INSTALLATION_MINUTES: z.coerce.number().positive().default(60),
@@ -189,7 +196,7 @@ const envSchema = z
         });
       }
 
-      if (data.PLATFORM_MASTER_KEY === '0'.repeat(64)) {
+      if (data.PLATFORM_MASTER_KEY === DEFAULT_PLATFORM_MASTER_KEY) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
           message: 'PLATFORM_MASTER_KEY must not be the default zero key in production',

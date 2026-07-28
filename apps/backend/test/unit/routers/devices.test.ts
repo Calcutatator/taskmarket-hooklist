@@ -13,6 +13,7 @@ vi.mock('../../../src/config/env', () => ({
     ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
     CHAIN_ID: 84532,
   }),
+  DEFAULT_PLATFORM_MASTER_KEY: '0'.repeat(64),
 }));
 
 vi.mock('viem', async (importOriginal) => {
@@ -26,6 +27,7 @@ vi.mock('viem', async (importOriginal) => {
 import { devicesRouter } from '../../../src/routers/devices.router';
 import { contractRegisterIdentity } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
+import { getServerConfig } from '../../../src/config/env';
 
 function sha256Hex(data: string): string {
   return createHash('sha256').update(data).digest('hex');
@@ -202,6 +204,28 @@ describe('devices router', () => {
       const r2 = await devicesRouter.createCaller(ctx2).key({ deviceId, apiToken: token });
 
       expect(r1.deviceEncryptionKey).toBe(r2.deviceEncryptionKey);
+    });
+
+    it('refuses to derive a device encryption key from the default zero master key, regardless of NODE_ENV', async () => {
+      // Simulates a self-hosted/staging deployment that never set PLATFORM_MASTER_KEY --
+      // getServerConfig()'s own startup validation only rejects this for
+      // NODE_ENV === 'production', so this guard must not depend on NODE_ENV at all.
+      vi.mocked(getServerConfig).mockReturnValueOnce({
+        PLATFORM_MASTER_KEY: '0'.repeat(64),
+        NODE_ENV: 'development',
+        ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+        CHAIN_ID: 84532,
+      } as ReturnType<typeof getServerConfig>);
+      const token = 'test-token';
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([makeDevice({ apiTokenHash: sha256Hex(token) })])
+      );
+      const caller = devicesRouter.createCaller(ctx);
+
+      await expect(
+        caller.key({ deviceId: 'test-device-id', apiToken: token })
+      ).rejects.toThrow('PLATFORM_MASTER_KEY is still the default zero key');
     });
   });
 

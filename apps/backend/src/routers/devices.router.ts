@@ -3,7 +3,7 @@ import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
 import { devices, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
-import { getServerConfig } from '../config/env';
+import { getServerConfig, DEFAULT_PLATFORM_MASTER_KEY } from '../config/env';
 import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { contractRegisterIdentity } from '../services/contract';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
@@ -15,6 +15,16 @@ import {
 import { sha256Hex } from '../lib/hash';
 
 function deriveDeviceEncryptionKey(masterKeyHex: string, deviceId: string): string {
+  // getServerConfig()'s startup validation only rejects the default zero key when
+  // NODE_ENV === 'production', so a self-hosted/staging deployment that never sets
+  // PLATFORM_MASTER_KEY would otherwise silently derive every device's key from a
+  // fixed, publicly-known value with no failure at all. Guarding here, at the actual
+  // point of derivation, closes that regardless of NODE_ENV.
+  if (masterKeyHex === DEFAULT_PLATFORM_MASTER_KEY) {
+    throw new Error(
+      'PLATFORM_MASTER_KEY is still the default zero key -- set a real secret before deriving device encryption keys'
+    );
+  }
   const ikm = Buffer.from(masterKeyHex, 'hex');
   const salt = Buffer.alloc(0);
   const info = Buffer.from(deviceId, 'utf8');
