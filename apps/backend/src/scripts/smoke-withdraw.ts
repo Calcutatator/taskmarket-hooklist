@@ -75,6 +75,14 @@ async function main() {
     console.error('Set WITHDRAWAL_ADDRESS (the address to receive withdrawals)');
     process.exit(1);
   }
+  // WITHDRAWAL_ADDRESS is interpolated into shell command strings below (runCli uses
+  // execSync); a value containing shell metacharacters would execute as arbitrary
+  // commands. Validating it as a plain hex address up front rules that out entirely,
+  // regardless of where it's populated from.
+  if (!/^0x[a-fA-F0-9]{40}$/.test(withdrawalAddress)) {
+    console.error('WITHDRAWAL_ADDRESS must be a 0x-prefixed 20-byte hex address');
+    process.exit(1);
+  }
 
   console.log('=== Taskmarket Smoke Test — Withdraw ===');
   console.log('withdrawal address:', withdrawalAddress);
