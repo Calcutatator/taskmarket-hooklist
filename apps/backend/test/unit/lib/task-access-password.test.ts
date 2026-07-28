@@ -1,10 +1,37 @@
 import { describe, expect, it } from 'vitest';
+import { scryptSync, randomBytes } from 'crypto';
 import {
   hashTaskAccessPassword,
   verifyTaskAccessPassword,
   verifyOrDummyTaskAccessPassword,
   enforceTaskAccessPasswordRateLimit,
+  SCRYPT_N,
 } from '../../../src/lib/task-access-password';
+
+describe('scrypt cost factor', () => {
+  it('meets the OWASP-recommended minimum work factor (N >= 2^17)', () => {
+    expect(SCRYPT_N).toBeGreaterThanOrEqual(2 ** 17);
+  });
+
+  it('encodes the cost factor in newly-created hashes so it can be raised again later without breaking old hashes', () => {
+    const stored = hashTaskAccessPassword('correct horse battery staple');
+    const parts = stored.split(':');
+    expect(parts[0]).toBe('scrypt');
+    expect(parts[1]).toBe(String(SCRYPT_N));
+  });
+
+  it('still verifies a legacy hash stored in the old 3-part format (no explicit N)', () => {
+    // Pre-fix hashes look like `scrypt:<salt>:<hash>` with no cost factor recorded --
+    // they were all created with Node's default N=16384. Simulate one directly with
+    // scryptSync rather than depending on old code we've since removed.
+    const salt = randomBytes(16);
+    const hash = scryptSync('legacy password', salt, 64);
+    const legacyStored = `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`;
+
+    expect(verifyTaskAccessPassword('legacy password', legacyStored)).toBe(true);
+    expect(verifyTaskAccessPassword('wrong', legacyStored)).toBe(false);
+  });
+});
 
 describe('hashTaskAccessPassword / verifyTaskAccessPassword', () => {
   it('round-trips a correct password', () => {
@@ -84,7 +111,10 @@ function makeFakeRateLimitDb() {
             if (!existing || windowExpired) {
               rows.set(row.key, { attempts: 1, windowStartedAt: now });
             } else {
-              rows.set(row.key, { attempts: existing.attempts + 1, windowStartedAt: existing.windowStartedAt });
+              rows.set(row.key, {
+                attempts: existing.attempts + 1,
+                windowStartedAt: existing.windowStartedAt,
+              });
             }
             return [{ attempts: rows.get(row.key)!.attempts }];
           },
@@ -98,7 +128,9 @@ function makeFakeRateLimitDb() {
 
 describe('enforceTaskAccessPasswordRateLimit', () => {
   it('allows attempts up to the limit, then throws for the same task', async () => {
-    const db = makeFakeRateLimitDb() as Parameters<typeof enforceTaskAccessPasswordRateLimit>[0]['db'];
+    const db = makeFakeRateLimitDb() as Parameters<
+      typeof enforceTaskAccessPasswordRateLimit
+    >[0]['db'];
 
     for (let i = 0; i < 10; i++) {
       await expect(
@@ -112,7 +144,9 @@ describe('enforceTaskAccessPasswordRateLimit', () => {
   });
 
   it('rate-limits each task independently', async () => {
-    const db = makeFakeRateLimitDb() as Parameters<typeof enforceTaskAccessPasswordRateLimit>[0]['db'];
+    const db = makeFakeRateLimitDb() as Parameters<
+      typeof enforceTaskAccessPasswordRateLimit
+    >[0]['db'];
 
     for (let i = 0; i < 10; i++) {
       await enforceTaskAccessPasswordRateLimit({ db, taskId: 'task-a' });

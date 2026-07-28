@@ -7,16 +7,29 @@ type Db = Pick<typeof DbType, 'select' | 'insert' | 'transaction'>;
 
 const SCRYPT_KEYLEN = 64;
 
+// OWASP Password Storage Cheat Sheet minimum work factor for scrypt (N=2^17, r=8, p=1).
+// Node's own default (N=16384) is roughly 1/8th of this. maxmem must cover 128*N*r bytes.
+export const SCRYPT_N = 2 ** 17;
+const SCRYPT_R = 8;
+const SCRYPT_P = 1;
+const SCRYPT_MAXMEM = 256 * 1024 * 1024;
+const SCRYPT_OPTIONS = { N: SCRYPT_N, r: SCRYPT_R, p: SCRYPT_P, maxmem: SCRYPT_MAXMEM };
+
+// Hashes created before this cost factor was raised have no explicit N recorded and were
+// all produced with Node's scrypt default -- kept only so those hashes keep verifying.
+const LEGACY_SCRYPT_N = 16384;
+
 /**
  * A human-chosen password needs a salted, slow hash -- unlike the rest of this codebase's
  * `sha256Hex` (lib/hash.ts), which is only ever applied to already-high-entropy random
  * tokens (API tokens, legal/task-access receipts). Node's built-in scrypt avoids adding a
- * new dependency.
+ * new dependency. The cost factor is recorded alongside the hash so it can be raised again
+ * later without invalidating hashes created under an older, lower cost factor.
  */
 export function hashTaskAccessPassword(password: string): string {
   const salt = randomBytes(16);
-  const hash = scryptSync(password, salt, SCRYPT_KEYLEN);
-  return `scrypt:${salt.toString('hex')}:${hash.toString('hex')}`;
+  const hash = scryptSync(password, salt, SCRYPT_KEYLEN, SCRYPT_OPTIONS);
+  return `scrypt:${SCRYPT_N}:${salt.toString('hex')}:${hash.toString('hex')}`;
 }
 
 // A fixed, valid-shaped hash used only to keep the "no password set" and "wrong password"
@@ -25,8 +38,22 @@ const DUMMY_STORED_HASH = hashTaskAccessPassword('taskmarket-dummy-constant-time
 
 export function verifyTaskAccessPassword(password: string, stored: string): boolean {
   const parts = stored.split(':');
-  if (parts.length !== 3 || parts[0] !== 'scrypt') return false;
-  const [, saltHex, hashHex] = parts;
+  let n: number;
+  let saltHex: string;
+  let hashHex: string;
+  if (parts.length === 4 && parts[0] === 'scrypt') {
+    n = Number(parts[1]);
+    saltHex = parts[2];
+    hashHex = parts[3];
+  } else if (parts.length === 3 && parts[0] === 'scrypt') {
+    n = LEGACY_SCRYPT_N;
+    saltHex = parts[1];
+    hashHex = parts[2];
+  } else {
+    return false;
+  }
+  if (!Number.isInteger(n) || n < 2) return false;
+
   let salt: Buffer;
   let expected: Buffer;
   try {
@@ -36,7 +63,10 @@ export function verifyTaskAccessPassword(password: string, stored: string): bool
     return false;
   }
   if (expected.length === 0) return false;
-  const actual = scryptSync(password, salt, expected.length);
+  const actual = scryptSync(password, salt, expected.length, {
+    ...SCRYPT_OPTIONS,
+    N: n,
+  });
   return timingSafeEqual(actual, expected);
 }
 
