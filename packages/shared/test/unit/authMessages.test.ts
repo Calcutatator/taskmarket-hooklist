@@ -37,6 +37,20 @@ describe('task-scoped messages', () => {
   });
 });
 
+describe('buildSubmitMessage content bindings', () => {
+  it('omits the bindings segment entirely when contentBindings is not passed', () => {
+    expect(buildSubmitMessage('t42')).toBe('taskmarket:submit:t42');
+  });
+
+  it('appends a comma-joined bindings segment when contentBindings is passed', () => {
+    expect(buildSubmitMessage('t42', ['keyA', 'keyB'])).toBe('taskmarket:submit:t42:keyA,keyB');
+  });
+
+  it('appends a single binding without a trailing comma', () => {
+    expect(buildSubmitMessage('t42', ['onlyKey'])).toBe('taskmarket:submit:t42:onlyKey');
+  });
+});
+
 describe('buildSetWithdrawalAddressMessage', () => {
   it('lowercases the withdrawal address', () => {
     expect(buildSetWithdrawalAddressMessage(CHECKSUMMED)).toBe(

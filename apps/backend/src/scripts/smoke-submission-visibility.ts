@@ -28,6 +28,7 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... WORKER_B_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-submission-visibility.ts
  */
+import { createHash } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import {
@@ -51,7 +52,12 @@ type SubmissionRow = {
 type TaskRow = { status: string };
 
 async function submitBounty(taskId: string, worker: Account, payload: string) {
-  const signature = await worker.signMessage({ message: buildSubmitMessage(taskId) });
+  const fileBytes = Buffer.from(payload);
+  // Issue #323: submit's signature is bound to the sha256 of the submitted bytes.
+  const contentHash = createHash('sha256').update(fileBytes).digest('hex');
+  const signature = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -61,7 +67,7 @@ async function submitBounty(taskId: string, worker: Account, payload: string) {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from(payload).toString('base64'),
+        file: fileBytes.toString('base64'),
       },
     ],
   })) as { submissionId: string };

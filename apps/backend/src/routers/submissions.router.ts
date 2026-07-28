@@ -367,7 +367,14 @@ export const submissionsRouter = router({
         }
       }
 
-      const message = buildSubmitMessage(input.taskId);
+      // Bind the signature to the exact bytes being submitted (issue #323): a signature
+      // harvested from one submission must not be replayable with different file bytes.
+      // This endpoint only has raw base64 bytes to work with (no artifactKey yet), so it
+      // binds to the sha256 of each artifact's decoded content rather than a storage key.
+      const contentBindings = input.artifacts.map((artifact) =>
+        sha256Hex(Buffer.from(artifact.file, 'base64'))
+      );
+      const message = buildSubmitMessage(input.taskId, contentBindings);
       await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
         invalid_signature: () =>
           new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),
@@ -596,7 +603,12 @@ export const submissionsRouter = router({
         }
       }
 
-      const message = buildSubmitMessage(input.taskId);
+      // Bind the signature to the exact artifact keys being submitted (issue #323): a
+      // signature harvested from one submission must not be replayable with different keys.
+      const message = buildSubmitMessage(
+        input.taskId,
+        input.artifacts.map((artifact) => artifact.artifactKey)
+      );
       await verifySignedAddressOrThrow(message, input.signature, input.workerAddress, {
         invalid_signature: () =>
           new TRPCError({ code: 'BAD_REQUEST', message: 'Invalid signature' }),

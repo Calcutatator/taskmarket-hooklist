@@ -1,5 +1,5 @@
 import { createHash } from 'crypto';
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { createMockCtx, makeChain } from '../helpers';
 
 vi.mock('../../../src/lib/storage', () => ({
@@ -25,6 +25,8 @@ vi.mock('../../../src/services/contract', () => ({
 
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { recoverMessageAddress } from 'viem';
+import { privateKeyToAccount } from 'viem/accounts';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { getStorageBackend } from '../../../src/lib/storage';
 import { contractSubmitWork } from '../../../src/services/contract';
 
@@ -666,6 +668,152 @@ describe('submissions router', () => {
         await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow(
           'Only worker can submit'
         );
+      });
+    });
+  });
+
+  describe('content-binding (issue #323): signatures must be bound to submitted content', () => {
+    // A real secp256k1 signer -- these tests need genuine signature/message binding,
+    // not the blanket per-test `recoverMessageAddress` stub the rest of this file uses
+    // (which returns a canned address regardless of the message argument, so it can't
+    // tell a bound message from an unbound one).
+    const SIGNER_ACCOUNT = privateKeyToAccount(`0x${'44'.repeat(32)}`);
+    const SIGNER_ADDRESS = SIGNER_ACCOUNT.address;
+
+    beforeEach(async () => {
+      const actualViem = await vi.importActual<typeof import('viem')>('viem');
+      vi.mocked(recoverMessageAddress).mockImplementation(actualViem.recoverMessageAddress);
+    });
+
+    afterEach(() => {
+      vi.mocked(recoverMessageAddress).mockReset();
+    });
+
+    function artifactKeyInput(artifactKey: string, overrides: Record<string, any> = {}) {
+      return {
+        artifactKey,
+        fileName: 'payload.txt',
+        mimeType: 'text/plain',
+        role: 'attachment' as const,
+        sizeBytes: 10,
+        sha256Hash: 'a'.repeat(64),
+        keccak256Hash: `0x${'b'.repeat(64)}`,
+        ...overrides,
+      };
+    }
+
+    describe('submit (raw inline bytes)', () => {
+      it('rejects a signature harvested from one submission when replayed with different bytes', async () => {
+        // Today's message format has no content binding, so this is exactly what a
+        // worker signs for a legitimate submission -- and, per issue #323, exactly
+        // what an attacker could harvest (e.g. from listByTask's `signature` field)
+        // and replay against completely different file bytes.
+        const harvestedSignature = await SIGNER_ACCOUNT.signMessage({
+          message: buildSubmitMessage(TASK_ID),
+        });
+
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'bounty', status: 'open' })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submit({
+            taskId: TASK_ID,
+            workerAddress: SIGNER_ADDRESS,
+            signature: harvestedSignature,
+            artifacts: [
+              {
+                fileName: 'payload.txt',
+                mimeType: 'text/plain',
+                role: 'attachment',
+                file: Buffer.from('bytes the signature never authorized').toString('base64'),
+              },
+            ],
+          })
+        ).rejects.toThrow(/Signature does not match worker address|Invalid signature/);
+      });
+
+      it('accepts a submission whose signature is bound to the exact submitted bytes', async () => {
+        const fileBytes = Buffer.from('exact submitted bytes');
+        const contentHash = createHash('sha256').update(fileBytes).digest('hex');
+        const signature = await SIGNER_ACCOUNT.signMessage({
+          message: buildSubmitMessage(TASK_ID, [contentHash]),
+        });
+
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'bounty', status: 'open' })])
+        );
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submit({
+          taskId: TASK_ID,
+          workerAddress: SIGNER_ADDRESS,
+          signature,
+          artifacts: [
+            {
+              fileName: 'payload.txt',
+              mimeType: 'text/plain',
+              role: 'attachment',
+              file: fileBytes.toString('base64'),
+            },
+          ],
+        });
+
+        expect(result.success).toBe(true);
+      });
+    });
+
+    describe('submitFromKeys', () => {
+      it('rejects a signature harvested from one submission when replayed with different artifact keys', async () => {
+        // Same replay as above, but for the presigned-upload flow: the signature
+        // authorizes nothing about *which* keys get submitted under today's format.
+        const harvestedSignature = await SIGNER_ACCOUNT.signMessage({
+          message: buildSubmitMessage(TASK_ID),
+        });
+
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'bounty', status: 'open' })])
+        );
+        const storage = getStorageBackend();
+        vi.mocked(storage.headObject).mockResolvedValueOnce({ contentLength: 10 });
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submitFromKeys({
+            taskId: TASK_ID,
+            workerAddress: SIGNER_ADDRESS,
+            signature: harvestedSignature,
+            artifacts: [artifactKeyInput(`submissions/${TASK_ID}/pending/never-authorized.txt`)],
+          })
+        ).rejects.toThrow(/Signature does not match worker address|Invalid signature/);
+      });
+
+      it('accepts a from-keys submission whose signature is bound to the exact artifact keys', async () => {
+        const artifactKey = `submissions/${TASK_ID}/pending/payload.txt`;
+        const signature = await SIGNER_ACCOUNT.signMessage({
+          message: buildSubmitMessage(TASK_ID, [artifactKey]),
+        });
+
+        const ctx = createMockCtx();
+        ctx.db.select.mockReturnValueOnce(
+          makeChain([makeTask({ mode: 'bounty', status: 'open' })])
+        );
+        const storage = getStorageBackend();
+        vi.mocked(storage.headObject).mockResolvedValueOnce({ contentLength: 10 });
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submitFromKeys({
+          taskId: TASK_ID,
+          workerAddress: SIGNER_ADDRESS,
+          signature,
+          artifacts: [artifactKeyInput(artifactKey)],
+        });
+
+        expect(result.success).toBe(true);
       });
     });
   });

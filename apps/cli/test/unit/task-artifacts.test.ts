@@ -28,33 +28,35 @@ vi.mock('fs', () => ({
 }));
 
 function makeHttpTransport() {
-  const request = vi.fn().mockImplementation(
-    (
-      _url: unknown,
-      _opts: unknown,
-      callback?: (res: { statusCode: number; on: ReturnType<typeof vi.fn> }) => void
-    ) => {
-      const req = {
-        on: vi.fn().mockReturnThis(),
-        once: vi.fn().mockReturnThis(),
-        emit: vi.fn().mockReturnThis(),
-        end: vi.fn(),
-        write: vi.fn().mockReturnValue(true),
-        removeListener: vi.fn().mockReturnThis(),
-      };
-      if (callback) {
-        const res = {
-          statusCode: 200,
-          on: vi.fn().mockImplementation((event: string, handler: () => void) => {
-            if (event === 'end') setImmediate(handler);
-            return res;
-          }),
+  const request = vi
+    .fn()
+    .mockImplementation(
+      (
+        _url: unknown,
+        _opts: unknown,
+        callback?: (res: { statusCode: number; on: ReturnType<typeof vi.fn> }) => void
+      ) => {
+        const req = {
+          on: vi.fn().mockReturnThis(),
+          once: vi.fn().mockReturnThis(),
+          emit: vi.fn().mockReturnThis(),
+          end: vi.fn(),
+          write: vi.fn().mockReturnValue(true),
+          removeListener: vi.fn().mockReturnThis(),
         };
-        setImmediate(() => callback(res));
+        if (callback) {
+          const res = {
+            statusCode: 200,
+            on: vi.fn().mockImplementation((event: string, handler: () => void) => {
+              if (event === 'end') setImmediate(handler);
+              return res;
+            }),
+          };
+          setImmediate(() => callback(res));
+        }
+        return req;
       }
-      return req;
-    }
-  );
+    );
   return { default: { request } };
 }
 
@@ -89,6 +91,7 @@ import { apiPost } from '../../src/lib/api.js';
 import { printResult } from '../../src/lib/output.js';
 import { createHash } from 'crypto';
 import { keccak256 } from 'viem';
+import { buildSubmitMessage } from '@taskmarket/shared';
 
 const EXPECTED_SHA256 = createHash('sha256').update(FILE_BYTES).digest('hex');
 const EXPECTED_KECCAK256 = keccak256(new Uint8Array(FILE_BYTES)) as string;
@@ -122,19 +125,15 @@ describe('task artifact commands', () => {
       from: 'node',
     });
 
-    expect(apiPost).toHaveBeenNthCalledWith(
-      1,
-      '/api/tasks/0xtask/submissions/request-upload-url',
-      {
-        taskId: '0xtask',
-        workerAddress: keystore.walletAddress,
-        signature: '0xsig',
-        fileName: 'one.png',
-        mimeType: 'image/png',
-        role: 'attachment',
-        sizeBytes: 8,
-      }
-    );
+    expect(apiPost).toHaveBeenNthCalledWith(1, '/api/tasks/0xtask/submissions/request-upload-url', {
+      taskId: '0xtask',
+      workerAddress: keystore.walletAddress,
+      signature: '0xsig',
+      fileName: 'one.png',
+      mimeType: 'image/png',
+      role: 'attachment',
+      sizeBytes: 8,
+    });
 
     expect(apiPost).toHaveBeenNthCalledWith(2, '/api/tasks/0xtask/submissions/from-keys', {
       taskId: '0xtask',
@@ -181,6 +180,47 @@ describe('task artifact commands', () => {
     const body = submitCall?.[1] as { artifacts: unknown[] };
     expect(body.artifacts).toHaveLength(2);
     expect(printResult).toHaveBeenCalledWith({ submissionId: 'submission-2' });
+  });
+
+  it('signs a second, content-bound message for the final submission distinct from the unbound upload-request signature', async () => {
+    // signMessage's message argument determines the returned signature here so the
+    // test can tell the two signatures apart -- the default beforeEach stub always
+    // returns the same '0xsig' regardless of input, which would mask issue #323's
+    // fix (the finalize call must sign a *different*, content-bound message).
+    vi.mocked(signMessage).mockImplementation(async (message: string) => `0xsig-for:${message}`);
+    vi.mocked(apiPost)
+      .mockResolvedValueOnce({
+        uploadUrl: 'http://localhost/upload',
+        artifactKey: 'submissions/0xtask/pending/key-one.png',
+      })
+      .mockResolvedValueOnce({ submissionId: 'submission-3' });
+
+    await submitCmd.parseAsync(['node', 'submit', '0xtask', '--file', 'one.png'], {
+      from: 'node',
+    });
+
+    expect(signMessage).toHaveBeenCalledTimes(2);
+    const [firstMessage] = vi.mocked(signMessage).mock.calls[0]!;
+    const [secondMessage] = vi.mocked(signMessage).mock.calls[1]!;
+
+    // requestUploadUrl runs before any artifactKey exists, so it still signs
+    // today's unbound message.
+    expect(firstMessage).toBe(buildSubmitMessage('0xtask'));
+    // The finalize call runs after every artifactKey is known, so it signs a
+    // message bound to them.
+    expect(secondMessage).toBe(
+      buildSubmitMessage('0xtask', ['submissions/0xtask/pending/key-one.png'])
+    );
+    expect(secondMessage).not.toBe(firstMessage);
+
+    const requestUploadCall = vi.mocked(apiPost).mock.calls[0];
+    const submitCall = vi.mocked(apiPost).mock.calls[1];
+    const requestUploadSignature = (requestUploadCall?.[1] as { signature: string }).signature;
+    const submitSignature = (submitCall?.[1] as { signature: string }).signature;
+
+    expect(requestUploadSignature).toBe(`0xsig-for:${firstMessage}`);
+    expect(submitSignature).toBe(`0xsig-for:${secondMessage}`);
+    expect(submitSignature).not.toBe(requestUploadSignature);
   });
 
   it('passes artifact IDs to the authenticated download endpoint', async () => {

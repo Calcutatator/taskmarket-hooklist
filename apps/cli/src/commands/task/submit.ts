@@ -163,11 +163,23 @@ export const submitCmd = new Command('submit')
         })
       );
 
+      // Sign a second, content-bound message now that every artifactKey is known --
+      // the earlier `signature` (unbound to any key) only ever authorized the
+      // per-file upload-URL requests above, not the final submission (issue #323: a
+      // signature not bound to its content can be replayed with different keys).
+      const submitSignature = await signMessage(
+        buildSubmitMessage(
+          taskId,
+          artifactInputs.map((artifact) => artifact.artifactKey)
+        ),
+        keystore
+      );
+
       const result = (await apiPost(`/api/tasks/${taskId}/submissions/from-keys`, {
         taskId,
         workerAddress: keystore.walletAddress,
         artifacts: artifactInputs,
-        signature,
+        signature: submitSignature,
       })) as { submissionId: string };
 
       printResult({ submissionId: result.submissionId });

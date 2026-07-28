@@ -32,8 +32,18 @@ export const READ_AUTH_SIGNATURE_HEADER = 'X-Taskmarket-Caller-Signature';
  */
 export const TASK_ACCESS_GRANT_HEADER = 'X-Taskmarket-Task-Access-Grant';
 
-export function buildSubmitMessage(taskId: string): string {
-  return `taskmarket:submit:${taskId}`;
+/**
+ * `contentBindings` ties the signature to the exact artifacts being submitted (their
+ * storage keys for `submitFromKeys`, or content hashes for `submit`'s raw-bytes path) so a
+ * signature harvested from one submission cannot be replayed with different file bytes or
+ * keys -- see the issue this closes for the original replay report. Optional and
+ * backward-compatible: omitting it (e.g. `requestUploadUrl`, which runs before any key or
+ * content exists to bind to) reproduces today's exact unbound message.
+ */
+export function buildSubmitMessage(taskId: string, contentBindings?: string[]): string {
+  return contentBindings
+    ? `taskmarket:submit:${taskId}:${contentBindings.join(',')}`
+    : `taskmarket:submit:${taskId}`;
 }
 
 export function buildClaimMessage(taskId: string): string {
