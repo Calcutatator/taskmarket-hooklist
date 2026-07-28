@@ -884,9 +884,11 @@ describe('submissions router', () => {
         });
 
         const ctx = createMockCtx();
-        ctx.db.select.mockReturnValueOnce(
-          makeChain([makeTask({ mode: 'bounty', status: 'open' })])
-        );
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]))
+          // pendingUploadKeys: the key must be recorded as issued to this worker,
+          // otherwise submitFromKeys rejects it before any content binding is checked.
+          .mockReturnValueOnce(makeChain([{ artifactKey, workerAddress: SIGNER_ADDRESS }]));
         const storage = getStorageBackend();
         vi.mocked(storage.headObject).mockResolvedValueOnce({ contentLength: 10 });
 
