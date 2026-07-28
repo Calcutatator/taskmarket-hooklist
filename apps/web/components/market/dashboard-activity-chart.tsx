@@ -89,6 +89,7 @@ export function DashboardActivityChart({
       title="Marketplace activity"
     >
       <TrendAreaChart
+        ariaLabel="Marketplace activity trend"
         animate={false}
         data={chartData}
         series={SERIES}

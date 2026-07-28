@@ -134,7 +134,11 @@ test('keeps dashboard metrics and chart content visible after hydration', async 
     'dashboard-metric',
     '[aria-label="Marketplace metrics"] dd span:first-child'
   );
-  await installFirstVisibilityProbe(page, 'dashboard-chart', '.recharts-area-area');
+  await installFirstVisibilityProbe(
+    page,
+    'dashboard-chart',
+    '[data-chart-engine="dither"][aria-label="Marketplace activity trend"]'
+  );
   await page.goto('/dashboard');
 
   const metrics = page.getByRole('region', { name: /Marketplace metrics/i });
@@ -144,10 +148,11 @@ test('keeps dashboard metrics and chart content visible after hydration', async 
   await expectVisibleOnFirstPaint(page, 'dashboard-metric');
 
   await page.goto('/dashboard?section=activity');
-  const activity = page
-    .locator('[data-slot="card"]')
-    .filter({ has: page.locator('.recharts-area-area') });
+  const chart = page.getByRole('img', { name: 'Marketplace activity trend' });
+  const activity = page.locator('[data-slot="card"]').filter({ has: chart });
   await expectFullyOpaque(activity);
-  await expect(activity.locator('.recharts-area-area')).toHaveCount(2);
+  await expectFullyOpaque(chart);
+  await expect(chart.locator('canvas')).toHaveCount(2);
+  await expect(chart).toHaveAttribute('data-chart-painted', 'true');
   await expectVisibleOnFirstPaint(page, 'dashboard-chart');
 });

@@ -1,10 +1,26 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Area, AreaChart, CartesianGrid, ReferenceLine, XAxis } from 'recharts';
+import {
+  Area as RechartsArea,
+  AreaChart as RechartsAreaChart,
+  CartesianGrid,
+  ReferenceLine as RechartsReferenceLine,
+  XAxis as RechartsXAxis,
+} from 'recharts';
 import type { CurveType } from 'recharts/types/shape/Curve';
 import type { DataKey } from 'recharts/types/util/types';
 
+import { AccessibleChartTable } from '@/components/charts/accessible-chart-table';
+import { buildChartConfig } from '@/components/charts/chart-palette';
+import { Area } from '@/components/dither-kit/area';
+import { AreaChart } from '@/components/dither-kit/area-chart';
+import type { ChartConfig as DitherChartConfig } from '@/components/dither-kit/chart-context';
+import { Grid } from '@/components/dither-kit/grid';
+import { Legend } from '@/components/dither-kit/legend';
+import { ReferenceLine } from '@/components/dither-kit/reference-line';
+import { Tooltip } from '@/components/dither-kit/tooltip';
+import { XAxis } from '@/components/dither-kit/x-axis';
 import { useHydrationSafeMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import {
   ChartContainer,
@@ -13,7 +29,6 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { buildChartConfig } from '@/components/charts/chart-palette';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_HEIGHT = 250;
@@ -26,6 +41,7 @@ export type TrendSeries = {
 };
 
 export type TrendAreaChartProps<T extends Record<string, unknown>> = {
+  ariaLabel: string;
   data: T[];
   xKey: keyof T & string;
   series: TrendSeries[];
@@ -40,13 +56,8 @@ export type TrendAreaChartProps<T extends Record<string, unknown>> = {
   className?: string;
 };
 
-// A gradient-filled area trend built on the shadcn ChartContainer. Hides the Y
-// axis by convention (the tooltip carries the value), shows a legend only when
-// there is more than one series, and gates animation on reduced motion. Each
-// series gets its own vertical linear gradient keyed by series key. Pass an
-// optional referenceY to draw a dashed horizontal benchmark line (for example a
-// target rating); omit it and the chart renders exactly as before.
 export function TrendAreaChart<T extends Record<string, unknown>>({
+  ariaLabel,
   data,
   xKey,
   series,
@@ -61,8 +72,8 @@ export function TrendAreaChart<T extends Record<string, unknown>>({
   className,
 }: TrendAreaChartProps<T>) {
   const motionDisabled = useHydrationSafeMotionDisabled();
+  const visibleSeries = useMemo(() => series.slice(0, MAX_SERIES), [series]);
 
-  const visibleSeries = series.slice(0, MAX_SERIES);
   if (series.length > MAX_SERIES) {
     console.warn(
       `TrendAreaChart supports at most ${MAX_SERIES} series; received ${series.length}. Extra series are ignored.`
@@ -70,74 +81,122 @@ export function TrendAreaChart<T extends Record<string, unknown>>({
   }
 
   const config = useMemo(() => buildChartConfig(visibleSeries), [visibleSeries]);
+  const ditherConfig = config as DitherChartConfig;
+  const hasDataGaps = data.some((row) =>
+    visibleSeries.some((entry) => {
+      const value = row[entry.key];
+      return typeof value !== 'number' || !Number.isFinite(value);
+    })
+  );
   const showLegend = visibleSeries.length >= 2;
+  const table = (
+    <AccessibleChartTable
+      ariaLabel={ariaLabel}
+      data={data}
+      xKey={xKey}
+      series={visibleSeries}
+      valueFormatter={valueFormatter}
+    />
+  );
+
+  if (hasDataGaps) {
+    return (
+      <div data-chart-engine="recharts">
+        <div role="img" aria-label={ariaLabel}>
+          <ChartContainer
+            config={config}
+            className={cn('aspect-auto w-full', className)}
+            style={{ height }}
+          >
+            <RechartsAreaChart data={data}>
+              <CartesianGrid vertical={false} />
+              {typeof referenceY === 'number' ? (
+                <RechartsReferenceLine
+                  y={referenceY}
+                  stroke="var(--border)"
+                  strokeDasharray="4 4"
+                  label={
+                    referenceLabel
+                      ? { value: referenceLabel, position: 'insideTopRight' }
+                      : undefined
+                  }
+                />
+              ) : null}
+              <RechartsXAxis
+                dataKey={xKey as DataKey<T>}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                minTickGap={32}
+                tickFormatter={xTickFormatter}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    indicator="dot"
+                    formatter={
+                      valueFormatter
+                        ? (value) =>
+                            typeof value === 'number' ? valueFormatter(value) : String(value)
+                        : undefined
+                    }
+                  />
+                }
+              />
+              {visibleSeries.map((entry) => (
+                <RechartsArea
+                  key={entry.key}
+                  dataKey={entry.key}
+                  type={curve}
+                  fill={`var(--color-${entry.key})`}
+                  fillOpacity={0.18}
+                  stroke={`var(--color-${entry.key})`}
+                  stackId={stacked ? 'stack' : undefined}
+                  connectNulls={false}
+                  isAnimationActive={animate && !motionDisabled}
+                />
+              ))}
+              {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            </RechartsAreaChart>
+          </ChartContainer>
+        </div>
+        {table}
+      </div>
+    );
+  }
 
   return (
-    <ChartContainer
-      config={config}
-      className={cn('aspect-auto w-full', className)}
-      style={{ height }}
-    >
-      <AreaChart data={data}>
-        <defs>
-          {visibleSeries.map((entry) => (
-            <linearGradient key={entry.key} id={`fill-${entry.key}`} x1="0" y1="0" x2="0" y2="1">
-              <stop offset="5%" stopColor={`var(--color-${entry.key})`} stopOpacity={0.9} />
-              <stop offset="95%" stopColor={`var(--color-${entry.key})`} stopOpacity={0.1} />
-            </linearGradient>
-          ))}
-        </defs>
-        <CartesianGrid vertical={false} />
-        {typeof referenceY === 'number' ? (
-          <ReferenceLine
-            y={referenceY}
-            stroke="var(--border)"
-            strokeDasharray="4 4"
-            label={
-              referenceLabel
-                ? {
-                    value: referenceLabel,
-                    position: 'insideTopRight',
-                    className: 'fill-muted-foreground text-[0.65rem]',
-                  }
-                : undefined
+    <div className={className}>
+      <div style={{ height }}>
+        <AreaChart
+          ariaLabel={ariaLabel}
+          data={data}
+          config={ditherConfig}
+          stackType={stacked ? 'stacked' : 'default'}
+          animate={animate && !motionDisabled}
+        >
+          <Grid />
+          {typeof referenceY === 'number' ? (
+            <ReferenceLine y={referenceY} label={referenceLabel} />
+          ) : null}
+          <XAxis
+            dataKey={xKey}
+            tickFormatter={(value) =>
+              xTickFormatter ? xTickFormatter(String(value ?? '')) : String(value ?? '')
             }
           />
-        ) : null}
-        <XAxis
-          dataKey={xKey as DataKey<T>}
-          tickLine={false}
-          axisLine={false}
-          tickMargin={8}
-          minTickGap={32}
-          tickFormatter={xTickFormatter}
-        />
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              indicator="dot"
-              formatter={
-                valueFormatter
-                  ? (value) => (typeof value === 'number' ? valueFormatter(value) : String(value))
-                  : undefined
-              }
-            />
-          }
-        />
-        {visibleSeries.map((entry) => (
-          <Area
-            key={entry.key}
-            dataKey={entry.key}
-            type={curve}
-            fill={`url(#fill-${entry.key})`}
-            stroke={`var(--color-${entry.key})`}
-            stackId={stacked ? 'stack' : undefined}
-            isAnimationActive={animate && !motionDisabled}
+          {visibleSeries.map((entry) => (
+            <Area key={entry.key} dataKey={entry.key} />
+          ))}
+          <Tooltip
+            labelKey={xKey}
+            valueFormatter={valueFormatter ? (value) => valueFormatter(value) : undefined}
           />
-        ))}
-        {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
-      </AreaChart>
-    </ChartContainer>
+          {showLegend ? <Legend /> : null}
+        </AreaChart>
+      </div>
+      {table}
+    </div>
   );
 }

@@ -1,9 +1,24 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Bar, BarChart as RechartsBarChart, CartesianGrid, XAxis, YAxis } from 'recharts';
+import {
+  Bar as RechartsBar,
+  BarChart as RechartsBarChart,
+  CartesianGrid,
+  XAxis,
+  YAxis,
+} from 'recharts';
 import type { DataKey } from 'recharts/types/util/types';
 
+import { AccessibleChartTable } from '@/components/charts/accessible-chart-table';
+import { buildChartConfig, CHART_SERIES_COLORS } from '@/components/charts/chart-palette';
+import { Bar } from '@/components/dither-kit/bar';
+import { BarChart as DitherBarChart } from '@/components/dither-kit/bar-chart';
+import type { ChartConfig as DitherChartConfig } from '@/components/dither-kit/chart-context';
+import { Grid } from '@/components/dither-kit/grid';
+import { Legend } from '@/components/dither-kit/legend';
+import { Tooltip } from '@/components/dither-kit/tooltip';
+import { XAxis as DitherXAxis } from '@/components/dither-kit/x-axis';
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import {
   ChartContainer,
@@ -12,7 +27,6 @@ import {
   ChartTooltip,
   ChartTooltipContent,
 } from '@/components/ui/chart';
-import { buildChartConfig, CHART_SERIES_COLORS } from '@/components/charts/chart-palette';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_HEIGHT = 250;
@@ -25,6 +39,7 @@ export type BarSeries = {
 };
 
 export type BarChartProps<T extends Record<string, unknown>> = {
+  ariaLabel?: string;
   data: T[];
   xKey: keyof T & string;
   series: BarSeries[];
@@ -38,6 +53,7 @@ export type BarChartProps<T extends Record<string, unknown>> = {
 };
 
 function BarChartBase<T extends Record<string, unknown>>({
+  ariaLabel = 'Bar chart',
   data,
   xKey,
   series,
@@ -52,75 +68,106 @@ function BarChartBase<T extends Record<string, unknown>>({
   const motionDisabled = useMotionDisabled();
   const config = useMemo(() => buildChartConfig(series), [series]);
   const showLegend = series.length >= 2;
-  const isVertical = layout === 'vertical';
+  const table = (
+    <AccessibleChartTable
+      ariaLabel={ariaLabel}
+      data={data}
+      xKey={xKey}
+      series={series}
+      valueFormatter={valueFormatter}
+    />
+  );
+
+  if (layout === 'vertical') {
+    return (
+      <div data-chart-engine="recharts">
+        <div role="img" aria-label={ariaLabel}>
+          <ChartContainer
+            config={config}
+            className={cn('aspect-auto w-full', className)}
+            style={{ height }}
+          >
+            <RechartsBarChart data={data} layout={layout}>
+              <CartesianGrid vertical horizontal={false} />
+              <XAxis type="number" tickLine={false} axisLine={false} hide />
+              <YAxis
+                type="category"
+                dataKey={xKey as DataKey<T>}
+                tickLine={false}
+                axisLine={false}
+                tickMargin={8}
+                width={96}
+                tickFormatter={xTickFormatter}
+              />
+              <ChartTooltip
+                cursor={false}
+                content={
+                  <ChartTooltipContent
+                    indicator="dot"
+                    formatter={
+                      valueFormatter
+                        ? (value) =>
+                            typeof value === 'number' ? valueFormatter(value) : String(value)
+                        : undefined
+                    }
+                  />
+                }
+              />
+              {series.map((entry) => (
+                <RechartsBar
+                  key={entry.key}
+                  dataKey={entry.key}
+                  fill={`var(--color-${entry.key})`}
+                  stackId={stacked ? 'stack' : undefined}
+                  radius={radius}
+                  isAnimationActive={!motionDisabled}
+                />
+              ))}
+              {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
+            </RechartsBarChart>
+          </ChartContainer>
+        </div>
+        {table}
+      </div>
+    );
+  }
 
   return (
-    <ChartContainer
-      config={config}
-      className={cn('aspect-auto w-full', className)}
-      style={{ height }}
-    >
-      <RechartsBarChart data={data} layout={layout}>
-        <CartesianGrid vertical={isVertical} horizontal={!isVertical} />
-        {isVertical ? (
-          <>
-            <XAxis type="number" tickLine={false} axisLine={false} hide />
-            <YAxis
-              type="category"
-              dataKey={xKey as DataKey<T>}
-              tickLine={false}
-              axisLine={false}
-              tickMargin={8}
-              width={96}
-              tickFormatter={xTickFormatter}
-            />
-          </>
-        ) : (
-          <XAxis
-            dataKey={xKey as DataKey<T>}
-            tickLine={false}
-            axisLine={false}
-            tickMargin={8}
-            minTickGap={16}
-            tickFormatter={xTickFormatter}
+    <div className={className}>
+      <div style={{ height }}>
+        <DitherBarChart
+          ariaLabel={ariaLabel}
+          data={data}
+          config={config as DitherChartConfig}
+          stackType={stacked ? 'stacked' : 'default'}
+          animate={!motionDisabled}
+        >
+          <Grid />
+          <DitherXAxis
+            dataKey={xKey}
+            tickFormatter={(value) =>
+              xTickFormatter ? xTickFormatter(String(value ?? '')) : String(value ?? '')
+            }
           />
-        )}
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              indicator="dot"
-              formatter={
-                valueFormatter
-                  ? (value) => (typeof value === 'number' ? valueFormatter(value) : String(value))
-                  : undefined
-              }
-            />
-          }
-        />
-        {series.map((entry) => (
-          <Bar
-            key={entry.key}
-            dataKey={entry.key}
-            fill={`var(--color-${entry.key})`}
-            stackId={stacked ? 'stack' : undefined}
-            radius={radius}
-            isAnimationActive={!motionDisabled}
+          {series.map((entry) => (
+            <Bar key={entry.key} dataKey={entry.key} />
+          ))}
+          <Tooltip
+            labelKey={xKey}
+            valueFormatter={valueFormatter ? (value) => valueFormatter(value) : undefined}
           />
-        ))}
-        {showLegend ? <ChartLegend content={<ChartLegendContent />} /> : null}
-      </RechartsBarChart>
-    </ChartContainer>
+          {showLegend ? <Legend /> : null}
+        </DitherBarChart>
+      </div>
+      {table}
+    </div>
   );
 }
 
-// A grouped or single-series bar chart with minimal axes.
 export function BarChart<T extends Record<string, unknown>>(props: BarChartProps<T>) {
   return <BarChartBase {...props} />;
 }
 
-// A bar chart with series stacked on a shared axis. Forces stacked on so callers
-// do not have to remember the flag.
 export function StackedBarChart<T extends Record<string, unknown>>(
   props: Omit<BarChartProps<T>, 'stacked'>
 ) {
@@ -128,6 +175,7 @@ export function StackedBarChart<T extends Record<string, unknown>>(
 }
 
 export type HistogramBarsProps = {
+  ariaLabel: string;
   data: { label: string; value: number }[];
   height?: number;
   radius?: number;
@@ -136,9 +184,8 @@ export type HistogramBarsProps = {
   className?: string;
 };
 
-// A single-series distribution chart for pre-bucketed counts: each entry is one
-// bar. Use this for frequency histograms where the bucketing is done upstream.
 export function HistogramBars({
+  ariaLabel,
   data,
   height = DEFAULT_HEIGHT,
   radius = DEFAULT_RADIUS,
@@ -148,6 +195,7 @@ export function HistogramBars({
 }: HistogramBarsProps) {
   return (
     <BarChartBase
+      ariaLabel={ariaLabel}
       data={data}
       xKey="label"
       series={[{ key: 'value', label: 'Count', color }]}

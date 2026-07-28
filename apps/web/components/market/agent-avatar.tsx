@@ -1,12 +1,8 @@
 import { getAgentName } from '@taskmarket/shared';
 
+import { CHART_SERIES_COLORS } from '@/components/charts/chart-palette';
+import { DitherAvatar } from '@/components/dither-kit/avatar';
 import { cn } from '@/lib/utils';
-
-// Standalone, dependency-free agent avatar. Renders a deterministic gradient mark
-// (hue derived from the address) with the agent's initials, extracted from the inline
-// AgentMark in components/market/agents.tsx so listing rows, cards, and the profile
-// header share one identity glyph. No avatar libraries - the gradient + initials are
-// computed locally and are stable for a given address/label.
 
 type AgentAvatarSize = 'sm' | 'md' | 'lg';
 
@@ -16,17 +12,15 @@ const SIZE_CLASSES: Record<AgentAvatarSize, string> = {
   lg: 'size-24 text-2xl',
 };
 
-// Sum the char codes of the first bytes of the address into a stable hue. Matches the
-// derivation in agents.tsx so the same address keeps the same colour everywhere.
-function hueFromAddress(address: string): number {
-  return address
-    .slice(2, 8)
-    .split('')
-    .reduce((sum, char) => sum + char.charCodeAt(0), 0);
+function colorIndexFromAddress(address: string): number {
+  return (
+    address
+      .slice(2, 8)
+      .split('')
+      .reduce((sum, char) => sum + char.charCodeAt(0), 0) % CHART_SERIES_COLORS.length
+  );
 }
 
-// Up to two initials from a human label, stripping the "Agent #" prefix so numeric ids
-// read as "#". Matches the derivation in agents.tsx.
 function initialsFromLabel(label: string): string {
   return label
     .replace(/^Agent #/, '#')
@@ -38,8 +32,6 @@ function initialsFromLabel(label: string): string {
     .toUpperCase();
 }
 
-// Resolve the display label the same way agents.tsx does: prefer a named agent, then
-// "Agent #<id>", then a shortened address.
 function resolveLabel(address: string, agentId?: string | number): string {
   if (agentId !== undefined && agentId !== null && `${agentId}` !== '') {
     const id = `${agentId}`;
@@ -60,23 +52,31 @@ export function AgentAvatar({
   className?: string;
 }) {
   const label = resolveLabel(address, agentId);
-  const hue = hueFromAddress(address);
-  const initials = initialsFromLabel(label) || address.slice(2, 4).toUpperCase();
+  const initials =
+    label === address
+      ? address.slice(2, 4).toUpperCase()
+      : initialsFromLabel(label) || address.slice(2, 4).toUpperCase();
+  const color = CHART_SERIES_COLORS[colorIndexFromAddress(address)];
 
   return (
     <div
       aria-label={`Avatar for ${label}`}
       className={cn(
-        'flex shrink-0 items-center justify-center rounded-full border border-border/58 font-mono font-semibold text-foreground shadow-[var(--shadow-control)]',
+        'relative flex shrink-0 items-center justify-center overflow-hidden rounded-full border border-border/58 bg-muted font-mono font-semibold text-foreground shadow-[var(--shadow-control)]',
         SIZE_CLASSES[size],
         className
       )}
       role="img"
-      style={{
-        background: `linear-gradient(135deg, hsl(${hue % 360} 28% 24%), hsl(${(hue + 48) % 360} 42% 38%))`,
-      }}
     >
-      {initials}
+      <DitherAvatar
+        ariaHidden
+        name={address.toLowerCase()}
+        color={color}
+        animate={size === 'lg'}
+        bloom="off"
+        className="absolute inset-0"
+      />
+      <span className="relative z-10 drop-shadow-sm">{initials}</span>
     </div>
   );
 }

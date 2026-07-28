@@ -154,6 +154,7 @@ export function DashboardDistributionChart({ initialData }: { initialData: Break
       <div className="flex h-full flex-col gap-6">
         <div className="grid flex-1 items-center gap-4 sm:grid-cols-[minmax(0,180px)_minmax(0,1fr)] sm:gap-6">
           <StatusBreakdown
+            ariaLabel={view === 'status' ? 'Task status distribution' : 'Task mode distribution'}
             centerCaption="tasks"
             centerLabel={formatNumber(total)}
             data={donutData}

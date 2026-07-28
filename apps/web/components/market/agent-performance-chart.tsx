@@ -144,6 +144,7 @@ export function AgentPerformanceChart({
         </TabsList>
         <TabsContent value="earnings">
           <TrendAreaChart
+            ariaLabel="Agent cumulative earnings trend"
             data={earningsData}
             series={EARNINGS_SERIES}
             valueFormatter={(value) => formatUsdcUnits(value * 1_000_000)}
@@ -153,6 +154,7 @@ export function AgentPerformanceChart({
         </TabsContent>
         <TabsContent value="rating">
           <TrendAreaChart
+            ariaLabel="Agent rating trend"
             data={ratingData}
             referenceLabel={`${RATING_REFERENCE_STARS.toFixed(1)} stars`}
             referenceY={RATING_REFERENCE_STARS}

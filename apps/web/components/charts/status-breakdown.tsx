@@ -1,23 +1,20 @@
 'use client';
 
 import { useMemo } from 'react';
-import { Cell, Label, Pie, PieChart } from 'recharts';
 
-import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
-import {
-  ChartContainer,
-  ChartLegend,
-  ChartLegendContent,
-  ChartTooltip,
-  ChartTooltipContent,
-  type ChartConfig,
-} from '@/components/ui/chart';
+import { AccessibleChartTable } from '@/components/charts/accessible-chart-table';
 import {
   buildChartConfig,
   statusColor,
   type TaskStatusBucket,
 } from '@/components/charts/chart-palette';
 import { BarChart, StackedBarChart } from '@/components/charts/bar-chart';
+import { BlockLegend } from '@/components/dither-kit/block-legend';
+import type { ChartConfig as DitherChartConfig } from '@/components/dither-kit/chart-context';
+import { Pie } from '@/components/dither-kit/pie';
+import { PieChart } from '@/components/dither-kit/pie-chart';
+import { Tooltip } from '@/components/dither-kit/tooltip';
+import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import { cn } from '@/lib/utils';
 
 const DEFAULT_HEIGHT = 250;
@@ -30,6 +27,7 @@ export type StatusDatum = {
 };
 
 export type StatusBreakdownProps = {
+  ariaLabel: string;
   data: StatusDatum[];
   height?: number;
   centerLabel?: string;
@@ -39,10 +37,8 @@ export type StatusBreakdownProps = {
   className?: string;
 };
 
-// A status donut. Each slice is coloured by its status bucket so the chart reads
-// the same as the status badges. Caps at six buckets to stay scannable, draws an
-// optional centre label/caption, and shows a legend unless suppressed.
 export function StatusBreakdown({
+  ariaLabel,
   data,
   height = DEFAULT_HEIGHT,
   centerLabel,
@@ -52,15 +48,15 @@ export function StatusBreakdown({
   className,
 }: StatusBreakdownProps) {
   const motionDisabled = useMotionDisabled();
+  const buckets = useMemo(() => data.slice(0, MAX_BUCKETS), [data]);
 
-  const buckets = data.slice(0, MAX_BUCKETS);
   if (data.length > MAX_BUCKETS) {
     console.warn(
       `StatusBreakdown supports at most ${MAX_BUCKETS} buckets; received ${data.length}. Extra buckets are ignored.`
     );
   }
 
-  const config = useMemo<ChartConfig>(
+  const config = useMemo<DitherChartConfig>(
     () =>
       buildChartConfig(
         buckets.map((entry) => ({
@@ -68,77 +64,57 @@ export function StatusBreakdown({
           label: entry.label,
           color: statusColor(entry.bucket),
         }))
-      ),
+      ) as DitherChartConfig,
     [buckets]
   );
+  const values = Object.fromEntries(buckets.map((entry) => [entry.bucket, entry.value]));
 
   return (
-    <ChartContainer
-      config={config}
-      className={cn('mx-auto aspect-square', className)}
-      style={{ height }}
-    >
-      <PieChart>
-        <ChartTooltip
-          cursor={false}
-          content={
-            <ChartTooltipContent
-              hideLabel
-              nameKey="bucket"
-              formatter={
-                valueFormatter
-                  ? (value) => (typeof value === 'number' ? valueFormatter(value) : String(value))
-                  : undefined
-              }
-            />
-          }
-        />
-        <Pie
+    <div className={cn('mx-auto', className)}>
+      <div className="relative mx-auto" style={{ height }}>
+        <PieChart
+          ariaLabel={ariaLabel}
           data={buckets}
+          config={config}
           dataKey="value"
           nameKey="bucket"
-          innerRadius={60}
-          strokeWidth={2}
-          isAnimationActive={!motionDisabled}
+          innerRadius={0.55}
+          animate={!motionDisabled}
         >
-          {buckets.map((entry) => (
-            <Cell key={entry.bucket} fill={statusColor(entry.bucket)} />
-          ))}
-          {centerLabel ? (
-            <Label
-              content={({ viewBox }) => {
-                if (!viewBox || !('cx' in viewBox) || !('cy' in viewBox)) {
-                  return null;
-                }
-                return (
-                  <text x={viewBox.cx} y={viewBox.cy} textAnchor="middle" dominantBaseline="middle">
-                    <tspan
-                      x={viewBox.cx}
-                      y={viewBox.cy}
-                      className="fill-foreground font-mono text-2xl font-semibold tabular-nums"
-                    >
-                      {centerLabel}
-                    </tspan>
-                    {centerCaption ? (
-                      <tspan
-                        x={viewBox.cx}
-                        y={(viewBox.cy ?? 0) + 20}
-                        className="fill-muted-foreground text-xs"
-                      >
-                        {centerCaption}
-                      </tspan>
-                    ) : null}
-                  </text>
-                );
-              }}
-            />
-          ) : null}
-        </Pie>
-        {hideLegend ? null : (
-          <ChartLegend content={<ChartLegendContent nameKey="bucket" />} className="flex-wrap" />
-        )}
-      </PieChart>
-    </ChartContainer>
+          <Pie />
+          <Tooltip valueFormatter={valueFormatter ? (value) => valueFormatter(value) : undefined} />
+        </PieChart>
+        {centerLabel ? (
+          <div
+            aria-hidden="true"
+            className="pointer-events-none absolute inset-0 flex flex-col items-center justify-center"
+          >
+            <span className="font-mono text-2xl font-semibold text-foreground tabular-nums">
+              {centerLabel}
+            </span>
+            {centerCaption ? (
+              <span className="text-xs text-muted-foreground">{centerCaption}</span>
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      {hideLegend ? null : (
+        <BlockLegend
+          config={config}
+          values={values}
+          valueFormatter={valueFormatter}
+          align="center"
+          className="mt-2"
+        />
+      )}
+      <AccessibleChartTable
+        ariaLabel={ariaLabel}
+        data={buckets}
+        xKey="label"
+        series={[{ key: 'value', label: 'Count' }]}
+        valueFormatter={valueFormatter}
+      />
+    </div>
   );
 }
 
@@ -147,6 +123,7 @@ export type DistributionDatum = {
 } & Record<string, string | number>;
 
 export type DistributionBarsProps = {
+  ariaLabel?: string;
   data: DistributionDatum[];
   series: { key: string; label: string; color?: string }[];
   height?: number;
@@ -155,10 +132,8 @@ export type DistributionBarsProps = {
   className?: string;
 };
 
-// A horizontal status or mode mix: one row per label, segments stacked (default)
-// or grouped. Thin wrapper over the bar chart with a vertical layout so the
-// distribution reads left to right.
 export function DistributionBars({
+  ariaLabel = 'Distribution',
   data,
   series,
   height = DEFAULT_HEIGHT,
@@ -167,9 +142,9 @@ export function DistributionBars({
   className,
 }: DistributionBarsProps) {
   if (grouped) {
-    // Grouped variant: render each series side by side rather than stacked.
     return (
       <DistributionGrouped
+        ariaLabel={ariaLabel}
         data={data}
         series={series}
         height={height}
@@ -181,6 +156,7 @@ export function DistributionBars({
 
   return (
     <StackedBarChart
+      ariaLabel={ariaLabel}
       data={data}
       xKey="label"
       series={series}
@@ -193,6 +169,7 @@ export function DistributionBars({
 }
 
 function DistributionGrouped({
+  ariaLabel,
   data,
   series,
   height,
@@ -201,6 +178,7 @@ function DistributionGrouped({
 }: Omit<DistributionBarsProps, 'grouped'>) {
   return (
     <BarChart
+      ariaLabel={ariaLabel}
       data={data}
       xKey="label"
       series={series}

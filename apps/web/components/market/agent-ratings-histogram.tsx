@@ -47,7 +47,11 @@ export function AgentRatingsHistogram({ ratings }: { ratings: readonly Rating[] 
       isEmpty={ratings.length < 1}
       title="Ratings distribution"
     >
-      <HistogramBars color={getChartSeries('rating').color} data={data} />
+      <HistogramBars
+        ariaLabel="Ratings distribution"
+        color={getChartSeries('rating').color}
+        data={data}
+      />
     </ChartCard>
   );
 }

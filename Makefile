@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli
+.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -37,6 +37,7 @@ help:
 	@echo "  make smoke <mode> [testnet] - Run smoke test against localhost (or testnet with 'testnet' flag)"
 	@echo "  make pre-commit           - Run pre-commit checks"
 	@echo "  make design-system        - Generate design tokens and copy to apps/frontend"
+	@echo "  make dither-kit [args]    - Run the pinned Dither Kit CLI for apps/web"
 	@echo "  make cli [args]           - Build the CLI, then run it against a local backend (TASKMARKET_API_URL)"
 	@echo "  make upgrade <testnet|mainnet> [revNNN] - Upgrade contract implementation; applies every pending step in sequence, or one explicit step (e.g. rev012)"
 	@echo "  make deploy-reward-hook <testnet|mainnet|preview> - Deploy DREAMS token reward hook (testnet/preview use a mock token)"
@@ -776,6 +777,11 @@ design-system:
 	cp packages/design-system/build/tailwind/base.css apps/frontend/src/styles/css/base.css && \
 	cp packages/design-system/build/tailwind/dark.css apps/frontend/src/styles/css/dark.css && \
 	cp packages/design-system/build/tailwind/tailwind.base.js apps/frontend/tailwind.base.js
+
+dither-kit:
+	@$(ENV_LOADER) && \
+	cd apps/web && \
+	DO_NOT_TRACK=1 pnpm dlx @dither-kit/cli@0.1.1 --yes --no-input --no-color $(ARGS)
 
 # "cli" is also a smoke mode (make smoke cli). When make runs as "make smoke cli",
 # make treats "cli" as a second real goal alongside "smoke" and would otherwise

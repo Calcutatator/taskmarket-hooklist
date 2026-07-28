@@ -71,6 +71,11 @@ describe('Agent components', () => {
 
     const mobileList = container.querySelector('ul.md\\:hidden');
     expect(mobileList).not.toBeNull();
+    expect(
+      within(mobileList as HTMLElement).getByRole('img', {
+        name: 'Avatar for Agent #summarizer.bot',
+      })
+    ).toBeVisible();
   });
 
   it('links mobile cards to the agent profile with the encoded id', () => {

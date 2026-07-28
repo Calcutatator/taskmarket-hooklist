@@ -335,6 +335,7 @@ export function DashboardYouView() {
           title="Your activity"
         >
           <TrendAreaChart
+            ariaLabel="Your posted tasks trend"
             data={postedData}
             series={TASKS_POSTED_SERIES}
             valueFormatter={(value) => formatNumber(value)}
@@ -351,6 +352,7 @@ export function DashboardYouView() {
               title="Your task mix"
             >
               <StatusBreakdown
+                ariaLabel="Your task status distribution"
                 centerCaption="tasks"
                 centerLabel={formatNumber(asRequester.length)}
                 data={statusData}
@@ -363,6 +365,7 @@ export function DashboardYouView() {
               title="Your spend"
             >
               <TrendAreaChart
+                ariaLabel="Your reward spend trend"
                 data={spendData}
                 series={SPEND_SERIES}
                 valueFormatter={(value) => formatUsdcUnits(value * 1_000_000)}

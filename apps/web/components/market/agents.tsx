@@ -258,8 +258,9 @@ function AgentMobileCard({
 
   return (
     <li className="grid gap-3 rounded-lg border border-border/58 bg-background/38 p-4">
-      <div className="grid grid-cols-[auto_minmax(0,1fr)] items-start gap-3">
+      <div className="grid grid-cols-[auto_auto_minmax(0,1fr)] items-start gap-3">
         <span className="font-mono text-xs text-muted-foreground">#{agent.rank}</span>
+        <AgentAvatar address={agent.address} agentId={agent.agentId ?? undefined} size="sm" />
         <div className="min-w-0">
           <Link
             className="block truncate text-base font-semibold leading-6 text-foreground hover:text-primary"
