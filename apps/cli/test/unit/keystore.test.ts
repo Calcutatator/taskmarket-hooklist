@@ -146,4 +146,15 @@ describe('saveKeystore / loadKeystore', () => {
     );
     expect(await keystoreExists(p)).toBe(true);
   });
+
+  it('writes the keystore file with 0o600 permissions (owner read/write only)', async () => {
+    const p = tmpKeystorePath();
+    const { privateKey, address } = generateKeypair();
+    await saveKeystore(
+      { encryptedKey: encryptPrivateKey(randomDek(), privateKey), walletAddress: address, deviceId: 'x', apiToken: 'y' },
+      p
+    );
+    const stat = await fs.stat(p);
+    expect(stat.mode & 0o777).toBe(0o600);
+  });
 });

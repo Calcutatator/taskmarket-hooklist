@@ -59,7 +59,13 @@ export function decryptPrivateKey(deviceEncryptionKeyHex: string, encryptedHex: 
 export async function saveKeystore(keystore: Keystore, keystorePath?: string): Promise<void> {
   const p = keystorePath ?? getKeystorePath();
   await fs.mkdir(path.dirname(p), { recursive: true });
-  await fs.writeFile(p, JSON.stringify(keystore, null, 2), 'utf8');
+  // Contains the apiToken bearer credential and the encrypted wallet private key --
+  // owner read/write only, matching task-access-grants.ts's own writeFile mode for a
+  // comparably sensitive file. A widened umask on an already-existing file from an
+  // older CLI version wouldn't be corrected by writeFile's mode alone, so chmod
+  // defensively too.
+  await fs.writeFile(p, JSON.stringify(keystore, null, 2), { encoding: 'utf8', mode: 0o600 });
+  await fs.chmod(p, 0o600);
 }
 
 export async function loadKeystore(keystorePath?: string): Promise<Keystore> {
