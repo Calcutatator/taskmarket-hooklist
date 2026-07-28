@@ -67,13 +67,11 @@ export function PieCanvas() {
     let popEase = 0; // eases the hovered slice's outward bulge
     let needsFill = true;
     let lastPaintSig = '';
-    let lastSelected: string | null | undefined = Symbol() as never;
     let lastHover: number | null | undefined = Symbol() as never;
 
     const paint = (prog: number) => {
       const s = state.current;
       const slices = s.pie;
-      if (!slices) return;
       c.clearRect(0, 0, cols, rows);
       const cx = s.center.x;
       const cy = s.center.y;
@@ -103,13 +101,11 @@ export function PieCanvas() {
 
           const seed = s.seedOf(slice.name);
           const variant = s.variantOf(slice.name);
-          const emphasis = s.selectedDataKey ?? s.focusDataKey;
-          const selDim = emphasis !== null && emphasis !== slice.name ? 0.3 : 1;
           const it = intensity + (active ? 0.4 * popEase : 0);
 
           // Bright rim on the outer edge — thicker on the hovered slice.
           if (localOuter - r < (active ? 1.4 + popEase : 1.4)) {
-            c.fillStyle = rgb(seed.fill, 1, selDim);
+            c.fillStyle = rgb(seed.fill, 1, seed.alpha);
             c.fillRect(x, y, 1, 1);
             continue;
           }
@@ -121,7 +117,7 @@ export function PieCanvas() {
           // Density → opacity (see the colour-vs-opacity note in dither-paint);
           // off cells drop to a faint tier, never a hole to the background.
           const k = (0.35 + density * 0.65) * (1 + 0.22 * it);
-          const alpha = Math.min(1, (lit ? k : k * OFF_TIER) * selDim);
+          const alpha = Math.min(1, lit ? k : k * OFF_TIER) * seed.alpha;
           c.fillStyle = rgb(seed.fill, 1, alpha);
           c.fillRect(x, y, 1, 1);
         }
@@ -130,7 +126,7 @@ export function PieCanvas() {
 
     const draw = (now: number) => {
       const s = state.current;
-      if (!s.ready || !s.pie) return;
+      if (!s.ready) return;
       if (bloomCtx) {
         const on = s.bloom !== 'off' && (!s.bloomOnHover || s.isMouseInChart);
         if (on) {
@@ -146,11 +142,6 @@ export function PieCanvas() {
       if (!animStart) animStart = now;
       const prog = animate ? Math.min(1, (now - animStart) / duration) : 1;
 
-      const emphasisNow = s.selectedDataKey ?? s.focusDataKey;
-      if (emphasisNow !== lastSelected) {
-        lastSelected = emphasisNow;
-        needsFill = true;
-      }
       if (s.hoverIndex !== lastHover) {
         lastHover = s.hoverIndex;
         popEase = 0; // a freshly-hovered slice bulges out from rest
@@ -200,8 +191,6 @@ export function PieCanvas() {
     ctx.revision,
     ctx.isMouseInChart,
     ctx.hoverIndex,
-    ctx.selectedDataKey,
-    ctx.focusDataKey,
     ctx.pie,
     ctx.variantOf,
     ctx.innerRadius,

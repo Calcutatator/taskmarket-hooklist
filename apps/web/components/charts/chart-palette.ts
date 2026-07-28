@@ -1,6 +1,11 @@
-'use client';
-
-import type { ChartConfig } from '@/components/ui/chart';
+// Deliberately not a client module. `components/market/agent-avatar.tsx` is a
+// Server Component that reads CHART_SERIES_COLORS directly; marking this file
+// `'use client'` turns that import into a client reference, the palette lookup
+// resolves to nothing, and every avatar silently falls back to a generated HSL
+// colour outside the token system.
+// Type-only, so the dither kit's `'use client'` boundary is erased at build
+// time and this module stays usable from a Server Component.
+import type { ChartConfig } from '@/components/dither-kit/chart-context';
 
 // The five neutral series colours, in priority order. Index 0 is the primary
 // rose used for the first/activity series; index 1 the accent teal for money;

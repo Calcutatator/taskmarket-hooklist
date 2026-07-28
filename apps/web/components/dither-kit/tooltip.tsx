@@ -15,8 +15,11 @@ const VARIANT: Record<TooltipVariant, string> = {
 
 /**
  * Floating hover tooltip. Reads the shared common context so it works in every
- * chart family. It glides between points and fades in/out (instead of snapping),
- * and dims unselected series/slices.
+ * chart family. It glides between points and fades in/out instead of snapping.
+ *
+ * Presentational only: it sits inside the plot's `role="img"` node, so it is not
+ * exposed to assistive tech. The chart root announces the same values through
+ * its own live region as the keyboard moves between points.
  */
 export function Tooltip({
   labelKey,
@@ -85,11 +88,10 @@ export function Tooltip({
               <div
                 key={item.name}
                 className="flex items-center gap-1.5 font-mono text-[11px] text-popover-foreground tabular-nums"
-                style={{ opacity: item.dimmed ? 0.4 : 1 }}
               >
                 <span
                   className="size-2 rounded-[1px]"
-                  style={{ backgroundColor: rgb(item.seed.fill) }}
+                  style={{ backgroundColor: rgb(item.seed.fill, 1, item.seed.alpha) }}
                 />
                 <span className="text-muted-foreground">{item.label}</span>
                 <span className="ml-auto pl-2 text-foreground">

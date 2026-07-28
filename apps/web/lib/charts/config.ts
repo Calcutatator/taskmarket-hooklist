@@ -1,4 +1,4 @@
-import type { ChartConfig } from '@/components/ui/chart';
+import type { ChartConfig } from '@/components/dither-kit/chart-context';
 
 // App-wide series registry. Charts across the dashboard, agent profiles, and the
 // live feed should pull their label and colour from here so the same concept

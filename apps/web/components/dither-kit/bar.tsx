@@ -8,21 +8,18 @@ export type BarProps = {
   dataKey: string;
   variant?: AreaVariant;
   strokeVariant?: StrokeVariant;
-  isClickable?: boolean;
   children?: ReactNode;
 };
 
 /**
  * One bar series. The dithered bars are painted on the canvas; this registers
- * the series and (when `isClickable`) lays transparent hit rects over each bar
- * — using the shared `barSlot` geometry so clicks line up with the pixels — to
- * select the series. The Legend offers the same toggle accessibly.
+ * the series so the canvas knows how to draw it, and exposes the series to
+ * child markers.
  */
 export function Bar({
   dataKey,
   variant = 'gradient',
   strokeVariant = 'solid',
-  isClickable = false,
   children,
 }: BarProps) {
   const ctx = useChartPart('Bar', 'bar');
@@ -43,34 +40,6 @@ export function Bar({
   if (!ctx.ready || !band) return null;
 
   const seed = ctx.seedOf(dataKey);
-  const dimmed = ctx.selectedDataKey !== null && ctx.selectedDataKey !== dataKey;
-  const si = ctx.configKeys.indexOf(dataKey);
-  const n = ctx.configKeys.length;
-  const onClick = () => ctx.selectDataKey(ctx.selectedDataKey === dataKey ? null : dataKey);
 
-  return (
-    <>
-      {isClickable &&
-        band.map((b, i) => {
-          const slot = ctx.barSlot(i, si, n);
-          const top = ctx.y(b[1]);
-          const base = ctx.y(b[0]);
-          return (
-            // biome-ignore lint/a11y/noStaticElementInteractions: progressive enhancement; the Legend offers the same toggle accessibly
-            <rect
-              // biome-ignore lint/suspicious/noArrayIndexKey: index is the stable category position
-              key={i}
-              x={slot.x}
-              y={Math.min(top, base)}
-              width={slot.width}
-              height={Math.abs(base - top)}
-              fill="transparent"
-              style={{ cursor: 'pointer' }}
-              onClick={onClick}
-            />
-          );
-        })}
-      <SeriesContext value={{ dataKey, seed, dimmed }}>{children}</SeriesContext>
-    </>
-  );
+  return <SeriesContext value={{ dataKey, seed }}>{children}</SeriesContext>;
 }

@@ -13,7 +13,30 @@ import {
 import { rgb } from './palette';
 
 type Star = { key: string; xi: number; depth: number; phase: number };
+/** The eased shape a series is currently drawn at, per backing column. */
 type Surface = { top: number[]; floor: number[] };
+/** The shape a series is easing toward, plus the columns it must not draw. */
+type Target = Surface & { gap: boolean[] };
+
+/**
+ * Column mask for a per-row gap flag, mirroring {@link resample}: a column is a
+ * gap when either row it interpolates between carries no value. So the fill
+ * stops at the last real point and resumes at the next one instead of sloping
+ * through the hole toward a phantom zero.
+ */
+function resampleGaps(src: boolean[], cols: number): boolean[] {
+  const out = new Array<boolean>(cols).fill(false);
+  if (src.length === 0) return out;
+  if (src.length === 1) return out.fill(src[0]);
+  const last = src.length - 1;
+  for (let c = 0; c < cols; c++) {
+    const t = (c / Math.max(cols - 1, 1)) * last;
+    const i = Math.floor(t);
+    const f = t - i;
+    out[c] = (src[i] ?? false) || (f > 0 && (src[Math.min(i + 1, last)] ?? false));
+  }
+  return out;
+}
 
 type LoopArgs = {
   canvas: HTMLCanvasElement;
@@ -21,7 +44,7 @@ type LoopArgs = {
   cols: number;
   rows: number;
   state: RefObject<ChartContextValue>;
-  targets: RefObject<Record<string, Surface>>;
+  targets: RefObject<Record<string, Target>>;
   stars: RefObject<Star[]>;
   animateEntrance: boolean;
 };
@@ -76,17 +99,17 @@ function startCartesianLoop({
     s.configKeys.forEach((key, si) => {
       const cur = current[key];
       if (!cur) return;
+      const gap = targets.current[key]?.gap;
       const seed = s.seedOf(key);
       const variant = s.seriesSpecs[key]?.variant ?? 'gradient';
       const isLine =
         (s.seriesSpecs[key]?.kind ?? (s.chartType === 'line' ? 'line' : 'area')) === 'line';
-      const emphasis = s.selectedDataKey ?? s.focusDataKey;
-      const dim = emphasis !== null && emphasis !== key ? 0.3 : 1;
       // Overlapping (non-stacked) layers thin out front-to-back so they
       // read as distinct layers instead of a muddy blend.
       const sparse = stacked ? 0 : si * 0.14;
       for (let x = 0; x < cols; x++) {
         if (x > revealCols) break;
+        if (gap?.[x]) continue; // no value here — leave the hole
         // For a value that dips below the zero baseline the value line ends up
         // *below* the floor in pixels; paintColumn needs the higher edge first,
         // so order the pair (a no-op for the common positive case).
@@ -95,7 +118,7 @@ function startCartesianLoop({
         paintColumn(octx, x, Math.min(a, b), Math.max(a, b), seed, {
           variant,
           intensity,
-          dim,
+          dim: 1,
           stacked: stacked && !isLine,
           sparse,
         });
@@ -113,7 +136,6 @@ function startCartesianLoop({
   let intensity = 0;
   let needsFill = true;
   let lastPaintSig = '';
-  let lastSelected: string | null | undefined = Symbol() as never;
 
   const draw = (now: number) => {
     const s = state.current;
@@ -172,11 +194,6 @@ function startCartesianLoop({
       }
     }
     if (moving) needsFill = true;
-    const emphasisNow = s.selectedDataKey ?? s.focusDataKey;
-    if (emphasisNow !== lastSelected) {
-      lastSelected = emphasisNow;
-      needsFill = true;
-    }
 
     const itTarget = s.isMouseInChart || s.hovered ? 1 : 0;
     let settling = false;
@@ -232,13 +249,14 @@ function startCartesianLoop({
       for (const key of s.configKeys) {
         const cur = current[key];
         if (!cur) continue;
+        if (targets.current[key]?.gap[mx]) continue; // nothing to mark in a hole
         const seed = s.seedOf(key);
         const my = Math.round(cur.top[mx] ?? 0);
         // Full-height column + a chunky marker block at the point — the
         // series colour at higher opacity, so it reads on either theme.
-        c.fillStyle = rgb(seed.fill, 1, 0.55);
+        c.fillStyle = rgb(seed.fill, 1, 0.55 * seed.alpha);
         for (let y = my; y < rows; y++) c.fillRect(mx, y, 1, 1);
-        c.fillStyle = rgb(seed.fill);
+        c.fillStyle = rgb(seed.fill, 1, seed.alpha);
         c.fillRect(mx - 1, my - 1, 3, 3);
       }
     }
@@ -248,6 +266,7 @@ function startCartesianLoop({
       if (!cur) continue;
       const sx = Math.round((star.xi / Math.max(s.dataLength - 1, 1)) * (cols - 1));
       if (sx > revealCols) continue; // behind the reveal front
+      if (targets.current[star.key]?.gap[sx]) continue; // nothing to glint on
       const top = cur.top[sx] ?? 0;
       const floor = cur.floor[sx] ?? rows - 1;
       const sy = Math.round(top + star.depth * (floor - top));
@@ -257,12 +276,12 @@ function startCartesianLoop({
       // Sparkles glint in the series colour via opacity (the `lift` wink)
       // rather than a lighter shade — so they never read as stray white
       // pixels on a light background.
-      const starColor = s.seedOf(star.key).fill;
-      c.fillStyle = rgb(starColor, 1, lift);
+      const starSeed = s.seedOf(star.key);
+      c.fillStyle = rgb(starSeed.fill, 1, lift * starSeed.alpha);
       c.fillRect(sx, sy, 1, 1);
       // At the peak of a wink the star flares into a 4-point glint.
       if (tw > 0.9) {
-        c.fillStyle = rgb(starColor, 1, lift * 0.6 * (tw - 0.9) * 10);
+        c.fillStyle = rgb(starSeed.fill, 1, lift * 0.6 * (tw - 0.9) * 10 * starSeed.alpha);
         c.fillRect(sx - 1, sy, 1, 1);
         c.fillRect(sx + 1, sy, 1, 1);
         c.fillRect(sx, sy - 1, 1, 1);
@@ -293,14 +312,14 @@ export function CartesianCanvas() {
 
   const { width, height } = ctx.plot;
   const { cols, rows } = backingSize(width, height);
-  const { ready, chartType, configKeys, bands, seriesSpecs, y, dataLength } = ctx;
+  const { ready, chartType, configKeys, bands, gaps, seriesSpecs, y, dataLength } = ctx;
 
   // Memoized: the pricey bit in the render path — a `resample` per series to
   // the backing column count. The canvas re-renders on every hover/cursor tick
   // (it consumes ctx), so without this the whole surface is rebuilt each time.
   // Pinned to the exact ctx fields it reads, plus the backing geometry.
   const targets = useMemo(() => {
-    const out: Record<string, Surface> = {};
+    const out: Record<string, Target> = {};
     if (!ready) return out;
     const h = height || 1;
     const glow = Math.max(6, Math.round(rows * 0.16));
@@ -313,10 +332,14 @@ export function CartesianCanvas() {
       const floor = band.map((b, i) =>
         line ? Math.min(rows - 1, top[i] + glow) : (y(b[0]) / h) * (rows - 1)
       );
-      out[key] = { top: resample(top, cols), floor: resample(floor, cols) };
+      out[key] = {
+        top: resample(top, cols),
+        floor: resample(floor, cols),
+        gap: resampleGaps(gaps[key] ?? [], cols),
+      };
     }
     return out;
-  }, [ready, chartType, configKeys, bands, seriesSpecs, y, height, rows, cols]);
+  }, [ready, chartType, configKeys, bands, gaps, seriesSpecs, y, height, rows, cols]);
 
   // Memoized: the star field is deterministic — only its shape (series ×
   // column count) matters, so it need not be rebuilt on unrelated re-renders.
@@ -376,8 +399,6 @@ export function CartesianCanvas() {
     ctx.hovered,
     ctx.hoverIndex,
     ctx.markerIndex,
-    ctx.selectedDataKey,
-    ctx.focusDataKey,
     ctx.seriesSpecs,
     ctx.seedOf,
   ]);

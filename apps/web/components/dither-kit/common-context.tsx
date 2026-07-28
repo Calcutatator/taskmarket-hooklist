@@ -9,25 +9,18 @@ export type TooltipItem = {
   label: string;
   value: number;
   seed: Seed;
-  dimmed: boolean;
 };
 
 /**
- * The minimal surface shared by every chart family, so `<Legend>` and
- * `<Tooltip>` work identically whether they sit in a cartesian, bar, or polar
- * root. Each root publishes one of these alongside its family-specific context.
+ * The minimal surface shared by every chart family, so `<Tooltip>` works
+ * identically whether it sits in a cartesian, bar, or polar root. Each root
+ * publishes one of these alongside its family-specific context.
  */
 export type CommonChart = {
   names: string[]; // legend entries — series keys (cartesian) or slice names (pie)
   labelOf: (name: string) => string;
   colorOf: (name: string) => string;
   seedOf: (name: string) => Seed;
-  selectedDataKey: string | null;
-  selectDataKey: (key: string | null) => void;
-  /** Transient legend-hover emphasis — spotlights one series (others dim)
-   * while the pointer rests on its legend entry. Selection still wins. */
-  focusDataKey: string | null;
-  setFocusDataKey: (key: string | null) => void;
   hoverIndex: number | null;
   heading: (index: number, labelKey?: string) => string | null;
   itemsAt: (index: number) => TooltipItem[];
@@ -41,7 +34,42 @@ export const CommonChartContext = createContext<CommonChart | null>(null);
 export function useCommonChart() {
   const ctx = use(CommonChartContext);
   if (!ctx) {
-    throw new Error('<Legend /> / <Tooltip /> must be used within a chart root.');
+    throw new Error('<Tooltip /> must be used within a chart root.');
   }
   return ctx;
+}
+
+/**
+ * The tooltip's content as one sentence, for the chart root's live region: the
+ * keyboard equivalent of scrubbing the pointer to a point. `heading` is dropped
+ * for families whose heading repeats the single item's own label (a pie slice
+ * is named by the slice, not by a separate category axis).
+ */
+export function describeChartPoint(
+  chart: CommonChart,
+  index: number,
+  {
+    labelKey,
+    heading = true,
+    valueFormatter,
+  }: {
+    labelKey?: string;
+    heading?: boolean;
+    valueFormatter?: (value: number, name: string) => string;
+  } = {}
+): string {
+  const items = chart.itemsAt(index);
+  const title = heading ? chart.heading(index, labelKey) : null;
+  if (items.length === 0) return title ?? '';
+  const values = items
+    .map((item) => {
+      // Pinned locale for the same reason the accessible table pins one: the
+      // announcement must not depend on the ambient locale of the renderer.
+      const value = valueFormatter
+        ? valueFormatter(item.value, item.name)
+        : item.value.toLocaleString('en-US');
+      return `${item.label}: ${value}`;
+    })
+    .join(', ');
+  return title ? `${title}. ${values}` : values;
 }

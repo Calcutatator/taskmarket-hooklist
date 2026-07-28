@@ -4,6 +4,7 @@ import type { PlatformTimeSeriesResponse, TimeRange } from '@taskmarket/shared';
 import { useState } from 'react';
 
 import { ChartCard, RangeToggle, TrendAreaChart } from '@/components/charts';
+import { formatBucketTick } from '@/lib/charts/axis-format';
 import { getChartSeries } from '@/lib/charts/config';
 import { trpc } from '@/lib/api/client';
 import { formatNumber } from '@/lib/format';
@@ -23,20 +24,6 @@ const RANGE_OPTIONS = [
   { value: '30d', label: 'Last 30 days', shortLabel: '30d' },
   { value: '90d', label: 'Last 90 days', shortLabel: '90d' },
 ];
-
-// A 'YYYY-MM-DD' UTC bucket rendered as a short "Jun 4" style tick. Parsing the
-// date parts directly avoids a local-timezone shift on the day boundary.
-function formatBucketTick(value: string): string {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) {
-    return value;
-  }
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
-}
 
 function toChartData(series: PlatformTimeSeriesResponse): SeriesPoint[] {
   return series.map((point) => ({

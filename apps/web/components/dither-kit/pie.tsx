@@ -14,7 +14,7 @@ export type PieProps = {
  * sets the shared fill variant. The dithered wedges are painted on the canvas.
  */
 export function Pie({ variant = 'gradient' }: PieProps) {
-  const ctx = usePolarPart('Pie', 'pie');
+  const ctx = usePolarPart('Pie');
   const { registerVariant, unregisterVariant } = ctx;
 
   useEffect(() => {

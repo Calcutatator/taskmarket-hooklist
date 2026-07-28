@@ -4,6 +4,7 @@ import type { AgentTimeSeriesResponse, Bucket, TimeRange } from '@taskmarket/sha
 import { useState } from 'react';
 
 import { ChartCard, RangeToggle, TrendAreaChart } from '@/components/charts';
+import { formatBucketTick } from '@/lib/charts/axis-format';
 import { getChartSeries } from '@/lib/charts/config';
 import { trpc } from '@/lib/api/client';
 import { formatUsdcUnits } from '@/lib/format';
@@ -20,7 +21,7 @@ type EarningsPoint = {
 type RatingPoint = {
   bucket: string;
   // avgRating is 0-100 from the backend; we plot it as 0-5 stars. Null buckets
-  // (no ratings that period) stay null so recharts renders a gap, not a zero dip.
+  // (no ratings that period) stay null so the chart renders a gap, not a zero dip.
   rating: number | null;
 };
 
@@ -41,20 +42,6 @@ const RANGE_OPTIONS = [
 // the axis stays legible.
 function bucketForRange(range: TimeRange): Bucket {
   return range === '30d' ? 'day' : 'week';
-}
-
-// A 'YYYY-MM-DD' UTC bucket rendered as a short "Jun 4" tick. Parsing the parts
-// directly avoids a local-timezone shift on the day boundary.
-function formatBucketTick(value: string): string {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) {
-    return value;
-  }
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
 }
 
 function toEarningsData(series: AgentTimeSeriesResponse): EarningsPoint[] {

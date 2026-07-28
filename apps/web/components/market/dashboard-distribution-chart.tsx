@@ -75,11 +75,12 @@ const VIEW_OPTIONS = [
 // mix, paired with a ranked breakdown (exact counts the donut hides) and a
 // derived summary strip so the card carries real detail and balances the live
 // activity feed beside it. Seeds from the SSR breakdowns and refreshes every
-// thirty seconds; empty arrays render the empty state.
+// thirty seconds; empty arrays render the empty state and a failed refresh
+// surfaces the error state rather than serving a stale mix as if it were live.
 export function DashboardDistributionChart({ initialData }: { initialData: BreakdownsResponse }) {
   const [view, setView] = useState<'status' | 'mode'>('status');
 
-  const { data } = trpc.stats.breakdowns.useQuery(
+  const query = trpc.stats.breakdowns.useQuery(
     {},
     {
       initialData,
@@ -88,7 +89,7 @@ export function DashboardDistributionChart({ initialData }: { initialData: Break
     }
   );
 
-  const breakdowns = data ?? { actorType: [], mode: [], status: [] };
+  const breakdowns = query.data ?? { actorType: [], mode: [], status: [] };
 
   // Donut data keeps the canonical bucket order; the list ranks by size.
   const donutData = useMemo<StatusDatum[]>(
@@ -148,7 +149,10 @@ export function DashboardDistributionChart({ initialData }: { initialData: Break
       description={
         view === 'status' ? 'Live task status mix.' : 'Tasks grouped by market mechanic.'
       }
-      isEmpty={rows.length === 0}
+      errorMessage={query.isError ? 'Could not load the task distribution.' : undefined}
+      isEmpty={!query.isLoading && rows.length === 0}
+      isLoading={query.isLoading && rows.length === 0}
+      liveUpdatedAt={query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : undefined}
       title="Task distribution"
     >
       <div className="flex h-full flex-col gap-6">

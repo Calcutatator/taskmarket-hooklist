@@ -2,7 +2,17 @@ export type Rgb = [number, number, number];
 
 export type DitherColor = string;
 
-export type Seed = { fill: Rgb; line: Rgb; star: Rgb };
+/**
+ * A resolved series colour: rgb channels plus the opacity the token itself
+ * carries. Some tokens differ only in alpha (`--chart-completed` is
+ * `--muted-foreground`, `--chart-expired` is the same colour at 60%), so every
+ * painter must fold `alpha` into the opacity it paints with — otherwise the two
+ * collapse into one indistinguishable colour on the canvas while the DOM
+ * legend swatch beside it still honours the alpha.
+ */
+export type Seed = { fill: Rgb; line: Rgb; star: Rgb; alpha: number };
+
+type Resolved = { channels: Rgb; alpha: number };
 
 const NAMED_COLOR_TOKENS: Record<string, string> = {
   green: 'var(--chart-2)',
@@ -13,27 +23,38 @@ const NAMED_COLOR_TOKENS: Record<string, string> = {
   red: 'var(--chart-disputed)',
   grey: 'var(--muted-foreground)',
 };
+// The token a colour falls back to when it cannot be resolved. An unknown token
+// (`var(--nope)`) parses fine but is invalid at computed-value time, and `color`
+// inherits — so without a pinned host the series would silently paint in the
+// page's text colour. The probe inherits this instead, keeping the failure mode
+// inside the design system.
+const FALLBACK_TOKEN = 'var(--muted-foreground)';
+// Last resort, only reachable when there is no document at all (SSR, jsdom) —
+// i.e. when nothing is painted anyway. Mid grey so a colour is always defined.
+const UNRESOLVED: Resolved = { channels: [128, 128, 128], alpha: 1 };
 const seedCache = new Map<string, Seed>();
 
 export const rgb = ([r, g, b]: Rgb, k = 1, a = 1) =>
   `rgba(${Math.round(r * k)},${Math.round(g * k)},${Math.round(b * k)},${a})`;
 
-function resolveCssColor(color: string): Rgb | null {
+function resolveCssColor(color: string): Resolved | null {
   if (typeof document === 'undefined') return null;
 
+  const host = document.createElement('div');
+  host.style.color = FALLBACK_TOKEN;
+  host.style.display = 'none';
   const probe = document.createElement('span');
   probe.style.color = color;
-  probe.style.display = 'none';
-  document.body.append(probe);
+  host.append(probe);
+  document.body.append(host);
   const resolved = getComputedStyle(probe).color;
-  probe.remove();
+  host.remove();
 
   if (/^rgba?\(/.test(resolved)) {
-    const channels = resolved
-      .match(/[\d.]+/g)
-      ?.slice(0, 3)
-      .map(Number);
-    return channels?.length === 3 ? (channels as Rgb) : null;
+    const channels = resolved.match(/[\d.]+/g)?.map(Number);
+    if (!channels || channels.length < 3) return null;
+    const [r, g, b, a] = channels;
+    return { channels: [r, g, b], alpha: a ?? 1 };
   }
 
   if (typeof navigator !== 'undefined' && navigator.userAgent.includes('jsdom')) return null;
@@ -44,8 +65,10 @@ function resolveCssColor(color: string): Rgb | null {
   if (!context) return null;
   context.fillStyle = resolved;
   context.fillRect(0, 0, 1, 1);
-  const [red, green, blue] = context.getImageData(0, 0, 1, 1).data;
-  return [red, green, blue];
+  // The canvas starts transparent, so a translucent colour comes back with its
+  // own alpha intact (getImageData is un-premultiplied).
+  const [red, green, blue, alpha] = context.getImageData(0, 0, 1, 1).data;
+  return { channels: [red, green, blue], alpha: alpha / 255 };
 }
 
 function mix(color: Rgb, target: number, amount: number): Rgb {
@@ -56,11 +79,13 @@ export const seedOfColor = (color: DitherColor): Seed => {
   const cached = seedCache.get(color);
   if (cached) return cached;
 
-  const fill = resolveCssColor(NAMED_COLOR_TOKENS[color] ?? color) ?? [128, 128, 128];
+  const { channels: fill, alpha } =
+    resolveCssColor(NAMED_COLOR_TOKENS[color] ?? color) ?? UNRESOLVED;
   const seed = {
     fill,
     line: mix(fill, 255, 0.36),
     star: mix(fill, 255, 0.62),
+    alpha,
   };
   seedCache.set(color, seed);
   return seed;

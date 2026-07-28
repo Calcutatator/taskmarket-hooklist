@@ -1,6 +1,7 @@
-import type { Metadata } from 'next';
+import type { Metadata, Route } from 'next';
 
 import { Bebas_Neue } from 'next/font/google';
+import Link from 'next/link';
 
 import { CopyCommand } from '@/components/taskdrop/copy-command';
 import { DropAlertsInlineForm } from '@/components/taskdrop/drop-alerts-inline-form';
@@ -14,9 +15,10 @@ import { buildPageMetadata } from '@/lib/seo';
 // them, and the how-to-start screen is taller than the viewport, so snapping fought the reader.
 const SNAP_ENABLED = false;
 
-// TODO(Loaf): Switch to /live once og-link-previews lands on main. That route resolves the
-// latest official Daydreams drop; until it exists, every live-drop CTA points at /tasks.
-const LIVE_DROP_URL = 'https://taskmarket.dev/tasks';
+// The evergreen live-drop link: /live renders whichever drop is current, so these CTAs never
+// need updating when the next one opens. Internal, so they navigate in place rather than
+// opening a tab.
+const LIVE_DROP_PATH = '/live' satisfies Route;
 const SKILL_URL = 'https://taskmarket.dev/skill.md';
 const DISCORD_URL = 'https://discord.gg/daydreamsagents';
 const DROP_ALERTS_ANCHOR = '#alerts';
@@ -121,17 +123,18 @@ function SkillCommand({ compact = false }: Readonly<{ compact?: boolean }>) {
   );
 }
 
+// Shared by the in-app and external step links so the two render identically.
+const STEP_LINK_CLASS = 'inline-flex items-center max-[480px]:min-h-11';
+
 function DropActions() {
   return (
     <div className="mt-[22px] flex flex-wrap gap-3">
-      <a
+      <Link
         className="taskdrop-display inline-flex min-h-11 items-center rounded-[11px] bg-[#FFF6E8] px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] text-[#2C1F1A] max-[420px]:px-5 max-[420px]:pt-3.5 max-[420px]:pb-[11px]"
-        href={LIVE_DROP_URL}
-        rel="noopener"
-        target="_blank"
+        href={LIVE_DROP_PATH}
       >
         ENTER THE LIVE DROP
-      </a>
+      </Link>
       <a
         className="taskdrop-display inline-flex min-h-11 items-center rounded-[11px] border-[1.5px] border-current bg-transparent px-[22px] pt-[15px] pb-3 text-xl tracking-[0.05em] max-[420px]:px-5 max-[420px]:pt-3.5 max-[420px]:pb-[11px]"
         href={DROP_ALERTS_ANCHOR}
@@ -142,15 +145,23 @@ function DropActions() {
   );
 }
 
-const firstDropSteps: ReadonlyArray<{ body: string; href?: string; title: string }> = [
+// A step links either in-app or out, never both. Keeping them as separate fields rather than
+// one string means `typedRoutes` still checks the in-app one against the real route map -- a
+// single `string` field would widen it out of that check.
+const firstDropSteps: ReadonlyArray<{
+  body: string;
+  externalHref?: string;
+  href?: Route;
+  title: string;
+}> = [
   {
     body: 'Open the drop running now. Read the theme and its tasks.',
-    href: LIVE_DROP_URL,
+    href: LIVE_DROP_PATH,
     title: 'SEE WHAT’S LIVE',
   },
   {
     body: 'Paste one line into your agent. It sets up a wallet.',
-    href: SKILL_URL,
+    externalHref: SKILL_URL,
     title: 'GET THE SKILL',
   },
   {
@@ -298,9 +309,13 @@ export default function TaskDropPage() {
                     <div className="min-w-0 flex-1">
                       <p className="taskdrop-display mb-0.5 text-lg text-[#2C1F1A]">
                         {step.href ? (
+                          <Link className={STEP_LINK_CLASS} href={step.href}>
+                            <span className="border-b-2 border-[#E74079] pb-px">{step.title}</span>
+                          </Link>
+                        ) : step.externalHref ? (
                           <a
-                            className="inline-flex items-center max-[480px]:min-h-11"
-                            href={step.href}
+                            className={STEP_LINK_CLASS}
+                            href={step.externalHref}
                             rel="noopener"
                             target="_blank"
                           >

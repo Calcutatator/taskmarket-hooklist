@@ -7,6 +7,8 @@ import { cn } from '@/lib/utils';
 const metricSlots = ['metric-1', 'metric-2', 'metric-3', 'metric-4', 'metric-5'];
 const tableRows = ['row-1', 'row-2', 'row-3', 'row-4', 'row-5', 'row-6'];
 const filterRows = ['filter-1', 'filter-2', 'filter-3', 'filter-4', 'filter-5'];
+const sectionTabSlots = ['tab-1', 'tab-2', 'tab-3', 'tab-4'];
+const exploreCardSlots = ['explore-1', 'explore-2', 'explore-3'];
 
 function LoadingFrame({
   children,
@@ -79,7 +81,10 @@ function TableSkeleton({
   rows?: number;
 }) {
   return (
-    <div className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38">
+    <div
+      className="min-w-0 max-w-full overflow-hidden rounded-lg border border-border/58 bg-card/38"
+      data-testid="table-skeleton"
+    >
       <div className="hidden w-full max-w-full overflow-x-auto md:block">
         <div className="grid min-w-[48rem] gap-0">
           <div
@@ -188,6 +193,73 @@ function FormSkeleton({ fields = 6 }: { fields?: number }) {
         </div>
       </CardContent>
     </Card>
+  );
+}
+
+// The console chrome that survives every dashboard section: the DashboardScope
+// heading with its Market/You toggle, and the DashboardSectionTabs strip. Both
+// are painted by the page itself on every `?section=` navigation, so a fallback
+// that omits them pops ~110px of layout in above the fold on each tab click.
+function ConsoleChromeSkeleton() {
+  return (
+    <>
+      <div
+        className="flex flex-wrap items-center justify-between gap-3 px-4 lg:px-6"
+        data-testid="dashboard-scope-skeleton"
+      >
+        <div className="grid gap-2">
+          <Skeleton className="h-3 w-16" />
+          <Skeleton className="h-9 w-64 max-w-[70vw]" />
+        </div>
+        <Skeleton className="h-10 w-40" />
+      </div>
+      <div
+        className="border-y border-border/58 px-4 lg:px-6"
+        data-testid="dashboard-section-tabs-skeleton"
+      >
+        <div className="my-2 flex w-fit min-h-11 items-center gap-1 rounded-full border border-border/65 p-1 sm:h-10">
+          {sectionTabSlots.map((slot) => (
+            <Skeleton className="h-8 w-24 rounded-full" key={slot} />
+          ))}
+        </div>
+      </div>
+    </>
+  );
+}
+
+// The /dashboard fallback. It reserves the persistent console chrome and then the
+// overview body (the default section: metric cards, a section heading, and the
+// three explore links). The section a click is heading for is a searchParam and
+// so unreadable here, but every section renders cards over that same chrome --
+// never a table -- so this stays close for all four.
+export function DashboardConsoleLoading({ metricCount = 5 }: { metricCount?: number } = {}) {
+  return (
+    <LoadingFrame className="flex flex-1 flex-col" label="Loading dashboard">
+      <div className="@container/main flex flex-1 flex-col gap-2">
+        <div className="flex flex-col gap-4 py-4 md:gap-6 md:py-6">
+          <ConsoleChromeSkeleton />
+          <MetricCardsSkeleton count={metricCount} />
+          <section className="grid gap-4 px-4 lg:px-6">
+            <div className="grid gap-2">
+              <Skeleton className="h-3 w-20" />
+              <Skeleton className="h-9 w-72 max-w-[70vw]" />
+            </div>
+            <div className="grid gap-3 md:grid-cols-3">
+              {exploreCardSlots.map((slot) => (
+                <div
+                  className="grid min-h-32 gap-2 rounded-lg border border-border/58 bg-card/44 p-5"
+                  key={slot}
+                >
+                  <Skeleton className="h-6 w-32" />
+                  <Skeleton className="h-4 w-full" />
+                  <Skeleton className="h-4 w-4/5" />
+                </div>
+              ))}
+            </div>
+          </section>
+        </div>
+      </div>
+    </LoadingFrame>
   );
 }
 

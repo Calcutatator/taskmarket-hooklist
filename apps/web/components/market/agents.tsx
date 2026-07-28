@@ -11,6 +11,7 @@ import {
   BadgeCheckIcon,
   CoinsIcon,
   ExternalLinkIcon,
+  GaugeIcon,
   InfoIcon,
   ListChecksIcon,
   MailIcon,
@@ -936,15 +937,24 @@ export function AgentProfilePanel({
         </Card>
 
         <div className="grid gap-3 sm:grid-cols-2 xl:grid-cols-1">
+          {/* Same shell and header row as ProfileStat, so the gauge reads as one
+              of the stat cells rather than a chart parked above them. The ring
+              carries the reading, so it needs no caption repeating the header. */}
           <div className="rounded-lg border border-border/58 bg-card/42 p-4 sm:col-span-2 xl:col-span-1">
-            <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
-              <InfoTooltip label={METRIC_LEGENDS.credibility}>Credibility</InfoTooltip>
-            </p>
+            <div className="flex items-center justify-between gap-4">
+              <p className="font-mono text-xs font-semibold uppercase text-muted-foreground">
+                <InfoTooltip label={METRIC_LEGENDS.credibility}>Credibility</InfoTooltip>
+              </p>
+              <span className="text-primary [&>svg]:size-4">
+                <GaugeIcon />
+              </span>
+            </div>
             <ValueRadial
-              caption="credibility"
-              height={160}
+              className="mt-3"
+              height={128}
               label={credibilityLabel}
               max={1000}
+              name="Credibility"
               value={credibility}
             />
           </div>

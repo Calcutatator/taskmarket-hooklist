@@ -1,6 +1,7 @@
 'use client';
 
 import { useChartPart } from './chart-context';
+import { resolveTicks, VALUE_TICK_COUNT } from './scales';
 
 export function Grid({
   horizontal = true,
@@ -17,10 +18,12 @@ export function Grid({
 
   return (
     <g className="stroke-border" strokeDasharray={strokeDasharray}>
+      {/* Same ticks as `<YAxis>`, so every line the grid draws is one the axis
+          puts a value on. */}
       {horizontal &&
-        ctx.y
-          .ticks(4)
-          .map((t) => <line key={`h-${t}`} x1={0} x2={width} y1={ctx.y(t)} y2={ctx.y(t)} />)}
+        resolveTicks(ctx.y, VALUE_TICK_COUNT, ctx.integral).map((t) => (
+          <line key={`h-${t}`} x1={0} x2={width} y1={ctx.y(t)} y2={ctx.y(t)} />
+        ))}
       {vertical &&
         ctx.data.map((_, i) => (
           <line

@@ -11,7 +11,11 @@ import {
   prefersReducedMotion,
 } from './dither-paint';
 
-type Bars = { top: number[]; base: number[] }; // per data index, in backing rows
+type Bars = {
+  top: number[]; // per data index, in backing rows
+  base: number[];
+  empty: boolean[]; // value sits exactly on its base — nothing to draw
+};
 
 // Fraction of the timeline spent staggering bar starts — the rest is each bar's
 // own grow window, so the rise sweeps across the chart as a wave.
@@ -47,6 +51,10 @@ export function BarCanvas() {
       out[key] = {
         top: band.map((b) => (y(b[1]) / h) * (rows - 1)),
         base: band.map((b) => (y(b[0]) / h) * (rows - 1)),
+        // A zero-value bar has no extent. Left to paintColumn it would still
+        // stamp its zero-depth outline pixel, and a 1px slab in the series
+        // colour sitting on the axis reads as a small nonzero bar.
+        empty: band.map((b) => b[1] === b[0]),
       };
     }
     return out;
@@ -100,9 +108,8 @@ export function BarCanvas() {
         if (!t) return;
         const seed = s.seedOf(key);
         const variant = s.seriesSpecs[key]?.variant ?? 'gradient';
-        const emphasis = s.selectedDataKey ?? s.focusDataKey;
-        const selDim = emphasis !== null && emphasis !== key ? 0.3 : 1;
         for (let i = 0; i < s.dataLength; i++) {
+          if (t.empty[i]) continue;
           const bp = barProgress(i, s.dataLength, prog);
           const base = t.base[i] ?? rows - 1;
           const grown = base + ((t.top[i] ?? base) - base) * bp;
@@ -120,7 +127,7 @@ export function BarCanvas() {
             paintColumn(c, x, top, bottom, seed, {
               variant,
               intensity: intensity + (active ? 0.4 : 0),
-              dim: selDim * hoverDim,
+              dim: hoverDim,
               stacked,
             });
           }
@@ -135,7 +142,6 @@ export function BarCanvas() {
     let intensity = 0;
     let needsFill = true;
     let lastPaintSig = '';
-    let lastSelected: string | null | undefined = Symbol() as never;
     let lastHover: number | null | undefined = Symbol() as never;
 
     const draw = (now: number) => {
@@ -158,11 +164,6 @@ export function BarCanvas() {
 
       if (prog !== lastProg) {
         lastProg = prog;
-        needsFill = true;
-      }
-      const emphasisNow = s.selectedDataKey ?? s.focusDataKey;
-      if (emphasisNow !== lastSelected) {
-        lastSelected = emphasisNow;
         needsFill = true;
       }
       if (s.hoverIndex !== lastHover) {
@@ -204,8 +205,6 @@ export function BarCanvas() {
     ctx.isMouseInChart,
     ctx.hovered,
     ctx.hoverIndex,
-    ctx.selectedDataKey,
-    ctx.focusDataKey,
     ctx.seriesSpecs,
     ctx.seedOf,
   ]);

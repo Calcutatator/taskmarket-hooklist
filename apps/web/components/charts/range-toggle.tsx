@@ -22,8 +22,8 @@ const DEFAULT_OPTIONS: RangeOption[] = [
   { value: '90d', label: 'Last 3 months', shortLabel: '90d' },
 ];
 
-// The responsive range control extracted from chart-area-interactive.tsx: a
-// segmented ToggleGroup on desktop and a Select on mobile, sharing one value.
+// The responsive range control shared by every chart card: a segmented
+// ToggleGroup on desktop and a Select on mobile, sharing one value.
 // Drop this into a ChartCard `action` so every chart gets the same control.
 export function RangeToggle({
   value,

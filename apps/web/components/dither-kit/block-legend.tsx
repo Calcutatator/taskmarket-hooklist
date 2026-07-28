@@ -4,13 +4,14 @@ import type { ChartConfig } from './chart-context';
 import { cn } from './lib';
 
 /**
- * An in-flow legend rendered as a sibling of the chart rather than an overlay.
+ * The chart legend: an in-flow key rendered as a sibling of the plot, so it can
+ * never overlap it at any width.
  *
- * The overlay {@link Legend} is pinned absolutely to the top of the plot, so
- * with more than ~3 entries (or a narrow container) its wrapped rows sit on top
- * of the chart. `<BlockLegend>` lives in normal document flow, so it can never
- * overlap the plot at any width — use it for multi-entry charts (donuts, many
- * series) and reserve the overlay `<Legend>` for ≤2–3 entries.
+ * It is a plain list, not a set of controls — the charts have no series
+ * selection to toggle, and a legend of buttons that only redraw themselves would
+ * be a keyboard stop with nothing behind it. Per-point values are read from the
+ * plot itself (tooltip / keyboard readout) and from the accessible data table
+ * each chart adapter renders.
  *
  * It needs no chart context: feed it the same `config` you pass the chart, and
  * optionally a `values` map to show a number beside each entry (e.g. allocation

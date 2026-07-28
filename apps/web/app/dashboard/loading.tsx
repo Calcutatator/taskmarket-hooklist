@@ -1,5 +1,5 @@
-import { DashboardOverviewLoading } from '@/components/dashboard-loading';
+import { DashboardConsoleLoading } from '@/components/dashboard-loading';
 
 export default function Loading() {
-  return <DashboardOverviewLoading metricCount={5} />;
+  return <DashboardConsoleLoading metricCount={5} />;
 }

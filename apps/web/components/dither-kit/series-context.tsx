@@ -6,7 +6,6 @@ import type { Seed } from './palette';
 export type SeriesContextValue = {
   dataKey: string;
   seed: Seed;
-  dimmed: boolean;
 };
 
 export const SeriesContext = createContext<SeriesContextValue | null>(null);

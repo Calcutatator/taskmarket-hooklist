@@ -26,11 +26,11 @@ export type PieChartProps<TData extends Row> = {
   replayToken?: number;
   bloom?: BloomInput;
   bloomOnHover?: boolean;
-  defaultSelectedDataKey?: string | null;
-  onSelectionChange?: (key: string | null) => void;
+  /** Formats announced values, so the keyboard readout matches the tooltip. */
+  valueFormatter?: (value: number, name: string) => string;
 };
 
-/** Composable dither **pie / donut** chart. Compose `<Pie>`, `<Legend>`, … inside. */
+/** Composable dither **pie / donut** chart. Compose `<Pie>`, `<Tooltip>`, … inside. */
 export function PieChart<TData extends Row>(props: PieChartProps<TData>) {
-  return <PolarRoot chartType="pie" Canvas={PieCanvas} {...props} />;
+  return <PolarRoot Canvas={PieCanvas} {...props} />;
 }

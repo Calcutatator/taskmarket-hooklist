@@ -1,6 +1,6 @@
 'use client';
 
-import type { ReactNode } from 'react';
+import type { CSSProperties, ReactNode } from 'react';
 import Link from 'next/link';
 import type { Route } from 'next';
 
@@ -31,6 +31,10 @@ export type ChartCardProps = {
   emptyAction?: ReactNode;
   onRetryHref?: string;
   height?: number;
+  // Bodies that are row-count driven rather than fixed-height (the heat map, for
+  // example) render taller on mobile than on desktop. Pass the mobile height so
+  // the loading placeholder reserves the right space at both widths.
+  mobileHeight?: number;
   liveUpdatedAt?: Date | string;
   className?: string;
   contentClassName?: string;
@@ -41,9 +45,33 @@ function toIsoString(value: Date | string): string {
   return typeof value === 'string' ? value : value.toISOString();
 }
 
+// The card chrome shared by every state. The error and empty states render it too
+// so the title, description, and the action controls (a range toggle, say) stay
+// on screen: a range that happens to hold no data must not strand the viewer with
+// no way back to a range that does.
+function ChartCardHeader({
+  title,
+  description,
+  action,
+}: {
+  title: ReactNode;
+  description?: ReactNode;
+  action?: ReactNode;
+}) {
+  return (
+    <CardHeader>
+      <CardTitle>{title}</CardTitle>
+      {description ? <CardDescription>{description}</CardDescription> : null}
+      {action ? <CardAction>{action}</CardAction> : null}
+    </CardHeader>
+  );
+}
+
 // The shared chart shell. Precedence is error -> loading -> empty -> content, and
 // every state renders a real Card so a chart slots into the same layouts as the
-// task table treatments it mirrors (see components/market/tasks.tsx).
+// task table treatments it mirrors (see components/market/tasks.tsx). Every state
+// also opens the `card` container so an action's container queries (RangeToggle
+// swaps to a Select below 767px) resolve the same way in all of them.
 export function ChartCard({
   title,
   description,
@@ -56,6 +84,7 @@ export function ChartCard({
   emptyAction,
   onRetryHref = '/dashboard',
   height = DEFAULT_HEIGHT,
+  mobileHeight,
   liveUpdatedAt,
   className,
   contentClassName,
@@ -63,7 +92,8 @@ export function ChartCard({
 }: ChartCardProps) {
   if (errorMessage) {
     return (
-      <Card className={className}>
+      <Card className={cn('@container/card', className)}>
+        <ChartCardHeader action={action} description={description} title={title} />
         <CardContent className="grid gap-4">
           <p className="font-mono text-sm text-destructive" role="alert">
             {errorMessage}
@@ -77,18 +107,28 @@ export function ChartCard({
   }
 
   if (isLoading) {
-    return <ChartCardSkeleton title={title} height={height} className={className} />;
+    return (
+      <ChartCardSkeleton
+        className={className}
+        hasAction={Boolean(action)}
+        hasDescription={Boolean(description)}
+        height={height}
+        mobileHeight={mobileHeight}
+        title={title}
+      />
+    );
   }
 
   if (isEmpty) {
     return (
       <Card
         className={cn(
-          'w-full border-dashed border-border/68 bg-card/60 py-14 shadow-[var(--shadow-soft)]',
+          '@container/card w-full border-dashed border-border/68 bg-card/60 shadow-[var(--shadow-soft)]',
           className
         )}
       >
-        <CardContent className="flex items-center justify-center">
+        <ChartCardHeader action={action} description={description} title={title} />
+        <CardContent className="flex items-center justify-center py-9">
           <div className="grid max-w-md gap-4 text-center">
             <div className="grid gap-2">
               <p className="font-sans text-sm font-semibold tracking-tight text-foreground">
@@ -107,11 +147,7 @@ export function ChartCard({
 
   return (
     <Card className={cn('@container/card', className)}>
-      <CardHeader>
-        <CardTitle>{title}</CardTitle>
-        {description ? <CardDescription>{description}</CardDescription> : null}
-        {action ? <CardAction>{action}</CardAction> : null}
-      </CardHeader>
+      <ChartCardHeader action={action} description={description} title={title} />
       <CardContent className={cn('px-2 pt-4 sm:px-6 sm:pt-6', contentClassName)}>
         {children}
         {liveUpdatedAt ? (
@@ -126,22 +162,51 @@ export function ChartCard({
 
 // The loading placeholder for a chart card. Exported so consumers can render it
 // directly while data is in flight without committing to the full ChartCard.
+// hasDescription/hasAction reserve the header chrome the loaded card will render
+// (a description line, an action control such as a RangeToggle) so the card does
+// not grow by a header row the moment data lands.
 export function ChartCardSkeleton({
   title,
+  hasDescription,
+  hasAction,
   height = DEFAULT_HEIGHT,
+  mobileHeight,
   className,
 }: {
   title?: ReactNode;
+  hasDescription?: boolean;
+  hasAction?: boolean;
   height?: number;
+  mobileHeight?: number;
   className?: string;
 }) {
+  // Two heights behind custom properties rather than one inline height: the
+  // breakpoint has to live in a class for the mobile/desktop swap to work.
+  const bodyStyle = {
+    '--chart-skeleton-height': `${height}px`,
+    '--chart-skeleton-mobile-height': `${mobileHeight ?? height}px`,
+  } as CSSProperties;
+
   return (
-    <Card className={className}>
+    <Card className={cn('@container/card', className)}>
       <CardHeader>
         <CardTitle>{title ?? <Skeleton className="h-5 w-40" />}</CardTitle>
+        {hasDescription ? (
+          <CardDescription>
+            <Skeleton className="h-5 w-64 max-w-full" />
+          </CardDescription>
+        ) : null}
+        {hasAction ? (
+          <CardAction>
+            <Skeleton className="h-9 w-40" />
+          </CardAction>
+        ) : null}
       </CardHeader>
       <CardContent className="px-2 pt-4 sm:px-6 sm:pt-6">
-        <Skeleton className="w-full" style={{ height }} />
+        <Skeleton
+          className="h-[var(--chart-skeleton-mobile-height)] w-full sm:h-[var(--chart-skeleton-height)]"
+          style={bodyStyle}
+        />
       </CardContent>
     </Card>
   );

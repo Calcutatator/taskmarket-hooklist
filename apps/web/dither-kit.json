@@ -19,10 +19,6 @@
         {
           "path": "components/dither-kit/cartesian-canvas.tsx",
           "hash": "sha256:180a1525cbe10ec35bc79f689bd018cfdf115ebb4e1e6b1ff31d4bd37ecc6f09"
-        },
-        {
-          "path": "components/dither-kit/sparkline.tsx",
-          "hash": "sha256:b5dab0b68af7ebc976ec51a74776761ac26d79f4aacd9c453a6e79c49e8d11ff"
         }
       ]
     },
@@ -97,10 +93,6 @@
         {
           "path": "components/dither-kit/grid.tsx",
           "hash": "sha256:ad09d80b3898a4d3f588ff1f2f4f82984864c3918cb09d31350be6ac18d2446f"
-        },
-        {
-          "path": "components/dither-kit/legend.tsx",
-          "hash": "sha256:2a067ebdc484c7bd9efb2afc4e8a0aa6718a14ec44ccd7bb94c871d192e501e6"
         },
         {
           "path": "components/dither-kit/lib.ts",

@@ -6,20 +6,27 @@ import { useSeries } from './series-context';
 
 export type DotVariant = 'border' | 'colored-border' | 'filled';
 
+// `seed.alpha` is the opacity the series' own token carries (see palette.ts) —
+// fold it into every painted alpha so tokens that differ only in alpha stay
+// distinguishable.
 function dotPaint(variant: DotVariant, seed: Seed) {
   switch (variant) {
     case 'colored-border':
       return {
         fill: 'var(--card)',
-        stroke: rgb(seed.line),
+        stroke: rgb(seed.line, 1, seed.alpha),
         strokeWidth: 1.5,
       };
     case 'filled':
-      return { fill: rgb(seed.star), stroke: rgb(seed.line), strokeWidth: 1 };
+      return {
+        fill: rgb(seed.star, 1, seed.alpha),
+        stroke: rgb(seed.line, 1, seed.alpha),
+        strokeWidth: 1,
+      };
     default:
       return {
         fill: 'var(--card)',
-        stroke: rgb(seed.star, 0.8),
+        stroke: rgb(seed.star, 0.8, seed.alpha),
         strokeWidth: 1,
       };
   }
@@ -76,7 +83,7 @@ export function ActiveDot({
   return (
     <g>
       {/* Soft halo so the active point is unmistakable over the dither. */}
-      <circle cx={cx} cy={cy} r={r + 3} fill={rgb(seed.line, 1, 0.18)} />
+      <circle cx={cx} cy={cy} r={r + 3} fill={rgb(seed.line, 1, 0.18 * seed.alpha)} />
       <circle cx={cx} cy={cy} r={r} {...paint} strokeWidth={2} />
     </g>
   );

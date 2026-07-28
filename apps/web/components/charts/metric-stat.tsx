@@ -111,7 +111,6 @@ export function MetricStat({
               <Sparkline
                 data={sparkline}
                 color={direction === 'down' ? 'var(--chart-disputed)' : 'var(--chart-1)'}
-                ariaLabel={`${label} trend`}
               />
             ) : null}
           </div>

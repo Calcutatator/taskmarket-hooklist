@@ -8,9 +8,8 @@ import {
   statusColor,
   type TaskStatusBucket,
 } from '@/components/charts/chart-palette';
-import { BarChart, StackedBarChart } from '@/components/charts/bar-chart';
 import { BlockLegend } from '@/components/dither-kit/block-legend';
-import type { ChartConfig as DitherChartConfig } from '@/components/dither-kit/chart-context';
+import type { ChartConfig } from '@/components/dither-kit/chart-context';
 import { Pie } from '@/components/dither-kit/pie';
 import { PieChart } from '@/components/dither-kit/pie-chart';
 import { Tooltip } from '@/components/dither-kit/tooltip';
@@ -56,7 +55,7 @@ export function StatusBreakdown({
     );
   }
 
-  const config = useMemo<DitherChartConfig>(
+  const config = useMemo<ChartConfig>(
     () =>
       buildChartConfig(
         buckets.map((entry) => ({
@@ -64,14 +63,17 @@ export function StatusBreakdown({
           label: entry.label,
           color: statusColor(entry.bucket),
         }))
-      ) as DitherChartConfig,
+      ),
     [buckets]
   );
   const values = Object.fromEntries(buckets.map((entry) => [entry.bucket, entry.value]));
 
   return (
-    <div className={cn('mx-auto', className)}>
-      <div className="relative mx-auto" style={{ height }}>
+    <div className={cn('w-full', className)}>
+      {/* `w-full`, not `mx-auto`: an auto inline margin overrides a grid item's
+          default stretch, collapsing the donut to zero width. The canvas centres
+          itself from the measured plot rect, so no outer centring is needed. */}
+      <div className="relative w-full" style={{ height }}>
         <PieChart
           ariaLabel={ariaLabel}
           data={buckets}
@@ -80,6 +82,7 @@ export function StatusBreakdown({
           nameKey="bucket"
           innerRadius={0.55}
           animate={!motionDisabled}
+          valueFormatter={valueFormatter ? (value) => valueFormatter(value) : undefined}
         >
           <Pie />
           <Tooltip valueFormatter={valueFormatter ? (value) => valueFormatter(value) : undefined} />
@@ -115,77 +118,5 @@ export function StatusBreakdown({
         valueFormatter={valueFormatter}
       />
     </div>
-  );
-}
-
-export type DistributionDatum = {
-  label: string;
-} & Record<string, string | number>;
-
-export type DistributionBarsProps = {
-  ariaLabel?: string;
-  data: DistributionDatum[];
-  series: { key: string; label: string; color?: string }[];
-  height?: number;
-  grouped?: boolean;
-  valueFormatter?: (value: number) => string;
-  className?: string;
-};
-
-export function DistributionBars({
-  ariaLabel = 'Distribution',
-  data,
-  series,
-  height = DEFAULT_HEIGHT,
-  grouped,
-  valueFormatter,
-  className,
-}: DistributionBarsProps) {
-  if (grouped) {
-    return (
-      <DistributionGrouped
-        ariaLabel={ariaLabel}
-        data={data}
-        series={series}
-        height={height}
-        valueFormatter={valueFormatter}
-        className={className}
-      />
-    );
-  }
-
-  return (
-    <StackedBarChart
-      ariaLabel={ariaLabel}
-      data={data}
-      xKey="label"
-      series={series}
-      height={height}
-      layout="vertical"
-      valueFormatter={valueFormatter}
-      className={className}
-    />
-  );
-}
-
-function DistributionGrouped({
-  ariaLabel,
-  data,
-  series,
-  height,
-  valueFormatter,
-  className,
-}: Omit<DistributionBarsProps, 'grouped'>) {
-  return (
-    <BarChart
-      ariaLabel={ariaLabel}
-      data={data}
-      xKey="label"
-      series={series}
-      height={height}
-      layout="vertical"
-      valueFormatter={valueFormatter}
-      className={className}
-    />
   );
 }

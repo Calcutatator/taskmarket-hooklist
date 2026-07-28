@@ -25,6 +25,21 @@ const AXIS_LABELS: Record<HeatmapDimension, { row: string; col: string }> = {
   hourOfWeek: { row: 'Day', col: 'Hour' },
 };
 
+// The heat map body is row-count driven, not a fixed-height chart, so the loading
+// placeholder is sized from the rows we expect rather than the generic chart
+// height. One row is a min-h-7 cell plus the 4px grid gap; the chrome is the
+// column header row plus the legend strip below the grid.
+const ROW_HEIGHT = 32;
+const GRID_CHROME_HEIGHT = 46;
+// Below sm the grid is replaced by a summary list of up to six cells, each a
+// two-line row on a 8px gap.
+const MOBILE_HEIGHT = 352;
+const HOUR_OF_WEEK_ROWS = 7;
+
+function gridHeight(rowCount: number): number {
+  return Math.max(rowCount, 1) * ROW_HEIGHT + GRID_CHROME_HEIGHT;
+}
+
 // The dashboard heat map: live market activity bucketed across two dimensions and
 // rendered on the warm rose ramp that mirrors the Taskmarket brand mark. Seeds
 // from the SSR snapshot and refreshes every thirty seconds, aligned with the
@@ -56,6 +71,13 @@ export function DashboardHeatmap({
   const data = query.data ?? { rowKeys: [], colKeys: [], cells: [], maxCount: 0 };
   const hasData = data.rowKeys.length > 0 && data.colKeys.length > 0;
   const labels = AXIS_LABELS[dimension];
+  // While a range or dimension switch is in flight there are no rows yet, so fall
+  // back to what the dimension implies: seven weekdays for hour-of-week, the SSR
+  // snapshot's mode rows otherwise (the mode set barely moves with the range).
+  const expectedRows =
+    dimension === 'hourOfWeek'
+      ? HOUR_OF_WEEK_ROWS
+      : Math.max(data.rowKeys.length, initialData.rowKeys.length);
 
   return (
     <ChartCard
@@ -76,9 +98,11 @@ export function DashboardHeatmap({
       }
       description={`Live market activity by ${labels.row.toLowerCase()} and ${labels.col.toLowerCase()}, refreshed every 30 seconds.`}
       errorMessage={query.isError ? 'Could not load the activity heat map.' : undefined}
+      height={gridHeight(expectedRows)}
       isEmpty={!query.isLoading && !hasData}
       isLoading={query.isLoading && !hasData}
       liveUpdatedAt={query.dataUpdatedAt ? new Date(query.dataUpdatedAt) : undefined}
+      mobileHeight={MOBILE_HEIGHT}
       title="Activity heat map"
     >
       <HeatmapGrid colLabel={labels.col} data={data} rowLabel={labels.row} />

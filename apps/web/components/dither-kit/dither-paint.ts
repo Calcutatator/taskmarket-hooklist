@@ -24,7 +24,7 @@ export const OFF_TIER = 0.4;
 export type PaintOpts = {
   variant: AreaVariant;
   intensity: number; // 0–1 hover lift
-  dim: number; // selection dim multiplier (0.3 dimmed, 1 normal)
+  dim: number; // dim multiplier for de-emphasised marks (0.5 dimmed, 1 normal)
   stacked: boolean; // denser + solid floor when layers stack
   sparse?: number; // raise the dither threshold (thin out) — front layers
 };
@@ -38,6 +38,10 @@ export type PaintOpts = {
 // The old lighter `line` / near-white `star` shades were dropped: a shade that
 // pops on a dark background reads as a jarring bright speck on a light one, while
 // the same colour at a lower opacity simply blends into whatever sits behind it.
+//
+// Every painted alpha is scaled by `seed.alpha` — the opacity the series' own
+// token carries (see palette.ts). Tokens that differ only in alpha must stay
+// distinguishable on the canvas.
 
 /**
  * Fill one backing-canvas column `x` from row `top` down to `floor` with the
@@ -59,7 +63,10 @@ export function paintColumn(
   const f = Math.round(floor);
   const depth = f - t;
   if (depth <= 0) {
-    octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * dim);
+    // A zero-depth column still gets its outline pixel: area / line series sit
+    // on the baseline here and dropping it would punch a hole in the outline.
+    // Bars skip zero-value categories before they reach this function.
+    octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * dim * seed.alpha);
     octx.fillRect(x, t, 1, 1);
     return;
   }
@@ -77,17 +84,17 @@ export function paintColumn(
     if (variant === 'dotted' && !lit) continue;
     // Density → alpha (see the colour-vs-opacity note above).
     const k = (0.3 + density * 0.7) * (1 + 0.22 * intensity);
-    const alpha = clamp01((lit ? k : k * OFF_TIER) * dim);
+    const alpha = clamp01((lit ? k : k * OFF_TIER) * dim) * seed.alpha;
     octx.fillStyle = rgb(seed.fill, 1, alpha);
     octx.fillRect(x, y, 1, 1);
   }
   // Top border outline — the shape's edge now that the fill fades out here.
   // Kept just under full opacity, with a faint feather row beneath, so it reads
   // as a soft edge rather than a hard line floating over the fade.
-  octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * dim);
+  octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * dim * seed.alpha);
   octx.fillRect(x, t, 1, 1);
   if (depth > 1) {
-    octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * 0.5 * dim);
+    octx.fillStyle = rgb(seed.fill, 1, BORDER_ALPHA * 0.5 * dim * seed.alpha);
     octx.fillRect(x, t + 1, 1, 1);
   }
 }
@@ -95,7 +102,12 @@ export function paintColumn(
 /** Linear-resample a per-index fraction array to `cols` columns. */
 export function resample(src: number[], cols: number): number[] {
   const out = new Array<number>(cols);
-  const last = Math.max(src.length - 1, 1);
+  // Nothing to interpolate between: an empty series is flat at zero and a
+  // single point is flat at its own value (interpolating toward a phantom
+  // second point would cliff the last column down to zero).
+  if (src.length === 0) return out.fill(0);
+  if (src.length === 1) return out.fill(src[0]);
+  const last = src.length - 1;
   for (let c = 0; c < cols; c++) {
     const t = (c / Math.max(cols - 1, 1)) * last;
     const i = Math.floor(t);

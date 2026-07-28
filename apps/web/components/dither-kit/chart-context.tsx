@@ -14,6 +14,7 @@ import {
   indexAtBand,
   nearestIndex,
   type StackType,
+  VALUE_HEADROOM,
 } from './scales';
 import type { Dimensions } from './use-chart-dimensions';
 
@@ -67,15 +68,16 @@ export type ChartContextValue = {
   ) => { x: number; width: number };
   y: ScaleLinear<number, number>; // value → px within the plot
   bands: Record<string, [number, number][]>; // per-series [y0, y1] per row
+  /** Per-series flags marking the rows that carry no value — every consumer
+   * skips those positions so the series breaks at a hole instead of drawing
+   * through it. */
+  gaps: Record<string, boolean[]>;
   max: number;
   min: number; // most-negative value (0 when nothing dips below the baseline)
+  /** Data counts whole things, so the value axis must label whole numbers. */
+  integral: boolean;
 
   // Interaction state, shared by every part.
-  selectedDataKey: string | null;
-  selectDataKey: (key: string | null) => void;
-  /** Legend-hover spotlight — dims every series but this one while set. */
-  focusDataKey: string | null;
-  setFocusDataKey: (key: string | null) => void;
   hoverIndex: number | null;
   setHoverIndex: (index: number | null) => void;
   markerIndex: number | null; // controlled crosshair override (e.g. committed point)
@@ -83,6 +85,10 @@ export type ChartContextValue = {
   setCursorX: (px: number) => void;
   isMouseInChart: boolean;
   setMouseInChart: (over: boolean) => void;
+  /** True while the plot is being scrubbed from the keyboard — gates the live
+   * region so pointer hover doesn't flood assistive tech with announcements. */
+  keyboardActive: boolean;
+  setKeyboardActive: (active: boolean) => void;
   hovered: boolean; // parent-driven hover (e.g. the whole card) — lifts the fill
   bloom: BloomInput; // glow on the dither canvas
   bloomOnHover: boolean; // only bloom while hovered
@@ -168,7 +174,7 @@ export function useRevision(data: unknown, token: number) {
 /**
  * Builds the shared context value: resolves the plot rect from the measured
  * size minus margins, computes the x/y scales and the per-series stack bands,
- * and owns the selection + hover state every part reads.
+ * and owns the hover state every part reads.
  */
 export function useChartController({
   chartType,
@@ -184,8 +190,7 @@ export function useChartController({
   hovered = false,
   bloom = 'off',
   bloomOnHover = false,
-  defaultSelectedDataKey = null,
-  onSelectionChange,
+  headroom = VALUE_HEADROOM,
 }: {
   chartType: ChartType;
   data: Row[];
@@ -193,6 +198,7 @@ export function useChartController({
   stackType: StackType;
   dimensions: Dimensions;
   margins: Margins;
+  headroom?: number;
   animate?: boolean;
   animationDuration?: number;
   replayToken?: number;
@@ -200,8 +206,6 @@ export function useChartController({
   hovered?: boolean;
   bloom?: BloomInput;
   bloomOnHover?: boolean;
-  defaultSelectedDataKey?: string | null;
-  onSelectionChange?: (key: string | null) => void;
 }): ChartContextValue {
   // This object becomes the ChartContext value, so its identity — and the
   // identity of every function/object it carries — must stay stable across
@@ -216,11 +220,10 @@ export function useChartController({
   const configKeys = useMemo(() => Object.keys(config), [config]);
   const revision = useRevision(data, replayToken);
 
-  const [selectedDataKey, setSelectedDataKey] = useState<string | null>(defaultSelectedDataKey);
-  const [focusDataKey, setFocusDataKey] = useState<string | null>(null);
   const [hoverIndex, setHoverIndex] = useState<number | null>(null);
   const [cursorX, setCursorX] = useState(0);
   const [isMouseInChart, setMouseInChart] = useState(false);
+  const [keyboardActive, setKeyboardActive] = useState(false);
   const [seriesSpecs, setSeriesSpecs] = useState<Record<string, SeriesSpec>>({});
 
   // useCallback because the series effects in area.tsx/bar.tsx list these as
@@ -245,16 +248,6 @@ export function useChartController({
       return next;
     });
   }, []);
-
-  // Stable so the memoized value keeps its identity; only re-created when the
-  // caller's selection handler does.
-  const selectDataKey = useCallback(
-    (key: string | null) => {
-      setSelectedDataKey(key);
-      onSelectionChange?.(key);
-    },
-    [onSelectionChange]
-  );
 
   // The root spreads `{ ...DEFAULT_MARGINS, ...marginsProp }` fresh every
   // render, so `margins` never keeps its identity. Pin one off the four numbers
@@ -284,7 +277,7 @@ export function useChartController({
   // Memoized: the priciest derivation in the render path — it walks every
   // row × series to build the stack bands. Hover/cursor state changes must not
   // recompute it, only a real data/series/stack change.
-  const { bands, max, min } = useMemo(
+  const { bands, gaps, integral, max, min } = useMemo(
     () => computeBands(data, configKeys, stackType),
     [data, configKeys, stackType]
   );
@@ -321,7 +314,10 @@ export function useChartController({
     },
     [xCenter, stacked, bandwidth]
   );
-  const y = useMemo(() => buildYScale(min, max, plotHeight), [min, max, plotHeight]);
+  const y = useMemo(
+    () => buildYScale(min, max, plotHeight, headroom),
+    [min, max, plotHeight, headroom]
+  );
 
   // Stable so `common` and the value stay stable; re-created only on config.
   const seedOf = useCallback((key: string) => seedOfColor(config[key]?.color ?? 'grey'), [config]);
@@ -334,10 +330,6 @@ export function useChartController({
       labelOf: (n) => config[n]?.label ?? n,
       colorOf: (n) => config[n]?.color ?? 'var(--muted-foreground)',
       seedOf,
-      selectedDataKey,
-      selectDataKey,
-      focusDataKey,
-      setFocusDataKey,
       hoverIndex,
       ready,
       tooltipLeft: Math.max(48, Math.min(plotWidth + mLeft - 48, cursorX)),
@@ -348,6 +340,7 @@ export function useChartController({
         if (hoverIndex == null) return floor;
         let minY = Number.POSITIVE_INFINITY;
         for (const key of configKeys) {
+          if (gaps[key]?.[hoverIndex]) continue;
           const b = bands[key]?.[hoverIndex];
           if (b) minY = Math.min(minY, y(b[1]));
         }
@@ -355,29 +348,26 @@ export function useChartController({
         return Math.max(floor, mTop + minY);
       })(),
       heading: (i, labelKey) => (labelKey ? String(data[i]?.[labelKey] ?? '') : null),
+      // A series with no value at this row drops out of the card entirely
+      // rather than reporting a zero it never had; a row where every series is
+      // missing yields no items, which hides the tooltip.
       itemsAt: (i) =>
-        configKeys.map((name) => {
-          const raw = data[i]?.[name];
-          return {
-            name,
-            label: config[name]?.label ?? name,
-            value: typeof raw === 'number' ? raw : 0,
-            seed: seedOf(name),
-            dimmed: (() => {
-              const emphasis = selectedDataKey ?? focusDataKey;
-              return emphasis !== null && emphasis !== name;
-            })(),
-          };
-        }),
+        configKeys
+          .filter((name) => !gaps[name]?.[i])
+          .map((name) => {
+            const raw = data[i]?.[name];
+            return {
+              name,
+              label: config[name]?.label ?? name,
+              value: typeof raw === 'number' ? raw : 0,
+              seed: seedOf(name),
+            };
+          }),
     }),
     [
       configKeys,
       config,
       seedOf,
-      selectedDataKey,
-      selectDataKey,
-      focusDataKey,
-      setFocusDataKey,
       hoverIndex,
       ready,
       plotWidth,
@@ -385,6 +375,7 @@ export function useChartController({
       mTop,
       cursorX,
       bands,
+      gaps,
       y,
       data,
     ]
@@ -412,12 +403,10 @@ export function useChartController({
       barSlot,
       y,
       bands,
+      gaps,
       max,
       min,
-      selectedDataKey,
-      selectDataKey,
-      focusDataKey,
-      setFocusDataKey,
+      integral,
       hoverIndex,
       setHoverIndex,
       markerIndex,
@@ -425,6 +414,8 @@ export function useChartController({
       setCursorX,
       isMouseInChart,
       setMouseInChart,
+      keyboardActive,
+      setKeyboardActive,
       hovered,
       bloom,
       bloomOnHover,
@@ -455,12 +446,10 @@ export function useChartController({
       barSlot,
       y,
       bands,
+      gaps,
       max,
       min,
-      selectedDataKey,
-      selectDataKey,
-      focusDataKey,
-      setFocusDataKey,
+      integral,
       hoverIndex,
       setHoverIndex,
       markerIndex,
@@ -468,6 +457,8 @@ export function useChartController({
       setCursorX,
       isMouseInChart,
       setMouseInChart,
+      keyboardActive,
+      setKeyboardActive,
       hovered,
       bloom,
       bloomOnHover,

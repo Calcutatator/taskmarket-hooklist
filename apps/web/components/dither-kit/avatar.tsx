@@ -2,12 +2,11 @@
 
 import { useEffect, useRef } from 'react';
 import { cn } from './lib';
-import { rgb, seedOfColor } from './palette';
+import { type DitherColor, rgb, type Rgb, seedOfColor } from './palette';
 import {
   BAYER4,
   clamp01,
   fnv1a,
-  hueFill,
   type PixelBloom,
   pixelBloomStyle,
   pixelPrefersReducedMotion,
@@ -16,19 +15,32 @@ import {
 import { useThemeRevision } from './use-theme-revision';
 
 // 8×8 cells, mirrored across one axis → 32 free pattern bits. With the mirror
-// axis bit and 180 hues that's 2^33 × 180 ≈ 1.5 trillion distinct avatars.
+// axis bit and the five palette colours that's 2^33 × 5 ≈ 43 billion distinct
+// avatars.
 const GRID = 8;
 const CELL_PX = 4; // backing px per cell → a 32×32 canvas, scaled up pixelated
+
+// The colours an avatar picks from when the caller supplies none. Every colour
+// this app paints has to resolve to a token in globals.css, so the generated
+// fill is drawn from the chart ramp rather than synthesized: a free-running HSL
+// hue lands outside the muted rose/teal/amber palette (it is what once turned
+// every agent avatar a saturated green). Spelled out here rather than imported
+// from components/charts so the kit stays free of app-level dependencies.
+const AVATAR_PALETTE: DitherColor[] = [
+  'var(--chart-1)',
+  'var(--chart-2)',
+  'var(--chart-3)',
+  'var(--chart-4)',
+  'var(--chart-5)',
+];
 
 export type AvatarMirror = 'auto' | 'horizontal' | 'vertical';
 
 export type DitherAvatarProps = {
   /** The seed — same name, same avatar, every time. */
   name: string;
-  /** Hue override (0–360). Derived from the name when omitted. */
-  hue?: number;
-  /** Semantic CSS colour override. Takes precedence over hue. */
-  color?: string;
+  /** Semantic CSS colour override. Derived from the name when omitted. */
+  color?: DitherColor;
   /** Mirror axis. "auto" picks one from the name — half the avatars fold
    * left/right, half fold top/bottom. */
   mirror?: AvatarMirror;
@@ -49,29 +61,28 @@ export type DitherAvatarProps = {
 type AvatarModel = {
   on: boolean[]; // GRID×GRID, row-major
   density: number[]; // per-cell dither density for on cells
-  fill: [number, number, number];
+  fill: Rgb;
+  // The opacity the fill's own token carries (see palette.ts). Folded into
+  // every painted alpha, the same way the chart painters do it, so a
+  // translucent token renders translucent instead of fully opaque.
+  alpha: number;
 };
 
 /**
  * Derive the full 8×8 cell grid from the name: 32 pattern bits + the mirror
- * axis + the hue + per-cell densities, all from one deterministic PRNG stream.
- * Every draw happens unconditionally so overriding `hue` or `mirror` never
- * shifts the pattern.
+ * axis + the palette colour + per-cell densities, all from one deterministic
+ * PRNG stream. Every draw happens unconditionally so overriding `color` or
+ * `mirror` never shifts the pattern.
  */
-function avatarModel(
-  name: string,
-  hueProp: number | undefined,
-  mirrorProp: AvatarMirror,
-  color?: string
-): AvatarModel {
+function avatarModel(name: string, mirrorProp: AvatarMirror, color?: DitherColor): AvatarModel {
   const rand = xorshift32(fnv1a(name));
   const bits = Array.from({ length: 32 }, () => rand() < 0.5);
   const drawnVertical = rand() < 0.5;
-  const drawnHue = Math.floor(rand() * 180) * 2;
+  const drawnColor = AVATAR_PALETTE[Math.floor(rand() * AVATAR_PALETTE.length)];
   const halfDensity = Array.from({ length: 32 }, () => 0.55 + rand() * 0.45);
 
   const vertical = mirrorProp === 'auto' ? drawnVertical : mirrorProp === 'vertical';
-  const hue = hueProp ?? drawnHue;
+  const seed = seedOfColor(color ?? drawnColor);
 
   const on = new Array<boolean>(GRID * GRID);
   const density = new Array<number>(GRID * GRID);
@@ -89,7 +100,8 @@ function avatarModel(
   return {
     on,
     density,
-    fill: color ? seedOfColor(color).fill : hueFill(hue),
+    fill: seed.fill,
+    alpha: seed.alpha,
   };
 }
 
@@ -135,7 +147,7 @@ function paintAvatar(
             const lit = density > BAYER4[gy & 3][gx & 3];
             // On/off cells modulate alpha tiers of the one fill colour, so the
             // avatar holds up on light and dark backgrounds alike.
-            const alpha = (lit ? base : base * 0.35) * cellAlpha;
+            const alpha = (lit ? base : base * 0.35) * cellAlpha * model.alpha;
             ctx.fillStyle = rgb(model.fill, 1, alpha);
             ctx.fillRect(gx, gy, 1, 1);
           }
@@ -167,11 +179,11 @@ function paintAvatar(
 /**
  * Generative dithered avatar — a mirrored 8×8 pixel glyph derived from a name,
  * rendered with the ordered-dither texture the charts are made of. Same name,
- * same avatar; ~1.5 trillion combinations across pattern, mirror axis, and hue.
+ * same avatar; ~43 billion combinations across pattern, mirror axis, and the
+ * chart palette.
  */
 export function DitherAvatar({
   name,
-  hue,
   color,
   mirror = 'auto',
   size,
@@ -192,11 +204,11 @@ export function DitherAvatar({
     return paintAvatar(
       canvas,
       bloomRef.current,
-      avatarModel(name, hue, mirror, color),
+      avatarModel(name, mirror, color),
       animate,
       animationDuration
     );
-  }, [name, hue, color, mirror, animate, animationDuration, replayToken, bloom, themeRevision]);
+  }, [name, color, mirror, animate, animationDuration, replayToken, bloom, themeRevision]);
 
   const bloomStyle = pixelBloomStyle(bloom);
 

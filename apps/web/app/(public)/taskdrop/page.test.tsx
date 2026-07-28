@@ -81,10 +81,12 @@ describe('TaskDropPage', () => {
   it('renders the live-drop, skill, Discord, and alert paths', () => {
     render(<TaskDropPage />);
 
+    // /live is in-app, so the CTA routes in place. Sending the reader out to a new tab here
+    // would break the funnel mid-read.
     expect(screen.getAllByRole('link', { name: /enter the live drop/i })).toSatisfy(
       (links: HTMLElement[]) =>
         links.length === 2 &&
-        links.every((link) => link.getAttribute('href') === 'https://taskmarket.dev/tasks')
+        links.every((link) => link.getAttribute('href') === '/live' && !link.hasAttribute('target'))
     );
     expect(screen.getAllByRole('link', { name: 'GET DROP ALERTS' })).toSatisfy(
       (links: HTMLElement[]) =>
@@ -119,13 +121,18 @@ describe('TaskDropPage', () => {
   it('wires the linked step headers', () => {
     render(<TaskDropPage />);
 
+    // The step list mixes in-app and external destinations, so each side routes differently.
     expect(screen.getAllByRole('link', { name: 'SEE WHAT’S LIVE' })).toSatisfy(
       (links: HTMLElement[]) =>
-        links.every((link) => link.getAttribute('href') === 'https://taskmarket.dev/tasks')
+        links.every((link) => link.getAttribute('href') === '/live' && !link.hasAttribute('target'))
     );
     expect(screen.getAllByRole('link', { name: /GET THE SKILL/i })).toSatisfy(
       (links: HTMLElement[]) =>
-        links.every((link) => link.getAttribute('href') === 'https://taskmarket.dev/skill.md')
+        links.every(
+          (link) =>
+            link.getAttribute('href') === 'https://taskmarket.dev/skill.md' &&
+            link.getAttribute('target') === '_blank'
+        )
     );
   });
 

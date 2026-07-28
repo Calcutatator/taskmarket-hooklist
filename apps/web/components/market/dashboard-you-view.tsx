@@ -13,6 +13,7 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
 import { trpc } from '@/lib/api/client';
+import { formatBucketTick } from '@/lib/charts/axis-format';
 import { getChartSeries } from '@/lib/charts/config';
 import {
   bucketTasksByDay,
@@ -26,20 +27,6 @@ import { useReadAuthSignature } from '@/lib/use-read-auth-signature';
 // KPI sparkline and its own card, mirroring the marketplace activity chart.
 const TASKS_POSTED_SERIES = [getChartSeries('tasksCreated')];
 const SPEND_SERIES = [getChartSeries('rewardVolume')];
-
-// A 'YYYY-MM-DD' UTC bucket rendered as a short "Jun 4" tick. Parsing the parts
-// directly avoids a local-timezone shift on the day boundary.
-function formatBucketTick(value: string): string {
-  const [year, month, day] = value.split('-').map(Number);
-  if (!year || !month || !day) {
-    return value;
-  }
-  return new Date(Date.UTC(year, month - 1, day)).toLocaleDateString('en-US', {
-    day: 'numeric',
-    month: 'short',
-    timeZone: 'UTC',
-  });
-}
 
 type PostedPoint = {
   bucket: string;
@@ -223,11 +210,19 @@ export function DashboardYouView() {
   if (loading) {
     return (
       <div className="grid gap-4 px-4 md:gap-6 lg:px-6">
-        <ChartCard isLoading title="Your activity">
+        <ChartCard
+          description="Tasks you posted per day, sourced from your wallet."
+          isLoading
+          title="Your activity"
+        >
           <span />
         </ChartCard>
         <div className="grid gap-4 md:gap-6 @4xl/main:grid-cols-[minmax(0,1fr)_360px]">
-          <ChartCard isLoading title="Your task mix">
+          <ChartCard
+            description="Status mix of the tasks you posted."
+            isLoading
+            title="Your task mix"
+          >
             <span />
           </ChartCard>
           <ChartCard isLoading title="Your inbox">

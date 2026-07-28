@@ -13,21 +13,11 @@ export {
   type TrendAreaChartProps,
   type TrendSeries,
 } from '@/components/charts/trend-area-chart';
-export {
-  BarChart,
-  StackedBarChart,
-  HistogramBars,
-  type BarChartProps,
-  type BarSeries,
-  type HistogramBarsProps,
-} from '@/components/charts/bar-chart';
+export { HistogramBars, type HistogramBarsProps } from '@/components/charts/bar-chart';
 export {
   StatusBreakdown,
-  DistributionBars,
   type StatusBreakdownProps,
   type StatusDatum,
-  type DistributionBarsProps,
-  type DistributionDatum,
 } from '@/components/charts/status-breakdown';
 export {
   HeatmapGrid,
