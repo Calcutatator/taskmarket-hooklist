@@ -4,6 +4,16 @@ import { apiPost } from '../../lib/api.js';
 import { printError } from '../../lib/output.js';
 import { writeFileSync } from 'fs';
 
+// Strips bytes that a terminal would interpret as control sequences before writing
+// downloaded text to stdout. ESC (0x1B) starts every ANSI/VT100 CSI and OSC sequence
+// (including OSC 52 clipboard-write sequences), so removing it neutralizes any
+// embedded escape sequence without needing to parse or allow-list specific ones.
+// \n and \t are preserved; other C0 control bytes and DEL (0x7F) are also stripped.
+function sanitizeForTerminal(text: string): string {
+  // eslint-disable-next-line no-control-regex -- stripping control bytes is the point
+  return text.replace(/[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]/g, '');
+}
+
 export const downloadCmd = new Command('download')
   .description('Download a submission file (requester or worker)')
   .argument('<taskId>', 'Task ID (0x-prefixed hex)')
@@ -45,7 +55,15 @@ export const downloadCmd = new Command('download')
         writeFileSync(opts.output, content);
         process.stdout.write(JSON.stringify({ ok: true, data: { savedTo: opts.output } }) + '\n');
       } else {
-        process.stdout.write(content);
+        let decoded: string;
+        try {
+          decoded = new TextDecoder('utf-8', { fatal: true }).decode(content);
+        } catch {
+          printError(
+            'Downloaded content is not valid UTF-8 text and cannot be safely printed to the terminal. Use --output <path> to save it to a file instead.'
+          );
+        }
+        process.stdout.write(sanitizeForTerminal(decoded!));
       }
     }
   );
