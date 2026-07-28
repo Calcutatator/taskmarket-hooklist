@@ -285,7 +285,12 @@ clone_eip1967_proxy() {
 }
 
 echo "==> [7/14] Clone ERC-8004 identity/reputation registries from Base Sepolia"
-BASE_SEPOLIA_RPC_URL="${FORGE_BASE_SEPOLIA_RPC_URL:-https://base-sepolia.g.alchemy.com/v2/7MBoD_MGw1P6ZpTHDhBAx}"
+# Alchemy rather than the public https://sepolia.base.org endpoint -- clone_eip1967_proxy
+# issues LOW_STORAGE_SLOT_COUNT eth_getStorageAt calls per proxy on top of the code reads,
+# and the public endpoint rate-limits that burst. Override with FORGE_BASE_SEPOLIA_RPC_URL.
+# If this ever fails with "App is inactive", the Alchemy app behind this key was rotated or
+# disabled -- replace the key here (and in .env) rather than working around it.
+BASE_SEPOLIA_RPC_URL="${FORGE_BASE_SEPOLIA_RPC_URL:-https://base-sepolia.g.alchemy.com/v2/alch_AHyoB5evCN62kIfyVTw5d}"
 ERC8004_IDENTITY_REGISTRY="0x8004A818BFB912233c491871b3d84c89A494BD9e"
 ERC8004_REPUTATION_REGISTRY="0x8004B663056A597Dffe9eCcC1965A193B7388713"
 clone_eip1967_proxy "$ERC8004_IDENTITY_REGISTRY" "$BASE_SEPOLIA_RPC_URL" "$ANVIL_RPC_URL"
