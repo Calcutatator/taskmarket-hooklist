@@ -372,7 +372,7 @@ describe('pitches router', () => {
 
     it('calls contractSelectWorker and updates 3 DB rows on happy path', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx();
+      const ctx = createMockCtx('0xpayer000000000000000000000000000000000');
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makePitch()]));
@@ -384,6 +384,18 @@ describe('pitches router', () => {
       expect(contractSelectWorker).toHaveBeenCalledOnce();
       // selected pitch, rejected others, task status update = 3 update calls
       expect(ctx.db.update).toHaveBeenCalledTimes(3);
+    });
+
+    it('throws when called with no settled X402 payment (missing payer)', async () => {
+      const selectInput = await signedSelectInput();
+      const ctx = createMockCtx(); // no payer set -- the X402 middleware never ran/settled
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([makePitch()]));
+
+      const caller = pitchesRouter.createCaller(ctx);
+      await expect(caller.select(selectInput)).rejects.toThrow('Payment required');
+      expect(contractSelectWorker).not.toHaveBeenCalled();
     });
   });
 });

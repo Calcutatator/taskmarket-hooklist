@@ -305,6 +305,18 @@ export const pitchesRouter = router({
           }),
       });
 
+      // X402 payment guard: this action is configured as a paid route
+      // (PAID_TASK_ACTION_ROUTES.select_worker in app.ts), but that REST wrapper is
+      // a separate entry point from this tRPC procedure -- calling this procedure
+      // directly (e.g. via /trpc/pitches.select) bypasses x402Middleware entirely
+      // unless the procedure also checks the settled payer itself, the same way
+      // every other paid-action procedure in this codebase does (see pitches.submit
+      // above, bids.submit, proofs.submit, etc.).
+      const payer: string | undefined = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required' });
+      }
+
       try {
         await contractSelectWorker(
           input.taskId as `0x${string}`,
