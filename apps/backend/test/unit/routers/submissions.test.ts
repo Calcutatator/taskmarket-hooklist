@@ -6,6 +6,7 @@ vi.mock('../../../src/lib/storage', () => ({
   getStorageBackend: vi.fn().mockReturnValue({
     upload: vi.fn().mockResolvedValue('file://test/submissions/task1/file'),
     getPresignedUrl: vi.fn().mockResolvedValue('https://presigned.example.com/file'),
+    getPresignedUploadUrl: vi.fn().mockResolvedValue('https://presigned.example.com/upload'),
     headObject: vi.fn().mockResolvedValue({ contentLength: 123 }),
     storageUriForKey: vi.fn((key: string) => `file://test/${key}`),
   }),
@@ -506,6 +507,32 @@ describe('submissions router', () => {
     });
   });
 
+  describe('requestUploadUrl', () => {
+    it('records which worker the issued artifactKey belongs to', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createMockCtx();
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([{ status: 'open', mode: 'bounty', expiryTime: null }])
+      );
+      const insertChain = makeChain();
+      ctx.db.insert.mockReturnValueOnce(insertChain);
+
+      const caller = submissionsRouter.createCaller(ctx);
+      await caller.requestUploadUrl({
+        taskId: TASK_ID,
+        workerAddress: WORKER,
+        signature: '0xsig',
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        sizeBytes: 123,
+      });
+
+      expect(insertChain.values).toHaveBeenCalledWith(
+        expect.objectContaining({ taskId: TASK_ID, workerAddress: WORKER })
+      );
+    });
+  });
+
   describe('submitFromKeys', () => {
     const ARTIFACT_KEY = `submissions/${TASK_ID}/pending/submission.txt`;
     const baseFromKeysInput = {
@@ -566,16 +593,18 @@ describe('submissions router', () => {
       it('allows the pre-assigned claimedBy worker to submit to a private bounty task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
         const ctx = createMockCtx();
-        ctx.db.select.mockReturnValueOnce(
-          makeChain([
-            makeTask({
-              mode: 'bounty',
-              status: 'open',
-              taskVisibility: 'private',
-              claimedBy: WORKER,
-            }),
-          ])
-        );
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([
+              makeTask({
+                mode: 'bounty',
+                status: 'open',
+                taskVisibility: 'private',
+                claimedBy: WORKER,
+              }),
+            ])
+          )
+          .mockReturnValueOnce(makeChain([{ artifactKey: ARTIFACT_KEY, workerAddress: WORKER }]));
 
         const caller = submissionsRouter.createCaller(ctx);
         const result = await caller.submitFromKeys(baseFromKeysInput);
@@ -591,7 +620,10 @@ describe('submissions router', () => {
             makeChain([makeTask({ mode: 'benchmark', status: 'open', taskVisibility: 'private' })])
           )
           .mockReturnValueOnce(makeChain([])) // task_awards: no match
-          .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED_VIEWER }]));
+          .mockReturnValueOnce(makeChain([{ viewerAddress: ALLOWED_VIEWER }]))
+          .mockReturnValueOnce(
+            makeChain([{ artifactKey: ARTIFACT_KEY, workerAddress: ALLOWED_VIEWER }])
+          );
 
         const caller = submissionsRouter.createCaller(ctx);
         const result = await caller.submitFromKeys({
@@ -647,9 +679,11 @@ describe('submissions router', () => {
       it('submits successfully for the pre-assigned worker on a claim task', async () => {
         vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
         const ctx = createMockCtx();
-        ctx.db.select.mockReturnValueOnce(
-          makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
-        );
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'claim', status: 'claimed', claimedBy: WORKER })])
+          )
+          .mockReturnValueOnce(makeChain([{ artifactKey: ARTIFACT_KEY, workerAddress: WORKER }]));
 
         const caller = submissionsRouter.createCaller(ctx);
         const result = await caller.submitFromKeys(baseFromKeysInput);
@@ -668,6 +702,57 @@ describe('submissions router', () => {
         await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow(
           'Only worker can submit'
         );
+      });
+    });
+
+    describe('artifact key ownership', () => {
+      const OTHER_WORKER = '0xOtherWorkerAddr00000000000000000000002';
+
+      it('rejects an artifact key that was never issued via requestUploadUrl', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
+          )
+          .mockReturnValueOnce(makeChain([])); // pendingUploadKeys: no matching row at all
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(caller.submitFromKeys(baseFromKeysInput)).rejects.toThrow(
+          'Artifact key was not issued to this worker'
+        );
+      });
+
+      it('rejects an artifact key that was issued to a different worker', async () => {
+        // Worker A's own key, presented by worker B -- the task-id prefix matches
+        // (both requested a key for the same task), but the key was never theirs.
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(OTHER_WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
+          )
+          .mockReturnValueOnce(makeChain([{ artifactKey: ARTIFACT_KEY, workerAddress: WORKER }]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        await expect(
+          caller.submitFromKeys({ ...baseFromKeysInput, workerAddress: OTHER_WORKER })
+        ).rejects.toThrow('Artifact key was not issued to this worker');
+      });
+
+      it('allows the key when it was issued to the presenting worker', async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(
+            makeChain([makeTask({ mode: 'bounty', status: 'open', claimedBy: null })])
+          )
+          .mockReturnValueOnce(makeChain([{ artifactKey: ARTIFACT_KEY, workerAddress: WORKER }]));
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.submitFromKeys(baseFromKeysInput);
+
+        expect(result.success).toBe(true);
       });
     });
   });

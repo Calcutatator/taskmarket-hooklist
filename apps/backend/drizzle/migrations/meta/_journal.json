@@ -281,6 +281,13 @@
       "when": 1784927314000,
       "tag": "0039_orphaned_payments_status_check",
       "breakpoints": true
+    },
+    {
+      "idx": 40,
+      "version": "7",
+      "when": 1785198708000,
+      "tag": "0040_add_pending_upload_keys",
+      "breakpoints": true
     }
   ]
 }

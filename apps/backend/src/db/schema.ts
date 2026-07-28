@@ -783,6 +783,25 @@ export const taskAccessPasswordRateLimits = pgTable('task_access_password_rate_l
   updatedAt: timestamp('updated_at', { precision: 3, withTimezone: true }).defaultNow().notNull(),
 });
 
+// Records which worker each requestUploadUrl-issued artifactKey was actually generated
+// for, so submitFromKeys can verify the caller presenting a key is the same worker it
+// was issued to -- not just that the key's prefix matches the task, which any worker
+// eligible to call requestUploadUrl for that task can trivially produce for themselves.
+export const pendingUploadKeys = pgTable(
+  'pending_upload_keys',
+  {
+    artifactKey: text('artifact_key').primaryKey(),
+    taskId: text('task_id')
+      .notNull()
+      .references(() => tasks.id),
+    workerAddress: text('worker_address').notNull(),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    taskIdIdx: index('idx_pending_upload_keys_task').on(table.taskId),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type TaskAward = typeof taskAwards.$inferSelect;
@@ -827,6 +846,8 @@ export type LegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferSe
 export type NewLegalAcceptanceChallenge = typeof legalAcceptanceChallenges.$inferInsert;
 export type LegalAccessReceipt = typeof legalAccessReceipts.$inferSelect;
 export type NewLegalAccessReceipt = typeof legalAccessReceipts.$inferInsert;
+export type PendingUploadKey = typeof pendingUploadKeys.$inferSelect;
+export type NewPendingUploadKey = typeof pendingUploadKeys.$inferInsert;
 export type TaskAllowedViewer = typeof taskAllowedViewers.$inferSelect;
 export type NewTaskAllowedViewer = typeof taskAllowedViewers.$inferInsert;
 export type TaskAccessGrant = typeof taskAccessGrants.$inferSelect;
