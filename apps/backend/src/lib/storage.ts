@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { writeFile, mkdir } from 'fs/promises';
-import { join, dirname } from 'path';
+import { dirname, resolve, sep } from 'path';
 import { getServerConfig } from '../config/env';
 
 export interface StorageBackend {
@@ -84,8 +84,22 @@ class S3Storage implements StorageBackend {
 class LocalStorage implements StorageBackend {
   private uploadDir = './uploads';
 
+  // Resolves key against the uploads root and rejects any path that would escape it
+  // via `..` segments. join() alone happily resolves a traversal outside the intended
+  // directory, so callers upstream that only check a string prefix (e.g.
+  // submissions.router.ts's submitFromKeys) are not a sufficient guard by themselves --
+  // this must hold regardless of what the caller already checked. Mirrors the same
+  // containment check already used in app.ts's `/uploads-local` PUT handler.
+  private resolveKeyPath(key: string): string | null {
+    const root = resolve(this.uploadDir);
+    const resolved = resolve(root, key);
+    if (resolved !== root && !resolved.startsWith(root + sep)) return null;
+    return resolved;
+  }
+
   async upload(key: string, data: Buffer): Promise<string> {
-    const filePath = join(this.uploadDir, key);
+    const filePath = this.resolveKeyPath(key);
+    if (!filePath) throw new Error(`Refusing to write outside the uploads directory: ${key}`);
     await mkdir(dirname(filePath), { recursive: true });
     await writeFile(filePath, data);
     return `file://${filePath}`;
@@ -110,12 +124,16 @@ class LocalStorage implements StorageBackend {
   }
 
   storageUriForKey(key: string): string {
-    return `file://${join(this.uploadDir, key)}`;
+    const filePath = this.resolveKeyPath(key);
+    if (!filePath)
+      throw new Error(`Refusing to resolve a URI outside the uploads directory: ${key}`);
+    return `file://${filePath}`;
   }
 
   async headObject(key: string): Promise<{ contentLength: number } | null> {
     const { stat } = await import('fs/promises');
-    const filePath = join(this.uploadDir, key);
+    const filePath = this.resolveKeyPath(key);
+    if (!filePath) return null;
     try {
       const s = await stat(filePath);
       return { contentLength: s.size };
