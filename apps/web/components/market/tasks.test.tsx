@@ -634,11 +634,18 @@ describe('Task marketplace components', () => {
     );
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
-    const bonusSummary = within(metrics).getByRole('article', { name: /bonus summary/i });
+    const bonusSummary = within(metrics).getByRole('article', {
+      name: /estimated dreams bonus summary/i,
+    });
 
     expect(within(rewardSummary).getByText('25 USDC')).toBeInTheDocument();
     expect(within(bonusSummary).getByText('+200 DREAMS')).toBeInTheDocument();
     expect(within(bonusSummary).getByText(/approximately 0.06 usdc/i)).toBeInTheDocument();
+    expect(
+      within(bonusSummary).getByRole('button', {
+        name: /learn how dreams bonus eligibility works/i,
+      })
+    ).toBeInTheDocument();
   });
 
   it('omits the DREAMS bonus caption when no estimate is present', () => {
@@ -646,6 +653,32 @@ describe('Task marketplace components', () => {
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).queryByText(/dreams bonus/i)).not.toBeInTheDocument();
+  });
+
+  it('shows a non-zero DREAMS estimate when its USDC equivalent rounds to zero', () => {
+    render(
+      <TaskDetailPanel
+        modeData={{}}
+        task={{
+          ...taskDetail,
+          estimatedWorkerUsdBonusValue: '0',
+          estimatedWorkerDreamsBonus: (1n * 10n ** 18n).toString(),
+        }}
+      />
+    );
+
+    const metrics = screen.getByRole('region', { name: /task metrics/i });
+    const bonusSummary = within(metrics).getByRole('article', {
+      name: /estimated dreams bonus summary/i,
+    });
+
+    expect(within(bonusSummary).getByText('+1 DREAMS')).toBeInTheDocument();
+    expect(within(bonusSummary).queryByText(/approximately/i)).not.toBeInTheDocument();
+    expect(
+      within(bonusSummary).getByRole('button', {
+        name: /learn how dreams bonus eligibility works/i,
+      })
+    ).toBeInTheDocument();
   });
 
   it('shows bounty submissions and open management commands', () => {

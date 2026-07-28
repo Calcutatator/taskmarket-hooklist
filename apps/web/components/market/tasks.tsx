@@ -31,6 +31,7 @@ import {
   ArtifactPreviewButton,
 } from '@/components/market/artifact-preview-button';
 import { CopyButton } from '@/components/market/copy-button';
+import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
 import { InfoTooltip } from '@/components/market/info-tooltip';
 import { LiveActivityPanel } from '@/components/market/live-activity';
 import { CountdownTimer } from '@/components/market/motion/countdown-timer';
@@ -342,16 +343,17 @@ function auctionPriceCaption(task: TaskDetailResponse | TaskResponse) {
 // caps, and bounty-mode payouts settle at completion-time rates, not these.
 function dreamsBonusSummary(
   task: TaskDetailResponse | TaskResponse
-): { caption: string; value: string } | null {
+): { caption?: string; value: string } | null {
   const usdBonus =
     'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
   const dreamsBonus =
     'estimatedWorkerDreamsBonus' in task ? task.estimatedWorkerDreamsBonus : undefined;
-  if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
+  if (!dreamsBonus || dreamsBonus === '0') {
     return null;
   }
   return {
-    caption: `Approximately ${formatUsdcUnits(usdBonus)}`,
+    caption:
+      usdBonus && usdBonus !== '0' ? `Approximately ${formatUsdcUnits(usdBonus)}` : undefined,
     value: `+${formatDreams(dreamsBonus)} DREAMS`,
   };
 }
@@ -1879,11 +1881,13 @@ function ModeDataPanel({
 
 function DetailMetric({
   label,
+  labelAction,
   value,
   valueCaption,
   valueClassName,
 }: {
   label: string;
+  labelAction?: ReactNode;
   value: ReactNode;
   valueCaption?: ReactNode;
   valueClassName?: string;
@@ -1893,7 +1897,10 @@ function DetailMetric({
       aria-label={`${label} summary`}
       className="min-w-0 border-t border-border/52 p-5 first:border-t-0 md:border-l md:border-t-0 md:first:border-l-0"
     >
-      <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
+      <div className="flex items-center gap-1">
+        <p className="font-mono text-[0.68rem] uppercase text-muted-foreground">{label}</p>
+        {labelAction}
+      </div>
       <div
         className={
           valueClassName ??
@@ -2436,7 +2443,8 @@ export function TaskDetailPanel({
             valueCaption={auctionPriceCaption(task)}
           />
           <DetailMetric
-            label="Bonus"
+            label={bonusSummary ? 'Estimated DREAMS bonus' : 'Bonus'}
+            labelAction={bonusSummary ? <DreamsRewardDisclosure /> : undefined}
             value={bonusSummary?.value ?? '--'}
             valueCaption={bonusSummary?.caption}
             valueClassName="mt-2 font-mono text-xl font-semibold tracking-tight text-foreground"

@@ -660,6 +660,18 @@ describe('CreateTaskWizard', () => {
     // split 80/20: worker 6.00 USDC / 60 DREAMS, requester 1.50 USDC / 15 DREAMS.
     expect(within(breakdown).getByText(/~6 usdc.*~60 dreams/i)).toBeInTheDocument();
     expect(within(breakdown).getByText(/~1.5 usdc.*~15 dreams/i)).toBeInTheDocument();
+
+    const eligibilityDisclosures = within(breakdown).getAllByRole('button', {
+      name: /learn how dreams bonus eligibility works/i,
+    });
+    expect(eligibilityDisclosures).toHaveLength(2);
+
+    await user.click(eligibilityDisclosures[0]!);
+    expect(screen.getByText(/how estimated dreams bonuses work/i)).toBeInTheDocument();
+    expect(screen.getByRole('link', { name: /read the dreams reward rules/i })).toHaveAttribute(
+      'href',
+      'https://docs.taskmarket.dev/reference/rewards'
+    );
   });
 
   it('omits the DREAMS bonus row when no exchange rate is configured', async () => {
@@ -675,6 +687,11 @@ describe('CreateTaskWizard', () => {
       .getAllByRole('term')
       .map((row) => row.textContent);
     expect(labels).not.toContain('Estimated worker DREAMS bonus');
+    expect(
+      within(breakdown).queryByRole('button', {
+        name: /learn how dreams bonus eligibility works/i,
+      })
+    ).not.toBeInTheDocument();
   });
 
   it('renders fully when initialMarketStats is null without a market strip', async () => {

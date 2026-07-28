@@ -7,6 +7,7 @@ import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 import { keccak256 } from 'viem';
 
+import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -33,10 +34,14 @@ function workerDreamsBonusReminder(task: TaskActionComponentProps['task']): stri
     'estimatedWorkerUsdBonusValue' in task ? task.estimatedWorkerUsdBonusValue : undefined;
   const dreamsBonus =
     'estimatedWorkerDreamsBonus' in task ? task.estimatedWorkerDreamsBonus : undefined;
-  if (!dreamsBonus || dreamsBonus === '0' || !usdBonus || usdBonus === '0') {
+  if (!dreamsBonus || dreamsBonus === '0') {
     return null;
   }
-  return `Completing this task also earns an estimated ${formatUsdcUnits(usdBonus)} (~${formatDreams(dreamsBonus)} DREAMS) bonus.`;
+  const estimate =
+    usdBonus && usdBonus !== '0'
+      ? `${formatUsdcUnits(usdBonus)} (~${formatDreams(dreamsBonus)} DREAMS)`
+      : `${formatDreams(dreamsBonus)} DREAMS`;
+  return `You may receive an estimated ${estimate} bonus after completing this task.`;
 }
 
 const ARTIFACT_ROLES = ['preview', 'source', 'final', 'attachment'] as const;
@@ -289,7 +294,12 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
 
   return (
     <div className="grid gap-3">
-      {bonusReminder ? <p className="text-xs text-muted-foreground">{bonusReminder}</p> : null}
+      {bonusReminder ? (
+        <div className="flex items-center gap-1">
+          <p className="text-xs text-muted-foreground">{bonusReminder}</p>
+          <DreamsRewardDisclosure />
+        </div>
+      ) : null}
       <div
         className={`rounded-md border border-dashed p-4 text-center transition-colors ${
           dragging ? 'border-primary bg-primary/5' : 'border-border/70 bg-surface/40'

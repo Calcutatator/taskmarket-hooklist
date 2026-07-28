@@ -8,6 +8,7 @@ import { CircleAlertIcon, LockKeyholeIcon } from 'lucide-react';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
+import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
 import type { WalletAccessStatus } from '@/components/privy-account-control';
 import { FundingGuard, type FundingStatus } from '@/components/market/fund-wallet-button';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
@@ -750,7 +751,10 @@ export function StepPublish({
                 </div>
                 {estimatedWorkerDreamsBonus && estimatedWorkerDreamsBonus !== '0' ? (
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-muted-foreground">Estimated worker DREAMS bonus</dt>
+                    <dt className="flex items-center gap-1 text-muted-foreground">
+                      <span>Estimated worker DREAMS bonus</span>
+                      <DreamsRewardDisclosure />
+                    </dt>
                     <dd className="font-mono text-muted-foreground">
                       ~{formatUsdcUnits(estimatedWorkerUsdBonus!)} · ~
                       {formatDreams(estimatedWorkerDreamsBonus)} DREAMS
@@ -759,7 +763,10 @@ export function StepPublish({
                 ) : null}
                 {estimatedRequesterDreamsBonus && estimatedRequesterDreamsBonus !== '0' ? (
                   <div className="flex items-center justify-between gap-3">
-                    <dt className="text-muted-foreground">Estimated requester DREAMS bonus</dt>
+                    <dt className="flex items-center gap-1 text-muted-foreground">
+                      <span>Estimated requester DREAMS bonus</span>
+                      <DreamsRewardDisclosure />
+                    </dt>
                     <dd className="font-mono text-muted-foreground">
                       ~{formatUsdcUnits(estimatedRequesterUsdBonus!)} · ~
                       {formatDreams(estimatedRequesterDreamsBonus)} DREAMS

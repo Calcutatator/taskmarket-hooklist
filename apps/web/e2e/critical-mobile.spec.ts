@@ -12,6 +12,25 @@ async function expectNoHorizontalOverflow(page: Page) {
   expect(overflow).toBeLessThanOrEqual(1);
 }
 
+async function expectInsideViewport(locator: Locator) {
+  const bounds = await locator.evaluate((element) => {
+    const rect = element.getBoundingClientRect();
+    return {
+      bottom: rect.bottom,
+      viewportHeight: window.innerHeight,
+      left: rect.left,
+      right: rect.right,
+      top: rect.top,
+      viewportWidth: window.innerWidth,
+    };
+  });
+
+  expect(bounds.left).toBeGreaterThanOrEqual(-1);
+  expect(bounds.right).toBeLessThanOrEqual(bounds.viewportWidth + 1);
+  expect(bounds.top).toBeGreaterThanOrEqual(-1);
+  expect(bounds.bottom).toBeLessThanOrEqual(bounds.viewportHeight + 1);
+}
+
 async function expectFullyOpaque(locator: Locator) {
   await expect(locator).toBeVisible();
   await expect
@@ -241,6 +260,49 @@ test('shows one provider-missing task action without opening upload', async ({ p
     page,
     page.getByRole('heading', { name: /Bounty - open submission pool/i })
   );
+});
+
+test('explains estimated DREAMS eligibility within the mobile viewport', async ({ page }) => {
+  await page.goto('/tasks/mock-bounty-open');
+
+  const metrics = page.getByRole('region', { name: /Task metrics/i });
+  await expect(metrics.getByText('Estimated DREAMS bonus', { exact: true })).toBeVisible();
+
+  const trigger = metrics.getByRole('button', {
+    name: /Learn how DREAMS bonus eligibility works/i,
+  });
+  await expectTouchTarget(trigger);
+  await trigger.tap();
+
+  const details = page.getByRole('dialog', {
+    name: /How estimated DREAMS bonuses work/i,
+  });
+  await expect(details).toBeVisible();
+  await expect(details).toContainText(
+    "Wallet age starts with the recipient's first interaction with the DREAMS reward hook, not when the wallet was created."
+  );
+  await expect(details).toContainText('under 2 weeks earns 0%');
+  await expect(details).toContainText('2–4 weeks earns 25%');
+  await expect(details).toContainText('4–8 weeks earns 50%');
+  await expect(details).toContainText('8+ weeks earns 100%');
+  await expect(details).toContainText(
+    'Weekly global, worker, requester, and task caps can reduce or skip the bonus.'
+  );
+  await expect(details).toContainText("The task's USDC reward is unaffected.");
+  await expect(details).toContainText(
+    'Credited DREAMS become claimable and are not sent automatically.'
+  );
+  await expect(
+    details.getByRole('link', {
+      name: /Read the DREAMS reward rules/i,
+    })
+  ).toHaveAttribute('href', 'https://docs.taskmarket.dev/reference/rewards');
+
+  await expectInsideViewport(details);
+  await expectNoHorizontalOverflow(page);
+
+  await trigger.tap();
+  await expect(details).toBeHidden();
 });
 
 test('keeps task creation steps usable without a configured wallet provider', async ({ page }) => {

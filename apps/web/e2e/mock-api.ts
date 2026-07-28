@@ -211,8 +211,15 @@ function submission({
 
 const tasks: TaskDetailResponse[] = [
   task({
+    bonusBps: 750,
     description:
       'Bounty - open submission pool for settlement receipt review.\nREFERENCE: https://raw.githubusercontent.com/taskmarket/research/7ba0f258954455441a7bd3d21ca19049e4c831f7a4db7777e6df3fbd9f30d48d/raw/guide.md',
+    dreamsPerUsdc: '2000000000000000000',
+    estimatedRequesterDreamsBonus: '7200000000000000000',
+    estimatedRequesterUsdBonusValue: '3600000',
+    estimatedUsdBonusValue: '18000000',
+    estimatedWorkerDreamsBonus: '28800000000000000000',
+    estimatedWorkerUsdBonusValue: '14400000',
     id: 'mock-bounty-open',
     mode: 'bounty',
     pendingActions: [
