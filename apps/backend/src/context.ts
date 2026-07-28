@@ -27,7 +27,9 @@ function headerValue(value: string | string[] | undefined): string | undefined {
  * read. Individual procedures (optionalAuthProcedure/protectedProcedure) decide
  * whether a missing caller is acceptable.
  */
-async function resolveCaller(req: CreateExpressContextOptions['req']): Promise<Caller | undefined> {
+export async function resolveCaller(
+  req: CreateExpressContextOptions['req']
+): Promise<Caller | undefined> {
   const address = headerValue(req.headers[READ_AUTH_ADDRESS_HEADER.toLowerCase()]);
   const signature = headerValue(req.headers[READ_AUTH_SIGNATURE_HEADER.toLowerCase()]);
   if (!address || !signature) return undefined;
@@ -43,7 +45,7 @@ async function resolveCaller(req: CreateExpressContextOptions['req']): Promise<C
  * throws, same posture as `resolveCaller`: an absent or invalid grant just leaves
  * `taskAccessGrant` undefined, and `canView` falls through to the wallet-identity checks.
  */
-async function resolveTaskAccessGrant(
+export async function resolveTaskAccessGrant(
   req: CreateExpressContextOptions['req']
 ): Promise<TaskAccessGrant | undefined> {
   const token = headerValue(req.headers[TASK_ACCESS_GRANT_HEADER.toLowerCase()]);

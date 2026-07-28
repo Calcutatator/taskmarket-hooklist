@@ -11,6 +11,7 @@ import { createOpenApiExpressMiddleware } from 'trpc-to-openapi';
 import type { ZodTypeAny } from 'zod';
 import { appRouter } from './router';
 import { createContext } from './context';
+import { feedbackFileHandler } from './routes/feedback';
 import { logger, morganStream } from './lib/logger';
 import { generateOpenAPI } from './lib/openapi';
 import { getServerConfig } from './config/env';
@@ -51,7 +52,7 @@ import { emailInboundHandler } from './middleware/emailInbound';
 import { createLegalAccessMiddleware } from './middleware/legal-access';
 import { getCurrentLegalDocument } from './services/legal';
 import { db } from './db/client';
-import { feedbacks, submissions, artifacts, proposals, proofs } from './db/schema';
+import { submissions, artifacts, proposals, proofs } from './db/schema';
 import {
   getTaskDropsUnsubscribeDetails,
   unsubscribeTaskDropsSubscription,
@@ -370,22 +371,8 @@ app.use(
   })
 );
 
-// Feedback file endpoint — mount before OpenAPI to avoid route conflict
-app.get('/api/feedback/:id', async (req, res) => {
-  try {
-    const result = await db
-      .select({ fileContent: feedbacks.fileContent })
-      .from(feedbacks)
-      .where(eq(feedbacks.id, req.params.id))
-      .limit(1);
-    if (!result.length) return res.status(404).json({ error: 'Not found' });
-    res.setHeader('Content-Type', 'application/json');
-    res.send(result[0].fileContent);
-  } catch (err) {
-    logger.error('feedback endpoint failed', { err });
-    res.status(500).json({ error: 'Internal server error' });
-  }
-});
+// Feedback file endpoint — mount before OpenAPI to avoid route conflict.
+app.get('/api/feedback/:id', feedbackFileHandler);
 
 // Canonical content-hash preimages. The response body is the exact byte string
 // that was hashed on-chain — `keccak256(responseBytes)` equals the stored hash.
