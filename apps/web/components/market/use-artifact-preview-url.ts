@@ -1,7 +1,7 @@
 'use client';
 
 import type { ArtifactResponse } from '@taskmarket/shared';
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 
@@ -9,6 +9,12 @@ type PreviewState = {
   expiresAt: string | null;
   url: string | null;
 };
+
+// Preview URLs are presigned per request, so the polled activity feed hands the same
+// artifact a different (but equivalent) URL every few seconds. Feeding that into a
+// media src makes the browser drop what it has loaded and restart from zero, which
+// stops a video mid-playback. Every consumer therefore pins the first usable URL it
+// sees for an artifact and keeps serving it until that URL actually expires.
 
 // A preview URL is only trusted while it still has a 30s validity margin, so media
 // that starts loading right before expiry can still finish.
@@ -41,6 +47,30 @@ export function usableArtifactPreviewUrl(artifact: ArtifactResponse) {
   });
 }
 
+// Render-time preview URL for media embedded straight off a polled list: the same
+// value usableArtifactPreviewUrl returns, held stable for as long as it stays valid
+// so a background refresh never swaps the src of a playing element.
+export function useStableArtifactPreviewUrl(artifact: ArtifactResponse) {
+  const pinned = useRef<{ artifactId: string; preview: PreviewState } | null>(null);
+  const held = pinned.current;
+
+  if (held?.artifactId === artifact.id) {
+    const heldUrl = currentPreviewUrl(held.preview);
+    if (heldUrl) {
+      return heldUrl;
+    }
+  }
+
+  const preview: PreviewState = {
+    expiresAt: artifact.previewExpiresAt ?? null,
+    url: artifact.previewUrl ?? null,
+  };
+  const freshUrl = currentPreviewUrl(preview);
+  pinned.current = freshUrl ? { artifactId: artifact.id, preview } : null;
+
+  return freshUrl;
+}
+
 // Owns the lifecycle of a single artifact's presigned preview URL: seeds from the
 // batch URL delivered with the artifact (or an explicit initial override), reports
 // null once that URL expires, and fetches a fresh one on demand via ensurePreviewUrl.
@@ -58,13 +88,23 @@ export function useArtifactPreviewUrl(
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const previewUrl = currentPreviewUrl(preview);
+  const seededArtifactId = useRef(artifact.id);
 
   useEffect(() => {
-    setPreview({
-      expiresAt: providedExpiresAt,
-      url: providedUrl,
-    });
-    setError(null);
+    const artifactChanged = seededArtifactId.current !== artifact.id;
+    seededArtifactId.current = artifact.id;
+
+    // Adopt the URL the list just delivered only when nothing usable is held: a poll
+    // re-signing the same artifact would otherwise restart any media playing from it.
+    setPreview((current) =>
+      !artifactChanged && currentPreviewUrl(current)
+        ? current
+        : { expiresAt: providedExpiresAt, url: providedUrl }
+    );
+
+    if (artifactChanged) {
+      setError(null);
+    }
   }, [artifact.id, providedExpiresAt, providedUrl]);
 
   const ensurePreviewUrl = useCallback(

@@ -22,8 +22,8 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
-  usableArtifactPreviewUrl,
   useArtifactPreviewUrl,
+  useStableArtifactPreviewUrl,
 } from '@/components/market/use-artifact-preview-url';
 import {
   MAX_INTERACTIVE_HTML_BYTES,
@@ -435,7 +435,7 @@ export function ArtifactPreviewTrigger({
 }
 
 export function ArtifactMediaTile({ artifact, taskId }: Props) {
-  const previewUrl = usableArtifactPreviewUrl(artifact);
+  const previewUrl = useStableArtifactPreviewUrl(artifact);
   const openLabel = `Open ${artifact.fileName} preview`;
 
   return (
@@ -585,7 +585,7 @@ function MediaHeroSurface({
 }
 
 export function ArtifactMediaHero({ artifact, onOpen, taskId }: Props & { onOpen?: () => void }) {
-  const previewUrl = usableArtifactPreviewUrl(artifact);
+  const previewUrl = useStableArtifactPreviewUrl(artifact);
 
   if (onOpen) {
     return <MediaHeroSurface artifact={artifact} onOpen={onOpen} previewUrl={previewUrl} />;
@@ -650,7 +650,7 @@ function MediaThumbSurface({
 }
 
 export function ArtifactMediaThumb({ artifact, onOpen, taskId }: Props & { onOpen?: () => void }) {
-  const previewUrl = usableArtifactPreviewUrl(artifact);
+  const previewUrl = useStableArtifactPreviewUrl(artifact);
 
   if (onOpen) {
     return <MediaThumbSurface artifact={artifact} onOpen={onOpen} previewUrl={previewUrl} />;

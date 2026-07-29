@@ -186,14 +186,29 @@ const submissions = [
   ),
 ];
 
-function renderPanel(initialSubmissions: SubmissionResponse[] = submissions) {
-  return render(
+function panel(initialSubmissions: SubmissionResponse[]) {
+  return (
     <LiveActivityPanel
       initialModeData={{ submissions: initialSubmissions }}
       profileBasePath="/dashboard/agents"
       task={task}
     />
   );
+}
+
+function renderPanel(initialSubmissions: SubmissionResponse[] = submissions) {
+  return render(panel(initialSubmissions));
+}
+
+// The feed re-signs every preview URL on each poll, so the same artifact arrives with
+// a new query string. Simulates that by re-issuing the submissions with fresh URLs.
+function resign(list: SubmissionResponse[], token: string): SubmissionResponse[] {
+  return list.map((entry) => ({
+    ...entry,
+    artifacts: (entry.artifacts ?? []).map((item) =>
+      item.previewUrl ? { ...item, previewUrl: `${item.previewUrl}?sig=${token}` } : { ...item }
+    ),
+  }));
 }
 
 describe('submissionMediaEntries', () => {
@@ -258,6 +273,88 @@ describe('SubmissionGalleryDialog', () => {
     expect(within(dialog).getByText('3 / 3')).toBeInTheDocument();
     fireEvent.keyDown(dialog, { key: 'ArrowRight' });
     expect(within(dialog).getByText('1 / 3')).toBeInTheDocument();
+  });
+
+  it('keeps the open video playing when a poll re-signs its preview URL', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /open walkthrough\.mp4 preview/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/walkthrough.mp4'
+    );
+
+    rerender(panel(resign(submissions, 'poll-2')));
+
+    // A new src would make the browser drop the loaded media and restart playback.
+    expect(screen.getByRole('dialog').querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/walkthrough.mp4'
+    );
+  });
+
+  it('stays on the open artifact when a newer submission joins the feed', async () => {
+    const user = userEvent.setup();
+    const { rerender } = renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /open walkthrough\.mp4 preview/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('3 / 3')).toBeInTheDocument();
+
+    const newer = submission(
+      'sub-3',
+      '0x5555555555555555555555555555555555555555',
+      [
+        artifact({
+          fileName: 'late.png',
+          id: 'artifact-late',
+          previewUrl: 'https://files.example.com/late.png',
+          submissionId: 'sub-3',
+        }),
+      ],
+      '2026-03-01T00:00:00.000Z'
+    );
+    rerender(panel([newer, ...submissions]));
+
+    // The newer submission shifts every entry down one slot; the gallery follows the
+    // artifact that was opened rather than its old position.
+    const refreshed = screen.getByRole('dialog');
+    expect(refreshed.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/walkthrough.mp4'
+    );
+    expect(within(refreshed).getByText('4 / 4')).toBeInTheDocument();
+  });
+
+  it('keeps an inline hero video src stable when a poll re-signs it', () => {
+    const heroVideo = artifact({
+      fileName: 'hero.mp4',
+      id: 'artifact-hero',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/hero.mp4',
+      submissionId: 'sub-3',
+    });
+    const videoOnly = [
+      submission('sub-3', '0x5555555555555555555555555555555555555555', [heroVideo]),
+    ];
+    const { rerender } = render(panel(videoOnly));
+
+    expect(document.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/hero.mp4'
+    );
+
+    rerender(panel(resign(videoOnly, 'poll-2')));
+
+    expect(document.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/hero.mp4'
+    );
   });
 
   it('hides the gallery button when no submission carries media artifacts', () => {

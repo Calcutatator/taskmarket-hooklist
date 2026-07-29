@@ -482,14 +482,13 @@ export function LiveActivityPanel({
   const pagedBids = bids.slice(pageStart, pageEnd);
 
   // Gallery over every media artifact across ALL submissions (not just the current
-  // page), in feed order. Opened from the header button (index 0) or from a card's
-  // hero/thumbnail (that artifact's index).
+  // page), in feed order. Opened from the header button (first entry) or from a
+  // card's hero/thumbnail (that artifact).
   const galleryEntries = submissionMediaEntries(submissions);
   const [galleryOpen, setGalleryOpen] = useState(false);
-  const [galleryIndex, setGalleryIndex] = useState(0);
+  const [galleryArtifactId, setGalleryArtifactId] = useState<string | null>(null);
   const openGalleryAt = (artifactId: string) => {
-    const entryIndex = galleryEntries.findIndex((entry) => entry.artifact.id === artifactId);
-    setGalleryIndex(entryIndex >= 0 ? entryIndex : 0);
+    setGalleryArtifactId(artifactId);
     setGalleryOpen(true);
   };
 
@@ -618,7 +617,7 @@ export function LiveActivityPanel({
             {!isReviewQueue && galleryEntries.length > 0 ? (
               <Button
                 onClick={() => {
-                  setGalleryIndex(0);
+                  setGalleryArtifactId(galleryEntries[0]?.artifact.id ?? null);
                   setGalleryOpen(true);
                 }}
                 size="sm"
@@ -816,7 +815,7 @@ export function LiveActivityPanel({
       </div>
       <SubmissionGalleryDialog
         entries={galleryEntries}
-        initialIndex={galleryIndex}
+        initialArtifactId={galleryArtifactId}
         onOpenChange={setGalleryOpen}
         open={galleryOpen}
         profileBasePath={profileBasePath}

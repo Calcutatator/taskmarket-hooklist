@@ -39,7 +39,7 @@ export function submissionMediaEntries(submissions: SubmissionResponse[]): Submi
 
 type SubmissionGalleryDialogProps = {
   entries: SubmissionMediaEntry[];
-  initialIndex: number;
+  initialArtifactId: string | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   profileBasePath: string;
@@ -56,26 +56,28 @@ export function SubmissionGalleryDialog(props: SubmissionGalleryDialogProps) {
 
 function SubmissionGalleryDialogInner({
   entries,
-  initialIndex,
+  initialArtifactId,
   onOpenChange,
   open,
   profileBasePath,
   taskId,
 }: SubmissionGalleryDialogProps) {
-  const [index, setIndex] = useState(initialIndex);
+  const [selectedArtifactId, setSelectedArtifactId] = useState(initialArtifactId);
 
   // Re-anchor to the requested entry each time the dialog opens (heroes and
   // thumbnails open the gallery at their own artifact).
   useEffect(() => {
     if (open) {
-      setIndex(initialIndex);
+      setSelectedArtifactId(initialArtifactId);
     }
-  }, [initialIndex, open]);
+  }, [initialArtifactId, open]);
 
-  // The entries list refreshes with every poll, so clamp rather than trust the
-  // stored index to still be in range.
+  // Track the artifact rather than its position: the entries list refreshes with
+  // every poll, and a newly submitted entry shifts every index below it. Fall back
+  // to the first entry if the selected artifact is no longer in the feed.
   const count = entries.length;
-  const safeIndex = Math.min(Math.max(index, 0), count - 1);
+  const selectedIndex = entries.findIndex((item) => item.artifact.id === selectedArtifactId);
+  const safeIndex = selectedIndex >= 0 ? selectedIndex : 0;
   const entry = entries[safeIndex] as SubmissionMediaEntry;
   const { artifact, submission } = entry;
   const workerLabel = compactAddress(submission.workerAgentId ?? submission.workerAddress);
@@ -110,8 +112,10 @@ function SubmissionGalleryDialogInner({
     );
   }, [count, entries, open, safeIndex]);
 
-  const goPrev = () => setIndex((safeIndex - 1 + count) % count);
-  const goNext = () => setIndex((safeIndex + 1) % count);
+  const goTo = (nextIndex: number) =>
+    setSelectedArtifactId(entries[nextIndex]?.artifact.id ?? null);
+  const goPrev = () => goTo((safeIndex - 1 + count) % count);
+  const goNext = () => goTo((safeIndex + 1) % count);
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (count < 2) {
