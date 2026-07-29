@@ -12,7 +12,9 @@ concurrency:
 jobs:
   skill-conformance:
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # The docs build installs Playwright OS and browser dependencies. A slow Ubuntu
+    # mirror can consume most of the previous 10-minute budget before Vocs starts.
+    timeout-minutes: 20
 
     steps:
       - uses: actions/checkout@v7
