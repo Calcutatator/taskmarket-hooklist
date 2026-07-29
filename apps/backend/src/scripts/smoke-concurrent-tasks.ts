@@ -27,7 +27,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-concurrent-tasks.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, pollTaskStatus, sleep, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 const CONCURRENCY = 3;
 
@@ -59,7 +65,10 @@ async function setupAppealingTask(
     signature: claimSig,
   });
 
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = `smoke-concurrent-tasks-payload-${label}`;
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -69,7 +78,7 @@ async function setupAppealingTask(
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from(`smoke-concurrent-tasks-payload-${label}`).toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   });

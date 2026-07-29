@@ -11,6 +11,8 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-auction-types.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import {
   log,
   ok,
@@ -23,6 +25,10 @@ import {
   sleep,
   nudgeChainForward,
 } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 // How long to wait after the bid deadline before asserting it has passed.
 // Override with AUCTION_DEADLINE_BUFFER_MS env var for CI environments.
@@ -85,7 +91,10 @@ async function smokeEnglish(requester: Account, worker: Account) {
   }
   ok('winner', winner);
 
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'english-auction-rebid-smoke-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -95,7 +104,7 @@ async function smokeEnglish(requester: Account, worker: Account) {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('english-auction-rebid-smoke-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   });

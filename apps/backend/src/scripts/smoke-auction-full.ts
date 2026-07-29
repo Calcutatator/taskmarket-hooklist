@@ -17,7 +17,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-auction-full.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, type Account, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function smokeDutchFull(requester: Account, worker: Account) {
   console.log('\n--- Dutch Auction Full End-to-End ---');
@@ -54,7 +60,10 @@ async function smokeDutchFull(requester: Account, worker: Account) {
   ok('status=claimed', true);
 
   log('3/6', 'Worker submitting deliverable...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'dutch-auction-full-smoke-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -64,7 +73,7 @@ async function smokeDutchFull(requester: Account, worker: Account) {
         fileName: 'dutch-auction-full-smoke.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('dutch-auction-full-smoke-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   })) as { submissionId: string };
@@ -181,7 +190,10 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
   ok('status=claimed', true);
 
   log('6/8', 'Worker submitting deliverable...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'reverse-dutch-full-smoke-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -191,7 +203,7 @@ async function smokeReverseDutchFull(requester: Account, worker: Account) {
         fileName: 'reverse-dutch-auction-full-smoke.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('reverse-dutch-full-smoke-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   })) as { submissionId: string };

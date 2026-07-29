@@ -19,8 +19,14 @@
  *     npx tsx --env-file=../../.env src/scripts/smoke-ranked-payout.ts
  */
 import assert from 'node:assert/strict';
+import { createHash } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTask } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 type Award = {
   workerAddress: string;
@@ -115,7 +121,10 @@ async function main() {
 
   // 2. Worker A submits the first artifact
   log('2/7', 'Worker A submitting first artifact...');
-  const submitSigA = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayloadA = 'artifact-A-content';
+  const submitSigA = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayloadA)]),
+  });
   const { submissionId: subA } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -125,7 +134,7 @@ async function main() {
         fileName: 'ranked-A.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('artifact-A-content').toString('base64'),
+        file: Buffer.from(submitPayloadA).toString('base64'),
       },
     ],
   })) as { submissionId: string };
@@ -139,7 +148,10 @@ async function main() {
 
   // 3. Worker B submits the second artifact
   log('3/7', 'Worker B submitting second artifact...');
-  const submitSigB = await workerB.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayloadB = 'artifact-B-content';
+  const submitSigB = await workerB.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayloadB)]),
+  });
   const { submissionId: subB } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: workerB.address,
@@ -149,7 +161,7 @@ async function main() {
         fileName: 'ranked-B.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('artifact-B-content').toString('base64'),
+        file: Buffer.from(submitPayloadB).toString('base64'),
       },
     ],
   })) as { submissionId: string };

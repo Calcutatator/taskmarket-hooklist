@@ -57,8 +57,13 @@
 import { createPublicClient, createWalletClient, http, parseAbi, getAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { baseSepolia } from 'viem/chains';
-import { buildWithdrawDreamsMessage } from '@taskmarket/shared';
+import { createHash } from 'crypto';
+import { buildWithdrawDreamsMessage, buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 const REWARD_HOOK_ADDRESS = process.env.REWARD_HOOK_ADDRESS;
 const MOCK_TOKEN_ADDRESS = process.env.MOCK_TOKEN_ADDRESS;
@@ -381,7 +386,10 @@ async function main() {
   ok('task.get DREAMS estimate fields match bonusBps * rate * split', true);
 
   log('A4/6', 'Worker A submitting...');
-  const submitSigA = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayloadA = 'old pond / a frog jumps in / sound of water';
+  const submitSigA = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayloadA)]),
+  });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -391,7 +399,7 @@ async function main() {
         fileName: 'haiku.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('old pond / a frog jumps in / sound of water').toString('base64'),
+        file: Buffer.from(submitPayloadA).toString('base64'),
       },
     ],
   });
@@ -575,7 +583,10 @@ async function main() {
   ok('vaultAfterReserve', vaultAfterReserve.toString());
 
   log('B5/7', 'Worker submitting deliverable...');
-  const claimSig = await worker.signMessage({ message: `taskmarket:submit:${claimTaskId}` });
+  const claimSubmitPayload = 'A contract once written in Solidity...';
+  const claimSig = await worker.signMessage({
+    message: buildSubmitMessage(claimTaskId, [contentHash(claimSubmitPayload)]),
+  });
   const { deliverableHash } = (await post(`/api/tasks/${claimTaskId}/submissions`, {
     taskId: claimTaskId,
     workerAddress: worker.address,
@@ -585,7 +596,7 @@ async function main() {
         fileName: 'limerick.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('A contract once written in Solidity...').toString('base64'),
+        file: Buffer.from(claimSubmitPayload).toString('base64'),
       },
     ],
   })) as { deliverableHash: string };

@@ -21,7 +21,13 @@
  *     to test scenario B. Scenario C reuses the requester as worker.
  *   - The contract must be the upgraded Diamond with submission hash storage.
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollTaskStatus } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 type TaskDetail = { status: string; selfAward?: boolean | null };
 type RequesterStats = {
@@ -116,7 +122,10 @@ async function main() {
   ok('taskId', taskB);
 
   log('B2', 'Worker submitting work...');
-  const submitSigB = await worker.signMessage({ message: `taskmarket:submit:${taskB}` });
+  const submitPayloadB = 'smoke-submission-integrity-B';
+  const submitSigB = await worker.signMessage({
+    message: buildSubmitMessage(taskB, [contentHash(submitPayloadB)]),
+  });
   const { submissionId: subB } = (await post(`/api/tasks/${taskB}/submissions`, {
     taskId: taskB,
     workerAddress: worker.address,
@@ -126,7 +135,7 @@ async function main() {
         fileName: 'result.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-submission-integrity-B').toString('base64'),
+        file: Buffer.from(submitPayloadB).toString('base64'),
       },
     ],
   })) as { submissionId: string };
@@ -174,7 +183,10 @@ async function main() {
   ok('taskId', taskC);
 
   log('C2', 'Requester submitting as worker (same address)...');
-  const submitSigC = await requester.signMessage({ message: `taskmarket:submit:${taskC}` });
+  const submitPayloadC = 'smoke-submission-integrity-C';
+  const submitSigC = await requester.signMessage({
+    message: buildSubmitMessage(taskC, [contentHash(submitPayloadC)]),
+  });
   const { submissionId: subC } = (await post(`/api/tasks/${taskC}/submissions`, {
     taskId: taskC,
     workerAddress: requester.address,
@@ -184,7 +196,7 @@ async function main() {
         fileName: 'result.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-submission-integrity-C').toString('base64'),
+        file: Buffer.from(submitPayloadC).toString('base64'),
       },
     ],
   })) as { submissionId: string };
@@ -239,7 +251,10 @@ async function main() {
   ok('taskId', taskD);
 
   log('D2', 'Worker submitting work...');
-  const submitSigD = await worker.signMessage({ message: `taskmarket:submit:${taskD}` });
+  const submitPayloadD = 'smoke-submission-integrity-D';
+  const submitSigD = await worker.signMessage({
+    message: buildSubmitMessage(taskD, [contentHash(submitPayloadD)]),
+  });
   await post(`/api/tasks/${taskD}/submissions`, {
     taskId: taskD,
     workerAddress: worker.address,
@@ -249,7 +264,7 @@ async function main() {
         fileName: 'result.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-submission-integrity-D').toString('base64'),
+        file: Buffer.from(submitPayloadD).toString('base64'),
       },
     ],
   });

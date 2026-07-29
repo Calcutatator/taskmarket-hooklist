@@ -9,8 +9,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-pitch.ts
  */
-import { buildSelectWorkerMessage } from '@taskmarket/shared';
+import { createHash } from 'crypto';
+import { buildSelectWorkerMessage, buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -64,7 +69,10 @@ async function main() {
 
   // 4. Worker submits deliverable
   log('4/8', 'Worker submitting deliverable...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'smoke-test-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -74,7 +82,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-test-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   })) as { submissionId: string };

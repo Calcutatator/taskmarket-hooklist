@@ -9,6 +9,8 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-evaluator.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import {
   log,
   ok,
@@ -21,6 +23,10 @@ import {
   sleep,
   nudgeChainForward,
 } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function pollStatus(taskId: string, expected: string[]): Promise<string> {
   const task = await pollTaskStatus<{ status: string }>(taskId, expected, {
@@ -86,7 +92,10 @@ async function setupReviewTask(opts: {
   ok('status', claimed.status);
 
   log('3/5', `[${label}] Worker submitting work...`);
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'smoke-evaluator-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -96,7 +105,7 @@ async function setupReviewTask(opts: {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-evaluator-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   });

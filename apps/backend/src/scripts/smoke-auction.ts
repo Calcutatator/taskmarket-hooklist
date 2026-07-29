@@ -13,8 +13,14 @@
  * test competitive bidding. Without it, the test still exercises auction mechanics
  * with a single bidder.
  */
+import { createHash } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, nudgeChainForward } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -103,7 +109,10 @@ async function main() {
 
   // 5. Winning worker submits deliverable
   log('5/7', 'Winning worker submitting deliverable...');
-  const submitSig = await submittingWorker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'smoke-test-payload';
+  const submitSig = await submittingWorker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: submittingWorker.address,
@@ -113,7 +122,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-test-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   })) as { submissionId: string };

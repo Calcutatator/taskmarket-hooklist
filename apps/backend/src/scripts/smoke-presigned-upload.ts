@@ -13,6 +13,7 @@
  */
 import { createHash } from 'crypto';
 import { keccak256 } from 'viem';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
 
 const TEXT_BYTES = Buffer.from('presigned upload smoke test payload');
@@ -58,7 +59,10 @@ async function main() {
   )) as { taskId: string };
   ok('taskId', taskId);
 
-  const signature = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  // requestUploadUrl runs before any artifactKey exists to bind to, so it stays on the
+  // unbound message; submitFromKeys below signs a second, separate message bound to the
+  // artifactKeys once they're known.
+  const uploadUrlSignature = await worker.signMessage({ message: buildSubmitMessage(taskId) });
 
   log('2/6', 'Requesting presigned PUT URLs for two artifacts...');
   const files = [
@@ -82,7 +86,7 @@ async function main() {
       {
         taskId,
         workerAddress: worker.address,
-        signature,
+        signature: uploadUrlSignature,
         fileName: file.fileName,
         mimeType: file.mimeType,
         role: file.role,
@@ -112,11 +116,17 @@ async function main() {
   }
 
   log('4/6', 'Calling submitFromKeys with artifact metadata...');
+  const fromKeysSignature = await worker.signMessage({
+    message: buildSubmitMessage(
+      taskId,
+      uploadResults.map((u) => u.artifactKey)
+    ),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions/from-keys`, {
     taskId,
     workerAddress: worker.address,
     artifacts: uploadResults,
-    signature,
+    signature: fromKeysSignature,
   })) as { submissionId: string };
   ok('submissionId', submissionId);
 

@@ -8,6 +8,7 @@
  */
 import { createHash } from 'crypto';
 import { keccak256, toBytes } from 'viem';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, registerDevice, API_URL } from './_x402';
 
 type ArtifactListing = {
@@ -187,7 +188,9 @@ async function main() {
   ]);
 
   log('2/7', 'Submitting multiple artifacts...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [sha256Hex(textPayload), sha256Hex(pngPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,

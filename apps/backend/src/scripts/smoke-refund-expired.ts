@@ -15,7 +15,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-refund-expired.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, pollUntil } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 type PendingAction = { role: string; action: string; command: string };
 type TaskResponse = {
@@ -125,7 +131,10 @@ async function main() {
   ok('taskId (B)', taskB);
 
   log('B2/3', 'Worker submitting work before expiry...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskB}` });
+  const submitPayload = 'smoke-refund-expired-scenario-b';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskB, [contentHash(submitPayload)]),
+  });
   await post(`/api/tasks/${taskB}/submissions`, {
     taskId: taskB,
     workerAddress: worker.address,
@@ -135,7 +144,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-refund-expired-scenario-b').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
   });

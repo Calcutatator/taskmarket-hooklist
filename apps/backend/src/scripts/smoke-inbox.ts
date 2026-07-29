@@ -16,7 +16,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-inbox.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, randomAccount, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -71,7 +77,10 @@ async function main() {
 
   // 4. Worker submits work
   log('4/8', 'Worker submitting work...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'inbox smoke test submission';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -80,7 +89,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('inbox smoke test submission').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
     signature: submitSig,

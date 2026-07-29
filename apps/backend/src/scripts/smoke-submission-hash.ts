@@ -16,7 +16,9 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-submission-hash.ts
  */
+import { createHash } from 'crypto';
 import { keccak256 } from 'viem';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL, sleep } from './_x402';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 
@@ -60,7 +62,10 @@ async function main() {
   const expectedHash = keccak256(new Uint8Array(fileBytes)) as string;
 
   log('3/5', `Worker submitting work (expected hash: ${expectedHash.slice(0, 18)}...)...`);
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const contentHash = createHash('sha256').update(fileBytes).digest('hex');
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,

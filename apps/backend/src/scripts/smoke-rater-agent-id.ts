@@ -20,9 +20,15 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-rater-agent-id.ts
  */
+import { createHash } from 'crypto';
 import { createPublicClient, http, parseAbiItem } from 'viem';
 import { baseSepolia } from 'viem/chains';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 const RPC_URL = process.env.FORGE_BASE_SEPOLIA_RPC_URL || 'https://sepolia.base.org';
 const CONTRACT_ADDRESS = process.env.CONTRACT_ADDRESS as `0x${string}` | undefined;
@@ -92,7 +98,10 @@ async function main() {
 
   // 5. Worker submits work
   log('5/7', 'Worker submitting work...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const submitPayload = 'rater-agent-id-smoke-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
   const { submissionId } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
@@ -101,7 +110,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('rater-agent-id-smoke-payload').toString('base64'),
+        file: Buffer.from(submitPayload).toString('base64'),
       },
     ],
     signature: submitSig,

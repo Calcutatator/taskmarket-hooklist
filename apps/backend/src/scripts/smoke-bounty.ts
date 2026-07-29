@@ -8,7 +8,13 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-bounty.ts
  */
+import { createHash } from 'crypto';
+import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, get, post, x402Post, getAccounts, API_URL } from './_x402';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 
 async function main() {
   const { requester, worker } = getAccounts();
@@ -37,33 +43,40 @@ async function main() {
   //    The contract emits TaskSubmitted per call without writing task.deliverable
   //    or changing status. The requester finalises at acceptance time.
   log('2/5', 'Worker submitting first artifact...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${taskId}` });
+  const payload1 = 'smoke-test-payload-v1';
+  const submitSig1 = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(payload1)]),
+  });
   const { submissionId: submissionId1 } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    signature: submitSig,
+    signature: submitSig1,
     artifacts: [
       {
         fileName: 'submission-v1.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-test-payload-v1').toString('base64'),
+        file: Buffer.from(payload1).toString('base64'),
       },
     ],
   })) as { submissionId: string };
   ok('submissionId1', submissionId1);
 
   log('2b/5', 'Worker submitting refined artifact (multi-submission)...');
+  const payload2 = 'smoke-test-payload-v2-refined';
+  const submitSig2 = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(payload2)]),
+  });
   const { submissionId: submissionId2 } = (await post(`/api/tasks/${taskId}/submissions`, {
     taskId,
     workerAddress: worker.address,
-    signature: submitSig,
+    signature: submitSig2,
     artifacts: [
       {
         fileName: 'submission-v2.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('smoke-test-payload-v2-refined').toString('base64'),
+        file: Buffer.from(payload2).toString('base64'),
       },
     ],
   })) as { submissionId: string };
@@ -130,18 +143,21 @@ async function main() {
   ok('taskId2', taskId2);
 
   log('R2/4', 'Worker submitting three times (multi-submission)...');
-  const submitSig2 = await worker.signMessage({ message: `taskmarket:submit:${taskId2}` });
   for (const v of ['v1', 'v2', 'v3']) {
+    const rejectPayload = `smoke-reject-payload-${v}`;
+    const rejectSig = await worker.signMessage({
+      message: buildSubmitMessage(taskId2, [contentHash(rejectPayload)]),
+    });
     await post(`/api/tasks/${taskId2}/submissions`, {
       taskId: taskId2,
       workerAddress: worker.address,
-      signature: submitSig2,
+      signature: rejectSig,
       artifacts: [
         {
           fileName: `submission-${v}.txt`,
           mimeType: 'text/plain',
           role: 'attachment',
-          file: Buffer.from(`smoke-reject-payload-${v}`).toString('base64'),
+          file: Buffer.from(rejectPayload).toString('base64'),
         },
       ],
     });

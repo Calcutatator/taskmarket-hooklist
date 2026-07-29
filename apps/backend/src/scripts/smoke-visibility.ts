@@ -98,12 +98,17 @@
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-visibility.ts
  */
+import { createHash } from 'crypto';
 import {
   buildReadAuthMessage,
   buildSubmitMessage,
   buildClaimMessage,
   TASK_ACCESS_GRANT_HEADER,
 } from '@taskmarket/shared';
+
+function contentHash(payload: string): string {
+  return createHash('sha256').update(Buffer.from(payload)).digest('hex');
+}
 import {
   log,
   ok,
@@ -269,7 +274,10 @@ async function main() {
   // worker.address to it via a task_awards row (the same isWorker match
   // agents.inbox's asWorker query uses).
   log('7/26', 'Worker submitting to the unlisted task...');
-  const submitSig = await worker.signMessage({ message: `taskmarket:submit:${unlistedId}` });
+  const unlistedPayload = 'visibility smoke test submission';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(unlistedId, [contentHash(unlistedPayload)]),
+  });
   await post(`/api/tasks/${unlistedId}/submissions`, {
     taskId: unlistedId,
     workerAddress: worker.address,
@@ -278,7 +286,7 @@ async function main() {
         fileName: 'submission.txt',
         mimeType: 'text/plain',
         role: 'attachment',
-        file: Buffer.from('visibility smoke test submission').toString('base64'),
+        file: Buffer.from(unlistedPayload).toString('base64'),
       },
     ],
     signature: submitSig,
@@ -574,8 +582,9 @@ async function main() {
   // 20. An outsider cannot submit work on the allowlist-only private (bounty
   // mode) task; the allowlisted worker can.
   log('20/26', 'Outsider attempting to submit work on the allowlist-only private task...');
+  const outsiderSubmitPayload = 'outsider should not be able to submit this';
   const outsiderSubmitSig = await outsider.signMessage({
-    message: buildSubmitMessage(allowlistOnlyId),
+    message: buildSubmitMessage(allowlistOnlyId, [contentHash(outsiderSubmitPayload)]),
   });
   await assertRejects(
     () =>
@@ -587,7 +596,7 @@ async function main() {
             fileName: 'submission.txt',
             mimeType: 'text/plain',
             role: 'attachment',
-            file: Buffer.from('outsider should not be able to submit this').toString('base64'),
+            file: Buffer.from(outsiderSubmitPayload).toString('base64'),
           },
         ],
         signature: outsiderSubmitSig,
@@ -597,8 +606,9 @@ async function main() {
   );
 
   log('20b/26', 'Allowlisted worker submitting work on the allowlist-only private task...');
+  const workerSubmitPayload = 'allowlisted worker submission';
   const workerSubmitSig = await worker.signMessage({
-    message: buildSubmitMessage(allowlistOnlyId),
+    message: buildSubmitMessage(allowlistOnlyId, [contentHash(workerSubmitPayload)]),
   });
   const { submissionId: allowlistSubmissionId } = (await post(
     `/api/tasks/${allowlistOnlyId}/submissions`,
@@ -610,7 +620,7 @@ async function main() {
           fileName: 'submission.txt',
           mimeType: 'text/plain',
           role: 'attachment',
-          file: Buffer.from('allowlisted worker submission').toString('base64'),
+          file: Buffer.from(workerSubmitPayload).toString('base64'),
         },
       ],
       signature: workerSubmitSig,
