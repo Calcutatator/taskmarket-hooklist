@@ -46,9 +46,9 @@ jobs:
           # Empty on push events -- integrity checks only.
           ADR_LINT_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
 
-  quality:
+  quality-js:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 20
 
     services:
       postgres:
@@ -64,6 +64,30 @@ jobs:
           --health-interval 10s
           --health-timeout 5s
           --health-retries 5
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - run: make install
+
+      - run: make ci-quality-js
+        env:
+          DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
+
+  quality-contracts:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
 
     steps:
       - uses: actions/checkout@v7
@@ -95,17 +119,13 @@ jobs:
 
       - run: make install
 
-      - run: make build all
+      - run: make build contracts
 
-      - run: make lint-check all
+      - run: make lint-check contracts
 
-      - run: make format-check all
+      - run: make format-check contracts
 
-      - run: make type-check all
-
-      - run: make test
-        env:
-          DATABASE_URL: postgresql://taskmarket:taskmarket@localhost:5432/taskmarket_test
+      - run: make contract test
 
       - name: Gas snapshot check
         run: make contract snapshot-check
@@ -132,9 +152,30 @@ jobs:
           path: packages/contracts/reports/coverage/lcov.info
           retention-days: 30
 
-  ui:
+  quality:
+    if: always()
+    needs: [quality-js, quality-contracts, skill-conformance]
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Verify quality shards
+        run: |
+          test "${{ needs.quality-js.result }}" = "success"
+          test "${{ needs.quality-contracts.result }}" = "success"
+          test "${{ needs.skill-conformance.result }}" = "success"
+
+  ui-e2e:
     runs-on: ubuntu-latest
     timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - browser: chromium
+            project: chromium-*
+          - browser: webkit
+            project: webkit-*
 
     steps:
       - uses: actions/checkout@v7
@@ -152,9 +193,9 @@ jobs:
 
       - run: make install
 
-      - run: make ui-ci-install-browsers
+      - run: make ui-ci-install-browsers UI_CI_BROWSER=${{ matrix.browser }}
 
-      - run: make ui-ci
+      - run: make ui-ci-e2e UI_CI_PROJECT='${{ matrix.project }}'
         env:
           CI: true
 
@@ -162,7 +203,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-report
+          name: playwright-report-${{ matrix.browser }}
           path: apps/web/playwright-report
           retention-days: 14
 
@@ -170,6 +211,16 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: playwright-test-results
+          name: playwright-test-results-${{ matrix.browser }}
           path: apps/web/test-results
           retention-days: 14
+
+  ui:
+    if: always()
+    needs: ui-e2e
+    runs-on: ubuntu-latest
+    timeout-minutes: 2
+
+    steps:
+      - name: Verify UI shards
+        run: test "${{ needs.ui-e2e.result }}" = "success"

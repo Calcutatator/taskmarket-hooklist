@@ -1,5 +1,6 @@
 import { expect, test, type Page } from '@playwright/test';
 
+import { isWebKitRscPrefetchAccessControlError } from './client-errors';
 import { startMockApiServer, taskListResponse } from './mock-api';
 
 const clientFailures = new WeakMap<Page, string[]>();
@@ -26,7 +27,7 @@ test.afterAll(async () => {
   }
 });
 
-test.beforeEach(async ({ page }) => {
+test.beforeEach(async ({ page }, testInfo) => {
   const failures: string[] = [];
   clientFailures.set(page, failures);
 
@@ -50,13 +51,16 @@ test.beforeEach(async ({ page }) => {
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
-      if (
-        message.text().includes('preview-network-block.test') &&
-        message.text().includes('Content Security Policy')
-      ) {
+      const text = message.text();
+      if (text.includes('preview-network-block.test') && text.includes('Content Security Policy')) {
         return;
       }
-      failures.push(message.text());
+      if (isWebKitRscPrefetchAccessControlError(testInfo.project.name, text)) {
+        // WebKit can report speculative Next.js RSC prefetches as access-control
+        // console errors even though the requested navigation succeeds.
+        return;
+      }
+      failures.push(text);
     }
   });
 
@@ -593,17 +597,15 @@ test('explains when /try publication is unavailable without Privy', async ({ pag
   );
 
   await page.goto('/try', { waitUntil: 'networkidle' });
-  await page
-    .getByLabel('What should yours explain?', { exact: true })
-    .first()
-    .fill('How heat pumps move more energy than they consume');
+  const prompt = page.getByLabel('What should yours explain?', { exact: true }).first();
+  const topic = 'How heat pumps move more energy than they consume';
+  await prompt.fill(topic);
+  await expect(prompt).toHaveValue(topic);
   await page
     .getByRole('button', { name: /Build my brief/i })
     .first()
     .click();
-  await expect(page.getByLabel(/Infographic topic/i)).toHaveValue(
-    'How heat pumps move more energy than they consume'
-  );
+  await expect(page.getByLabel(/Infographic topic/i)).toHaveValue(topic);
   await page.getByLabel(/Target audience/i).fill('Homeowners comparing heating systems');
   await page.getByRole('button', { name: /Review and fund/i }).click();
 

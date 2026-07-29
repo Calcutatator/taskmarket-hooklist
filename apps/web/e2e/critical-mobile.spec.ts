@@ -1,5 +1,6 @@
 import { expect, test, type Locator, type Page } from '@playwright/test';
 
+import { isWebKitRscPrefetchAccessControlError } from './client-errors';
 import { startMockApiServer, taskListResponse } from './mock-api';
 
 const clientFailures = new WeakMap<Page, string[]>();
@@ -98,7 +99,11 @@ test.beforeEach(async ({ page }, testInfo) => {
 
   page.on('console', (message) => {
     if (message.type() === 'error') {
-      failures.push(message.text());
+      const text = message.text();
+      if (isWebKitRscPrefetchAccessControlError(testInfo.project.name, text)) {
+        return;
+      }
+      failures.push(text);
     }
   });
   page.on('pageerror', (error) => {
@@ -175,6 +180,9 @@ test('navigates dashboard sections without document reload and preserves browser
     page,
     page.getByRole('heading', { name: /Marketplace activity/i }).first()
   );
+  await activity.evaluate(async (element) => {
+    await Promise.all(element.getAnimations().map((animation) => animation.finished));
+  });
   await expect
     .poll(() => page.evaluate(() => window.sessionStorage.getItem('dashboard-beforeunload')))
     .toBe('false');
@@ -226,6 +234,7 @@ test('persists task views while resetting cursor pagination through reload and h
   await expectTouchTarget(filterDialog.getByRole('button', { name: /Apply filters/i }));
   await page.keyboard.press('Escape');
   await expect(filterDialog).toBeHidden();
+  await expect(filters).toBeFocused();
 
   await galleryView.click();
   await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=gallery$/);

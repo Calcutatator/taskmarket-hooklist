@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check adr-lint contract ui-ci ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check adr-lint contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -30,7 +30,9 @@ help:
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
 	@echo "  make adr-lint             - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
+	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run production web UI regression checks"
+	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
 	@echo "  make db <cmd>             - Database commands (start|stop|generate|migrate|push|seed|studio|backfill-task-awards|backfill-agent-registry-chain|retry-orphaned-refunds)"
@@ -510,6 +512,11 @@ fix:
 	fi
 
 test:
+	# "test" is also the second goal in "make contract test"; the contract
+	# dispatcher already ran the Solidity suite in that case.
+	@if [ "$(word 1,$(MAKECMDGOALS))" = "contract" ]; then \
+		exit 0; \
+	fi; \
 	$(ENV_LOADER) && pnpm turbo test
 
 skill-conformance:
@@ -591,6 +598,14 @@ contract:
 		exit 1; \
 	fi
 
+ci-quality-js:
+	$(ENV_LOADER) && \
+	pnpm turbo build --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs' && \
+	pnpm turbo lint:check --filter='!@taskmarket/contracts' && \
+	pnpm turbo format:check --filter='!@taskmarket/contracts' && \
+	pnpm turbo type-check --filter='!@taskmarket/contracts' && \
+	pnpm turbo test --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs'
+
 ui-ci:
 	$(ENV_LOADER) && \
 	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
@@ -612,8 +627,27 @@ ui-ci:
 	TASKMARKET_MOCK_WEB_PORT="$$MOCK_WEB_PORT" \
 		pnpm --filter @taskmarket/web test:e2e
 
+ui-ci-e2e:
+	$(ENV_LOADER) && \
+	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
+	MOCK_WEB_PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" && \
+	PLAYWRIGHT_ARGS=() && \
+	if [ -n "$(UI_CI_PROJECT)" ]; then PLAYWRIGHT_ARGS+=(--project="$(UI_CI_PROJECT)"); fi && \
+	pnpm --filter @taskmarket/shared build && \
+	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	NEXT_PUBLIC_PRIVY_APP_ID= \
+		pnpm --filter @taskmarket/web build && \
+	NEXT_PUBLIC_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	TASKMARKET_API_URL="http://127.0.0.1:$$MOCK_API_PORT" \
+	NEXT_PUBLIC_PRIVY_APP_ID= \
+	CI=1 \
+	NODE_ENV=production \
+	TASKMARKET_MOCK_WEB_PORT="$$MOCK_WEB_PORT" \
+		pnpm --filter @taskmarket/web exec playwright test "$${PLAYWRIGHT_ARGS[@]}" $(UI_CI_TEST_ARGS)
+
 ui-ci-install-browsers:
-	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps chromium webkit
+	$(ENV_LOADER) && cd apps/web && pnpm exec playwright install --with-deps $(if $(UI_CI_BROWSER),$(UI_CI_BROWSER),chromium webkit)
 
 clean:
 	$(ENV_LOADER) && pnpm turbo clean
