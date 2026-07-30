@@ -14,6 +14,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-22
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** Supersedes ADR-0015; Supersedes ADR-0017
 
@@ -127,6 +131,6 @@ globally rather than passing a signature through query input.
 - ADR-0017 (`bids.myBids` signed self-auth) -- same; superseded by this ADR.
 - ADR-0016 (submission visibility, independent axis) -- the PR that shipped the general
   `ctx.caller` mechanism this ADR converges onto.
-- `docs/specs/task-visibility-and-submission-visibility.md` -- Phase 3 file list already
+- `docs/rfc/0005-task-visibility-and-submission-visibility.md` -- Phase 3 file list already
   plans a `canView` retrofit across `bids`/`pitches`/`proofs`/`feedbacks.router.ts`, which
   now starts from this single converged pattern instead of three precedents.

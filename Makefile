@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check adr-lint contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -24,11 +24,13 @@ help:
 	@echo "  make type-check <app|all> - Type check specific app or all"
 	@echo "  make check all            - Run all checks (lint + format + type-check)"
 	@echo "  make fix all              - Fix all issues (lint + format)"
-	@echo "  make test                 - Run all tests"
+	@echo "  make test [app]           - Run all tests, or just one package's tests"
 	@echo "  make skill-conformance    - Check shipped skill against platform contracts"
 	@echo "  make skill-export SKILLS_MARKET_OUTPUT=<dir> - Export the canonical skills.sh package"
 	@echo "  make docs-og-check        - Check docs pages have required og/twitter meta tags"
-	@echo "  make adr-lint             - Check docs/adr/ ADRs follow numbering/status rules"
+	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
+	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
+	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run production web UI regression checks"
@@ -342,27 +344,19 @@ start:
 lint-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|adr|specs|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
-		cd apps/web && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		cd packages/shared && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm lint:check; \
-	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
-		cd apps/email-worker && pnpm lint:check; \
+	elif [ "$(word 1,$(ARGS))" = "specs" ]; then \
+		cd packages/adr && pnpm spec-lint; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm lint:check; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm lint:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|adr|specs|all>"; \
 		exit 1; \
 	fi
 
@@ -517,7 +511,18 @@ test:
 	@if [ "$(word 1,$(MAKECMDGOALS))" = "contract" ]; then \
 		exit 0; \
 	fi; \
-	$(ENV_LOADER) && pnpm turbo test
+	$(ENV_LOADER) && \
+	if [ -z "$(word 1,$(ARGS))" ]; then \
+		pnpm turbo test; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm test; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm test; \
+	else \
+		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Usage: make test [backend|frontend|web|docs|shared|contracts|email-worker|adr]"; \
+		exit 1; \
+	fi
 
 skill-conformance:
 	$(ENV_LOADER) && \
@@ -537,13 +542,6 @@ docs-og-check:
 	$(ENV_LOADER) && \
 	pnpm --filter @taskmarket/docs build && \
 	pnpm --filter @taskmarket/docs check-og
-
-adr-lint:
-	@if [ -n "$$ADR_LINT_BASE" ]; then \
-		node docs/adr/lint.mjs $$(git diff --name-only "$$ADR_LINT_BASE"...HEAD); \
-	else \
-		node docs/adr/lint.mjs; \
-	fi
 
 contract:
 	@$(ENV_LOADER) && \

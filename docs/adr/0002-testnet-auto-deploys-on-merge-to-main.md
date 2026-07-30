@@ -12,6 +12,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-15
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
@@ -26,7 +30,7 @@ environment was named `taskmarket.io`. Nothing deployed to the shared testnet au
 An earlier version of this ADR proposed a separate long-lived `testnet` branch as the default
 PR target, with `main` as a production mirror updated only by a manual merge from `testnet`
 (matching an aspirational branch model already sketched in
-`docs/specs/agentic-development-factory-rfc.md`). That branch was created, the repository's
+`docs/rfc/0003-agentic-development-factory.md`). That branch was created, the repository's
 default branch was flipped to it, and this PR was retargeted to it — then reverted before
 merge: the manual `testnet` → `main` merge-forward step added process weight without a
 corresponding safety benefit, since nothing about promoting already-validated app code to
@@ -80,13 +84,13 @@ CI passing and a `v*` tag push, exactly as it worked before this ADR.
   directly rather than a separate branch that represents a deliberate snapshot.
 
 **Neutral / follow-up:**
-- None outstanding — `docs/specs/agentic-development-factory-rfc.md`'s release-ladder section
+- None outstanding — `docs/rfc/0003-agentic-development-factory.md`'s release-ladder section
   was updated alongside this ADR to describe this single-branch model.
 
 ## References
 
-- RFC: `docs/specs/agentic-development-factory-rfc.md` (release path section)
-- RFC: `docs/specs/agent-preview-environments-rfc.md`
+- RFC: `docs/rfc/0003-agentic-development-factory.md` (release path section)
+- RFC: `docs/rfc/0002-agent-preview-environments.md`
 - ADR-0001: `docs/adr/0001-mainnet-upgrades-stay-manual.md` (mainnet upgrade custody, unchanged
   by this decision)
 - `.github/workflows/deploy-testnet.yml`, `.github/workflows/deploy-production.yml`,

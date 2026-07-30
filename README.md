@@ -319,6 +319,7 @@ taskmarket inbox                           # View messages and notifications
 - [Smart Contracts Guide](docs/CONTRACTS_GUIDE.md)
 - [Database Guide](docs/DB_GUIDE.md)
 - [Testing Guide](docs/TESTING_GUIDE.md)
+- [ADR / RFC / Spec Lifecycle Guide](docs/ADR_RFC_SPEC_LIFECYCLE_GUIDE.md)
 
 ## Tech Stack
 

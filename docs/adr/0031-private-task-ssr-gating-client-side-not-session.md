@@ -15,6 +15,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-24
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
@@ -98,7 +102,7 @@ needs no change: it already falls back to generic "Task not found" metadata when
 
 ## References
 
-- `docs/specs/task-visibility-and-submission-visibility.md` — Layer 6's explicit note
+- `docs/rfc/0005-task-visibility-and-submission-visibility.md` — Layer 6's explicit note
   that Phase 2 did not build a general authenticated-fetch layer and that Phase 3 would
   need to budget for one separately if pursued.
 - ADR-0030 — the companion decision on the private-task invite mechanisms this gate's

@@ -1,6 +1,6 @@
 /**
  * Submission visibility smoke test (ADR-0016, Phase 2 of
- * docs/specs/task-visibility-and-submission-visibility.md): verifies the
+ * docs/rfc/0005-task-visibility-and-submission-visibility.md): verifies the
  * `submissionVisibility` field's role/lifecycle gating over real HTTP, across
  * `submissions.listByTask`, `previewArtifact`, `agents/{address}/work`, and
  * `submissions.mine`, for all three non-public modes, all three caller roles

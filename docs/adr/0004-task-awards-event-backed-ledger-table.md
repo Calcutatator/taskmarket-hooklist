@@ -12,9 +12,14 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-16
-- **Deciders:** (pending — this documents a decision already implemented in PR #166's original
-  commits, before this repo's ADR process was applied to it; the compatibility-field retention
-  described below was reviewed and rejected before ever reaching `Accepted` — see ADR-0006)
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Loaf
+- **Reviewers:** Loaf — self-attested; no independent reviewer recorded
+- **Deciders:** Loaf — self-attested; no independent decider recorded (this ADR
+  retroactively documents a decision already implemented in PR #166's original commits, before
+  this repo's ADR process was applied to it; the compatibility-field retention described below
+  was reviewed and rejected before ever reaching `Accepted` — see ADR-0006)
 - **Supersedes / Superseded-by:** Superseded by [0006](0006-task-awards-single-source-of-truth.md)
 
 ## Context

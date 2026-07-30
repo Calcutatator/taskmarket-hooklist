@@ -1,14 +1,13 @@
-# Agentic Development Factory RFC
+# 0003 — Agentic Development Factory
 
-Status: Draft, no decision recorded yet
-Owner: Taskmarket
-Last updated: 2026-07-13
+- **Status:** Draft
+- **Date:** 2026-07-13
+- **Author:** Beau
+- **Supersedes / Superseded-by:** —
 
-This is an RFC: a design proposal for discussion, not a decision record. Once a direction is
-chosen, the decision itself belongs in an ADR under `docs/adr/` (see `docs/adr/README.md`).
-This document depends on `docs/specs/agent-preview-environments-rfc.md` — it assumes that
-work exists and asks a broader question on top of it: what does day-to-day agent-driven
-development actually look like, end to end?
+This document depends on [0002 — Agent preview environments](0002-agent-preview-environments.md)
+— it assumes that work exists and asks a broader question on top of it: what does day-to-day
+agent-driven development actually look like, end to end?
 
 ## Summary
 
@@ -19,7 +18,7 @@ processes — bug fixes and feature additions — with different levels of cerem
 the open problem that neither process actually solves yet: reproducing a real, reported bug
 inside a preview environment that starts from a clean, empty state.
 
-## Problem
+## Motivation
 
 Not every piece of work deserves the same process. A typo fix and a new task-workflow
 primitive shouldn't both require the same upfront design conversation, but right now there's
@@ -35,7 +34,7 @@ Two different triggers, two different shapes of work:
   getting it wrong is expensive to unwind once agents and humans are both building on top of
   it.
 
-## Goals
+Goals this RFC is trying to satisfy:
 
 - Define two distinct, written contribution processes — ad hoc bug fixes and RFC-first feature
   additions — so agents and humans both know which ceremony a piece of work requires.
@@ -51,7 +50,7 @@ Two different triggers, two different shapes of work:
 - Name the problems that are not yet solved (bug reproduction from empty state) instead of
   letting the process documents imply completeness.
 
-## Proposed Design
+## Proposal
 
 ### Two processes, not one
 
@@ -64,7 +63,7 @@ Two different triggers, two different shapes of work:
 4. Normal PR review and merge.
 
 **Feature-addition process** (RFC required):
-1. A human writes or approves a spec — an RFC in `docs/specs/` — before implementation starts.
+1. A human writes or approves a spec — an RFC in `docs/rfc/` — before implementation starts.
    This is the "spec-first" conversation: what problem, what shape of solution, what's out of
    scope.
 2. Once the RFC's direction is discussed and any resulting decisions are recorded as ADRs, an
@@ -297,9 +296,10 @@ a PR:
 
 1. **Feature, RFC-first.** A developer drafts the RFC in an attended session with the
    strongest model, it lands in a PR, gets discussed, and its decisions are recorded as
-   ADRs. Then a single trigger message — "build `docs/specs/foo-rfc.md`" — spins up a cloud
-   agent that reads the RFC, `CLAUDE.md`, and the ADR process, opens an implementation PR,
-   receives its preview environment automatically, and loops until done or paused on an ADR.
+   ADRs. Then a single trigger message — "build `docs/rfc/0003-agentic-development-factory.md`" —
+   spins up a cloud agent that reads the RFC, `CLAUDE.md`, and the ADR process, opens an
+   implementation PR, receives its preview environment automatically, and loops until done
+   or paused on an ADR.
 2. **Bug fix.** A single message describing the symptom. The agent spins up, opens a PR,
    attempts reproduction (see the open problem below), fixes, and requests review.
 3. **Tiny feature, RFC skipped.** Identical to the bug path — the trigger message *is* the
@@ -394,7 +394,7 @@ Ordering constraint at every rung: contracts upgrade before app code that calls 
 functions deploys. The reverse order serves user traffic against functions that do not exist
 yet.
 
-## Open Problem: reproducing a reported bug
+### Open problem: reproducing a reported bug
 
 This is genuinely unsolved, not just undecided — worth stating plainly rather than papering
 over it with a design that sounds complete but isn't.
@@ -431,12 +431,12 @@ Candidate directions, none chosen:
 This RFC does not pick one. It exists to make sure this gap is written down and visible before
 the bug-fix process above is treated as solved.
 
-## Economics and Execution Substrate
+### Economics and execution substrate
 
 Who pays for the model inference, and where the agents physically run, are not afterthoughts —
 they determine which parts of this factory can scale and which are bounded by headcount.
 
-### The two billing shapes that exist
+**The two billing shapes that exist**
 
 1. **Subscription-bundled local sessions.** A developer running an agent interactively on
    their own machine (Claude Code, Cursor, etc.), billed flat through their own personal or
@@ -461,7 +461,7 @@ with their own identity, triggered from shared chat, not attributable to any one
 account — the moment work is fleet-shaped (tier 3), the organization is paying API rates
 for it and capacity stops being bounded by whose plan is whose.
 
-### Model tiering by phase
+**Model tiering by phase**
 
 The two processes in this RFC have very different token-economics profiles, and the model
 choice should follow the judgment density of the phase, not be one global setting:
@@ -482,7 +482,7 @@ The corollary: the expensive model plans and reviews; the cheap models grind. A 
 might be authored with the strongest model in an attended session, then handed to a cheaper
 cloud agent for implementation — with the strongest model reappearing only at PR-review time.
 
-### Where the work runs
+**Where the work runs**
 
 - **Spec/RFC phase: local, attended, subscription-billed.** Already true today; nothing to
   build.
@@ -496,7 +496,7 @@ cloud agent for implementation — with the strongest model reappearing only at 
   transfer-to-local pattern). Cloud-vs-local is a per-task choice, not an architecture
   commitment.
 
-### Cost-control questions this raises (open, not designed here)
+**Cost-control questions this raises (open, not designed here)**
 
 - A per-PR token budget for unattended implementation agents — what's the cap, and what
   happens when it's hit (pause and ping a human, or escalate model tier and retry)?
@@ -507,6 +507,23 @@ cloud agent for implementation — with the strongest model reappearing only at 
   should be?
 - At what concurrent-PR volume do the metered costs justify more engineering (checkpoint
   reuse, model routing, batching), versus just paying the bill?
+
+## Open questions
+
+- Who/what decides whether a given piece of work is a "bug fix" or a "feature addition" when
+  it's ambiguous? No process defined yet — likely defaults to human judgment at PR-open time.
+- Does a bug-fix PR ever need to escalate into requiring an RFC mid-flight (e.g. the "narrow
+  fix" turns out to require a real design decision)? If so, that's presumably just "stop and
+  write an ADR," per the existing ADR process — but worth confirming that's sufficient rather
+  than needing a formal escalation path to the RFC track.
+- Which of the three reproduction candidates above (if any) is worth prototyping first.
+- The cost-control questions under "Economics and execution substrate": per-PR token budgets,
+  cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
+  costs justify optimization engineering.
+- When to make the testnet/mainnet deployer key split — not a prerequisite for anything
+  currently built (the testnet rung's app deploy is already automated without it; only the
+  testnet contract upgrade itself would ever need it, if that's later decided). (The mainnet
+  custody question itself is decided: ADR-0001, manual and developer-local.)
 
 ## Non-goals
 
@@ -519,24 +536,10 @@ cloud agent for implementation — with the strongest model reappearing only at 
   away, not resolved here.
 - Making the RFC-required-for-features convention machine-enforced. It's a norm, not a gate.
 
-## Open Questions
+## References
 
-- Who/what decides whether a given piece of work is a "bug fix" or a "feature addition" when
-  it's ambiguous? No process defined yet — likely defaults to human judgment at PR-open time.
-- Does a bug-fix PR ever need to escalate into requiring an RFC mid-flight (e.g. the "narrow
-  fix" turns out to require a real design decision)? If so, that's presumably just "stop and
-  write an ADR," per the existing ADR process — but worth confirming that's sufficient rather
-  than needing a formal escalation path to the RFC track.
-- Which of the three reproduction candidates above (if any) is worth prototyping first.
-- The cost-control questions under "Economics and Execution Substrate": per-PR token budgets,
-  cost attribution on the PR, API key ownership/scoping, and the threshold at which metered
-  costs justify optimization engineering.
-- When to make the testnet/mainnet deployer key split — not a prerequisite for anything
-  currently built (the testnet rung's app deploy is already automated without it; only the
-  testnet contract upgrade itself would ever need it, if that's later decided). (The mainnet
-  custody question itself is decided: ADR-0001, manual and developer-local.)
-
-## Next Step
-
-Once discussion settles, record the outcome as an ADR in `docs/adr/`, same as any other
-decision from this RFC track.
+- Related RFC: [0002 — Agent preview environments](0002-agent-preview-environments.md)
+- Related ADRs: ADR-0001 (`docs/adr/0001-mainnet-upgrades-stay-manual.md`), ADR-0002
+  (`docs/adr/0002-testnet-auto-deploys-on-merge-to-main.md`)
+- Next step: once discussion settles, record the outcome as an ADR in `docs/adr/`, same as any
+  other decision from this RFC track.

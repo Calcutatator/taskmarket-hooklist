@@ -14,6 +14,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-23
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
@@ -34,7 +38,7 @@ Issue #196 (UX Review 1, items 7-9) surfaced this from two angles:
   bug, but nothing named the condition, so a caller has no way to detect it except
   re-deriving the backend's own logic.
 
-`docs/specs/task-phase-field-rfc.md` scoped three options (a narrow `expired: boolean`;
+`docs/rfc/0004-task-phase-field.md` scoped three options (a narrow `expired: boolean`;
 an additive derived enum; doing nothing beyond documentation) and recommended the enum,
 gated on this ADR settling the exact values and the treatment of the evaluator/dispute
 statuses. This ADR is that follow-up decision, keeping the RFC's original working name,
@@ -103,7 +107,7 @@ on the same task.
 ## References
 
 - Issue #196 (UX Review 1), items 7-9
-- `docs/specs/task-phase-field-rfc.md` — the RFC this ADR decides
+- `docs/rfc/0004-task-phase-field.md` — the RFC this ADR decides
 - ADR-0006 — task_awards as the single source of truth for settlement (the `status`
   correctness invariant this decision does not touch)
 - ADR-0007 — indexer status transitions are guarded by prior state (why `status` can sit

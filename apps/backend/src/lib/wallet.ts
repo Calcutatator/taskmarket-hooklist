@@ -4,6 +4,7 @@ import { nonceManager } from 'viem/nonce';
 import { base, baseSepolia } from 'viem/chains';
 import { getServerConfig } from '../config/env';
 
+// Implements: ADR-0019
 // The server wallet signs on-chain calls for many concurrent requests (task creation,
 // identity registration, accept/rate/cancel, evaluator actions, etc.), all from this one
 // address. Without a nonce manager, each concurrent call independently reads the current

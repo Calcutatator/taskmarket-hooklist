@@ -9,12 +9,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-13
+- **Embodiment:** Inactive
+- **Last audited:** 2026-07-29
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
 
-The agentic development factory RFC (`docs/specs/agentic-development-factory-rfc.md`)
+The agentic development factory RFC (`docs/rfc/0003-agentic-development-factory.md`)
 defines a release ladder from per-PR preview environments up to the persistent chains. Every
 rung below mainnet can be safely automated: preview deploys use throwaway Anvil keys,
 upgrade rehearsals use fork-mode Anvil with an impersonated owner (no real key present), and
@@ -59,5 +63,5 @@ owner) requires a new ADR superseding this one.
 
 ## References
 
-- RFC: `docs/specs/agentic-development-factory-rfc.md` (release path section)
-- RFC: `docs/specs/agent-preview-environments-rfc.md` (the rungs below this decision)
+- RFC: `docs/rfc/0003-agentic-development-factory.md` (release path section)
+- RFC: `docs/rfc/0002-agent-preview-environments.md` (the rungs below this decision)

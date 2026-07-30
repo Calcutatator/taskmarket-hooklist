@@ -12,6 +12,10 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-20
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** Superseded by ADR-0023
 
@@ -90,7 +94,7 @@ separately decided.
 
 ## References
 
-- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md`, "What `agents.inbox` actually needs"
+- PR #110 — `docs/rfc/0005-task-visibility-and-submission-visibility.md`, "What `agents.inbox` actually needs"
   section
 - Issue #183 — Phase 1 implementation tracker
 - ADR 0014 — the related decision that visibility stays public-by-default/opt-in

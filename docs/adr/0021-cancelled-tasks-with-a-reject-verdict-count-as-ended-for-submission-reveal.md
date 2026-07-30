@@ -13,6 +13,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-21
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
@@ -22,7 +26,7 @@ Phase 2 (ADR-0016) defines `submissionVisibility`'s lifecycle gate as: while a t
 active, the requester sees all submissions and each submitting worker sees only their
 own; "once the task ends," `reveal_all` reveals everything and `winner_only` reveals the
 `task_awards`-linked winner(s). The RFC's own lifecycle table
-(`docs/specs/task-visibility-and-submission-visibility.md`, "Time + role gated reveal")
+(`docs/rfc/0005-task-visibility-and-submission-visibility.md`, "Time + role gated reveal")
 names exactly two "Ended" statuses: `completed` and `expired`. It does not mention
 `cancelled` at all.
 
@@ -100,7 +104,7 @@ before reaching the visibility check).
 
 - ADR-0016 — Submission visibility is an independent axis, defaulting to public and
   locked in at creation (the decision this ADR extends the lifecycle gate of)
-- `docs/specs/task-visibility-and-submission-visibility.md` — "Time + role gated reveal"
+- `docs/rfc/0005-task-visibility-and-submission-visibility.md` — "Time + role gated reveal"
   section (needs a follow-up edit to describe the `cancelled`/`verdictType` case)
 - `apps/backend/src/routers/evaluations.router.ts` — `finalizeVerdict`'s REJECT branch
 - `apps/backend/src/lib/submission-visibility.ts` — `isTaskEnded`, `canViewSubmission`

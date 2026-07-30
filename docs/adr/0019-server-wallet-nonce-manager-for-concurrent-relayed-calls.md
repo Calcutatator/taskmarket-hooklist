@@ -11,9 +11,13 @@
 > does not fix the separate bug where a relayed call's eventual failure can still be silently
 > swallowed by a caller that doesn't await or handle it.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-07-21
-- **Deciders:** (pending human approval)
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-29
+- **Author:** Agent — drafted per docs/adr/README.md's agent workflow
+- **Reviewers:** Agent — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context

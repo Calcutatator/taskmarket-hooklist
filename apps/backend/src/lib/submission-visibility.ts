@@ -6,7 +6,7 @@ export type SubmissionVisibilityMode = 'public' | 'reveal_all' | 'winner_only' |
 /**
  * A task is "ended" for reveal purposes once it reaches a terminal state where
  * no further submissions are expected -- matches the lifecycle table in
- * docs/specs/task-visibility-and-submission-visibility.md ("Active:
+ * docs/rfc/0005-task-visibility-and-submission-visibility.md ("Active:
  * open/claimed/...; Ended: completed/expired").
  *
  * `cancelled` is usually NOT a resolution outcome -- tasks.router.ts's plain

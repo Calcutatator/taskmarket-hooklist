@@ -17,12 +17,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
 
-PR #110 (`docs/specs/task-visibility-and-submission-visibility.md`) originally nested "submission visibility
+PR #110 (`docs/rfc/0005-task-visibility-and-submission-visibility.md`) originally nested "submission visibility
 mode" inside a single "Phase 2: true private tasks" bucket, reasoning that both needed
 the same general read-authentication foundation and so belonged together, and originally
 modeled it as a two-step process: a `public`/`private` choice at creation, plus a
@@ -145,7 +149,7 @@ Submission visibility is governed by its own field, independent of `tasks.taskVi
 
 ## References
 
-- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md`, "Phase 2: Submission visibility"
+- PR #110 — `docs/rfc/0005-task-visibility-and-submission-visibility.md`, "Phase 2: Submission visibility"
   section
 - Issue #183 — Phase 1/2/3 implementation tracker
 - ADR 0014 — task visibility stays public by default (the separate, related axis this

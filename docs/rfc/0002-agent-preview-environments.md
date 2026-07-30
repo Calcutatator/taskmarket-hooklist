@@ -1,13 +1,9 @@
-# Agent Preview Environments RFC
+# 0002 — Agent Preview Environments
 
-Status: Draft, no decision recorded yet
-Owner: Taskmarket
-Last updated: 2026-07-13
-
-This is an RFC: a design proposal for discussion, not a decision record. Once a direction is
-chosen, the decision itself belongs in an ADR under `docs/adr/` (see `docs/adr/README.md`
-for the process) — a human must explicitly approve that ADR before it's considered decided.
-This document should not be read as already-approved.
+- **Status:** Draft
+- **Date:** 2026-07-13
+- **Author:** Beau
+- **Supersedes / Superseded-by:** —
 
 ## Summary
 
@@ -19,7 +15,7 @@ automation with an explicit `deploy-preview.yml` GitHub Actions workflow that pr
 Railway environment plus a disposable Anvil chain for every PR, redeployed from scratch on
 every commit.
 
-## Problem
+## Motivation
 
 Agents working in parallel on separate PRs currently have nowhere safe to verify their
 changes:
@@ -45,7 +41,9 @@ changes:
   would mean handing that same key to every agent, or building a funded-wallet-per-environment
   system.
 
-## Current State (updated after this RFC's design was implemented and verified live)
+## Proposal
+
+### Current state (updated after this RFC's design was implemented and verified live)
 
 Project: `TASK MARKET` (`31b1179a-c6f5-42da-a0aa-58231c519ce2`)
 
@@ -81,7 +79,7 @@ CI/CD as it exists in the repo today:
 - `sandbox-smoke.yml` — runs `scripts/cloud-env-setup.sh` inside a real Linux container
   whenever the sandbox script, its Dockerfile, or the Makefile change.
 
-## Documentation-process inconsistency found while writing this
+### Documentation-process inconsistency found while writing this
 
 While placing this RFC, we found the repo has no settled convention for where pre-decision
 design documents live. `docs/specs/erc8195-delegation-chains.md` is a "proposal" in
@@ -92,7 +90,11 @@ correct. This RFC follows the `docs/specs/` precedent and this repo now has an e
 placement is left untouched — moving or renaming it is a separate decision, not bundled into
 this change.
 
-## Goals
+**Update:** this inconsistency has since been addressed — pre-decision proposals now have an
+explicit, templated home in `docs/rfc/` with a real numbering scheme, index, and status
+lifecycle, and this document's own migration into that directory is part of that fix.
+
+### Goals
 
 - Give every PR (and, by extension, every agent working on a PR) an isolated environment: its
   own Postgres, its own deployed contracts, its own chain state.
@@ -107,24 +109,16 @@ this change.
   its own PR environment for ordinary implementation choices, and only pauses for a human when
   it hits a decision that belongs in an ADR.
 
-## Non-goals
+### Proposed design
 
-- Replacing or reconfiguring the real shared testnet (`testnet` environment) or its
-  deploy/upgrade process.
-- Fixing the `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue — noted here because it
-  motivates part of the design, but tracked as a separate, smaller fix.
-- Building a system for testing against real Base Sepolia per PR (see Alternatives).
-
-## Proposed Design
-
-### Stop relying on Railway's native PR-environment automation
+#### Stop relying on Railway's native PR-environment automation
 
 Disable the project-level `prDeploys` / `botPrEnvironments` bot integration once confirmed
 nothing else currently depends on it, so Railway stops auto-cloning new environments from the
 broken `preview` base. This is a project-wide setting change and needs explicit sign-off
 before it's flipped, separate from writing the new workflow.
 
-### `deploy-preview.yml` GitHub Actions workflow
+#### `deploy-preview.yml` GitHub Actions workflow
 
 Triggered on `pull_request: [opened, synchronize, reopened, closed]`.
 
@@ -151,7 +145,7 @@ On open or new commit (`synchronize`):
 
 On close: delete the environment.
 
-### Never use `make upgrade testnet` for these environments
+#### Never use `make upgrade testnet` for these environments
 
 `make upgrade testnet` (`DiamondFullUpgrade.s.sol`) exists to preserve a diamond's proxy
 address and storage across a contract change on a persistent chain, where redeploying isn't
@@ -160,7 +154,7 @@ freshly empty — so every PR-environment deploy uses `make deploy testnet`, nev
 Using `upgrade` here would only import unrelated failure modes (storage-layout diffing,
 facet-selector pinning) into a sandbox that doesn't need them.
 
-### The facilitator: X402 payments on a disposable chain
+#### The facilitator: X402 payments on a disposable chain
 
 Payer-gated endpoints (anything the smoke tests hit via `x402Post`) do not work with just a
 chain and a backend: X402 payment verification and settlement go through a **facilitator**
@@ -205,7 +199,7 @@ resolution) is now confirmed live end to end against a real Railway deploy. X402
 settlement through the deployed facilitator on a disposable per-PR chain has not yet been
 exercised live -- that piece remains open.
 
-### Testing the CLI against a preview environment
+#### Testing the CLI against a preview environment
 
 The CLI (`@lucid-agents/taskmarket`) resolves its backend from the `TASKMARKET_API_URL`
 environment variable (`apps/cli/src/lib/api.ts`), defaulting to production. Two cases:
@@ -225,7 +219,7 @@ Publishing per-environment npm packages was considered and rejected: it adds a r
 round-trip and version-churn noise to every PR for something running the branch's own source
 already does correctly.
 
-## Alternatives Considered
+### Alternatives considered
 
 - **Real Base Sepolia deploy per PR environment.** Rejected: needs a funded deployer wallet
   shared across every parallel agent, faucet/gas contention, slower per-push turnaround, and
@@ -242,15 +236,15 @@ already does correctly.
   or kept together, and keeping both forces migrations-always-additive plus exactly the
   partial-drift edge cases the unconditional wipe eliminates. Unconditional full wipe on
   every commit is simpler and always in sync with HEAD. The future speed win is the
-  `PROJECT_SANDBOXES` checkpoint/fork path in Open Questions (fresh-state semantics without
+  `PROJECT_SANDBOXES` checkpoint/fork path in Open questions (fresh-state semantics without
   re-running the deploy script), not persistence.
 - **Keep Railway's native bot PR-environment feature as-is.** Rejected: its configuration is
   invisible outside the Railway dashboard, and its current base template (`preview`) is
   broken.
 
-## Accepted Limitations
+### Accepted limitations
 
-### Latency per commit
+#### Latency per commit
 
 Every pushed commit pays a full environment rebuild. Decomposed, though, the wipe itself is
 not the slow part:
@@ -267,9 +261,9 @@ isolated" (this design) or "more minutes, real money, shared" (testnet). The reb
 also paid per pushed commit, not per action: within one deployed preview an agent iterates
 freely — browser, smoke tests, chain time-travel, DB inspection — without triggering a
 rebuild. Mitigations if the per-push minutes become the bottleneck: Railway build caching,
-and the `PROJECT_SANDBOXES` checkpoint/fork path in Open Questions.
+and the `PROJECT_SANDBOXES` checkpoint/fork path in Open questions.
 
-### State does not survive commits
+#### State does not survive commits
 
 Wiping the environment on every commit means bugs that only reproduce after a multi-step
 sequence built up across earlier commits in the same PR (e.g. "create a task on commit 1,
@@ -287,7 +281,7 @@ rarer case of a bug that only reproduces after real-world chain conditions (real
 real block timing variance) rather than simulated time — for that narrow case, the shared
 persistent testnet remains the right, more expensive, contended fallback.
 
-## Open Questions
+## Open questions
 
 - Confirm nothing currently depends on Railway's native `botPrEnvironments`/`prDeploys`
   behavior before disabling it.
@@ -305,7 +299,16 @@ persistent testnet remains the right, more expensive, contended fallback.
 - The `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue is out of scope here but
   should be tracked separately.
 
-## Next Step
+## Non-goals
 
-Once discussion settles, record the outcome as an ADR in `docs/adr/` using
-`docs/adr/template.md`, with status `Proposed` until a human explicitly approves it.
+- Replacing or reconfiguring the real shared testnet (`testnet` environment) or its
+  deploy/upgrade process.
+- Fixing the `FORGE_DEV_PRIVATE_KEY` testnet/mainnet key-sharing issue — noted here because it
+  motivates part of the design, but tracked as a separate, smaller fix.
+- Building a system for testing against real Base Sepolia per PR (see Alternatives considered).
+
+## References
+
+- Spec: `docs/rfc/0002-agent-preview-environments.md` (this document)   ·   Related ADRs: ADR-0002
+- Once discussion settles, record the outcome as an ADR in `docs/adr/` using
+  `docs/adr/_template.md`, with status `Proposed` until a human explicitly approves it.

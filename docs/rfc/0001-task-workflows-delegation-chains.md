@@ -1,25 +1,25 @@
-# ERC-8195 Task Workflows
+# 0001 — ERC-8195 Delegation Chains — Task Workflow Design Options
 
-## What This Proposal Is About
+- **Status:** Draft
+- **Date:** 2026-06-02
+- **Author:** Beau
+- **Supersedes / Superseded-by:** —
 
-**ERC-8195 has no concept of task workflows.**
+## Summary
 
-A task workflow is a set of tasks that are related by delegation: a requester posts a root
-task, a worker decomposes that task into subtasks and assigns them to other agents, who may
-further decompose their subtasks, and so on. The completed subtasks collectively constitute
-completion of the root task. The requester cares about the root task outcome; the protocol
-should handle the coordination and settlement of everything underneath it.
+**ERC-8195 has no concept of task workflows.** A task workflow is a set of tasks related by
+delegation: a requester posts a root task, a worker decomposes that task into subtasks and
+assigns them to other agents, who may further decompose their subtasks, and so on. The
+completed subtasks collectively constitute completion of the root task — the requester cares
+about the root task outcome, and the protocol should handle coordination and settlement of
+everything underneath it.
 
-Today, ERC-8195 cannot express this. Every task is an isolated escrow unit. The protocol has
-no way to represent that Task B was created because of Task A, that Task C is a subtask of
-Task B, or that settling Task C should contribute toward settling Task A. There is no task
-workflow primitive.
+Today, every task is an isolated escrow unit. The protocol has no way to represent that Task
+B was created because of Task A, that Task C is a subtask of Task B, or that settling Task C
+should contribute toward settling Task A. There is no task workflow primitive. This proposal
+defines task workflows for ERC-8195 and presents three implementation approaches.
 
-This proposal defines task workflows for ERC-8195 and presents three implementation approaches.
-
----
-
-## Why the Absence of Task Workflows Is a Problem
+## Motivation
 
 Without task workflows, a worker who wants to subcontract must create a second independent
 task out of their own pocket. The two tasks — the one they were hired on and the one they
@@ -45,12 +45,12 @@ any re-entrant call into the same TaskMarket contract, so a hook on Task B-C can
 synchronously trigger `acceptSubmission` on Task A-B within the same call. Off-chain relays
 work mechanically but reintroduce exactly the trust problem the protocol exists to eliminate.
 
----
-
-## Approaches
+## Proposal
 
 Three approaches exist for adding task workflow support. They differ in where the workflow
 graph is stored and how settlement is enforced.
+
+### Approaches (comparison)
 
 | | On-chain Workflow | Hybrid Workflow | Off-chain Workflow |
 |---|---|---|---|
@@ -63,15 +63,13 @@ graph is stored and how settlement is enforced.
 | Iteration speed | Slow (contract upgrade required) | Fast | Fast |
 | Right for | Adversarial environments, heterogeneous markets | Trusted ecosystems needing atomic settlement | Early-stage, low-stakes delegation |
 
----
-
-## Approach 1: On-chain Task Workflows
+### Approach 1: On-chain Task Workflows
 
 This approach adds task workflow structure directly to the ERC-8195 core state machine.
 Every task can optionally declare a parent task. The contract enforces the relationship,
 splits the parent escrow into child escrows, and propagates settlement automatically.
 
-### Minimal Form: Linked Task Tree
+#### Minimal Form: Linked Task Tree
 
 Add `bytes32 parentTaskId` (zero for root tasks) to `createTask`. The contract enforces:
 
@@ -109,7 +107,7 @@ extension pattern in Part VII of the ERC-8195 spec.
 - Cannot express parallel branches that fan out and re-merge (no join semantics). For that,
   see the maximal form below.
 
-### Maximal Form: Full Task Workflow DAG
+#### Maximal Form: Full Task Workflow DAG
 
 Replace the single `parentTaskId` with `bytes32[] dependencyTaskIds`. A task with multiple
 dependencies becomes a join node: it transitions from `Blocked` to `Open` only when all
@@ -157,9 +155,7 @@ contract, confirm on the destination, release when both sides commit.
   The on-chain graph is the authority for who gets paid and when; the sequencer is a liveness
   concern, not a safety concern.
 
----
-
-## Approach 2: Hybrid Task Workflows
+### Approach 2: Hybrid Task Workflows
 
 This approach separates the two problems. Task workflow scheduling stays off-chain (the backend
 unblocks downstream tasks as upstream tasks complete). Task workflow attribution goes on-chain
@@ -175,7 +171,7 @@ upgrade (adding the `WorkflowFacet` via `diamondCut`) but no changes to the exis
 lifecycle. It provides on-chain attribution and atomic settlement, while leaving coordination
 to the backend where it is cheaper and faster to iterate on.
 
-### ITMPWorkflow Extension Interface
+#### ITMPWorkflow Extension Interface
 
 `ITMPWorkflow` is an optional ERC-8195 extension, following the same pattern as
 `ITMPEvaluator`, `ITMPFees`, and `ITMPReputation`. Implementations declare support via
@@ -212,7 +208,7 @@ interface ITMPWorkflow is IERC165 {
 }
 ```
 
-### Settlement: Requester-Only Authorization
+#### Settlement: Requester-Only Authorization
 
 Only the root requester signs `settleWorkflow`. Workers do not co-sign. They consented to
 their terms when they accepted their individual tasks — that consent is already recorded
@@ -225,15 +221,13 @@ The requester signs an EIP-712 manifest specifying which worker gets which amoun
 deliverable. The contract verifies the signature and executes all `acceptSubmission` calls
 in a single transaction. If any call reverts, the entire settlement reverts — full atomicity.
 
-### Remaining Gap vs On-chain Approach
+#### Remaining Gap vs On-chain Approach
 
 Workers still front child task rewards during execution. `ITMPWorkflow` provides atomic
 settlement at the end, not during the workflow run. If B cannot afford to front C's reward
 for the duration of the workflow, the on-chain approach with escrow splitting is required.
 
----
-
-## Approach 3: Off-chain Task Workflows
+### Approach 3: Off-chain Task Workflows
 
 If trustless attribution is not required — for example, in a closed ecosystem of
 reputation-staked agents where the backend operator is trusted — task workflows can be
@@ -250,7 +244,7 @@ For adversarial environments, use the hybrid or on-chain approach. For trusted e
 where speed of iteration matters more than trustless guarantees, off-chain task workflows
 are a reasonable starting point.
 
-### Data Model
+#### Data Model
 
 ```sql
 CREATE TABLE workflows (
@@ -276,7 +270,7 @@ CREATE TABLE workflow_tasks (
 );
 ```
 
-### tRPC Router Surface
+#### tRPC Router Surface
 
 ```typescript
 // workflows.router.ts
@@ -287,9 +281,7 @@ workflows.addTask  // attach a task to a workflow with optional parent task
 workflows.status   // aggregate: X/N tasks complete, current blockers
 ```
 
----
-
-## Related Systems
+### Related Systems
 
 The task workflow concepts in this proposal have analogues in existing workflow orchestration
 software. Understanding the differences clarifies what ERC-8195 task workflows are and are not.
@@ -318,9 +310,7 @@ shape but insufficient as a trust model. This is why the on-chain and hybrid app
 the workflow graph on-chain rather than purely in the backend — the chain is the Temporal-style
 authoritative log.
 
----
-
-## Open Questions
+## Open questions
 
 1. **Fee model.** Does the platform fee apply at every task in the workflow or only at the
    root? Per-hop fees compound quickly in deep chains and may make task workflow delegation
@@ -340,3 +330,23 @@ authoritative log.
 
 5. **Depth limit.** On-chain: must be enforced in the contract to prevent gas exhaustion.
    Off-chain: configurable per deployment.
+
+## Non-goals
+
+This proposal does not select a single approach — it lays out three alternatives with
+different trust/cost/speed trade-offs for later decision. It does not propose changes to
+the ERC-8004 reputation record format, nor to the base ERC-8195 escrow/settlement primitives
+outside of what each approach explicitly modifies. The off-chain approach (Approach 3)
+explicitly does not attempt trustless attribution or tamper-proof settlement — those
+properties are only in scope for the on-chain and hybrid approaches. The on-chain maximal
+form explicitly does not resolve how a parent contract verifies *honest* completion of a
+child task on a foreign ERC-8195 deployment (see Open Question 4) — it only defines the
+interface-compliance and settlement-relay mechanics.
+
+## References
+
+- Spec: ERC-8195 core task lifecycle and evaluator extension pattern (Part VII)
+- Related interfaces: `ITMPHook`, `ITMPEvaluator`, `ITMPFees`, `ITMPReputation` (existing
+  ERC-8195 optional extensions, same pattern as the proposed `ITMPWorkflow`)
+- Related standard: ERC-8004 (reputation record)
+- External prior art: Temporal (temporal.io), Prefect (prefect.io) — see Related Systems

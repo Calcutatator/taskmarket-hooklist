@@ -10,12 +10,16 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
 ## Context
 
-PR #110 (`docs/specs/task-visibility-and-submission-visibility.md`) scopes work to let a requester make a task
+PR #110 (`docs/rfc/0005-task-visibility-and-submission-visibility.md`) scopes work to let a requester make a task
 not-publicly-listed. An early draft of that RFC was titled and framed around
 "private-by-default" — i.e., new tasks would default to hidden, with `public` as an
 opt-out. That framing directly contradicted the RFC's own concrete schema
@@ -68,5 +72,5 @@ silently changed by a future migration.
 
 ## References
 
-- PR #110 — `docs/specs/task-visibility-and-submission-visibility.md` (the RFC this decision was extracted from)
+- PR #110 — `docs/rfc/0005-task-visibility-and-submission-visibility.md` (the RFC this decision was extracted from)
 - Issue #183 — Phase 1 implementation tracker

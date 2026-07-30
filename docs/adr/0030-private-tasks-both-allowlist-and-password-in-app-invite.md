@@ -3,7 +3,7 @@
 > **Decision (Y-statement):** In the context of Phase 3 (true private tasks) needing to
 > decide what invite mechanism(s) to support and how a password-granted (non-wallet)
 > caller proves access on subsequent reads, facing the fact that the RFC
-> (`docs/specs/task-visibility-and-submission-visibility.md`) left both questions
+> (`docs/rfc/0005-task-visibility-and-submission-visibility.md`) left both questions
 > explicitly open, we decided to support both a wallet allowlist and a password
 > simultaneously (requester's choice, either or both, combinable on one task), surface
 > allowlist invites in-app via a new `invitedPrivateTasks` field on the existing
@@ -17,6 +17,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-24
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 
@@ -112,7 +116,7 @@ center.
 
 ## References
 
-- `docs/specs/task-visibility-and-submission-visibility.md` — the RFC that scoped Phase
+- `docs/rfc/0005-task-visibility-and-submission-visibility.md` — the RFC that scoped Phase
   3 and explicitly deferred both decisions this ADR resolves.
 - ADR-0009 (legal acceptance opaque receipt, default-deny middleware) — the precedent
   this ADR's password-grant mechanism copies.

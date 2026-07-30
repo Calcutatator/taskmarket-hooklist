@@ -1,0 +1,1984 @@
+// Unit + corpus tests for packages/adr/lib.ts (the ADR linter's pure core).
+//
+// Convention: every new check needs both a case where it fires and an
+// adjacent case where it correctly does NOT fire (a negative-space test) —
+// a check only ever exercised on the positive case can't catch itself
+// becoming over-eager later.
+
+import { describe, test, expect } from 'vitest';
+import fc from 'fast-check';
+import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { tmpdir } from 'node:os';
+import { join, dirname } from 'node:path';
+import { fileURLToPath } from 'node:url';
+
+import {
+  type AdrAuditEntry,
+  isPlaceholder,
+  stripLeadingWrapper,
+  primaryName,
+  normalizeName,
+  detectDirection,
+  detectAmendDirection,
+  extractSupersessionEntries,
+  extractAmendmentEntries,
+  stripCaveatClauses,
+  extractAdrNumbers,
+  isBindingStatus,
+  checkSupersessionReciprocity,
+  fieldValue,
+  SUPERSEDES_RE,
+  lintAdrDir,
+  formatIssueLine,
+  formatGithubAnnotation,
+  normalizeIssueFilePath,
+  buildAuditSummary,
+  computeDrift,
+  computeEmbodiment,
+  statedEmbodimentClean,
+  type SpecFile,
+  checkSpec,
+  lintSpecs,
+  SPEC_REQUIRED_SECTIONS,
+  SPEC_VALID_STATUSES,
+  checkFilenameFormat,
+  findDuplicateNumbers,
+  checkStatusField,
+  checkDateField,
+  checkRequiredSections,
+  checkYStatement,
+  checkConsideredOptionsMinimum,
+  checkAuthorReviewersDeciders,
+  checkDanglingReferences,
+  checkNumberingGaps,
+  checkReadmeIndex,
+  checkCoverage,
+  resolveGitTrackedOrStagedFiles,
+  FILENAME_RE,
+  VALID_STATUSES,
+  REQUIRED_SECTIONS,
+  Y_STATEMENT_KEYWORDS,
+  COVERAGE_PATHS,
+} from './lib.js';
+import { readFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
+
+const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
+const ADR_DIR = join(PACKAGE_DIR, '..', '..', 'docs', 'adr');
+
+// ---------------------------------------------------------------------------
+// Placeholder detection
+// ---------------------------------------------------------------------------
+
+describe('isPlaceholder', () => {
+  test('entirely a placeholder, no leading wrapper', () => {
+    expect(isPlaceholder('pending human approval')).toBe(true);
+    expect(isPlaceholder('TBD')).toBe(true);
+    expect(isPlaceholder('')).toBe(true);
+    expect(isPlaceholder(null)).toBe(true);
+    expect(isPlaceholder(undefined)).toBe(true);
+  });
+
+  test('entirely a placeholder, with leading wrapper punctuation', () => {
+    expect(isPlaceholder('(pending human approval)')).toBe(true);
+    expect(isPlaceholder('— (awaiting external ack)')).toBe(true);
+    expect(isPlaceholder('- TBD')).toBe(true);
+    expect(isPlaceholder('  — none yet')).toBe(true);
+  });
+
+  test('a real name is never a placeholder', () => {
+    expect(isPlaceholder('Beau')).toBe(false);
+    expect(isPlaceholder('Beau Williams')).toBe(false);
+    expect(isPlaceholder('beauwilliams')).toBe(false);
+  });
+
+  test('real content followed by a separately-pending clause is NOT blank', () => {
+    const value = 'Original: Alice (approved 2026-01-01); later amendment: awaiting ack';
+    expect(isPlaceholder(value)).toBe(false);
+  });
+});
+
+test('stripLeadingWrapper strips only leading dashes/parens/brackets/whitespace', () => {
+  expect(stripLeadingWrapper('— (awaiting ack)')).toBe('awaiting ack)');
+  expect(stripLeadingWrapper('Beau')).toBe('Beau');
+  expect(stripLeadingWrapper('  (pending)')).toBe('pending)');
+});
+
+// ---------------------------------------------------------------------------
+// Self-ack name comparison
+// ---------------------------------------------------------------------------
+
+test('primaryName / normalizeName take the name before a self-attestation annotation', () => {
+  expect(primaryName('Beau — self-attested; no independent reviewer recorded')).toBe('Beau');
+  expect(normalizeName('Beau — self-attested; no independent reviewer recorded')).toBe('beau');
+  expect(normalizeName('Beau')).toBe('beau');
+  expect(normalizeName('Beau Williams')).toBe('beauwilliams');
+});
+
+// ---------------------------------------------------------------------------
+// Supersedes / Superseded-by multi-line fix
+// ---------------------------------------------------------------------------
+
+describe('extractSupersessionEntries — dotAll multi-line fix', () => {
+  test('a real single-line value still works unchanged', () => {
+    const content = [
+      '- **Status:** Superseded',
+      '- **Date:** 2026-07-20',
+      '- **Supersedes / Superseded-by:** Superseded by ADR-0023',
+      '',
+      '## Context',
+    ].join('\n');
+
+    const fieldText = fieldValue(content, SUPERSEDES_RE)!;
+    const entries = extractSupersessionEntries(fieldText);
+    expect(entries).toHaveLength(1);
+    expect(entries[0].refNum).toBe('0023');
+    expect(entries[0].direction).toBe('superseded-by');
+  });
+
+  test('a wrapped multi-line value is captured in full (regression)', () => {
+    const content = [
+      '- **Status:** Accepted',
+      '- **Date:** 2026-07-16',
+      '- **Supersedes / Superseded-by:** Supersedes ADR-0002; superseded in part by ADR-0020,',
+      '  which only overrides the wallet-normalization section below and leaves the rest of',
+      '  this decision intact',
+      '',
+      '## Context',
+    ].join('\n');
+
+    const value = fieldValue(content, SUPERSEDES_RE);
+    expect(value).toMatch(/ADR-0020/);
+    expect(value).toMatch(/overrides the wallet-normalization section/);
+
+    const entries = extractSupersessionEntries(value!);
+    expect(entries).toHaveLength(2);
+    expect(entries.map((e) => e.refNum).sort()).toEqual(['0002', '0020']);
+    const bySrc = Object.fromEntries(entries.map((e) => [e.refNum, e.direction]));
+    expect(bySrc['0002']).toBe('supersedes');
+    expect(bySrc['0020']).toBe('superseded-by');
+  });
+});
+
+describe('stripCaveatClauses / extractSupersessionEntries — caveat-clause regression', () => {
+  test('a caveat clause naming an ADR only as context is not treated as a claimed target', () => {
+    const segment = 'Superseded by ADR-0006, for the scope not already superseded by ADR-0020';
+    const cleaned = stripCaveatClauses(segment);
+    expect(cleaned).not.toMatch(/ADR-0020/);
+    expect(cleaned).toMatch(/ADR-0006/);
+
+    const entries = extractSupersessionEntries(segment);
+    expect(entries.map((e) => e.refNum).sort()).toEqual(['0006']);
+    expect(entries[0].direction).toBe('superseded-by');
+  });
+
+  test('caveat stripping does not corrupt direction detection when the caveat appears before the real claim', () => {
+    const segment = 'not already superseded by ADR-0020, but Supersedes ADR-0009';
+    const entries = extractSupersessionEntries(segment);
+    expect(entries.map((e) => e.refNum)).toEqual(['0009']);
+    expect(entries[0].direction).toBe('supersedes');
+  });
+});
+
+describe('extractSupersessionEntries — genuine multi-target-in-one-segment', () => {
+  test('a single segment listing multiple targets in prose (no semicolons) captures all of them', () => {
+    const segment = 'Supersedes ADR-0002, ADR-0004, ADR-0006';
+    const entries = extractSupersessionEntries(segment);
+    expect(entries.map((e) => e.refNum).sort()).toEqual(['0002', '0004', '0006']);
+    for (const e of entries) {
+      expect(e.direction).toBe('supersedes');
+    }
+  });
+
+  test('duplicate mentions of the same ADR within a segment are deduplicated', () => {
+    const segment = 'Supersedes ADR-0002 and, for clarity, ADR-0002 again';
+    const entries = extractSupersessionEntries(segment);
+    expect(entries.map((e) => e.refNum)).toEqual(['0002']);
+  });
+});
+
+describe('extractSupersessionEntries — existing semicolon-multi-relationship case', () => {
+  test('semicolon-separated segments are each extracted independently (synthetic)', () => {
+    const fieldText = ' Supersedes ADR-0004; Superseded by ADR-0009';
+    const entries = extractSupersessionEntries(fieldText);
+    expect(entries).toEqual([
+      { refNum: '0004', direction: 'supersedes' },
+      { refNum: '0009', direction: 'superseded-by' },
+    ]);
+  });
+
+  test('matches the real multi-relationship ADR in this repo (ADR-0023)', () => {
+    const content = readFileSync(
+      join(
+        ADR_DIR,
+        '0023-converge-inbox-and-mybids-self-auth-onto-the-general-read-auth-header.md'
+      ),
+      'utf8'
+    );
+    const fieldText = fieldValue(content, SUPERSEDES_RE);
+    expect(fieldText).toBeTruthy();
+    const entries = extractSupersessionEntries(fieldText!);
+    expect(
+      entries
+        .map((e) => ({ refNum: e.refNum, direction: e.direction }))
+        .sort((a, b) => a.refNum.localeCompare(b.refNum))
+    ).toEqual([
+      { refNum: '0015', direction: 'supersedes' },
+      { refNum: '0017', direction: 'supersedes' },
+    ]);
+  });
+});
+
+describe('extractAdrNumbers', () => {
+  test('returns distinct numbers in first-seen order', () => {
+    expect(extractAdrNumbers('ADR-0002 and ADR-0004 and ADR-0002 again')).toEqual(['0002', '0004']);
+  });
+});
+
+describe('isBindingStatus — status-aware pending-vs-binding', () => {
+  test('Accepted, Superseded, Deprecated, Rejected, Withdrawn are all binding', () => {
+    for (const status of ['Accepted', 'Superseded', 'Deprecated', 'Rejected', 'Withdrawn']) {
+      expect(isBindingStatus(status)).toBe(true);
+    }
+  });
+  test('Proposed is not yet binding', () => {
+    expect(isBindingStatus('Proposed')).toBe(false);
+  });
+});
+
+describe('checkSupersessionReciprocity', () => {
+  test('a matched Accepted <-> Superseded pair produces no issues', () => {
+    const supersessionMap = new Map([
+      ['0006', [{ refNum: '0004', direction: 'supersedes' as const }]],
+      ['0004', [{ refNum: '0006', direction: 'superseded-by' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Superseded'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+    const results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(results).toEqual([]);
+  });
+
+  test('an Accepted ADR claiming a supersession the peer does not reciprocate is a blocking ERROR', () => {
+    const supersessionMap = new Map([
+      ['0006', [{ refNum: '0004', direction: 'supersedes' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Superseded'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+    const results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].type).toBe('ERROR');
+    expect(results[0].message).toMatch(/not symmetric/);
+  });
+
+  test('a direction mismatch (both claim the same direction) is a blocking ERROR', () => {
+    const supersessionMap = new Map([
+      ['0006', [{ refNum: '0004', direction: 'supersedes' as const }]],
+      ['0004', [{ refNum: '0006', direction: 'supersedes' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Accepted'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+    const results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(results).toHaveLength(2);
+    expect(results.every((r) => r.type === 'ERROR' && /direction mismatch/.test(r.message))).toBe(
+      true
+    );
+  });
+
+  test('a Proposed ADR claiming supersession without a peer binding reference only warns, and checks the pending field', () => {
+    const supersessionMap = new Map([
+      ['0032', [{ refNum: '0006', direction: 'superseded-by' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0032', 'Proposed'],
+      ['0006', 'Accepted'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+
+    let results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].type).toBe('WARN');
+    expect(results[0].message).toMatch(/not yet Accepted/);
+
+    const pendingSupersessionMap = new Map([
+      ['0006', [{ refNum: '0032', direction: 'supersedes' as const }]],
+    ]);
+    results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap,
+      statusByFile,
+      findFile,
+    });
+    expect(results).toEqual([]);
+  });
+
+  test('an Accepted ADR is unaffected by an unrelated Proposed ADR opened against the same topic', () => {
+    const supersessionMap = new Map([
+      ['0006', [{ refNum: '0004', direction: 'supersedes' as const }]],
+      ['0004', [{ refNum: '0006', direction: 'superseded-by' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Superseded'],
+    ]);
+    const findFile = (num: string) => (num === '0032' ? undefined : `${num}-fake.md`);
+    const results = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(results).toEqual([]);
+  });
+});
+
+test('detectDirection: "superseded by" (with or without a wrapped newline before "by") is superseded-by', () => {
+  expect(detectDirection('Supersedes ADR-0002')).toBe('supersedes');
+  expect(detectDirection('Superseded by ADR-0006')).toBe('superseded-by');
+  expect(detectDirection('superseded in part\nby ADR-0020')).toBe('superseded-by');
+});
+
+test('detectAmendDirection: "amended by" (with or without a wrapped newline before "by") is amended-by', () => {
+  expect(detectAmendDirection('Amends ADR-0002')).toBe('amends');
+  expect(detectAmendDirection('Amended by ADR-0006')).toBe('amended-by');
+  expect(detectAmendDirection('amended in part\nby ADR-0020')).toBe('amended-by');
+});
+
+test('extractAmendmentEntries: mirrors extractSupersessionEntries for the Amends/Amended-by relation', () => {
+  expect(extractAmendmentEntries('Amends ADR-0002')).toEqual([{ refNum: '0002', direction: 'amends' }]);
+  expect(extractAmendmentEntries('Amended by ADR-0006; Amends ADR-0002')).toEqual([
+    { refNum: '0006', direction: 'amended-by' },
+    { refNum: '0002', direction: 'amends' },
+  ]);
+});
+
+describe('checkSupersessionReciprocity — amendment relation (parameterized)', () => {
+  test('a matched Amends <-> Amended-by pair produces no issues, with amendment wording', () => {
+    const amendmentMap = new Map([
+      ['0006', [{ refNum: '0004', direction: 'amends' as const }]],
+      ['0004', [{ refNum: '0006', direction: 'amended-by' as const }]],
+    ]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Accepted'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+    const results = checkSupersessionReciprocity({
+      supersessionMap: amendmentMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+      relationLabel: 'amendment',
+      directionWords: ['Amends', 'Amended by'],
+      pendingFieldName: 'Pending Amends / Amended-by',
+    });
+    expect(results).toEqual([]);
+  });
+
+  test('a missing reciprocal amendment reference is a blocking ERROR with amendment wording, not supersession', () => {
+    const amendmentMap = new Map([['0006', [{ refNum: '0004', direction: 'amends' as const }]]]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Accepted'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+    const results = checkSupersessionReciprocity({
+      supersessionMap: amendmentMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+      relationLabel: 'amendment',
+      directionWords: ['Amends', 'Amended by'],
+      pendingFieldName: 'Pending Amends / Amended-by',
+    });
+    expect(results).toHaveLength(1);
+    expect(results[0].type).toBe('ERROR');
+    expect(results[0].message).toMatch(/^amendment link to ADR-0004 is not symmetric/);
+  });
+
+  test('negative space: a Supersedes-only claim never satisfies an Amends claim, and vice versa', () => {
+    // The whole point of tracking these as two independent relations: an ADR that amends
+    // a peer must not be considered reciprocated just because that peer happens to
+    // supersede it (or anything else in the Supersedes map).
+    const amendmentMap = new Map([['0006', [{ refNum: '0004', direction: 'amends' as const }]]]);
+    const supersessionMap = new Map([['0004', [{ refNum: '0006', direction: 'supersedes' as const }]]]);
+    const statusByFile = new Map<string, string | null>([
+      ['0006', 'Accepted'],
+      ['0004', 'Accepted'],
+    ]);
+    const findFile = (num: string) => `${num}-fake.md`;
+
+    const amendResults = checkSupersessionReciprocity({
+      supersessionMap: amendmentMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+      relationLabel: 'amendment',
+      directionWords: ['Amends', 'Amended by'],
+      pendingFieldName: 'Pending Amends / Amended-by',
+    });
+    expect(amendResults.some((r) => r.type === 'ERROR' && r.file === '0006-fake.md')).toBe(true);
+
+    const supersessionResults = checkSupersessionReciprocity({
+      supersessionMap,
+      pendingSupersessionMap: new Map(),
+      statusByFile,
+      findFile,
+    });
+    expect(supersessionResults.some((r) => r.type === 'ERROR' && r.file === '0004-fake.md')).toBe(true);
+  });
+});
+
+describe('checkSupersessionReciprocity (property, parameterized across both relations)', () => {
+  const RELATIONS = [
+    { name: 'supersession', config: {}, forward: 'supersedes' as const, backward: 'superseded-by' as const },
+    {
+      name: 'amendment',
+      config: {
+        relationLabel: 'amendment',
+        directionWords: ['Amends', 'Amended by'] as [string, string],
+        pendingFieldName: 'Pending Amends / Amended-by',
+      },
+      forward: 'amends' as const,
+      backward: 'amended-by' as const,
+    },
+  ];
+
+  const BINDING_STATUSES = ['Accepted', 'Superseded', 'Deprecated', 'Rejected', 'Withdrawn'];
+  const twoDistinctNums = fc
+    .uniqueArray(fc.integer({ min: 0, max: 9999 }).map((n) => String(n).padStart(4, '0')), {
+      minLength: 2,
+      maxLength: 2,
+    })
+    .map(([a, b]) => [a, b] as const);
+  const findFileFor = (nums: readonly string[]) => (num: string) => nums.includes(num) ? `${num}-fake.md` : undefined;
+
+  for (const { name, config, forward, backward } of RELATIONS) {
+    describe(name, () => {
+      test('property: a perfectly reciprocal pair (any binding status combination) always produces zero issues', () => {
+        fc.assert(
+          fc.property(
+            twoDistinctNums,
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.boolean(),
+            (nums, statusA, statusB, aIsForward) => {
+              const [a, b] = nums;
+              const map = new Map([
+                [a, [{ refNum: b, direction: aIsForward ? forward : backward }]],
+                [b, [{ refNum: a, direction: aIsForward ? backward : forward }]],
+              ]);
+              const statusByFile = new Map<string, string | null>([
+                [a, statusA],
+                [b, statusB],
+              ]);
+              const results = checkSupersessionReciprocity({
+                supersessionMap: map,
+                pendingSupersessionMap: new Map(),
+                statusByFile,
+                findFile: findFileFor(nums),
+                ...config,
+              });
+              expect(results).toEqual([]);
+            }
+          )
+        );
+      });
+
+      test('property: a one-sided binding claim always produces exactly one "not symmetric" ERROR on the claimant', () => {
+        fc.assert(
+          fc.property(
+            twoDistinctNums,
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(forward, backward),
+            (nums, statusA, statusB, direction) => {
+              const [a, b] = nums;
+              const map = new Map([[a, [{ refNum: b, direction }]]]);
+              const statusByFile = new Map<string, string | null>([
+                [a, statusA],
+                [b, statusB],
+              ]);
+              const results = checkSupersessionReciprocity({
+                supersessionMap: map,
+                pendingSupersessionMap: new Map(),
+                statusByFile,
+                findFile: findFileFor(nums),
+                ...config,
+              });
+              expect(results).toHaveLength(1);
+              expect(results[0].type).toBe('ERROR');
+              expect(results[0].file).toBe(`${a}-fake.md`);
+              expect(results[0].message).toMatch(/not symmetric/);
+            }
+          )
+        );
+      });
+
+      test('property: both sides claiming the same direction (binding) always produces two direction-mismatch ERRORs', () => {
+        fc.assert(
+          fc.property(
+            twoDistinctNums,
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(forward, backward),
+            (nums, statusA, statusB, direction) => {
+              const [a, b] = nums;
+              const map = new Map([
+                [a, [{ refNum: b, direction }]],
+                [b, [{ refNum: a, direction }]],
+              ]);
+              const statusByFile = new Map<string, string | null>([
+                [a, statusA],
+                [b, statusB],
+              ]);
+              const results = checkSupersessionReciprocity({
+                supersessionMap: map,
+                pendingSupersessionMap: new Map(),
+                statusByFile,
+                findFile: findFileFor(nums),
+                ...config,
+              });
+              expect(results).toHaveLength(2);
+              expect(results.every((r) => r.type === 'ERROR' && /direction mismatch/.test(r.message))).toBe(true);
+            }
+          )
+        );
+      });
+
+      test('property: a Proposed claimant with no peer reciprocation is a WARN, not an ERROR', () => {
+        fc.assert(
+          fc.property(
+            twoDistinctNums,
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.constantFrom(forward, backward),
+            (nums, peerStatus, direction) => {
+              const [a, b] = nums;
+              const map = new Map([[a, [{ refNum: b, direction }]]]);
+              const statusByFile = new Map<string, string | null>([
+                [a, 'Proposed'],
+                [b, peerStatus],
+              ]);
+              const results = checkSupersessionReciprocity({
+                supersessionMap: map,
+                pendingSupersessionMap: new Map(),
+                statusByFile,
+                findFile: findFileFor(nums),
+                ...config,
+              });
+              expect(results).toHaveLength(1);
+              expect(results[0].type).toBe('WARN');
+              expect(results[0].file).toBe(`${a}-fake.md`);
+            }
+          )
+        );
+      });
+
+      test('property: a Proposed claimant whose peer reciprocates via the pending field produces zero issues', () => {
+        fc.assert(
+          fc.property(
+            twoDistinctNums,
+            fc.constantFrom(...BINDING_STATUSES),
+            fc.boolean(),
+            (nums, peerStatus, aIsForward) => {
+              const [a, b] = nums;
+              const map = new Map([[a, [{ refNum: b, direction: aIsForward ? forward : backward }]]]);
+              const pendingMap = new Map([[b, [{ refNum: a, direction: aIsForward ? backward : forward }]]]);
+              const statusByFile = new Map<string, string | null>([
+                [a, 'Proposed'],
+                [b, peerStatus],
+              ]);
+              const results = checkSupersessionReciprocity({
+                supersessionMap: map,
+                pendingSupersessionMap: pendingMap,
+                statusByFile,
+                findFile: findFileFor(nums),
+                ...config,
+              });
+              expect(results).toEqual([]);
+            }
+          )
+        );
+      });
+
+      test('property: a claim referencing an ADR outside the known file set never produces an issue (dangling refs handled elsewhere)', () => {
+        fc.assert(
+          fc.property(twoDistinctNums, fc.constantFrom(...BINDING_STATUSES), fc.constantFrom(forward, backward), (nums, status, direction) => {
+            const [a, b] = nums;
+            const map = new Map([[a, [{ refNum: b, direction }]]]);
+            const statusByFile = new Map<string, string | null>([[a, status]]);
+            // findFile only knows about `a` — `b` is "dangling" from this function's perspective.
+            const results = checkSupersessionReciprocity({
+              supersessionMap: map,
+              pendingSupersessionMap: new Map(),
+              statusByFile,
+              findFile: (num) => (num === a ? `${a}-fake.md` : undefined),
+              ...config,
+            });
+            expect(results).toEqual([]);
+          })
+        );
+      });
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// Corpus-level integration: real docs/adr/ passes with 0 errors
+// ---------------------------------------------------------------------------
+
+test('lintAdrDir: the real docs/adr/ corpus has zero blocking errors', () => {
+  const { issues, adrFiles } = lintAdrDir(ADR_DIR);
+  expect(adrFiles.length).toBeGreaterThan(0);
+  const errors = issues.filter((i) => i.type === 'ERROR');
+  expect(errors).toEqual([]);
+});
+
+// ---------------------------------------------------------------------------
+// Integrity checks (filename, duplicate numbers, Status, Date, required
+// sections, dangling references) — these were previously exercised only
+// indirectly via the real-corpus gate; adding direct fixture-based
+// positive/negative coverage for each, matching the convention already
+// established for the newer checks below (Author/Reviewers/Deciders,
+// Y-statement, Considered options).
+// ---------------------------------------------------------------------------
+
+test('lintAdrDir: a filename that does not match \\d{4}-[a-z0-9-]+.md is a blocking error', () => {
+  const content = makeAdr({ num: '0908', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ 'ADR-0908-bad-filename.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /filename must match/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a well-formed filename is not flagged (negative space)', () => {
+  const content = makeAdr({ num: '0908', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0908-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /filename must match/.test(e.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: two files sharing the same leading 4-digit number is a blocking error', () => {
+  const a = makeAdr({ num: '0909', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  const b = makeAdr({ num: '0909', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0909-alpha.md': a, '0909-beta.md': b }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /duplicate ADR number 0909/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a missing **Status:** field is a blocking error', () => {
+  const content = makeAdr({ num: '0910', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }).replace(
+    '- **Status:** Accepted\n',
+    ''
+  );
+  withFixtureDir({ '0910-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /missing \*\*Status:\*\* field/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: an invalid **Status:** value is a blocking error', () => {
+  const content = makeAdr({ num: '0911', status: 'Revised', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0911-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /invalid status "Revised"/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a valid **Status:** value is not flagged (negative space)', () => {
+  const content = makeAdr({ num: '0911', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0911-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /invalid status/.test(e.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: a missing or malformed **Date:** field is a blocking error', () => {
+  const content = makeAdr({ num: '0912', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }).replace(
+    '- **Date:** 2026-07-28\n',
+    '- **Date:** 07/28/2026\n'
+  );
+  withFixtureDir({ '0912-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /missing or malformed \*\*Date:\*\*/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a missing required section (## Context) is a blocking error', () => {
+  const content = makeAdr({ num: '0913', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }).replace(
+    '## Context',
+    '## Background'
+  );
+  withFixtureDir({ '0913-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /missing required section: ## Context/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a dangling ADR-NNNN cross-reference is a blocking error', () => {
+  const content =
+    makeAdr({ num: '0914', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }) +
+    '\nSee also ADR-9999 for related context.\n';
+  withFixtureDir({ '0914-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /dangling reference to ADR-9999/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a reference to an ADR that exists in the same directory is not flagged (negative space)', () => {
+  const a = makeAdr({ num: '0915', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  const b =
+    makeAdr({ num: '0916', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }) +
+    '\nSee also ADR-0915 for related context.\n';
+  withFixtureDir({ '0915-fixture.md': a, '0916-fixture.md': b }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /dangling reference/.test(e.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: a gap in ADR numbering is a non-blocking WARN', () => {
+  const a = makeAdr({ num: '0917', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  const b = makeAdr({ num: '0919', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0917-fixture.md': a, '0919-fixture.md': b }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    expect(issues.some((i) => i.type === 'WARN' && /ADR 0918 is missing/.test(i.message))).toBe(true);
+    expect(issues.some((i) => i.type === 'ERROR' && /0918/.test(i.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: contiguous ADR numbers produce no numbering-gap warning (negative space)', () => {
+  const a = makeAdr({ num: '0917', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  const b = makeAdr({ num: '0918', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0917-fixture.md': a, '0918-fixture.md': b }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    expect(issues.some((i) => /is missing between existing ADRs/.test(i.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: an ADR not listed in docs/adr/README.md is a non-blocking WARN', () => {
+  const content = makeAdr({ num: '0920', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0920-fixture.md': content, 'README.md': '| ADR |\n|---|\n' }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    expect(issues.some((i) => i.type === 'WARN' && /not listed in docs\/adr\/README\.md/.test(i.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: an ADR listed in README.md is not flagged (negative space)', () => {
+  const content = makeAdr({ num: '0920', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0920-fixture.md': content, 'README.md': '| ADR |\n|---|\n| [0920](0920-fixture.md) |\n' }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    expect(issues.some((i) => /not listed in docs\/adr\/README\.md/.test(i.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: a covered path changing without any docs/adr/ change is a non-blocking WARN', () => {
+  const content = makeAdr({ num: '0921', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0921-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir, ['docs/specs/some-spec.md']);
+    expect(
+      issues.some((i) => i.type === 'WARN' && /source changed without any docs\/adr\/\*\* change/.test(i.message))
+    ).toBe(true);
+  });
+});
+
+test('lintAdrDir: a covered path change alongside a docs/adr/ change produces no coverage warning (negative space)', () => {
+  const content = makeAdr({ num: '0921', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+  withFixtureDir({ '0921-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir, ['docs/specs/some-spec.md', 'docs/adr/0921-fixture.md']);
+    expect(issues.some((i) => /source changed without any docs\/adr\/\*\* change/.test(i.message))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Direct pure-function unit + property/fuzz tests for every check extracted
+// out of lintAdrDir. Zero filesystem I/O — each check is content/data in,
+// Issue[] out. Complements (does not replace) the fixture-based lintAdrDir
+// integration tests above, which verify end-to-end wiring; these verify
+// each check's exact logic, including randomized edge cases.
+// ---------------------------------------------------------------------------
+
+describe('checkFilenameFormat', () => {
+  test('a well-formed filename produces no issues', () => {
+    expect(checkFilenameFormat('0032-adopt-rfc-lite.md')).toEqual([]);
+  });
+
+  test('a malformed filename is a blocking error', () => {
+    const issues = checkFilenameFormat('ADR-0032-bad.md');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+  });
+
+  test('property: any string matching FILENAME_RE never produces an issue', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[0-9]{4}-[a-z0-9-]+\.md$/),
+        (file) => {
+          expect(checkFilenameFormat(file)).toEqual([]);
+        }
+      )
+    );
+  });
+
+  test('property: a string missing the .md suffix always fails', () => {
+    fc.assert(
+      fc.property(fc.stringMatching(/^[0-9]{4}-[a-z0-9-]+$/), (base) => {
+        expect(FILENAME_RE.test(base)).toBe(false);
+        expect(checkFilenameFormat(base)).toHaveLength(1);
+      })
+    );
+  });
+});
+
+describe('findDuplicateNumbers', () => {
+  test('no duplicates produces no issues', () => {
+    expect(findDuplicateNumbers(['0001-a.md', '0002-b.md', '0003-c.md'])).toEqual([]);
+  });
+
+  test('a duplicate pair flags only the second occurrence', () => {
+    const issues = findDuplicateNumbers(['0001-a.md', '0001-b.md']);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].file).toBe('0001-b.md');
+  });
+
+  test('a triple duplicate flags the 2nd and 3rd occurrences, not the 1st', () => {
+    const issues = findDuplicateNumbers(['0001-a.md', '0001-b.md', '0001-c.md']);
+    expect(issues.map((i) => i.file)).toEqual(['0001-b.md', '0001-c.md']);
+  });
+
+  test('property: for a random list of unique 4-digit numbers, no file is ever flagged', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.integer({ min: 0, max: 9999 }), { minLength: 1, maxLength: 30 }), (nums) => {
+        const files = nums.map((n) => `${String(n).padStart(4, '0')}-x.md`);
+        expect(findDuplicateNumbers(files)).toEqual([]);
+      })
+    );
+  });
+
+  test('property: issue count equals total files minus distinct numbers', () => {
+    fc.assert(
+      fc.property(
+        fc.array(fc.integer({ min: 0, max: 20 }), { minLength: 1, maxLength: 40 }),
+        (nums) => {
+          const files = nums.map((n, i) => `${String(n).padStart(4, '0')}-x${i}.md`);
+          const distinct = new Set(nums).size;
+          expect(findDuplicateNumbers(files)).toHaveLength(files.length - distinct);
+        }
+      )
+    );
+  });
+});
+
+describe('checkStatusField', () => {
+  test('a valid status produces no issues and returns the parsed status', () => {
+    const { issues, status } = checkStatusField('- **Status:** Accepted\n', 'x.md');
+    expect(issues).toEqual([]);
+    expect(status).toBe('Accepted');
+  });
+
+  test('an invalid status is a blocking error', () => {
+    const { issues } = checkStatusField('- **Status:** Revised\n', 'x.md');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+  });
+
+  test('a missing status field is a blocking error, status is null', () => {
+    const { issues, status } = checkStatusField('no status here\n', 'x.md');
+    expect(issues).toHaveLength(1);
+    expect(status).toBeNull();
+  });
+
+  test('property: any value from VALID_STATUSES always passes', () => {
+    fc.assert(
+      fc.property(fc.constantFrom(...VALID_STATUSES), (s) => {
+        const { issues, status } = checkStatusField(`- **Status:** ${s}\n`, 'x.md');
+        expect(issues).toEqual([]);
+        expect(status).toBe(s);
+      })
+    );
+  });
+
+  test('property: a random alphabetic value never in VALID_STATUSES always fails', () => {
+    fc.assert(
+      fc.property(
+        fc.stringMatching(/^[A-Z][a-z]{2,12}$/).filter((s) => !VALID_STATUSES.has(s)),
+        (s) => {
+          const { issues } = checkStatusField(`- **Status:** ${s}\n`, 'x.md');
+          expect(issues).toHaveLength(1);
+        }
+      )
+    );
+  });
+});
+
+describe('checkDateField', () => {
+  test('a valid date produces no issues', () => {
+    expect(checkDateField('- **Date:** 2026-07-28\n', 'x.md')).toEqual([]);
+  });
+
+  test('a missing date is a blocking error', () => {
+    expect(checkDateField('no date here\n', 'x.md')).toHaveLength(1);
+  });
+
+  test('property: any YYYY-MM-DD digit shape always passes (DATE_RE checks shape, not calendar validity)', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 0, max: 9999 }),
+        fc.integer({ min: 0, max: 99 }),
+        fc.integer({ min: 0, max: 99 }),
+        (y, m, d) => {
+          const date = `${String(y).padStart(4, '0')}-${String(m).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
+          expect(checkDateField(`- **Date:** ${date}\n`, 'x.md')).toEqual([]);
+        }
+      )
+    );
+  });
+
+  test('property: a slash-separated date never matches, regardless of digits', () => {
+    fc.assert(
+      fc.property(
+        fc.integer({ min: 1, max: 12 }),
+        fc.integer({ min: 1, max: 28 }),
+        fc.integer({ min: 2000, max: 2099 }),
+        (m, d, y) => {
+          const date = `${String(m).padStart(2, '0')}/${String(d).padStart(2, '0')}/${y}`;
+          expect(checkDateField(`- **Date:** ${date}\n`, 'x.md')).toHaveLength(1);
+        }
+      )
+    );
+  });
+});
+
+describe('checkRequiredSections', () => {
+  const ALL_HEADINGS = REQUIRED_SECTIONS.map((a) => a[0]);
+  const VALID = ALL_HEADINGS.map((h) => `## ${h}\n`).join('\n');
+
+  test('all sections present produces no issues', () => {
+    expect(checkRequiredSections(VALID, 'x.md')).toEqual([]);
+  });
+
+  test('property: random omitted subset is flagged exactly, nothing else', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.constantFrom(...ALL_HEADINGS), { minLength: 1 }), (omitted) => {
+        let text = VALID;
+        for (const heading of omitted) {
+          text = text.replace(`## ${heading}\n`, `## Removed-${heading}\n`);
+        }
+        const issues = checkRequiredSections(text, 'x.md');
+        const flagged = new Set(
+          ALL_HEADINGS.filter((h) => issues.some((i) => i.message.includes(`## ${h}`)))
+        );
+        expect(flagged).toEqual(new Set(omitted));
+      })
+    );
+  });
+});
+
+describe('checkYStatement', () => {
+  const VALID_Y_BLOCK =
+    '**Decision (Y-statement):** In the context of a test, facing a need, we decided to test, to achieve coverage, accepting the verbosity.\n\n## Context\n';
+
+  test('a fully valid Y-statement produces no issues', () => {
+    expect(checkYStatement(VALID_Y_BLOCK, 'x.md')).toEqual([]);
+  });
+
+  test('a missing marker is a single extraction-independent error', () => {
+    const issues = checkYStatement('no marker here\n', 'x.md');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain('missing **Decision (Y-statement):**');
+  });
+
+  test('property: random omitted keyword subset is flagged exactly, nothing else', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.constantFrom(...Y_STATEMENT_KEYWORDS), { minLength: 1 }), (omitted) => {
+        let text = VALID_Y_BLOCK;
+        for (const kw of omitted) {
+          // Replace with a scrambled version that can't accidentally match another keyword's
+          // word-boundary regex (e.g. don't turn "we decided" into text containing "accepting").
+          text = text.replace(kw, kw.split('').reverse().join('_'));
+        }
+        const issues = checkYStatement(text, 'x.md');
+        const flagged = new Set(
+          Y_STATEMENT_KEYWORDS.filter((kw) => issues.some((i) => i.message.includes(`"${kw}"`)))
+        );
+        expect(flagged).toEqual(new Set(omitted));
+      })
+    );
+  });
+});
+
+describe('checkConsideredOptionsMinimum (direct)', () => {
+  const withRows = (rows: number) => {
+    const dataRows = Array.from({ length: rows }, (_, i) => `| Option ${i} | pro | con |`).join('\n');
+    return `## Considered options\n\n| Option | Pros | Cons |\n|---|---|---|\n${dataRows}\n\n## Decision\n`;
+  };
+
+  test('property: flagged if and only if fewer than 2 rows', () => {
+    fc.assert(
+      fc.property(fc.integer({ min: 0, max: 8 }), (rows) => {
+        const issues = checkConsideredOptionsMinimum(withRows(rows), 'x.md');
+        expect(issues.length > 0).toBe(rows < 2);
+      })
+    );
+  });
+});
+
+describe('checkAuthorReviewersDeciders (direct)', () => {
+  function adr(author?: string, reviewers?: string, deciders?: string): string {
+    // fieldRegex's lazy capture needs a following "\n- **" or "\n##" to terminate on — without
+    // a trailing heading, the LAST field's value would fail to match at all (fieldValue would
+    // wrongly return null for it, reading as a placeholder regardless of its real value).
+    return (
+      [
+        author !== undefined ? `- **Author:** ${author}` : '',
+        reviewers !== undefined ? `- **Reviewers:** ${reviewers}` : '',
+        deciders !== undefined ? `- **Deciders:** ${deciders}` : '',
+      ].join('\n') + '\n## Context\n'
+    );
+  }
+
+  test('Accepted + placeholder Deciders is blocking', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Alice', 'Bob', '—'), 'x.md', 'Accepted');
+    expect(issues.some((i) => i.type === 'ERROR')).toBe(true);
+  });
+
+  test('Accepted + placeholder Reviewers is warn-only', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Alice', '—', 'Carol'), 'x.md', 'Accepted');
+    expect(issues.every((i) => i.type === 'WARN')).toBe(true);
+    expect(issues.length).toBeGreaterThan(0);
+  });
+
+  test('Proposed + placeholder Deciders is not flagged at all (negative space)', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Alice', 'Bob', '—'), 'x.md', 'Proposed');
+    expect(issues).toEqual([]);
+  });
+
+  test('property: across every Status x placeholder-combination, Deciders-blocking fires iff Accepted and Deciders is a placeholder', () => {
+    const names = ['—', 'Alice', 'Bob', 'Carol'];
+    fc.assert(
+      fc.property(
+        fc.constantFrom('Proposed', 'Accepted', 'Superseded'),
+        fc.constantFrom(...names),
+        fc.constantFrom(...names),
+        fc.constantFrom(...names),
+        (status, author, reviewers, deciders) => {
+          const issues = checkAuthorReviewersDeciders(adr(author, reviewers, deciders), 'x.md', status);
+          const decidersBlocking = issues.some(
+            (i) => i.type === 'ERROR' && i.message.includes('Deciders is blank or a placeholder')
+          );
+          expect(decidersBlocking).toBe(status === 'Accepted' && deciders === '—');
+        }
+      )
+    );
+  });
+
+  test('property: self-ack WARN fires iff Author matches Deciders/Reviewers and Author is not a placeholder', () => {
+    const names = ['—', 'Alice', 'Bob'];
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...names),
+        fc.constantFrom(...names),
+        fc.constantFrom(...names),
+        (author, reviewers, deciders) => {
+          const issues = checkAuthorReviewersDeciders(adr(author, reviewers, deciders), 'x.md', 'Accepted');
+          const deciderSelfAck = issues.some((i) => i.message.includes('Author and Deciders name the same person'));
+          expect(deciderSelfAck).toBe(author !== '—' && deciders !== '—' && author === deciders);
+        }
+      )
+    );
+  });
+});
+
+describe('checkDanglingReferences', () => {
+  test('a reference to a known number is not flagged', () => {
+    expect(checkDanglingReferences('see ADR-0001', 'x.md', new Set(['0001']))).toEqual([]);
+  });
+
+  test('a reference to an unknown number is a blocking error', () => {
+    const issues = checkDanglingReferences('see ADR-9999', 'x.md', new Set(['0001']));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('ERROR');
+  });
+
+  test('property: exactly the referenced numbers outside the known set are flagged', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 0, max: 50 }), { minLength: 0, maxLength: 10 }),
+        fc.uniqueArray(fc.integer({ min: 0, max: 50 }), { minLength: 0, maxLength: 10 }),
+        (knownNums, referencedNums) => {
+          const known = new Set(knownNums.map((n) => String(n).padStart(4, '0')));
+          const content = referencedNums.map((n) => `ADR-${String(n).padStart(4, '0')}`).join(' and ');
+          const issues = checkDanglingReferences(content, 'x.md', known);
+          const flaggedNums = new Set(
+            issues.map((i) => /ADR-(\d{4})/.exec(i.message)![1])
+          );
+          const expectedDangling = new Set(
+            referencedNums.map((n) => String(n).padStart(4, '0')).filter((n) => !known.has(n))
+          );
+          expect(flaggedNums).toEqual(expectedDangling);
+        }
+      )
+    );
+  });
+});
+
+describe('checkNumberingGaps', () => {
+  test('contiguous numbers produce no warnings', () => {
+    expect(checkNumberingGaps(new Set(['0001', '0002', '0003']))).toEqual([]);
+  });
+
+  test('a single gap is flagged', () => {
+    const issues = checkNumberingGaps(new Set(['0001', '0003']));
+    expect(issues).toHaveLength(1);
+    expect(issues[0].message).toContain('0002');
+  });
+
+  test('empty set produces no warnings', () => {
+    expect(checkNumberingGaps(new Set())).toEqual([]);
+  });
+
+  test('property: warning count equals (max - min + 1) - distinct count', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.integer({ min: 0, max: 60 }), { minLength: 1, maxLength: 20 }), (nums) => {
+        const set = new Set(nums.map((n) => String(n).padStart(4, '0')));
+        const min = Math.min(...nums);
+        const max = Math.max(...nums);
+        const span = max - min + 1;
+        expect(checkNumberingGaps(set)).toHaveLength(span - nums.length);
+      })
+    );
+  });
+});
+
+describe('checkReadmeIndex', () => {
+  test('null readme content produces no issues', () => {
+    expect(checkReadmeIndex(['0001-a.md'], null)).toEqual([]);
+  });
+
+  test('a file whose number is listed is not flagged', () => {
+    expect(checkReadmeIndex(['0001-a.md'], '| [0001](0001-a.md) |')).toEqual([]);
+  });
+
+  test('a file whose number is absent from the README is a warning', () => {
+    const issues = checkReadmeIndex(['0001-a.md'], '| ADR | Title |');
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('WARN');
+  });
+
+  test('property: exactly the files whose number is missing from readme text are flagged', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 0, max: 40 }), { minLength: 1, maxLength: 15 }),
+        fc.array(fc.boolean(), { minLength: 1, maxLength: 15 }),
+        (nums, presentFlags) => {
+          const files = nums.map((n) => `${String(n).padStart(4, '0')}-x.md`);
+          const readme = nums
+            .filter((_, i) => presentFlags[i % presentFlags.length])
+            .map((n) => `| [${String(n).padStart(4, '0')}] |`)
+            .join('\n');
+          const issues = checkReadmeIndex(files, readme);
+          const flaggedNums = new Set(issues.map((i) => i.file.slice(0, 4)));
+          const expectedMissing = new Set(
+            nums.filter((n, i) => !presentFlags[i % presentFlags.length]).map((n) => String(n).padStart(4, '0'))
+          );
+          expect(flaggedNums).toEqual(expectedMissing);
+        }
+      )
+    );
+  });
+});
+
+describe('checkCoverage', () => {
+  test('empty changedFiles produces no warning', () => {
+    expect(checkCoverage([])).toEqual([]);
+  });
+
+  test('a docs/adr/ change present suppresses the warning regardless of other paths', () => {
+    expect(checkCoverage(['docs/adr/0001-x.md', `${COVERAGE_PATHS[0]}foo.ts`])).toEqual([]);
+  });
+
+  test('a covered path changing without any docs/adr/ change is a warning', () => {
+    const issues = checkCoverage([`${COVERAGE_PATHS[0]}foo.ts`]);
+    expect(issues).toHaveLength(1);
+    expect(issues[0].type).toBe('WARN');
+  });
+
+  test('an uncovered path changing without any docs/adr/ change produces no warning', () => {
+    expect(checkCoverage(['some/unrelated/path.ts'])).toEqual([]);
+  });
+
+  test('property: warns iff (no docs/adr/ path present) and (some path matches a covered prefix)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.oneof(
+            fc.constantFrom(...COVERAGE_PATHS).map((p) => `${p}fixture.ts`),
+            fc.constant('docs/adr/fixture.md'),
+            fc.constant('unrelated/fixture.ts')
+          ),
+          { maxLength: 10 }
+        ),
+        (changedFiles) => {
+          const hasAdrChange = changedFiles.some((f) => f.startsWith('docs/adr/'));
+          const hasCoveredPath = changedFiles.some((f) => COVERAGE_PATHS.some((p) => f.startsWith(p)));
+          const issues = checkCoverage(changedFiles);
+          expect(issues.length > 0).toBe(!hasAdrChange && hasCoveredPath);
+        }
+      )
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Author / Reviewers / Deciders governance checks, against synthetic
+// fixture ADRs so the real corpus is never mutated by a test run.
+// ---------------------------------------------------------------------------
+
+function makeAdr({
+  num,
+  status,
+  author,
+  reviewers,
+  deciders,
+}: {
+  num: string;
+  status: string;
+  author?: string;
+  reviewers?: string;
+  deciders?: string;
+}): string {
+  return [
+    `# ${num} — Fixture ADR`,
+    '',
+    '> **Decision (Y-statement):** In the context of a test fixture, facing the need for',
+    '> deterministic lint coverage, we decided to synthesize a minimal ADR to achieve',
+    '> isolation from the real corpus, accepting that it reads awkwardly.',
+    '',
+    `- **Status:** ${status}`,
+    '- **Date:** 2026-07-28',
+    ...(author !== undefined ? [`- **Author:** ${author}`] : []),
+    ...(reviewers !== undefined ? [`- **Reviewers:** ${reviewers}`] : []),
+    ...(deciders !== undefined ? [`- **Deciders:** ${deciders}`] : []),
+    '- **Supersedes / Superseded-by:** —',
+    '',
+    '## Context',
+    '',
+    'Fixture context.',
+    '',
+    '## Considered options',
+    '',
+    '| Option | Pros | Cons |',
+    '|---|---|---|',
+    '| Option A | ... | ... |',
+    '| Option B (rejected) | ... | ... |',
+    '',
+    '## Decision',
+    '',
+    'Fixture decision.',
+    '',
+    '## Consequences',
+    '',
+    '**Positive:**',
+    '- ...',
+    '',
+    '**Negative / trade-offs:**',
+    '- ...',
+    '',
+    '**Neutral / follow-up:**',
+    '- ...',
+    '',
+    '## References',
+    '',
+    '- none',
+    '',
+  ].join('\n');
+}
+
+function withFixtureDir<T>(fixtures: Record<string, string>, fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'adr-lint-fixture-'));
+  try {
+    for (const [name, body] of Object.entries(fixtures)) {
+      writeFileSync(join(dir, name), body, 'utf8');
+    }
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+test('lintAdrDir: Accepted + placeholder Deciders is a blocking error', () => {
+  withFixtureDir(
+    {
+      '0900-fixture.md': makeAdr({
+        num: '0900',
+        status: 'Accepted',
+        author: 'Alice',
+        reviewers: 'Alice — self-attested; no independent reviewer recorded',
+        deciders: '(pending human approval)',
+      }),
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      const errors = issues.filter((i) => i.type === 'ERROR');
+      expect(errors.some((e) => /Deciders is blank or a placeholder/.test(e.message))).toBe(true);
+    }
+  );
+});
+
+test('lintAdrDir: Accepted + placeholder Reviewers is warn-only, not blocking', () => {
+  withFixtureDir(
+    {
+      '0901-fixture.md': makeAdr({
+        num: '0901',
+        status: 'Accepted',
+        author: 'Alice',
+        reviewers: '(pending)',
+        deciders: 'Bob',
+      }),
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      const errors = issues.filter((i) => i.type === 'ERROR');
+      const warnings = issues.filter((i) => i.type === 'WARN');
+      expect(errors.filter((e) => /Reviewers/.test(e.message))).toEqual([]);
+      expect(warnings.some((w) => /Reviewers is blank or a placeholder/.test(w.message))).toBe(
+        true
+      );
+    }
+  );
+});
+
+test('lintAdrDir: self-ack smell warns (not errors) when Author and Deciders match', () => {
+  withFixtureDir(
+    {
+      '0902-fixture.md': makeAdr({
+        num: '0902',
+        status: 'Accepted',
+        author: 'Carol',
+        reviewers: 'Dave',
+        deciders: 'Carol',
+      }),
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      const errors = issues.filter((i) => i.type === 'ERROR');
+      expect(errors).toEqual([]);
+      const warnings = issues.filter((i) => i.type === 'WARN');
+      expect(
+        warnings.some((w) => /Author and Deciders name the same person \(Carol\)/.test(w.message))
+      ).toBe(true);
+    }
+  );
+});
+
+test('lintAdrDir: Proposed status with placeholder Deciders is not a blocking error', () => {
+  withFixtureDir(
+    {
+      '0903-fixture.md': makeAdr({
+        num: '0903',
+        status: 'Proposed',
+        author: 'Erin',
+        reviewers: 'Erin — self-attested; no independent reviewer recorded',
+        deciders: '(pending human approval)',
+      }),
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      const errors = issues.filter((i) => i.type === 'ERROR');
+      expect(errors).toEqual([]);
+    }
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Y-statement extraction failure
+// ---------------------------------------------------------------------------
+
+test('lintAdrDir: reports an extraction failure instead of scanning the whole document when the Y-statement marker has no recognizable block boundary', () => {
+  // The block-extraction regex looks ahead for the FIRST `\n- **` metadata bullet or `\n##`
+  // heading anywhere after the marker — so extraction only genuinely fails when NEITHER
+  // appears anywhere later in the file, which this fixture deliberately has (no metadata
+  // bullets, no headings at all). All five required phrases are present in the prose below
+  // the marker as a distractor — if the check fell back to scanning the whole document on
+  // extraction failure, it would wrongly pass a malformed/unterminated Y-statement instead
+  // of reporting that the block couldn't be found.
+  const content = [
+    '> **Decision (Y-statement):** incomplete, no terminator follows',
+    '',
+    'In the context of unrelated prose, facing an unrelated concern, we decided to',
+    'write this paragraph to achieve nothing in particular, accepting that it is a distractor.',
+    '',
+  ].join('\n');
+
+  withFixtureDir({ '0904-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(
+      errors.some((e) => /could not extract \*\*Decision \(Y-statement\):\*\* TL;DR block/.test(e.message))
+    ).toBe(true);
+    // The whole-document fallback would have found all five required phrases in the
+    // distractor prose and reported zero "missing expected phrase" errors — confirm none
+    // of those fire, i.e. the check didn't silently validate against the wrong text.
+    expect(errors.some((e) => /missing expected phrase/.test(e.message))).toBe(false);
+  });
+});
+
+test('lintAdrDir: a "facing" keyword match must be a real word, not a substring of another word', () => {
+  // Regression guard: Y_STATEMENT_KEYWORDS originally used a plain .includes() substring
+  // search, so "interfacing" (or "surfacing", etc.) would satisfy the "facing" keyword even
+  // though the Y-statement never actually contains that word on its own.
+  const content = [
+    '> **Decision (Y-statement):** In the context of an API redesign, interfacing with the',
+    '> new schema, we decided to adopt it to achieve consistency, accepting the migration cost.',
+    '',
+    '## Context',
+    '',
+    'Fixture.',
+    '',
+  ].join('\n');
+
+  withFixtureDir({ '0905-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /missing expected phrase "facing"/.test(e.message))).toBe(true);
+  });
+});
+
+test('lintAdrDir: a real standalone "facing" keyword still passes (negative space)', () => {
+  const content = [
+    '> **Decision (Y-statement):** In the context of an API redesign, facing a schema change,',
+    '> we decided to adopt it to achieve consistency, accepting the migration cost.',
+    '',
+    '## Context',
+    '',
+    'Fixture.',
+    '',
+  ].join('\n');
+
+  withFixtureDir({ '0906-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    expect(errors.some((e) => /missing expected phrase "facing"/.test(e.message))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Considered-options section-extraction anchoring
+// ---------------------------------------------------------------------------
+
+test('lintAdrDir: a nested "### Considered options" recap must not be matched instead of the real ## section', () => {
+  // Regression guard: the section-extraction regex originally matched the substring
+  // "## Considered options" without anchoring to a real top-level heading, so it could
+  // match inside a nested "### Considered options" recap (e.g. a Decision-section summary)
+  // instead of the actual H2 section — validating the wrong content's row count.
+  const content = [
+    makeAdr({ num: '0907', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' }),
+    '',
+    '### Considered options',
+    '',
+    '| Option | Pros | Cons |',
+    '|---|---|---|',
+    '| Recap only | x | y |',
+    '',
+  ].join('\n');
+
+  withFixtureDir({ '0907-fixture.md': content }, (dir) => {
+    const { issues } = lintAdrDir(dir);
+    const errors = issues.filter((i) => i.type === 'ERROR');
+    // makeAdr's own "## Considered options" section already has 2 real rows (Option A, Option
+    // B) — an un-anchored match on the nested 1-row recap would wrongly flag "fewer than 2
+    // alternatives" here.
+    expect(errors.some((e) => /fewer than 2 alternatives/.test(e.message))).toBe(false);
+  });
+});
+
+// ---------------------------------------------------------------------------
+// Property-based tests (fast-check) — regex-heavy extraction/detection
+// functions where hand-picked examples alone are too easy to fool.
+// ---------------------------------------------------------------------------
+
+const PENDING_PHRASES = ['pending', 'tbd', 'awaiting', 'none', 'unknown', 'n/a', 'na'];
+const WRAPPERS = ['', '-', '–', '—', '(', '[', '_', '*', '  ', '— (', '_(', '**'];
+
+describe('isPlaceholder (property)', () => {
+  test('any pending phrase behind any wrapper is always a placeholder', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom(...PENDING_PHRASES),
+        fc.constantFrom(...WRAPPERS),
+        fc.constantFrom('', ')', '*', '_', ' — author cannot self-ack)'),
+        (phrase, wrapper, suffix) => {
+          expect(isPlaceholder(`${wrapper}${phrase}${suffix}`)).toBe(true);
+        }
+      )
+    );
+  });
+
+  test('negative space: real partial content naming a person is never a placeholder', () => {
+    fc.assert(
+      fc.property(
+        fc.constantFrom('Cong', 'Gary', 'Beau', 'Alice', 'Priya'),
+        fc.integer({ min: 1, max: 999 }),
+        fc.constantFrom(...PENDING_PHRASES),
+        (name, prNum, phrase) => {
+          const value = `Original: ${name} (PR #${prNum} approval, 2026-07-27); later: ${phrase}`;
+          expect(isPlaceholder(value)).toBe(false);
+        }
+      )
+    );
+  });
+});
+
+describe('stripCaveatClauses + extractAdrNumbers (property)', () => {
+  test('caveat-mentioned ADRs never survive stripping, real targets always do', () => {
+    fc.assert(
+      fc.property(
+        fc.uniqueArray(fc.integer({ min: 1000, max: 9999 }), { minLength: 2, maxLength: 2 }),
+        fc.uniqueArray(fc.integer({ min: 1000, max: 9999 }), { minLength: 2, maxLength: 2 }),
+        // This schema has an independent Amends relation alongside
+        // Supersedes, so the caveat clause must recognize both verbs.
+        fc.constantFrom('superseded', 'supersedes', 'amended', 'amends'),
+        fc.constantFrom('not ', ''),
+        (real, caveat, verb, notPrefix) => {
+          fc.pre(real.every((r) => !caveat.includes(r)));
+          const text =
+            `ADR-${real[0]} and ADR-${real[1]} ` +
+            `(${notPrefix}already ${verb} by ADR-${caveat[0]} and ADR-${caveat[1]})`;
+          const stripped = stripCaveatClauses(text);
+          const refs = extractAdrNumbers(stripped);
+          expect(refs).toEqual([String(real[0]), String(real[1])]);
+        }
+      )
+    );
+  });
+
+  test('negative space: with no caveat clause, every real reference survives untouched', () => {
+    fc.assert(
+      fc.property(fc.uniqueArray(fc.integer({ min: 1000, max: 9999 }), { minLength: 1, maxLength: 4 }), (nums) => {
+        const text = nums.map((n) => `ADR-${n}`).join(', ');
+        const stripped = stripCaveatClauses(text);
+        const refs = extractAdrNumbers(stripped);
+        expect(refs).toEqual(nums.map(String));
+      })
+    );
+  });
+});
+
+// ---------------------------------------------------------------------------
+// CLI output format snapshot — CI's ::error::/::warning:: annotation parsing
+// depends on this staying stable, and nothing else guards it.
+// ---------------------------------------------------------------------------
+
+describe('CLI output format', () => {
+  test('plain issue line format', () => {
+    expect(formatIssueLine({ type: 'ERROR', file: '0100-fixture.md', message: 'bad ref' })).toBe(
+      '  ERROR  0100-fixture.md: bad ref'
+    );
+    expect(formatIssueLine({ type: 'WARN', file: '', message: 'gap at 0050' })).toBe('  WARN   : gap at 0050');
+  });
+
+  test('github actions annotation format, including escaping', () => {
+    expect(
+      formatGithubAnnotation({ type: 'ERROR', file: '0100-fixture.md', message: 'bad ref' }, 'docs/adr/0100-fixture.md')
+    ).toBe('::error file=docs/adr/0100-fixture.md::bad ref');
+    // The message ("data") only gets %/\r/\n escaped per GitHub's rules — unlike the file
+    // ("property"), ':' and ',' are left as-is in data position.
+    expect(
+      formatGithubAnnotation({ type: 'WARN', file: '0100-fixture.md', message: 'a:b,c\nd' }, 'docs/adr/0100-fixture.md')
+    ).toBe('::warning file=docs/adr/0100-fixture.md::a:b,c%0Ad');
+  });
+
+  test('github actions annotation format falls back to no file= property for a non-file sentinel', () => {
+    expect(formatGithubAnnotation({ type: 'WARN', file: '(numbering)', message: 'gap' }, '')).toBe('::warning::gap');
+  });
+});
+
+describe('normalizeIssueFilePath', () => {
+  test('prefixes a bare filename with the given directory', () => {
+    expect(normalizeIssueFilePath('0100-fixture.md', 'docs/adr')).toBe('docs/adr/0100-fixture.md');
+  });
+
+  test('leaves an already repo-relative path untouched', () => {
+    expect(normalizeIssueFilePath('docs/specs/foo.md', 'docs/adr')).toBe('docs/specs/foo.md');
+  });
+
+  test('returns empty for a non-file sentinel like "(numbering)"', () => {
+    expect(normalizeIssueFilePath('(numbering)', 'docs/adr')).toBe('');
+  });
+});
+
+// Verifies: ADR-0032
+describe('Embodiment audit', () => {
+  function entry(partial: Partial<AdrAuditEntry> & Pick<AdrAuditEntry, 'number'>): AdrAuditEntry {
+    return { status: 'Accepted', statedEmbodiment: 'Not started', specRefs: [], codeRefs: [], testRefs: [], ...partial };
+  }
+
+  describe('statedEmbodimentClean', () => {
+    test('strips a trailing [unaudited] annotation', () => {
+      expect(statedEmbodimentClean('Not started `[unaudited]`')).toBe('Not started');
+    });
+
+    test('negative space: a value with no annotation is returned unchanged', () => {
+      expect(statedEmbodimentClean('Implemented')).toBe('Implemented');
+    });
+  });
+
+  describe('computeEmbodiment', () => {
+    test('computes Not started when nothing references the ADR', () => {
+      expect(computeEmbodiment(entry({ number: '0001' }))).toBe('Not started');
+    });
+
+    test('computes Specified when only a spec references it', () => {
+      expect(computeEmbodiment(entry({ number: '0001', specRefs: ['docs/specs/x.md'] }))).toBe('Specified');
+    });
+
+    test('computes Implemented when code references it, even with no spec ref', () => {
+      expect(computeEmbodiment(entry({ number: '0001', codeRefs: ['packages/adr/adr-audit.ts'] }))).toBe('Implemented');
+    });
+
+    test('computes Verified when a test references it, even with no code ref', () => {
+      expect(computeEmbodiment(entry({ number: '0001', testRefs: ['packages/adr/lib.test.ts'] }))).toBe('Verified');
+    });
+
+    test('prefers Verified over Implemented over Specified when multiple ref types are present', () => {
+      expect(
+        computeEmbodiment(entry({ number: '0001', specRefs: ['a.md'], codeRefs: ['b.ts'], testRefs: ['c.test.ts'] }))
+      ).toBe('Verified');
+    });
+
+    test('computes Inactive when the stated value says Inactive, regardless of refs', () => {
+      expect(computeEmbodiment(entry({ number: '0001', statedEmbodiment: 'Inactive', codeRefs: ['b.ts'] }))).toBe('Inactive');
+    });
+  });
+
+  describe('computeDrift', () => {
+    test('returns null when stated matches computed', () => {
+      expect(computeDrift(entry({ number: '0001', statedEmbodiment: 'Implemented', codeRefs: ['b.ts'] }))).toBeNull();
+    });
+
+    test('negative space: returns a descriptive string when stated and computed disagree', () => {
+      const drift = computeDrift(entry({ number: '0001', statedEmbodiment: 'Implemented' }));
+      expect(drift).toContain("stated='Implemented'");
+      expect(drift).toContain("computed='Not started'");
+    });
+  });
+
+  describe('buildAuditSummary', () => {
+    test('sorts entries by ADR number and maps ref arrays to counts', () => {
+      const summary = buildAuditSummary(
+        [
+          entry({ number: '0010', statedEmbodiment: 'Not started' }),
+          entry({ number: '0002', statedEmbodiment: 'Implemented', codeRefs: ['a.ts', 'b.ts'] }),
+        ],
+        '2026-07-28'
+      );
+      expect(summary.generated).toBe('2026-07-28');
+      expect(summary.adrs.map((a) => a.number)).toEqual(['0002', '0010']);
+      expect(summary.adrs[0].codeRefs).toBe(2);
+      expect(summary.adrs[0].drift).toBeNull();
+      expect(summary.adrs[1].drift).toBeNull(); // Not started stated, Not started computed
+    });
+
+    test('negative space: a clean corpus (no drift anywhere) reports drift: null for every entry', () => {
+      const summary = buildAuditSummary([entry({ number: '0001', statedEmbodiment: 'Not started' })], '2026-07-28');
+      expect(summary.adrs.every((a) => a.drift === null)).toBe(true);
+    });
+  });
+});
+
+// Verifies: ADR-0032
+describe('Spec-lite linter (checkSpec / lintSpecs)', () => {
+  const VALID_SPEC = `# Test Spec
+
+> Version: 1.0 | Date: 2026-07-28 | Status: Ready
+> **Implements ADRs:** ADR-0001
+
+## Purpose
+
+Test purpose.
+
+## Design / Architecture
+
+Test design.
+
+## Interfaces / Contracts
+
+Test interfaces.
+
+## Testing & Verification
+
+Test verification.
+
+## Non-goals
+
+Test non-goals.
+
+## References
+
+- Test reference.
+`;
+
+  function spec(text: string, path = 'docs/specs/test-spec.md'): SpecFile {
+    return { path, text };
+  }
+
+  test('a fully valid spec produces no issues', () => {
+    const issues = checkSpec(spec(VALID_SPEC), new Set(['0001']));
+    expect(issues).toEqual([]);
+  });
+
+  test.each(SPEC_REQUIRED_SECTIONS.map((aliases) => aliases[0]))(
+    'flags a missing required section: %s',
+    (heading) => {
+      const text = VALID_SPEC.replace(`## ${heading}\n`, `## Removed\n`);
+      const issues = checkSpec(spec(text), new Set());
+      expect(issues.some((i) => i.type === 'ERROR' && i.message.includes(`'## ${heading}'`))).toBe(
+        true
+      );
+    }
+  );
+
+  test('an alias heading satisfies the requirement (negative space)', () => {
+    const text = VALID_SPEC.replace('## Non-goals\n', '## Out of Scope\n');
+    const issues = checkSpec(spec(text), new Set());
+    expect(issues.some((i) => i.message.includes('Non-goals'))).toBe(false);
+  });
+
+  test('invalid Status is flagged', () => {
+    const text = VALID_SPEC.replace('Status: Ready', 'Status: Revised');
+    const issues = checkSpec(spec(text), new Set());
+    expect(issues.some((i) => i.type === 'ERROR' && i.message.includes('Invalid Status'))).toBe(
+      true
+    );
+  });
+
+  test('absent Status field is not flagged (negative space)', () => {
+    const text = VALID_SPEC.replace('Status: Ready', 'Ready-ish');
+    const issues = checkSpec(spec(text), new Set());
+    expect(issues.some((i) => i.message.includes('Invalid Status'))).toBe(false);
+  });
+
+  test('malformed Date is flagged', () => {
+    const text = VALID_SPEC.replace('Date: 2026-07-28', 'Date: 07/28/2026');
+    const issues = checkSpec(spec(text), new Set());
+    expect(issues.some((i) => i.type === 'ERROR' && i.message.includes('valid YYYY-MM-DD'))).toBe(
+      true
+    );
+  });
+
+  test('a dangling Implements ADRs reference is warn-only, not blocking', () => {
+    const issues = checkSpec(spec(VALID_SPEC), new Set());
+    const dangling = issues.filter((i) => i.message.includes('does not exist'));
+    expect(dangling).toHaveLength(1);
+    expect(dangling[0].type).toBe('WARN');
+  });
+
+  test('a resolvable Implements ADRs reference produces no warning (negative space)', () => {
+    const issues = checkSpec(spec(VALID_SPEC), new Set(['0001']));
+    expect(issues.some((i) => i.type === 'WARN')).toBe(false);
+  });
+
+  test('lintSpecs aggregates issues across multiple files and reports specFiles', () => {
+    const result = lintSpecs(
+      [spec(VALID_SPEC, 'docs/specs/a.md'), spec('# Broken\n', 'docs/specs/b.md')],
+      new Set(['0001'])
+    );
+    expect(result.specFiles).toEqual(['docs/specs/a.md', 'docs/specs/b.md']);
+    expect(result.issues.filter((i) => i.file === 'docs/specs/b.md').length).toBeGreaterThan(0);
+    expect(result.issues.filter((i) => i.file === 'docs/specs/a.md').length).toBe(0);
+  });
+
+  describe('property: random section omission is flagged exactly, nothing else', () => {
+    test('holds across randomized subsets', () => {
+      fc.assert(
+        fc.property(
+          fc.uniqueArray(fc.constantFrom(...SPEC_REQUIRED_SECTIONS.map((a) => a[0])), {
+            minLength: 1,
+          }),
+          (omitted) => {
+            let text = VALID_SPEC;
+            for (const heading of omitted) {
+              text = text.replace(`## ${heading}\n`, `## Removed-${heading}\n`);
+            }
+            const issues = checkSpec(spec(text), new Set(['0001']));
+            const flagged = new Set(
+              SPEC_REQUIRED_SECTIONS.map((a) => a[0]).filter((heading) =>
+                issues.some((i) => i.message.includes(`'## ${heading}'`))
+              )
+            );
+            expect(flagged).toEqual(new Set(omitted));
+          }
+        )
+      );
+    });
+  });
+
+  describe('property: random Status values flag only the invalid ones', () => {
+    test('holds across randomized candidates', () => {
+      fc.assert(
+        fc.property(
+          fc.constantFrom('Draft', 'Ready', 'Superseded', 'Revised', 'Pending', 'Final', 'wip'),
+          (status) => {
+            const text = VALID_SPEC.replace('Status: Ready', `Status: ${status}`);
+            const issues = checkSpec(spec(text), new Set());
+            const hasError = issues.some((i) => i.message.includes('Invalid Status'));
+            expect(hasError).toBe(!SPEC_VALID_STATUSES.has(status));
+          }
+        )
+      );
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// resolveGitTrackedOrStagedFiles — scopes raw-filesystem discovery (in
+// lintAdrDir here, and the analogous discovery functions in adr-audit.ts /
+// spec-lint.ts) to what git actually tracks or has staged, so an untracked
+// WIP .md file dropped in the corpus dir doesn't get swept into corpus-wide
+// checks. Exercised against a real, disposable git repo (never this repo)
+// so committing/staging in the fixture can't touch the real working tree.
+// ---------------------------------------------------------------------------
+
+function withGitFixtureRepo<T>(fn: (dir: string) => T): T {
+  const dir = mkdtempSync(join(tmpdir(), 'adr-git-fixture-'));
+  try {
+    execFileSync('git', ['init', '-q'], { cwd: dir });
+    execFileSync('git', ['config', 'user.email', 'test@example.com'], { cwd: dir });
+    execFileSync('git', ['config', 'user.name', 'Test'], { cwd: dir });
+    return fn(dir);
+  } finally {
+    rmSync(dir, { recursive: true, force: true });
+  }
+}
+
+describe('resolveGitTrackedOrStagedFiles', () => {
+  test('a committed (tracked) file is included', () => {
+    withGitFixtureRepo((dir) => {
+      writeFileSync(join(dir, 'tracked.md'), 'x', 'utf8');
+      execFileSync('git', ['add', 'tracked.md'], { cwd: dir });
+      execFileSync('git', ['commit', '-q', '-m', 'add tracked'], { cwd: dir });
+
+      const files = resolveGitTrackedOrStagedFiles(dir, dir);
+      expect(files).not.toBeNull();
+      expect(files!.has(join(dir, 'tracked.md'))).toBe(true);
+    });
+  });
+
+  test('an untracked file is excluded', () => {
+    withGitFixtureRepo((dir) => {
+      writeFileSync(join(dir, 'tracked.md'), 'x', 'utf8');
+      execFileSync('git', ['add', 'tracked.md'], { cwd: dir });
+      execFileSync('git', ['commit', '-q', '-m', 'add tracked'], { cwd: dir });
+
+      writeFileSync(join(dir, 'scratch.md'), 'wip', 'utf8');
+
+      const files = resolveGitTrackedOrStagedFiles(dir, dir);
+      expect(files).not.toBeNull();
+      expect(files!.has(join(dir, 'scratch.md'))).toBe(false);
+    });
+  });
+
+  test('a staged-but-uncommitted file is included', () => {
+    withGitFixtureRepo((dir) => {
+      writeFileSync(join(dir, 'tracked.md'), 'x', 'utf8');
+      execFileSync('git', ['add', 'tracked.md'], { cwd: dir });
+      execFileSync('git', ['commit', '-q', '-m', 'add tracked'], { cwd: dir });
+
+      writeFileSync(join(dir, 'staged.md'), 'staged', 'utf8');
+      execFileSync('git', ['add', 'staged.md'], { cwd: dir });
+
+      const files = resolveGitTrackedOrStagedFiles(dir, dir);
+      expect(files).not.toBeNull();
+      expect(files!.has(join(dir, 'staged.md'))).toBe(true);
+    });
+  });
+
+  test('a non-git directory falls back to null (unfiltered behavior)', () => {
+    withFixtureDir({ 'plain.md': 'not a git repo' }, (dir) => {
+      const files = resolveGitTrackedOrStagedFiles(dir, dir);
+      expect(files).toBeNull();
+    });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// lintAdrDir — end-to-end: an untracked WIP .md file in the ADR dir doesn't
+// participate in corpus-wide checks (duplicate-number detection, etc.)
+// while a tracked/staged file still does. All existing lintAdrDir fixture
+// tests above use a bare (non-git) tmpdir, so they exercise the fallback
+// path unchanged; these exercise the git-scoped path specifically.
+// ---------------------------------------------------------------------------
+
+describe('lintAdrDir — git-scoped discovery', () => {
+  test('an untracked scratch .md file is excluded from discovery entirely', () => {
+    withGitFixtureRepo((dir) => {
+      const tracked = makeAdr({ num: '0950', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+      writeFileSync(join(dir, '0950-tracked.md'), tracked, 'utf8');
+      execFileSync('git', ['add', '0950-tracked.md'], { cwd: dir });
+      execFileSync('git', ['commit', '-q', '-m', 'add tracked adr'], { cwd: dir });
+
+      // Untracked scratch file, deliberately malformed (bad filename) — should
+      // never be swept into the lint pass at all.
+      writeFileSync(join(dir, 'WIP-notes.md'), 'not an ADR, just scratch', 'utf8');
+
+      const { issues, adrFiles } = lintAdrDir(dir, [], dir);
+      expect(adrFiles).toEqual(['0950-tracked.md']);
+      expect(issues.some((i) => i.file === 'WIP-notes.md')).toBe(false);
+    });
+  });
+
+  test('a staged-but-uncommitted ADR still participates in discovery', () => {
+    withGitFixtureRepo((dir) => {
+      const tracked = makeAdr({ num: '0951', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
+      writeFileSync(join(dir, '0951-tracked.md'), tracked, 'utf8');
+      execFileSync('git', ['add', '0951-tracked.md'], { cwd: dir });
+      execFileSync('git', ['commit', '-q', '-m', 'add tracked adr'], { cwd: dir });
+
+      const staged = makeAdr({ num: '0952', status: 'Accepted', author: 'Dave', reviewers: 'Erin', deciders: 'Frank' });
+      writeFileSync(join(dir, '0952-staged.md'), staged, 'utf8');
+      execFileSync('git', ['add', '0952-staged.md'], { cwd: dir });
+
+      const { adrFiles } = lintAdrDir(dir, [], dir);
+      expect(adrFiles.sort()).toEqual(['0951-tracked.md', '0952-staged.md']);
+    });
+  });
+});

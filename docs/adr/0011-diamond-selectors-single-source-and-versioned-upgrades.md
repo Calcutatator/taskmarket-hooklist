@@ -13,6 +13,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-20
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** Beau Williams
+- **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
 

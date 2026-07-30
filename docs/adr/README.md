@@ -7,7 +7,7 @@ considered, and why.
 ## What is an ADR?
 
 An ADR records one decision. It is not a design proposal — that's an RFC, filed in
-`docs/specs/` (e.g. `docs/specs/agent-preview-environments-rfc.md`). An ADR documents _why_ a
+`docs/rfc/` (see `docs/rfc/README.md`; e.g. `docs/rfc/0002-agent-preview-environments.md`). An ADR documents _why_ a
 decision was made, written once the decision is settled, not during the exploration. Once
 accepted, an ADR is append-only: if a decision is later reversed, a new ADR supersedes the old
 one and both remain, cross-linked.
@@ -28,8 +28,15 @@ Use `_template.md` as your starting point. Each ADR follows **MADR-lite** struct
 
 - **Status:** Proposed
 - **Date:** YYYY-MM-DD
-- **Deciders:** (human name)
+- **Embodiment:** Not started
+- **Last audited:** YYYY-MM-DD
+- **Author:** (who drafted this ADR)
+- **Reviewers:** (who gave it a lightweight technical ack)
+- **Deciders:** (who held binding approval authority)
 - **Supersedes / Superseded-by:** —
+- **Pending Supersedes / Superseded-by:** —
+- **Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** —
 
 ## Context
 ## Considered options
@@ -37,6 +44,70 @@ Use `_template.md` as your starting point. Each ADR follows **MADR-lite** struct
 ## Consequences
 ## References
 ```
+
+### Three roles: Author, Reviewers, Deciders
+
+An ADR distinguishes three roles, each answering a different question:
+
+- **Author** — who drafted it. Can be a human or an agent (see Agent workflow below).
+- **Reviewers** — who technically vetted it. Deliberately lightweight: any peer comment,
+  "+1", or "lgtm" is enough. If no independent reviewer exists yet, name the author and say so
+  plainly (e.g. `Beau — self-attested; no independent reviewer recorded`) rather than leaving the
+  field blank or inventing a reviewer who didn't actually look at it.
+- **Deciders** — who held binding approval authority to move `Status` to `Accepted`. This is the
+  pre-existing field; it hasn't moved, but it's now explicitly one of three roles instead of the
+  only one.
+
+**Why `Deciders` is blocking and `Reviewers` is only a warning:** an `Accepted` ADR with no
+recorded decision authority is a governance gap — it means a binding decision has no one
+answerable for it, which is exactly the kind of silent gap this file exists to prevent. The linter
+(`packages/adr/`) therefore treats a blank or placeholder `Deciders` field on an `Accepted`
+ADR as a blocking error.
+A missing lightweight technical ack in `Reviewers` is a smaller issue — useful to flag, not worth
+blocking a merge over — so it's warn-only, the same posture `Deciders` itself had before this
+convention existed with zero enforcement at all.
+
+The linter also nudges (warn-only, never blocking) when `Author` and `Deciders` — or `Author` and
+`Reviewers` — name the same person: a "self-ack smell." On a small team this will fire often and
+is not by itself something to fix; it's a visibility signal for growing teams, not a defect. If a
+field is self-attested (see above), the linter's placeholder detector correctly still treats the
+named person as real content, not a blank — self-attestation is honest disclosure, not a
+placeholder.
+
+Same field-wrapping convention as `Supersedes / Superseded-by`: a value can wrap across multiple
+lines with an indented continuation (see e.g. ADR 0004's `Deciders` field), and the linter reads
+the whole thing, not just the first line.
+
+### Pending supersession claims
+
+`**Supersedes / Superseded-by:**` is a _binding_ claim — the linter enforces that both sides
+of the relationship reference each other in this same field, with opposite directions
+("Supersedes" on one side, "Superseded by" on the other).
+
+That binding enforcement only makes sense once the claiming ADR is itself `Accepted`. An
+`Accepted` ADR's binding relationships shouldn't silently change meaning just because someone
+opens an unrelated, still-`Proposed` ADR against the same topic. So a not-yet-`Accepted` ADR
+that wants to claim a supersession relationship records it in
+`**Pending Supersedes / Superseded-by:**` instead — the linter checks it too, but the check is
+a warning, not a blocking error, and it looks for reciprocation in the peer's own `Pending`
+field rather than its binding one.
+
+Once the claiming ADR is accepted, move the reference from `Pending Supersedes /
+Superseded-by:` into the binding `Supersedes / Superseded-by:` field (on both sides of the
+relationship) as part of the same review that flips `Status` to `Accepted`. Leaving it in
+`Pending` after acceptance means the relationship is no longer enforced strictly.
+
+### Amends / Amended-by
+
+A distinct relationship from `Supersedes / Superseded-by`: use it when an ADR refines or
+extends a peer ADR's decision without replacing it outright. The linter checks its symmetry
+and direction the same way as `Supersedes / Superseded-by`, but entirely independently — a
+claim in the `Amends` field is never satisfied by an entry in the `Supersedes` field, or vice
+versa, since the two relations mean different things. The same not-yet-Accepted rule applies:
+a still-`Proposed` ADR's amendment claim goes in `Pending Amends / Amended-by:` instead of the
+binding field, promoted once the claiming ADR reaches `Accepted`.
+
+Most ADRs never need this field at all; only fill it in when this ADR genuinely amends another.
 
 ## Status lifecycle
 
@@ -54,23 +125,66 @@ draft, propose, and argue for a decision, but may not self-approve one — this 
 required human-in-the-loop checkpoint in the flow below; everything upstream of it (research,
 drafting, prototyping) can happen without a human present.
 
+## Embodiment (realization tracking)
+
+`Status` answers "has this been decided" (`Proposed → Accepted`). `Embodiment` is a separate,
+parallel field answering "has this decision actually been built" — independent of `Status`, since
+an ADR can sit `Accepted` for months with zero implementation, or describe behavior that was later
+removed from the codebase without the ADR being updated to say so.
+
+States:
+
+- **Not started** — no spec, code, or test references this ADR yet.
+- **Specified** — at least one spec file's header carries `**Implements ADRs:** ADR-NNNN`.
+- **Implemented** — at least one code file's comment carries `Implements: ADR-NNNN`.
+- **Verified** — at least one test file's comment carries `Verifies: ADR-NNNN`.
+- **Drift detected** — alarm state: the ADR's *stated* Embodiment (its own header field) disagrees
+  with what the reconciliation script *computes* from the back-pointers above.
+- **Inactive** — for a negative-decision ADR (e.g. "we decided not to do X") where the absence of
+  code is itself the correct, final embodiment.
+
+`pnpm --filter @taskmarket/adr run adr-audit` (warn-only, never blocks) walks `docs/specs/`,
+`apps/`, and `packages/` (including this repo's own tooling — it's part of the architecture too)
+for these back-pointer patterns, computes each ADR's embodiment,
+and reports drift where stated and computed disagree. CI posts a compact summary as a PR comment —
+total ADR count, drift count, a table of only the drifting ADRs, and the full per-ADR table folded
+into a collapsed toggle — updating the same comment on subsequent pushes rather than stacking a new
+one every time.
+
+**Adding a back-pointer:** when a spec, code module, or test actually realizes an ADR, add the
+corresponding marker so the audit picks it up:
+
+```md
+<!-- spec header -->
+**Implements ADRs:** ADR-0042
+```
+
+```ts
+// Implements: ADR-0042
+```
+
+```ts
+// Verifies: ADR-0042
+```
+
 ## Agent workflow
 
 This process is written to work with an agent operating mostly unattended in its own PR
 preview environment, not just with humans:
 
-1. A human writes (or approves) the spec — an RFC in `docs/specs/`, or just a clear task
+1. A human writes (or approves) the spec — an RFC in `docs/rfc/`, or just a clear task
    description — and hands it to the agent.
 2. The agent works the task in its own PR, iterating against its own isolated preview
    environment (its own Anvil chain, its own Postgres, reachable at its own environment URL)
    without needing a human present for ordinary implementation decisions.
 3. When the agent hits a decision that is hard to reverse or affects more than its own PR —
    the kind of thing this file says belongs in an ADR — it stops and drafts one with
-   `Status: Proposed`, laying out the context and the considered options (including at least
-   one rejected alternative), instead of picking one unilaterally and continuing.
+   `Status: Proposed`, recording itself (or the person directing it) under `Author`, laying out
+   the context and the considered options (including at least one rejected alternative), instead
+   of picking one unilaterally and continuing.
 4. A human reviews the draft ADR and either approves it (`Status: Accepted`, their name
-   recorded under `Deciders`) or sends it back. The agent does not resume implementation work
-   on that decision until this happens.
+   recorded under `Deciders`, with any technical ack recorded under `Reviewers`) or sends it
+   back. The agent does not resume implementation work on that decision until this happens.
 5. Once accepted, the agent continues working in the same PR environment against the now
    settled decision.
 
@@ -109,23 +223,46 @@ those always pause for a human.
 - [0029 — `processTaskCreatedEvent`'s reconciliation insert cannot recover off-chain-only `create()` inputs](0029-task-created-reconciliation-cannot-recover-off-chain-only-create-inputs.md)
 - [0030 — Private tasks grant access via both wallet allowlist and password, discovered in-app via `agents.inbox`, using an opaque bearer receipt](0030-private-tasks-both-allowlist-and-password-in-app-invite.md)
 - [0031 — Phase 3's private-task SSR gating is a client-side access gate, not a persisted wallet session](0031-private-task-ssr-gating-client-side-not-session.md)
+- [0032 — Adopt RFC-lite for pre-decision proposals](0032-adopt-rfc-lite-for-proposals.md)
 
 ## Linting
 
-Structure is enforced by `docs/adr/lint.mjs`:
+Structure is enforced by the `@taskmarket/adr` package (`packages/adr/`) — a normal
+workspace package, not code living inside this `docs/adr/` directory, so `docs/adr/` stays pure
+ADR content and the linter is an ordinary `turbo test` / `turbo type-check` citizen like any other
+package:
 
 ```bash
-make adr-lint
+make lint-check adr
 # or, directly:
-node docs/adr/lint.mjs
+pnpm --filter @taskmarket/adr exec tsx adr-lint.ts
+
+# unit + corpus tests for the linter itself run as part of the normal test suite:
+pnpm test
+# or just this package:
+pnpm --filter @taskmarket/adr test
 ```
 
 Blocking checks: filename format (`NNNN-kebab-slug.md`), valid `Status`, `Date: YYYY-MM-DD`,
 all four required sections present, no duplicate ADR numbers, Y-statement structural keywords,
 at least one rejected alternative in Considered options, supersession-link symmetry and
-direction, no dangling `ADR-NNNN` cross-references. Warn-only (never fails the build): README
-index completeness, relevant source changes (contracts, backend, RFC specs) without a
-corresponding ADR change, and gaps in ADR numbering.
+direction for `Accepted`-lineage ADRs (see "Pending supersession claims" above), no dangling
+`ADR-NNNN` cross-references, and an `Accepted` ADR must have a real (non-blank, non-placeholder)
+`Deciders` value. Warn-only (never fails the build): README index completeness, relevant source
+changes (contracts, backend, specs) without a corresponding ADR change, gaps in ADR
+numbering, an `Accepted` ADR with a blank or placeholder `Reviewers` value, an `Author`/`Deciders`
+or `Author`/`Reviewers` "self-ack smell" (same person named in both roles), and a still-`Proposed`
+ADR's provisional supersession claim missing its `Pending Supersedes / Superseded-by:`
+reciprocation on the peer side.
+
+Placeholder detection strips leading wrapper punctuation (dashes, parens, brackets, underscores,
+whitespace) off a field value and checks whether what's left _starts with_ a pending-style phrase
+(`pending`, `tbd`, `awaiting`, `none`, `unknown`, `n/a`, …), case-insensitive. That correctly
+catches both a bare placeholder (`(pending human approval)`) and one with leading punctuation
+(`— (awaiting external ack)`), without misreading a field that has real partial content followed
+by a separately-pending clause (e.g. `Original: Alice (approved 2026-01-01); later amendment:
+awaiting ack` still counts as real content, because "Original: Alice..." doesn't itself start
+with a pending phrase).
 
 Gaps are warn-only, not blocking, on purpose: concurrent branches each drafting their own next
 ADR number legitimately merge out of order (e.g. ADR 0022 shipping before 0021, which was
@@ -137,4 +274,4 @@ incident this repo already learned from.
 The source-changed-without-an-ADR check only activates when the linter is given the changed
 file list. CI passes it automatically on pull requests (via `ADR_LINT_BASE`, diffing against
 the PR's base branch) and surfaces any warnings as annotations on the PR — visible, but never
-a failing check. Locally: `ADR_LINT_BASE=origin/main make adr-lint`.
+a failing check. Locally: `ADR_LINT_BASE=origin/main make lint-check adr`.

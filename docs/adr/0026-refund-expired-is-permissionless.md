@@ -9,6 +9,10 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-23
+- **Embodiment:** Implemented
+- **Last audited:** 2026-07-28
+- **Author:** beauwilliams
+- **Reviewers:** beauwilliams — self-attested; no independent reviewer recorded
 - **Deciders:** beauwilliams
 - **Supersedes / Superseded-by:** —
 
