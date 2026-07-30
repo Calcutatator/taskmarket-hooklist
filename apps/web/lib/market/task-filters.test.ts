@@ -83,14 +83,35 @@ describe('task filters', () => {
     expect(filters.status).toBe('open');
   });
 
-  it('uses the compact table as the deterministic default view', () => {
-    expect(parseTaskFilters({}).selectedView).toBe('table');
-    expect(parseTaskFilters({ view: 'mosaic' }).selectedView).toBe('table');
+  it('leaves selectedView unset when no explicit view param is present, so the renderer can pick a device-appropriate default', () => {
+    // parseTaskFilters runs on the server, which cannot know the visiting device's
+    // viewport -- an absent or invalid ?view= must stay unresolved here rather than
+    // collapsing to a single universal default, so a client island can later choose
+    // gallery on mobile and table on desktop without a hydration mismatch.
+    expect(parseTaskFilters({}).selectedView).toBeUndefined();
+    expect(parseTaskFilters({ view: 'mosaic' }).selectedView).toBeUndefined();
+  });
+
+  it('honours an explicit ?view=table or ?view=gallery regardless of device', () => {
+    expect(parseTaskFilters({ view: 'table' }).selectedView).toBe('table');
+    expect(parseTaskFilters({ view: 'gallery' }).selectedView).toBe('gallery');
   });
 
   it('serializes only an explicit gallery view', () => {
     expect(taskFiltersHref('/tasks', { view: 'table' })).toBe('/tasks');
     expect(taskFiltersHref('/tasks', { view: 'gallery' })).toBe('/tasks?view=gallery');
+  });
+
+  it('serializes an explicit table override, so the view toggle can opt back out of a mobile gallery default', () => {
+    // Only 'table' passed through `overrides` (an explicit navigation, e.g. the view
+    // toggle) round-trips as a real query param -- a 'table' value merely carried
+    // through from `filters` (the deterministic non-mobile default) stays implicit,
+    // so unrelated filter links do not accidentally pin the view away from whatever
+    // the visiting device would otherwise default to.
+    expect(taskFiltersHref('/tasks', {}, { view: 'table' })).toBe('/tasks?view=table');
+    expect(taskFiltersHref('/tasks', { view: 'gallery' }, { view: 'table' })).toBe(
+      '/tasks?view=table'
+    );
   });
 
   it('preserves gallery with filters and drops cursors when they are explicitly reset', () => {

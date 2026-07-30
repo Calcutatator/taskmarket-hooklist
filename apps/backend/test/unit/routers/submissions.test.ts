@@ -1125,6 +1125,143 @@ describe('submissions router', () => {
       );
     });
 
+    describe('interactive HTML preview eligibility', () => {
+      function mockSingleArtifactListing(htmlArtifactRow: Record<string, any>) {
+        const ctx = createMockCtx();
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([makeTask()]))
+          .mockReturnValueOnce(makeChain([submissionRow]))
+          .mockReturnValueOnce(makeChain([htmlArtifactRow]))
+          .mockReturnValueOnce(makeChain([]));
+        return ctx;
+      }
+
+      it('gives a text/html artifact a preview URL from the listing path', async () => {
+        const storage = getStorageBackend();
+        const htmlArtifactRow = {
+          ...artifactRow,
+          id: 'artifact-html',
+          fileName: 'game.html',
+          mediaKind: 'text',
+          mimeType: 'text/html',
+          storageUri: 'file://test/game.html',
+        };
+        const ctx = mockSingleArtifactListing(htmlArtifactRow);
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.listByTask({
+          includePreviewUrls: 'media',
+          taskId: TASK_ID,
+        });
+
+        expect(storage.getPresignedUrl).toHaveBeenCalledWith('file://test/game.html', 3600);
+        expect(result[0]?.artifacts[0]).toEqual(
+          expect.objectContaining({
+            id: 'artifact-html',
+            previewUrl: 'https://presigned.example.com/file',
+          })
+        );
+      });
+
+      it('qualifies a parameterized text/html mimetype (text/html; charset=utf-8)', async () => {
+        const storage = getStorageBackend();
+        const htmlArtifactRow = {
+          ...artifactRow,
+          id: 'artifact-html-charset',
+          fileName: 'game.html',
+          mediaKind: 'text',
+          mimeType: 'text/html; charset=utf-8',
+          storageUri: 'file://test/game.html',
+        };
+        const ctx = mockSingleArtifactListing(htmlArtifactRow);
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.listByTask({
+          includePreviewUrls: 'media',
+          taskId: TASK_ID,
+        });
+
+        expect(storage.getPresignedUrl).toHaveBeenCalledWith('file://test/game.html', 3600);
+        expect(result[0]?.artifacts[0]).toEqual(
+          expect.objectContaining({
+            id: 'artifact-html-charset',
+            previewUrl: 'https://presigned.example.com/file',
+          })
+        );
+      });
+
+      it('qualifies a .html filename even with a generic mimetype', async () => {
+        const storage = getStorageBackend();
+        const htmlArtifactRow = {
+          ...artifactRow,
+          id: 'artifact-html-ext',
+          fileName: 'INDEX.HTML',
+          mediaKind: 'unknown',
+          mimeType: 'application/octet-stream',
+          storageUri: 'file://test/index.html',
+        };
+        const ctx = mockSingleArtifactListing(htmlArtifactRow);
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.listByTask({
+          includePreviewUrls: 'media',
+          taskId: TASK_ID,
+        });
+
+        expect(storage.getPresignedUrl).toHaveBeenCalledWith('file://test/index.html', 3600);
+        expect(result[0]?.artifacts[0]).toEqual(
+          expect.objectContaining({
+            id: 'artifact-html-ext',
+            previewUrl: 'https://presigned.example.com/file',
+          })
+        );
+      });
+
+      it('does not give a plain text artifact (text/plain, notes.txt) a preview URL', async () => {
+        const storage = getStorageBackend();
+        const textArtifactRow = {
+          ...artifactRow,
+          id: 'artifact-plain-text',
+          fileName: 'notes.txt',
+          mediaKind: 'text',
+          mimeType: 'text/plain',
+          storageUri: 'file://test/notes.txt',
+        };
+        const ctx = mockSingleArtifactListing(textArtifactRow);
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.listByTask({
+          includePreviewUrls: 'media',
+          taskId: TASK_ID,
+        });
+
+        expect(storage.getPresignedUrl).not.toHaveBeenCalled();
+        expect(result[0]?.artifacts[0]).not.toHaveProperty('previewUrl');
+      });
+
+      it('does not give an archive artifact (application/zip) a preview URL', async () => {
+        const storage = getStorageBackend();
+        const zipArtifactRow = {
+          ...artifactRow,
+          id: 'artifact-zip',
+          fileName: 'bundle.zip',
+          mediaKind: 'archive',
+          mimeType: 'application/zip',
+          storageUri: 'file://test/bundle.zip',
+        };
+        const ctx = mockSingleArtifactListing(zipArtifactRow);
+
+        const caller = submissionsRouter.createCaller(ctx);
+        const result = await caller.listByTask({
+          includePreviewUrls: 'media',
+          taskId: TASK_ID,
+        });
+
+        expect(storage.getPresignedUrl).not.toHaveBeenCalled();
+        expect(result[0]?.artifacts[0]).not.toHaveProperty('previewUrl');
+      });
+    });
+
     it('returns presigned URL when task is completed', async () => {
       const ctx = createMockCtx();
       ctx.db.select

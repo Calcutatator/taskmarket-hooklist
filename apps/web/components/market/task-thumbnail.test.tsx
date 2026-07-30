@@ -71,9 +71,13 @@ describe('TaskListBoard', () => {
       />
     );
 
+    // Only 'table' round-trips as an explicit query param when it comes from an
+    // actual navigation (this toggle click), not merely carried through as the
+    // deterministic non-mobile default -- otherwise the toggle could not opt a
+    // mobile visitor back out of the gallery default (see task-filters.ts).
     expect(screen.getByRole('link', { name: /table view/i })).toHaveAttribute(
       'href',
-      '/tasks?mode=auction&status=open&sort=reward_desc'
+      '/tasks?mode=auction&status=open&sort=reward_desc&view=table'
     );
     expect(screen.getByRole('link', { name: /gallery view/i })).toHaveAttribute(
       'href',

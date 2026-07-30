@@ -2,7 +2,7 @@
 
 import type { ArtifactResponse } from '@taskmarket/shared';
 import {
-  AlertTriangle,
+  ChevronDown,
   FileArchive,
   FileIcon,
   FileText,
@@ -22,15 +22,24 @@ import {
   DialogTitle,
 } from '@/components/ui/dialog';
 import {
+  Drawer,
+  DrawerContent,
+  DrawerDescription,
+  DrawerHeader,
+  DrawerTitle,
+} from '@/components/ui/drawer';
+import { ArtifactPoster } from '@/components/market/artifact-poster';
+import {
+  InteractiveHtmlPreview,
+  UntrustedHtmlWarningChip,
+} from '@/components/market/interactive-html-preview';
+import {
   useArtifactPreviewUrl,
   useStableArtifactPreviewUrl,
 } from '@/components/market/use-artifact-preview-url';
-import {
-  MAX_INTERACTIVE_HTML_BYTES,
-  buildSandboxedHtmlDocument,
-  canRenderInteractiveHtml,
-  isInteractiveHtmlArtifact,
-} from '@/lib/sandboxed-html';
+import { useIsMobile } from '@/hooks/use-mobile';
+import { cn } from '@/lib/utils';
+import { isInteractiveHtmlArtifact } from '@/lib/sandboxed-html';
 
 type Props = {
   artifact: ArtifactResponse;
@@ -84,16 +93,35 @@ function ArtifactKindIcon({ artifact }: { artifact: ArtifactResponse }) {
   return <FileIcon className="size-4" />;
 }
 
+// Meaningful, kind-based label for an artifact ArtifactPoster cannot render a live
+// preview for (image/video already have their own inline preview, so this only ever
+// fires for pdf/audio/archive/unknown, or a too-large HTML file). Leads with what the
+// file *is* rather than its raw mimetype string.
+function artifactKindLabel(artifact: ArtifactResponse): string {
+  switch (artifact.mediaKind) {
+    case 'pdf':
+      return 'PDF document';
+    case 'archive':
+      return 'Archive';
+    case 'audio':
+      return 'Audio file';
+    case 'text':
+      return artifact.fileName.toLowerCase().endsWith('.md') ||
+        artifact.mimeType === 'text/markdown'
+        ? 'Markdown file'
+        : 'Text file';
+    default:
+      return 'File';
+  }
+}
+
 function MediaPreviewFallback({ artifact }: { artifact: ArtifactResponse }) {
   return (
-    <div className="grid h-full min-h-32 place-items-center gap-3 bg-muted/32 p-4 text-center text-sm text-muted-foreground">
-      <div className="grid justify-items-center gap-2">
-        <span className="grid size-11 place-items-center rounded-full border border-border/64 bg-background/60 text-foreground">
-          <ArtifactKindIcon artifact={artifact} />
-        </span>
-        <span className="font-medium text-foreground">Open preview</span>
-        <span className="max-w-48 break-words text-xs leading-5">{artifact.mimeType}</span>
-      </div>
+    <div className="grid h-full min-h-24 place-items-center gap-2 bg-muted/32 p-3 text-center text-sm text-muted-foreground">
+      <span className="grid size-9 place-items-center rounded-full border border-border/64 bg-background/60 text-foreground">
+        <ArtifactKindIcon artifact={artifact} />
+      </span>
+      <span className="font-medium text-foreground">{artifactKindLabel(artifact)}</span>
     </div>
   );
 }
@@ -194,114 +222,16 @@ function TextPreview({
   );
 }
 
-function InteractiveHtmlPreview({
-  artifact,
-  previewUrl,
-}: {
-  artifact: ArtifactResponse;
-  previewUrl: string;
-}) {
-  const [sandboxDocument, setSandboxDocument] = useState<string | null>(null);
-  const [bodyExceedsLimit, setBodyExceedsLimit] = useState(false);
-  const [fetchError, setFetchError] = useState<string | null>(null);
-  const [attempt, setAttempt] = useState(0);
-  const declaredSizeExceedsLimit = !canRenderInteractiveHtml(artifact);
-
-  useEffect(() => {
-    if (declaredSizeExceedsLimit) {
-      setSandboxDocument(null);
-      setBodyExceedsLimit(false);
-      setFetchError(null);
-      return;
-    }
-
-    const controller = new AbortController();
-    setSandboxDocument(null);
-    setBodyExceedsLimit(false);
-    setFetchError(null);
-
-    fetch(previewUrl, { signal: controller.signal })
-      .then((response) => {
-        if (!response.ok) {
-          throw new Error(`Request failed (${response.status})`);
-        }
-        return response.text();
-      })
-      .then((html) => {
-        if (new Blob([html]).size > MAX_INTERACTIVE_HTML_BYTES) {
-          setBodyExceedsLimit(true);
-          return;
-        }
-        setSandboxDocument(buildSandboxedHtmlDocument(html));
-      })
-      .catch((error: unknown) => {
-        if (error instanceof DOMException && error.name === 'AbortError') {
-          return;
-        }
-        setFetchError(error instanceof Error ? error.message : 'Failed to load HTML preview');
-      });
-
-    return () => controller.abort();
-  }, [attempt, declaredSizeExceedsLimit, previewUrl]);
-
-  if (declaredSizeExceedsLimit || bodyExceedsLimit) {
-    return (
-      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
-        This HTML file exceeds the 5 MB interactive preview limit.
-      </div>
-    );
-  }
-
-  if (fetchError) {
-    return (
-      <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-        <p>Failed to load HTML preview: {fetchError}</p>
-        <Button onClick={() => setAttempt((value) => value + 1)} size="sm" type="button">
-          Retry
-        </Button>
-      </div>
-    );
-  }
-
-  if (!sandboxDocument) {
-    return (
-      <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
-        Loading interactive HTML preview...
-      </div>
-    );
-  }
-
-  return (
-    <div className="grid gap-3">
-      <div
-        aria-label="Untrusted HTML warning"
-        className="flex items-start gap-2 rounded-xl border border-border/60 bg-muted/32 p-3 text-xs text-muted-foreground"
-        role="note"
-      >
-        <AlertTriangle aria-hidden="true" className="mt-0.5 size-4 shrink-0 text-foreground" />
-        <p>
-          Untrusted interactive HTML. Do not enter passwords, approve wallet requests, or provide
-          sensitive information.
-        </p>
-      </div>
-      <iframe
-        allow=""
-        className="h-[65vh] w-full rounded-xl border border-border/60 bg-background/52"
-        referrerPolicy="no-referrer"
-        sandbox="allow-scripts"
-        srcDoc={sandboxDocument}
-        title={`Interactive preview of ${artifact.fileName}`}
-      />
-    </div>
-  );
-}
-
 function ArtifactPreviewContent({
   artifact,
+  fill = false,
   previewUrl,
+  showHtmlWarning = true,
 }: {
   artifact: ArtifactResponse;
+  fill?: boolean;
   previewUrl: string | null;
+  showHtmlWarning?: boolean;
 }) {
   if (!previewUrl) {
     return (
@@ -312,7 +242,21 @@ function ArtifactPreviewContent({
   }
 
   if (isInteractiveHtmlArtifact(artifact)) {
-    return <InteractiveHtmlPreview artifact={artifact} previewUrl={previewUrl} />;
+    return (
+      <InteractiveHtmlPreview
+        artifact={artifact}
+        classNames={
+          fill
+            ? {
+                container: 'grid h-full grid-rows-[auto_1fr] gap-3',
+                iframe: 'h-full w-full rounded-xl border border-border/60 bg-background/52',
+              }
+            : undefined
+        }
+        previewUrl={previewUrl}
+        showWarning={showHtmlWarning}
+      />
+    );
   }
 
   if (artifact.mediaKind === 'image') {
@@ -320,7 +264,7 @@ function ArtifactPreviewContent({
       <div className="overflow-hidden rounded-xl border border-border/60 bg-background/52">
         <img
           alt={artifact.fileName}
-          className="max-h-[65vh] w-full object-contain"
+          className={cn('w-full object-contain', fill ? 'h-full' : 'max-h-[65vh]')}
           src={previewUrl}
         />
       </div>
@@ -330,7 +274,10 @@ function ArtifactPreviewContent({
   if (artifact.mediaKind === 'pdf') {
     return (
       <iframe
-        className="h-[65vh] w-full rounded-xl border border-border/60 bg-background/52"
+        className={cn(
+          'w-full rounded-xl border border-border/60 bg-background/52',
+          fill ? 'h-full' : 'h-[65vh]'
+        )}
         src={previewUrl}
         title={artifact.fileName}
       />
@@ -340,7 +287,10 @@ function ArtifactPreviewContent({
   if (artifact.mediaKind === 'video') {
     return (
       <video
-        className="max-h-[65vh] w-full rounded-xl border border-border/60 bg-background/52"
+        className={cn(
+          'w-full rounded-xl border border-border/60 bg-background/52',
+          fill ? 'h-full' : 'max-h-[65vh]'
+        )}
         controls
         src={previewUrl}
       >
@@ -374,6 +324,156 @@ function ArtifactPreviewContent({
   );
 }
 
+type ArtifactPreviewSurfaceProps = {
+  artifact: ArtifactResponse;
+  ensurePreviewUrl: (force?: boolean) => Promise<string | null>;
+  error: string | null;
+  interactiveHtml: boolean;
+  loading: boolean;
+  onOpenChange: (open: boolean) => void;
+  open: boolean;
+  previewUrl: string | null;
+};
+
+function DesktopArtifactDialog({
+  artifact,
+  ensurePreviewUrl,
+  error,
+  interactiveHtml,
+  loading,
+  onOpenChange,
+  open,
+  previewUrl,
+}: ArtifactPreviewSurfaceProps) {
+  return (
+    <Dialog open={open} onOpenChange={onOpenChange}>
+      <DialogContent className="max-h-[90vh] max-w-4xl overflow-auto">
+        <DialogHeader>
+          <DialogTitle className="break-all font-mono">{artifact.fileName}</DialogTitle>
+          <DialogDescription>
+            {artifact.mimeType} / {formatBytes(artifact.sizeBytes)}
+          </DialogDescription>
+        </DialogHeader>
+
+        {error ? (
+          <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+            <p>{error}</p>
+            <Button
+              disabled={loading}
+              onClick={() => void ensurePreviewUrl(true)}
+              size="sm"
+              type="button"
+            >
+              Retry
+            </Button>
+          </div>
+        ) : (
+          <ArtifactPreviewContent artifact={artifact} previewUrl={previewUrl} />
+        )}
+
+        <ArtifactMetadata artifact={artifact} previewUrl={interactiveHtml ? null : previewUrl} />
+      </DialogContent>
+    </Dialog>
+  );
+}
+
+// The bottom sheet used below the md breakpoint. The measured problem was that the
+// centered dialog spent ~200px of a phone-sized viewport on chrome (filename,
+// mimetype/size line, a three-line security warning) before any of the actual
+// content -- a game or other interactive artifact -- was visible. This surface
+// gives the content the screen: a single compact header line, the warning
+// collapsed into a tappable chip, and artifact metadata behind a footer disclosure
+// that is not even mounted until opened, so the body never has to scroll while the
+// content is on screen.
+function MobileArtifactSheet({
+  artifact,
+  ensurePreviewUrl,
+  error,
+  interactiveHtml,
+  loading,
+  onOpenChange,
+  open,
+  previewUrl,
+}: ArtifactPreviewSurfaceProps) {
+  const [detailsOpen, setDetailsOpen] = useState(false);
+  const descriptionId = 'mobile-artifact-preview-description';
+
+  return (
+    <Drawer onOpenChange={onOpenChange} open={open}>
+      {/* The variant prefix is repeated deliberately: components/ui/drawer.tsx caps
+          bottom drawers with `data-[vaul-drawer-direction=bottom]:max-h-[80dvh]`, a
+          class+attribute selector that outranks a plain `max-h-[*]` on specificity.
+          Matching the prefix keeps specificity equal so tailwind-merge can drop the
+          default and let this height win. */}
+      <DrawerContent
+        aria-describedby={descriptionId}
+        className="data-[vaul-drawer-direction=bottom]:h-[92dvh] data-[vaul-drawer-direction=bottom]:max-h-[92dvh]"
+      >
+        <DrawerHeader className="sr-only">
+          <DrawerTitle>{artifact.fileName}</DrawerTitle>
+          <DrawerDescription id={descriptionId}>
+            {artifact.mimeType} / {formatBytes(artifact.sizeBytes)}
+          </DrawerDescription>
+        </DrawerHeader>
+
+        <div
+          className="flex items-center justify-between gap-2 border-b border-border/58 px-4 pb-3"
+          data-testid="mobile-artifact-preview-topbar"
+        >
+          <span className="text-sm font-medium text-foreground">Preview</span>
+          {interactiveHtml ? <UntrustedHtmlWarningChip /> : null}
+        </div>
+
+        <div className="grid min-h-0 flex-1 overflow-hidden p-3">
+          {error ? (
+            <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
+              <p>{error}</p>
+              <Button
+                disabled={loading}
+                onClick={() => void ensurePreviewUrl(true)}
+                size="sm"
+                type="button"
+              >
+                Retry
+              </Button>
+            </div>
+          ) : (
+            <ArtifactPreviewContent
+              artifact={artifact}
+              fill
+              previewUrl={previewUrl}
+              showHtmlWarning={false}
+            />
+          )}
+        </div>
+
+        <div className="shrink-0 border-t border-border/58 px-4 py-2">
+          <button
+            aria-expanded={detailsOpen}
+            className="flex w-full items-center justify-between font-mono text-xs uppercase text-muted-foreground hover:text-foreground"
+            onClick={() => setDetailsOpen((value) => !value)}
+            type="button"
+          >
+            Details
+            <ChevronDown
+              aria-hidden="true"
+              className={cn('size-4 transition-transform', detailsOpen && 'rotate-180')}
+            />
+          </button>
+          {detailsOpen ? (
+            <div className="mt-2 max-h-[40vh] overflow-y-auto">
+              <ArtifactMetadata
+                artifact={artifact}
+                previewUrl={interactiveHtml ? null : previewUrl}
+              />
+            </div>
+          ) : null}
+        </div>
+      </DrawerContent>
+    </Drawer>
+  );
+}
+
 export function ArtifactPreviewTrigger({
   artifact,
   children,
@@ -382,11 +482,13 @@ export function ArtifactPreviewTrigger({
   taskId,
 }: ArtifactPreviewTriggerProps) {
   const [open, setOpen] = useState(false);
+  const isMobile = useIsMobile();
   const interactiveHtml = isInteractiveHtmlArtifact(artifact);
   const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact, {
     expiresAt: initialPreviewExpiresAt,
     url: initialPreviewUrl,
   });
+  const Surface = isMobile ? MobileArtifactSheet : DesktopArtifactDialog;
 
   return (
     <>
@@ -402,34 +504,16 @@ export function ArtifactPreviewTrigger({
           void ensurePreviewUrl().finally(() => setOpen(true));
         },
       })}
-      <Dialog open={open} onOpenChange={setOpen}>
-        <DialogContent className="max-h-[90vh] max-w-4xl overflow-auto">
-          <DialogHeader>
-            <DialogTitle className="break-all font-mono">{artifact.fileName}</DialogTitle>
-            <DialogDescription>
-              {artifact.mimeType} / {formatBytes(artifact.sizeBytes)}
-            </DialogDescription>
-          </DialogHeader>
-
-          {error ? (
-            <div className="grid gap-3 rounded-xl border border-destructive/30 bg-destructive/10 p-4 text-sm text-destructive">
-              <p>{error}</p>
-              <Button
-                disabled={loading}
-                onClick={() => void ensurePreviewUrl(true)}
-                size="sm"
-                type="button"
-              >
-                Retry
-              </Button>
-            </div>
-          ) : (
-            <ArtifactPreviewContent artifact={artifact} previewUrl={previewUrl} />
-          )}
-
-          <ArtifactMetadata artifact={artifact} previewUrl={interactiveHtml ? null : previewUrl} />
-        </DialogContent>
-      </Dialog>
+      <Surface
+        artifact={artifact}
+        ensurePreviewUrl={ensurePreviewUrl}
+        error={error}
+        interactiveHtml={interactiveHtml}
+        loading={loading}
+        onOpenChange={setOpen}
+        open={open}
+        previewUrl={previewUrl}
+      />
     </>
   );
 }
@@ -477,7 +561,11 @@ export function ArtifactMediaTile({ artifact, taskId }: Props) {
                 onClick={openPreview}
                 type="button"
               >
-                <MediaPreviewFallback artifact={artifact} />
+                <ArtifactPoster
+                  artifact={artifact}
+                  fallback={<MediaPreviewFallback artifact={artifact} />}
+                  previewUrl={previewUrl}
+                />
               </button>
             )}
           </div>
@@ -576,7 +664,11 @@ function MediaHeroSurface({
             onClick={onOpen}
             type="button"
           >
-            <MediaPreviewFallback artifact={artifact} />
+            <ArtifactPoster
+              artifact={artifact}
+              fallback={<MediaPreviewFallback artifact={artifact} />}
+              previewUrl={previewUrl}
+            />
           </button>
         )}
       </div>

@@ -10,6 +10,7 @@ import {
   activityLabel,
   taskHasActivity,
 } from '@/components/market/tasks';
+import { ArtifactPoster, canRenderArtifactPoster } from '@/components/market/artifact-poster';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -18,7 +19,11 @@ import {
   taskStatusBadgeVariant,
   taskStatusLabel,
 } from '@/lib/market/task-badges';
-import { isMediaArtifact, taskCoverPlaceholderStyle } from '@/lib/market/task-cover';
+import {
+  isMediaArtifact,
+  isPlayableArtifact,
+  taskCoverPlaceholderStyle,
+} from '@/lib/market/task-cover';
 import { taskTitle } from '@/lib/market/task-title';
 import { trpc } from '@/lib/api/client';
 
@@ -125,10 +130,23 @@ function TaskPlaceholderCover({ task }: { task: TaskResponse }) {
   );
 }
 
+// Whether a playable artifact can actually stand in as a cover: an image/video needs a
+// resolved preview URL, and an interactive HTML deliverable needs whatever
+// ArtifactPoster/canRenderArtifactPoster requires (a preview URL and a size under the
+// inline-sandbox limit) -- otherwise it falls through to the deterministic placeholder
+// like any other non-playable artifact.
+function isCoverCandidate(artifact: ArtifactResponse): boolean {
+  if (isMediaArtifact(artifact)) {
+    return Boolean(artifact.previewUrl);
+  }
+  return canRenderArtifactPoster(artifact, artifact.previewUrl ?? null);
+}
+
 // Media cover: only mounted for tasks that report activity, so a paginated feed makes a bounded
-// number of preview requests rather than one per row. Picks the first embeddable image/video
-// with a presigned preview URL and renders it edge-to-edge; otherwise falls back to the
-// placeholder with zero layout shift.
+// number of preview requests rather than one per row. Picks the first embeddable artifact --
+// image, video, or interactive HTML, in submission order, matching SubmissionCard's "whichever
+// playable artifact comes first" rule -- and renders it edge-to-edge; otherwise falls back to
+// the placeholder with zero layout shift.
 function TaskMediaCover({ task }: { task: TaskResponse }) {
   const { data, isError, isLoading } = trpc.submissions.listByTask.useQuery(
     { includePreviewUrls: 'media', taskId: task.id },
@@ -146,17 +164,31 @@ function TaskMediaCover({ task }: { task: TaskResponse }) {
     ? undefined
     : (data ?? [])
         .flatMap((submission) => submission.artifacts ?? [])
-        .filter(isMediaArtifact)
-        .find((artifact) => Boolean(artifact.previewUrl));
+        .filter(isPlayableArtifact)
+        .find(isCoverCandidate);
 
-  if (!cover || !cover.previewUrl) {
+  if (!cover) {
     return <TaskPlaceholderCover task={task} />;
   }
 
-  return cover.mediaKind === 'video' ? (
-    <CoverVideo previewUrl={cover.previewUrl} />
-  ) : (
-    <CoverImage artifact={cover} previewUrl={cover.previewUrl} />
+  if (isMediaArtifact(cover) && cover.previewUrl) {
+    return cover.mediaKind === 'video' ? (
+      <CoverVideo previewUrl={cover.previewUrl} />
+    ) : (
+      <CoverImage artifact={cover} previewUrl={cover.previewUrl} />
+    );
+  }
+
+  // Not image/video: an interactive HTML deliverable, rendered live via the same
+  // lazy-mounted (IntersectionObserver-gated), non-interactive poster used elsewhere,
+  // so a feed never mounts more live iframes than are actually near the viewport.
+  return (
+    <ArtifactPoster
+      artifact={cover}
+      className="absolute inset-0"
+      fallback={<TaskPlaceholderCover task={task} />}
+      previewUrl={cover.previewUrl ?? null}
+    />
   );
 }
 
@@ -166,7 +198,7 @@ export function TaskCover({ task }: { task: TaskResponse }) {
   const splitLabel = splitPayoutLabel(task);
 
   return (
-    <div className="group relative aspect-[4/3] w-full overflow-hidden rounded-lg bg-surface/44 ring-1 ring-inset ring-border/58 transition-shadow duration-300 group-hover:ring-border">
+    <div className="group relative aspect-[4/5] w-full overflow-hidden rounded-lg bg-surface/44 ring-1 ring-inset ring-border/58 transition-shadow duration-300 group-hover:ring-border sm:aspect-[4/3]">
       {hasActivity ? <TaskMediaCover task={task} /> : <TaskPlaceholderCover task={task} />}
       {/* Bottom scrim keeps the title/reward legible; a lighter top scrim backs the
           badges, which are pinned top-left so their position is constant across the

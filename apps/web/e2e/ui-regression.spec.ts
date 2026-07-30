@@ -1,6 +1,9 @@
-import { expect, test, type Page } from '@playwright/test';
+import { expect, test, type Locator, type Page } from '@playwright/test';
 
-import { isWebKitRscPrefetchAccessControlError } from './client-errors';
+import {
+  isWebKitMediaControlIconLoadError,
+  isWebKitRscPrefetchAccessControlError,
+} from './client-errors';
 import { startMockApiServer, taskListResponse } from './mock-api';
 
 const clientFailures = new WeakMap<Page, string[]>();
@@ -11,6 +14,24 @@ async function expectNoHorizontalOverflow(page: Page) {
     () => document.documentElement.scrollWidth - document.documentElement.clientWidth
   );
   expect(horizontalOverflow).toBeLessThanOrEqual(1);
+}
+
+// The desktop Dialog renders an explicit Close control; the mobile bottom Drawer
+// (vaul) does not, so it is dismissed by Escape instead -- the same pattern already
+// used to close the mobile filter drawer (see critical-mobile.spec.ts). Escape only
+// reaches the outer Dialog/Drawer primitive's own listener if DOM focus is inside its
+// document: a native keydown fired while focus sits inside the artifact's sandboxed
+// srcDoc iframe never bubbles out to the parent document, so focus is moved back onto
+// a plain element in the dialog chrome first.
+async function closeArtifactDialog(page: Page, dialog: Locator) {
+  const closeButton = dialog.getByRole('button', { name: /Close/i });
+  if (await closeButton.count()) {
+    await closeButton.click();
+    return;
+  }
+
+  await dialog.getByText(/^\d+ \/ \d+$/).click();
+  await page.keyboard.press('Escape');
 }
 
 test.beforeAll(async () => {
@@ -58,6 +79,9 @@ test.beforeEach(async ({ page }, testInfo) => {
       if (isWebKitRscPrefetchAccessControlError(testInfo.project.name, text)) {
         // WebKit can report speculative Next.js RSC prefetches as access-control
         // console errors even though the requested navigation succeeds.
+        return;
+      }
+      if (isWebKitMediaControlIconLoadError(testInfo.project.name, text)) {
         return;
       }
       failures.push(text);
@@ -280,24 +304,29 @@ test('runs submitted HTML inline while isolating it from the platform and networ
 
   await page.goto('/dashboard/tasks/e2e-pending-review');
 
+  // Interactive HTML is now a first-class playable artifact: it surfaces as a media
+  // thumbnail in the gallery layout (the review queue's default view) rather than
+  // being buried in the "Supporting files" disclosure, and opens through the shared
+  // submission gallery (a centered Dialog at md+, a bottom Drawer below md).
   const comparison = page.getByRole('region', { name: /Artifact comparison/i });
-  await comparison.getByText(/^Supporting files \(\d+\)$/i).click();
   await comparison
-    .getByText('candidate-a-calculator.html', { exact: true })
-    .locator('../..')
-    .getByRole('button', { name: /^View$/ })
+    .getByRole('button', { name: /Open candidate-a-calculator\.html preview/i })
     .click();
 
   const dialog = page.getByRole('dialog');
-  const frameElement = dialog.getByTitle('Interactive preview of candidate-a-calculator.html');
+  const frameTitle = 'Interactive preview of candidate-a-calculator.html';
+  // The gallery windows up to 3 adjacent panes (prev/current/next) at once, but only
+  // one entry in this fixture is the HTML artifact, so exactly one iframe with this
+  // title can ever be mounted regardless of how many panes are in the window.
+  await expect(page.locator(`iframe[title="${frameTitle}"]`)).toHaveCount(1);
+
+  const frameElement = dialog.getByTitle(frameTitle);
   await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
   await expect(frameElement).toHaveAttribute('allow', '');
   await expect(frameElement).toHaveAttribute('referrerpolicy', 'no-referrer');
   await expect(dialog.getByRole('link', { name: /Open artifact/i })).toHaveCount(0);
 
-  const frame = page.frameLocator(
-    'iframe[title="Interactive preview of candidate-a-calculator.html"]'
-  );
+  const frame = page.frameLocator(`iframe[title="${frameTitle}"]`);
   await expect(frame.getByRole('heading', { name: 'Submission calculator' })).toBeVisible();
   await expect(frame.getByText('Parent access blocked')).toBeVisible();
   await expect(frame.getByText('Network access blocked')).toBeVisible();
@@ -307,7 +336,7 @@ test('runs submitted HTML inline while isolating it from the platform and networ
   await expect(frame.getByRole('status')).toHaveText('15');
   expect(blockedNetworkRequests).toBe(0);
 
-  await dialog.getByRole('button', { name: /Close/i }).click();
+  await closeArtifactDialog(page, dialog);
   await expect(frameElement).toHaveCount(0);
 });
 

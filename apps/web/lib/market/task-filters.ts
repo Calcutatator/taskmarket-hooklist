@@ -24,8 +24,13 @@ function parseSort(value?: string): TaskSortValue {
     : DEFAULT_TASK_SORT;
 }
 
-function parseView(value?: string): TaskListView {
-  return value === 'gallery' ? 'gallery' : 'table';
+// Returns undefined when the query param is absent or invalid -- parseTaskFilters runs
+// on the server, which cannot know the visiting device's viewport, so "no explicit
+// choice" must stay unresolved here rather than collapsing to a single universal
+// default. The renderer (a client island) later picks gallery on mobile and table on
+// desktop when this comes back undefined.
+function parseView(value?: string): TaskListView | undefined {
+  return value === 'table' || value === 'gallery' ? value : undefined;
 }
 
 // Query params are untrusted -- a stale bookmark, crafted URL, or crawler can put
@@ -72,7 +77,7 @@ export type ParsedTaskFilters = {
   selectedMode: string;
   selectedSort: TaskSortValue;
   selectedStatus: string;
-  selectedView: TaskListView;
+  selectedView?: TaskListView;
   sort?: TaskSortValue;
   status?: string;
   tags?: string[];
@@ -211,6 +216,13 @@ export function taskFiltersHref(
   }
   if (next.view === 'gallery') {
     params.set('view', next.view);
+  } else if (overrides.view === 'table') {
+    // Only a 'table' value passed via `overrides` (an explicit navigation, e.g. the
+    // view toggle) round-trips as a real query param. A 'table' value merely carried
+    // through from `filters` stays implicit, so unrelated filter links do not
+    // accidentally pin the view away from whatever the visiting device would
+    // otherwise default to.
+    params.set('view', overrides.view);
   }
   if (next.cursor) {
     params.set('cursor', next.cursor);

@@ -151,8 +151,27 @@ type ArtifactPreview = {
   previewUrl: string;
 };
 
-function canEmbedMediaPreview(row: Artifact) {
-  return row.mediaKind === 'image' || row.mediaKind === 'video';
+/**
+ * Mirrors the frontend's isInteractiveHtmlArtifact (apps/web/lib/sandboxed-html.ts):
+ * normalize the mimeType down to the part before any ';' parameter, trim, lowercase,
+ * and compare to 'text/html'; or fall back to a .html/.htm filename suffix. Kept as a
+ * local helper (not a packages/shared export) because widening it further would mean
+ * also updating the frontend copy in the same change, which is out of scope here --
+ * the two must be kept in sync by hand until/unless they're consolidated.
+ */
+function isInteractiveHtmlArtifact(row: Pick<Artifact, 'fileName' | 'mimeType'>): boolean {
+  const normalizedMimeType = row.mimeType.split(';', 1)[0]?.trim().toLowerCase();
+  return normalizedMimeType === 'text/html' || /\.html?$/i.test(row.fileName.trim());
+}
+
+/**
+ * Artifact kinds the listing endpoints will mint a presigned previewUrl for when
+ * includePreviewUrls: 'media' is requested. Interactive HTML (games, playable pages)
+ * is included alongside images/video so feed covers and live poster previews get a
+ * real preview instead of silently falling back to a placeholder.
+ */
+function canEmbedArtifactPreview(row: Artifact) {
+  return row.mediaKind === 'image' || row.mediaKind === 'video' || isInteractiveHtmlArtifact(row);
 }
 
 /** task_awards-linked worker addresses (lowercased) -- the "winner(s)" winner_only reveals. */
@@ -861,9 +880,9 @@ export const submissionsRouter = router({
       if (input.includePreviewUrls === 'media') {
         const expiresIn = 3600;
         const previewExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-        const mediaArtifacts = artifactResults.filter(canEmbedMediaPreview);
+        const previewableArtifacts = artifactResults.filter(canEmbedArtifactPreview);
         await Promise.all(
-          mediaArtifacts.map(async (artifact) => {
+          previewableArtifacts.map(async (artifact) => {
             previewByArtifactId.set(artifact.id, {
               previewExpiresAt,
               previewUrl: await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn),
@@ -1040,9 +1059,9 @@ export const submissionsRouter = router({
       if (input.includePreviewUrls === 'media') {
         const expiresIn = 3600;
         const previewExpiresAt = new Date(Date.now() + expiresIn * 1000).toISOString();
-        const mediaArtifacts = artifactResults.filter(canEmbedMediaPreview);
+        const previewableArtifacts = artifactResults.filter(canEmbedArtifactPreview);
         await Promise.all(
-          mediaArtifacts.map(async (artifact) => {
+          previewableArtifacts.map(async (artifact) => {
             previewByArtifactId.set(artifact.id, {
               previewExpiresAt,
               previewUrl: await getStorageBackend().getPresignedUrl(artifact.storageUri, expiresIn),

@@ -73,7 +73,7 @@ import {
   PaginationPrevious,
 } from '@/components/ui/pagination';
 import { TaskCover } from '@/components/market/task-cover';
-import { TaskListBoard } from '@/components/market/task-thumbnail';
+import { TaskListBoard, TaskViewToggle } from '@/components/market/task-thumbnail';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
   Table,
@@ -97,7 +97,7 @@ import {
   taskStatusBadgeVariant,
   taskStatusLabel,
 } from '@/lib/market/task-badges';
-import { isMediaArtifact } from '@/lib/market/task-cover';
+import { isPlayableArtifact } from '@/lib/market/task-cover';
 import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
 import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
@@ -592,16 +592,16 @@ function TaskMobileCard({ detailBasePath, task }: { detailBasePath: string; task
   return (
     <li>
       <Link
-        className="group grid h-36 grid-rows-[auto_1fr_auto] gap-2 overflow-hidden rounded-lg border border-border/58 bg-background/38 p-3 transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
+        className="group grid min-h-36 grid-rows-[auto_1fr_auto] gap-2 overflow-hidden rounded-lg border border-border/58 bg-background/38 p-3 transition-colors hover:border-primary/40 hover:bg-primary/[0.03] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         href={detailHref as Route}
         prefetch={false}
       >
-        <div className="flex min-w-0 items-center justify-between gap-2">
+        <div className="flex min-w-0 flex-wrap items-center gap-x-2 gap-y-1">
           <div className="flex min-w-0 items-center gap-1.5">
             <Badge variant={taskModeBadgeVariant(task.mode)}>{task.mode}</Badge>
             <Badge variant={taskStatusBadgeVariant(task)}>{taskStatusLabel(task.status)}</Badge>
           </div>
-          <span className="shrink-0 font-mono text-xs text-muted-foreground">
+          <span className="ml-auto shrink-0 font-mono text-xs text-muted-foreground">
             {activityLabel(task)}
           </span>
         </div>
@@ -645,11 +645,19 @@ export function taskHasActivity(task: TaskResponse): boolean {
 // whole card is a single link to the detail page, with the cover (media or deterministic
 // placeholder) carrying the title, badges, reward, and activity in its overlay. There are no
 // nested interactive elements so the card stays one focusable target.
+// Mobile-only feed rhythm shared by the gallery grid and its loading skeleton: full-bleed
+// (cancel the page's px-4 gutter, restored at sm+), one card per screen (snap-y/snap-start),
+// and a taller cover (see components/market/task-cover.tsx's aspect-[4/5] sm:aspect-[4/3]).
+// The sm+ multi-column grid keeps its original, unsnapped, gutter-respecting layout.
+const TASK_GALLERY_GRID_CLASS =
+  'grid grid-cols-1 -mx-4 snap-y snap-mandatory gap-3 sm:mx-0 sm:grid-cols-2 sm:snap-none lg:grid-cols-3 2xl:grid-cols-4';
+const TASK_GALLERY_ITEM_CLASS = 'snap-start sm:snap-align-none';
+
 function TaskGalleryCard({ detailBasePath, task }: { detailBasePath: string; task: TaskResponse }) {
   const detailHref = `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}`;
 
   return (
-    <li>
+    <li className={TASK_GALLERY_ITEM_CLASS}>
       <Link
         className="group block rounded-lg focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-primary/60"
         href={detailHref as Route}
@@ -671,7 +679,7 @@ function TaskGalleryGrid({
   return (
     <ul
       aria-label="Task gallery"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
+      className={TASK_GALLERY_GRID_CLASS}
       data-testid="task-gallery"
       role="list"
     >
@@ -682,18 +690,15 @@ function TaskGalleryGrid({
   );
 }
 
-// Gallery loading state: a grid of aspect-[4/3] skeletons matching the cover shape, so a
-// switch to the gallery view does not collapse into the lightweight table-row bars.
+// Gallery loading state: a grid of cover-shaped skeletons matching TaskCover's aspect ratio
+// and the mobile full-bleed/snap rhythm, so a switch to the gallery view (or its initial
+// load) does not collapse into the lightweight table-row bars or jump once real covers land.
 function TaskGallerySkeletonGrid() {
   return (
-    <ul
-      aria-label="Loading task gallery"
-      className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3 2xl:grid-cols-4"
-      role="list"
-    >
+    <ul aria-label="Loading task gallery" className={TASK_GALLERY_GRID_CLASS} role="list">
       {Array.from({ length: 6 }, (_, index) => (
-        <li key={index}>
-          <Skeleton className="aspect-[4/3] w-full rounded-lg" />
+        <li className={TASK_GALLERY_ITEM_CLASS} key={index}>
+          <Skeleton className="aspect-[4/5] w-full rounded-lg sm:aspect-[4/3]" />
         </li>
       ))}
     </ul>
@@ -1095,7 +1100,49 @@ export function TaskFilterRail(props: Omit<TaskFilterControlsProps, 'idPrefix'>)
   );
 }
 
+// Sort and view live above the feed in the desktop toolbar (TaskListBoard's
+// TASK_TOOLBAR row), but that row is hidden below `lg` (see TaskListBoard) since it
+// was previously unconditional mobile chrome -- a wrapping SORT row plus a VIEW row
+// stacked above every card. This drawer is where a phone visitor reaches them
+// instead, so they duplicate TaskSortControl/TaskViewToggle's own local
+// `currentFilters` construction (matching TaskFilterControls' pattern below) rather
+// than the desktop toolbar's copies, which are private to a different component tree.
 function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
+  const {
+    basePath = '/dashboard/tasks',
+    deadlineHours = '',
+    maxReward = '',
+    minReward = '',
+    selectedActor = 'ALL',
+    selectedMode = 'ALL',
+    selectedSort = 'newest',
+    selectedStatus = 'ALL',
+    selectedView,
+    tags = '',
+    taskDropId = '',
+    requester = '',
+    worker = '',
+  } = props;
+  const currentFilters: TaskSearchParams = {
+    actor: selectedActor,
+    deadlineHours,
+    maxReward,
+    minReward,
+    mode: selectedMode,
+    sort: selectedSort,
+    status: selectedStatus,
+    tags,
+    taskDropId,
+    requester,
+    view: selectedView,
+    worker,
+  };
+  // This drawer only ever renders below `lg` (see the `lg:hidden` wrapper around it in
+  // TaskListPageContent), so unlike the desktop toolbar it can safely assume "mobile"
+  // without useIsMobile(): an unset selectedView highlights Gallery here, matching
+  // TaskListBoard's own on-device default for the feed actually being shown below.
+  const mobileView: TaskListView = selectedView ?? 'gallery';
+
   return (
     <Drawer direction="bottom">
       <Button asChild className="min-h-11" variant="outline">
@@ -1112,7 +1159,17 @@ function MobileTaskFilterDrawer(props: Omit<TaskFilterControlsProps, 'idPrefix'>
           </DrawerDescription>
         </DrawerHeader>
         <div className="overflow-y-auto px-4 pb-4">
-          <TaskFilterControls {...props} idPrefix="drawer" />
+          <div className="grid gap-4 border-b border-border/58 pb-4">
+            <TaskSortControl
+              basePath={basePath}
+              currentFilters={currentFilters}
+              selectedSort={selectedSort as TaskSortValue}
+            />
+            <TaskViewToggle basePath={basePath} currentFilters={currentFilters} view={mobileView} />
+          </div>
+          <div className="pt-4">
+            <TaskFilterControls {...props} idPrefix="drawer" />
+          </div>
         </div>
       </DrawerContent>
     </Drawer>
@@ -1261,7 +1318,11 @@ export function TaskListPageContent({
   pagination?: TaskPaginationState;
   tasks: TaskResponse[];
 }) {
-  const selectedView = filterParams.selectedView ?? 'table';
+  // Left unresolved (undefined) when the request had no explicit ?view= param, rather
+  // than defaulting to 'table' here -- this runs on the server, which cannot know the
+  // visiting device's viewport, so the client island (TaskListBoard) picks gallery on
+  // mobile and table on desktop when this is undefined. See task-filters.ts's parseView.
+  const selectedView = filterParams.selectedView;
   const sortFilters: TaskSearchParams = {
     actor: filterParams.selectedActor,
     deadlineHours: filterParams.deadlineHours,
@@ -1525,8 +1586,14 @@ export function SubmissionCard({
   task: TaskDetailResponse | TaskResponse;
 }) {
   const artifacts: ArtifactResponse[] = submission.artifacts ?? [];
-  const mediaArtifacts = artifacts.filter(isMediaArtifact);
-  const supportingArtifacts = artifacts.filter((artifact) => !isMediaArtifact(artifact));
+  // Artifacts arrive pre-sorted by displayOrder (the order the worker uploaded them
+  // in), which already encodes their intended primacy -- the backend never reorders
+  // by type. So the hero is whichever playable artifact comes first in that order,
+  // not whichever type (image/video vs. interactive HTML) it happens to be: a worker
+  // who leads with an HTML deliverable gets it surfaced as the hero, same as leading
+  // with an image or video always has.
+  const mediaArtifacts = artifacts.filter(isPlayableArtifact);
+  const supportingArtifacts = artifacts.filter((artifact) => !isPlayableArtifact(artifact));
   const [heroArtifact, ...extraMedia] = mediaArtifacts;
   const primaryArtifact = heroArtifact ?? supportingArtifacts[0];
   const worker = submission.workerAddress;
@@ -1611,22 +1678,13 @@ export function SubmissionCard({
         aria-label={`Submission from ${workerLabel}`}
         className="grid h-full min-w-0 content-start overflow-hidden rounded-lg border border-border/58 bg-background/34 shadow-[var(--shadow-soft)] transition-colors hover:border-primary/54"
       >
-        <div className="grid min-h-72 place-items-center bg-muted/20 p-4">
-          {heroArtifact ? (
-            <ArtifactMediaHero
-              artifact={heroArtifact}
-              onOpen={onOpenMedia ? () => onOpenMedia(heroArtifact.id) : undefined}
-              taskId={submission.taskId}
-            />
-          ) : (
-            <div className="grid justify-items-center gap-3 text-muted-foreground">
-              <FileIcon className="size-14" strokeWidth={1.25} />
-              <span className="font-mono text-sm uppercase">
-                {countLabel(artifacts.length, 'file')}
-              </span>
-            </div>
-          )}
-        </div>
+        {primaryArtifact ? (
+          <ArtifactMediaHero
+            artifact={primaryArtifact}
+            onOpen={heroArtifact && onOpenMedia ? () => onOpenMedia(heroArtifact.id) : undefined}
+            taskId={submission.taskId}
+          />
+        ) : null}
         <div className="grid gap-3 border-t border-border/58 p-4">
           <div className="flex min-w-0 items-center justify-between gap-3">
             <span className="flex min-w-0 items-center gap-2">
@@ -2149,7 +2207,7 @@ function TaskSummaryRail({
   const primaryAward = awards.find((award) => award.isPrimary);
 
   return (
-    <div className="w-full border-l border-border/58 pl-5">
+    <div className="w-full lg:border-l lg:border-border/58 lg:pl-5">
       <TaskReviewStatus
         detail={
           reviewRequired

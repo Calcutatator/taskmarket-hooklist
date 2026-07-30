@@ -69,6 +69,44 @@ vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn() }),
 }));
 
+// MobileTaskFilterDrawer renders its Sort/View controls inside a vaul-driven <Drawer>.
+// vaul drives its bottom-sheet drag gesture off Pointer Events + CSS transform APIs
+// jsdom does not implement, so a real vaul Drawer throws on interaction; no other
+// component reachable from this file's tests renders a Drawer (mobile-aware surfaces
+// tested elsewhere in this file never set a mobile matchMedia, so they always resolve
+// to the desktop Dialog, not vaul). This mock always renders the drawer content, which
+// is enough to assert Sort/View are structurally reachable inside it.
+vi.mock('vaul', () => {
+  function Root({ children }: { children: React.ReactNode }) {
+    return <>{children}</>;
+  }
+  function Trigger(props: Record<string, unknown>) {
+    return <button type="button" {...props} />;
+  }
+  function Portal({ children }: { children: React.ReactNode }) {
+    return <>{children}</>;
+  }
+  function Overlay(props: Record<string, unknown>) {
+    return <div {...props} />;
+  }
+  function Close(props: Record<string, unknown>) {
+    return <button type="button" {...props} />;
+  }
+  function Content(props: Record<string, unknown>) {
+    return <div role="dialog" {...props} />;
+  }
+  function Title(props: Record<string, unknown>) {
+    return <h2 {...props} />;
+  }
+  function Description(props: Record<string, unknown>) {
+    return <p {...props} />;
+  }
+
+  return {
+    Drawer: { Root, Trigger, Portal, Overlay, Close, Content, Title, Description },
+  };
+});
+
 vi.mock('next/link', () => ({
   default: ({
     children,
@@ -126,6 +164,7 @@ afterEach(() => {
   mockAuth.authenticated = false;
   mockFund.mockClear();
   mockPrivyConnect.mockClear();
+  FakeIntersectionObserver.instances = [];
   vi.unstubAllGlobals();
   vi.unstubAllEnvs();
   vi.restoreAllMocks();
@@ -250,6 +289,39 @@ function mockPreviewFetch(previewUrl: string) {
   } as Response);
 }
 
+// jsdom does not implement IntersectionObserver, and the interactive-HTML poster
+// (SubmissionArtifactPoster) uses one to defer mounting a live sandboxed iframe
+// until the tile is near the viewport. Stubbed locally per-test via
+// vi.stubGlobal (cleaned up by the shared afterEach's vi.unstubAllGlobals()
+// below) rather than in a global test setup file, so unrelated suites that
+// render the same poster keep exercising the real "no observer support"
+// fallback instead of silently having it stubbed out for them too.
+class FakeIntersectionObserver implements IntersectionObserver {
+  static instances: FakeIntersectionObserver[] = [];
+  callback: IntersectionObserverCallback;
+  root: Element | Document | null = null;
+  rootMargin = '';
+  scrollMargin = '';
+  thresholds: number[] = [];
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+    FakeIntersectionObserver.instances.push(this);
+  }
+
+  observe = vi.fn();
+  unobserve = vi.fn();
+  disconnect = vi.fn();
+  takeRecords = vi.fn(() => []);
+
+  trigger(isIntersecting: boolean) {
+    this.callback(
+      [{ isIntersecting } as IntersectionObserverEntry],
+      this as unknown as IntersectionObserver
+    );
+  }
+}
+
 describe('taskTitle', () => {
   it('strips markdown emphasis, backticks, and heading markers from the first line', () => {
     expect(taskTitle({ ...task, description: '**QETEB MERIRI — the Noonday Destroyer**' })).toBe(
@@ -345,8 +417,9 @@ describe('Task marketplace components', () => {
     expect(cardLinks).toHaveLength(1);
     expect(cardLinks[0]).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
 
-    // The cover container is a uniform 4:3 tile and the title lives in its overlay.
-    expect(gallery.querySelector('.aspect-\\[4\\/3\\]')).not.toBeNull();
+    // The cover container is taller on mobile and a uniform 4:3 tile at sm+, and the
+    // title lives in its overlay.
+    expect(gallery.querySelector('.aspect-\\[4\\/5\\].sm\\:aspect-\\[4\\/3\\]')).not.toBeNull();
     expect(within(gallery).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
     expect(within(gallery).getAllByText('25').length).toBeGreaterThan(0);
   });
@@ -355,9 +428,36 @@ describe('Task marketplace components', () => {
     render(<TaskTable isLoading tasks={[]} view="gallery" />);
 
     const loading = screen.getByRole('list', { name: /loading task gallery/i });
-    expect(loading.querySelectorAll('.aspect-\\[4\\/3\\]').length).toBeGreaterThan(0);
+    expect(
+      loading.querySelectorAll('.aspect-\\[4\\/5\\].sm\\:aspect-\\[4\\/3\\]').length
+    ).toBeGreaterThan(0);
     // The gallery loading state does not fall back to the table "Loading tasks" card.
     expect(screen.queryByText(/loading tasks/i)).not.toBeInTheDocument();
+  });
+
+  it('adapts the gallery feed for full-bleed, one-per-screen mobile scrolling while keeping the sm+ grid', () => {
+    render(<TaskTable tasks={[task]} view="gallery" />);
+
+    const gallery = screen.getByTestId('task-gallery');
+
+    // Full-bleed on mobile: cancel the page's horizontal gutter just for the feed,
+    // restored once the sm+ multi-column grid kicks back in.
+    expect(gallery).toHaveClass('-mx-4');
+    expect(gallery).toHaveClass('sm:mx-0');
+
+    // Snap-scrolling is mobile-only; the sm+ grid never snaps.
+    expect(gallery).toHaveClass('snap-y');
+    expect(gallery).toHaveClass('snap-mandatory');
+    expect(gallery).toHaveClass('sm:snap-none');
+
+    // The multi-column grid at sm+ is unchanged.
+    expect(gallery).toHaveClass('sm:grid-cols-2');
+    expect(gallery).toHaveClass('lg:grid-cols-3');
+    expect(gallery).toHaveClass('2xl:grid-cols-4');
+
+    const item = within(gallery).getByRole('listitem');
+    expect(item).toHaveClass('snap-start');
+    expect(item).toHaveClass('sm:snap-align-none');
   });
 
   it('renders due/activity columns, colour-coded status, and the requester actor signal', () => {
@@ -377,7 +477,7 @@ describe('Task marketplace components', () => {
     expect(screen.getAllByText(/^human$/i).length).toBeGreaterThan(0);
   });
 
-  it('renders each compact mobile task as one obvious 144px detail link', () => {
+  it('renders each compact mobile task as one obvious detail link with at least a 144px minimum height', () => {
     render(<TaskTable tasks={[task]} />);
 
     const mobileList = screen.getByRole('list', { name: /task cards/i });
@@ -385,7 +485,10 @@ describe('Task marketplace components', () => {
 
     expect(detailLinks).toHaveLength(1);
     expect(detailLinks[0]).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
-    expect(detailLinks[0]).toHaveClass('h-36');
+    // A minimum height (not a fixed height) keeps cards visually consistent while still
+    // letting a two-line title or a long status label grow the card instead of clipping.
+    expect(detailLinks[0]).toHaveClass('min-h-36');
+    expect(detailLinks[0]).not.toHaveClass('h-36');
     expect(within(mobileList).getByText(/summarize protocol feedback/i)).toBeInTheDocument();
     expect(within(mobileList).getByText(/^auction$/i)).toBeInTheDocument();
     expect(within(mobileList).getByText(/^open$/i)).toBeInTheDocument();
@@ -393,6 +496,29 @@ describe('Task marketplace components', () => {
     expect(within(mobileList).getByText(/^due$/i)).toBeInTheDocument();
     expect(within(mobileList).getByText(/^reward$/i)).toBeInTheDocument();
     expect(within(mobileList).getByText(/view task/i)).toBeInTheDocument();
+  });
+
+  it('lets the mobile card status row wrap instead of letting a long status label overprint the activity count', () => {
+    render(
+      <TaskTable
+        tasks={[{ ...task, mode: 'bounty', status: 'pending_approval', submissionCount: 2 }]}
+      />
+    );
+
+    const mobileList = screen.getByRole('list', { name: /task cards/i });
+    const detailLink = within(mobileList).getByRole('link');
+    const statusRow = detailLink.firstElementChild as HTMLElement;
+
+    // A long status label ("Awaiting buyer review") must not share a no-wrap flex row
+    // with the activity count -- that pairing is what let the badge overprint the count.
+    expect(statusRow).toHaveClass('flex-wrap');
+    expect(statusRow).not.toHaveClass('justify-between');
+
+    // Right-aligns itself via margin so it still reads correctly whether it shares the
+    // first line with the badges or wraps onto a line of its own.
+    const activityCount = within(mobileList).getByText(/2 submissions/i);
+    expect(activityCount).toHaveClass('ml-auto');
+    expect(within(mobileList).getByText(/awaiting buyer review/i)).toBeInTheDocument();
   });
 
   it('keeps compact task facts in the mobile detail link accessible name', () => {
@@ -419,7 +545,11 @@ describe('Task marketplace components', () => {
       />
     );
 
-    expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
+    // The mobile filter drawer holds its own copy of the sort control (see "folds
+    // sort and view into the mobile filter drawer"), so scope to the desktop toolbar.
+    expect(
+      within(screen.getByTestId('task-toolbar')).getByRole('link', { name: /reward: high/i })
+    ).toHaveAttribute(
       'href',
       '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
@@ -459,7 +589,9 @@ describe('Task marketplace components', () => {
       'href',
       '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&view=gallery&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
     );
-    expect(screen.getByRole('link', { name: /reward: high/i })).toHaveAttribute(
+    expect(
+      within(screen.getByTestId('task-toolbar')).getByRole('link', { name: /reward: high/i })
+    ).toHaveAttribute(
       'href',
       '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
@@ -483,6 +615,172 @@ describe('Task marketplace components', () => {
     );
 
     expect(screen.queryByRole('navigation', { name: /task pagination/i })).not.toBeInTheDocument();
+  });
+
+  describe('mobile-default feed view', () => {
+    // TaskListPageContent runs on the server and cannot call useIsMobile itself, so
+    // the device-based default (mobile -> gallery, desktop -> table) is resolved by
+    // the client island (TaskListBoard) it mounts. matchMedia below simulates the
+    // visiting device the same way artifact-preview-button.test.tsx does for the
+    // mobile/desktop dialog branch.
+    function setupMatchMedia(width: number) {
+      Object.defineProperty(window, 'innerWidth', {
+        configurable: true,
+        value: width,
+      });
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: vi.fn().mockImplementation((query: string) => ({
+          addEventListener: vi.fn(),
+          dispatchEvent: vi.fn(),
+          matches: width < 768,
+          media: query,
+          onchange: null,
+          removeEventListener: vi.fn(),
+        })),
+      });
+    }
+
+    afterEach(() => {
+      // Restore the desktop-default matchMedia stub from test/setup.ts so later
+      // tests in this file (e.g. the mobile/desktop artifact dialog branch elsewhere)
+      // are not left resolving useIsMobile() against a stale mobile viewport.
+      Object.defineProperty(window, 'matchMedia', {
+        configurable: true,
+        value: (query: string) => ({
+          addEventListener: () => {},
+          addListener: () => {},
+          dispatchEvent: () => false,
+          matches: false,
+          media: query,
+          onchange: null,
+          removeEventListener: () => {},
+          removeListener: () => {},
+        }),
+      });
+    });
+
+    it('renders the gallery feed on mobile when no explicit view param is set', () => {
+      setupMatchMedia(390);
+      render(
+        <TaskListPageContent
+          activeFilters={[]}
+          filterParams={{ selectedMode: 'ALL', selectedSort: 'newest', selectedStatus: 'ALL' }}
+          tasks={[task]}
+        />
+      );
+
+      expect(screen.getByTestId('task-gallery')).toBeInTheDocument();
+      expect(screen.queryByRole('list', { name: /task cards/i })).not.toBeInTheDocument();
+    });
+
+    it('renders the table feed on desktop when no explicit view param is set (regression guard)', () => {
+      setupMatchMedia(1280);
+      render(
+        <TaskListPageContent
+          activeFilters={[]}
+          filterParams={{ selectedMode: 'ALL', selectedSort: 'newest', selectedStatus: 'ALL' }}
+          tasks={[task]}
+        />
+      );
+
+      expect(screen.queryByTestId('task-gallery')).not.toBeInTheDocument();
+      expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
+    });
+
+    it('honours an explicit ?view=table on mobile, overriding the gallery default', () => {
+      setupMatchMedia(390);
+      render(
+        <TaskListPageContent
+          activeFilters={[]}
+          filterParams={{
+            selectedMode: 'ALL',
+            selectedSort: 'newest',
+            selectedStatus: 'ALL',
+            selectedView: 'table',
+          }}
+          tasks={[task]}
+        />
+      );
+
+      expect(screen.queryByTestId('task-gallery')).not.toBeInTheDocument();
+      expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
+    });
+
+    it('honours an explicit ?view=gallery on desktop, overriding the table default', () => {
+      setupMatchMedia(1280);
+      render(
+        <TaskListPageContent
+          activeFilters={[]}
+          filterParams={{
+            selectedMode: 'ALL',
+            selectedSort: 'newest',
+            selectedStatus: 'ALL',
+            selectedView: 'gallery',
+          }}
+          tasks={[task]}
+        />
+      );
+
+      expect(screen.getByTestId('task-gallery')).toBeInTheDocument();
+    });
+  });
+
+  it('gates the desktop sort/view toolbar row to lg and up, out of the mobile chrome budget', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{
+          selectedMode: 'ALL',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+        }}
+        tasks={[task]}
+      />
+    );
+
+    // The toolbar row shared by TaskSortControl and the view toggle must not be part
+    // of the always-visible mobile chrome below `lg`; the drawer test below covers
+    // it being reachable from a phone instead.
+    const toolbar = screen.getByTestId('task-toolbar');
+    expect(toolbar).not.toHaveClass('flex');
+    expect(toolbar).toHaveClass('hidden');
+    expect(toolbar).toHaveClass('lg:flex');
+
+    // Regression guard: still reachable at lg (desktop) -- the elements exist and
+    // are lg-visible, not removed. (The mobile drawer holds its own copies, so scope
+    // to the toolbar to avoid matching both.)
+    expect(within(toolbar).getByRole('link', { name: /reward: high/i })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('link', { name: /gallery view/i })).toBeInTheDocument();
+  });
+
+  it('folds sort and view into the mobile filter drawer, reachable and keyboard-focusable', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{
+          selectedMode: 'auction',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+        }}
+        tasks={[task]}
+      />
+    );
+
+    const drawer = screen.getByRole('dialog');
+    const sortLink = within(drawer).getByRole('link', { name: /reward: high/i });
+    const galleryLink = within(drawer).getByRole('link', { name: /gallery view/i });
+    const tableLink = within(drawer).getByRole('link', { name: /table view/i });
+
+    // Preserves the active mode filter, matching the desktop sort control's contract.
+    expect(sortLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction&sort=reward_desc');
+    expect(galleryLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction&view=gallery');
+
+    // Plain <a> elements: reachable by keyboard (native tab order) with no extra wiring.
+    sortLink.focus();
+    expect(sortLink).toHaveFocus();
+    tableLink.focus();
+    expect(tableLink).toHaveFocus();
   });
 
   it('keeps filter links serializable and exposes a clear action', () => {
@@ -598,6 +896,20 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^result$/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(`taskmarket task bid ${task.id} --price <n>`)).not.toHaveLength(0);
+  });
+
+  it('gates the summary rail divider and inset to lg and up since the rail stacks full-width below the content on mobile', () => {
+    render(<TaskDetailPanel modeData={{}} task={taskDetail} />);
+
+    const sidebar = screen.getByRole('complementary', { name: /task sidebar/i });
+    const rail = sidebar.firstElementChild as HTMLElement;
+
+    // Below `lg` the aside stacks full-width under the main content, so an unconditional
+    // left rule and inset render as orphaned decoration with nothing to their left.
+    expect(rail).not.toHaveClass('border-l');
+    expect(rail).not.toHaveClass('pl-5');
+    expect(rail).toHaveClass('lg:border-l');
+    expect(rail).toHaveClass('lg:pl-5');
   });
 
   it('places task details directly below work requirements', () => {
@@ -1080,6 +1392,139 @@ describe('Task marketplace components', () => {
     expect(within(comparison).getByText('notes.txt')).toBeInTheDocument();
   });
 
+  it('renders a genuinely empty submission as a single short line, not a min-h-72 file-count void', () => {
+    renderReviewSubmissions([
+      {
+        artifacts: [],
+        fileUrl: 'ipfs://deliverable',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+    ]);
+
+    const comparison = screen.getByRole('region', { name: /artifact comparison/i });
+    const card = within(comparison).getByRole('article', { name: /submission from/i });
+
+    expect(within(card).queryByText(/0 files/i)).not.toBeInTheDocument();
+    expect(card.querySelector('.min-h-72')).not.toBeInTheDocument();
+    expect(
+      within(card).getByText(/no artifacts were attached to this submission/i)
+    ).toBeInTheDocument();
+  });
+
+  it('renders an HTML-only submission as its hero surface instead of a collapsed supporting-files disclosure', () => {
+    renderReviewSubmissions([
+      {
+        artifacts: [
+          makeArtifact({
+            fileName: 'game.html',
+            id: 'artifact-html',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+    ]);
+
+    const comparison = screen.getByRole('region', { name: /artifact comparison/i });
+    expect(
+      within(comparison).getByRole('button', { name: /open game\.html preview/i })
+    ).toBeInTheDocument();
+    expect(within(comparison).queryByText(/supporting files/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the interactive HTML hero as a live sandboxed poster once in view, not a file-count fallback', async () => {
+    vi.stubGlobal('IntersectionObserver', FakeIntersectionObserver);
+    const htmlContent = '<html><body>game</body></html>';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () => htmlContent,
+    } as Response);
+
+    renderReviewSubmissions([
+      {
+        artifacts: [
+          makeArtifact({
+            fileName: 'game.html',
+            id: 'artifact-html',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+            previewUrl: 'https://files.example.com/game.html',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+    ]);
+
+    const comparison = screen.getByRole('region', { name: /artifact comparison/i });
+    expect(within(comparison).queryByText(/1 file/i)).not.toBeInTheDocument();
+
+    FakeIntersectionObserver.instances.at(-1)?.trigger(true);
+
+    const frame = await within(comparison).findByTitle('Interactive preview of game.html');
+    expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+
+    fetchMock.mockRestore();
+  });
+
+  // Hero selection picks whichever playable artifact comes first in upload order
+  // (displayOrder), not whichever type it is -- an HTML deliverable submitted ahead
+  // of an image still becomes the hero, and the image is demoted to a thumbnail.
+  it('picks the first playable artifact in upload order as hero over a later image, regardless of type', () => {
+    renderReviewSubmissions([
+      {
+        artifacts: [
+          makeArtifact({
+            displayOrder: 0,
+            fileName: 'demo.html',
+            id: 'artifact-html-first',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+          }),
+          makeArtifact({
+            displayOrder: 1,
+            fileName: 'screenshot.png',
+            id: 'artifact-image-second',
+            previewUrl: 'https://files.example.com/screenshot.png',
+          }),
+        ],
+        fileUrl: 'ipfs://deliverable',
+        id: 'sub-a',
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: '0x3333333333333333333333333333333333333333',
+      },
+    ]);
+
+    const comparison = screen.getByRole('region', { name: /artifact comparison/i });
+    const heroButton = within(comparison).getByRole('button', {
+      name: /open demo\.html preview/i,
+    });
+    const thumbButton = within(comparison).getByRole('button', {
+      name: /open screenshot\.png preview/i,
+    });
+
+    // The hero surface and the small thumbnail surface use distinct sizing; the
+    // thumbnail carries a fixed `size-16` class that the hero never does.
+    expect(heroButton.className).not.toContain('size-16');
+    expect(thumbButton.className).toContain('size-16');
+  });
+
   it('lets reviewers switch the same submission queue between gallery and list views', async () => {
     const user = userEvent.setup();
 
@@ -1407,7 +1852,7 @@ describe('Task marketplace components', () => {
       }),
     ]);
 
-    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    await user.click(screen.getByRole('button', { name: /open calculator\.html preview/i }));
 
     const dialog = await screen.findByRole('dialog');
     const frame = await within(dialog).findByTitle('Interactive preview of calculator.html');
@@ -1447,7 +1892,7 @@ describe('Task marketplace components', () => {
       }),
     ]);
 
-    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    await user.click(screen.getByRole('button', { name: /open oversized\.html preview/i }));
 
     const dialog = await screen.findByRole('dialog');
     expect(
@@ -1488,7 +1933,7 @@ describe('Task marketplace components', () => {
       }),
     ]);
 
-    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    await user.click(screen.getByRole('button', { name: /open mismatched-size\.html preview/i }));
 
     const dialog = await screen.findByRole('dialog');
     expect(
@@ -1534,7 +1979,7 @@ describe('Task marketplace components', () => {
       }),
     ]);
 
-    await user.click(screen.getByRole('button', { name: /^view$/i }));
+    await user.click(screen.getByRole('button', { name: /open retry\.html preview/i }));
 
     const dialog = await screen.findByRole('dialog');
     expect(

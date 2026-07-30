@@ -116,7 +116,17 @@ describe('TaskCover', () => {
     // No media element and no empty hole: the box is the deterministic placeholder.
     expect(container.querySelector('img')).toBeNull();
     expect(container.querySelector('video')).toBeNull();
-    expect(container.querySelector('.aspect-\\[4\\/3\\]')).not.toBeNull();
+    expect(container.querySelector('.aspect-\\[4\\/5\\].sm\\:aspect-\\[4\\/3\\]')).not.toBeNull();
+  });
+
+  it('is taller than a 4:3 tile by default (mobile feed rhythm) and reverts to 4:3 at sm and up', () => {
+    const task = makeTask({ submissionCount: 0, pitchCount: 0, auctionBidCount: 0 });
+
+    const { container } = render(<TaskCover task={task} />);
+    const cover = container.querySelector('.aspect-\\[4\\/5\\]');
+
+    expect(cover).not.toBeNull();
+    expect(cover).toHaveClass('sm:aspect-[4/3]');
   });
 
   it('renders an object-cover image when a media artifact resolves, without metadata text', () => {
@@ -209,7 +219,7 @@ describe('TaskCover', () => {
 
     expect(container.querySelector('[data-slot="skeleton"]')).toBeNull();
     expect(container.querySelector('img')).toBeNull();
-    expect(container.querySelector('.aspect-\\[4\\/3\\]')).not.toBeNull();
+    expect(container.querySelector('.aspect-\\[4\\/5\\].sm\\:aspect-\\[4\\/3\\]')).not.toBeNull();
     // Overlay content (title) is still present over the placeholder.
     expect(screen.getByText(/generate a campaign hero image/i)).toBeInTheDocument();
   });
@@ -227,5 +237,123 @@ describe('TaskCover', () => {
     render(<TaskCover task={makeTask({ awardCount: 3, status: 'completed' })} />);
 
     expect(screen.getByText('Split payout · 3')).toBeInTheDocument();
+  });
+
+  describe('interactive HTML submissions', () => {
+    // The poster lazy-mounts its live iframe via IntersectionObserver, which jsdom
+    // does not implement -- stub it as immediately intersecting so the poster
+    // mounts synchronously, mirroring artifact-preview-button.test.tsx.
+    class IntersectionObserverStub {
+      private readonly callback: IntersectionObserverCallback;
+
+      constructor(callback: IntersectionObserverCallback) {
+        this.callback = callback;
+      }
+
+      disconnect() {}
+
+      observe(target: Element) {
+        this.callback(
+          [
+            {
+              boundingClientRect: target.getBoundingClientRect(),
+              intersectionRatio: 1,
+              intersectionRect: target.getBoundingClientRect(),
+              isIntersecting: true,
+              rootBounds: null,
+              target,
+              time: 0,
+            },
+          ],
+          this as unknown as IntersectionObserver
+        );
+      }
+
+      takeRecords() {
+        return [];
+      }
+
+      unobserve() {}
+    }
+
+    beforeEach(() => {
+      vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+    });
+
+    afterEach(() => {
+      vi.unstubAllGlobals();
+    });
+
+    it('renders a real live-poster cover for a task whose only submission artifact is interactive HTML', async () => {
+      const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+        ok: true,
+        text: async () => '<html><body>demo</body></html>',
+      } as Response);
+      const task = makeTask({ submissionCount: 1 });
+      seedQuery({
+        data: [
+          {
+            artifacts: [
+              makeArtifact({
+                fileName: 'calculator.html',
+                id: 'artifact-html',
+                mediaKind: 'text',
+                mimeType: 'text/html',
+                previewUrl: 'https://files.example.com/calculator.html',
+                sizeBytes: 2048,
+              }),
+            ],
+            fileUrl: 'ipfs://deliverable',
+            id: 'sub-1',
+            signature: '0xsig',
+            submittedAt: new Date().toISOString(),
+            taskId: task.id,
+            workerAddress: '0x3333333333333333333333333333333333333333',
+          },
+        ],
+      });
+
+      const { container } = render(<TaskCover task={task} />);
+
+      const frame = await screen.findByTitle('Interactive preview of calculator.html');
+      expect(frame.tagName).toBe('IFRAME');
+      // Never a live target of its own: the whole card stays one click target.
+      expect(frame).toHaveClass('pointer-events-none');
+      // Not the deterministic placeholder glyph.
+      expect(container.querySelector('[aria-hidden][style]')).toBeNull();
+
+      fetchMock.mockRestore();
+    });
+
+    it('falls back to the placeholder when the only artifact is HTML too large to sandbox inline', () => {
+      const task = makeTask({ submissionCount: 1 });
+      seedQuery({
+        data: [
+          {
+            artifacts: [
+              makeArtifact({
+                fileName: 'oversized.html',
+                id: 'artifact-html-oversized',
+                mediaKind: 'text',
+                mimeType: 'text/html',
+                previewUrl: 'https://files.example.com/oversized.html',
+                sizeBytes: 6 * 1024 * 1024,
+              }),
+            ],
+            fileUrl: 'ipfs://deliverable',
+            id: 'sub-1',
+            signature: '0xsig',
+            submittedAt: new Date().toISOString(),
+            taskId: task.id,
+            workerAddress: '0x3333333333333333333333333333333333333333',
+          },
+        ],
+      });
+
+      const { container } = render(<TaskCover task={task} />);
+
+      expect(container.querySelector('iframe')).toBeNull();
+      expect(container.querySelector('.aspect-\\[4\\/5\\]')).not.toBeNull();
+    });
   });
 });

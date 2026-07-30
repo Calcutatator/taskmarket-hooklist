@@ -1,8 +1,14 @@
 import type { ArtifactResponse } from '@taskmarket/shared';
 import type { CSSProperties } from 'react';
 
+import { isInteractiveHtmlArtifact } from '@/lib/sandboxed-html';
+
 export function isMediaArtifact(artifact: ArtifactResponse) {
   return artifact.mediaKind === 'image' || artifact.mediaKind === 'video';
+}
+
+export function isPlayableArtifact(artifact: ArtifactResponse): boolean {
+  return isMediaArtifact(artifact) || isInteractiveHtmlArtifact(artifact);
 }
 
 export function taskCoverFieldIndex(taskId: string, buckets = 5) {
