@@ -2,7 +2,7 @@ import { render, screen } from '@testing-library/react';
 import { describe, expect, it, vi } from 'vitest';
 import type { TaskResponse } from '@taskmarket/shared';
 
-import { TaskListBoard } from './task-thumbnail';
+import { TaskListBoard, TaskViewToggle } from './task-thumbnail';
 
 // TaskTable pulls in the full task detail/actions tree; the board test only cares
 // about the view-toggle island, so stub TaskTable to echo the view it receives.
@@ -44,7 +44,7 @@ const task: TaskResponse = {
 
 describe('TaskListBoard', () => {
   it('renders the compact table as the deterministic default view', () => {
-    render(<TaskListBoard currentFilters={{}} tasks={[task]} view="table" />);
+    render(<TaskListBoard currentFilters={{}} tasks={[task]} />);
 
     expect(screen.getByTestId('task-table')).toHaveTextContent('view:table');
     expect(screen.getByRole('link', { name: /gallery view/i })).not.toHaveAttribute('aria-current');
@@ -71,13 +71,9 @@ describe('TaskListBoard', () => {
       />
     );
 
-    // Only 'table' round-trips as an explicit query param when it comes from an
-    // actual navigation (this toggle click), not merely carried through as the
-    // deterministic non-mobile default -- otherwise the toggle could not opt a
-    // mobile visitor back out of the gallery default (see task-filters.ts).
     expect(screen.getByRole('link', { name: /table view/i })).toHaveAttribute(
       'href',
-      '/tasks?mode=auction&status=open&sort=reward_desc&view=table'
+      '/tasks?mode=auction&status=open&sort=reward_desc'
     );
     expect(screen.getByRole('link', { name: /gallery view/i })).toHaveAttribute(
       'href',
@@ -90,5 +86,17 @@ describe('TaskListBoard', () => {
     render(<TaskListBoard currentFilters={{}} tasks={[]} view="table" />);
 
     expect(screen.queryByRole('link', { name: /gallery view/i })).not.toBeInTheDocument();
+  });
+
+  it('uses list terminology and full-width tap targets in the mobile presentation', () => {
+    render(<TaskViewToggle currentFilters={{ mode: 'auction' }} presentation="mobile" />);
+
+    const toggle = screen.getByRole('group', { name: /task view/i });
+    const listLink = screen.getByRole('link', { name: /list view/i });
+
+    expect(toggle).toHaveClass('grid-cols-2');
+    expect(listLink).toHaveTextContent('List');
+    expect(listLink).toHaveClass('min-h-11');
+    expect(listLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction');
   });
 });

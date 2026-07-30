@@ -69,13 +69,9 @@ vi.mock('sonner', () => ({
   toast: Object.assign(vi.fn(), { success: vi.fn() }),
 }));
 
-// MobileTaskFilterDrawer renders its Sort/View controls inside a vaul-driven <Drawer>.
 // vaul drives its bottom-sheet drag gesture off Pointer Events + CSS transform APIs
-// jsdom does not implement, so a real vaul Drawer throws on interaction; no other
-// component reachable from this file's tests renders a Drawer (mobile-aware surfaces
-// tested elsewhere in this file never set a mobile matchMedia, so they always resolve
-// to the desktop Dialog, not vaul). This mock always renders the drawer content, which
-// is enough to assert Sort/View are structurally reachable inside it.
+// jsdom does not implement. The mock keeps the mobile filter shell and contents
+// rendered so its layout contract and URL-backed controls remain testable.
 vi.mock('vaul', () => {
   function Root({ children }: { children: React.ReactNode }) {
     return <>{children}</>;
@@ -374,7 +370,14 @@ describe('Task marketplace components', () => {
     expect(screen.getByRole('table').closest('[data-slot="card"]')).toBeNull();
     expect(taskLinks.at(0)).toHaveAttribute('href', '/dashboard/tasks/0xabc123');
     expect(taskLinks.at(0)).toHaveAttribute('data-next-link', 'true');
-    expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
+    const mobileTaskList = screen.getByRole('list', { name: /task cards/i });
+    const taskListFrame = mobileTaskList.parentElement;
+    expect(mobileTaskList).toHaveClass('gap-2');
+    expect(mobileTaskList).not.toHaveClass('p-3');
+    expect(taskListFrame).not.toHaveClass('border');
+    expect(taskListFrame).toHaveClass('md:border');
+    expect(taskListFrame).toHaveClass('md:rounded-lg');
+    expect(taskListFrame).toHaveClass('md:bg-card/38');
     expect(screen.getAllByText(/requester/i).length).toBeGreaterThan(0);
     // Listing reward splits the amount and the de-emphasised USDC unit into separate nodes.
     expect(screen.getAllByText('25').length).toBeGreaterThan(0);
@@ -618,64 +621,7 @@ describe('Task marketplace components', () => {
   });
 
   describe('mobile-default feed view', () => {
-    // TaskListPageContent runs on the server and cannot call useIsMobile itself, so
-    // the device-based default (mobile -> gallery, desktop -> table) is resolved by
-    // the client island (TaskListBoard) it mounts. matchMedia below simulates the
-    // visiting device the same way artifact-preview-button.test.tsx does for the
-    // mobile/desktop dialog branch.
-    function setupMatchMedia(width: number) {
-      Object.defineProperty(window, 'innerWidth', {
-        configurable: true,
-        value: width,
-      });
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        value: vi.fn().mockImplementation((query: string) => ({
-          addEventListener: vi.fn(),
-          dispatchEvent: vi.fn(),
-          matches: width < 768,
-          media: query,
-          onchange: null,
-          removeEventListener: vi.fn(),
-        })),
-      });
-    }
-
-    afterEach(() => {
-      // Restore the desktop-default matchMedia stub from test/setup.ts so later
-      // tests in this file (e.g. the mobile/desktop artifact dialog branch elsewhere)
-      // are not left resolving useIsMobile() against a stale mobile viewport.
-      Object.defineProperty(window, 'matchMedia', {
-        configurable: true,
-        value: (query: string) => ({
-          addEventListener: () => {},
-          addListener: () => {},
-          dispatchEvent: () => false,
-          matches: false,
-          media: query,
-          onchange: null,
-          removeEventListener: () => {},
-          removeListener: () => {},
-        }),
-      });
-    });
-
-    it('renders the gallery feed on mobile when no explicit view param is set', () => {
-      setupMatchMedia(390);
-      render(
-        <TaskListPageContent
-          activeFilters={[]}
-          filterParams={{ selectedMode: 'ALL', selectedSort: 'newest', selectedStatus: 'ALL' }}
-          tasks={[task]}
-        />
-      );
-
-      expect(screen.getByTestId('task-gallery')).toBeInTheDocument();
-      expect(screen.queryByRole('list', { name: /task cards/i })).not.toBeInTheDocument();
-    });
-
-    it('renders the table feed on desktop when no explicit view param is set (regression guard)', () => {
-      setupMatchMedia(1280);
+    it('renders the compact list when no explicit view param is set', () => {
       render(
         <TaskListPageContent
           activeFilters={[]}
@@ -688,27 +634,7 @@ describe('Task marketplace components', () => {
       expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
     });
 
-    it('honours an explicit ?view=table on mobile, overriding the gallery default', () => {
-      setupMatchMedia(390);
-      render(
-        <TaskListPageContent
-          activeFilters={[]}
-          filterParams={{
-            selectedMode: 'ALL',
-            selectedSort: 'newest',
-            selectedStatus: 'ALL',
-            selectedView: 'table',
-          }}
-          tasks={[task]}
-        />
-      );
-
-      expect(screen.queryByTestId('task-gallery')).not.toBeInTheDocument();
-      expect(screen.getByRole('list', { name: /task cards/i })).toBeInTheDocument();
-    });
-
-    it('honours an explicit ?view=gallery on desktop, overriding the table default', () => {
-      setupMatchMedia(1280);
+    it('honours an explicit ?view=gallery preference', () => {
       render(
         <TaskListPageContent
           activeFilters={[]}
@@ -739,48 +665,151 @@ describe('Task marketplace components', () => {
       />
     );
 
-    // The toolbar row shared by TaskSortControl and the view toggle must not be part
-    // of the always-visible mobile chrome below `lg`; the drawer test below covers
-    // it being reachable from a phone instead.
+    // The desktop row remains gated while the separate mobile toolbar covers the
+    // same frequent actions below `lg`.
     const toolbar = screen.getByTestId('task-toolbar');
     expect(toolbar).not.toHaveClass('flex');
     expect(toolbar).toHaveClass('hidden');
     expect(toolbar).toHaveClass('lg:flex');
 
-    // Regression guard: still reachable at lg (desktop) -- the elements exist and
-    // are lg-visible, not removed. (The mobile drawer holds its own copies, so scope
-    // to the toolbar to avoid matching both.)
+    // Regression guard: still reachable at lg (desktop).
     expect(within(toolbar).getByRole('link', { name: /reward: high/i })).toBeInTheDocument();
     expect(within(toolbar).getByRole('link', { name: /gallery view/i })).toBeInTheDocument();
   });
 
-  it('folds sort and view into the mobile filter drawer, reachable and keyboard-focusable', () => {
+  it('keeps filter, sort, view, and clear actions in one icon-only mobile row', async () => {
+    const user = userEvent.setup();
+
     render(
       <TaskListPageContent
-        activeFilters={[]}
+        activeFilters={[
+          { label: 'Mode', value: 'auction' },
+          { label: 'Task Drop', value: 'launch-drop' },
+        ]}
         filterParams={{
           selectedMode: 'auction',
           selectedSort: 'newest',
           selectedStatus: 'ALL',
+          taskDropId: 'launch-drop',
+        }}
+        tasks={[task]}
+      />
+    );
+
+    const toolbar = screen.getByTestId('mobile-task-toolbar');
+    expect(toolbar).toHaveClass('grid-cols-5');
+    expect(toolbar).toHaveClass('lg:hidden');
+    const heading = screen.getByRole('heading', { name: /open tasks/i });
+    const postTask = screen.getByRole('link', { name: /post task/i });
+    expect(heading).toHaveClass('text-2xl');
+    expect(heading).toHaveClass('sm:text-4xl');
+    expect(postTask).toHaveClass('size-11');
+    expect(postTask.querySelector('svg')).not.toBeNull();
+    expect(within(postTask).getByText('Post task')).toHaveClass('hidden', 'sm:inline');
+    expect(
+      within(toolbar).getByText('2', { selector: '[aria-label="2 active filters"]' })
+    ).toBeInTheDocument();
+
+    const filterTrigger = within(toolbar).getByRole('button', {
+      name: /filters, 2 active filters/i,
+    });
+    const listLink = within(toolbar).getByRole('link', { name: /list view/i });
+    const galleryLink = within(toolbar).getByRole('link', { name: /gallery view/i });
+    const clearLink = within(toolbar)
+      .getAllByRole('link', { name: /clear filters/i })
+      .find((link) => link.querySelector('svg'));
+    expect(clearLink).toBeDefined();
+    expect(filterTrigger.querySelector('svg')).not.toBeNull();
+    expect(listLink).toHaveAttribute('aria-current', 'page');
+    expect(listLink).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&taskDropId=launch-drop'
+    );
+    expect(galleryLink).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&taskDropId=launch-drop&view=gallery'
+    );
+    expect(listLink).toHaveClass('min-h-11');
+    expect(galleryLink).toHaveClass('min-h-11');
+    expect(within(listLink).getByText('List')).toHaveClass('sr-only');
+    expect(within(galleryLink).getByText('Gallery')).toHaveClass('sr-only');
+    expect(clearLink).toHaveAttribute('href', '/dashboard/tasks');
+    expect(clearLink?.querySelector('svg')).not.toBeNull();
+
+    const sortTrigger = within(toolbar).getByRole('button', { name: /sort tasks.*newest/i });
+    expect(sortTrigger.querySelector('svg')).not.toBeNull();
+    expect(sortTrigger).not.toHaveTextContent('Newest');
+    sortTrigger.focus();
+    await user.keyboard('{Enter}');
+    const rewardSort = await screen.findByRole('menuitem', { name: /reward: high/i });
+    expect(rewardSort).toHaveAttribute(
+      'href',
+      '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc'
+    );
+    expect(rewardSort).toHaveClass('min-h-11');
+    await user.keyboard('{Escape}');
+    expect(sortTrigger).toHaveFocus();
+  });
+
+  it('bounds the mobile filter drawer and keeps actions outside its scrolling body', async () => {
+    const user = userEvent.setup();
+
+    render(
+      <TaskListPageContent
+        activeFilters={[]}
+        filterParams={{
+          selectedMode: 'ALL',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+        }}
+        pagination={{ hasMore: true, nextCursor: 'next-page' }}
+        tasks={[task]}
+      />
+    );
+
+    const drawer = screen.getByRole('dialog');
+    const drawerBody = within(drawer).getByTestId('mobile-task-filter-body');
+    const advanced = within(drawer).getByText('Advanced filters').closest('details');
+
+    expect(drawer).toHaveClass('max-h-[calc(100dvh-0.5rem)]');
+    expect(drawer).toHaveClass('overflow-hidden');
+    expect(drawerBody).toHaveClass('min-h-0');
+    expect(drawerBody).toHaveClass('flex-1');
+    expect(drawerBody).toHaveClass('overflow-y-auto');
+    expect(advanced).not.toHaveAttribute('open');
+    const advancedSummary = within(drawer).getByText('Advanced filters').closest('summary');
+    advancedSummary?.focus();
+    expect(advancedSummary).toHaveFocus();
+    await user.click(advancedSummary as HTMLElement);
+    expect(advanced).toHaveAttribute('open');
+    expect(within(drawer).getByRole('link', { name: /all modes/i })).toHaveClass('min-h-11');
+    expect(within(drawer).getByRole('link', { name: /clear filters/i })).toHaveClass('min-h-11');
+    expect(within(drawer).getByRole('button', { name: /show 1\+ results/i })).toHaveAttribute(
+      'form',
+      'mobile-task-filter-form'
+    );
+  });
+
+  it('opens advanced mobile filters when an advanced URL value is active', () => {
+    render(
+      <TaskListPageContent
+        activeFilters={[{ label: 'Tags', value: 'react' }]}
+        filterParams={{
+          selectedMode: 'ALL',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+          tags: 'react',
         }}
         tasks={[task]}
       />
     );
 
     const drawer = screen.getByRole('dialog');
-    const sortLink = within(drawer).getByRole('link', { name: /reward: high/i });
-    const galleryLink = within(drawer).getByRole('link', { name: /gallery view/i });
-    const tableLink = within(drawer).getByRole('link', { name: /table view/i });
+    const advanced = within(drawer).getByText('Advanced filters').closest('details');
 
-    // Preserves the active mode filter, matching the desktop sort control's contract.
-    expect(sortLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction&sort=reward_desc');
-    expect(galleryLink).toHaveAttribute('href', '/dashboard/tasks?mode=auction&view=gallery');
-
-    // Plain <a> elements: reachable by keyboard (native tab order) with no extra wiring.
-    sortLink.focus();
-    expect(sortLink).toHaveFocus();
-    tableLink.focus();
-    expect(tableLink).toHaveFocus();
+    expect(advanced).toHaveAttribute('open');
+    expect(within(drawer).getByText('1 active')).toBeInTheDocument();
+    expect(within(drawer).getByLabelText(/tags/i)).toHaveValue('react');
   });
 
   it('keeps filter links serializable and exposes a clear action', () => {
@@ -861,6 +890,10 @@ describe('Task marketplace components', () => {
     const metrics = screen.getByRole('region', { name: /task metrics/i });
     const metricCards = within(metrics).getAllByRole('article');
     expect(metricCards).toHaveLength(4);
+    expect(metrics).toHaveClass('grid-cols-2');
+    expect(metrics).toHaveClass('md:grid-cols-4');
+    expect(metricCards[0]).toHaveClass('p-3');
+    expect(metricCards[0]).toHaveClass('md:p-5');
     const rewardSummary = within(metrics).getByRole('article', { name: /reward summary/i });
     expect(within(rewardSummary).getByText(/^reward$/i)).toBeInTheDocument();
     // Auction reward metric surfaces the live operative price (lowest bid), not the static reward.
@@ -896,6 +929,23 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/who can run/i)).not.toBeInTheDocument();
     expect(screen.queryByText(/^result$/i)).not.toBeInTheDocument();
     expect(screen.getAllByText(`taskmarket task bid ${task.id} --price <n>`)).not.toHaveLength(0);
+    const primaryActions = screen
+      .getAllByText(`taskmarket task bid ${task.id} --price <n>`)[0]
+      .closest('section');
+    const requirements = screen.getByRole('heading', { name: /work requirements/i }).parentElement;
+    const primaryActionWrapper = screen.getByRole('heading', { name: /next actions/i })
+      .parentElement?.parentElement;
+    expect(primaryActionWrapper).toHaveClass('order-1');
+    expect(primaryActionWrapper).toHaveClass('lg:order-2');
+    expect(requirements).toHaveClass('order-2');
+    expect(requirements).toHaveClass('lg:order-1');
+    expect(
+      primaryActions && requirements
+        ? Boolean(
+            primaryActions.compareDocumentPosition(requirements) & Node.DOCUMENT_POSITION_FOLLOWING
+          )
+        : false
+    ).toBe(true);
   });
 
   it('gates the summary rail divider and inset to lg and up since the rail stacks full-width below the content on mobile', () => {

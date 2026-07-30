@@ -1,4 +1,4 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
@@ -106,6 +106,32 @@ describe('PublicSiteHeader', () => {
       document.querySelectorAll<HTMLElement>('[id$="wallet-connect"]')
     ).map((element) => element.id);
     expect(new Set(accountControlIds).size).toBe(accountControlIds.length);
+  });
+
+  it('gives the mobile menu practical width and consistent touch targets', async () => {
+    const user = userEvent.setup();
+    render(<PublicSiteHeader />);
+
+    await user.click(screen.getByRole('button', { name: /open menu/i }));
+
+    const dialog = screen.getByRole('dialog', { name: /menu/i });
+    const mobileNav = within(dialog).getByRole('navigation', { name: /mobile primary/i });
+
+    expect(dialog).toHaveClass('w-[calc(100%-1rem)]', 'max-w-sm');
+    for (const link of within(mobileNav).getAllByRole('link')) {
+      expect(link).toHaveClass('flex', 'min-h-11', 'items-center', 'whitespace-nowrap');
+    }
+  });
+
+  it('restores focus to the mobile menu trigger when the sheet closes', async () => {
+    const user = userEvent.setup();
+    render(<PublicSiteHeader />);
+
+    const menuTrigger = screen.getByRole('button', { name: /open menu/i });
+    await user.click(menuTrigger);
+    await user.click(screen.getByRole('button', { name: /^close$/i }));
+
+    await waitFor(() => expect(menuTrigger).toHaveFocus());
   });
 
   it('marks a nested public route active in both navigation menus', async () => {

@@ -26,6 +26,9 @@ const navLinks: ReadonlyArray<readonly [string, Route, Route]> = [
   ['Protocol', '/dashboard/protocol', '/protocol'],
 ];
 
+const mobileNavRowClassName =
+  'flex min-h-11 items-center whitespace-nowrap rounded-md px-3 py-3 text-base font-medium tracking-tight transition-colors hover:bg-surface-2/58 hover:text-primary';
+
 function BrandLink() {
   return (
     <Link aria-label="Taskmarket home" className="block px-1.5 py-1" href="/">
@@ -81,7 +84,7 @@ export function PublicSiteHeader() {
                 <MenuIcon className="size-5" />
               </Button>
             </SheetTrigger>
-            <SheetContent side="right">
+            <SheetContent className="w-[calc(100%-1rem)] max-w-sm" side="right">
               <SheetHeader>
                 <SheetTitle>Menu</SheetTitle>
               </SheetHeader>
@@ -90,10 +93,7 @@ export function PublicSiteHeader() {
                 className="grid grid-cols-[minmax(0,1fr)] gap-1 px-4"
               >
                 <SheetClose asChild>
-                  <Link
-                    className="flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-primary transition-colors hover:bg-surface-2/58 hover:text-primary"
-                    href="/dashboard/drops"
-                  >
+                  <Link className={`${mobileNavRowClassName} text-primary`} href="/dashboard/drops">
                     Latest Drop
                   </Link>
                 </SheetClose>
@@ -101,7 +101,7 @@ export function PublicSiteHeader() {
                   <SheetClose asChild key={href}>
                     <Link
                       aria-current={isActive(href, publicHref) ? 'page' : undefined}
-                      className={`flex min-h-11 items-center rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-surface-2/58 hover:text-primary ${
+                      className={`${mobileNavRowClassName} text-foreground ${
                         isActive(href, publicHref) ? 'bg-surface-2/58 text-primary' : ''
                       }`}
                       href={href}
@@ -111,10 +111,7 @@ export function PublicSiteHeader() {
                   </SheetClose>
                 ))}
                 <SheetClose asChild>
-                  <Link
-                    className="rounded-md px-3 py-3 text-base font-medium tracking-tight text-foreground transition-colors hover:bg-surface-2/58 hover:text-primary"
-                    href="/dashboard"
-                  >
+                  <Link className={`${mobileNavRowClassName} text-foreground`} href="/dashboard">
                     Dashboard
                   </Link>
                 </SheetClose>

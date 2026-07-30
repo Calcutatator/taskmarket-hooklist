@@ -551,14 +551,27 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
     '/dashboard/tasks?taskDropId=launch-drop&cursor=2026-07-21T00%3A00%3A00.000Z&cursorStack=2026-07-22T00%3A00%3A00.000Z'
   );
 
-  await expect(
-    page.getByRole('region', { name: /Task list/i }).getByRole('heading', { name: /Open tasks/i })
-  ).toBeVisible();
+  const taskListRegion = page.getByRole('region', { name: /Task list/i });
+  await expect(taskListRegion.getByRole('heading', { name: /Open tasks/i })).toBeVisible();
   await expect(page.getByRole('list', { name: /Task (cards|gallery)/i })).toBeVisible();
   await expect(page.getByRole('complementary', { name: /Task filters/i })).toHaveCount(0);
 
-  const filterButton = page.getByRole('button', { name: /^Filters$/i });
+  const filterButton = page.getByRole('button', { name: /^Filters/i });
   await expect(filterButton).toBeVisible();
+
+  const mobileToolbar = taskListRegion.getByTestId('mobile-task-toolbar');
+  const toolbarControls = [
+    filterButton,
+    mobileToolbar.getByRole('button', { name: /Sort tasks/i }),
+    mobileToolbar.getByRole('link', { name: /List view/i }),
+    mobileToolbar.getByRole('link', { name: /Gallery view/i }),
+    mobileToolbar.getByRole('link', { name: /Clear filters/i }),
+  ];
+  const toolbarBoxes = await Promise.all(toolbarControls.map((control) => control.boundingBox()));
+  expect(new Set(toolbarBoxes.map((box) => Math.round(box?.y ?? -1))).size).toBe(1);
+  expect(
+    (await mobileToolbar.boundingBox())?.height ?? Number.POSITIVE_INFINITY
+  ).toBeLessThanOrEqual(44);
 
   const triggerBox = await filterButton.boundingBox();
   expect(triggerBox?.height ?? 0).toBeGreaterThanOrEqual(44);
@@ -566,14 +579,28 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
   await filterButton.click();
   const filterDialog = page.getByRole('dialog', { name: /Task filters/i });
   await expect(filterDialog).toBeVisible();
+  const dialogBox = await filterDialog.boundingBox();
+  expect(dialogBox?.height ?? Number.POSITIVE_INFINITY).toBeLessThanOrEqual(
+    page.viewportSize()?.height ?? 0
+  );
+  await expect(filterDialog).toHaveCSS('overflow', 'hidden');
+  await expect(filterDialog.getByTestId('mobile-task-filter-body')).toHaveCSS('overflow-y', 'auto');
 
   const taskDropInput = filterDialog.getByLabel(/Task Drop ID/i);
   await expect(taskDropInput).toHaveValue('launch-drop');
+  const advancedSummary = filterDialog.getByText('Advanced filters').locator('..');
+  const advancedFilters = advancedSummary.locator('..');
+  await expect(advancedFilters).toHaveAttribute('open', '');
+  await advancedSummary.focus();
+  await page.keyboard.press('Enter');
+  await expect(advancedFilters).not.toHaveAttribute('open');
+  await page.keyboard.press('Enter');
+  await expect(advancedFilters).toHaveAttribute('open', '');
   await expect(filterDialog.getByRole('link', { name: /^auction$/i })).toHaveAttribute(
     'href',
     '/dashboard/tasks?mode=auction&taskDropId=launch-drop'
   );
-  await filterDialog.getByRole('button', { name: /Apply filters/i }).click();
+  await filterDialog.getByRole('button', { name: /Show \d+ results?/i }).click();
   await expect
     .poll(() => {
       const currentUrl = new URL(page.url());
@@ -604,7 +631,7 @@ test('keeps primary mobile chrome controls at touch size', async ({ page }, test
 
   const controls = [
     page.getByRole('button', { name: /Toggle Sidebar/i }),
-    page.getByRole('button', { name: /^Filters$/i }),
+    page.getByRole('button', { name: /^Filters/i }),
     page.getByRole('link', { name: /Post task/i }).first(),
   ];
 

@@ -8,32 +8,42 @@ import type { ReactNode } from 'react';
 
 import { TaskTable } from '@/components/market/tasks';
 import { Button } from '@/components/ui/button';
-import { useIsMobile } from '@/hooks/use-mobile';
 import {
   taskFiltersHref,
   type TaskListView,
   type TaskSearchParams,
 } from '@/lib/market/task-filters';
 
-// Table/Gallery toggle, shared by the desktop toolbar (TaskListBoard, below) and the
-// mobile filter drawer (MobileTaskFilterDrawer in tasks.tsx) -- see tasks.tsx for why
-// the drawer needs its own copy of this control rather than the desktop toolbar row.
+// Table/Gallery toggle shared by the compact mobile browse toolbar and desktop board.
+// The mobile presentation changes layout and copy, but URL and active-state behaviour
+// stay in one place.
 export function TaskViewToggle({
   basePath = '/dashboard/tasks',
   currentFilters = {},
+  presentation = 'desktop',
   view = 'table',
 }: {
   basePath?: string;
   currentFilters?: TaskSearchParams;
+  presentation?: 'desktop' | 'mobile';
   view?: TaskListView;
 }) {
+  const mobile = presentation === 'mobile';
+  const controlClassName = mobile ? 'h-11 min-h-11 w-full px-0 sm:h-11 sm:min-h-11' : undefined;
+
   return (
-    <div className="flex items-center gap-1.5">
-      <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">View</span>
-      <Button asChild size="chip" variant="chip">
+    <div
+      aria-label={mobile ? 'Task view' : undefined}
+      className={mobile ? 'col-span-2 grid grid-cols-2 gap-2' : 'flex items-center gap-1.5'}
+      role={mobile ? 'group' : undefined}
+    >
+      {mobile ? null : (
+        <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">View</span>
+      )}
+      <Button asChild className={controlClassName} size="chip" variant="chip">
         <Link
           aria-current={view === 'table' ? 'page' : undefined}
-          aria-label="Table view"
+          aria-label={mobile ? 'List view' : 'Table view'}
           data-active={view === 'table'}
           href={
             taskFiltersHref(basePath, currentFilters, {
@@ -44,10 +54,10 @@ export function TaskViewToggle({
           }
         >
           <Rows3 className="size-3" />
-          Table
+          {mobile ? <span className="sr-only">List</span> : 'Table'}
         </Link>
       </Button>
-      <Button asChild size="chip" variant="chip">
+      <Button asChild className={controlClassName} size="chip" variant="chip">
         <Link
           aria-current={view === 'gallery' ? 'page' : undefined}
           aria-label="Gallery view"
@@ -61,7 +71,7 @@ export function TaskViewToggle({
           }
         >
           <LayoutGrid className="size-3" />
-          Gallery
+          {mobile ? <span className="sr-only">Gallery</span> : 'Gallery'}
         </Link>
       </Button>
     </div>
@@ -94,18 +104,10 @@ export function TaskListBoard({
   toolbarStart?: ReactNode;
   view?: TaskListView;
 }) {
-  const isMobile = useIsMobile();
-  // `view` is undefined when parseTaskFilters found no explicit ?view= param --
-  // TaskListPageContent runs on the server and cannot call useIsMobile itself, so it
-  // leaves the choice unresolved and this client island picks a device-appropriate
-  // default: gallery (media-forward) on mobile, table (lightweight) on desktop. An
-  // explicit param is always authoritative regardless of device. useIsMobile()
-  // resolves to `false` until its effect runs post-mount, so the first client render
-  // matches the server's implicit table output exactly -- no hydration mismatch, at
-  // the cost of a brief table-to-gallery flash on real mobile devices, the same
-  // trade-off this codebase already accepts for the Dialog/Drawer swap in
-  // artifact-preview-button.tsx and components/ui/sidebar.tsx.
-  const resolvedView: TaskListView = view ?? (isMobile ? 'gallery' : 'table');
+  // The compact table/card layout is the deterministic default on every viewport.
+  // Gallery remains available when the URL carries the explicit preference, without
+  // a post-hydration viewport check that swaps the feed after first paint.
+  const resolvedView: TaskListView = view ?? 'table';
   // The toggle hides in error/empty states where there is nothing to lay out; the
   // caller-provided sort control (toolbarStart) stays visible so a filtered-to-empty
   // view can still be re-sorted. Sort and view share one toolbar row to keep the

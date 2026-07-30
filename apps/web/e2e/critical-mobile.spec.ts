@@ -193,7 +193,7 @@ test('navigates dashboard sections without document reload and preserves browser
     .poll(() => page.evaluate(() => window.sessionStorage.getItem('dashboard-beforeunload')))
     .toBe('false');
 
-  await tasks.click();
+  await tasks.evaluate((element: HTMLAnchorElement) => element.click());
   await page.waitForLoadState('networkidle');
   await expect(page).toHaveURL(/\/dashboard\?section=tasks$/);
   await expect(tasks).toHaveAttribute('aria-current', 'page');
@@ -222,67 +222,56 @@ test('persists task views while resetting cursor pagination through reload and h
   page,
 }) => {
   await page.goto('/tasks?mode=auction&status=open&cursor=next-page&cursorStack=first-page');
-  const filters = page.getByRole('button', { name: /^Filters$/i });
+  const filters = page.getByRole('button', { name: /^Filters/i });
+  const listView = page.getByRole('link', { name: /List view/i });
+  const galleryView = page.getByRole('link', { name: /Gallery view/i });
 
-  // No explicit ?view= is present, so mobile defaults to the gallery (the desktop
-  // toolbar's Table/Gallery toggle is `hidden lg:flex`; on mobile the same control now
-  // lives inside the Filters drawer -- see MobileTaskFilterDrawer in tasks.tsx).
-  // useIsMobile() only resolves post-mount, so the feed can briefly render the table's
-  // card list before swapping to the gallery grid; assert the settled state rather
-  // than racing that transition.
-  await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
-  await expectTouchTarget(filters);
-
-  await filters.click();
-  const filterDialog = page.getByRole('dialog', { name: /Task filters/i });
-  await expect(filterDialog).toBeVisible();
-
-  // The drawer only ever renders below `lg`, so it can assume mobile synchronously
-  // (no useIsMobile() race) and shows Gallery as active immediately.
-  const tableView = filterDialog.getByRole('link', { name: /Table view/i });
-  const galleryView = filterDialog.getByRole('link', { name: /Gallery view/i });
-  await expect(galleryView).toHaveAttribute('aria-current', 'page');
+  // The compact card feed is the deterministic default on every viewport, so the
+  // server output remains in place after hydration when no explicit view is present.
+  await expect(page.getByRole('list', { name: /Task cards/i })).toBeVisible();
+  await expect(listView).toHaveAttribute('aria-current', 'page');
+  await expect(listView).toHaveAttribute('href', '/tasks?mode=auction&status=open');
   await expect(galleryView).toHaveAttribute('href', '/tasks?mode=auction&status=open&view=gallery');
-  // A 'table' selection must round-trip as an explicit ?view=table so it can opt a
-  // mobile visitor back out of the gallery default on a later filter navigation (see
-  // taskFiltersHref in lib/market/task-filters.ts).
-  await expect(tableView).toHaveAttribute('href', '/tasks?mode=auction&status=open&view=table');
-  await expect(filterDialog.getByLabel(/Task Drop ID/i)).toBeVisible();
-  await expectTouchTarget(filterDialog.getByRole('button', { name: /Apply filters/i }));
-  await expectTouchTarget(tableView);
+  await expectTouchTarget(filters);
+  await expectTouchTarget(listView);
   await expectTouchTarget(galleryView);
 
-  // Selecting Table is an explicit choice: the link strips the inbound cursor and
-  // cursorStack, resetting pagination when the view changes. The drawer stays open
-  // across the client-side navigation (it is an uncontrolled sheet, and the filter
-  // links intentionally do not force-close it so several choices can be made in one
-  // visit), so close it explicitly before asserting on the feed underneath.
-  await tableView.click();
-  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=table$/);
-  await page.keyboard.press('Escape');
-  await expect(filterDialog).toBeHidden();
-  await expect(filters).toBeFocused();
-  await expect(page.getByRole('list', { name: /Task cards/i })).toBeVisible();
-
-  // The choice survives a reload, and the drawer still reflects it as active.
+  // Gallery is an explicit URL-backed preference. Selecting it clears both cursor
+  // parameters, and the preference survives a reload.
+  await galleryView.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=gallery$/);
+  await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
   await page.reload({ waitUntil: 'networkidle' });
-  await expect(page.getByRole('list', { name: /Task cards/i })).toBeVisible();
-  await filters.click();
-  await expect(filterDialog).toBeVisible();
-  await expect(filterDialog.getByRole('link', { name: /Table view/i })).toHaveAttribute(
+  await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
+  await expect(page.getByRole('link', { name: /Gallery view/i })).toHaveAttribute(
     'aria-current',
     'page'
   );
 
-  await filterDialog.getByRole('link', { name: /Gallery view/i }).click();
-  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=gallery$/);
+  // Filter navigation keeps the explicit gallery preference.
+  await filters.click();
+  const filterDialog = page.getByRole('dialog', { name: /Task filters/i });
+  await expect(filterDialog).toBeVisible();
+  const bountyMode = filterDialog.getByRole('link', { name: /^Bounty$/i });
+  await expect(bountyMode).toHaveAttribute('href', '/tasks?mode=bounty&status=open&view=gallery');
+  await bountyMode.focus();
+  await page.keyboard.press('Enter');
+  await expect(page).toHaveURL(/\/tasks\?mode=bounty&status=open&view=gallery$/);
   await page.keyboard.press('Escape');
   await expect(filterDialog).toBeHidden();
   await expect(filters).toBeFocused();
   await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
 
+  // Browser history restores the previous explicit gallery state, then List returns
+  // to the clean default URL without a hydration-time feed swap.
   await page.goBack();
-  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=table$/);
+  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=gallery$/);
+  await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
+  const restoredListView = page.getByRole('link', { name: /List view/i });
+  await expect(restoredListView).toHaveAttribute('href', '/tasks?mode=auction&status=open');
+  await restoredListView.evaluate((element: HTMLAnchorElement) => element.click());
+  await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open$/);
   await expect(page.getByRole('list', { name: /Task cards/i })).toBeVisible();
   await expectStablePage(page, page.getByRole('heading', { name: /Open tasks/i }).first());
 });
