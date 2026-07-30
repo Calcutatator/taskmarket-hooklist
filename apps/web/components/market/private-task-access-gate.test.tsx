@@ -62,6 +62,7 @@ function renderGate() {
   );
 }
 
+// Verifies: ADR-0031
 describe('PrivateTaskAccessGate', () => {
   beforeEach(() => {
     vi.clearAllMocks();

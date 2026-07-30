@@ -1,3 +1,4 @@
+// Implements: ADR-0020 (normalize wallet addresses to lowercase)
 import { z } from 'zod';
 
 // Canonical Ethereum address schema. Validates shape only -- does NOT

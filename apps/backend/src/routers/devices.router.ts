@@ -1,3 +1,4 @@
+// Implements: ADR-0018 (devices.register requires signature proof of address ownership)
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';

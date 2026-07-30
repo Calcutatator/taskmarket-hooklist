@@ -11,8 +11,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-21
-- **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Embodiment:** Verified
+- **Last audited:** 2026-07-29
 - **Author:** beauwilliams
 - **Reviewers:** beauwilliams — self-attested; no independent reviewer recorded
 - **Deciders:** beauwilliams
@@ -113,9 +113,6 @@ upcoming release:
 - Breaking change for any CLI install that doesn't upgrade — will see signature verification
   failures on device registration, withdrawal-address setting, DREAMS withdrawal, inbox
   self-auth, and my-bids self-auth until it updates.
-- Every write path touching `agents`/`devices` still needs the `normalizeAddress()` treatment
-  applied (only `devices.router.ts` is done as of this ADR being accepted) — remaining sites are
-  follow-up work in the same PR/branch.
 
 **Neutral / follow-up:**
 - The one-time data migration for existing rows, and confirming the currently-deployed backend

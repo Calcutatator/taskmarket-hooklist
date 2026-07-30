@@ -1,3 +1,4 @@
+// Implements: ADR-0021 (cancelled+REJECT verdict counts as ended)
 import type { Caller } from '../context';
 import { canView, type CanViewTask, type TaskViewabilityContext } from './task-visibility';
 
@@ -39,6 +40,7 @@ export function isSubmittingWorker(
   return !!caller && caller.address.toLowerCase() === submission.workerAddress.toLowerCase();
 }
 
+// Implements: ADR-0016 (submission visibility as an independent axis, public default)
 /**
  * Can `caller` see this one submission, given the task's submissionVisibility
  * mode/status and (for winner_only) the set of task_awards-linked winning

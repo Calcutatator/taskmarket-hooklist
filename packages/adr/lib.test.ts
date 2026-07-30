@@ -35,6 +35,15 @@ import {
   buildAuditSummary,
   computeDrift,
   computeEmbodiment,
+  type RealizedByLocator,
+  parseRealizedByLocators,
+  formatRealizedByLocators,
+  checkRealizedByLocator,
+  resolveRealizedByRefs,
+  globToRegExp,
+  matchesAnyGlob,
+  findCommentAdrRefs,
+  stripIgnoredLines,
   statedEmbodimentClean,
   type SpecFile,
   checkSpec,
@@ -51,9 +60,20 @@ import {
   checkAuthorReviewersDeciders,
   checkDanglingReferences,
   checkNumberingGaps,
-  checkReadmeIndex,
+  checkDocIndexFreshness,
+  parseDocIndexEntry,
+  renderDocIndexYaml,
+  renderDocIndexList,
+  buildIndexMarkerRe,
+  ADR_INDEX_YAML_OPTIONS,
+  ADR_INDEX_FRESHNESS_OPTIONS,
+  RFC_INDEX_MARKER_RE,
+  RFC_INDEX_FRESHNESS_OPTIONS,
+  RFC_INDEX_YAML_OPTIONS,
+  lintRfcDir,
   checkCoverage,
   resolveGitTrackedOrStagedFiles,
+  isDocDirMemberFile,
   FILENAME_RE,
   VALID_STATUSES,
   REQUIRED_SECTIONS,
@@ -795,20 +815,38 @@ test('lintAdrDir: contiguous ADR numbers produce no numbering-gap warning (negat
   });
 });
 
-test('lintAdrDir: an ADR not listed in docs/adr/README.md is a non-blocking WARN', () => {
+test('lintAdrDir: a stale/missing docs/adr/index.yaml or README index is a blocking ERROR', () => {
   const content = makeAdr({ num: '0920', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
-  withFixtureDir({ '0920-fixture.md': content, 'README.md': '| ADR |\n|---|\n' }, (dir) => {
-    const { issues } = lintAdrDir(dir);
-    expect(issues.some((i) => i.type === 'WARN' && /not listed in docs\/adr\/README\.md/.test(i.message))).toBe(true);
-  });
+  withFixtureDir(
+    {
+      '0920-fixture.md': content,
+      'README.md': '<!-- ADR-INDEX:START -->\n<!-- ADR-INDEX:END -->\n',
+      // Explicitly wrong (not the auto-computed default) -- withFixtureDir would otherwise
+      // inject a correct index.yaml for fixtures that aren't testing index freshness itself.
+      'index.yaml': 'adrs: []\n',
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      expect(issues.some((i) => i.type === 'ERROR' && i.file === 'docs/adr/index.yaml')).toBe(true);
+      expect(issues.some((i) => i.type === 'ERROR' && i.file === 'docs/adr/README.md')).toBe(true);
+    }
+  );
 });
 
-test('lintAdrDir: an ADR listed in README.md is not flagged (negative space)', () => {
+test('lintAdrDir: a current index.yaml and README index are not flagged (negative space)', () => {
   const content = makeAdr({ num: '0920', status: 'Accepted', author: 'Alice', reviewers: 'Bob', deciders: 'Carol' });
-  withFixtureDir({ '0920-fixture.md': content, 'README.md': '| ADR |\n|---|\n| [0920](0920-fixture.md) |\n' }, (dir) => {
-    const { issues } = lintAdrDir(dir);
-    expect(issues.some((i) => /not listed in docs\/adr\/README\.md/.test(i.message))).toBe(false);
-  });
+  const entries = [{ number: '0920', file: '0920-fixture.md', title: 'Fixture ADR', status: 'Accepted', date: '2026-07-28' }];
+  withFixtureDir(
+    {
+      '0920-fixture.md': content,
+      'README.md': `<!-- ADR-INDEX:START -->\n${renderDocIndexList(entries)}\n<!-- ADR-INDEX:END -->\n`,
+      'index.yaml': renderDocIndexYaml(entries, ADR_INDEX_YAML_OPTIONS),
+    },
+    (dir) => {
+      const { issues } = lintAdrDir(dir);
+      expect(issues.some((i) => i.file === 'docs/adr/index.yaml' || i.file === 'docs/adr/README.md')).toBe(false);
+    }
+  );
 });
 
 test('lintAdrDir: a covered path changing without any docs/adr/ change is a non-blocking WARN', () => {
@@ -1189,41 +1227,89 @@ describe('checkNumberingGaps', () => {
   });
 });
 
-describe('checkReadmeIndex', () => {
-  test('null readme content produces no issues', () => {
-    expect(checkReadmeIndex(['0001-a.md'], null)).toEqual([]);
-  });
-
-  test('a file whose number is listed is not flagged', () => {
-    expect(checkReadmeIndex(['0001-a.md'], '| [0001](0001-a.md) |')).toEqual([]);
-  });
-
-  test('a file whose number is absent from the README is a warning', () => {
-    const issues = checkReadmeIndex(['0001-a.md'], '| ADR | Title |');
-    expect(issues).toHaveLength(1);
-    expect(issues[0].type).toBe('WARN');
-  });
-
-  test('property: exactly the files whose number is missing from readme text are flagged', () => {
-    fc.assert(
-      fc.property(
-        fc.uniqueArray(fc.integer({ min: 0, max: 40 }), { minLength: 1, maxLength: 15 }),
-        fc.array(fc.boolean(), { minLength: 1, maxLength: 15 }),
-        (nums, presentFlags) => {
-          const files = nums.map((n) => `${String(n).padStart(4, '0')}-x.md`);
-          const readme = nums
-            .filter((_, i) => presentFlags[i % presentFlags.length])
-            .map((n) => `| [${String(n).padStart(4, '0')}] |`)
-            .join('\n');
-          const issues = checkReadmeIndex(files, readme);
-          const flaggedNums = new Set(issues.map((i) => i.file.slice(0, 4)));
-          const expectedMissing = new Set(
-            nums.filter((n, i) => !presentFlags[i % presentFlags.length]).map((n) => String(n).padStart(4, '0'))
-          );
-          expect(flaggedNums).toEqual(expectedMissing);
-        }
-      )
+// Verifies: ADR-0033
+describe('parseDocIndexEntry', () => {
+  test('extracts number, title, status, and date from a real ADR header', () => {
+    const content = ['# 0001 — Mainnet contract upgrades stay manual and developer-local', '', '- **Status:** Accepted', '- **Date:** 2026-07-13'].join(
+      '\n'
     );
+    expect(parseDocIndexEntry('0001-mainnet-upgrades-stay-manual.md', content)).toEqual({
+      number: '0001',
+      file: '0001-mainnet-upgrades-stay-manual.md',
+      title: 'Mainnet contract upgrades stay manual and developer-local',
+      status: 'Accepted',
+      date: '2026-07-13',
+    });
+  });
+
+  test("falls back to 'unknown' for title/status/date when absent", () => {
+    expect(parseDocIndexEntry('0001-x.md', 'no header fields here')).toEqual({
+      number: '0001',
+      file: '0001-x.md',
+      title: 'unknown',
+      status: 'unknown',
+      date: 'unknown',
+    });
+  });
+});
+
+describe('renderDocIndexYaml / renderDocIndexList', () => {
+  const entries = [
+    { number: '0002', file: '0002-b.md', title: 'Second decision', status: 'Accepted', date: '2026-07-02' },
+    { number: '0001', file: '0001-a.md', title: 'First: a title, with punctuation', status: 'Superseded', date: '2026-07-01' },
+  ];
+
+  test('YAML output is sorted by number and quotes titles needing it', () => {
+    const yaml = renderDocIndexYaml(entries, ADR_INDEX_YAML_OPTIONS);
+    expect(yaml.indexOf('number: "0001"')).toBeLessThan(yaml.indexOf('number: "0002"'));
+    expect(yaml).toContain('title: "First: a title, with punctuation"');
+    expect(yaml).toContain('title: Second decision');
+  });
+
+  test('list output is sorted by number with a real markdown link per entry', () => {
+    const list = renderDocIndexList(entries);
+    const lines = list.split('\n');
+    expect(lines[0]).toBe('- [0001 — First: a title, with punctuation](0001-a.md)');
+    expect(lines[1]).toBe('- [0002 — Second decision](0002-b.md)');
+  });
+});
+
+describe('checkDocIndexFreshness', () => {
+  const entries = [{ number: '0001', file: '0001-a.md', title: 'A decision', status: 'Accepted', date: '2026-07-01' }];
+  const freshYaml = renderDocIndexYaml(entries, ADR_INDEX_YAML_OPTIONS);
+  const freshReadme = `intro\n<!-- ADR-INDEX:START -->\n${renderDocIndexList(entries)}\n<!-- ADR-INDEX:END -->\noutro`;
+
+  test('no issues when both index.yaml and the README list are current', () => {
+    expect(checkDocIndexFreshness(entries, freshYaml, freshReadme, ADR_INDEX_FRESHNESS_OPTIONS)).toEqual([]);
+  });
+
+  test('missing index.yaml is a blocking error', () => {
+    const issues = checkDocIndexFreshness(entries, null, freshReadme, ADR_INDEX_FRESHNESS_OPTIONS);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: 'ERROR', file: 'docs/adr/index.yaml' });
+  });
+
+  test('negative space: a stale index.yaml (real content changed since) is a blocking error', () => {
+    const staleYaml = renderDocIndexYaml([{ ...entries[0], status: 'Superseded' }], ADR_INDEX_YAML_OPTIONS);
+    const issues = checkDocIndexFreshness(entries, staleYaml, freshReadme, ADR_INDEX_FRESHNESS_OPTIONS);
+    expect(issues.some((i) => i.file === 'docs/adr/index.yaml')).toBe(true);
+  });
+
+  test('README missing the ADR-INDEX markers entirely is a blocking error', () => {
+    const issues = checkDocIndexFreshness(entries, freshYaml, 'no markers here', ADR_INDEX_FRESHNESS_OPTIONS);
+    expect(issues.some((i) => i.file === 'docs/adr/README.md' && i.message.includes('markers'))).toBe(true);
+  });
+
+  test('negative space: a stale README list is a blocking error', () => {
+    const staleReadme = `intro\n<!-- ADR-INDEX:START -->\n<!-- ADR-INDEX:END -->\noutro`;
+    const issues = checkDocIndexFreshness(entries, freshYaml, staleReadme, ADR_INDEX_FRESHNESS_OPTIONS);
+    expect(issues.some((i) => i.file === 'docs/adr/README.md')).toBe(true);
+  });
+
+  test('null README content is a blocking error, matching the null-index.yaml case', () => {
+    const issues = checkDocIndexFreshness(entries, freshYaml, null, ADR_INDEX_FRESHNESS_OPTIONS);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: 'ERROR', file: 'docs/adr/README.md' });
   });
 });
 
@@ -1333,10 +1419,33 @@ function makeAdr({
   ].join('\n');
 }
 
+// Auto-injects a valid index.yaml (and, when the fixture provides its own README.md without
+// explicit ADR-INDEX markers, leaves it untouched) so the many fixtures here testing something
+// else entirely -- Y-statement structure, Reviewers/Deciders, filename format -- don't also
+// trip checkDocIndexFreshness's blocking checks. A fixture that wants to test index freshness
+// itself passes its own 'index.yaml' key, which overrides this default.
 function withFixtureDir<T>(fixtures: Record<string, string>, fn: (dir: string) => T): T {
   const dir = mkdtempSync(join(tmpdir(), 'adr-lint-fixture-'));
   try {
-    for (const [name, body] of Object.entries(fixtures)) {
+    const withDefaults = { ...fixtures };
+    if (!('index.yaml' in withDefaults)) {
+      // isDocDirMemberFile is the single source of truth lintAdrDir's own adrFiles filter uses
+      // too -- not FILENAME_RE, which is stricter (strictly-numbered filenames only). A fixture
+      // testing a malformed filename (e.g. checkFilenameFormat's own blocking check) would
+      // otherwise be silently excluded from this auto-generated index, tripping an unrelated
+      // index-freshness failure.
+      const entries = Object.entries(fixtures)
+        .filter(([name]) => isDocDirMemberFile(name))
+        .map(([name, body]) => parseDocIndexEntry(name, body));
+      withDefaults['index.yaml'] = renderDocIndexYaml(entries, ADR_INDEX_YAML_OPTIONS);
+      // Same reasoning as the index.yaml default above: a fixture not testing README
+      // freshness itself shouldn't trip the now-blocking null-README check just because it
+      // never mentioned README.md.
+      if (!('README.md' in withDefaults)) {
+        withDefaults['README.md'] = `<!-- ADR-INDEX:START -->\n${renderDocIndexList(entries)}\n<!-- ADR-INDEX:END -->\n`;
+      }
+    }
+    for (const [name, body] of Object.entries(withDefaults)) {
       writeFileSync(join(dir, name), body, 'utf8');
     }
     return fn(dir);
@@ -1688,6 +1797,14 @@ describe('Embodiment audit', () => {
     test('computes Inactive when the stated value says Inactive, regardless of refs', () => {
       expect(computeEmbodiment(entry({ number: '0001', statedEmbodiment: 'Inactive', codeRefs: ['b.ts'] }))).toBe('Inactive');
     });
+
+    test('computes Deprecated when the stated value says Deprecated, regardless of refs', () => {
+      // Distinct from Inactive: a Deprecated ADR was genuinely realized once (real back-pointers
+      // may still transiently exist elsewhere before cleanup), but its realizing code is gone by
+      // design and can never resolve a back-pointer again -- Inactive never had one to begin with.
+      expect(computeEmbodiment(entry({ number: '0001', statedEmbodiment: 'Deprecated' }))).toBe('Deprecated');
+      expect(computeEmbodiment(entry({ number: '0001', statedEmbodiment: 'Deprecated', codeRefs: ['b.ts'] }))).toBe('Deprecated');
+    });
   });
 
   describe('computeDrift', () => {
@@ -1722,6 +1839,198 @@ describe('Embodiment audit', () => {
       const summary = buildAuditSummary([entry({ number: '0001', statedEmbodiment: 'Not started' })], '2026-07-28');
       expect(summary.adrs.every((a) => a.drift === null)).toBe(true);
     });
+  });
+});
+
+describe('parseRealizedByLocators', () => {
+  test('splits a comma-separated locator list, trimming whitespace, with no hash', () => {
+    expect(parseRealizedByLocators('packages/contracts/src/facets/CoreFacet.sol, .github/workflows/deploy-testnet.yml')).toEqual([
+      { path: 'packages/contracts/src/facets/CoreFacet.sol', hash: null },
+      { path: '.github/workflows/deploy-testnet.yml', hash: null },
+    ]);
+  });
+
+  test('parses an optional @hash suffix per locator', () => {
+    expect(parseRealizedByLocators('a.sol@a1b2c3, b.yml')).toEqual([
+      { path: 'a.sol', hash: 'a1b2c3' },
+      { path: 'b.yml', hash: null },
+    ]);
+  });
+
+  test('negative space: the empty-field placeholder means no locators, not one literal placeholder locator', () => {
+    expect(parseRealizedByLocators('—')).toEqual([]);
+  });
+
+  test('negative space: null and blank input both mean no locators', () => {
+    expect(parseRealizedByLocators(null)).toEqual([]);
+    expect(parseRealizedByLocators('   ')).toEqual([]);
+  });
+
+  test('drops empty segments from a trailing/doubled comma', () => {
+    expect(parseRealizedByLocators('a.sol, , b.yml')).toEqual([
+      { path: 'a.sol', hash: null },
+      { path: 'b.yml', hash: null },
+    ]);
+  });
+});
+
+describe('formatRealizedByLocators', () => {
+  test('round-trips through parseRealizedByLocators', () => {
+    const raw = 'a.sol@a1b2c3, b.yml';
+    expect(formatRealizedByLocators(parseRealizedByLocators(raw))).toBe(raw);
+  });
+});
+
+describe('checkRealizedByLocator', () => {
+  test('a missing file is never fresh, even with no hash recorded', () => {
+    const result = checkRealizedByLocator({ path: 'gone.ts', hash: null }, null, 0);
+    expect(result).toEqual({ path: 'gone.ts', fresh: false, hashChanged: false });
+  });
+
+  test('no hash recorded means existence alone is enough — pre-hash behavior unchanged', () => {
+    const result = checkRealizedByLocator({ path: 'x.ts', hash: null }, 'anything', 0);
+    expect(result).toEqual({ path: 'x.ts', fresh: true, hashChanged: false });
+  });
+
+  test('matching hash is fresh with no staleness flag', () => {
+    const result = checkRealizedByLocator({ path: 'x.ts', hash: 'abc123' }, 'abc123', 0);
+    expect(result).toEqual({ path: 'x.ts', fresh: true, hashChanged: false });
+  });
+
+  test('hash mismatch within the grace period is still fresh, but flagged as changed', () => {
+    const result = checkRealizedByLocator({ path: 'x.ts', hash: 'abc123' }, 'def456', 10, 28);
+    expect(result).toEqual({ path: 'x.ts', fresh: true, hashChanged: true });
+  });
+
+  test('negative space: hash mismatch past the grace period is no longer fresh', () => {
+    const result = checkRealizedByLocator({ path: 'x.ts', hash: 'abc123' }, 'def456', 29, 28);
+    expect(result).toEqual({ path: 'x.ts', fresh: false, hashChanged: true });
+  });
+
+  test('boundary: exactly at the grace-day limit still counts as fresh', () => {
+    const result = checkRealizedByLocator({ path: 'x.ts', hash: 'abc123' }, 'def456', 28, 28);
+    expect(result.fresh).toBe(true);
+  });
+});
+
+describe('resolveRealizedByRefs', () => {
+  test('returns every locator when all exist (AND semantics satisfied)', () => {
+    const getHash = (l: string) => (l === 'a.sol' || l === 'b.yml' ? 'h' : null);
+    const result = resolveRealizedByRefs(
+      [
+        { path: 'a.sol', hash: null },
+        { path: 'b.yml', hash: null },
+      ],
+      getHash,
+      0
+    );
+    expect(result.refs).toEqual(['a.sol', 'b.yml']);
+    expect(result.staleWarnings).toEqual([]);
+  });
+
+  test('negative space: if even one required locator is missing, none count as evidence', () => {
+    const getHash = (l: string) => (l === 'present.sol' ? 'h' : null); // 'missing.sol' is not
+    const result = resolveRealizedByRefs(
+      [
+        { path: 'present.sol', hash: null },
+        { path: 'missing.sol', hash: null },
+      ],
+      getHash,
+      0
+    );
+    expect(result.refs).toEqual([]);
+  });
+
+  test('negative space: an empty locator list resolves to no refs without calling the checker', () => {
+    let called = false;
+    const result = resolveRealizedByRefs([], () => ((called = true), 'h'), 0);
+    expect(result.refs).toEqual([]);
+    expect(called).toBe(false);
+  });
+
+  test('a hash mismatch still in grace counts as evidence but surfaces a stale warning', () => {
+    const getHash = () => 'changed-hash';
+    const result = resolveRealizedByRefs([{ path: 'x.ts', hash: 'original-hash' }], getHash, 5, 28);
+    expect(result.refs).toEqual(['x.ts']);
+    expect(result.staleWarnings).toEqual(['x.ts']);
+  });
+
+  test('negative space: a hash mismatch past grace drops out of evidence entirely, no warning needed', () => {
+    const getHash = () => 'changed-hash';
+    const result = resolveRealizedByRefs([{ path: 'x.ts', hash: 'original-hash' }], getHash, 40, 28);
+    expect(result.refs).toEqual([]);
+    expect(result.staleWarnings).toEqual([]);
+  });
+});
+
+describe('stripIgnoredLines', () => {
+  test('blanks a line carrying the marker, leaves other lines untouched', () => {
+    const content = 'keep this\nremove this // adr-scan:ignore-line\nkeep this too';
+    expect(stripIgnoredLines(content)).toBe('keep this\n\nkeep this too');
+  });
+
+  test('negative space: content with no marker is returned unchanged', () => {
+    const content = 'line one\nline two';
+    expect(stripIgnoredLines(content)).toBe(content);
+  });
+
+  test('blanks every marked line when there is more than one', () => {
+    const content = 'a // adr-scan:ignore-line\nb\nc // adr-scan:ignore-line';
+    expect(stripIgnoredLines(content)).toBe('\nb\n');
+  });
+});
+
+describe('globToRegExp / matchesAnyGlob', () => {
+  test('"**" matches any chars including "/"', () => {
+    expect(matchesAnyGlob('packages/contracts/src/facets/CoreFacet.sol', ['packages/contracts/**'])).toBe(true);
+  });
+
+  test('negative space: "**" prefix requires the literal prefix segment to match', () => {
+    expect(matchesAnyGlob('packages/shared/src/index.ts', ['packages/contracts/**'])).toBe(false);
+  });
+
+  test('"*" matches any chars except "/", for an extension pattern', () => {
+    expect(matchesAnyGlob('.github/workflows/deploy-testnet.yml', ['**/*.yml'])).toBe(true);
+    expect(matchesAnyGlob('.github/workflows/deploy-testnet.yaml', ['**/*.yml'])).toBe(false);
+  });
+
+  test('matches against any glob in the list, not just the first', () => {
+    expect(matchesAnyGlob('a.yaml', ['**/*.yml', '**/*.yaml'])).toBe(true);
+  });
+
+  test('negative space: an empty glob list never matches', () => {
+    expect(matchesAnyGlob('anything.ts', [])).toBe(false);
+  });
+
+  test('regex special characters in a literal segment are escaped, not interpreted', () => {
+    // A literal '.' must only match '.', not "any character" — 'packages/contracts/foo.sol'
+    // should not falsely match a pattern meant only for a literal dot.
+    expect(globToRegExp('a.b').test('aXb')).toBe(false);
+    expect(globToRegExp('a.b').test('a.b')).toBe(true);
+  });
+});
+
+describe('findCommentAdrRefs', () => {
+  // These fixtures contain literal "Implements: ADR-NNNN" text, and this repo's own
+  // adr-audit.ts whole-repo-scans packages/adr/lib.test.ts too (it's real source under
+  // CODE_ROOTS) — so each fixture line carries the ADR_SCAN_IGNORE_MARKER trailing comment,
+  // the tool's own out-of-band "don't count this line as real evidence" signal (see
+  // stripIgnoredLines in lib.ts), rather than obfuscating the string itself.
+  test('extracts ADR numbers from Implements: and Verifies: comments', () => {
+    expect(findCommentAdrRefs('// Implements: ADR-0002\n// Verifies: ADR-0011')).toEqual(['0002', '0011']); // adr-scan:ignore-line
+  });
+
+  test('dedupes when the same ADR is referenced more than once', () => {
+    expect(findCommentAdrRefs('// Implements: ADR-0002\n// Implements: ADR-0002')).toEqual(['0002']); // adr-scan:ignore-line
+  });
+
+  test('negative space: content with no back-pointer comment returns an empty list', () => {
+    expect(findCommentAdrRefs('// just a normal comment')).toEqual([]);
+  });
+
+  test('a line marked adr-scan:ignore-line is excluded from evidence entirely', () => {
+    const content = '// Implements: ADR-0002 // adr-scan:ignore-line\n// Implements: ADR-0011';
+    expect(findCommentAdrRefs(stripIgnoredLines(content))).toEqual(['0011']);
   });
 });
 

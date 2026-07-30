@@ -18,6 +18,7 @@ function makeTask(overrides: Partial<CanViewTask> = {}): CanViewTask {
   };
 }
 
+// Verifies: ADR-0030
 describe('canView', () => {
   describe('public / unlisted tasks', () => {
     it('public task is viewable by anyone, including an unauthenticated caller', () => {

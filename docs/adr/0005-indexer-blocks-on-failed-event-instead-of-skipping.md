@@ -12,7 +12,7 @@
 - **Status:** Accepted
 - **Date:** 2026-07-16
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-29
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau

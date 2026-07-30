@@ -11,6 +11,11 @@ export type RecordTaskSettlementInput = {
   settlement: ProjectedSettlement;
 };
 
+// Implements: ADR-0006 (task_awards is the sole post-completion source of truth)
+// The one write path for a completed task's award(s) -- called from both the indexer's
+// TaskCompleted handling and, synchronously, from evaluations.router.ts's
+// resolveDispute/finalizeVerdict approve path, closing the eventual-consistency window
+// where a task could flip to status='completed' before any task_awards row existed.
 /**
  * Persist one on-chain settlement and apply its accounting side effects once.
  * Event markers are claimed in the same transaction before any increments so

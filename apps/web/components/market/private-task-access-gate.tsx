@@ -37,6 +37,7 @@ import {
  * attach a grant header scoped to just this one taskId if another query ever batched
  * alongside it. A single unbatched request keeps this gate's headers unambiguous.
  */
+// Implements: ADR-0031 (client-side gate, not persisted SSR wallet session)
 export function PrivateTaskAccessGate({
   taskId,
   backHref,

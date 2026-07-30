@@ -131,6 +131,7 @@ function taskPhaseCondition(phase: TaskPhaseType, now: Date) {
   }
 }
 
+// Implements: ADR-0027 (suggest worker only when unambiguous)
 /**
  * computePendingActions embeds the sole distinct active submitter's address
  * (only ever passed in when unambiguous -- see ADR-0027) in suggested command
@@ -1345,6 +1346,10 @@ export const tasksRouter = router({
       return { txHash };
     }),
 
+  // Implements: ADR-0026 (refundExpired is permissionless)
+  // No `payer !== task.requester` guard below -- any X402-paying caller may
+  // trigger a refund on any eligible expired task, matching CoreFacet's own
+  // permissionless on-chain semantics.
   refundExpired: publicProcedure
     .meta({
       openapi: {

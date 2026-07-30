@@ -121,6 +121,9 @@ export const tasks = pgTable(
   })
 );
 
+// Implements: ADR-0004 (task_awards is a separate event-backed ledger table)
+// One row per award, replay-safe via the (chainId, blockNumber, logIndex) unique index
+// below -- see settlement-recorder.ts's onConflictDoNothing() insert.
 export const taskAwards = pgTable(
   'task_awards',
   {

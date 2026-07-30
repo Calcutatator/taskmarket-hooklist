@@ -19,11 +19,12 @@
 - **Status:** Accepted
 - **Date:** 2026-07-23
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-30 (Realized-by hash refresh attested by Claude (removed forbidden ADR comments from packages/contracts))
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
+- **Realized by:** packages/contracts/script/SwapRewardHook.s.sol@3839352645872c539226369b701c031e061b2bc4
 
 ## Context
 
@@ -142,9 +143,10 @@ to compensate after the fact.
   have changed the scope of shipping this particular fix (which inherently requires
   `TaskTokenRewardHook`'s own bytecode to change too), so it's left out of this ADR and not
   designed here.
-- The actual upgrade script (deploying the new `EpochBudget`/hook pair and calling
-  `RewardVault.setHook()` + `AdminFacet.setDefaultHooks()`) is not yet written; this ADR
-  settles the strategy, not the implementation.
+- The upgrade script (`packages/contracts/script/SwapRewardHook.s.sol` — deploys the new
+  `EpochBudget`/hook pair and calls `RewardVault.setHook()` + `AdminFacet.setDefaultHooks()`) is
+  implemented; see the `SKIP_RESERVATION_CHECK` discussion below for its one deliberate deviation
+  from this ADR's guarantees.
 - `SwapRewardHook.s.sol` (the script implementing this decision) additionally exposes a
   `SKIP_RESERVATION_CHECK` env var / `make swap-reward-hook <net> force` escape hatch that
   bypasses the `totalReserved() == 0` guard entirely, on both testnet and mainnet. This is a

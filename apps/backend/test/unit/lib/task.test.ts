@@ -65,6 +65,7 @@ describe('computeSubmissionWindowOpen', () => {
   });
 });
 
+// Verifies: ADR-0024
 describe('computeTaskPhase', () => {
   it.each([
     ['open', FUTURE],

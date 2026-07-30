@@ -88,6 +88,7 @@ const IN_REVIEW_STATUSES = new Set(['review', 'appealing', 'disputed']);
 const SUBMISSION_WINDOW_STATUSES = new Set(['open', 'claimed', 'worker_selected']);
 const RESOLVED_STATUSES = new Set(['completed', 'cancelled', 'expired']);
 
+// Implements: ADR-0024 (derived phase field for awaiting-closeout state)
 // Derived lifecycle bucket over `status` -- see ADR-0024. `status` stays a literal
 // mirror of on-chain/indexer state; `phase` names the coarser bucket a client actually
 // wants without having to separately cross-check expiryTime and re-derive this itself.

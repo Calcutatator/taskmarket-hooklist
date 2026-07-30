@@ -1,3 +1,4 @@
+// Verifies: ADR-0010 (content-digest-invalidated legal acceptance)
 import { createHash } from 'crypto';
 import { CURRENT_LEGAL_BUNDLE } from '@taskmarket/shared';
 import { beforeEach, describe, expect, it, vi } from 'vitest';

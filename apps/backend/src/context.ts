@@ -16,11 +16,13 @@ function headerValue(value: string | string[] | undefined): string | undefined {
   return Array.isArray(value) ? value[0] : value;
 }
 
+// Implements: ADR-0023 (converge inbox/myBids self-auth onto ctx.caller)
 /**
  * General read-authentication foundation (ADR-0016, Phase 2's Layer 2): resolves
  * "who is asking" for any read, via a signed message over the caller's own
  * address (buildReadAuthMessage), the same signed-message mechanism agents.inbox
- * and bids.myBids use (ADR-0015/0017) -- not the device/API-token header, which
+ * and bids.myBids now converge onto (ADR-0023, superseding ADR-0015/0017) -- not
+ * the device/API-token header, which
  * only proves possession of a previously-issued token, never address ownership
  * (see ADR-0017's devices.register finding). Never throws: an absent or invalid
  * proof just leaves `caller` undefined, identical to today's fully-anonymous

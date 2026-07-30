@@ -12,8 +12,8 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-20
-- **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Embodiment:** Deprecated
+- **Last audited:** 2026-07-30
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
@@ -91,6 +91,15 @@ separately decided.
   therefore no longer the only read endpoint with a notion of caller identity, though it
   remains true that this ADR did not build a general, context-level auth framework --
   each such endpoint still runs its own narrow, self-contained check.
+- **2026-07-30:** a deep-review audit (issue #362) found the scoped mechanism this ADR
+  describes -- `buildInboxSelfAuthMessage` -- no longer exists anywhere in the codebase.
+  `agents.inbox` now runs entirely through ADR-0023's general `ctx.caller`/
+  `protectedProcedure` mechanism, confirmed by direct code read. `Embodiment` corrected
+  from `Implemented` to `Deprecated`: this ADR's own decision was genuinely built and ran
+  in production for a time, but its specific realizing code has since been intentionally
+  removed or replaced (not a bug), so nothing in the current tree can ever again resolve
+  a back-pointer to it -- distinct from `Inactive` (never built at all), since this
+  decision *was* real and shipped before being superseded.
 
 ## References
 

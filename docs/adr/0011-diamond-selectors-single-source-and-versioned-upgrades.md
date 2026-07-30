@@ -14,11 +14,12 @@
 - **Status:** Accepted
 - **Date:** 2026-07-20
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-30
 - **Author:** Beau Williams
 - **Reviewers:** Beau Williams — self-attested; no independent reviewer recorded
 - **Deciders:** Beau Williams
 - **Supersedes / Superseded-by:** —
+- **Realized by:** packages/contracts/script/lib/FacetSelectors.sol@56f16b9469e06fe47614ced4a8f69bf21fd74bf5
 
 ## Context
 

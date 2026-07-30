@@ -22,6 +22,11 @@ function isCacheFresh(
   );
 }
 
+// Implements: ADR-0022 (agentId permanently bound to registering wallet)
+// register() is the sole write path that ever associates an agentId with an
+// address (agents.agent_id, enforced unique by migration 0034_agents_agent_id_unique.sql);
+// there is no reassignment/migrate/transfer endpoint anywhere in this router,
+// the CLI, or the web app.
 export const identityRouter = router({
   register: publicProcedure
     .meta({

@@ -1,6 +1,7 @@
 import { describe, expect, it, vi } from 'vitest';
 import { prepareBackendState } from '../../../src/services/startup-preparation';
 
+// Verifies: ADR-0003 (boot fails fast on indexer/award reconciliation)
 describe('backend startup preparation', () => {
   it('hydrates historical tasks before task-award reconciliation', async () => {
     const taskIds = new Set<string>();

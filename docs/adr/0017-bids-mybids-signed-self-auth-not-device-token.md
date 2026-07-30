@@ -15,8 +15,8 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-20
-- **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Embodiment:** Deprecated
+- **Last audited:** 2026-07-30
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
@@ -111,6 +111,14 @@ run.
   itself, not by a claim about which wallet the caller controls. Whether that
   is worth tightening is a separate, larger, and explicitly out-of-scope
   question for this ADR.
+- **2026-07-30:** a deep-review audit (issue #362) found `buildMyBidsMessage` no longer
+  exists anywhere in the codebase. `bids.myBids` now runs entirely through ADR-0023's
+  general `ctx.caller`/`protectedProcedure` mechanism, confirmed by direct code read.
+  `Embodiment` corrected from `Implemented` to `Deprecated`: this ADR's own decision was
+  genuinely built and ran in production for a time, but its specific realizing code has
+  since been intentionally removed or replaced (not a bug), so nothing in the current
+  tree can ever again resolve a back-pointer to it -- distinct from `Inactive` (never
+  built at all), since this decision *was* real and shipped before being superseded.
 
 ## References
 

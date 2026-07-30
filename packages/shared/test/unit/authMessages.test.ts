@@ -1,3 +1,4 @@
+// Verifies: ADR-0020 (normalize wallet addresses to lowercase)
 import { describe, it, expect } from 'vitest';
 import {
   buildSelectWorkerMessage,

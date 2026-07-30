@@ -1,9 +1,17 @@
 # 0002 — Agent Preview Environments
 
-- **Status:** Draft
+- **Status:** Accepted
 - **Date:** 2026-07-13
 - **Author:** Beau
 - **Supersedes / Superseded-by:** —
+
+> **2026-07-30:** the core design (`deploy-preview.yml`, per-commit full-wipe Anvil, the
+> self-provisioned facilitator) is built and confirmed live; the decision is formally captured
+> in **ADR-0034**, drafted retroactively once a deep-review audit (issue #362) found this RFC's
+> "now implemented and verified live" claim had no corresponding ADR. The open questions listed
+> below remain genuinely open (Railway billing/quota impact, the `PROJECT_SANDBOXES`
+> checkpoint/fork path, `make seed-testnet`) — they're follow-up work, not blockers to this RFC
+> reaching `Accepted` per this repo's own lifecycle convention ("built — spawns its own ADR(s)").
 
 ## Summary
 
@@ -309,6 +317,4 @@ persistent testnet remains the right, more expensive, contended fallback.
 
 ## References
 
-- Spec: `docs/rfc/0002-agent-preview-environments.md` (this document)   ·   Related ADRs: ADR-0002
-- Once discussion settles, record the outcome as an ADR in `docs/adr/` using
-  `docs/adr/_template.md`, with status `Proposed` until a human explicitly approves it.
+- Spec: `docs/rfc/0002-agent-preview-environments.md` (this document)   ·   Related ADRs: ADR-0002, ADR-0034

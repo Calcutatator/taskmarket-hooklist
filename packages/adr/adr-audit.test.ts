@@ -55,17 +55,34 @@ describe('parseAdrHeaderFields', () => {
     expect(parseAdrHeaderFields(sampleHeader)).toEqual({
       status: 'Accepted',
       statedEmbodiment: 'Inactive',
+      realizedByLocators: [],
+      lastAudited: '2026-07-29',
     });
   });
 
-  test('falls back to "unknown" for each field independently when absent', () => {
+  test('falls back to "unknown"/null for each field independently when absent', () => {
     expect(parseAdrHeaderFields('# no header fields here')).toEqual({
       status: 'unknown',
       statedEmbodiment: 'unknown',
+      realizedByLocators: [],
+      lastAudited: null,
     });
     expect(parseAdrHeaderFields('- **Status:** Proposed\n\n## Context')).toEqual({
       status: 'Proposed',
       statedEmbodiment: 'unknown',
+      realizedByLocators: [],
+      lastAudited: null,
     });
+  });
+
+  test('extracts Realized-by locators when present, with an optional @hash', () => {
+    const header = sampleHeader.replace(
+      '- **Supersedes / Superseded-by:** —',
+      '- **Supersedes / Superseded-by:** —\n- **Realized by:** docs/rfc/README.md@a1b2c3, .github/workflows/deploy-testnet.yml'
+    );
+    expect(parseAdrHeaderFields(header).realizedByLocators).toEqual([
+      { path: 'docs/rfc/README.md', hash: 'a1b2c3' },
+      { path: '.github/workflows/deploy-testnet.yml', hash: null },
+    ]);
   });
 });

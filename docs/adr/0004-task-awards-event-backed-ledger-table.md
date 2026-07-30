@@ -13,7 +13,7 @@
 - **Status:** Superseded
 - **Date:** 2026-07-16
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-29
 - **Author:** Loaf
 - **Reviewers:** Loaf — self-attested; no independent reviewer recorded
 - **Deciders:** Loaf — self-attested; no independent decider recorded (this ADR

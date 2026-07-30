@@ -115,6 +115,19 @@ export const PENDING_SUPERSEDES_RE = fieldRegex('Pending Supersedes \\/ Supersed
 // claim in one field is never satisfied by an entry in the other.
 export const AMENDS_RE = fieldRegex('Amends \\/ Amended-by');
 export const PENDING_AMENDS_RE = fieldRegex('Pending Amends \\/ Amended-by');
+// Optional record-side realization pointer: "**Realized by:** <path>@<hash>[, ...]".
+// adr-audit.ts checks that the path exists AND (when a hash is given) that the file's
+// current content hash still matches the snapshot taken when the field was last set —
+// rather than requiring a code-side back-pointer comment or requiring the path fall under
+// one of CODE_ROOTS — for a decision whose realization is something adr-audit.ts doesn't
+// otherwise scan (a GitHub Actions YAML workflow, or a Solidity contract in the public
+// contracts mirror where this repo's own convention forbids this exact comment style in
+// favor of revNNN versioning — see the real ADR-0002/0011/0025/0028 cases this closes). The
+// hash exists to catch what a plain existence check can't: another developer or agent edits
+// the realizing file without touching the ADR at all — the path still exists, but what it
+// says may no longer match the decision. See REALIZED_BY_STALE_GRACE_DAYS.
+export const REALIZED_BY_RE = fieldRegex('Realized by');
+export const LAST_AUDITED_RE = fieldRegex('Last audited');
 
 // A not-yet-Accepted ADR's supersession claim isn't binding yet, so its
 // reciprocity is checked against the peer's Pending field instead (warn,
@@ -516,19 +529,158 @@ export function checkNumberingGaps(seenNumbers: Set<string>): Issue[] {
   return issues;
 }
 
-// readmeContent is null when docs/adr/README.md doesn't exist at all (e.g. a synthetic fixture
-// dir in a test) — that's not itself an error this check reports; it just has nothing to check.
-export function checkReadmeIndex(adrFiles: string[], readmeContent: string | null): Issue[] {
-  if (readmeContent === null) return [];
+// Implements: ADR-0033
+// ---------------------------------------------------------------------------
+// Structured document index tracking (docs/adr/index.yaml, docs/rfc/index.yaml, and any future
+// numbered-doc directory with the same shape) — see ADR-0033. A README's own hand-maintained
+// index table/list is a second copy of number/title/status/date that already lives
+// structurally in each document's own header — the exact class of drift a code-review tool
+// caught for real in this repo's ADR index (stale statuses weeks after the ADRs themselves
+// changed, missed because the old presence-only check never verified the details next to a
+// number were still accurate). Generalized here rather than duplicated per doc kind: one set of
+// pure functions, parameterized by where the generated files live and what marker/YAML-header
+// text each doc kind uses; a generated index.yaml is the real source of truth, the README's
+// rendered view is spliced between marker comments so it can never independently drift.
+
+export interface DocIndexEntry {
+  number: string;
+  file: string;
+  title: string;
+  status: string;
+  date: string;
+}
+
+const DOC_TITLE_RE = /^#\s*\d{4}\s*—\s*(.+?)\s*$/m;
+const DOC_DATE_VALUE_RE = /\*\*Date:\*\*\s+(\d{4}-\d{2}-\d{2})/;
+
+export function parseDocIndexEntry(file: string, content: string): DocIndexEntry {
+  const number = file.slice(0, 4);
+  const title = DOC_TITLE_RE.exec(content)?.[1] ?? 'unknown';
+  const status = STATUS_RE.exec(content)?.[1] ?? 'unknown';
+  const date = DOC_DATE_VALUE_RE.exec(content)?.[1] ?? 'unknown';
+  return { number, file, title, status, date };
+}
+
+function yamlScalar(s: string): string {
+  if (s === '' || /^\s|\s$/.test(s) || /[:#\-[\]{}&*!|>'"%@`,]/.test(s)) {
+    return `"${s.replace(/\\/g, '\\\\').replace(/"/g, '\\"')}"`;
+  }
+  return s;
+}
+
+export interface DocIndexYamlOptions {
+  // Lines placed after the yaml-language-server pragma, before the root key -- doc-kind-specific
+  // provenance text (which script generates it, which ADR governs it, where the rendered view lives).
+  headerComment: string[];
+  // YAML root key, e.g. "adrs" or "rfcs".
+  rootKey: string;
+}
+
+// Deliberately hand-rolled, not a general YAML library: the shape is a fixed flat list of flat
+// objects, small enough that a real emitter would be more surface area than the format itself.
+// Parsing arbitrary YAML back in would be a different story -- this file only ever writes it.
+export function renderDocIndexYaml(entries: DocIndexEntry[], opts: DocIndexYamlOptions): string {
+  const sorted = [...entries].sort((a, b) => a.number.localeCompare(b.number));
+  const lines = ['# yaml-language-server: $schema=./index.schema.json', ...opts.headerComment, `${opts.rootKey}:`];
+  for (const e of sorted) {
+    lines.push(`  - number: "${e.number}"`);
+    lines.push(`    file: ${yamlScalar(e.file)}`);
+    lines.push(`    title: ${yamlScalar(e.title)}`);
+    lines.push(`    status: ${yamlScalar(e.status)}`);
+    lines.push(`    date: ${yamlScalar(e.date)}`);
+  }
+  return lines.join('\n') + '\n';
+}
+
+// Matches this repo's existing "- [NNNN — Title](file.md)" bullet-list index style -- the one
+// rendered view both ADRs and RFCs use here (the sibling repo instead renders a markdown table;
+// same underlying data, different rendering convention per repo, not per doc kind).
+export function renderDocIndexList(entries: DocIndexEntry[]): string {
+  const sorted = [...entries].sort((a, b) => a.number.localeCompare(b.number));
+  return sorted.map((e) => `- [${e.number} — ${e.title}](${e.file})`).join('\n');
+}
+
+// Group 2 deliberately does not require a specific newline count around it (checked only via
+// .trim() below, and reconstructed with an explicit newline on each side by the caller) --
+// when the content between markers is genuinely empty (a freshly-added stub with nothing
+// generated into it yet), there's exactly one newline separating START and END, not two.
+export function buildIndexMarkerRe(label: string): RegExp {
+  return new RegExp(`(<!-- ${label}:START.*?-->)([\\s\\S]*?)(<!-- ${label}:END -->)`);
+}
+
+export const ADR_INDEX_MARKER_RE = buildIndexMarkerRe('ADR-INDEX');
+export const RFC_INDEX_MARKER_RE = buildIndexMarkerRe('RFC-INDEX');
+
+export interface DocIndexFreshnessOptions {
+  yamlFilePath: string; // e.g. "docs/adr/index.yaml" -- used only in Issue.file/messages
+  readmeFilePath: string; // e.g. "docs/adr/README.md"
+  markerRe: RegExp;
+  markerLabel: string; // e.g. "ADR-INDEX" -- used only in messages
+  yamlOptions: DocIndexYamlOptions;
+}
+
+// Blocking: <kind>/index.yaml and README's generated list block must both match what the
+// current document corpus actually says. Either argument being null means the artifact is
+// entirely missing (a real error, not "nothing to check" -- staleness is exactly the failure
+// mode this exists to catch).
+export function checkDocIndexFreshness(
+  entries: DocIndexEntry[],
+  currentIndexYaml: string | null,
+  currentReadme: string | null,
+  opts: DocIndexFreshnessOptions
+): Issue[] {
   const issues: Issue[] = [];
-  for (const file of adrFiles) {
-    const num = file.slice(0, 4);
-    if (!readmeContent.includes(num)) {
-      issues.push({ type: 'WARN', file, message: `ADR ${num} is not listed in docs/adr/README.md` });
-    }
+  const expectedYaml = renderDocIndexYaml(entries, opts.yamlOptions);
+  if (currentIndexYaml === null) {
+    issues.push({ type: 'ERROR', file: opts.yamlFilePath, message: 'missing -- run the audit tool to generate it' });
+  } else if (currentIndexYaml !== expectedYaml) {
+    issues.push({
+      type: 'ERROR',
+      file: opts.yamlFilePath,
+      message: 'stale -- does not match current titles/statuses/dates; re-run the audit tool to regenerate it',
+    });
+  }
+
+  if (currentReadme === null) {
+    issues.push({ type: 'ERROR', file: opts.readmeFilePath, message: 'missing -- the generated index table has nowhere to live' });
+    return issues;
+  }
+  const m = opts.markerRe.exec(currentReadme);
+  if (!m) {
+    issues.push({
+      type: 'ERROR',
+      file: opts.readmeFilePath,
+      message: `missing ${opts.markerLabel} markers -- the generated index list block was removed or renamed`,
+    });
+    return issues;
+  }
+  const expectedList = renderDocIndexList(entries);
+  if (m[2].trim() !== expectedList.trim()) {
+    issues.push({
+      type: 'ERROR',
+      file: opts.readmeFilePath,
+      message: `index list between ${opts.markerLabel} markers is stale -- re-run the audit tool to regenerate it`,
+    });
   }
   return issues;
 }
+
+export const ADR_INDEX_YAML_OPTIONS: DocIndexYamlOptions = {
+  headerComment: [
+    '# Auto-generated by packages/adr/adr-audit.ts -- do not hand-edit.',
+    '# Structured source of truth for the ADR index (see ADR-0033). docs/adr/README.md\'s own',
+    '# "## Index" list is rendered FROM this file, not maintained independently.',
+  ],
+  rootKey: 'adrs',
+};
+
+export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
+  yamlFilePath: 'docs/adr/index.yaml',
+  readmeFilePath: 'docs/adr/README.md',
+  markerRe: ADR_INDEX_MARKER_RE,
+  markerLabel: 'ADR-INDEX',
+  yamlOptions: ADR_INDEX_YAML_OPTIONS,
+};
 
 export function checkCoverage(changedFiles: string[]): Issue[] {
   if (changedFiles.length === 0) return [];
@@ -582,6 +734,16 @@ export function resolveGitTrackedOrStagedFiles(dir: string, cwd: string): Set<st
   }
 }
 
+// A doc-dir member file (docs/adr/*.md, docs/rfc/*.md): any markdown file except the
+// directory's own README and underscore-prefixed files (_template.md, etc.). The single
+// source of truth for this filter -- lintAdrDir, lintRfcDir, and anything that needs to
+// reconstruct the same file set (e.g. a test fixture generating a matching index.yaml) all
+// call this instead of each restating the three conditions independently, which is exactly
+// how a hand-maintained index goes stale: the same fact, stated more than once, drifts.
+export function isDocDirMemberFile(name: string): boolean {
+  return name.endsWith('.md') && name !== 'README.md' && !name.startsWith('_');
+}
+
 // Filters a list of bare filenames (as returned by readdirSync(parentDir))
 // down to those git tracks or has staged, when `trackedFiles` is non-null.
 // When `trackedFiles` is null (git unavailable), returns the list unchanged
@@ -610,7 +772,7 @@ export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot
   try {
     const trackedFiles = resolveGitTrackedOrStagedFiles(adrDir, repoRoot);
     adrFiles = filterToTracked(
-      readdirSync(adrDir).filter((f) => f.endsWith('.md') && f !== 'README.md' && !f.startsWith('_')),
+      readdirSync(adrDir).filter(isDocDirMemberFile),
       adrDir,
       trackedFiles
     ).sort();
@@ -706,11 +868,73 @@ export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot
 
   const readmePath = join(adrDir, 'README.md');
   const readmeContent = existsSync(readmePath) ? readFileSync(readmePath, 'utf8') : null;
-  issues.push(...checkReadmeIndex(adrFiles, readmeContent));
+  const indexYamlPath = join(adrDir, 'index.yaml');
+  const indexYamlContent = existsSync(indexYamlPath) ? readFileSync(indexYamlPath, 'utf8') : null;
+  const indexEntries = adrFiles.map((file) => parseDocIndexEntry(file, contentsByFile.get(file)!));
+  issues.push(...checkDocIndexFreshness(indexEntries, indexYamlContent, readmeContent, ADR_INDEX_FRESHNESS_OPTIONS));
 
   issues.push(...checkCoverage(changedFiles));
 
   return { issues, adrFiles };
+}
+
+export const RFC_INDEX_YAML_OPTIONS: DocIndexYamlOptions = {
+  headerComment: [
+    '# Auto-generated by packages/adr/adr-audit.ts -- do not hand-edit.',
+    '# Structured source of truth for the RFC index. docs/rfc/README.md\'s own',
+    '# "## Index" list is rendered FROM this file, not maintained independently.',
+  ],
+  rootKey: 'rfcs',
+};
+
+export const RFC_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
+  yamlFilePath: 'docs/rfc/index.yaml',
+  readmeFilePath: 'docs/rfc/README.md',
+  markerRe: RFC_INDEX_MARKER_RE,
+  markerLabel: 'RFC-INDEX',
+  yamlOptions: RFC_INDEX_YAML_OPTIONS,
+};
+
+export interface RfcLintResult {
+  issues: Issue[];
+  rfcFiles: string[];
+}
+
+// RFCs are deliberately NOT structurally linted the way ADRs are (docs/rfc/README.md: "RFCs are
+// proposals, not commitments, and the current volume doesn't justify the tooling") -- this
+// checks only index freshness, the same narrow, low-noise mechanical property the ADR check
+// enforces, not Y-statement structure, considered-options, or any of the checks lintAdrDir also
+// runs. A hand-maintained index can go stale regardless of how loosely the documents themselves
+// are governed; that's a property of having two copies of the same facts, not of RFC rigor.
+export function lintRfcDir(rfcDir: string, repoRoot: string = rfcDir): RfcLintResult {
+  let rfcFiles: string[];
+  try {
+    const trackedFiles = resolveGitTrackedOrStagedFiles(rfcDir, repoRoot);
+    rfcFiles = filterToTracked(
+      readdirSync(rfcDir).filter(isDocDirMemberFile),
+      rfcDir,
+      trackedFiles
+    ).sort();
+  } catch {
+    return {
+      issues: [{ type: 'ERROR', file: '(rfc-dir)', message: `docs/rfc directory not found at ${rfcDir}` }],
+      rfcFiles: [],
+    };
+  }
+
+  const contentsByFile = new Map<string, string>();
+  for (const file of rfcFiles) {
+    contentsByFile.set(file, readFileSync(join(rfcDir, file), 'utf8'));
+  }
+
+  const readmePath = join(rfcDir, 'README.md');
+  const readmeContent = existsSync(readmePath) ? readFileSync(readmePath, 'utf8') : null;
+  const indexYamlPath = join(rfcDir, 'index.yaml');
+  const indexYamlContent = existsSync(indexYamlPath) ? readFileSync(indexYamlPath, 'utf8') : null;
+  const indexEntries = rfcFiles.map((file) => parseDocIndexEntry(file, contentsByFile.get(file)!));
+  const issues = checkDocIndexFreshness(indexEntries, indexYamlContent, readmeContent, RFC_INDEX_FRESHNESS_OPTIONS);
+
+  return { issues, rfcFiles };
 }
 
 // ── Embodiment (realization) audit ──────────────────────────────────────────
@@ -721,7 +945,7 @@ export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot
 // computes state from already-extracted text/back-pointer counts, so it's directly
 // unit-testable without touching disk.
 
-export type EmbodimentState = 'Not started' | 'Specified' | 'Implemented' | 'Verified' | 'Inactive';
+export type EmbodimentState = 'Not started' | 'Specified' | 'Implemented' | 'Verified' | 'Inactive' | 'Deprecated';
 
 // Matches a spec file header's back-pointer to one or more ADRs, e.g.
 // "**Implements ADRs:** ADR-0042, ADR-0043" — table-row or blockquote/plain forms
@@ -731,6 +955,29 @@ export const SPEC_IMPLEMENTS_ADRS_RE = /\*\*Implements ADRs:?\*\*:?\s*[:|]?\s*([
 // Matches a code/test file's back-pointer comment, e.g. "// Implements: ADR-0042".
 export const CODE_IMPLEMENTS_RE = /\bImplements:\s*ADR-(\d{4})/g;
 export const CODE_VERIFIES_RE = /\bVerifies:\s*ADR-(\d{4})/g;
+
+// A pure grep/regex scan can't tell "real evidence" apart from "a string that merely looks
+// like evidence" (a docstring example, a test fixture for the regex itself, sample text in a
+// README). This repo's own tooling hits that exact case: packages/adr's test fixtures for
+// CODE_IMPLEMENTS_RE/CODE_VERIFIES_RE necessarily contain literal "Implements: ADR-NNNN"
+// text, and adr-audit.ts's whole-repo scan would otherwise count them as real. The fix is an
+// explicit out-of-band signal, not a scan-root exclusion (which would just as wrongly hide
+// genuine back-pointers elsewhere in the same file) or string-obfuscating the fixture (fragile,
+// and doesn't generalize past this one case): a trailing marker comment on the source line
+// itself, checked by stripIgnoredLines() before any back-pointer regex ever sees the content.
+export const ADR_SCAN_IGNORE_MARKER = 'adr-scan:ignore-line';
+
+// Blanks any line containing ADR_SCAN_IGNORE_MARKER before back-pointer scanning. Applied to
+// real file content read from disk (adr-audit.ts), never to an in-memory string passed
+// directly to a function under test — a test asserting what CODE_IMPLEMENTS_RE/
+// findCommentAdrRefs extracts from a string still gets the real, unblanked string; the marker
+// only tells the *outer* whole-repo scan to skip that physical source line.
+export function stripIgnoredLines(content: string): string {
+  return content
+    .split('\n')
+    .map((line) => (line.includes(ADR_SCAN_IGNORE_MARKER) ? '' : line))
+    .join('\n');
+}
 
 // Matches an ADR header's own stated Embodiment field, e.g. "**Embodiment:** Implemented".
 // Used by adr-audit.ts's discoverAdrs() to read what an ADR claims, before comparing
@@ -749,10 +996,175 @@ export function parseAdrFilenameNumber(name: string): string | null {
 // Pure Status + stated-Embodiment extraction from an ADR file's raw content. Used by
 // adr-audit.ts's discoverAdrs() to build each AdrAuditEntry before the spec/code/test
 // back-pointer scan fills in specRefs/codeRefs/testRefs.
-export function parseAdrHeaderFields(content: string): { status: string; statedEmbodiment: string } {
+export function parseAdrHeaderFields(
+  content: string
+): { status: string; statedEmbodiment: string; realizedByLocators: RealizedByLocator[]; lastAudited: string | null } {
   const status = STATUS_RE.exec(content)?.[1] ?? 'unknown';
   const statedEmbodiment = EMBODIMENT_RE.exec(content)?.[1]?.trim() ?? 'unknown';
-  return { status, statedEmbodiment };
+  const realizedByLocators = parseRealizedByLocators(fieldValue(content, REALIZED_BY_RE));
+  const lastAudited = fieldValue(content, LAST_AUDITED_RE);
+  return { status, statedEmbodiment, realizedByLocators, lastAudited };
+}
+
+export interface RealizedByLocator {
+  path: string;
+  // null = no hash tracking requested for this locator — falls back to existence-only,
+  // matching the field's original (pre-hash) shape so existing "Realized by: <path>" entries
+  // with no "@hash" suffix keep working unchanged.
+  hash: string | null;
+}
+
+/**
+ * Parses a "**Realized by:**" field's raw captured text into individual `{path, hash}`
+ * locators. Comma-separated; each entry is `path` or `path@hash`. "—" (the standard
+ * empty-field placeholder) and blank/whitespace-only input both mean "no locators declared",
+ * not a single empty-string locator.
+ */
+export function parseRealizedByLocators(raw: string | null): RealizedByLocator[] {
+  if (!raw) return [];
+  const trimmed = raw.trim();
+  if (trimmed === '' || trimmed === '—') return [];
+  return trimmed
+    .split(',')
+    .map((s) => s.trim())
+    .filter(Boolean)
+    .map((entry) => {
+      const at = entry.lastIndexOf('@');
+      if (at === -1) return { path: entry, hash: null };
+      return { path: entry.slice(0, at).trim(), hash: entry.slice(at + 1).trim() };
+    });
+}
+
+/** Inverse of parseRealizedByLocators — used by the (optional) hash-refresh CLI step. */
+export function formatRealizedByLocators(locators: RealizedByLocator[]): string {
+  return locators.map((l) => (l.hash ? `${l.path}@${l.hash}` : l.path)).join(', ');
+}
+
+// How many days a hash mismatch is tolerated as still-fresh evidence before the audit stops
+// giving it the benefit of the doubt and counts it as real drift. Overridable via
+// .adrrc.json's realizedByStaleGraceDays.
+export const REALIZED_BY_STALE_GRACE_DAYS = 28;
+
+export interface RealizedByCheckResult {
+  path: string;
+  fresh: boolean; // counts as evidence for this audit run
+  hashChanged: boolean; // informational — true even when still `fresh` (i.e. still in grace)
+}
+
+/**
+ * Checks one locator against its current on-disk hash. Kept fs-free (the caller supplies
+ * `currentHash`) so this stays unit-testable without touching disk — adr-audit.ts supplies
+ * the real git-backed hash in production.
+ *
+ * - Missing file (`currentHash === null`): never fresh, regardless of grace period.
+ * - No hash recorded on the locator: existence alone is enough (pre-hash behavior, unchanged).
+ * - Hash matches: fresh, nothing changed since the snapshot.
+ * - Hash differs: still fresh *within* the grace period (a real code change isn't
+ *   automatically a broken decision — it's a signal to go re-verify, not an instant failure);
+ *   past the grace period, no longer fresh.
+ */
+export function checkRealizedByLocator(
+  locator: RealizedByLocator,
+  currentHash: string | null,
+  daysSinceLastAudited: number,
+  graceDays: number = REALIZED_BY_STALE_GRACE_DAYS
+): RealizedByCheckResult {
+  if (currentHash === null) return { path: locator.path, fresh: false, hashChanged: false };
+  if (locator.hash === null) return { path: locator.path, fresh: true, hashChanged: false };
+  if (currentHash === locator.hash) return { path: locator.path, fresh: true, hashChanged: false };
+  return { path: locator.path, fresh: daysSinceLastAudited <= graceDays, hashChanged: true };
+}
+
+/**
+ * Resolves a full "**Realized by:**" locator list against an injected current-hash lookup.
+ *
+ * AND semantics: every listed locator must be fresh, or none of them count as evidence — a
+ * genuinely multi-part claim can't get credit for a claim about its weakest missing/stale part.
+ */
+export function resolveRealizedByRefs(
+  locators: RealizedByLocator[],
+  getCurrentHash: (path: string) => string | null,
+  daysSinceLastAudited: number,
+  graceDays: number = REALIZED_BY_STALE_GRACE_DAYS
+): { refs: string[]; staleWarnings: string[] } {
+  if (locators.length === 0) return { refs: [], staleWarnings: [] };
+  const results = locators.map((l) => checkRealizedByLocator(l, getCurrentHash(l.path), daysSinceLastAudited, graceDays));
+  const allFresh = results.every((r) => r.fresh);
+  if (!allFresh) return { refs: [], staleWarnings: [] };
+  return { refs: results.map((r) => r.path), staleWarnings: results.filter((r) => r.hashChanged).map((r) => r.path) };
+}
+
+// Minimal glob support: '**/' (zero or more path segments — an *optional* directory prefix,
+// so '**/*.yml' also matches a bare top-level 'a.yml', not just a nested one; this is
+// standard glob/gitignore behavior, not an edge case to skip), a bare '**' (any chars
+// including '/'), '*' (any chars except '/'), and literal segments — enough for the real
+// patterns this repo needs today ('packages/contracts/**', '**/*.yml', '**/*.yaml').
+// Deliberately not a full glob implementation (no brace expansion, negation, or character
+// classes) — pull in a real glob library if a pattern ever needs one of those; hand-rolling
+// that correctly is a real source of subtle bugs not worth taking on ahead of actual demand.
+export function globToRegExp(pattern: string): RegExp {
+  let re = '';
+  let i = 0;
+  while (i < pattern.length) {
+    if (pattern[i] === '*' && pattern[i + 1] === '*' && pattern[i + 2] === '/') {
+      re += '(?:.*/)?';
+      i += 3;
+    } else if (pattern[i] === '*' && pattern[i + 1] === '*') {
+      re += '.*';
+      i += 2;
+    } else if (pattern[i] === '*') {
+      re += '[^/]*';
+      i += 1;
+    } else if (pattern[i] === '?') {
+      // Glob single-char wildcard -- must be handled explicitly, not left to fall through to
+      // the literal-char branch below: '?' is also a regex quantifier (makes the preceding
+      // token optional), so an unhandled '?' would silently compile to the wrong thing instead
+      // of throwing (e.g. "a?.ts" would match "a.ts"/".ts", not "a" + any one char + ".ts").
+      re += '[^/]';
+      i += 1;
+    } else if ('.+^${}()|[]\\'.includes(pattern[i])) {
+      re += '\\' + pattern[i];
+      i += 1;
+    } else {
+      re += pattern[i];
+      i += 1;
+    }
+  }
+  return new RegExp(`^${re}$`);
+}
+
+// Compiled patterns are cached by source string -- matchesAnyGlob is called once per file
+// during a whole-repo scan (scanCode()), so recompiling every glob in a config list on every
+// single call is pure waste once the file count gets large; the glob list itself is static
+// for the lifetime of one CLI invocation.
+const GLOB_REG_EXP_CACHE = new Map<string, RegExp>();
+function cachedGlobToRegExp(pattern: string): RegExp {
+  let re = GLOB_REG_EXP_CACHE.get(pattern);
+  if (!re) {
+    re = globToRegExp(pattern);
+    GLOB_REG_EXP_CACHE.set(pattern, re);
+  }
+  return re;
+}
+
+export function matchesAnyGlob(relPath: string, globs: string[]): boolean {
+  return globs.some((g) => cachedGlobToRegExp(g).test(relPath));
+}
+
+// Extracts every ADR number referenced by an Implements:/Verifies: back-pointer comment in
+// this content — used to detect a comment landing somewhere the repo's convention says it
+// shouldn't (see commentForbiddenPaths in adr-audit.ts's config). Kept independent of
+// scanCode()'s normal evidence-collection loop: a comment inside a forbidden path must never
+// count as real embodiment evidence even though it's still worth flagging as a convention
+// violation — these are two different questions, not the same check reused.
+export function findCommentAdrRefs(content: string): string[] {
+  const nums = new Set<string>();
+  CODE_IMPLEMENTS_RE.lastIndex = 0;
+  let m: RegExpExecArray | null;
+  while ((m = CODE_IMPLEMENTS_RE.exec(content)) !== null) nums.add(m[1]);
+  CODE_VERIFIES_RE.lastIndex = 0;
+  while ((m = CODE_VERIFIES_RE.exec(content)) !== null) nums.add(m[1]);
+  return [...nums];
 }
 
 export interface AdrAuditEntry {
@@ -773,7 +1185,9 @@ export function statedEmbodimentClean(raw: string): string {
 export function computeEmbodiment(
   entry: Pick<AdrAuditEntry, 'statedEmbodiment' | 'specRefs' | 'codeRefs' | 'testRefs'>
 ): EmbodimentState {
-  if (statedEmbodimentClean(entry.statedEmbodiment).includes('Inactive')) return 'Inactive';
+  const cleanStated = statedEmbodimentClean(entry.statedEmbodiment);
+  if (cleanStated.includes('Deprecated')) return 'Deprecated';
+  if (cleanStated.includes('Inactive')) return 'Inactive';
   if (entry.testRefs.length > 0) return 'Verified';
   if (entry.codeRefs.length > 0) return 'Implemented';
   if (entry.specRefs.length > 0) return 'Specified';

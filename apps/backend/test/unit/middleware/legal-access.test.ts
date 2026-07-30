@@ -1,5 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 
+// Verifies: ADR-0009 (legal acceptance opaque receipt, default-deny middleware)
 const { verifyLegalReceipt, verifyPrivyAccessToken } = vi.hoisted(() => ({
   verifyLegalReceipt: vi.fn(),
   verifyPrivyAccessToken: vi.fn(),

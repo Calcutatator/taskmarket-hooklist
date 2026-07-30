@@ -19,6 +19,10 @@ import {
 import { TRPCError } from '@trpc/server';
 import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
 
+// Implements: ADR-0023 (myBids self-auth converged onto ctx.caller)
+// myBids below is now a protectedProcedure deriving the caller's address from
+// ctx.caller.address (the general read-auth header) instead of the bespoke,
+// removed address/signature input scheme (ADR-0017, superseded).
 export const bidsRouter = router({
   submit: publicProcedure
     .meta({

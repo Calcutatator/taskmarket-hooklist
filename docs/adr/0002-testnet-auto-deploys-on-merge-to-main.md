@@ -13,11 +13,12 @@
 - **Status:** Accepted
 - **Date:** 2026-07-15
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-30
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
+- **Realized by:** .github/workflows/deploy-testnet.yml@2ae727d2b53deb3d1e39ff1e20693cb54070bef6
 
 ## Context
 

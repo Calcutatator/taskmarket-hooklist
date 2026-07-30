@@ -17,11 +17,12 @@
 - **Status:** Accepted
 - **Date:** 2026-07-21
 - **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Last audited:** 2026-07-30 (Realized-by hash refresh attested by Claude (removed forbidden ADR comments from packages/contracts))
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
+- **Realized by:** packages/contracts/src/facets/CoreFacet.sol@5b17a5d3278d53a7e0c56e3d2ac1c15de89f94cd
 
 ## Context
 

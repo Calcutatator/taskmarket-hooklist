@@ -1,3 +1,7 @@
+// Implements: ADR-0009 (legal acceptance opaque receipt, default-deny middleware)
+// Single global Express middleware mounted ahead of all routers/tRPC procedures. Denies
+// by default unless the route/procedure is explicitly listed in the allowlists below --
+// see services/legal.ts for the opaque bearer receipt issuance/hashing.
 import type { NextFunction, Request, RequestHandler, Response } from 'express';
 import { LEGAL_RECEIPT_HEADER } from '@taskmarket/shared';
 

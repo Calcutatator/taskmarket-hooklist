@@ -1,3 +1,4 @@
+// Implements: ADR-0010 (content-digest-invalidated legal acceptance)
 import { randomBytes, randomUUID } from 'crypto';
 import {
   CURRENT_LEGAL_BUNDLE,

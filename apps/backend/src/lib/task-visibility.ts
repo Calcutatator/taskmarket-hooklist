@@ -1,3 +1,4 @@
+// Implements: ADR-0014 (public-by-default task visibility, unlisted/private opt-in)
 import { eq, inArray, notInArray, sql } from 'drizzle-orm';
 import type { db as DbType } from '../db/client';
 import { taskAllowedViewers, taskAwards, tasks, type Task } from '../db/schema';
@@ -56,6 +57,7 @@ export type TaskViewabilityContext = {
  *     - true if caller's address is in the task's wallet allowlist
  *     - else false
  */
+// Implements: ADR-0030 (private task allowlist + password + grant predicate)
 export function canView(
   task: CanViewTask,
   caller: Caller | undefined,

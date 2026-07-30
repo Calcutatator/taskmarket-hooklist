@@ -2,6 +2,8 @@ import { randomUUID } from 'node:crypto';
 import { eq } from 'drizzle-orm';
 import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from 'vitest';
 
+// Verifies: ADR-0007 (indexer status transitions guarded by prior state)
+
 // indexer.ts reads getServerConfig() eagerly at module scope (for the public
 // RPC client and a few module-level constants), so importing it -- unlike
 // every other test file, which only imports routers/services that call
@@ -169,6 +171,7 @@ describeWithDatabase('indexer status guard handlers', () => {
     expect(rows[0]?.stakeBps).toBe(0);
   });
 
+  // Verifies: ADR-0029
   it('processTaskCreatedEvent decodes stakeRequired/stakeBps from the TaskCreated event (rev014, ADR-0029)', async () => {
     const taskId = `test-guard-${randomUUID()}`;
     taskIds.push(taskId);

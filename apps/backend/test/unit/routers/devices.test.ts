@@ -1,3 +1,4 @@
+// Verifies: ADR-0018 (devices.register requires signature proof of address ownership)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createHash } from 'crypto';
 import { createMockCtx, makeChain } from '../helpers';

@@ -20,12 +20,13 @@
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lintAdrDir, formatIssueLine, formatGithubAnnotation, normalizeIssueFilePath } from './lib.js';
+import { lintAdrDir, lintRfcDir, formatIssueLine, formatGithubAnnotation, normalizeIssueFilePath } from './lib.js';
 
 // Repo root is two levels up from packages/adr/.
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(PACKAGE_DIR, '..', '..');
 const ADR_DIR = join(PACKAGE_DIR, '..', '..', 'docs', 'adr');
+const RFC_DIR = join(PACKAGE_DIR, '..', '..', 'docs', 'rfc');
 
 function getChangedFiles(): string[] {
   const argvFiles = process.argv.slice(2);
@@ -47,18 +48,29 @@ function getChangedFiles(): string[] {
     // diff here means a misconfiguration (bad ref, shallow clone), not "nothing changed".
     // Fail loudly rather than silently downgrading to an integrity-only run.
     console.error(`  ERROR  ADR_LINT_BASE="${base}" git diff failed: ${(e as Error).message}`);
+    console.log(JSON.stringify({ status: 'error', reason: 'adr_lint_base_diff_failed', message: (e as Error).message }, null, 2));
     process.exit(1);
   }
 }
 
+// stdout is a pure data channel: exactly one JSON object, always carrying a `status` field,
+// meant for the agent/script that's actually the primary consumer of this tool. Everything a
+// human would scan while iterating locally -- the per-issue WARN/ERROR lines, GitHub Actions
+// annotations, the summary line -- goes to stderr instead, so `pnpm lint:check` piped through
+// `| jq` (or read by an agent) gets clean JSON with no prose mixed in, while a human running it
+// directly in a terminal still sees everything (stdout and stderr both render there).
 function runCli(adrDir: string, changedFiles: string[]): void {
-  const { issues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT);
+  const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT);
+  // RFCs are not structurally linted (see lintRfcDir's own doc comment) -- only index
+  // freshness is checked here, the same mechanical property enforced for ADRs.
+  const { issues: rfcIssues, rfcFiles } = lintRfcDir(RFC_DIR, REPO_ROOT);
+  const issues = [...adrIssues, ...rfcIssues];
 
   for (const issue of issues) {
-    console.log(formatIssueLine(issue));
+    console.error(formatIssueLine(issue));
     // Surface as PR annotations when running in GitHub Actions; warnings stay non-blocking.
     if (process.env.GITHUB_ACTIONS) {
-      console.log(formatGithubAnnotation(issue, normalizeIssueFilePath(issue.file, 'docs/adr')));
+      console.error(formatGithubAnnotation(issue, normalizeIssueFilePath(issue.file, 'docs/adr')));
     }
   }
 
@@ -66,15 +78,19 @@ function runCli(adrDir: string, changedFiles: string[]): void {
   const warnCount = issues.filter((i) => i.type === 'WARN').length;
   if (adrFiles.length > 0) {
     if (errorCount === 0 && warnCount === 0) {
-      console.log(`  ${adrFiles.length} ADR(s) OK`);
+      console.error(`  ${adrFiles.length} ADR(s) OK`);
     } else if (errorCount === 0) {
-      console.log(`  ${adrFiles.length} ADR(s) OK (${warnCount} warning(s))`);
+      console.error(`  ${adrFiles.length} ADR(s) OK (${warnCount} warning(s))`);
     } else {
-      console.log(`\n  ${errorCount} error(s), ${warnCount} warning(s)`);
+      console.error(`\n  ${errorCount} error(s), ${warnCount} warning(s)`);
     }
   } else {
-    console.log('ADR lint passed (0 ADRs checked).');
+    console.error('ADR lint passed (0 ADRs checked).');
   }
+  console.error(`  ${rfcFiles.length} RFC(s) checked (index freshness only)`);
+
+  const status = errorCount > 0 ? 'error' : warnCount > 0 ? 'warn' : 'ok';
+  console.log(JSON.stringify({ status, errorCount, warnCount, adrCount: adrFiles.length, rfcCount: rfcFiles.length, issues }, null, 2));
 
   process.exit(errorCount > 0 ? 1 : 0);
 }

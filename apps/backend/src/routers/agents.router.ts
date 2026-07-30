@@ -35,6 +35,10 @@ import { sha256Hex } from '../lib/hash';
 import { lowerAddressEq } from '../lib/agents';
 import { taskDiscoverable } from '../lib/task-visibility';
 
+// Implements: ADR-0023 (inbox self-auth converged onto ctx.caller)
+// inbox's `selfAuthed` check below now derives from ctx.caller (the general
+// read-auth header resolved once in context.ts) instead of the bespoke,
+// removed taskmarket:inbox:<address> query-param scheme (ADR-0015, superseded).
 export const agentsRouter = router({
   stats: publicProcedure
     .meta({

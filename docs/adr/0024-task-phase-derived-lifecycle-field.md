@@ -14,8 +14,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-07-23
-- **Embodiment:** Implemented
-- **Last audited:** 2026-07-28
+- **Embodiment:** Verified
+- **Last audited:** 2026-07-29
 - **Author:** Beau
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau

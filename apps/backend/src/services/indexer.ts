@@ -250,6 +250,7 @@ async function markProcessed(log: EventLog): Promise<void> {
     .onConflictDoNothing();
 }
 
+// Implements: ADR-0029 (chain-recover stakeRequired/stakeBps on reconcile)
 export async function processTaskCreatedEvent(
   log: EventLog,
   database: Database = db
@@ -295,6 +296,10 @@ export async function processTaskCreatedEvent(
   console.log(`TaskCreated event: ${taskId} by ${requester}, mode: ${modeString}`);
 }
 
+// Implements: ADR-0007 (indexer status transitions guarded by prior state)
+// Every tasks.status-writing handler below conditions its UPDATE on the task's current
+// status being one of the valid prior states its corresponding router mutation itself
+// requires -- see each handler's own inline "(see ADR-0007)" note for its specific guard.
 export async function processTaskClaimedEvent(
   log: EventLog,
   database: Database = db
@@ -1004,6 +1009,7 @@ async function dispatchMainEvent(log: EventLog): Promise<boolean> {
   return true;
 }
 
+// Implements: ADR-0005 (main stream blocks on a failed event instead of skipping)
 async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
   const contractAddress = config.CONTRACT_ADDRESS as `0x${string}`;
 

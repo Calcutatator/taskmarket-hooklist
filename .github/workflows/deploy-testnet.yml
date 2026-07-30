@@ -1,5 +1,7 @@
 name: Deploy to Railway Testnet
 
+# Implements: ADR-0002 (merge to main auto-deploys app code to shared testnet)
+#
 # Runs after CI's own "CI" workflow completes on main, not on the same push event CI itself
 # runs on -- ci.yml's quality job takes many minutes, so checking "did CI pass on this commit"
 # on the push event directly would race it and find "in_progress", not "success".

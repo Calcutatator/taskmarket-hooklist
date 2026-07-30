@@ -1,3 +1,4 @@
+// Verifies: ADR-0014 (public-by-default task visibility, unlisted/private opt-in)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { createMockCtx, makeChain } from '../helpers';
@@ -841,6 +842,7 @@ describe('tasks router', () => {
       expect(accept?.command).toContain('0xworker');
     });
 
+    // Verifies: ADR-0027
     it('active bounty with two distinct submitters: pendingActions commands omit any suggested address (ADR-0027)', async () => {
       const ctx = createMockCtx();
       const activeRowWithSubs = {
@@ -1292,6 +1294,7 @@ describe('tasks router', () => {
       expect(ctx.db.select).toHaveBeenCalledOnce();
     });
 
+    // Verifies: ADR-0026
     it('allows a non-requester payer to refund an expired task (permissionless)', async () => {
       const NON_REQUESTER = '0x2222222222222222222222222222222222222222';
       const ctx = createMockCtx(NON_REQUESTER);

@@ -1,3 +1,4 @@
+// Verifies: ADR-0016 (submission visibility as an independent axis, public default)
 import { describe, expect, it } from 'vitest';
 import {
   canViewSubmission,
@@ -14,6 +15,7 @@ const TASK_ID = 'task-1';
 const task = { id: TASK_ID, requester: REQUESTER, taskVisibility: 'public', claimedBy: null };
 const submission = { workerAddress: WORKER };
 
+// Verifies: ADR-0021
 describe('isTaskEnded', () => {
   it('treats completed and expired as ended', () => {
     expect(isTaskEnded('completed')).toBe(true);
