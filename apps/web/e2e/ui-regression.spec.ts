@@ -340,6 +340,65 @@ test('runs submitted HTML inline while isolating it from the platform and networ
   await expect(frameElement).toHaveCount(0);
 });
 
+test('offers dedicated HTML showcase tasks with distinct interactive submissions', async ({
+  page,
+}) => {
+  const showcases = [
+    {
+      actionLabel: 'Team',
+      changedText: 'Make decisions together.',
+      fileName: 'northline-launch.html',
+      heading: 'Make room for the work that matters.',
+      taskId: 'mock-html-landing-page',
+    },
+    {
+      actionLabel: 'Week',
+      changedText: 'Rolling view for this week',
+      fileName: 'harbor-operations.html',
+      heading: 'Today at a glance',
+      taskId: 'mock-html-dashboard',
+    },
+    {
+      actionLabel: 'Research pair',
+      changedText: 'The pair can split interviews and compare notes during synthesis.',
+      fileName: 'fieldnote-estimator.html',
+      heading: 'Plan a focused research sprint',
+      taskId: 'mock-html-estimator',
+    },
+  ];
+
+  for (const showcase of showcases) {
+    await page.goto(`/dashboard/tasks/${showcase.taskId}`);
+
+    const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+    const frameTitle = `Interactive preview of ${showcase.fileName}`;
+    const previewButton = comparison.getByRole('button', {
+      name: new RegExp(`Open ${showcase.fileName} preview`, 'i'),
+    });
+    await expect(previewButton.locator(`iframe[title="${frameTitle}"]`)).toHaveCount(1);
+    await previewButton.click();
+
+    const dialog = page.getByRole('dialog');
+    const frameElement = dialog.getByTitle(frameTitle);
+    await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
+
+    const frame = dialog.frameLocator(`iframe[title="${frameTitle}"]`);
+    await expect(frame.getByRole('heading', { name: showcase.heading })).toBeVisible();
+    await expect(frame.locator('html')).toHaveAttribute('data-ready', 'true');
+    await expect(async () => {
+      await frame.getByRole('button', { name: showcase.actionLabel }).click();
+      await expect(frame.getByText(showcase.changedText)).toBeVisible();
+    }).toPass({ timeout: 15_000 });
+    expect(
+      await frame.locator('html').evaluate((element) => element.scrollWidth > element.clientWidth)
+    ).toBe(false);
+
+    await closeArtifactDialog(page, dialog);
+    await expect(frameElement).toHaveCount(0);
+    await expectNoHorizontalOverflow(page);
+  }
+});
+
 test('surfaces the live status banner on an open task and stays hydration-clean', async ({
   page,
 }) => {

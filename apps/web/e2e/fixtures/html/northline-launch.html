@@ -1,0 +1,395 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Northline</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #d95f3f;
+        --accent-hover-surface: #8d301c;
+        --accent-surface: #a83d24;
+        --accent-strong: #b74328;
+        --background: #f2f0eb;
+        --border: #cbc7bf;
+        --ink: #20201e;
+        --muted: #696760;
+        --on-accent: #ffffff;
+        --panel: #e7e3dc;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100dvh;
+        margin: 0;
+        background: var(--background);
+        color: var(--ink);
+        font-family:
+          Arial,
+          Helvetica Neue,
+          sans-serif;
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .shell {
+        width: min(1180px, calc(100% - 40px));
+        margin: 0 auto;
+      }
+
+      nav {
+        display: flex;
+        min-height: 72px;
+        align-items: center;
+        justify-content: space-between;
+        border-bottom: 1px solid var(--border);
+      }
+
+      .brand {
+        color: var(--ink);
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: -0.03em;
+        text-decoration: none;
+      }
+
+      .nav-action {
+        border: 1px solid var(--ink);
+        border-radius: 999px;
+        color: var(--ink);
+        padding: 10px 16px;
+        text-decoration: none;
+      }
+
+      main {
+        display: grid;
+        min-height: calc(100dvh - 72px);
+        grid-template-columns: minmax(0, 1.15fr) minmax(350px, 0.85fr);
+        gap: clamp(36px, 7vw, 104px);
+        align-items: center;
+        padding: clamp(48px, 8vw, 108px) 0;
+      }
+
+      .copy {
+        display: grid;
+        gap: 24px;
+        align-content: center;
+      }
+
+      .eyebrow {
+        margin: 0;
+        color: var(--accent-strong);
+        font-size: 0.75rem;
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 12ch;
+        margin: 0;
+        font-size: clamp(3.25rem, 7vw, 6.8rem);
+        letter-spacing: -0.075em;
+        line-height: 0.92;
+      }
+
+      .intro {
+        max-width: 36rem;
+        margin: 0;
+        color: var(--muted);
+        font-size: clamp(1rem, 1.8vw, 1.25rem);
+        line-height: 1.6;
+      }
+
+      .actions {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 12px;
+      }
+
+      .primary,
+      .secondary {
+        min-height: 48px;
+        border-radius: 999px;
+        padding: 0 20px;
+        cursor: pointer;
+        font-weight: 700;
+      }
+
+      .primary {
+        border: 1px solid var(--accent-surface);
+        background: var(--accent-surface);
+        color: var(--on-accent);
+      }
+
+      .primary:hover {
+        background: var(--accent-hover-surface);
+      }
+
+      .secondary {
+        border: 1px solid var(--border);
+        background: transparent;
+        color: var(--ink);
+      }
+
+      .primary:active,
+      .secondary:active,
+      .mode:active {
+        transform: translateY(1px);
+      }
+
+      .workspace {
+        position: relative;
+        min-height: 560px;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 28px;
+        background: var(--panel);
+        box-shadow: 0 30px 80px color-mix(in srgb, var(--ink) 12%, transparent);
+      }
+
+      .workspace::before {
+        position: absolute;
+        inset: -22% -38% auto auto;
+        width: 420px;
+        height: 420px;
+        border-radius: 50%;
+        background: color-mix(in srgb, var(--accent) 24%, transparent);
+        content: '';
+        filter: blur(2px);
+      }
+
+      .workspace-inner {
+        position: relative;
+        display: grid;
+        min-height: 560px;
+        grid-template-rows: auto 1fr auto;
+        gap: 28px;
+        padding: 26px;
+      }
+
+      .workspace-header {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .workspace-title,
+      .workspace-status,
+      .mode-label,
+      .selection {
+        margin: 0;
+      }
+
+      .workspace-title {
+        font-size: 0.8rem;
+        font-weight: 800;
+        letter-spacing: 0.08em;
+        text-transform: uppercase;
+      }
+
+      .workspace-status {
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .focus-card {
+        align-self: center;
+        padding: clamp(24px, 4vw, 42px);
+        border: 1px solid color-mix(in srgb, var(--border) 80%, transparent);
+        border-radius: 20px;
+        background: color-mix(in srgb, var(--background) 78%, transparent);
+      }
+
+      .focus-card h2 {
+        max-width: 13ch;
+        margin: 8px 0 20px;
+        font-size: clamp(2.1rem, 4vw, 3.5rem);
+        letter-spacing: -0.055em;
+        line-height: 1;
+      }
+
+      .selection {
+        min-height: 48px;
+        color: var(--muted);
+        line-height: 1.5;
+      }
+
+      .mode-label {
+        color: var(--accent-strong);
+        font-size: 0.72rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      .modes {
+        display: grid;
+        grid-template-columns: repeat(3, 1fr);
+        gap: 8px;
+      }
+
+      .mode {
+        min-height: 44px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: transparent;
+        color: var(--ink);
+        cursor: pointer;
+      }
+
+      .mode[aria-pressed='true'] {
+        border-color: var(--accent-surface);
+        background: var(--accent-surface);
+        color: var(--on-accent);
+      }
+
+      @media (max-width: 780px) {
+        .shell {
+          width: min(100% - 28px, 620px);
+        }
+
+        main {
+          min-height: auto;
+          grid-template-columns: 1fr;
+          padding: 56px 0;
+        }
+
+        h1 {
+          font-size: clamp(3rem, 15vw, 5.25rem);
+        }
+
+        .workspace,
+        .workspace-inner {
+          min-height: 480px;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #df7659;
+          --accent-hover-surface: #7f2919;
+          --accent-surface: #9f351e;
+          --accent-strong: #ef9278;
+          --background: #191a18;
+          --border: #454740;
+          --ink: #eeece6;
+          --muted: #aaa9a2;
+          --panel: #242622;
+        }
+      }
+
+      @media (prefers-reduced-motion: reduce) {
+        *,
+        *::before,
+        *::after {
+          scroll-behavior: auto !important;
+          transition: none !important;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="shell">
+      <nav aria-label="Primary navigation">
+        <a class="brand" href="#start">Northline</a>
+        <a class="nav-action" href="#workspace">See the workspace</a>
+      </nav>
+      <main id="start">
+        <section class="copy" aria-labelledby="page-title">
+          <p class="eyebrow">A calmer place to plan</p>
+          <h1 id="page-title">Make room for the work that matters.</h1>
+          <p class="intro">
+            Northline gathers priorities, decisions, and progress into one deliberate daily view.
+          </p>
+          <div class="actions">
+            <button class="primary" id="choose-focus" type="button">Choose a focus</button>
+            <button class="secondary" id="clear-focus" type="button">Reset</button>
+          </div>
+        </section>
+
+        <section class="workspace" id="workspace" aria-labelledby="workspace-heading">
+          <div class="workspace-inner">
+            <header class="workspace-header">
+              <p class="workspace-title" id="workspace-heading">Monday plan</p>
+              <p class="workspace-status">3 priorities</p>
+            </header>
+
+            <div class="focus-card">
+              <p class="mode-label">Current focus</p>
+              <h2 id="focus-title">Protect the morning.</h2>
+              <p class="selection" id="focus-description" aria-live="polite">
+                Keep the first two hours clear for careful, uninterrupted work.
+              </p>
+            </div>
+
+            <div class="modes" aria-label="Focus mode">
+              <button class="mode" data-mode="deep" aria-pressed="true" type="button">Deep</button>
+              <button class="mode" data-mode="team" aria-pressed="false" type="button">Team</button>
+              <button class="mode" data-mode="review" aria-pressed="false" type="button">
+                Review
+              </button>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const modes = {
+        deep: {
+          title: 'Protect the morning.',
+          description: 'Keep the first two hours clear for careful, uninterrupted work.',
+        },
+        team: {
+          title: 'Make decisions together.',
+          description: 'Gather the open questions and leave the meeting with clear owners.',
+        },
+        review: {
+          title: 'Close the loop.',
+          description: 'Review what shipped, record what changed, and set the next useful move.',
+        },
+      };
+
+      const buttons = [...document.querySelectorAll('.mode')];
+      const title = document.querySelector('#focus-title');
+      const description = document.querySelector('#focus-description');
+
+      function selectMode(mode) {
+        const content = modes[mode];
+        title.textContent = content.title;
+        description.textContent = content.description;
+        buttons.forEach((button) => {
+          button.setAttribute('aria-pressed', String(button.dataset.mode === mode));
+        });
+      }
+
+      buttons.forEach((button) => {
+        button.addEventListener('click', () => selectMode(button.dataset.mode));
+      });
+
+      document.querySelector('#choose-focus').addEventListener('click', () => {
+        document
+          .querySelector('#workspace')
+          .scrollIntoView({ behavior: 'smooth', block: 'center' });
+        buttons[0].focus();
+      });
+
+      document.querySelector('#clear-focus').addEventListener('click', () => selectMode('deep'));
+      document.documentElement.dataset.ready = 'true';
+    </script>
+  </body>
+</html>

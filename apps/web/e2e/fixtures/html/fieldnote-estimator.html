@@ -1,0 +1,387 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Fieldnote sprint estimator</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #365e47;
+        --accent-surface: #365e47;
+        --accent-soft: #dfe8df;
+        --background: #f0f1eb;
+        --border: #cfd2c8;
+        --ink: #222722;
+        --muted: #6b716b;
+        --on-accent: #f4f7f2;
+        --on-accent-muted: #d7e2d8;
+        --panel: #fafbf6;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100dvh;
+        margin: 0;
+        background: var(--background);
+        color: var(--ink);
+        font-family:
+          Arial,
+          Helvetica Neue,
+          sans-serif;
+      }
+
+      button,
+      input,
+      select {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      input:focus-visible,
+      select:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 3px;
+      }
+
+      .shell {
+        display: grid;
+        width: min(1120px, calc(100% - 32px));
+        min-height: 100dvh;
+        grid-template-columns: minmax(0, 0.9fr) minmax(390px, 1.1fr);
+        gap: clamp(40px, 8vw, 120px);
+        align-items: center;
+        margin: 0 auto;
+        padding: 48px 0;
+      }
+
+      .intro {
+        display: grid;
+        gap: 22px;
+      }
+
+      .brand {
+        margin: 0;
+        color: var(--accent);
+        font-size: 0.85rem;
+        font-weight: 800;
+        letter-spacing: 0.12em;
+        text-transform: uppercase;
+      }
+
+      h1 {
+        max-width: 11ch;
+        margin: 0;
+        font-size: clamp(3rem, 6vw, 5.9rem);
+        letter-spacing: -0.065em;
+        line-height: 0.96;
+      }
+
+      .lede {
+        max-width: 32rem;
+        margin: 0;
+        color: var(--muted);
+        font-size: 1.08rem;
+        line-height: 1.65;
+      }
+
+      .principles {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 20px;
+        margin-top: 18px;
+      }
+
+      .principles div {
+        border-top: 1px solid var(--border);
+        padding-top: 14px;
+      }
+
+      .principles strong,
+      .principles span {
+        display: block;
+      }
+
+      .principles strong {
+        font-size: 0.85rem;
+      }
+
+      .principles span {
+        margin-top: 6px;
+        color: var(--muted);
+        font-size: 0.8rem;
+        line-height: 1.45;
+      }
+
+      .estimator {
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 22px;
+        background: var(--panel);
+        box-shadow: 0 28px 70px color-mix(in srgb, var(--ink) 10%, transparent);
+      }
+
+      form {
+        display: grid;
+        gap: 26px;
+        padding: clamp(24px, 5vw, 46px);
+      }
+
+      .form-heading {
+        margin: 0;
+        font-size: 1.25rem;
+        letter-spacing: -0.025em;
+      }
+
+      .field {
+        display: grid;
+        gap: 9px;
+      }
+
+      label {
+        font-size: 0.84rem;
+        font-weight: 700;
+      }
+
+      .hint {
+        margin: 0;
+        color: var(--muted);
+        font-size: 0.76rem;
+        line-height: 1.4;
+      }
+
+      select {
+        min-height: 48px;
+        width: 100%;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: var(--background);
+        color: var(--ink);
+        padding: 0 12px;
+      }
+
+      input[type='range'] {
+        width: 100%;
+        accent-color: var(--accent);
+      }
+
+      .range-labels {
+        display: flex;
+        justify-content: space-between;
+        color: var(--muted);
+        font-size: 0.72rem;
+      }
+
+      .toggle {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 8px;
+      }
+
+      .toggle button {
+        min-height: 46px;
+        border: 1px solid var(--border);
+        border-radius: 11px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+      }
+
+      .toggle button[aria-pressed='true'] {
+        border-color: var(--accent);
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .result {
+        display: grid;
+        grid-template-columns: 1fr 1fr;
+        gap: 1px;
+        border-top: 1px solid var(--border);
+        background: var(--border);
+      }
+
+      .result div {
+        background: var(--accent-surface);
+        color: var(--on-accent);
+        padding: 24px clamp(20px, 4vw, 38px);
+      }
+
+      .result span,
+      .result output {
+        display: block;
+      }
+
+      .result span {
+        color: var(--on-accent-muted);
+        font-size: 0.75rem;
+        font-weight: 700;
+      }
+
+      .result output {
+        margin-top: 9px;
+        font-size: clamp(2rem, 5vw, 3.5rem);
+        font-weight: 800;
+        letter-spacing: -0.055em;
+      }
+
+      .result-note {
+        grid-column: 1 / -1;
+        margin: 0;
+        background: var(--panel) !important;
+        color: var(--muted) !important;
+        font-size: 0.78rem;
+        line-height: 1.5;
+      }
+
+      @media (max-width: 800px) {
+        .shell {
+          width: min(100% - 28px, 620px);
+          grid-template-columns: 1fr;
+          padding: 48px 0 64px;
+        }
+
+        h1 {
+          font-size: clamp(3rem, 14vw, 5.1rem);
+        }
+      }
+
+      @media (max-width: 460px) {
+        .principles,
+        .result {
+          grid-template-columns: 1fr;
+        }
+
+        .result-note {
+          grid-column: auto;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #5d8d70;
+          --accent-surface: #2f533f;
+          --accent-soft: #2c4033;
+          --background: #181d19;
+          --border: #3c463e;
+          --ink: #edf1ec;
+          --muted: #a4ada5;
+          --panel: #212722;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <main class="shell">
+      <section class="intro" aria-labelledby="page-title">
+        <p class="brand">Fieldnote research planning</p>
+        <h1 id="page-title">Plan a focused research sprint</h1>
+        <p class="lede">
+          Set the scope, choose the working style, and get a practical starting plan for your team.
+        </p>
+        <div class="principles">
+          <div>
+            <strong>Small enough to finish</strong>
+            <span>Keep the question narrow and the evidence useful.</span>
+          </div>
+          <div>
+            <strong>Flexible by design</strong>
+            <span>Adjust the plan as real interviews change the picture.</span>
+          </div>
+        </div>
+      </section>
+
+      <section class="estimator" aria-labelledby="estimator-title">
+        <form>
+          <h2 class="form-heading" id="estimator-title">Shape the sprint</h2>
+
+          <div class="field">
+            <label for="participants">Participant group</label>
+            <select id="participants">
+              <option value="6">Focused group, 6 people</option>
+              <option value="10">Broader group, 10 people</option>
+              <option value="14">Mixed group, 14 people</option>
+            </select>
+            <p class="hint">A focused group is usually enough for a specific workflow question.</p>
+          </div>
+
+          <div class="field">
+            <label for="questions">Research questions</label>
+            <input id="questions" type="range" min="1" max="5" value="2" />
+            <div class="range-labels" aria-hidden="true">
+              <span>1 question</span>
+              <span>5 questions</span>
+            </div>
+          </div>
+
+          <div class="field">
+            <label>Working style</label>
+            <div class="toggle" aria-label="Working style">
+              <button data-style="solo" aria-pressed="true" type="button">One researcher</button>
+              <button data-style="pair" aria-pressed="false" type="button">Research pair</button>
+            </div>
+            <p class="hint">A pair can run interviews and synthesis in parallel.</p>
+          </div>
+        </form>
+
+        <div class="result" aria-live="polite">
+          <div>
+            <span>Suggested length</span>
+            <output id="days-output">5 days</output>
+          </div>
+          <div>
+            <span>Interview sessions</span>
+            <output id="sessions-output">6</output>
+          </div>
+          <p class="result-note" id="result-note">
+            Includes planning, interviews, synthesis, and a concise decision brief.
+          </p>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const participants = document.querySelector('#participants');
+      const questions = document.querySelector('#questions');
+      const styleButtons = [...document.querySelectorAll('[data-style]')];
+      const daysOutput = document.querySelector('#days-output');
+      const sessionsOutput = document.querySelector('#sessions-output');
+      const resultNote = document.querySelector('#result-note');
+      let workingStyle = 'solo';
+
+      function updateEstimate() {
+        const participantCount = Number(participants.value);
+        const questionCount = Number(questions.value);
+        const pairAdjustment = workingStyle === 'pair' ? 1 : 0;
+        const days = Math.max(
+          3,
+          Math.ceil(participantCount / 3) + questionCount + 1 - pairAdjustment
+        );
+
+        daysOutput.textContent = `${days} days`;
+        sessionsOutput.textContent = String(participantCount);
+        resultNote.textContent =
+          workingStyle === 'pair'
+            ? 'The pair can split interviews and compare notes during synthesis.'
+            : 'Includes planning, interviews, synthesis, and a concise decision brief.';
+      }
+
+      participants.addEventListener('change', updateEstimate);
+      questions.addEventListener('input', updateEstimate);
+      styleButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          workingStyle = button.dataset.style;
+          styleButtons.forEach((item) => {
+            item.setAttribute('aria-pressed', String(item === button));
+          });
+          updateEstimate();
+        });
+      });
+      document.documentElement.dataset.ready = 'true';
+    </script>
+  </body>
+</html>

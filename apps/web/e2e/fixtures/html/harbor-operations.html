@@ -1,0 +1,533 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>Harbor operations</title>
+    <style>
+      :root {
+        color-scheme: light dark;
+        --accent: #246f65;
+        --accent-surface: #246f65;
+        --accent-soft: #d3e5df;
+        --background: #eef1ef;
+        --border: #ccd3cf;
+        --ink: #1f2522;
+        --muted: #69726d;
+        --on-accent: #f4f8f6;
+        --on-accent-muted: #d7e8e3;
+        --panel: #f8faf8;
+        --warning: #a15c1d;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      body {
+        min-height: 100dvh;
+        margin: 0;
+        background: var(--background);
+        color: var(--ink);
+        font-family:
+          Arial,
+          Helvetica Neue,
+          sans-serif;
+      }
+
+      button,
+      a {
+        font: inherit;
+      }
+
+      button:focus-visible,
+      a:focus-visible {
+        outline: 3px solid var(--accent);
+        outline-offset: 2px;
+      }
+
+      .app {
+        display: grid;
+        width: min(1280px, calc(100% - 32px));
+        min-height: calc(100dvh - 32px);
+        grid-template-columns: 220px minmax(0, 1fr);
+        margin: 16px auto;
+        overflow: hidden;
+        border: 1px solid var(--border);
+        border-radius: 18px;
+        background: var(--panel);
+      }
+
+      aside {
+        display: flex;
+        flex-direction: column;
+        justify-content: space-between;
+        border-right: 1px solid var(--border);
+        padding: 24px 18px;
+      }
+
+      .brand {
+        margin: 0 8px 32px;
+        font-size: 1.05rem;
+        font-weight: 800;
+        letter-spacing: -0.035em;
+      }
+
+      .nav {
+        display: grid;
+        gap: 6px;
+      }
+
+      .nav a {
+        width: 100%;
+        border: 0;
+        border-radius: 10px;
+        background: transparent;
+        color: var(--muted);
+        padding: 11px 12px;
+        text-align: left;
+        text-decoration: none;
+      }
+
+      .nav a[aria-current='page'] {
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-weight: 700;
+      }
+
+      .account {
+        border-top: 1px solid var(--border);
+        padding: 18px 8px 0;
+        color: var(--muted);
+        font-size: 0.8rem;
+        line-height: 1.5;
+      }
+
+      main {
+        min-width: 0;
+        padding: clamp(24px, 4vw, 48px);
+      }
+
+      header {
+        display: flex;
+        gap: 24px;
+        align-items: flex-start;
+        justify-content: space-between;
+      }
+
+      h1 {
+        margin: 0;
+        font-size: clamp(2rem, 4vw, 3.5rem);
+        letter-spacing: -0.055em;
+        line-height: 1;
+      }
+
+      .lede {
+        margin: 10px 0 0;
+        color: var(--muted);
+      }
+
+      .range {
+        display: flex;
+        padding: 4px;
+        border: 1px solid var(--border);
+        border-radius: 12px;
+        background: var(--background);
+      }
+
+      .range button {
+        min-width: 58px;
+        border: 0;
+        border-radius: 8px;
+        background: transparent;
+        color: var(--muted);
+        cursor: pointer;
+        padding: 8px 10px;
+      }
+
+      .range button[aria-pressed='true'] {
+        background: var(--panel);
+        color: var(--ink);
+        box-shadow: 0 3px 12px color-mix(in srgb, var(--ink) 9%, transparent);
+      }
+
+      .metrics {
+        display: grid;
+        grid-template-columns: 1.25fr 1fr 1fr;
+        gap: 14px;
+        margin: 36px 0 18px;
+      }
+
+      .metric {
+        min-height: 142px;
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+      }
+
+      .metric:first-child {
+        background: var(--accent-surface);
+        color: var(--on-accent);
+      }
+
+      .metric-label,
+      .metric-detail {
+        margin: 0;
+        font-size: 0.78rem;
+      }
+
+      .metric-label {
+        color: var(--muted);
+        font-weight: 700;
+      }
+
+      .metric:first-child .metric-label,
+      .metric:first-child .metric-detail {
+        color: var(--on-accent-muted);
+      }
+
+      .metric-value {
+        display: block;
+        margin: 20px 0 8px;
+        font-size: clamp(2rem, 4vw, 3.25rem);
+        font-weight: 800;
+        letter-spacing: -0.06em;
+      }
+
+      .metric-detail {
+        color: var(--muted);
+      }
+
+      .work-grid {
+        display: grid;
+        grid-template-columns: minmax(0, 1.6fr) minmax(260px, 0.8fr);
+        gap: 14px;
+      }
+
+      .panel {
+        border: 1px solid var(--border);
+        border-radius: 14px;
+        padding: 20px;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        margin-bottom: 26px;
+      }
+
+      .panel h2,
+      .panel p {
+        margin: 0;
+      }
+
+      .panel h2 {
+        font-size: 1rem;
+      }
+
+      .panel-note {
+        color: var(--muted);
+        font-size: 0.75rem;
+      }
+
+      .chart {
+        display: grid;
+        height: 230px;
+        grid-template-columns: repeat(7, 1fr);
+        gap: 10px;
+        align-items: end;
+        border-bottom: 1px solid var(--border);
+        padding: 0 6px 22px;
+      }
+
+      .bar {
+        position: relative;
+        min-height: 12px;
+        border-radius: 8px 8px 3px 3px;
+        background: var(--accent);
+      }
+
+      .bar::after {
+        position: absolute;
+        top: calc(100% + 8px);
+        left: 50%;
+        color: var(--muted);
+        content: attr(data-label);
+        font-size: 0.68rem;
+        transform: translateX(-50%);
+      }
+
+      .queue {
+        display: grid;
+        gap: 18px;
+      }
+
+      .queue-item {
+        display: grid;
+        grid-template-columns: auto 1fr;
+        gap: 12px;
+        align-items: start;
+      }
+
+      .queue-count {
+        display: grid;
+        width: 38px;
+        height: 38px;
+        place-items: center;
+        border-radius: 10px;
+        background: var(--accent-soft);
+        color: var(--ink);
+        font-weight: 800;
+      }
+
+      .queue-title {
+        font-weight: 700;
+      }
+
+      .queue-detail {
+        margin-top: 5px !important;
+        color: var(--muted);
+        font-size: 0.78rem;
+        line-height: 1.45;
+      }
+
+      .queue-item:last-child .queue-count {
+        color: var(--warning);
+      }
+
+      @media (max-width: 820px) {
+        .app {
+          width: 100%;
+          min-height: 100dvh;
+          grid-template-columns: 1fr;
+          margin: 0;
+          border: 0;
+          border-radius: 0;
+        }
+
+        aside {
+          display: block;
+          border-right: 0;
+          border-bottom: 1px solid var(--border);
+          padding: 16px;
+        }
+
+        .brand {
+          margin: 0 0 14px;
+        }
+
+        .nav {
+          grid-template-columns: repeat(3, 1fr);
+        }
+
+        .nav a {
+          text-align: center;
+        }
+
+        .account {
+          display: none;
+        }
+
+        .metrics,
+        .work-grid {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 520px) {
+        header {
+          display: grid;
+        }
+
+        .range {
+          width: fit-content;
+        }
+
+        main {
+          padding: 24px 16px 40px;
+        }
+      }
+
+      @media (prefers-color-scheme: dark) {
+        :root {
+          --accent: #4b9c8f;
+          --accent-surface: #1f6259;
+          --accent-soft: #28413b;
+          --background: #171b19;
+          --border: #39413d;
+          --ink: #edf1ee;
+          --muted: #a6afa9;
+          --panel: #202522;
+          --warning: #dfa05c;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside>
+        <div>
+          <p class="brand">Harbor</p>
+          <nav class="nav" aria-label="Dashboard sections">
+            <a aria-current="page" href="#overview">Overview</a>
+            <a href="#routes">Routes</a>
+            <a href="#team">Team</a>
+          </nav>
+        </div>
+        <p class="account">Operations workspace<br />Sydney harbor team</p>
+      </aside>
+
+      <main id="overview">
+        <header>
+          <div>
+            <h1>Today at a glance</h1>
+            <p class="lede" id="period-label">Live operations for Thursday</p>
+          </div>
+          <div class="range" aria-label="Reporting period">
+            <button data-period="day" aria-pressed="true" type="button">Day</button>
+            <button data-period="week" aria-pressed="false" type="button">Week</button>
+            <button data-period="month" aria-pressed="false" type="button">Month</button>
+          </div>
+        </header>
+
+        <section class="metrics" aria-label="Key metrics">
+          <article class="metric">
+            <p class="metric-label">Completed movements</p>
+            <strong class="metric-value" id="completed-value">47</strong>
+            <p class="metric-detail" id="completed-detail">8 ahead of plan</p>
+          </article>
+          <article class="metric">
+            <p class="metric-label">Average turnaround</p>
+            <strong class="metric-value" id="turnaround-value">18m</strong>
+            <p class="metric-detail" id="turnaround-detail">3m faster today</p>
+          </article>
+          <article class="metric">
+            <p class="metric-label">Capacity available</p>
+            <strong class="metric-value" id="capacity-value">23%</strong>
+            <p class="metric-detail" id="capacity-detail">Stable through 16:00</p>
+          </article>
+        </section>
+
+        <section class="work-grid">
+          <article class="panel" id="routes">
+            <div class="panel-head">
+              <h2>Movement volume</h2>
+              <p class="panel-note">Completed per hour</p>
+            </div>
+            <div
+              class="chart"
+              aria-label="Hourly movement volume: 08 38%, 09 62%, 10 46%, 11 81%, 12 68%, 13 92%, 14 74%"
+              id="volume-chart"
+              role="img"
+            >
+              <div class="bar" data-label="08" style="height: 38%"></div>
+              <div class="bar" data-label="09" style="height: 62%"></div>
+              <div class="bar" data-label="10" style="height: 46%"></div>
+              <div class="bar" data-label="11" style="height: 81%"></div>
+              <div class="bar" data-label="12" style="height: 68%"></div>
+              <div class="bar" data-label="13" style="height: 92%"></div>
+              <div class="bar" data-label="14" style="height: 74%"></div>
+            </div>
+          </article>
+
+          <article class="panel" id="team">
+            <div class="panel-head">
+              <h2>Needs attention</h2>
+              <p class="panel-note">3 active</p>
+            </div>
+            <div class="queue">
+              <div class="queue-item">
+                <span class="queue-count">4</span>
+                <div>
+                  <p class="queue-title">Ready for dispatch</p>
+                  <p class="queue-detail">Assignments are confirmed and awaiting release.</p>
+                </div>
+              </div>
+              <div class="queue-item">
+                <span class="queue-count">2</span>
+                <div>
+                  <p class="queue-title">Waiting on documents</p>
+                  <p class="queue-detail">Two route packs need final checks.</p>
+                </div>
+              </div>
+              <div class="queue-item">
+                <span class="queue-count">1</span>
+                <div>
+                  <p class="queue-title">Schedule risk</p>
+                  <p class="queue-detail">A late arrival may affect the afternoon window.</p>
+                </div>
+              </div>
+            </div>
+          </article>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      const periods = {
+        day: {
+          label: 'Live operations for Thursday',
+          completed: '47',
+          completedDetail: '8 ahead of plan',
+          turnaround: '18m',
+          turnaroundDetail: '3m faster today',
+          capacity: '23%',
+          capacityDetail: 'Stable through 16:00',
+          bars: [38, 62, 46, 81, 68, 92, 74],
+        },
+        week: {
+          label: 'Rolling view for this week',
+          completed: '284',
+          completedDetail: '16 ahead of plan',
+          turnaround: '21m',
+          turnaroundDetail: '2m faster this week',
+          capacity: '19%',
+          capacityDetail: 'Friday has the most room',
+          bars: [52, 68, 71, 64, 88, 76, 58],
+        },
+        month: {
+          label: 'Performance across the last 30 days',
+          completed: '1,148',
+          completedDetail: '4.6% above plan',
+          turnaround: '23m',
+          turnaroundDetail: 'Consistent across all routes',
+          capacity: '17%',
+          capacityDetail: 'Demand peaked mid-month',
+          bars: [44, 57, 63, 79, 72, 66, 84],
+        },
+      };
+
+      const periodButtons = [...document.querySelectorAll('[data-period]')];
+      const bars = [...document.querySelectorAll('.bar')];
+      const chart = document.querySelector('#volume-chart');
+      const hours = ['08', '09', '10', '11', '12', '13', '14'];
+
+      periodButtons.forEach((button) => {
+        button.addEventListener('click', () => {
+          const data = periods[button.dataset.period];
+          document.querySelector('#period-label').textContent = data.label;
+          document.querySelector('#completed-value').textContent = data.completed;
+          document.querySelector('#completed-detail').textContent = data.completedDetail;
+          document.querySelector('#turnaround-value').textContent = data.turnaround;
+          document.querySelector('#turnaround-detail').textContent = data.turnaroundDetail;
+          document.querySelector('#capacity-value').textContent = data.capacity;
+          document.querySelector('#capacity-detail').textContent = data.capacityDetail;
+          bars.forEach((bar, index) => {
+            bar.style.height = `${data.bars[index]}%`;
+          });
+          chart.setAttribute(
+            'aria-label',
+            `Hourly movement volume: ${data.bars
+              .map((value, index) => `${hours[index]} ${value}%`)
+              .join(', ')}`
+          );
+          periodButtons.forEach((item) => {
+            item.setAttribute('aria-pressed', String(item === button));
+          });
+        });
+      });
+      document.documentElement.dataset.ready = 'true';
+    </script>
+  </body>
+</html>

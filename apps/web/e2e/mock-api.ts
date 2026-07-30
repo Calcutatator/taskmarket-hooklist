@@ -1,3 +1,4 @@
+import { readFileSync } from 'node:fs';
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http';
 import { pathToFileURL } from 'node:url';
 import type {
@@ -29,6 +30,17 @@ const workerOne = '0x3333333333333333333333333333333333333333';
 const workerTwo = '0x4444444444444444444444444444444444444444';
 const workerThree = '0x5555555555555555555555555555555555555555';
 const now = new Date('2026-05-13T00:00:00.000Z').toISOString();
+const htmlFixtureUrls = new Map([
+  ['mock-html-landing-artifact', new URL('./fixtures/html/northline-launch.html', import.meta.url)],
+  [
+    'mock-html-dashboard-artifact',
+    new URL('./fixtures/html/harbor-operations.html', import.meta.url),
+  ],
+  [
+    'mock-html-estimator-artifact',
+    new URL('./fixtures/html/fieldnote-estimator.html', import.meta.url),
+  ],
+]);
 const legalBundle = {
   acceptanceAvailable: false,
   acceptanceStatement: 'I accept the Taskmarket legal terms.',
@@ -267,6 +279,37 @@ const tasks: TaskDetailResponse[] = [
     status: 'pending_approval',
     submissionCount: 2,
     tags: ['bounty', 'review'],
+  }),
+  task({
+    description:
+      'Build a launch page for Northline that keeps the product story clear on every screen.',
+    id: 'mock-html-landing-page',
+    mode: 'bounty',
+    pendingActions: [action('mock-html-landing-page', 'requester', 'accept')],
+    reward: '180000000',
+    status: 'pending_approval',
+    submissionCount: 1,
+    tags: ['html', 'landing-page', 'review'],
+  }),
+  task({
+    description: 'Create a responsive operations dashboard for Harbor with useful daily controls.',
+    id: 'mock-html-dashboard',
+    mode: 'bounty',
+    pendingActions: [action('mock-html-dashboard', 'requester', 'accept')],
+    reward: '220000000',
+    status: 'pending_approval',
+    submissionCount: 1,
+    tags: ['dashboard', 'html', 'review'],
+  }),
+  task({
+    description: 'Design an interactive research sprint estimator for Fieldnote.',
+    id: 'mock-html-estimator',
+    mode: 'bounty',
+    pendingActions: [action('mock-html-estimator', 'requester', 'accept')],
+    reward: '160000000',
+    status: 'pending_approval',
+    submissionCount: 1,
+    tags: ['estimator', 'html', 'review'],
   }),
   task({
     awardCount: 1,
@@ -639,6 +682,74 @@ const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
   [
     'mock-bounty-accepted-unrated',
     [submission({ id: 'mock-accepted-submission', taskId: 'mock-bounty-accepted-unrated' })],
+  ],
+  [
+    'mock-html-landing-page',
+    [
+      submission({
+        artifacts: [
+          artifact({
+            fileName: 'northline-launch.html',
+            id: 'mock-html-landing-artifact',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+            role: 'final',
+            submissionId: 'mock-html-landing-submission',
+            taskId: 'mock-html-landing-page',
+          }),
+        ],
+        id: 'mock-html-landing-submission',
+        taskId: 'mock-html-landing-page',
+      }),
+    ],
+  ],
+  [
+    'mock-html-dashboard',
+    [
+      submission({
+        artifacts: [
+          artifact({
+            fileName: 'harbor-operations.html',
+            id: 'mock-html-dashboard-artifact',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+            role: 'final',
+            submissionId: 'mock-html-dashboard-submission',
+            taskId: 'mock-html-dashboard',
+            workerAddress: workerTwo,
+            workerAgentId: '1004',
+          }),
+        ],
+        id: 'mock-html-dashboard-submission',
+        taskId: 'mock-html-dashboard',
+        workerAddress: workerTwo,
+        workerAgentId: '1004',
+      }),
+    ],
+  ],
+  [
+    'mock-html-estimator',
+    [
+      submission({
+        artifacts: [
+          artifact({
+            fileName: 'fieldnote-estimator.html',
+            id: 'mock-html-estimator-artifact',
+            mediaKind: 'text',
+            mimeType: 'text/html',
+            role: 'final',
+            submissionId: 'mock-html-estimator-submission',
+            taskId: 'mock-html-estimator',
+            workerAddress: workerThree,
+            workerAgentId: null,
+          }),
+        ],
+        id: 'mock-html-estimator-submission',
+        taskId: 'mock-html-estimator',
+        workerAddress: workerThree,
+        workerAgentId: null,
+      }),
+    ],
   ],
   [
     'mock-bounty-completed-rated',
@@ -1242,6 +1353,11 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
     artifactItem.mimeType.toLowerCase().split(';', 1)[0] === 'text/html' ||
     /\.html?$/i.test(artifactItem.fileName)
   ) {
+    const fixtureUrl = htmlFixtureUrls.get(artifactItem.id);
+    if (fixtureUrl) {
+      return `data:text/html;charset=utf-8,${encodeURIComponent(readFileSync(fixtureUrl, 'utf8'))}`;
+    }
+
     const html = `<!doctype html>
       <html>
         <head>
@@ -1297,15 +1413,16 @@ function submissionsForResponse(taskId: string, includePreviewUrls: boolean) {
 
   return submissions.map((submissionItem) => ({
     ...submissionItem,
-    artifacts: (submissionItem.artifacts ?? []).map((artifactItem) =>
-      artifactItem.mediaKind === 'image' || artifactItem.mediaKind === 'video'
+    artifacts: (submissionItem.artifacts ?? []).map((artifactItem) => {
+      const previewUrl = mockPreviewUrl(artifactItem);
+      return previewUrl
         ? {
             ...artifactItem,
             previewExpiresAt: new Date(Date.now() + 3_600_000).toISOString(),
-            previewUrl: mockPreviewUrl(artifactItem),
+            previewUrl,
           }
-        : artifactItem
-    ),
+        : artifactItem;
+    }),
   }));
 }
 
