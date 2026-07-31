@@ -17,11 +17,33 @@ When implementing or reviewing changes, follow the established patterns in these
 
 ## Design Decisions: RFCs and ADRs
 
-Pre-decision design proposals live in `docs/specs/` (RFCs). Decided architectural or
-hard-to-reverse decisions are recorded in `docs/adr/` (ADRs) — see `docs/adr/README.md` for
-the process. An ADR requires explicit human approval before its status becomes `Accepted`; an
-agent may draft one but may not self-approve it. If you are working a task unattended and hit
-a decision that belongs in an ADR, stop and draft one instead of deciding unilaterally.
+Pre-decision design proposals live in `docs/rfc/` (RFCs) — see `docs/rfc/README.md` for the
+template, numbering, and status lifecycle. Decided architectural or hard-to-reverse decisions
+are recorded in `docs/adr/` (ADRs) — see `docs/adr/README.md` for the process. An ADR requires
+explicit human approval before its status becomes `Accepted`; an agent may draft one but may
+not self-approve it. If you are working a task unattended and hit a decision that belongs in an
+ADR, stop and draft one instead of deciding unilaterally.
+
+### When to suggest `/rfc` or `/adr`
+
+Two commands do the actual drafting — `/rfc` for a proposal still open for comment, `/adr` for a
+decision already made — see their command files for the full process. **Suggest one rather than
+silently continuing** when you notice, in this conversation or a user's message:
+
+- A direction being proposed with real tradeoffs but not yet settled ("what if we...", "we could
+  either... or...", "thinking about doing X") → suggest `/rfc`.
+- A choice actually being made ("let's go with X", "we decided to use X instead of Y", "going
+  forward we'll...") → suggest `/adr`.
+- A reversal or amendment to something already decided → suggest `/adr` (it will reference the
+  prior ADR).
+
+This is a suggestion, not a gate — say something like "this sounds like it's worth an RFC/ADR,
+want me to draft one with `/rfc`/`/adr`?" and let the user say no. Don't block on it, and don't
+draft one unprompted without flagging it first. A missed suggestion here isn't caught by any
+tooling — `packages/adr/adr-lint.ts` only checks documents that already exist, never whether a
+conversation should have produced one — so the cost of under-suggesting is a decision that never
+gets written down at all. When genuinely unsure whether something is proposal-stage or
+already-decided, ask rather than guessing which command to suggest.
 
 ## Repository Structure
 

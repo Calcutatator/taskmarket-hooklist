@@ -73,7 +73,26 @@ jobs:
 
       - name: ADR embodiment audit
         if: always()
-        run: pnpm --filter @taskmarket/adr run adr-audit
+        run: pnpm --filter @taskmarket/adr run adr-audit -- --fail-on-drift
+
+      - name: Governance/application-source scope check
+        if: always()
+        run: pnpm --filter @taskmarket/adr run scope-check
+        env:
+          # This check is inherently about a PR's cumulative diff against its base branch, not a
+          # single commit -- unlike ADR_LINT_BASE above, there's no useful pre-commit equivalent
+          # (it would repeat the same warning on every commit in a long-lived branch). Empty on
+          # push events -- nothing to compare against without a PR base.
+          SCOPE_CHECK_BASE: ${{ github.base_ref && format('origin/{0}', github.base_ref) || '' }}
+
+      - name: Citation-existence check
+        if: always()
+        run: pnpm --filter @taskmarket/adr run citation-check
+        env:
+          # gh CLI auth for the issue/PR-number half of the check (the file-path half needs
+          # nothing). The job's own `pull-requests: write` permission is sufficient scope for
+          # read-only issue/PR lookups by number.
+          GH_TOKEN: ${{ github.token }}
 
       - name: Comment on PR with drift summary
         if: always() && github.event_name == 'pull_request'

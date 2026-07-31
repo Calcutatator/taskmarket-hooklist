@@ -54,6 +54,21 @@ export const CONSIDERED_OPTIONS_ALIASES = REQUIRED_SECTIONS.find((aliases) =>
 // Source paths that should usually come with an ADR — warn-only, not blocking.
 export const COVERAGE_PATHS = ['packages/contracts/src/', 'apps/backend/src/', 'docs/specs/'];
 
+// A diff touching only these paths is a governance-only change (ADR/RFC/spec content, this
+// package's own tooling, or Claude Code process configuration/commands/hooks — none of which
+// ship to users or run in production) — see checkScopeMismatch below. `.claude/` was added after
+// running this check against this repo's own harness-prototype branch and finding it flagged
+// `.claude/commands/*.md` as "application source" alongside a real docs/rfc/ change — a false
+// positive: process tooling, not product behavior, same category as packages/adr/. A test file
+// anywhere counts as lower-risk regardless of path (a test doesn't itself change production
+// behavior), so it's checked separately via TEST_FILE_RE, not folded into this list.
+export const GOVERNANCE_PATHS = ['docs/adr/', 'docs/rfc/', 'docs/specs/', 'packages/adr/', '.claude/'];
+
+// Single source of truth for "is this a test file" -- was independently declared in adr-audit.ts
+// before being centralized here; kept in one place per this package's own duplicated-logic lesson
+// (see docs/rfc back-pointer commentary in adr-audit.ts near its former declaration).
+export const TEST_FILE_RE = /\.(test|spec)\.tsx?$/;
+
 export type Issue = { type: 'ERROR' | 'WARN'; file: string; message: string };
 // direction is widened to `string` (rather than the narrower supersession-only
 // literal union) so this same entry shape serves both the Supersedes/Superseded-by
@@ -691,6 +706,145 @@ export function checkCoverage(changedFiles: string[]): Issue[] {
   return [
     { type: 'WARN', file: triggered[0], message: 'source changed without any docs/adr/** change — consider whether a new ADR is needed' },
   ];
+}
+
+// The mirror-image check to checkCoverage above: that one flags application source changing
+// without a governance-path change; this one flags a governance-path change (docs/adr/,
+// docs/rfc/, docs/specs/, or this package's own tooling) bundled in the *same diff* as real,
+// non-test application source -- the "a docs-scoped branch quietly also carried a production
+// behavior change" case. Warn-only, matching this repo's own established blocking-vs-warn
+// calibration ("is this a governance gap with no one answerable, or useful-but-not-worth-
+// blocking" -- see docs/adr/README.md): a governance pass legitimately does sometimes need a
+// real, small code fix (e.g. a mechanical fix to this package's own tooling alongside doc
+// changes), so this surfaces "needs elevated review" rather than hard-blocking a case that might
+// be entirely legitimate.
+export function checkScopeMismatch(changedFiles: string[]): Issue[] {
+  const governanceFiles = changedFiles.filter((f) => GOVERNANCE_PATHS.some((p) => f.startsWith(p)));
+  if (governanceFiles.length === 0) return [];
+  const nonGovernanceSourceFiles = changedFiles.filter(
+    (f) => !GOVERNANCE_PATHS.some((p) => f.startsWith(p)) && !TEST_FILE_RE.test(f)
+  );
+  if (nonGovernanceSourceFiles.length === 0) return [];
+  return [
+    {
+      type: 'WARN',
+      file: nonGovernanceSourceFiles[0],
+      message:
+        `this diff mixes a governance-path change (e.g. ${governanceFiles[0]}) with ` +
+        `${nonGovernanceSourceFiles.length} non-test application-source file(s) (e.g. ` +
+        `${nonGovernanceSourceFiles[0]}) — if this is a real behavior change, it needs review ` +
+        `beyond a docs/governance pass, not just a green ADR/RFC/spec lint`,
+    },
+  ];
+}
+
+// Shared by adr-lint.ts and scope-check.ts (both need "what changed in this diff" against a base
+// ref) so the git-invocation logic exists in exactly one place, not two independently-maintained
+// copies. Throws on a real git failure (bad ref, shallow clone) rather than swallowing it — each
+// CLI wrapper decides how to surface that (this repo's own fail-loud convention: a caller that
+// explicitly asked for a diff and got a git error should hear about it, not silently fall back to
+// "nothing changed").
+export function resolveGitDiffChangedFiles(repoRoot: string, base: string): string[] {
+  const diff = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  });
+  return diff.split('\n').filter((f) => f.trim().length > 0);
+}
+
+// ---------------------------------------------------------------------------
+// Citation-existence checking (RFC-0007 §8). Built after a real false-positive finding: a
+// generated document cited a real file, a naive existsSync-style check reported it as missing
+// (it was real, just sitting in an open, not-yet-merged PR, invisible to the current checkout),
+// and that was wrongly asserted as a fabricated reference. The fix isn't "check harder" -- it's
+// making every existence claim state its own scope explicitly, so "not found in the working
+// tree" (weak, working-tree-scoped) is never conflated with "does not exist" (a claim no single
+// fs check can actually make). See checkFilePathCitations' message text and checkPrCitations'
+// use of a scope (the real repo, via `gh`) that resolves regardless of merge state.
+// ---------------------------------------------------------------------------
+
+// Deliberately a strict, single-heading match (not hasSection's alias-tolerant one above) --
+// every ADR/RFC/spec template in this repo uses exactly "## References", so a strict match keeps
+// extraction unambiguous rather than risking a false match on prose that merely mentions the
+// word.
+//
+// No `m` flag: a lookbehind handles the "start of line" anchor instead, because `m` would also
+// redefine the closing `$` to mean end-of-line rather than end-of-string, breaking the
+// "run to end of file when no next section follows" case -- the exact bug already documented
+// (and fixed the same way) elsewhere in this codebase's own regex-extraction history; this
+// function's first draft made the identical mistake before a live test against a References-last
+// document caught it.
+export function extractReferencesSection(content: string): string | null {
+  const match = /(?<=^|\n)##\s+References\b[ \t]*\n([\s\S]*?)(?=\n##\s|\s*$)/i.exec(content);
+  return match ? match[1] : null;
+}
+
+// A citation is a backtick-quoted, repo-relative-looking path: at least one "/" and a file
+// extension. Deliberately scoped to the References section only (never the whole document) --
+// a code snippet elsewhere in a spec's Design/Architecture section can contain backtick-quoted
+// paths that illustrate what a change touches, not a claim that the path already exists.
+const CITED_FILE_PATH_RE = /`([a-zA-Z0-9_.-]+(?:\/[a-zA-Z0-9_.-]+)+\.[a-zA-Z0-9]+)`/g;
+
+export function extractCitedFilePaths(referencesSection: string): string[] {
+  const paths = new Set<string>();
+  const re = new RegExp(CITED_FILE_PATH_RE);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(referencesSection)) !== null) {
+    paths.add(match[1]);
+  }
+  return [...paths];
+}
+
+// Matches GitHub's own "#123" shorthand or a full .../pull/123 URL. Requires the leading "#" or
+// "/pull/" so this can never collide with an ADR-NNNN reference (checkDanglingReferences above),
+// which has its own, already-blocking check.
+//
+// Named "GithubNumber", not "Pr": GitHub's own numbering is a single shared sequence across
+// issues and pull requests -- a bare "#123" citation is not necessarily a PR (a live check
+// against this repo's real corpus found several "#NNN" citations that were real, closed
+// *issues*, misreported as fake PRs by an earlier version of this check that only queried the
+// pulls endpoint). Checking existence against the issues endpoint (which GitHub's own API
+// returns for both issues and PRs -- a PR is a special kind of issue in its data model) is the
+// correct scope for the bare-number form.
+const CITED_GITHUB_NUMBER_RE = /(?:^|\s)#(\d+)\b|\/pull\/(\d+)\b/g;
+
+export function extractCitedGithubNumbers(referencesSection: string): string[] {
+  const numbers = new Set<string>();
+  const re = new RegExp(CITED_GITHUB_NUMBER_RE);
+  let match: RegExpExecArray | null;
+  while ((match = re.exec(referencesSection)) !== null) {
+    numbers.add((match[1] ?? match[2]) as string);
+  }
+  return [...numbers];
+}
+
+// exists() is dependency-injected rather than this function calling fs.existsSync directly --
+// testable without a real filesystem, and it forces the caller to supply (and, via scopeLabel,
+// state honestly) what "exists" actually means here. Warn-only: a citation problem is a
+// content-accuracy issue to flag, matching this repo's own blocking-vs-warn calibration
+// ("governance gap with no one answerable" vs. "useful but not worth blocking a merge" --
+// docs/adr/README.md), not a governance-accountability gap the way a missing Deciders value is.
+export function checkFilePathCitations(
+  citedPaths: string[],
+  file: string,
+  exists: (path: string) => boolean,
+  scopeLabel: string
+): Issue[] {
+  return citedPaths
+    .filter((path) => !exists(path))
+    .map((path) => ({
+      type: 'WARN' as const,
+      file,
+      message:
+        `citation \`${path}\` not found in ${scopeLabel} — if it belongs to an unmerged PR or a ` +
+        `different branch, say so explicitly in the citation text rather than as a bare path`,
+    }));
+}
+
+export function checkGithubNumberCitations(citedNumbers: string[], file: string, numberExists: (n: string) => boolean): Issue[] {
+  return citedNumbers
+    .filter((n) => !numberExists(n))
+    .map((n) => ({ type: 'WARN' as const, file, message: `citation #${n} does not resolve to a real issue or pull request on this repo` }));
 }
 
 // Resolves the set of files under `dir` that git considers tracked or

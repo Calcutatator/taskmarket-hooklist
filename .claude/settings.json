@@ -10,6 +10,34 @@
           }
         ]
       }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Edit|Write|MultiEdit",
+        "hooks": [
+          {
+            "type": "command",
+            "if": "Edit(docs/adr/*.md)",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-adr-embodiment.mjs",
+            "timeout": 20,
+            "statusMessage": "Checking ADR Embodiment claim against computed evidence..."
+          },
+          {
+            "type": "command",
+            "if": "Write(docs/adr/*.md)",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-adr-embodiment.mjs",
+            "timeout": 20,
+            "statusMessage": "Checking ADR Embodiment claim against computed evidence..."
+          },
+          {
+            "type": "command",
+            "if": "MultiEdit(docs/adr/*.md)",
+            "command": "node \"$CLAUDE_PROJECT_DIR\"/.claude/hooks/check-adr-embodiment.mjs",
+            "timeout": 20,
+            "statusMessage": "Checking ADR Embodiment claim against computed evidence..."
+          }
+        ]
+      }
     ]
   }
 }

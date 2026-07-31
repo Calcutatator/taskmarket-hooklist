@@ -72,6 +72,12 @@ import {
   RFC_INDEX_YAML_OPTIONS,
   lintRfcDir,
   checkCoverage,
+  checkScopeMismatch,
+  extractReferencesSection,
+  extractCitedFilePaths,
+  extractCitedGithubNumbers,
+  checkFilePathCitations,
+  checkGithubNumberCitations,
   resolveGitTrackedOrStagedFiles,
   isDocDirMemberFile,
   FILENAME_RE,
@@ -79,6 +85,7 @@ import {
   REQUIRED_SECTIONS,
   Y_STATEMENT_KEYWORDS,
   COVERAGE_PATHS,
+  GOVERNANCE_PATHS,
 } from './lib.js';
 import { readFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
@@ -1351,6 +1358,146 @@ describe('checkCoverage', () => {
         }
       )
     );
+  });
+});
+
+describe('checkScopeMismatch', () => {
+  test('empty changedFiles produces no warning', () => {
+    expect(checkScopeMismatch([])).toEqual([]);
+  });
+
+  test('governance-only diff (no non-governance path) produces no warning', () => {
+    expect(checkScopeMismatch(['docs/adr/0001-x.md', 'docs/rfc/0002-y.md', 'packages/adr/lib.ts'])).toEqual([]);
+  });
+
+  test('application-only diff (no governance path) produces no warning', () => {
+    expect(checkScopeMismatch(['apps/backend/src/foo.ts', 'apps/web/components/bar.tsx'])).toEqual([]);
+  });
+
+  test('a governance-path change bundled with non-test application source is a warning', () => {
+    const issues = checkScopeMismatch(['docs/adr/0001-x.md', 'apps/backend/src/foo.ts']);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: 'WARN', file: 'apps/backend/src/foo.ts' });
+  });
+
+  test('a governance-path change bundled only with test files is not a warning', () => {
+    expect(checkScopeMismatch(['docs/adr/0001-x.md', 'apps/backend/src/foo.test.ts', 'apps/web/bar.spec.tsx'])).toEqual([]);
+  });
+
+  test('this package’s own tooling under packages/adr/ counts as governance, not application source', () => {
+    expect(checkScopeMismatch(['docs/rfc/0001-x.md', 'packages/adr/scope-check.ts'])).toEqual([]);
+  });
+
+  test('property: warns iff (some path is governance) and (some non-test path is not governance)', () => {
+    fc.assert(
+      fc.property(
+        fc.array(
+          fc.oneof(
+            fc.constantFrom(...GOVERNANCE_PATHS).map((p) => `${p}fixture.ts`),
+            fc.constant('apps/backend/src/fixture.ts'),
+            fc.constant('apps/backend/src/fixture.test.ts')
+          ),
+          { maxLength: 10 }
+        ),
+        (changedFiles) => {
+          const hasGovernance = changedFiles.some((f) => GOVERNANCE_PATHS.some((p) => f.startsWith(p)));
+          const hasNonGovernanceSource = changedFiles.some(
+            (f) => !GOVERNANCE_PATHS.some((p) => f.startsWith(p)) && !/\.(test|spec)\.tsx?$/.test(f)
+          );
+          const issues = checkScopeMismatch(changedFiles);
+          expect(issues.length > 0).toBe(hasGovernance && hasNonGovernanceSource);
+        }
+      )
+    );
+  });
+});
+
+describe('extractReferencesSection', () => {
+  test('extracts the content between "## References" and the next "## " heading', () => {
+    const content = '# Title\n\n## Summary\nBody.\n\n## References\n- foo\n- bar\n\n## Non-goals\nMore.';
+    expect(extractReferencesSection(content)?.trim()).toBe('- foo\n- bar');
+  });
+
+  test('extracts to end of document when References is the last section', () => {
+    const content = '# Title\n\n## References\n- foo\n';
+    expect(extractReferencesSection(content)?.trim()).toBe('- foo');
+  });
+
+  test('returns null when no References section exists', () => {
+    expect(extractReferencesSection('# Title\n\n## Summary\nBody.')).toBeNull();
+  });
+});
+
+describe('extractCitedFilePaths', () => {
+  test('extracts backtick-quoted repo-relative paths', () => {
+    expect(extractCitedFilePaths('- Spec: `docs/specs/foo.md`\n- Code: `apps/web/lib/bar.ts`')).toEqual([
+      'docs/specs/foo.md',
+      'apps/web/lib/bar.ts',
+    ]);
+  });
+
+  test('does not match a bare word, a URL without a path-like shape, or a backtick-quoted symbol with no slash', () => {
+    expect(extractCitedFilePaths('- See `foo` and `bar()` — https://example.com/x')).toEqual([]);
+  });
+
+  test('deduplicates repeated citations', () => {
+    expect(extractCitedFilePaths('`docs/adr/0001-x.md` and again `docs/adr/0001-x.md`')).toEqual(['docs/adr/0001-x.md']);
+  });
+});
+
+describe('extractCitedGithubNumbers', () => {
+  test('matches "#123" shorthand', () => {
+    expect(extractCitedGithubNumbers('- PR: #369 fixed this')).toEqual(['369']);
+  });
+
+  test('matches a full pull request URL', () => {
+    expect(extractCitedGithubNumbers('- https://github.com/org/repo/pull/42')).toEqual(['42']);
+  });
+
+  test('does not match an ADR-NNNN reference', () => {
+    expect(extractCitedGithubNumbers('- Related: ADR-0027')).toEqual([]);
+  });
+
+  test('deduplicates repeated citations', () => {
+    expect(extractCitedGithubNumbers('#42 ... also #42')).toEqual(['42']);
+  });
+});
+
+describe('checkFilePathCitations', () => {
+  test('no issues when every cited path exists per the injected exists()', () => {
+    expect(checkFilePathCitations(['a.md', 'b.ts'], 'doc.md', () => true, 'the working tree')).toEqual([]);
+  });
+
+  test('a WARN per missing path, naming the stated scope', () => {
+    const issues = checkFilePathCitations(['a.md'], 'doc.md', () => false, 'the working tree');
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: 'WARN', file: 'doc.md' });
+    expect(issues[0].message).toContain('the working tree');
+    expect(issues[0].message).toContain('a.md');
+  });
+
+  test('property: warns exactly for the paths exists() reports false for', () => {
+    fc.assert(
+      fc.property(fc.array(fc.string({ minLength: 1 }), { maxLength: 10 }), fc.array(fc.boolean(), { maxLength: 10 }), (paths, flags) => {
+        const existsMap = new Map(paths.map((p, i) => [p, flags[i % Math.max(flags.length, 1)] ?? true]));
+        const issues = checkFilePathCitations(paths, 'doc.md', (p) => existsMap.get(p) ?? true, 'scope');
+        const expectedMissing = paths.filter((p) => !(existsMap.get(p) ?? true)).length;
+        expect(issues.length).toBe(expectedMissing);
+      })
+    );
+  });
+});
+
+describe('checkGithubNumberCitations', () => {
+  test('no issues when every cited number resolves per the injected numberExists()', () => {
+    expect(checkGithubNumberCitations(['1', '2'], 'doc.md', () => true)).toEqual([]);
+  });
+
+  test('a WARN per issue/PR number that does not resolve', () => {
+    const issues = checkGithubNumberCitations(['999'], 'doc.md', () => false);
+    expect(issues).toHaveLength(1);
+    expect(issues[0]).toMatchObject({ type: 'WARN', file: 'doc.md' });
+    expect(issues[0].message).toContain('#999');
   });
 });
 

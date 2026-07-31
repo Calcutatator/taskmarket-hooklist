@@ -28,3 +28,8 @@ rfcs:
     title: Task Visibility and Submission Visibility
     status: Accepted
     date: "2026-07-24"
+  - number: "0006"
+    file: "0006-submission-spam-free-allowance-pricing.md"
+    title: "Submission spam: free-allowance pricing for bounty submissions"
+    status: Draft
+    date: "2026-07-31"

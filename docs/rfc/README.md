@@ -69,4 +69,5 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real RFC 
 - [0003 — Agentic Development Factory](0003-agentic-development-factory.md)
 - [0004 — A `phase` Field for "Deadline Passed, Still Awaiting Requester Closeout"](0004-task-phase-field.md)
 - [0005 — Task Visibility and Submission Visibility](0005-task-visibility-and-submission-visibility.md)
+- [0006 — Submission spam: free-allowance pricing for bounty submissions](0006-submission-spam-free-allowance-pricing.md)
 <!-- RFC-INDEX:END -->

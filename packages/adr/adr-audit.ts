@@ -61,10 +61,16 @@
  * Usage:
  *   pnpm --filter @taskmarket/adr run adr-audit
  *
- * Output (always exit 0 — informational, never blocking):
+ * Output (exit 0, informational, unless --fail-on-drift is passed):
  *   docs/adr-audit/report.md    human-readable full report
  *   docs/adr-audit/summary.json structured data, consumed by the PR-comment
  *                               posting step in CI
+ *
+ * Pass --fail-on-drift to exit 1 when any ADR's stated Embodiment disagrees with what
+ * Implements:/Verifies: back-pointers actually compute -- opt-in strictness for CI/pre-commit,
+ * default behavior unchanged for local/interactive use. See .claude/hooks/check-adr-embodiment.mjs
+ * for the editor-level equivalent of this same check, applied before a single edit lands rather
+ * than at commit/push time.
  */
 
 import { execFileSync } from 'child_process';
@@ -80,6 +86,7 @@ import {
   REALIZED_BY_RE,
   REALIZED_BY_STALE_GRACE_DAYS,
   SPEC_IMPLEMENTS_ADRS_RE,
+  TEST_FILE_RE,
   buildAuditSummary,
   checkRealizedByLocator,
   computeDrift,
@@ -133,7 +140,6 @@ const RFC_DIR = path.join(REPO_ROOT, 'docs', 'rfc');
 const SPECS_DIR = path.join(REPO_ROOT, 'docs', 'specs');
 const SKIP_DIR_NAMES = new Set(['node_modules', 'dist', 'build', '.turbo', '.next', 'coverage', '.git']);
 const SOURCE_EXT = new Set(['.ts', '.tsx']);
-const TEST_FILE_RE = /\.(test|spec)\.tsx?$/;
 
 interface AdrToolConfig {
   // Days a Realized-by hash mismatch is tolerated before it counts as real drift.
@@ -663,6 +669,18 @@ function main(): void {
     console.error(`Comment-convention violations: ${commentViolations.size} (see docs/adr-audit/report.md)`);
   }
 
+  // --fail-on-drift is opt-in, not the default: the plain run stays exit-0/informational for
+  // local/interactive use (a developer regenerating the index shouldn't get blocked by drift
+  // they're not currently trying to fix), matching this repo's own warn-vs-block calibration
+  // elsewhere (README.md's "is this a governance gap with no one answerable, or useful-but-not-
+  // worth-blocking" framing). CI and pre-commit opt into strictness explicitly by passing the
+  // flag, rather than this script's default behavior silently changing for every caller.
+  const failOnDrift = process.argv.includes('--fail-on-drift');
+  if (failOnDrift && driftCount > 0) {
+    console.error(`--fail-on-drift set: failing (${driftCount} ADR(s) with a stated/computed Embodiment mismatch).`);
+    process.exitCode = 1;
+  }
+
   // stdout is a pure data channel: the on-disk summary.json plus a status field, for the
   // agent/script that's actually the primary consumer -- everything above is stderr.
   console.log(
@@ -672,6 +690,7 @@ function main(): void {
         driftCount,
         graceCount: staleByNum.size,
         commentViolationCount: commentViolations.size,
+        failOnDrift,
         summary,
       },
       null,

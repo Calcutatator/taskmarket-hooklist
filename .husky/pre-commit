@@ -6,3 +6,13 @@ pnpm turbo type-check
 pnpm turbo format:check
 make skill-conformance
 make docs-og-check
+
+# turbo lint:check only runs each package's own "lint:check" script -- packages/adr's
+# spec-lint and adr-audit have different script names, so neither ran locally at all until now
+# (spec-lint was previously CI-only via `make lint-check specs`; adr-audit's Embodiment check
+# was previously never blocking anywhere). Both close real, separate gaps: spec-lint catches a
+# malformed spec before it's ever pushed; --fail-on-drift catches a stated Embodiment claim that
+# disagrees with computed evidence even when the editor-level PreToolUse hook wasn't active for
+# this edit (a different tool, a human editing directly, the hook not installed).
+pnpm --filter @taskmarket/adr run spec-lint
+pnpm --filter @taskmarket/adr run adr-audit -- --fail-on-drift

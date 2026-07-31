@@ -8,6 +8,8 @@
     "lint:check": "tsx adr-lint.ts",
     "spec-lint": "tsx spec-lint.ts",
     "adr-audit": "tsx adr-audit.ts",
+    "scope-check": "tsx scope-check.ts",
+    "citation-check": "tsx citation-check.ts",
     "type-check": "tsc --noEmit",
     "test": "vitest run",
     "test:watch": "vitest watch"

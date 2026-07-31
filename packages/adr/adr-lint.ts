@@ -17,10 +17,16 @@
 // and a still-Proposed ADR's provisional supersession claim missing its
 // Pending Supersedes / Superseded-by reciprocation on the peer side.
 
-import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
-import { lintAdrDir, lintRfcDir, formatIssueLine, formatGithubAnnotation, normalizeIssueFilePath } from './lib.js';
+import {
+  lintAdrDir,
+  lintRfcDir,
+  formatIssueLine,
+  formatGithubAnnotation,
+  normalizeIssueFilePath,
+  resolveGitDiffChangedFiles,
+} from './lib.js';
 
 // Repo root is two levels up from packages/adr/.
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -36,13 +42,7 @@ function getChangedFiles(): string[] {
   if (!base) return [];
 
   try {
-    // execFileSync with an argument array — not the shell — so ADR_LINT_BASE can never be
-    // interpreted as shell syntax, no matter what it contains.
-    const diff = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
-      cwd: REPO_ROOT,
-      encoding: 'utf-8',
-    });
-    return diff.split('\n').filter((f) => f.trim().length > 0);
+    return resolveGitDiffChangedFiles(REPO_ROOT, base);
   } catch (e) {
     // ADR_LINT_BASE was explicitly requested (CI sets it on every PR run) — a failed
     // diff here means a misconfiguration (bad ref, shallow clone), not "nothing changed".
