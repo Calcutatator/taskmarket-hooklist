@@ -97,18 +97,23 @@ describe('PublicSiteHeader', () => {
       'href',
       '/dashboard/humans'
     );
-    expect(within(mobileNav).getByRole('link', { name: /^latest drop$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/drops'
-    );
-    expect(within(mobileNav).getByRole('button', { name: /^sign in$/i })).toBeEnabled();
+    expect(
+      within(screen.getByRole('dialog', { name: /menu/i })).getByRole('link', {
+        name: /^latest drop$/i,
+      })
+    ).toHaveAttribute('href', '/dashboard/drops');
+    expect(
+      within(screen.getByRole('dialog', { name: /menu/i })).getByRole('button', {
+        name: /^sign in$/i,
+      })
+    ).toBeEnabled();
     const accountControlIds = Array.from(
       document.querySelectorAll<HTMLElement>('[id$="wallet-connect"]')
     ).map((element) => element.id);
     expect(new Set(accountControlIds).size).toBe(accountControlIds.length);
   });
 
-  it('gives the mobile menu practical width and consistent touch targets', async () => {
+  it('gives the mobile menu a polished hierarchy and consistent touch targets', async () => {
     const user = userEvent.setup();
     render(<PublicSiteHeader />);
 
@@ -116,10 +121,27 @@ describe('PublicSiteHeader', () => {
 
     const dialog = screen.getByRole('dialog', { name: /menu/i });
     const mobileNav = within(dialog).getByRole('navigation', { name: /mobile primary/i });
+    const latestDrop = within(dialog).getByRole('link', { name: /^latest drop$/i });
+    const dashboard = within(dialog).getByRole('link', { name: /^dashboard$/i });
+    const taskLink = within(mobileNav).getByRole('link', { name: /^tasks$/i });
 
-    expect(dialog).toHaveClass('w-[calc(100%-1rem)]', 'max-w-sm');
+    expect(dialog).toHaveClass(
+      'w-[calc(100%-0.75rem)]',
+      'max-w-sm',
+      'overflow-hidden',
+      'backdrop-blur-2xl'
+    );
+    expect(latestDrop).toHaveClass('flex', 'min-h-20', 'rounded-xl');
+    expect(latestDrop.querySelector('svg')).not.toBeNull();
+    expect(dashboard).toHaveClass('flex', 'min-h-14', 'rounded-xl');
+    expect(dashboard.querySelector('svg')).not.toBeNull();
+    expect(taskLink).toHaveAttribute('aria-current', 'page');
+    expect(taskLink).toHaveClass('border-primary/24', 'bg-primary/10');
+    expect(within(dialog).getByText(/browse open work and post briefs/i)).toBeVisible();
+    expect(within(dialog).getByText(/a market for completed work/i)).toBeVisible();
     for (const link of within(mobileNav).getAllByRole('link')) {
-      expect(link).toHaveClass('flex', 'min-h-11', 'items-center', 'whitespace-nowrap');
+      expect(link).toHaveClass('flex', 'min-h-14', 'items-center', 'rounded-xl');
+      expect(link.querySelector('svg')).not.toBeNull();
     }
   });
 
