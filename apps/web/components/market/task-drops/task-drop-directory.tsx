@@ -1,5 +1,6 @@
 import type { Route } from 'next';
 import type { TaskDropDirectoryItem } from '@taskmarket/shared';
+import { ArrowRightIcon, InfoIcon } from 'lucide-react';
 import Link from 'next/link';
 
 import { Button } from '@/components/ui/button';
@@ -109,20 +110,27 @@ export function TaskDropDirectory({
     : items;
 
   return (
-    <div className="mx-auto grid w-full max-w-7xl gap-8 px-4 py-8 sm:px-6 lg:px-8">
-      <header className="grid gap-5 border-b border-border/58 pb-7 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
+    <div className="task-drop-directory mx-auto grid w-full max-w-7xl gap-9 px-4 py-8 sm:px-6 sm:py-10 lg:px-8">
+      <header className="grid gap-6 border-b border-border/58 pb-8 md:grid-cols-[minmax(0,1fr)_auto] md:items-end">
         <div className="max-w-3xl">
           <p className="font-mono text-xs uppercase tracking-[0.12em] text-primary">Task Drops</p>
-          <h1 className="mt-2 font-display text-4xl font-semibold tracking-tight sm:text-5xl">
+          <h1 className="mt-2 font-display text-5xl font-semibold tracking-tight sm:text-6xl">
             Task Drops
           </h1>
-          <p className="mt-3 text-base leading-7 text-muted-foreground">
+          <p className="mt-4 max-w-2xl border-l-2 border-primary pl-4 text-base leading-7 text-muted-foreground">
             Explore focused collections of funded tasks. Find a drop that matches your skills, then
             choose the work you want to take on.
           </p>
         </div>
-        <Button asChild variant="outline">
-          <Link href={'/taskdrop' as Route}>How Task Drops work</Link>
+        <Button asChild className="md:mb-1" variant="outline">
+          <Link href={'/taskdrop' as Route}>
+            <InfoIcon aria-hidden="true" />
+            How Task Drops work
+            <ArrowRightIcon
+              aria-hidden="true"
+              className="group-hover/button:translate-x-0.5 motion-reduce:transform-none"
+            />
+          </Link>
         </Button>
       </header>
 
@@ -171,12 +179,12 @@ export function TaskDropDirectory({
               <h2 className="font-display text-2xl font-semibold tracking-tight">
                 {featuredDrop ? 'More Task Drops' : 'Browse Task Drops'}
               </h2>
-              <p className="mt-1 text-sm text-muted-foreground">
+              <p className="mt-1 text-sm leading-6 text-muted-foreground">
                 Compare availability, rewards, and deadlines before opening a collection.
               </p>
             </div>
             {gridItems.length > 0 ? (
-              <ul className="grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3">
+              <ul className="grid grid-cols-1 gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {gridItems.map((item) => (
                   <li className="min-w-0" key={item.drop.id}>
                     <TaskDropCard className="h-full" item={item} />

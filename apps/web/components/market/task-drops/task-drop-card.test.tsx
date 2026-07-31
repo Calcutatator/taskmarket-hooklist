@@ -35,10 +35,12 @@ describe('TaskDropCard', () => {
     expect(links[0]).toHaveAttribute('href', '/dashboard/drops/launch%2Fdrop%20one');
     expect(within(card).getByText('Official drop')).toBeVisible();
     expect(within(card).getByText('2 available')).toBeVisible();
-    expect(within(card).getByText('3 total')).toBeVisible();
+    expect(within(card).getByText('3')).toBeVisible();
+    expect(within(card).getByText('Total')).toBeVisible();
     expect(within(card).getByText('6 USDC')).toBeVisible();
     expect(within(card).getByText('0x1111...1111')).toBeVisible();
     expect(within(card).getByText(/Updated/)).toBeVisible();
+    expect(within(card).getByText('Available')).toBeVisible();
   });
 
   it('does not label unresolved work as resolved when no future deadline exists', () => {
@@ -55,8 +57,25 @@ describe('TaskDropCard', () => {
     );
 
     const card = screen.getByRole('article');
-    expect(within(card).queryByText('Resolved')).not.toBeInTheDocument();
-    expect(within(card).getByText('In progress')).toBeVisible();
+    expect(within(card).queryAllByText('Resolved')).toHaveLength(0);
+    expect(within(card).getAllByText('In progress')).not.toHaveLength(0);
     expect(within(card).getByText('1 task')).toBeVisible();
+  });
+
+  it('uses the resolved state when every task is complete', () => {
+    render(
+      <TaskDropCard
+        item={{
+          ...item,
+          availableTaskCount: 0,
+          nextExpiryTime: null,
+          resolvedTaskCount: 3,
+        }}
+      />
+    );
+
+    const card = screen.getByRole('article');
+    expect(within(card).getAllByText('Resolved')).not.toHaveLength(0);
+    expect(within(card).getByText('3 resolved')).toBeVisible();
   });
 });

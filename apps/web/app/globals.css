@@ -124,6 +124,21 @@
       var(--app-viewport-height) - 2rem - var(--safe-area-inset-top) - var(--safe-area-inset-bottom)
     );
   }
+
+  .task-drop-directory {
+    --drop-directory-resolved: var(--chart-5);
+  }
+
+  .task-drop-art-grid {
+    background-image:
+      linear-gradient(color-mix(in oklab, var(--foreground) 4%, transparent) 1px, transparent 1px),
+      linear-gradient(
+        90deg,
+        color-mix(in oklab, var(--foreground) 4%, transparent) 1px,
+        transparent 1px
+      );
+    background-size: 18px 18px;
+  }
 }
 
 .light {
@@ -272,6 +287,7 @@
   --color-drop-active: var(--drop-active);
   --color-drop-footer: var(--drop-footer);
   --color-drop-footer-muted: var(--drop-footer-muted);
+  --color-drop-directory-resolved: var(--drop-directory-resolved);
   --radius-sm: calc(var(--radius) + 0px);
   --radius-md: calc(var(--radius) + 2px);
   --radius-lg: calc(var(--radius) + 4px);
