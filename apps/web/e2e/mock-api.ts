@@ -1443,6 +1443,8 @@ function findArtifact(artifactId: string) {
   return null;
 }
 
+let videoPreviewSequence = 0;
+
 function mockPreviewUrl(artifactItem: ArtifactResponse) {
   if (artifactItem.mediaKind === 'image') {
     const svg = [
@@ -1457,9 +1459,11 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
   }
 
   if (artifactItem.mediaKind === 'video') {
-    // Minimal ftyp box as a data URL — avoids any DNS resolution in CI.
-    // Media decode errors from invalid data do not surface as console.error.
-    return 'data:video/mp4;base64,AAAAHGZ0eXBNNFYgAAACAGlzb20=';
+    // A real browser-decodable fixture lets playback and byte-range behavior run in
+    // E2E. The changing signature reproduces production activity polls re-signing
+    // the same object without introducing external network access.
+    videoPreviewSequence += 1;
+    return `/taskdrop/taskdrop-mark-loop.mp4?signature=${videoPreviewSequence}`;
   }
 
   if (
@@ -1637,6 +1641,8 @@ function dataForProcedure(procedure: string, input: unknown) {
       return pitchesByTaskId.get(taskId) ?? [];
     case 'proofs.listByTask':
       return proofsByTaskId.get(taskId) ?? [];
+    case 'submissions.listByTask':
+      return submissionsForResponse(taskId, true);
     case 'stats.platformTimeSeries':
       return platformSeriesForRange(range);
     case 'stats.breakdowns':

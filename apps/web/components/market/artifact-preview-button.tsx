@@ -10,7 +10,7 @@ import {
   Play,
   VideoIcon,
 } from 'lucide-react';
-import { useEffect, useState, type ReactNode } from 'react';
+import { useCallback, useEffect, useState, type ReactNode } from 'react';
 import Markdown from 'react-markdown';
 
 import { Button } from '@/components/ui/button';
@@ -33,6 +33,7 @@ import {
   InteractiveHtmlPreview,
   UntrustedHtmlWarningChip,
 } from '@/components/market/interactive-html-preview';
+import { ResilientArtifactVideo } from '@/components/market/resilient-artifact-video';
 import {
   useArtifactPreviewUrl,
   useStableArtifactPreviewUrl,
@@ -225,14 +226,31 @@ function TextPreview({
 function ArtifactPreviewContent({
   artifact,
   fill = false,
+  previewExpiresAt,
   previewUrl,
   showHtmlWarning = true,
 }: {
   artifact: ArtifactResponse;
   fill?: boolean;
+  previewExpiresAt: string | null;
   previewUrl: string | null;
   showHtmlWarning?: boolean;
 }) {
+  if (artifact.mediaKind === 'video') {
+    return (
+      <ResilientArtifactVideo
+        artifact={artifact}
+        className={cn(
+          'w-full rounded-xl border border-border/60 bg-background/52',
+          fill ? 'h-full' : 'max-h-[65vh]'
+        )}
+        controls
+        initialPreviewExpiresAt={previewExpiresAt}
+        initialPreviewUrl={previewUrl}
+      />
+    );
+  }
+
   if (!previewUrl) {
     return (
       <div className="rounded-xl border border-border/60 bg-background/52 p-4 text-sm text-muted-foreground">
@@ -284,23 +302,6 @@ function ArtifactPreviewContent({
     );
   }
 
-  if (artifact.mediaKind === 'video') {
-    return (
-      <video
-        className={cn(
-          'w-full rounded-xl border border-border/60 bg-background/52',
-          fill ? 'h-full' : 'max-h-[65vh]'
-        )}
-        controls
-        src={previewUrl}
-      >
-        <a href={previewUrl} rel="noreferrer" target="_blank">
-          Open artifact
-        </a>
-      </video>
-    );
-  }
-
   if (artifact.mediaKind === 'audio') {
     return (
       <div className="rounded-xl border border-border/60 bg-background/52 p-4">
@@ -332,6 +333,7 @@ type ArtifactPreviewSurfaceProps = {
   loading: boolean;
   onOpenChange: (open: boolean) => void;
   open: boolean;
+  previewExpiresAt: string | null;
   previewUrl: string | null;
 };
 
@@ -343,6 +345,7 @@ function DesktopArtifactDialog({
   loading,
   onOpenChange,
   open,
+  previewExpiresAt,
   previewUrl,
 }: ArtifactPreviewSurfaceProps) {
   return (
@@ -368,7 +371,11 @@ function DesktopArtifactDialog({
             </Button>
           </div>
         ) : (
-          <ArtifactPreviewContent artifact={artifact} previewUrl={previewUrl} />
+          <ArtifactPreviewContent
+            artifact={artifact}
+            previewExpiresAt={previewExpiresAt}
+            previewUrl={previewUrl}
+          />
         )}
 
         <ArtifactMetadata artifact={artifact} previewUrl={interactiveHtml ? null : previewUrl} />
@@ -393,6 +400,7 @@ function MobileArtifactSheet({
   loading,
   onOpenChange,
   open,
+  previewExpiresAt,
   previewUrl,
 }: ArtifactPreviewSurfaceProps) {
   const [detailsOpen, setDetailsOpen] = useState(false);
@@ -441,6 +449,7 @@ function MobileArtifactSheet({
             <ArtifactPreviewContent
               artifact={artifact}
               fill
+              previewExpiresAt={previewExpiresAt}
               previewUrl={previewUrl}
               showHtmlWarning={false}
             />
@@ -484,10 +493,14 @@ export function ArtifactPreviewTrigger({
   const [open, setOpen] = useState(false);
   const isMobile = useIsMobile();
   const interactiveHtml = isInteractiveHtmlArtifact(artifact);
-  const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact, {
-    expiresAt: initialPreviewExpiresAt,
-    url: initialPreviewUrl,
-  });
+  const { ensurePreviewUrl, error, loading, previewExpiresAt, previewUrl } = useArtifactPreviewUrl(
+    taskId,
+    artifact,
+    {
+      expiresAt: initialPreviewExpiresAt,
+      url: initialPreviewUrl,
+    }
+  );
   const Surface = isMobile ? MobileArtifactSheet : DesktopArtifactDialog;
 
   return (
@@ -512,6 +525,7 @@ export function ArtifactPreviewTrigger({
         loading={loading}
         onOpenChange={setOpen}
         open={open}
+        previewExpiresAt={previewExpiresAt}
         previewUrl={previewUrl}
       />
     </>
@@ -519,14 +533,20 @@ export function ArtifactPreviewTrigger({
 }
 
 export function ArtifactMediaTile({ artifact, taskId }: Props) {
-  const previewUrl = useStableArtifactPreviewUrl(artifact);
+  const stablePreviewUrl = useStableArtifactPreviewUrl(artifact);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState(stablePreviewUrl);
+  const previewUrl = artifact.mediaKind === 'video' ? videoPreviewUrl : stablePreviewUrl;
   const openLabel = `Open ${artifact.fileName} preview`;
+
+  useEffect(() => {
+    setVideoPreviewUrl(stablePreviewUrl);
+  }, [artifact.id, stablePreviewUrl]);
 
   return (
     <ArtifactPreviewTrigger
       artifact={artifact}
-      initialPreviewExpiresAt={artifact.previewExpiresAt ?? null}
-      initialPreviewUrl={artifact.previewUrl ?? null}
+      initialPreviewExpiresAt={artifact.mediaKind === 'video' ? null : artifact.previewExpiresAt}
+      initialPreviewUrl={previewUrl}
       taskId={taskId}
     >
       {({ error, loading, openPreview }) => (
@@ -546,13 +566,14 @@ export function ArtifactMediaTile({ artifact, taskId }: Props) {
                   src={previewUrl}
                 />
               </button>
-            ) : artifact.mediaKind === 'video' && previewUrl ? (
-              <video
+            ) : artifact.mediaKind === 'video' ? (
+              <ResilientArtifactVideo
+                artifact={artifact}
                 className="h-full w-full object-contain"
                 controls
                 muted
+                onPreviewUrlChange={setVideoPreviewUrl}
                 preload="metadata"
-                src={previewUrl}
               />
             ) : (
               <button
@@ -610,16 +631,32 @@ export function ArtifactMediaTile({ artifact, taskId }: Props) {
 // Full-width image-first surface for a submission's primary deliverable. The media
 // is the whole element: no filename/size caption, and a click opens the viewer
 // (the shared gallery when onOpen is provided, the per-artifact dialog otherwise).
+function MediaHeroVideoFallback({ onVisible }: { onVisible: () => void }) {
+  useEffect(() => {
+    onVisible();
+  }, [onVisible]);
+
+  return <p>This video cannot be played in your browser.</p>;
+}
+
 function MediaHeroSurface({
   artifact,
   onOpen,
+  onVideoPreviewUrlChange,
   previewUrl,
 }: {
   artifact: ArtifactResponse;
   onOpen: () => void;
+  onVideoPreviewUrlChange: (previewUrl: string | null) => void;
   previewUrl: string | null;
 }) {
   const openLabel = `Open ${artifact.fileName} preview`;
+  const [videoFailed, setVideoFailed] = useState(false);
+  const handleVideoFallbackVisible = useCallback(() => setVideoFailed(true), []);
+
+  useEffect(() => {
+    setVideoFailed(false);
+  }, [artifact.id]);
 
   return (
     <div className="overflow-hidden rounded-lg border border-border/58 bg-muted/26 shadow-[var(--shadow-soft)]">
@@ -638,25 +675,29 @@ function MediaHeroSurface({
               src={previewUrl}
             />
           </button>
-        ) : artifact.mediaKind === 'video' && previewUrl ? (
-          <button
-            aria-label={openLabel}
-            className="relative block h-full w-full cursor-zoom-in overflow-hidden"
-            onClick={onOpen}
-            type="button"
-          >
-            <video
+        ) : artifact.mediaKind === 'video' ? (
+          <div className="relative h-full w-full overflow-hidden">
+            <ResilientArtifactVideo
+              artifact={artifact}
               className="h-full w-full object-contain"
+              fallback={<MediaHeroVideoFallback onVisible={handleVideoFallbackVisible} />}
               muted
+              onPreviewUrlChange={onVideoPreviewUrlChange}
               preload="metadata"
-              src={previewUrl}
             />
-            <span className="absolute inset-0 grid place-items-center">
-              <span className="grid size-11 place-items-center rounded-full border border-border/64 bg-background/72 text-foreground">
-                <Play className="size-4" />
-              </span>
-            </span>
-          </button>
+            {!videoFailed ? (
+              <button
+                aria-label={openLabel}
+                className="absolute inset-0 grid h-full w-full cursor-zoom-in place-items-center"
+                onClick={onOpen}
+                type="button"
+              >
+                <span className="grid size-11 place-items-center rounded-full border border-border/64 bg-background/72 text-foreground">
+                  <Play className="size-4" />
+                </span>
+              </button>
+            ) : null}
+          </div>
         ) : (
           <button
             aria-label={openLabel}
@@ -677,22 +718,40 @@ function MediaHeroSurface({
 }
 
 export function ArtifactMediaHero({ artifact, onOpen, taskId }: Props & { onOpen?: () => void }) {
-  const previewUrl = useStableArtifactPreviewUrl(artifact);
+  const stablePreviewUrl = useStableArtifactPreviewUrl(artifact);
+  const [videoPreviewUrl, setVideoPreviewUrl] = useState(stablePreviewUrl);
+  const previewUrl = artifact.mediaKind === 'video' ? videoPreviewUrl : stablePreviewUrl;
+
+  useEffect(() => {
+    setVideoPreviewUrl(stablePreviewUrl);
+  }, [artifact.id, stablePreviewUrl]);
 
   if (onOpen) {
-    return <MediaHeroSurface artifact={artifact} onOpen={onOpen} previewUrl={previewUrl} />;
+    return (
+      <MediaHeroSurface
+        artifact={artifact}
+        onOpen={onOpen}
+        onVideoPreviewUrlChange={setVideoPreviewUrl}
+        previewUrl={previewUrl}
+      />
+    );
   }
 
   return (
     <ArtifactPreviewTrigger
       artifact={artifact}
-      initialPreviewExpiresAt={artifact.previewExpiresAt ?? null}
-      initialPreviewUrl={artifact.previewUrl ?? null}
+      initialPreviewExpiresAt={artifact.mediaKind === 'video' ? null : artifact.previewExpiresAt}
+      initialPreviewUrl={previewUrl}
       taskId={taskId}
     >
       {({ error, openPreview }) => (
         <div className="grid gap-1">
-          <MediaHeroSurface artifact={artifact} onOpen={openPreview} previewUrl={previewUrl} />
+          <MediaHeroSurface
+            artifact={artifact}
+            onOpen={openPreview}
+            onVideoPreviewUrlChange={setVideoPreviewUrl}
+            previewUrl={previewUrl}
+          />
           {error ? <span className="text-xs text-destructive">{error}</span> : null}
         </div>
       )}

@@ -19,6 +19,7 @@ import {
 } from '@/components/market/interactive-html-preview';
 import { useMotionDisabled } from '@/components/market/motion/use-motion-disabled';
 import { RelativeTime } from '@/components/market/motion/relative-time';
+import { ResilientArtifactVideo } from '@/components/market/resilient-artifact-video';
 import { ActorLink } from '@/components/market/tasks';
 import {
   usableArtifactPreviewUrl,
@@ -549,8 +550,92 @@ function GallerySlide({
   taskId,
 }: GallerySlideProps) {
   const { artifact } = entry;
-  const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact);
   const isCurrent = offset === 0;
+  const handleVideoPreviewChange = useCallback(
+    (previewUrl: string | null) => {
+      if (isCurrent) {
+        onCurrentPreviewChange(artifact.id, previewUrl);
+      }
+    },
+    [artifact.id, isCurrent, onCurrentPreviewChange]
+  );
+
+  const content =
+    artifact.mediaKind === 'video' ? (
+      <ResilientArtifactVideo
+        artifact={artifact}
+        className="max-h-full max-w-full"
+        controls
+        fetchMissingPreview={isCurrent}
+        onPreviewUrlChange={handleVideoPreviewChange}
+      />
+    ) : (
+      <GalleryNonVideoPreview
+        artifact={artifact}
+        isCurrent={isCurrent}
+        onCurrentPreviewChange={onCurrentPreviewChange}
+        open={open}
+        showWarning={showWarning}
+        taskId={taskId}
+      />
+    );
+
+  const pane = (
+    <div
+      aria-hidden={isCurrent ? undefined : true}
+      className="grid h-full w-full place-items-center"
+    >
+      {content}
+    </div>
+  );
+
+  if (motionDisabled) {
+    return (
+      <div
+        className={cn(
+          'absolute inset-0 h-full w-full',
+          offset === -1 && '-translate-x-full',
+          offset === 0 && 'translate-x-0',
+          offset === 1 && 'translate-x-full'
+        )}
+      >
+        {pane}
+      </div>
+    );
+  }
+
+  const targetX = `${offset * 100}%`;
+
+  return (
+    <motion.div
+      animate={{ x: targetX }}
+      className="absolute inset-0 h-full w-full"
+      initial={{ x: targetX }}
+      transition={{ duration: 0.32, ease: easeOut }}
+    >
+      {pane}
+    </motion.div>
+  );
+}
+
+type GalleryNonVideoPreviewProps = {
+  artifact: ArtifactResponse;
+  isCurrent: boolean;
+  onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
+  open: boolean;
+  showWarning: boolean;
+  taskId: string;
+};
+
+function GalleryNonVideoPreview({
+  artifact,
+  isCurrent,
+  onCurrentPreviewChange,
+  open,
+  showWarning,
+  taskId,
+}: GalleryNonVideoPreviewProps) {
+  const { ensurePreviewUrl, error, loading, previewUrl } = useArtifactPreviewUrl(taskId, artifact);
 
   useEffect(() => {
     if (!open || previewUrl || loading || error) {
@@ -595,48 +680,7 @@ function GallerySlide({
       className="min-h-0 h-full w-full object-contain"
       src={previewUrl}
     />
-  ) : (
-    <video className="max-h-full max-w-full" controls src={previewUrl}>
-      <a href={previewUrl} rel="noreferrer" target="_blank">
-        Open artifact
-      </a>
-    </video>
-  );
+  ) : null;
 
-  const pane = (
-    <div
-      aria-hidden={isCurrent ? undefined : true}
-      className="grid h-full w-full place-items-center"
-    >
-      {content}
-    </div>
-  );
-
-  if (motionDisabled) {
-    return (
-      <div
-        className={cn(
-          'absolute inset-0 h-full w-full',
-          offset === -1 && '-translate-x-full',
-          offset === 0 && 'translate-x-0',
-          offset === 1 && 'translate-x-full'
-        )}
-      >
-        {pane}
-      </div>
-    );
-  }
-
-  const targetX = `${offset * 100}%`;
-
-  return (
-    <motion.div
-      animate={{ x: targetX }}
-      className="absolute inset-0 h-full w-full"
-      initial={{ x: targetX }}
-      transition={{ duration: 0.32, ease: easeOut }}
-    >
-      {pane}
-    </motion.div>
-  );
+  return content;
 }

@@ -1,4 +1,4 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor } from '@testing-library/react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse, TaskResponse } from '@taskmarket/shared';
 
@@ -90,12 +90,27 @@ function seedQuery(value: { data?: unknown; isError?: boolean; isLoading?: boole
   };
 }
 
+function setupMotionPreferences({ hover, reduced }: { hover: boolean; reduced: boolean }) {
+  vi.stubGlobal(
+    'matchMedia',
+    vi.fn().mockImplementation((query: string) => ({
+      addEventListener: vi.fn(),
+      dispatchEvent: vi.fn(),
+      matches: query === '(hover: hover)' ? hover : reduced,
+      media: query,
+      onchange: null,
+      removeEventListener: vi.fn(),
+    }))
+  );
+}
+
 beforeEach(() => {
   seedQuery({ data: undefined });
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  vi.unstubAllGlobals();
 });
 
 describe('TaskCover', () => {
@@ -198,6 +213,112 @@ describe('TaskCover', () => {
 
     // A decorative play puck signals the tile is playable.
     expect(container.querySelector('[data-task-cover-play]')).not.toBeNull();
+  });
+
+  it('plays on hover and resets on leave when pointer hover and motion are available', async () => {
+    setupMotionPreferences({ hover: true, reduced: false });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const pause = vi.spyOn(HTMLMediaElement.prototype, 'pause').mockImplementation(() => {});
+    const task = makeTask({ submissionCount: 1 });
+    seedQuery({
+      data: [
+        {
+          artifacts: [
+            makeArtifact({
+              fileName: 'walkthrough.mp4',
+              id: 'artifact-video',
+              mediaKind: 'video',
+              mimeType: 'video/mp4',
+              previewUrl: 'https://files.example.com/walkthrough.mp4',
+            }),
+          ],
+          id: 'sub-1',
+          submittedAt: new Date().toISOString(),
+          taskId: task.id,
+          workerAddress: '0x3333333333333333333333333333333333333333',
+        },
+      ],
+    });
+
+    const { container } = render(<TaskCover task={task} />);
+    const video = container.querySelector('video') as HTMLVideoElement;
+
+    fireEvent.mouseEnter(video);
+
+    expect(play).toHaveBeenCalledOnce();
+    await waitFor(() =>
+      expect(container.querySelector('[data-task-cover-play]')).not.toBeInTheDocument()
+    );
+
+    video.currentTime = 12;
+    fireEvent.mouseLeave(video);
+
+    expect(pause).toHaveBeenCalledOnce();
+    expect(video.currentTime).toBe(0);
+    expect(container.querySelector('[data-task-cover-play]')).toBeInTheDocument();
+  });
+
+  it('never starts hover playback when reduced motion is requested', () => {
+    setupMotionPreferences({ hover: true, reduced: true });
+    const play = vi.spyOn(HTMLMediaElement.prototype, 'play').mockResolvedValue();
+    const task = makeTask({ submissionCount: 1 });
+    seedQuery({
+      data: [
+        {
+          artifacts: [
+            makeArtifact({
+              id: 'artifact-video',
+              mediaKind: 'video',
+              mimeType: 'video/mp4',
+              previewUrl: 'https://files.example.com/walkthrough.mp4',
+            }),
+          ],
+          id: 'sub-1',
+          submittedAt: new Date().toISOString(),
+          taskId: task.id,
+          workerAddress: '0x3333333333333333333333333333333333333333',
+        },
+      ],
+    });
+
+    const { container } = render(<TaskCover task={task} />);
+    fireEvent.mouseEnter(container.querySelector('video') as HTMLVideoElement);
+
+    expect(play).not.toHaveBeenCalled();
+    expect(container.querySelector('[data-task-cover-play]')).toBeInTheDocument();
+  });
+
+  it('keeps a task-cover video source stable when activity polling re-signs its URL', () => {
+    const task = makeTask({ submissionCount: 1 });
+    const submission = (previewUrl: string) => ({
+      artifacts: [
+        makeArtifact({
+          id: 'artifact-video',
+          mediaKind: 'video' as const,
+          mimeType: 'video/mp4',
+          previewUrl,
+        }),
+      ],
+      id: 'sub-1',
+      submittedAt: new Date().toISOString(),
+      taskId: task.id,
+      workerAddress: '0x3333333333333333333333333333333333333333',
+    });
+    seedQuery({ data: [submission('https://files.example.com/walkthrough.mp4?sig=first')] });
+    const { container, rerender } = render(<TaskCover task={task} />);
+
+    expect(container.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/walkthrough.mp4?sig=first'
+    );
+
+    seedQuery({ data: [submission('https://files.example.com/walkthrough.mp4?sig=second')] });
+    rerender(<TaskCover task={{ ...task }} />);
+
+    expect(container.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/walkthrough.mp4?sig=first'
+    );
   });
 
   it('shows a skeleton while the media query is loading', () => {

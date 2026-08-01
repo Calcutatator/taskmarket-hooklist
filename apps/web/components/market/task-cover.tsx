@@ -11,6 +11,7 @@ import {
   taskHasActivity,
 } from '@/components/market/tasks';
 import { ArtifactPoster, canRenderArtifactPoster } from '@/components/market/artifact-poster';
+import { ResilientArtifactVideo } from '@/components/market/resilient-artifact-video';
 import { Badge } from '@/components/ui/badge';
 import { Skeleton } from '@/components/ui/skeleton';
 import {
@@ -55,7 +56,7 @@ function CoverImage({ artifact, previewUrl }: { artifact: ArtifactResponse; prev
   );
 }
 
-function CoverVideo({ previewUrl }: { previewUrl: string }) {
+function CoverVideo({ artifact }: { artifact: ArtifactResponse }) {
   const videoRef = useRef<HTMLVideoElement | null>(null);
   const [showPuck, setShowPuck] = useState(true);
 
@@ -85,7 +86,8 @@ function CoverVideo({ previewUrl }: { previewUrl: string }) {
 
   return (
     <>
-      <video
+      <ResilientArtifactVideo
+        artifact={artifact}
         className={COVER_MEDIA_CLASS}
         muted
         onMouseEnter={handleEnter}
@@ -93,7 +95,7 @@ function CoverVideo({ previewUrl }: { previewUrl: string }) {
         playsInline
         preload="metadata"
         ref={videoRef}
-        src={previewUrl}
+        showOpenAction={false}
       />
       {showPuck ? (
         <div
@@ -173,7 +175,7 @@ function TaskMediaCover({ task }: { task: TaskResponse }) {
 
   if (isMediaArtifact(cover) && cover.previewUrl) {
     return cover.mediaKind === 'video' ? (
-      <CoverVideo previewUrl={cover.previewUrl} />
+      <CoverVideo artifact={cover} />
     ) : (
       <CoverImage artifact={cover} previewUrl={cover.previewUrl} />
     );

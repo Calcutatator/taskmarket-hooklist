@@ -79,8 +79,10 @@ export function useArtifactPreviewUrl(
   artifact: ArtifactResponse,
   initial?: { expiresAt?: string | null; url?: string | null }
 ) {
-  const providedUrl = initial?.url ?? artifact.previewUrl ?? null;
-  const providedExpiresAt = initial?.expiresAt ?? artifact.previewExpiresAt ?? null;
+  const hasInitial = initial !== undefined;
+  const providedUrl = initial === undefined ? (artifact.previewUrl ?? null) : (initial.url ?? null);
+  const providedExpiresAt =
+    initial === undefined ? (artifact.previewExpiresAt ?? null) : (initial.expiresAt ?? null);
   const [preview, setPreview] = useState<PreviewState>({
     expiresAt: providedExpiresAt,
     url: providedUrl,
@@ -94,18 +96,20 @@ export function useArtifactPreviewUrl(
     const artifactChanged = seededArtifactId.current !== artifact.id;
     seededArtifactId.current = artifact.id;
 
-    // Adopt the URL the list just delivered only when nothing usable is held: a poll
-    // re-signing the same artifact would otherwise restart any media playing from it.
-    setPreview((current) =>
-      !artifactChanged && currentPreviewUrl(current)
+    // Adopt a list URL only when nothing usable is held: a poll re-signing the same
+    // artifact would otherwise restart playing media. An explicit initial override
+    // comes from a renderer that already refreshed the URL, so it is authoritative.
+    setPreview((current) => {
+      const explicitInitialChanged = hasInitial && current.url !== providedUrl;
+      return !artifactChanged && !explicitInitialChanged && currentPreviewUrl(current)
         ? current
-        : { expiresAt: providedExpiresAt, url: providedUrl }
-    );
+        : { expiresAt: providedExpiresAt, url: providedUrl };
+    });
 
     if (artifactChanged) {
       setError(null);
     }
-  }, [artifact.id, providedExpiresAt, providedUrl]);
+  }, [artifact.id, hasInitial, providedExpiresAt, providedUrl]);
 
   const ensurePreviewUrl = useCallback(
     async (force = false) => {
@@ -147,5 +151,11 @@ export function useArtifactPreviewUrl(
     [artifact.id, preview, taskId]
   );
 
-  return { ensurePreviewUrl, error, loading, previewUrl };
+  return {
+    ensurePreviewUrl,
+    error,
+    loading,
+    previewExpiresAt: preview.expiresAt,
+    previewUrl,
+  };
 }

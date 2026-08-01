@@ -713,6 +713,66 @@ describe('SubmissionGalleryDialog', () => {
     );
   });
 
+  it('mirrors a recovered video URL into the current artifact Details action', async () => {
+    setupMatchMedia(1280);
+    const freshUrl = 'https://files.example.com/walkthrough.mp4?sig=recovered';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      json: async () => ({
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        previewUrl: freshUrl,
+      }),
+      ok: true,
+    } as Response);
+    const user = userEvent.setup();
+    const videoSubmission = submission('sub-video', '0x4444444444444444444444444444444444444444', [
+      videoC,
+    ]);
+    render(
+      directGallery({
+        entries: [galleryEntry(videoC, videoSubmission)],
+        initialArtifactId: videoC.id,
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    const video = dialog.querySelector('video') as HTMLVideoElement;
+    fireEvent.error(video);
+
+    await waitFor(() => expect(video).toHaveAttribute('src', freshUrl));
+    await user.click(within(dialog).getByText('Details'));
+
+    expect(within(dialog).getByRole('link', { name: 'Open artifact' })).toHaveAttribute(
+      'href',
+      freshUrl
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('keeps the video carousel window bounded to the current and adjacent artifacts', async () => {
+    setupMatchMedia(1280);
+    const videoEntries = Array.from({ length: 50 }, (_, index) => {
+      const item = artifact({
+        fileName: `video-${index}.mp4`,
+        id: `artifact-video-${index}`,
+        mediaKind: 'video',
+        mimeType: 'video/mp4',
+        previewUrl: `https://files.example.com/video-${index}.mp4`,
+        submissionId: `sub-video-${index}`,
+      });
+      const itemSubmission = submission(
+        `sub-video-${index}`,
+        '0x4444444444444444444444444444444444444444',
+        [item]
+      );
+      return galleryEntry(item, itemSubmission);
+    });
+
+    render(directGallery({ entries: videoEntries }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(dialog.querySelectorAll('video')).toHaveLength(3);
+  });
+
   it('stays on the open artifact when a newer submission joins the feed', async () => {
     const user = userEvent.setup();
     const { rerender } = renderPanel();
@@ -1124,6 +1184,41 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="drawer-content"]')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="dialog-content"]')).not.toBeInTheDocument();
+  });
+
+  it('shows the actionable video fallback after bounded recovery is exhausted', async () => {
+    setupMatchMedia(390);
+    const freshUrl = 'https://files.example.com/walkthrough.mp4?sig=recovered';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      json: async () => ({
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        previewUrl: freshUrl,
+      }),
+      ok: true,
+    } as Response);
+    const videoSubmission = submission('sub-video', '0x4444444444444444444444444444444444444444', [
+      videoC,
+    ]);
+    render(
+      directGallery({
+        entries: [galleryEntry(videoC, videoSubmission)],
+        initialArtifactId: videoC.id,
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    const video = dialog.querySelector('video') as HTMLVideoElement;
+    fireEvent.error(video);
+    await waitFor(() => expect(video).toHaveAttribute('src', freshUrl));
+    fireEvent.error(video);
+
+    const fallback = await within(dialog).findByRole('alert');
+    expect(fallback).toHaveTextContent('This video cannot be played in your browser.');
+    expect(within(fallback).getByRole('link', { name: 'Open artifact' })).toHaveAttribute(
+      'href',
+      freshUrl
+    );
+    expect(fetchMock).toHaveBeenCalledOnce();
   });
 
   it('shows an optional context label above the mobile playfield', async () => {

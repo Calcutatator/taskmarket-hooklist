@@ -1,10 +1,10 @@
-import { act, render, screen, within } from '@testing-library/react';
+import { act, fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse } from '@taskmarket/shared';
 import { createContext, useContext, type ReactNode } from 'react';
 
-import { ArtifactMediaTile } from './artifact-preview-button';
+import { ArtifactMediaHero, ArtifactMediaTile } from './artifact-preview-button';
 
 // A controllable IntersectionObserver stub for asserting the "not yet in view"
 // state distinctly from "in view" -- unlike IntersectionObserverStub below (which
@@ -548,5 +548,125 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
       'src',
       'https://files.example.com/clip.mp4'
     );
+  });
+});
+
+describe('artifact video integration', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
+  it('keeps the controlled tile video source stable across activity polling', () => {
+    const videoArtifact = artifact({
+      fileName: 'clip.mp4',
+      id: 'artifact-video',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/clip-first.mp4',
+    });
+    const { container, rerender } = render(
+      <ArtifactMediaTile artifact={videoArtifact} taskId="task-1" />
+    );
+
+    const video = container.querySelector('video');
+    expect(video).toHaveAttribute('controls');
+    expect(video).toHaveAttribute('src', 'https://files.example.com/clip-first.mp4');
+
+    rerender(
+      <ArtifactMediaTile
+        artifact={{
+          ...videoArtifact,
+          previewUrl: 'https://files.example.com/clip-from-next-poll.mp4',
+        }}
+        taskId="task-1"
+      />
+    );
+
+    expect(container.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/clip-first.mp4'
+    );
+  });
+
+  it('preserves hero click-to-open behavior around the resilient video', async () => {
+    const user = userEvent.setup();
+    const onOpen = vi.fn();
+    const videoArtifact = artifact({
+      fileName: 'clip.mp4',
+      id: 'artifact-video',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/clip.mp4',
+    });
+    const { container } = render(
+      <ArtifactMediaHero artifact={videoArtifact} onOpen={onOpen} taskId="task-1" />
+    );
+
+    expect(container.querySelector('video')).toHaveAttribute(
+      'src',
+      'https://files.example.com/clip.mp4'
+    );
+
+    await user.click(screen.getByRole('button', { name: /open clip\.mp4 preview/i }));
+
+    expect(onOpen).toHaveBeenCalledOnce();
+  });
+
+  it('reuses the renderer-fetched URL when opening a standalone video dialog', async () => {
+    const user = userEvent.setup();
+    const freshUrl = 'https://files.example.com/clip-fetched.mp4';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      json: async () => ({
+        expiresAt: new Date(Date.now() + 3_600_000).toISOString(),
+        previewUrl: freshUrl,
+      }),
+      ok: true,
+    } as Response);
+    const videoArtifact = artifact({
+      fileName: 'clip.mp4',
+      id: 'artifact-video',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewExpiresAt: undefined,
+      previewUrl: undefined,
+    });
+    const { container } = render(<ArtifactMediaTile artifact={videoArtifact} taskId="task-1" />);
+
+    await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', freshUrl));
+    await user.click(screen.getByRole('button', { name: /open clip\.mp4 preview/i }));
+
+    expect(await screen.findByRole('dialog')).toBeInTheDocument();
+    expect(screen.getByRole('dialog').querySelector('video')).toHaveAttribute('src', freshUrl);
+    expect(fetchMock).toHaveBeenCalledTimes(1);
+  });
+
+  it('exposes the hero fallback action after recovery is exhausted without nesting controls', async () => {
+    const freshUrl = 'https://files.example.com/clip-recovered.mp4';
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      json: async () => ({ previewUrl: freshUrl }),
+      ok: true,
+    } as Response);
+    const videoArtifact = artifact({
+      fileName: 'clip.mp4',
+      id: 'artifact-video',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/clip.mp4',
+    });
+    const { container } = render(
+      <ArtifactMediaHero artifact={videoArtifact} onOpen={vi.fn()} taskId="task-1" />
+    );
+    const video = container.querySelector('video')!;
+
+    fireEvent.error(video);
+    await waitFor(() => expect(video).toHaveAttribute('src', freshUrl));
+    fireEvent.error(video);
+
+    expect(await screen.findByRole('alert')).toHaveTextContent(
+      'This video cannot be played in your browser.'
+    );
+    expect(screen.getByRole('link', { name: 'Open artifact' })).toHaveAttribute('href', freshUrl);
+    expect(container.querySelector('button a')).toBeNull();
+    expect(fetchMock).toHaveBeenCalledTimes(1);
   });
 });

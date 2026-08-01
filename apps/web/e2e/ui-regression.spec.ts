@@ -292,6 +292,63 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expectNoHorizontalOverflow(page);
 });
 
+test('keeps a real task video playing when activity polling re-signs its URL', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    !['chromium-desktop', 'webkit-mobile-390'].includes(testInfo.project.name),
+    'One Chromium and one WebKit project cover browser media behavior.'
+  );
+
+  let submissionPolls = 0;
+  await page.route('**/trpc/**', async (route) => {
+    if (new URL(route.request().url()).pathname.includes('submissions.listByTask')) {
+      submissionPolls += 1;
+      await route.continue();
+      return;
+    }
+    await route.fallback();
+  });
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await comparison.getByRole('button', { name: /Open candidate-a-demo\.mp4 preview/i }).click();
+
+  const video = page.getByRole('dialog').locator('video').filter({ visible: true });
+  await expect(video).toHaveCount(1);
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
+    .toBeGreaterThanOrEqual(2);
+
+  const initialSrc = await video.getAttribute('src');
+  expect(initialSrc).toMatch(/^\/taskdrop\/taskdrop-mark-loop\.mp4\?signature=\d+$/);
+  const rangeResponse = await page.request.get(new URL(initialSrc!, page.url()).toString(), {
+    headers: { range: 'bytes=0-1023' },
+  });
+  expect(rangeResponse.status()).toBe(206);
+  expect(rangeResponse.headers()['accept-ranges']).toBe('bytes');
+  expect(rangeResponse.headers()['content-range']).toMatch(/^bytes 0-1023\//);
+
+  await video.evaluate(async (element) => {
+    const videoElement = element as HTMLVideoElement;
+    videoElement.loop = true;
+    videoElement.muted = true;
+    await videoElement.play();
+  });
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).currentTime))
+    .toBeGreaterThan(0.1);
+
+  const pollsBeforePlayback = submissionPolls;
+  await expect
+    .poll(() => submissionPolls, { timeout: 12_000 })
+    .toBeGreaterThan(pollsBeforePlayback);
+  await expect(video).toHaveAttribute('src', initialSrc!);
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
+    .toBe(false);
+});
+
 test('runs submitted HTML inline while isolating it from the platform and network', async ({
   page,
 }) => {
