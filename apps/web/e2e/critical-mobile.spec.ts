@@ -294,6 +294,38 @@ test('shows one provider-missing task action without opening upload', async ({ p
   );
 });
 
+test('keeps grouped submission review usable at edge mobile widths', async ({ page }) => {
+  await page.goto('/dashboard/tasks/e2e-grouped-submission-review');
+
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  const historyButton = comparison.getByRole('button', {
+    name: /^View all 150 submissions from/,
+  });
+  await expectNoHorizontalOverflow(page);
+
+  await page.getByRole('button', { exact: true, name: 'Gallery' }).tap();
+  const artifactDrawer = page.getByRole('dialog');
+  await expect(artifactDrawer).toContainText(
+    'second-worker-final-with-an-extremely-long-review-filename.png'
+  );
+  await expect(artifactDrawer).toBeVisible();
+  await expectNoHorizontalOverflow(page);
+  await page.keyboard.press('Escape');
+  await expect(artifactDrawer).toHaveCount(0);
+
+  await page.getByRole('button', { name: 'Next page' }).tap();
+  await expectTouchTarget(historyButton);
+  await historyButton.tap();
+  await expect(page.getByRole('heading', { name: 'Submitter history' })).toBeVisible();
+  await expect(page.getByRole('region', { name: /^Submission \d+ of 150 from/ })).toHaveCount(10);
+  await expectNoHorizontalOverflow(page);
+
+  const backButton = page.getByRole('button', { name: 'Back to all submitters' });
+  await expectTouchTarget(backButton);
+  await backButton.tap();
+  await expect(comparison).toBeVisible();
+});
+
 test('explains estimated DREAMS eligibility within the mobile viewport', async ({ page }) => {
   await page.goto('/tasks/mock-bounty-open');
 

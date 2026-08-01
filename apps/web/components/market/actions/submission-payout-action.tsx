@@ -21,9 +21,11 @@ function sameAddress(left?: string | null, right?: string | null) {
 
 export function SubmissionPayoutAction({
   action,
+  onSuccess,
   task,
 }: {
   action: PendingAction;
+  onSuccess?: () => void;
   task: TaskDetailResponse | TaskResponse;
 }) {
   const { address, isConnected } = useAccount();
@@ -56,7 +58,15 @@ export function SubmissionPayoutAction({
             </p>
           </FundingGuard>
         ) : null}
-        <AcceptButton action={action} disabled={Boolean(actionFundingPrompt)} task={task} />
+        <AcceptButton
+          action={action}
+          disabled={Boolean(actionFundingPrompt)}
+          onSuccess={onSuccess}
+          task={task}
+        />
+        <p className="text-xs leading-5 text-muted-foreground">
+          Releases payout to this worker using their latest active submission.
+        </p>
       </div>
     );
   }

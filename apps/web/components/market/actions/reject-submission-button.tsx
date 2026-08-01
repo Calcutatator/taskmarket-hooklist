@@ -1,13 +1,17 @@
 'use client';
 
+import type { PendingAction } from '@taskmarket/shared';
 import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { FundingGuard, usePaidActionFundingPrompt } from '@/components/market/fund-wallet-button';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { formatUsdcUnits } from '@/lib/format';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
+import { ConfirmDialog } from './confirm-dialog';
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
 
@@ -16,23 +20,46 @@ function parseWorkerFromCommand(command: string): string | null {
   return match?.[1] ?? null;
 }
 
+function sameAddress(left?: string | null, right?: string | null) {
+  return Boolean(left && right && left.toLowerCase() === right.toLowerCase());
+}
+
+export type WorkerRejectionTarget = {
+  activeSubmissionCount: number;
+  workerAddress: string;
+};
+
+export type RejectSubmissionButtonProps = Omit<TaskActionComponentProps, 'action'> & {
+  action?: Pick<PendingAction, 'command'>;
+  onRejectSuccess?: (workerKey: string) => void;
+  target?: WorkerRejectionTarget;
+};
+
 export function RejectSubmissionButton({
   disabled,
+  onRejectSuccess,
   onSuccess,
   task,
   action,
-}: TaskActionComponentProps & { action?: { command: string } }) {
+  target,
+}: RejectSubmissionButtonProps) {
   const { address, isConnected } = useAccount();
   const { signTypedDataAsync } = useSignTypedData();
   const { switchChainAsync } = useSwitchChain();
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
+  const requesterConnected = sameAddress(address, task.requester);
+  const { actionFundingPrompt, recheckActionFunding } = usePaidActionFundingPrompt({
+    address,
+    enabled: Boolean(target && requesterConnected),
+  });
 
   if (!isConnected || !address) {
-    return <ConnectPrompt label="Connect the requester wallet to reject this submission." />;
+    return <ConnectPrompt label="Connect the requester wallet to reject submissions." />;
   }
 
-  const worker = action?.command ? parseWorkerFromCommand(action.command) : null;
+  const worker =
+    target?.workerAddress ?? (action?.command ? parseWorkerFromCommand(action.command) : null);
   if (!worker) {
     return (
       <p className="text-xs text-muted-foreground">
@@ -40,21 +67,33 @@ export function RejectSubmissionButton({
       </p>
     );
   }
+  const workerAddress = worker;
 
   const busy = step !== 'idle' && step !== 'done';
+  const wrongRequester = Boolean(target && !requesterConnected);
+  const blocked = disabled || busy || wrongRequester || Boolean(actionFundingPrompt);
+  const submissionLabel =
+    target?.activeSubmissionCount === 1
+      ? '1 submission'
+      : `${target?.activeSubmissionCount ?? 0} submissions`;
 
   async function handleReject() {
+    if (target && !requesterConnected) {
+      return;
+    }
+
     setError(null);
     const result = await payX402Post<{ txHash?: string }>(
       `/api/tasks/${task.id}/reject-submission`,
-      { taskId: task.id, worker },
+      { taskId: task.id, worker: workerAddress },
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
       setStep
     );
     if (result.ok) {
       setStep('done');
+      onRejectSuccess?.(workerAddress.toLowerCase());
       onSuccess?.();
-      toast.success('Submission rejected');
+      toast.success(target ? 'Submitter rejected' : 'Submission rejected');
     } else {
       setStep('idle');
       if (!result.rejected) {
@@ -65,24 +104,77 @@ export function RejectSubmissionButton({
   }
 
   if (step === 'done') {
-    return <p className="text-xs text-muted-foreground">Submission rejected.</p>;
+    return (
+      <p className="text-xs text-muted-foreground">
+        {target ? 'Submitter rejected.' : 'Submission rejected.'}
+      </p>
+    );
   }
+
+  const trigger = (
+    <Button
+      className="w-fit justify-self-start px-5"
+      disabled={blocked}
+      onClick={target ? undefined : handleReject}
+      size="sm"
+      variant="destructive"
+    >
+      {busy
+        ? 'Rejecting...'
+        : target
+          ? `Reject submitter and all ${submissionLabel}`
+          : 'Reject submission'}
+    </Button>
+  );
 
   return (
     <div className="grid gap-2">
-      <Button
-        className="w-fit justify-self-start px-5"
-        disabled={disabled || busy}
-        onClick={handleReject}
-        size="sm"
-        variant="destructive"
-      >
-        {busy ? 'Rejecting...' : 'Reject submission'}
-      </Button>
+      {target ? (
+        <ConfirmDialog
+          confirmCta="Reject all submissions"
+          description={
+            <span className="grid gap-2">
+              <span>
+                All {submissionLabel} from{' '}
+                <span className="break-all font-mono">{workerAddress}</span> will be rejected. This
+                worker cannot submit again to this task.
+              </span>
+              <span>The relay fee is 0.001 USDC.</span>
+            </span>
+          }
+          disabled={blocked}
+          loadingCta="Rejecting..."
+          onConfirm={handleReject}
+          title="Reject this submitter?"
+        >
+          {trigger}
+        </ConfirmDialog>
+      ) : (
+        trigger
+      )}
+      {target && actionFundingPrompt ? (
+        <FundingGuard
+          address={address}
+          defaultAmount={actionFundingPrompt.defaultAmount}
+          message={`Wallet has ${actionFundingPrompt.balanceUsdc} USDC. Add ${formatUsdcUnits(
+            actionFundingPrompt.shortfallBaseUnits
+          )} before rejecting this submitter.`}
+          onStatus={(status) => {
+            if (status === 'confirmed') {
+              recheckActionFunding();
+            }
+          }}
+        />
+      ) : null}
       <p className="text-xs text-muted-foreground">
         Costs 0.001 USDC relay fee. Rejected workers cannot resubmit. Once all submissions are
         rejected, the task can be cancelled.
       </p>
+      {wrongRequester ? (
+        <p className="text-xs text-destructive">
+          Connect the requester wallet to reject submissions.
+        </p>
+      ) : null}
       {error ? <p className="text-xs text-destructive">{error}</p> : null}
     </div>
   );

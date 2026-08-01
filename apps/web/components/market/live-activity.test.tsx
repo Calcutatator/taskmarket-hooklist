@@ -1,7 +1,12 @@
-import { render, screen } from '@testing-library/react';
+import { fireEvent, render, screen, within } from '@testing-library/react';
 import { act } from 'react';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
-import type { BidResponse, SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared';
+import type {
+  BidResponse,
+  ProofResponse,
+  SubmissionResponse,
+  TaskDetailResponse,
+} from '@taskmarket/shared';
 
 import { LiveActivityPanel } from './live-activity';
 
@@ -17,7 +22,7 @@ const {
 } = vi.hoisted(() => ({
   authenticatedSubmissionsQuerySpy: vi.fn(),
   bidsState: { value: [] as unknown[] },
-  mockAccount: { address: undefined as string | undefined },
+  mockAccount: { address: undefined as string | undefined, isConnected: false },
   readAuthReadyState: { value: false },
   readAuthSignatureSpy: vi.fn(),
   reducedMotionState: { value: true },
@@ -79,6 +84,14 @@ vi.mock('sonner', () => ({
 
 vi.mock('wagmi', () => ({
   useAccount: () => mockAccount,
+  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
+  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
+}));
+
+vi.mock('next/navigation', () => ({
+  useRouter: () => ({
+    refresh: vi.fn(),
+  }),
 }));
 
 vi.mock('motion/react', () => ({
@@ -172,6 +185,20 @@ function submission(id: string, worker: string): SubmissionResponse {
   };
 }
 
+function proof(id: string, worker: string): ProofResponse {
+  return {
+    id,
+    metricValue: '0.92',
+    proofData: 'ipfs://proof-data',
+    proofType: 'eval',
+    status: 'pending',
+    submissionId: null,
+    submittedAt: new Date().toISOString(),
+    taskId: task.id,
+    workerAddress: worker,
+  };
+}
+
 function renderPanel(overrides?: {
   task?: Partial<TaskDetailResponse>;
   initialBids?: BidResponse[];
@@ -193,6 +220,7 @@ beforeEach(() => {
   authenticatedSubmissionsQuerySpy.mockImplementation(async () => submissionsState.value);
   bidsState.value = [];
   mockAccount.address = undefined;
+  mockAccount.isConnected = false;
   readAuthReadyState.value = false;
   readAuthSignatureSpy.mockClear();
   reducedMotionState.value = true;
@@ -370,6 +398,65 @@ describe('LiveActivityPanel', () => {
     expect(toastSpy).toHaveBeenCalledWith('New submission from 0x3333...3333');
     expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe(
       'New submission from 0x3333...3333'
+    );
+  });
+
+  it('keeps repeat submissions silent and announces only a new submitter in review mode', () => {
+    const firstSubmission = submission(
+      'submission-1',
+      '0x2222222222222222222222222222222222222222'
+    );
+    const revision = {
+      ...submission('submission-2', '0x2222222222222222222222222222222222222222'),
+      submittedAt: new Date(Date.now() + 60_000).toISOString(),
+    };
+    const newSubmitter = submission('submission-3', '0x3333333333333333333333333333333333333333');
+    const reviewTask = {
+      ...task,
+      auctionType: null,
+      mode: 'bounty' as const,
+      submissionCount: 1,
+    };
+    const panel = () => (
+      <LiveActivityPanel
+        initialModeData={{ submissions: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        submissionReviewEligible
+        task={reviewTask}
+      />
+    );
+
+    mockAccount.address = REQUESTER;
+    submissionsState.value = [firstSubmission];
+    const { rerender } = render(panel());
+
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    submissionsState.value = [firstSubmission, revision];
+    rerender(panel());
+    act(() => {
+      vi.advanceTimersByTime(1_500);
+    });
+
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
+    expect(
+      screen.getByRole('button', { name: /^View all 2 submissions from/ })
+    ).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    submissionsState.value = [firstSubmission, revision, newSubmitter];
+    rerender(panel());
+    act(() => {
+      vi.advanceTimersByTime(1_500);
+    });
+
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(2);
+    expect(toastSpy).toHaveBeenCalledTimes(1);
+    expect(toastSpy).toHaveBeenCalledWith('New submitter from 0x3333...3333');
+    expect(document.querySelector('[aria-live="polite"]')?.textContent).toBe(
+      'New submitter from 0x3333...3333'
     );
   });
 
@@ -580,5 +667,188 @@ describe('LiveActivityPanel', () => {
     });
 
     expect(container.querySelector('[data-motion-div="true"]')).toBeNull();
+  });
+});
+
+describe('LiveActivityPanel benchmark secondary submissions surface', () => {
+  const WORKER_A = '0x2222222222222222222222222222222222222222';
+  const WORKER_B = '0x3333333333333333333333333333333333333333';
+
+  const benchmarkAccept = {
+    action: 'accept' as const,
+    command: `taskmarket task accept ${task.id} --worker ${WORKER_A}`,
+    role: 'requester' as const,
+  };
+  const benchmarkReject = {
+    action: 'reject_submission' as const,
+    command: `taskmarket task reject-submission ${task.id} --worker <address>`,
+    role: 'requester' as const,
+  };
+
+  function renderBenchmarkPanel(overrides?: {
+    submissions?: SubmissionResponse[];
+    proofs?: ProofResponse[];
+    submissionCount?: number;
+    withReviewActions?: boolean;
+    secondarySubmissionReview?: boolean;
+  }) {
+    const benchmarkTask = {
+      ...task,
+      auctionType: null,
+      mode: 'benchmark' as const,
+      submissionCount: overrides?.submissionCount ?? overrides?.submissions?.length ?? 0,
+    };
+    return render(
+      <LiveActivityPanel
+        initialModeData={{ proofs: overrides?.proofs ?? [], submissions: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        reviewActions={
+          overrides?.withReviewActions === false
+            ? undefined
+            : { acceptAction: benchmarkAccept, rejectAction: benchmarkReject }
+        }
+        secondarySubmissionReview={overrides?.secondarySubmissionReview ?? true}
+        task={benchmarkTask}
+      />
+    );
+  }
+
+  // TaskDetailPanel computes `secondarySubmissionReview` from
+  // `task.submissionCount > 0` and only ever passes `true` down to
+  // LiveActivityPanel when that holds (see tasks.tsx's `benchmarkSubmissionReview`
+  // and the corresponding tasks.test.tsx coverage). At this component level, a
+  // benchmark task with zero submissions is exactly a task the parent never flags
+  // as eligible, so it renders with the flag left at its default `false`.
+  it('renders no Additional submissions disclosure when submissionCount is 0', () => {
+    submissionsState.value = [];
+    renderBenchmarkPanel({ secondarySubmissionReview: false, submissionCount: 0 });
+
+    expect(screen.queryByTestId('benchmark-submission-review')).not.toBeInTheDocument();
+    expect(screen.queryByText(/additional submissions/i)).not.toBeInTheDocument();
+  });
+
+  it('renders the disclosure collapsed by default with the correct count', () => {
+    mockAccount.address = REQUESTER;
+    submissionsState.value = [submission('sub-1', WORKER_A), submission('sub-2', WORKER_B)];
+
+    renderBenchmarkPanel({ submissions: submissionsState.value });
+
+    const disclosure = screen.getByTestId('benchmark-submission-review');
+    expect(disclosure.tagName).toBe('DETAILS');
+    expect(disclosure).not.toHaveAttribute('open');
+    expect(screen.getByText('Additional submissions (2)')).toBeInTheDocument();
+  });
+
+  it('groups the secondary surface by worker using the primary queue rules', () => {
+    mockAccount.address = REQUESTER;
+    submissionsState.value = [
+      submission('sub-1', WORKER_A),
+      submission('sub-2', WORKER_A),
+      submission('sub-3', WORKER_B),
+    ];
+
+    renderBenchmarkPanel({ submissions: submissionsState.value });
+
+    act(() => {
+      fireEvent.click(screen.getByText('Additional submissions (3)'));
+    });
+
+    expect(
+      screen.getByTestId(`benchmark-submitter-group-${WORKER_A.toLowerCase()}`)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByTestId(`benchmark-submitter-group-${WORKER_B.toLowerCase()}`)
+    ).toBeInTheDocument();
+    expect(
+      screen.getByRole('button', { name: /^View all 2 submissions from/ })
+    ).toBeInTheDocument();
+  });
+
+  it('wires accept/reject on the secondary surface with the primary queue command shape', () => {
+    mockAccount.address = REQUESTER;
+    mockAccount.isConnected = true;
+    submissionsState.value = [submission('sub-1', WORKER_A)];
+
+    renderBenchmarkPanel({ submissions: submissionsState.value });
+
+    act(() => {
+      fireEvent.click(screen.getByText('Additional submissions (1)'));
+    });
+
+    expect(screen.getAllByText('Release payout').length).toBeGreaterThan(0);
+    expect(
+      screen.getByText('Releases payout to this worker using their latest active submission.')
+    ).toBeInTheDocument();
+
+    const rejectButton = screen.getByRole('button', {
+      name: 'Reject submitter and all 1 submission',
+    });
+    expect(rejectButton).toBeInTheDocument();
+
+    act(() => {
+      fireEvent.click(rejectButton);
+    });
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('Reject this submitter?')).toBeInTheDocument();
+    expect(within(dialog).getByText(/0\.001 usdc/i)).toBeInTheDocument();
+    expect(within(dialog).getByText(WORKER_A, { exact: false })).toBeInTheDocument();
+  });
+
+  it('keeps the secondary surface state isolated from the primary proof feed, and vice versa', () => {
+    mockAccount.address = REQUESTER;
+    submissionsState.value = [submission('sub-1', WORKER_A), submission('sub-2', WORKER_B)];
+    const proofs = [proof('proof-1', '0x4444444444444444444444444444444444444444')];
+
+    renderBenchmarkPanel({ proofs, submissions: submissionsState.value });
+
+    // Primary proof feed is present and unaffected before any secondary interaction.
+    expect(screen.getByText('eval')).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    // Opening, and paginating within, the secondary surface must not touch the
+    // primary feed's rendered state, toasts, or live region.
+    act(() => {
+      fireEvent.click(screen.getByText('Additional submissions (2)'));
+    });
+    expect(screen.getByText('eval')).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      fireEvent.click(screen.getByRole('button', { name: 'Gallery view' }));
+    });
+    expect(screen.getByText('eval')).toBeInTheDocument();
+    expect(toastSpy).not.toHaveBeenCalled();
+
+    act(() => {
+      vi.advanceTimersByTime(9_000);
+    });
+    // The primary feed's own toast/announcement bookkeeping is untouched by the
+    // secondary surface's independent poll.
+    expect(toastSpy).not.toHaveBeenCalled();
+    expect(screen.getByText('eval')).toBeInTheDocument();
+  });
+
+  it('is additive only -- a bounty task never renders the benchmark secondary surface', () => {
+    mockAccount.address = REQUESTER;
+    submissionsState.value = [submission('sub-1', WORKER_A)];
+
+    render(
+      <LiveActivityPanel
+        initialModeData={{ submissions: [] }}
+        marketStats={null}
+        profileBasePath="/dashboard/agents"
+        submissionReviewEligible
+        task={{
+          ...task,
+          auctionType: null,
+          mode: 'bounty',
+          submissionCount: 1,
+        }}
+      />
+    );
+
+    expect(screen.queryByTestId('benchmark-submission-review')).not.toBeInTheDocument();
+    expect(screen.queryByText(/additional submissions/i)).not.toBeInTheDocument();
   });
 });

@@ -21,6 +21,8 @@ const { account, authState, connectOrCreateWallet, login } = vi.hoisted(() => ({
 
 vi.mock('wagmi', () => ({
   useAccount: () => account,
+  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
+  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
 }));
 
 vi.mock('@privy-io/react-auth', () => ({
@@ -65,5 +67,16 @@ describe('SubmissionPayoutAction', () => {
 
     expect(login).toHaveBeenCalledTimes(1);
     expect(connectOrCreateWallet).not.toHaveBeenCalled();
+  });
+
+  it('explains that payout uses the latest active submission', () => {
+    account.address = task.requester as `0x${string}`;
+    account.isConnected = true;
+
+    render(<SubmissionPayoutAction action={action} task={task} />);
+
+    expect(
+      screen.getByText('Releases payout to this worker using their latest active submission.')
+    ).toBeInTheDocument();
   });
 });

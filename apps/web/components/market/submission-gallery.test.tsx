@@ -1,11 +1,15 @@
-import { fireEvent, render, screen, within } from '@testing-library/react';
+import { fireEvent, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { ArtifactResponse, SubmissionResponse, TaskDetailResponse } from '@taskmarket/shared';
 import { createContext, useContext, type ReactNode } from 'react';
 
 import { LiveActivityPanel } from './live-activity';
-import { submissionMediaEntries } from './submission-gallery';
+import {
+  SubmissionGalleryDialog,
+  submissionMediaEntries,
+  type SubmissionMediaEntry,
+} from './submission-gallery';
 import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
 
 // vaul drives its bottom-sheet drag gesture off Pointer Events + CSS transform APIs
@@ -281,6 +285,45 @@ function resign(list: SubmissionResponse[], token: string): SubmissionResponse[]
   }));
 }
 
+function galleryEntry(
+  artifactValue: ArtifactResponse,
+  submissionValue: SubmissionResponse
+): SubmissionMediaEntry {
+  return { artifact: artifactValue, submission: submissionValue };
+}
+
+function directGallery({
+  contextLabel,
+  entries,
+  entryPolicy,
+  initialArtifactId = entries[0]?.artifact.id ?? null,
+  onOpenChange = vi.fn(),
+  open = true,
+  sessionKey,
+}: {
+  contextLabel?: string;
+  entries: SubmissionMediaEntry[];
+  entryPolicy?: 'live' | 'snapshot-membership';
+  initialArtifactId?: string | null;
+  onOpenChange?: (open: boolean) => void;
+  open?: boolean;
+  sessionKey?: string;
+}) {
+  return (
+    <SubmissionGalleryDialog
+      contextLabel={contextLabel}
+      entries={entries}
+      entryPolicy={entryPolicy}
+      initialArtifactId={initialArtifactId}
+      onOpenChange={onOpenChange}
+      open={open}
+      profileBasePath="/dashboard/agents"
+      sessionKey={sessionKey}
+      taskId={task.id}
+    />
+  );
+}
+
 describe('submissionMediaEntries', () => {
   it('flattens media artifacts across submissions in feed order and skips text files', () => {
     const entries = submissionMediaEntries(submissions);
@@ -316,6 +359,289 @@ describe('submissionMediaEntries', () => {
 });
 
 describe('SubmissionGalleryDialog', () => {
+  it('keeps live membership as the default when an open artifact disappears', async () => {
+    setupMatchMedia(1280);
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const firstEntry = galleryEntry(imageA, firstSubmission);
+    const secondEntry = galleryEntry(imageB, secondSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [firstEntry, secondEntry],
+        initialArtifactId: imageB.id,
+      })
+    );
+
+    expect(
+      within(await screen.findByRole('dialog')).getByAltText('poster-b.png')
+    ).toBeInTheDocument();
+
+    rerender(directGallery({ entries: [firstEntry], initialArtifactId: imageB.id }));
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByAltText('poster-a.png')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 / 1')).toBeInTheDocument();
+  });
+
+  it('retains captured membership and selection when snapshot entries disappear', async () => {
+    setupMatchMedia(1280);
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const firstEntry = galleryEntry(imageA, firstSubmission);
+    const secondEntry = galleryEntry(imageB, secondSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [firstEntry, secondEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageB.id,
+      })
+    );
+
+    expect(
+      within(await screen.findByRole('dialog')).getByAltText('poster-b.png')
+    ).toBeInTheDocument();
+
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageB.id,
+      })
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByAltText('poster-b.png')).toBeInTheDocument();
+    expect(within(dialog).getByText('2 / 2')).toBeInTheDocument();
+  });
+
+  it('keeps captured order and ignores inserted entries during a snapshot session', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const lateArtifact = artifact({
+      fileName: 'late.png',
+      id: 'artifact-late',
+      previewUrl: 'https://files.example.com/late.png',
+      submissionId: 'sub-late',
+    });
+    const lateSubmission = submission('sub-late', '0x5555555555555555555555555555555555555555', [
+      lateArtifact,
+    ]);
+    const firstEntry = galleryEntry(imageA, firstSubmission);
+    const secondEntry = galleryEntry(imageB, secondSubmission);
+    const lateEntry = galleryEntry(lateArtifact, lateSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [firstEntry, secondEntry],
+        entryPolicy: 'snapshot-membership',
+      })
+    );
+
+    expect(within(await screen.findByRole('dialog')).getByText('1 / 2')).toBeInTheDocument();
+
+    rerender(
+      directGallery({
+        entries: [lateEntry, firstEntry, secondEntry],
+        entryPolicy: 'snapshot-membership',
+      })
+    );
+
+    const dialog = screen.getByRole('dialog');
+    expect(within(dialog).getByText('1 / 2')).toBeInTheDocument();
+    expect(within(dialog).queryByAltText('late.png')).not.toBeInTheDocument();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Next artifact' }));
+    expect(within(dialog).getByAltText('poster-b.png')).toBeInTheDocument();
+    expect(within(dialog).getByText('2 / 2')).toBeInTheDocument();
+  });
+
+  it('refreshes metadata for captured entries that remain in the current scope', async () => {
+    setupMatchMedia(1280);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const originalEntry = galleryEntry(imageB, secondSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [originalEntry],
+        entryPolicy: 'snapshot-membership',
+      })
+    );
+
+    expect(
+      within(await screen.findByRole('dialog')).getByRole('heading', { name: 'poster-b.png' })
+    ).toBeInTheDocument();
+
+    const refreshedArtifact = { ...imageB, fileName: 'poster-b-refreshed.png' };
+    rerender(
+      directGallery({
+        entries: [
+          galleryEntry(refreshedArtifact, {
+            ...secondSubmission,
+            artifacts: [refreshedArtifact],
+          }),
+        ],
+        entryPolicy: 'snapshot-membership',
+      })
+    );
+
+    expect(
+      within(screen.getByRole('dialog')).getByRole('heading', {
+        name: 'poster-b-refreshed.png',
+      })
+    ).toBeInTheDocument();
+  });
+
+  it('captures the latest membership after a snapshot session closes and reopens', async () => {
+    setupMatchMedia(1280);
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const firstEntry = galleryEntry(imageA, firstSubmission);
+    const secondEntry = galleryEntry(imageB, secondSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [firstEntry, secondEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageB.id,
+      })
+    );
+
+    expect(within(await screen.findByRole('dialog')).getByText('2 / 2')).toBeInTheDocument();
+
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        open: false,
+      })
+    );
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        open: true,
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByAltText('poster-a.png')).toBeInTheDocument();
+    expect(within(dialog).getByText('1 / 1')).toBeInTheDocument();
+    expect(within(dialog).queryByAltText('poster-b.png')).not.toBeInTheDocument();
+  });
+
+  it('closes and drops captured fallback entries when the authorization scope changes', async () => {
+    setupMatchMedia(1280);
+    const onOpenChange = vi.fn();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const secondSubmission = submission('sub-2', '0x4444444444444444444444444444444444444444', [
+      imageB,
+    ]);
+    const firstEntry = galleryEntry(imageA, firstSubmission);
+    const secondEntry = galleryEntry(imageB, secondSubmission);
+    const { rerender } = render(
+      directGallery({
+        entries: [secondEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageB.id,
+        onOpenChange,
+        sessionKey: 'task-1:private:0xrequester',
+      })
+    );
+
+    expect(
+      within(await screen.findByRole('dialog')).getByAltText('poster-b.png')
+    ).toBeInTheDocument();
+
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageA.id,
+        onOpenChange,
+        sessionKey: 'task-1:private:0xother-account',
+      })
+    );
+
+    await waitFor(() => expect(onOpenChange).toHaveBeenCalledWith(false));
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageA.id,
+        onOpenChange,
+        open: false,
+        sessionKey: 'task-1:private:0xother-account',
+      })
+    );
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+    expect(screen.queryByAltText('poster-b.png')).not.toBeInTheDocument();
+
+    rerender(
+      directGallery({
+        entries: [firstEntry],
+        entryPolicy: 'snapshot-membership',
+        initialArtifactId: imageA.id,
+        onOpenChange,
+        sessionKey: 'task-1:private:0xother-account',
+      })
+    );
+    expect(
+      within(await screen.findByRole('dialog')).getByAltText('poster-a.png')
+    ).toBeInTheDocument();
+    expect(screen.queryByAltText('poster-b.png')).not.toBeInTheDocument();
+  });
+
+  it('shows an optional context label in the desktop viewer header', async () => {
+    setupMatchMedia(1280);
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+
+    render(
+      directGallery({
+        contextLabel: 'Rejected submission history',
+        entries: [galleryEntry(imageA, firstSubmission)],
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Rejected submission history')).toBeVisible();
+  });
+
+  it('names chevron navigation for artifacts', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    renderPanel();
+
+    await user.click(screen.getByRole('button', { name: /gallery/i }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByRole('button', { name: 'Previous artifact' })).toBeInTheDocument();
+    expect(within(dialog).getByRole('button', { name: 'Next artifact' })).toBeInTheDocument();
+    expect(
+      within(dialog).queryByRole('button', { name: /previous submission/i })
+    ).not.toBeInTheDocument();
+  });
+
   it('opens the gallery from the header button at the first media artifact', async () => {
     const user = userEvent.setup();
     renderPanel();
@@ -347,7 +673,7 @@ describe('SubmissionGalleryDialog', () => {
     expect(within(dialog).getByAltText('poster-b.png')).toBeInTheDocument();
     expect(within(dialog).getByText('2 / 3')).toBeInTheDocument();
 
-    await user.click(within(dialog).getByRole('button', { name: /next submission/i }));
+    await user.click(within(dialog).getByRole('button', { name: /next artifact/i }));
     expect(within(dialog).getByText('3 / 3')).toBeInTheDocument();
     expect(dialog.querySelector('video')).toHaveAttribute(
       'src',
@@ -355,7 +681,7 @@ describe('SubmissionGalleryDialog', () => {
     );
 
     // Wraps from the last entry back to the first.
-    await user.click(within(dialog).getByRole('button', { name: /next submission/i }));
+    await user.click(within(dialog).getByRole('button', { name: /next artifact/i }));
     expect(within(dialog).getByAltText('poster-a.png')).toBeInTheDocument();
     expect(within(dialog).getByText('1 / 3')).toBeInTheDocument();
 
@@ -513,13 +839,13 @@ describe('SubmissionGalleryDialog', () => {
     fetchMock.mockRestore();
   });
 
-  it('mounts at most 3 panes even with 50 entries (windowed mounting)', async () => {
+  it('mounts at most 3 panes even with 150 entries (windowed mounting)', async () => {
     const htmlContent = '<html><body><output>ready</output></body></html>';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
       ok: true,
       text: async () => htmlContent,
     } as Response);
-    const manyArtifacts = Array.from({ length: 50 }, (_, index) =>
+    const manyArtifacts = Array.from({ length: 150 }, (_, index) =>
       artifact({
         fileName: `game-${index}.html`,
         id: `artifact-html-${index}`,
@@ -534,7 +860,7 @@ describe('SubmissionGalleryDialog', () => {
         `sub-html-${index}`,
         '0x9999999999999999999999999999999999999999',
         [item],
-        `2026-02-01T00:00:${String(index).padStart(2, '0')}.000Z`
+        `2026-02-01T00:00:00.${String(index).padStart(3, '0')}Z`
       )
     );
 
@@ -590,7 +916,7 @@ describe('SubmissionGalleryDialog', () => {
     // Starting at index 0, the window holds entries 5 (wrap), 0, and 1.
     expect(dialog.querySelectorAll('[title="Interactive preview of game-2.html"]')).toHaveLength(0);
 
-    await user.click(within(dialog).getByRole('button', { name: /next submission/i }));
+    await user.click(within(dialog).getByRole('button', { name: /next artifact/i }));
     await within(dialog).findByTitle('Interactive preview of game-2.html');
 
     // The window recenters on index 1: entries 0, 1, and 2 are now mounted, and the
@@ -736,7 +1062,7 @@ describe('SubmissionGalleryDialog', () => {
     const startGutter = within(dialog).getByTestId('gallery-swipe-gutter-start');
 
     // Swipe backward from the first entry: wraps to the last, same as ArrowLeft/the
-    // "Previous submission" chevron.
+    // "Previous artifact" chevron.
     fireEvent.pointerDown(startGutter, { clientX: 200, clientY: 200 });
     fireEvent.pointerUp(startGutter, { clientX: 300, clientY: 200 });
     expect(within(dialog).getByText('3 / 3')).toBeInTheDocument();
@@ -798,6 +1124,23 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="drawer-content"]')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="dialog-content"]')).not.toBeInTheDocument();
+  });
+
+  it('shows an optional context label above the mobile playfield', async () => {
+    setupMatchMedia(390);
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+
+    render(
+      directGallery({
+        contextLabel: 'Rejected submission history',
+        entries: [galleryEntry(imageA, firstSubmission)],
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText('Rejected submission history')).toBeVisible();
   });
 
   it('still uses the centered dialog at and above the md breakpoint (regression guard)', async () => {
@@ -937,8 +1280,8 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     // (invisible and untouchable by default, restored the moment keyboard focus
     // lands, mirroring a skip-link) and are exercised for real in the compiled
     // Tailwind build powering `make ui-ci`'s Playwright pass.
-    const prev = within(dialog).getByRole('button', { name: /previous submission/i });
-    const next = within(dialog).getByRole('button', { name: /next submission/i });
+    const prev = within(dialog).getByRole('button', { name: /previous artifact/i });
+    const next = within(dialog).getByRole('button', { name: /next artifact/i });
 
     expect(prev).toHaveClass('opacity-0', 'pointer-events-none');
     expect(next).toHaveClass('opacity-0', 'pointer-events-none');
@@ -954,8 +1297,8 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     await user.click(screen.getByRole('button', { name: /gallery/i }));
 
     const dialog = await screen.findByRole('dialog');
-    const prev = within(dialog).getByRole('button', { name: /previous submission/i });
-    const next = within(dialog).getByRole('button', { name: /next submission/i });
+    const prev = within(dialog).getByRole('button', { name: /previous artifact/i });
+    const next = within(dialog).getByRole('button', { name: /next artifact/i });
 
     expect(prev).not.toHaveClass('opacity-0');
     expect(next).not.toHaveClass('opacity-0');

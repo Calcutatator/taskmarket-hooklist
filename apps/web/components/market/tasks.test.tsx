@@ -1333,7 +1333,7 @@ describe('Task marketplace components', () => {
     expect(screen.queryByText(/review the latest submission/i)).not.toBeInTheDocument();
   });
 
-  it('paginates and sorts a large submission review queue', async () => {
+  it('paginates and sorts a large submitter review queue', async () => {
     const user = userEvent.setup();
     const submissions: SubmissionResponse[] = Array.from({ length: 12 }, (_, index) => ({
       artifacts: [],
@@ -1354,15 +1354,15 @@ describe('Task marketplace components', () => {
 
     renderReviewSubmissions(submissions);
 
-    // 12 submissions at 10 per page -> 2 pages, showing 1-10 first. Scope the
+    // 12 submitters at 10 per page -> 2 pages, showing 1-10 first. Scope the
     // article query to submission cards -- the reward/status DetailMetric
     // summaries are also <article>s and would otherwise inflate the count.
-    expect(screen.getByText('Showing 1-10 of 12')).toBeInTheDocument();
+    expect(screen.getByText('Showing 1-10 of 12 submitters')).toBeInTheDocument();
     expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
     expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(10);
 
     await user.click(screen.getByRole('button', { name: /next page/i }));
-    expect(screen.getByText('Showing 11-12 of 12')).toBeInTheDocument();
+    expect(screen.getByText('Showing 11-12 of 12 submitters')).toBeInTheDocument();
     expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(2);
 
     await user.selectOptions(
@@ -1376,6 +1376,289 @@ describe('Task marketplace components', () => {
     expect(
       screen.getAllByRole('link', { name: compactAddressLabel(mostExperiencedWorker) })[0]
     ).toBeInTheDocument();
+  });
+
+  it('collapses repeated submissions into one submitter and drills into inline history', async () => {
+    const user = userEvent.setup();
+    const workerAddress = '0x3333333333333333333333333333333333333333';
+    const submissions: SubmissionResponse[] = Array.from({ length: 12 }, (_, index) => ({
+      artifacts: [],
+      fileUrl: `ipfs://deliverable-${index + 1}`,
+      id: `sub-${index + 1}`,
+      signature: '0xsig',
+      submittedAt: new Date(Date.now() - (12 - index) * 60_000).toISOString(),
+      taskId: task.id,
+      workerAddress,
+    }));
+
+    renderReviewSubmissions(submissions);
+
+    expect(screen.getByText('1 active submitter · 12 active submissions')).toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
+    expect(
+      screen.getByRole('group', {
+        name: `Submitter ${compactAddressLabel(workerAddress)}, 12 submissions`,
+      })
+    ).toBeInTheDocument();
+    expect(screen.queryByText(/page 1 of 2/i)).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /^View all 12 submissions from/ }));
+
+    const historyHeading = await screen.findByRole('heading', { name: 'Submitter history' });
+    expect(historyHeading).toHaveFocus();
+    expect(screen.getByTestId('submitter-history')).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /^Submission \d+ of 12 from/ })).toHaveLength(10);
+    expect(screen.getByText('Showing 1-10 of 12 submissions')).toBeInTheDocument();
+    expect(screen.getByText('Page 1 of 2')).toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: /back to all submitters/i }));
+
+    expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
+    expect(screen.queryByTestId('submitter-history')).not.toBeInTheDocument();
+    expect(screen.getAllByRole('article', { name: /^Submission from/ })).toHaveLength(1);
+  });
+
+  it('keeps rejected submitter history accessible without review actions', async () => {
+    const user = userEvent.setup();
+    const workerAddress = '0x3333333333333333333333333333333333333333';
+
+    renderReviewSubmissions([
+      {
+        artifacts: [],
+        fileUrl: 'ipfs://deliverable-older',
+        id: 'sub-older',
+        signature: '0xsig',
+        submittedAt: new Date(Date.now() - 120_000).toISOString(),
+        taskId: task.id,
+        workerAddress,
+      },
+      {
+        artifacts: [],
+        fileUrl: 'ipfs://deliverable-rejected',
+        id: 'sub-rejected',
+        rejectedAt: new Date(Date.now() - 60_000).toISOString(),
+        signature: '0xsig',
+        submittedAt: new Date(Date.now() - 60_000).toISOString(),
+        taskId: task.id,
+        workerAddress,
+      },
+    ]);
+
+    expect(screen.getByText('No active submissions to review.')).toBeInTheDocument();
+    expect(screen.queryByRole('article', { name: /^Submission from/ })).not.toBeInTheDocument();
+
+    await user.click(screen.getByText('Rejected submitters (1)'));
+    expect(screen.getAllByText('2 submissions')).toHaveLength(2);
+    await user.click(screen.getByRole('button', { name: 'View history' }));
+
+    expect(await screen.findByRole('heading', { name: 'Submitter history' })).toBeInTheDocument();
+    expect(screen.getAllByRole('region', { name: /^Submission \d+ of 2 from/ })).toHaveLength(2);
+    expect(screen.getAllByText(/^Rejected(?: with submitter)?$/)).toHaveLength(3);
+    expect(screen.queryByRole('group', { name: 'Submitter decisions' })).not.toBeInTheDocument();
+    expect(screen.queryByText('Release payout')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: /reject submitter/i })).not.toBeInTheDocument();
+  });
+
+  describe('benchmark secondary submissions review surface', () => {
+    const workerA = '0x3333333333333333333333333333333333333333';
+    const workerB = '0x4444444444444444444444444444444444444444';
+
+    function benchmarkSubmission(id: string, worker: string): SubmissionResponse {
+      return {
+        artifacts: [],
+        fileUrl: `ipfs://${id}`,
+        id,
+        signature: '0xsig',
+        submittedAt: new Date().toISOString(),
+        taskId: task.id,
+        workerAddress: worker,
+      };
+    }
+
+    function renderBenchmarkTask(options?: {
+      submissions?: SubmissionResponse[];
+      submissionCount?: number;
+      asRequester?: boolean;
+      omitReviewActions?: boolean;
+    }) {
+      if (options?.asRequester ?? true) {
+        mockAccount.address = task.requester;
+        mockAccount.isConnected = true;
+      }
+      const submissions = options?.submissions ?? [];
+      return render(
+        <TaskDetailPanel
+          modeData={{ proofs: [], submissions }}
+          task={{
+            ...taskDetail,
+            auctionBidCount: null,
+            auctionType: null,
+            mode: 'benchmark',
+            pendingActions: options?.omitReviewActions
+              ? []
+              : [
+                  {
+                    action: 'accept',
+                    command: `taskmarket task accept ${task.id} --worker ${workerA}`,
+                    role: 'requester',
+                  },
+                  {
+                    action: 'reject_submission',
+                    command: `taskmarket task reject-submission ${task.id} --worker <address>`,
+                    role: 'requester',
+                  },
+                ],
+            status: 'open',
+            submissionCount: options?.submissionCount ?? submissions.length,
+          }}
+        />
+      );
+    }
+
+    it('renders no Additional submissions disclosure when submissionCount is 0', () => {
+      renderBenchmarkTask({ submissionCount: 0, submissions: [] });
+
+      expect(screen.queryByTestId('benchmark-submission-review')).not.toBeInTheDocument();
+      expect(screen.queryByText(/additional submissions/i)).not.toBeInTheDocument();
+    });
+
+    it('renders no disclosure when the backend has not generated accept/reject pending actions', () => {
+      renderBenchmarkTask({
+        omitReviewActions: true,
+        submissions: [benchmarkSubmission('sub-1', workerA)],
+      });
+
+      expect(screen.queryByTestId('benchmark-submission-review')).not.toBeInTheDocument();
+    });
+
+    it('renders the collapsed disclosure with the correct count for a benchmark task with submissions', () => {
+      renderBenchmarkTask({
+        submissions: [benchmarkSubmission('sub-1', workerA), benchmarkSubmission('sub-2', workerB)],
+      });
+
+      const disclosure = screen.getByTestId('benchmark-submission-review');
+      expect(disclosure.tagName).toBe('DETAILS');
+      expect(disclosure).not.toHaveAttribute('open');
+      expect(screen.getByText('Additional submissions (2)')).toBeInTheDocument();
+    });
+
+    it('groups the secondary surface by worker using the same rules as the primary queue', async () => {
+      const user = userEvent.setup();
+      renderBenchmarkTask({
+        submissions: [
+          benchmarkSubmission('sub-1', workerA),
+          benchmarkSubmission('sub-2', workerA),
+          benchmarkSubmission('sub-3', workerB),
+        ],
+      });
+
+      await user.click(screen.getByText('Additional submissions (3)'));
+
+      expect(
+        screen.getByTestId(`benchmark-submitter-group-${workerA.toLowerCase()}`)
+      ).toBeInTheDocument();
+      expect(
+        screen.getByTestId(`benchmark-submitter-group-${workerB.toLowerCase()}`)
+      ).toBeInTheDocument();
+
+      await user.click(screen.getByRole('button', { name: /^View all 2 submissions from/ }));
+      expect(await screen.findByRole('heading', { name: 'Submitter history' })).toBeInTheDocument();
+      expect(screen.getAllByRole('region', { name: /^Submission \d+ of 2 from/ })).toHaveLength(2);
+    });
+
+    it('wires accept/reject on the secondary surface with the same command shape as the primary queue', async () => {
+      const user = userEvent.setup();
+      renderBenchmarkTask({ submissions: [benchmarkSubmission('sub-1', workerA)] });
+
+      await user.click(screen.getByText('Additional submissions (1)'));
+
+      expect(screen.getAllByText('Release payout').length).toBeGreaterThan(0);
+      expect(
+        screen.getByText('Releases payout to this worker using their latest active submission.')
+      ).toBeInTheDocument();
+
+      const rejectButton = screen.getByRole('button', {
+        name: 'Reject submitter and all 1 submission',
+      });
+      await user.click(rejectButton);
+
+      const dialog = screen.getByRole('dialog');
+      expect(within(dialog).getByText('Reject this submitter?')).toBeInTheDocument();
+      expect(within(dialog).getByText(/0\.001 usdc/i)).toBeInTheDocument();
+      expect(within(dialog).getByText(workerA, { exact: false })).toBeInTheDocument();
+    });
+
+    it('does not affect the primary proof feed when the secondary surface is opened, and vice versa', async () => {
+      const user = userEvent.setup();
+      render(
+        <TaskDetailPanel
+          modeData={{
+            proofs: [
+              {
+                id: 'proof-1',
+                metricValue: '0.9',
+                proofData: 'ipfs://proof-data',
+                proofType: 'eval',
+                status: 'pending',
+                submissionId: null,
+                submittedAt: new Date().toISOString(),
+                taskId: task.id,
+                workerAddress: '0x5555555555555555555555555555555555555555',
+              },
+            ],
+            submissions: [benchmarkSubmission('sub-1', workerA)],
+          }}
+          task={{
+            ...taskDetail,
+            auctionBidCount: null,
+            auctionType: null,
+            mode: 'benchmark',
+            pendingActions: [
+              {
+                action: 'accept',
+                command: `taskmarket task accept ${task.id} --worker ${workerA}`,
+                role: 'requester',
+              },
+              {
+                action: 'reject_submission',
+                command: `taskmarket task reject-submission ${task.id} --worker <address>`,
+                role: 'requester',
+              },
+            ],
+            status: 'open',
+            submissionCount: 1,
+          }}
+        />
+      );
+
+      expect(screen.getByText('eval')).toBeInTheDocument();
+
+      await user.click(screen.getByText('Additional submissions (1)'));
+
+      // Opening the secondary surface leaves the primary proof feed unchanged.
+      expect(screen.getByText('eval')).toBeInTheDocument();
+      expect(screen.getByTestId('benchmark-submission-review')).toBeInTheDocument();
+    });
+
+    it('renders a bounty task byte-identically whether or not this milestone is present', () => {
+      renderReviewSubmissions([
+        {
+          artifacts: [],
+          fileUrl: 'ipfs://deliverable',
+          id: 'sub-1',
+          signature: '0xsig',
+          submittedAt: new Date().toISOString(),
+          taskId: task.id,
+          workerAddress: workerA,
+        },
+      ]);
+
+      // The secondary surface is benchmark-only and additive; a bounty task's
+      // grouped review queue must never render it.
+      expect(screen.queryByTestId('benchmark-submission-review')).not.toBeInTheDocument();
+      expect(screen.queryByText(/additional submissions/i)).not.toBeInTheDocument();
+      expect(screen.getByRole('heading', { name: /submission review/i })).toBeInTheDocument();
+    });
   });
 
   it('renders pending approval submissions as media comparison cards', () => {
@@ -2098,26 +2381,21 @@ describe('Task marketplace components', () => {
 
     render(
       <TaskDetailPanel
-        modeData={{ submissions: [] }}
+        modeData={{ bids: [] }}
         task={{
           ...taskDetail,
-          auctionBidCount: null,
-          auctionType: null,
-          mode: 'bounty',
           pendingActions: [
             {
-              action: 'accept',
-              command: `taskmarket task accept ${task.id} --worker 0x3333333333333333333333333333333333333333 --receipt 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`,
+              action: 'update',
+              command: `taskmarket task update ${task.id} --reward 25000000 --extend-expiry 86400 --receipt 0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff`,
               role: 'requester',
             },
           ],
-          status: 'pending_approval',
-          submissionCount: 1,
         }}
       />
     );
 
-    const cliCommand = screen.getByText(/taskmarket task accept/i);
+    const cliCommand = screen.getByText(/taskmarket task update/i);
     expect(cliCommand.closest('details')).toHaveClass('min-w-0');
     expect(cliCommand.closest('pre')).toHaveClass('max-w-full', 'overflow-x-auto');
   });

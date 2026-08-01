@@ -112,6 +112,7 @@ import { isPlayableArtifact } from '@/lib/market/task-cover';
 import { taskToAgentJson, taskToMarkdown } from '@/lib/market/task-export';
 import { TASK_SORT_OPTIONS, normalizeBasePath, taskFiltersHref } from '@/lib/market/task-filters';
 import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
+import { commandForTaskWorker } from '@/lib/market/task-action-command';
 import type {
   ActiveFilter,
   TaskListView,
@@ -1809,14 +1810,6 @@ function ArtifactRow({ artifact, taskId }: { artifact: ArtifactResponse; taskId:
   );
 }
 
-function commandForSubmissionWorker(command: string, worker: string) {
-  if (/(?:^|\s)--worker\s+0x[a-fA-F0-9]{40}(?:\s|$)/.test(command)) {
-    return command.replace(/--worker\s+0x[a-fA-F0-9]{40}/, `--worker ${worker}`);
-  }
-
-  return `${command} --worker ${worker}`;
-}
-
 function actorProfileHref(profileBasePath: string, identity?: string | null) {
   return `${normalizeBasePath(profileBasePath)}/${encodeURIComponent(identity ?? '')}` as Route;
 }
@@ -1895,7 +1888,7 @@ export function SubmissionCard({
   const acceptAction = reviewAction
     ? {
         ...reviewAction,
-        command: commandForSubmissionWorker(reviewAction.command, worker),
+        command: commandForTaskWorker(reviewAction.command, worker),
       }
     : null;
   const awardRecipient = isAwardRecipient(task, worker);
@@ -2207,25 +2200,30 @@ function ModeDataPanel({
   marketStats,
   modeData,
   profileBasePath,
-  reviewAction,
+  reviewActions,
+  secondarySubmissionReview,
+  submissionReviewEligible,
   task,
 }: {
   marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath: string;
-  reviewAction?: PendingAction;
+  reviewActions?: {
+    acceptAction?: PendingAction;
+    rejectAction?: PendingAction;
+  };
+  secondarySubmissionReview?: boolean;
+  submissionReviewEligible?: boolean;
   task: TaskDetailResponse | TaskResponse;
 }) {
-  const submissions = modeData?.submissions ?? [];
-  const isReviewQueue = Boolean(reviewAction && submissions.length > 0);
-
   return (
     <LiveActivityPanel
       initialModeData={modeData}
-      isReviewQueue={isReviewQueue}
       marketStats={marketStats}
       profileBasePath={profileBasePath}
-      reviewAction={reviewAction}
+      reviewActions={reviewActions}
+      secondarySubmissionReview={secondarySubmissionReview}
+      submissionReviewEligible={submissionReviewEligible}
       task={task}
     />
   );
@@ -2732,18 +2730,41 @@ export function TaskDetailPanel({
   const taskTypesHref = '/dashboard/task-types' as Route;
   const modeHref = taskFiltersHref(listBase, { mode: task.mode }) as Route;
   const pendingActions = task.pendingActions ?? [];
-  // Route the accept action to per-submission cards only when submissions are
-  // already loaded. When modeData has no submissions yet, keep accept in
-  // nextActions so it renders in the actions card (avoids a command disappearing
-  // on first render before modeData fetches).
-  const loadedSubmissions = modeData?.submissions ?? [];
-  const reviewAction =
-    loadedSubmissions.length > 0
-      ? pendingActions.find((action) => action.action === 'accept' && action.role === 'requester')
-      : undefined;
-  const nextActions = reviewAction
-    ? pendingActions.filter((action) => action !== reviewAction)
-    : pendingActions;
+  const acceptAction = pendingActions.find(
+    (action) => action.action === 'accept' && action.role === 'requester'
+  );
+  const rejectAction = pendingActions.find(
+    (action) => action.action === 'reject_submission' && action.role === 'requester'
+  );
+  const submissionReviewEligible =
+    (task.mode === 'bounty' || task.mode === 'claim') &&
+    ((task.mode === 'bounty' && (task.status === 'open' || task.status === 'pending_approval')) ||
+      Boolean(acceptAction) ||
+      Boolean(rejectAction));
+  const reviewActions = submissionReviewEligible ? { acceptAction, rejectAction } : undefined;
+  // Route accept/reject out of the generic actions card only once submissions have
+  // actually loaded -- mirrors this component's own pre-existing guard (removed
+  // during the worker-grouping refactor): before modeData fetches, LiveActivityPanel
+  // has nothing to render the action inside yet either (its own groups are built from
+  // loaded submissions), so stripping it here too made the control disappear from the
+  // page entirely for that window, not just move surfaces.
+  const submissionsLoaded = (modeData?.submissions?.length ?? 0) > 0;
+  // Benchmark's optional `task submit` channel (alongside its primary `task proof`
+  // flow) already gets real accept/reject_submission pending actions from the
+  // backend (contestHasSubmissions), but had no frontend review surface at all.
+  // This is additive only -- it must never affect submissionReviewEligible/
+  // activeMode, which stay proof-primary for benchmark.
+  const benchmarkSubmissionReview =
+    task.mode === 'benchmark' &&
+    (task.submissionCount ?? 0) > 0 &&
+    Boolean(acceptAction || rejectAction);
+  const benchmarkReviewActions = benchmarkSubmissionReview
+    ? { acceptAction, rejectAction }
+    : undefined;
+  const nextActions =
+    submissionReviewEligible && submissionsLoaded
+      ? pendingActions.filter((action) => action !== acceptAction && action !== rejectAction)
+      : pendingActions;
   const participationAction = findParticipationAction(nextActions);
   const extractedSubmitAction =
     participationAction?.action === 'submit' ? participationAction : undefined;
@@ -2753,7 +2774,7 @@ export function TaskDetailPanel({
   );
   const showNextActions =
     mainNextActions.length > 0 ||
-    (!reviewAction && cancelActions.length === 0 && !extractedSubmitAction);
+    (!submissionReviewEligible && cancelActions.length === 0 && !extractedSubmitAction);
   const title = taskTitle(task);
   const fullTitle = taskFullTitle(task);
   const descriptionBody = taskBody(task);
@@ -2820,17 +2841,18 @@ export function TaskDetailPanel({
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
-        {!reviewAction && participationModule ? (
+        {!submissionReviewEligible && participationModule ? (
           <div className="order-1 lg:order-4">{participationModule}</div>
         ) : null}
-        {reviewAction ? (
+        {submissionReviewEligible ? (
           <>
             {participationModule}
             <ModeDataPanel
               marketStats={marketStats}
               modeData={modeData}
               profileBasePath={profileBasePath}
-              reviewAction={reviewAction}
+              reviewActions={reviewActions}
+              submissionReviewEligible
               task={task}
             />
           </>
@@ -2881,12 +2903,14 @@ export function TaskDetailPanel({
             />
           </div>
         ) : null}
-        {!reviewAction ? (
+        {!submissionReviewEligible ? (
           <div className="order-4">
             <ModeDataPanel
               marketStats={marketStats}
               modeData={modeData}
               profileBasePath={profileBasePath}
+              reviewActions={benchmarkReviewActions}
+              secondarySubmissionReview={benchmarkSubmissionReview}
               task={task}
             />
           </div>
@@ -2897,7 +2921,7 @@ export function TaskDetailPanel({
           modeData={modeData}
           modeHref={modeHref}
           profileBasePath={profileBasePath}
-          reviewRequired={Boolean(reviewAction)}
+          reviewRequired={Boolean(acceptAction || rejectAction)}
           task={task}
           taskTypesHref={taskTypesHref}
         />

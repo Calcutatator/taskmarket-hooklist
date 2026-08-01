@@ -108,7 +108,7 @@ export function submissionMediaEntries(submissions: SubmissionResponse[]): Submi
 // fills the rest of the frame, instead of the fixed-vh sizing the standalone
 // preview dialog uses.
 const GALLERY_HTML_CLASS_NAMES = {
-  container: 'grid h-full w-full grid-rows-[auto_1fr] gap-3 p-3',
+  container: 'grid h-full w-full grid-rows-[auto_1fr] gap-3 px-3 pb-3 pt-14',
   error: 'grid justify-items-center gap-3 p-4 text-center text-sm text-destructive',
   iframe: 'h-full w-full rounded-xl border border-border/60 bg-background/52',
   message: 'p-4 text-center text-sm text-muted-foreground',
@@ -127,23 +127,63 @@ const GALLERY_HTML_CLASS_NAMES_COMPACT = {
 };
 
 type SubmissionGalleryDialogProps = {
+  contextLabel?: string;
   entries: SubmissionMediaEntry[];
+  entryPolicy?: SubmissionGalleryEntryPolicy;
   initialArtifactId: string | null;
   onOpenChange: (open: boolean) => void;
   open: boolean;
   profileBasePath: string;
+  sessionKey?: string;
   taskId: string;
 };
 
+export type SubmissionGalleryEntryPolicy = 'live' | 'snapshot-membership';
+
 export function SubmissionGalleryDialog(props: SubmissionGalleryDialogProps) {
-  if (props.entries.length === 0) {
+  const { entries, entryPolicy = 'live', onOpenChange, open, sessionKey = props.taskId } = props;
+  const [capturedEntries, setCapturedEntries] = useState<SubmissionMediaEntry[] | null>(null);
+  const previousSessionKeyRef = useRef(sessionKey);
+  const sessionChanged = previousSessionKeyRef.current !== sessionKey;
+
+  useEffect(() => {
+    if (!sessionChanged) {
+      return;
+    }
+
+    previousSessionKeyRef.current = sessionKey;
+    setCapturedEntries(null);
+    if (open) {
+      onOpenChange(false);
+    }
+  }, [onOpenChange, open, sessionChanged, sessionKey]);
+
+  useEffect(() => {
+    if (entryPolicy !== 'snapshot-membership' || !open) {
+      setCapturedEntries(null);
+      return;
+    }
+
+    if (capturedEntries === null && entries.length > 0) {
+      setCapturedEntries(entries.map((entry) => entry));
+    }
+  }, [capturedEntries, entries, entryPolicy, open, sessionKey]);
+
+  const latestEntriesById = new Map(entries.map((entry) => [entry.artifact.id, entry]));
+  const sessionEntries =
+    entryPolicy === 'snapshot-membership' && capturedEntries
+      ? capturedEntries.map((captured) => latestEntriesById.get(captured.artifact.id) ?? captured)
+      : entries;
+
+  if (sessionChanged || sessionEntries.length === 0) {
     return null;
   }
 
-  return <SubmissionGalleryDialogInner {...props} />;
+  return <SubmissionGalleryDialogInner {...props} entries={sessionEntries} key={sessionKey} />;
 }
 
 function SubmissionGalleryDialogInner({
+  contextLabel,
   entries,
   initialArtifactId,
   onOpenChange,
@@ -355,7 +395,7 @@ function SubmissionGalleryDialogInner({
       {count > 1 ? (
         <>
           <Button
-            aria-label="Previous submission"
+            aria-label="Previous artifact"
             className={cn(
               'absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full',
               // Swipe is the primary gesture on mobile, and the frame needs its full
@@ -375,7 +415,7 @@ function SubmissionGalleryDialogInner({
             <ChevronLeft className="size-4" />
           </Button>
           <Button
-            aria-label="Next submission"
+            aria-label="Next artifact"
             className={cn(
               'absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full',
               isMobile &&
@@ -436,6 +476,9 @@ function SubmissionGalleryDialogInner({
               Submitted by {workerLabel} <RelativeTime value={submission.submittedAt} />
             </DrawerDescription>
           </DrawerHeader>
+          {contextLabel ? (
+            <p className="shrink-0 px-4 pt-2 text-sm font-medium text-foreground">{contextLabel}</p>
+          ) : null}
           <div className="grid min-h-0 flex-1 overflow-hidden p-2">{playfield}</div>
           <div
             className="flex shrink-0 items-start justify-between gap-2 border-t border-border/58 px-4 py-2"
@@ -458,6 +501,9 @@ function SubmissionGalleryDialogInner({
       >
         {liveRegion}
         <DialogHeader>
+          {contextLabel ? (
+            <p className="text-sm font-medium text-foreground">{contextLabel}</p>
+          ) : null}
           <DialogTitle className="break-all pr-8 font-mono">{artifact.fileName}</DialogTitle>
           <DialogDescription>
             Submitted by{' '}

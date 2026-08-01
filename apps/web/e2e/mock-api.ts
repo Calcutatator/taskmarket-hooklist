@@ -31,6 +31,10 @@ const workerTwo = '0x4444444444444444444444444444444444444444';
 const workerThree = '0x5555555555555555555555555555555555555555';
 const now = new Date('2026-05-13T00:00:00.000Z').toISOString();
 const htmlFixtureUrls = new Map([
+  [
+    'e2e-first-spam-revision-html-artifact',
+    new URL('./fixtures/html/fieldnote-estimator.html', import.meta.url),
+  ],
   ['mock-html-landing-artifact', new URL('./fixtures/html/northline-launch.html', import.meta.url)],
   [
     'mock-html-dashboard-artifact',
@@ -185,12 +189,16 @@ function artifact({
 function submission({
   artifacts = [],
   id,
+  rejectedAt,
+  submittedAt = hoursFromNow(-6),
   taskId,
   workerAddress = workerOne,
   workerAgentId = '1003',
 }: {
   artifacts?: ArtifactResponse[];
   id: string;
+  rejectedAt?: string | null;
+  submittedAt?: string;
   taskId: string;
   workerAddress?: string;
   workerAgentId?: string | null;
@@ -204,7 +212,8 @@ function submission({
     fileUrl: `ipfs://${id}`,
     id,
     signature: '0xsig',
-    submittedAt: hoursFromNow(-6),
+    rejectedAt,
+    submittedAt,
     submitTxHash: `0x${id
       .replace(/[^a-f0-9]/gi, '')
       .padEnd(64, 'b')
@@ -279,6 +288,19 @@ const tasks: TaskDetailResponse[] = [
     status: 'pending_approval',
     submissionCount: 2,
     tags: ['bounty', 'review'],
+  }),
+  task({
+    description: 'Bounty - spam-resistant requester review with many revisions from one submitter.',
+    id: 'e2e-grouped-submission-review',
+    mode: 'bounty',
+    pendingActions: [
+      action('e2e-grouped-submission-review', 'requester', 'accept'),
+      action('e2e-grouped-submission-review', 'requester', 'reject_submission'),
+    ],
+    reward: '240000000',
+    status: 'pending_approval',
+    submissionCount: 162,
+    tags: ['bounty', 'review', 'grouped'],
   }),
   task({
     description:
@@ -605,6 +627,97 @@ const tasks: TaskDetailResponse[] = [
 ];
 
 const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
+  [
+    'e2e-grouped-submission-review',
+    [
+      ...Array.from({ length: 150 }, (_, index) =>
+        submission({
+          artifacts:
+            index === 0
+              ? [
+                  artifact({
+                    fileName: 'first-spam-revision.png',
+                    id: 'e2e-first-spam-revision-artifact',
+                    mediaKind: 'image',
+                    mimeType: 'image/png',
+                    role: 'preview',
+                    submissionId: 'e2e-spam-revision-1',
+                    taskId: 'e2e-grouped-submission-review',
+                  }),
+                  artifact({
+                    fileName: 'first-spam-revision.mp4',
+                    id: 'e2e-first-spam-revision-video-artifact',
+                    mediaKind: 'video',
+                    mimeType: 'video/mp4',
+                    role: 'preview',
+                    submissionId: 'e2e-spam-revision-1',
+                    taskId: 'e2e-grouped-submission-review',
+                  }),
+                  artifact({
+                    fileName: 'first-spam-revision.html',
+                    id: 'e2e-first-spam-revision-html-artifact',
+                    mediaKind: 'text',
+                    mimeType: 'text/html',
+                    role: 'preview',
+                    submissionId: 'e2e-spam-revision-1',
+                    taskId: 'e2e-grouped-submission-review',
+                  }),
+                  artifact({
+                    fileName: 'first-spam-revision-notes.txt',
+                    id: 'e2e-first-spam-revision-notes-artifact',
+                    mediaKind: 'text',
+                    mimeType: 'text/plain',
+                    role: 'source',
+                    submissionId: 'e2e-spam-revision-1',
+                    taskId: 'e2e-grouped-submission-review',
+                    textPreview: 'Supporting notes for the first revision.',
+                  }),
+                ]
+              : [],
+          id: `e2e-spam-revision-${index + 1}`,
+          submittedAt: hoursFromNow(-150 + index),
+          taskId: 'e2e-grouped-submission-review',
+        })
+      ),
+      submission({
+        artifacts: [
+          artifact({
+            fileName: 'second-worker-final-with-an-extremely-long-review-filename.png',
+            id: 'e2e-second-worker-artifact',
+            mediaKind: 'image',
+            mimeType: 'image/png',
+            role: 'preview',
+            submissionId: 'e2e-second-worker-submission',
+            taskId: 'e2e-grouped-submission-review',
+            workerAddress: workerTwo,
+            workerAgentId: null,
+          }),
+        ],
+        id: 'e2e-second-worker-submission',
+        submittedAt: hoursFromNow(-2),
+        taskId: 'e2e-grouped-submission-review',
+        workerAddress: workerTwo,
+        workerAgentId: null,
+      }),
+      ...Array.from({ length: 10 }, (_, index) =>
+        submission({
+          id: `e2e-additional-worker-submission-${index + 1}`,
+          submittedAt: hoursFromNow(-12 + index),
+          taskId: 'e2e-grouped-submission-review',
+          workerAddress: `0x${(index + 6).toString(16).padStart(40, '0')}`,
+          workerAgentId: null,
+        })
+      ),
+      submission({
+        id: 'e2e-rejected-worker-submission',
+        rejectedAt: hoursFromNow(-1),
+        submittedAt: hoursFromNow(-3),
+        taskId: 'e2e-grouped-submission-review',
+        workerAddress: workerThree,
+        workerAgentId: null,
+      }),
+    ],
+  ],
   [
     'e2e-pending-review',
     [
