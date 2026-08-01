@@ -1,6 +1,6 @@
 {
   "name": "@lucid-agents/taskmarket",
-  "version": "1.7.2",
+  "version": "1.7.3",
   "type": "module",
   "bin": {
     "taskmarket": "./dist/index.js"
