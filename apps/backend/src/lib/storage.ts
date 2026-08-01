@@ -6,7 +6,7 @@ import {
 } from '@aws-sdk/client-s3';
 import { getSignedUrl } from '@aws-sdk/s3-request-presigner';
 import { writeFile, mkdir } from 'fs/promises';
-import { dirname, resolve, sep } from 'path';
+import { dirname, isAbsolute, relative, resolve, sep } from 'path';
 import { getServerConfig } from '../config/env';
 
 export interface StorageBackend {
@@ -106,8 +106,26 @@ class LocalStorage implements StorageBackend {
   }
 
   async getPresignedUrl(key: string): Promise<string> {
+    const stripped = key.replace(/^file:\/\//, '');
+
+    // upload()/storageUriForKey() always return an absolute path (resolveKeyPath()
+    // resolves against the uploads root before either ever returns), and that's
+    // exactly what round-trips back into this function on the preview/download path.
+    // The string-prefix match below only ever matches a *relative* key, so an
+    // absolute one silently fell through unmodified -- leaking the raw filesystem
+    // path into the served URL (a doubled `/uploads//home/...` 404) instead of being
+    // rebased against the real uploads root. Handle that case explicitly first.
+    if (isAbsolute(stripped)) {
+      const root = resolve(this.uploadDir);
+      const rel = relative(root, stripped);
+      if (rel.startsWith('..') || isAbsolute(rel)) {
+        throw new Error(`Refusing to serve a path outside the uploads directory: ${key}`);
+      }
+      return `http://localhost:3000/uploads/${rel}`;
+    }
+
     const uploadPrefix = this.uploadDir.replace(/^\.\//, '').replace(/\/+$/, '');
-    let objectKey = key.replace(/^file:\/\//, '').replace(/^\.\//, '');
+    let objectKey = stripped.replace(/^\.\//, '');
     if (objectKey.startsWith(`${uploadPrefix}/`)) {
       objectKey = objectKey.slice(uploadPrefix.length + 1);
     }

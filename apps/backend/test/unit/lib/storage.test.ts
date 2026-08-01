@@ -41,6 +41,28 @@ describe('storage backend', () => {
     );
   });
 
+  it('normalizes an absolute file:// URI the same way upload() actually returns it', async () => {
+    // Regression test: upload()/storageUriForKey() always resolve the key to an
+    // absolute path before returning `file://${filePath}` (resolveKeyPath() always
+    // resolves against the uploads root) -- the relative-only fixtures above never
+    // exercised that real shape, which is exactly how this bug went unnoticed. An
+    // absolute file:// URI must rebase against the real uploads root, not leak the
+    // raw filesystem path into the served URL (the doubled `/uploads//home/...` 404).
+    const storage = getStorageBackend();
+    const absolutePath = resolve('./uploads', 'submissions/task/submission/artifact.png');
+
+    await expect(storage.getPresignedUrl(`file://${absolutePath}`)).resolves.toBe(
+      'http://localhost:3000/uploads/submissions/task/submission/artifact.png'
+    );
+  });
+
+  it('getPresignedUrl refuses an absolute path outside the uploads directory', async () => {
+    const storage = getStorageBackend();
+    await expect(storage.getPresignedUrl('file:///etc/passwd')).rejects.toThrow(
+      /outside the uploads directory/
+    );
+  });
+
   describe('path traversal containment', () => {
     it('headObject cannot reach a real file that exists just outside the uploads directory', async () => {
       // A genuinely existing file just outside ./uploads -- if the traversal check is
