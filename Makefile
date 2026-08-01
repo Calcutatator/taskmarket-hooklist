@@ -458,9 +458,11 @@ type-check:
 		cd packages/shared && pnpm type-check; \
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm type-check; \
+	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
+		cd apps/cli && pnpm type-check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|all>"; \
+		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|all>"; \
 		exit 1; \
 	fi
 
@@ -782,6 +784,8 @@ smoke:
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:concurrent-tasks; \
 	elif [ "$(word 1,$(ARGS))" = "payment-orphan-refund" ]; then \
 		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:payment-orphan-refund; \
+	elif [ "$(word 1,$(ARGS))" = "rate-limit" ]; then \
+		cd apps/backend && API_URL="$$SMOKE_API_URL" pnpm smoke:rate-limit; \
 	elif [ "$(word 1,$(ARGS))" = "sandbox" ]; then \
 		if [ -f .git ]; then \
 			echo "Linked git worktree detected -- its .git file points at the main repo's" ; \
@@ -799,7 +803,7 @@ smoke:
 			docker run --rm taskmarket-sandbox-test; \
 		fi; \
 	else \
-		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|payment-orphan-refund|sandbox>"; \
+		echo "Usage: make smoke <bounty|claim|pitch|benchmark|auction|auction-types|auction-full|cancel-update|rater-agent-id|bids-inbox|pending-actions|artifacts|submission-hash|task-search|identity|agents|inbox|cli|wallet|withdraw|encryption|xmtp|xmtp-live|email|broadcast|upgrade|ranked-payout|evaluator-timeout|refund-expired|submission-integrity|token-reward-hook|evaluator|visibility|submission-visibility|concurrent-tasks|payment-orphan-refund|rate-limit|sandbox>"; \
 		exit 1; \
 	fi
 
@@ -815,14 +819,16 @@ dither-kit:
 	cd apps/web && \
 	DO_NOT_TRACK=1 pnpm dlx @dither-kit/cli@0.1.1 --yes --no-input --no-color $(ARGS)
 
-# "cli" is also a smoke mode (make smoke cli). When make runs as "make smoke cli",
-# make treats "cli" as a second real goal alongside "smoke" and would otherwise
-# execute this recipe standalone too -- as "node apps/cli/dist/index.js cli", which
-# fails since "cli" isn't a CLI subcommand. No-op instead whenever "smoke" is the
-# actual invoked goal, leaving "make cli [args]" itself unaffected.
+# "cli" is also a smoke mode (make smoke cli) and a type-check/test app name
+# (make type-check cli, make test cli). Whenever one of those is the actual
+# invoked goal, make treats "cli" as a second real goal alongside it and would
+# otherwise execute this recipe standalone too -- as "node apps/cli/dist/index.js
+# cli", which fails since "cli" isn't a CLI subcommand. No-op instead whenever
+# any of those is the actual invoked goal, leaving "make cli [args]" itself
+# unaffected.
 cli:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(MAKECMDGOALS))" = "smoke" ]; then \
+	if [ "$(word 1,$(MAKECMDGOALS))" = "smoke" ] || [ "$(word 1,$(MAKECMDGOALS))" = "type-check" ] || [ "$(word 1,$(MAKECMDGOALS))" = "test" ]; then \
 		exit 0; \
 	fi; \
 	pnpm --filter @lucid-agents/taskmarket... build && \

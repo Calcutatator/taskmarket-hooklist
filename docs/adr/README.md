@@ -238,6 +238,10 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0032 — Adopt RFC-lite for pre-decision proposals](0032-adopt-rfc-lite-for-proposals.md)
 - [0033 — The ADR decision index is generated from a structured YAML source, not hand-maintained markdown](0033-structured-adr-index-generated-not-hand-maintained.md)
 - [0034 — Per-PR preview environments: full redeploy per commit, disposable Anvil, self-provisioned facilitator](0034-per-pr-preview-environments-full-wipe-anvil-plus-self-provisioned-facilitator.md)
+- [0035 — Submission metering bypasses x402Middleware entirely rather than pricing free submissions at zero](0035-submission-metering-bypasses-x402-not-price-at-zero.md)
+- [0036 — Free-submission allowance is 5 per (worker, task)](0036-free-submission-allowance-is-five.md)
+- [0037 — Tier 2 hard ceiling is 100 submissions per (worker, task) — NOT a platform-wide limit](0037-tier-2-hard-ceiling-is-100-submissions.md)
+- [0038 — Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction](0038-rate-limiting-is-a-shared-module-not-per-feature-bespoke-logic.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

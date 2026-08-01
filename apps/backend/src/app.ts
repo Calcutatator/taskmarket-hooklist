@@ -19,6 +19,7 @@ import {
   IDENTITY_REGISTER_ROUTE,
   PAID_TASK_ACTION_ROUTES,
   STANDARD_X402_ACTION_AMOUNT,
+  SUBMISSION_ROUTES,
   TASK_CREATE_ROUTE,
 } from './config/payments';
 import { CANONICAL_PREIMAGE_ROUTES } from './config/routes';
@@ -37,6 +38,8 @@ import {
   EvaluateInputSchema,
   EvaluatorTimeoutInputSchema,
   ResolveDisputeInputSchema,
+  SubmissionCreateSchema,
+  SubmissionCreateFromKeysSchema,
 } from '@taskmarket/shared';
 import {
   AcceptInputSchema,
@@ -45,6 +48,7 @@ import {
 } from './schemas/acceptance.schemas';
 import { validateBody } from './middleware/validateBody';
 import { X402PreflightError, x402Middleware, type X402Options } from './middleware/x402';
+import { submissionAllowanceGate } from './middleware/submissionAllowanceGate';
 import { taskActionPreflight } from './middleware/taskActionPreflight';
 import { getUpdatePaymentAmount } from './services/task-payments';
 import { ogTagsMiddleware } from './middleware/ogTags';
@@ -566,6 +570,21 @@ app.post(
     getAmount: () => STANDARD_X402_ACTION_AMOUNT,
     description: 'ERC-8004 agent identity registration',
   })
+);
+
+// RFC-0006 Tier 1: bounty/benchmark submissions get a free-allowance metered gate
+// instead of an unconditional x402Middleware -- see
+// apps/backend/src/middleware/submissionAllowanceGate.ts. Claim/pitch/auction
+// submissions stay unmetered through the same routes, exactly as before this change.
+app.post(
+  SUBMISSION_ROUTES.submit,
+  validateBody(SubmissionCreateSchema),
+  submissionAllowanceGate(db, { description: 'Submit work' })
+);
+app.post(
+  SUBMISSION_ROUTES.submitFromKeys,
+  validateBody(SubmissionCreateFromKeysSchema),
+  submissionAllowanceGate(db, { description: 'Submit work (from keys)' })
 );
 
 // OpenAPI REST (handles all /api routes, including the ones above after X402 next())

@@ -49,6 +49,11 @@ export function createMockCtx(
     insert: vi.fn().mockReturnValue(makeChain()),
     update: vi.fn().mockReturnValue(makeChain([])),
     delete: vi.fn().mockReturnValue(makeChain()),
+    // Real drizzle transactions support raw sql via .execute() (see e.g.
+    // scripts/normalize-address-casing.ts) -- used by
+    // assertUnderHardSubmissionCeilingForInsert's advisory lock. Resolves to an
+    // empty result by default; tests exercising the ceiling itself override this.
+    execute: vi.fn().mockResolvedValue([]),
     transaction: vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(db)),
   };
 

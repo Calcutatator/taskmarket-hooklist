@@ -1,4 +1,4 @@
-import { API_URL, legalReceiptHeadersForKeystore } from './api.js';
+import { ApiError, API_URL, legalReceiptHeadersForKeystore } from './api.js';
 import { loadKeystore } from './keystore.js';
 import { createTransferAuthorization } from './signer.js';
 
@@ -39,7 +39,7 @@ export async function x402Post(path: string, body: Record<string, unknown>): Pro
       return r1.json();
     }
     const text = await r1.text().catch(() => '');
-    throw new Error(`POST ${path} failed (${r1.status}): ${text}`);
+    throw new ApiError(r1.status, `POST ${path} failed (${r1.status}): ${text}`);
   }
 
   const requirements = (await r1.json()) as PaymentRequirements;
@@ -81,7 +81,10 @@ export async function x402Post(path: string, body: Record<string, unknown>): Pro
 
   const result = await r2.json();
   if (!r2.ok) {
-    throw new Error(`POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`);
+    throw new ApiError(
+      r2.status,
+      `POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`
+    );
   }
   return result;
 }

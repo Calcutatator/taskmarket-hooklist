@@ -36,6 +36,14 @@ silently continuing** when you notice, in this conversation or a user's message:
   forward we'll...") → suggest `/adr`.
 - A reversal or amendment to something already decided → suggest `/adr` (it will reference the
   prior ADR).
+- **Any part of an existing RFC's own proposal getting built** → suggest `/adr`, even when the RFC
+  already argued for the approach and implementing it feels like "just following the RFC," not a
+  new decision. `docs/rfc/README.md` states this as a hard rule: "When part of an RFC is actually
+  built, that decision gets its own ADR." Missing this trigger is a real, observed failure mode —
+  a real implementation shipped a genuine mechanism decision (not just following an obvious
+  default) with no ADR, because it read as "implementing what was already decided" rather than
+  "making a decision," even though the repo's own convention says the build itself is what
+  triggers the ADR. Don't wait for a decision to feel novel before suggesting one.
 
 This is a suggestion, not a gate — say something like "this sounds like it's worth an RFC/ADR,
 want me to draft one with `/rfc`/`/adr`?" and let the user say no. Don't block on it, and don't

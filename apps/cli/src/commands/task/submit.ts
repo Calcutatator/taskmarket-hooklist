@@ -10,6 +10,7 @@ import { buildSubmitMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
+import { x402Post } from '../../lib/x402.js';
 import { printError, printResult } from '../../lib/output.js';
 
 function collectFile(value: string, previous: string[]): string[] {
@@ -175,7 +176,12 @@ export const submitCmd = new Command('submit')
         keystore
       );
 
-      const result = (await apiPost(`/api/tasks/${taskId}/submissions/from-keys`, {
+      // /submissions/from-keys is gated by submissionAllowanceGate (RFC-0006) -- once the
+      // free allowance is exhausted it responds 402, not a plain success/error. x402Post
+      // handles both cases transparently: it returns the JSON body directly when the first
+      // round already succeeds (still within the free allowance), and only runs the
+      // sign-and-pay handshake when actually challenged with a 402.
+      const result = (await x402Post(`/api/tasks/${taskId}/submissions/from-keys`, {
         taskId,
         workerAddress: keystore.walletAddress,
         artifacts: artifactInputs,

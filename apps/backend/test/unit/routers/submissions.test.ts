@@ -205,8 +205,10 @@ describe('submissions router', () => {
       const ctx = createMockCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
       const tx: any = {
+        select: vi.fn().mockReturnValue(makeChain([])),
         insert: vi.fn().mockReturnValue(makeChain()),
         update: vi.fn().mockReturnValue(makeChain()),
+        execute: vi.fn().mockResolvedValue([]),
       };
       ctx.db.transaction.mockImplementationOnce(async (callback: (txArg: typeof tx) => unknown) =>
         callback(tx)

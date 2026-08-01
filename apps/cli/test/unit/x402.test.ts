@@ -32,6 +32,7 @@ vi.mock('../../src/lib/keystore.js', async (importOriginal) => {
 });
 
 import { x402Post } from '../../src/lib/x402.js';
+import { ApiError } from '../../src/lib/api.js';
 
 // Mock fetch globally
 const mockFetch = vi.fn();
@@ -122,6 +123,43 @@ describe('x402Post', () => {
     });
 
     await expect(x402Post('/api/tasks', {})).rejects.toThrow('500');
+  });
+
+  // Code review finding: submit.ts (and any other future x402Post caller past a
+  // gated free-then-paid endpoint) needs the real HTTP status structurally, not just
+  // embedded as text, to add it to the CLI's standard JSON error envelope -- see
+  // apps/cli/src/lib/api.ts's ApiError and apps/cli/src/index.ts's top-level catch.
+  it('throws ApiError with the real status when round 1 returns a non-402 error', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 429,
+      text: async () => '{"error":"This task has reached its maximum number of submissions from this worker."}',
+    });
+
+    const error = await x402Post('/api/tasks', {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(429);
+  });
+
+  it('throws ApiError with the real status when round 2 (post-payment) returns non-200', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      json: async () => PAYMENT_REQUIREMENTS,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ deviceEncryptionKey: dek }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 500,
+      json: async () => ({ error: 'Settlement failed' }),
+    });
+
+    const error = await x402Post('/api/tasks', {}).catch((e: unknown) => e);
+    expect(error).toBeInstanceOf(ApiError);
+    expect((error as ApiError).status).toBe(500);
   });
 
   it('throws when round 2 returns non-200', async () => {

@@ -5,6 +5,24 @@ import { loadKeystore, type Keystore } from './keystore.js';
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
 export const API_ORIGIN = new URL(API_URL).origin;
 
+/**
+ * Thrown by apiGet/apiPost/apiDelete on a non-2xx response instead of a bare Error, so the
+ * real HTTP status is available structurally (`.status`) rather than only embedded as text
+ * inside `.message`. Strictly additive -- `ApiError extends Error`, so existing
+ * `catch (err: Error)` call sites keep working unchanged. See
+ * apps/cli/src/index.ts's top-level catch, which surfaces `.status` on the CLI's standard
+ * JSON error envelope when present.
+ */
+export class ApiError extends Error {
+  readonly status: number;
+
+  constructor(status: number, message: string) {
+    super(message);
+    this.name = 'ApiError';
+    this.status = status;
+  }
+}
+
 export function legalReceiptHeadersForKeystore(
   keystore: Pick<Keystore, 'legalAcceptanceApiOrigin' | 'legalAcceptanceReceipt'>,
   path: string,
@@ -44,7 +62,7 @@ export async function apiGet(
   });
   const body = await res.json();
   if (!res.ok) {
-    throw new Error(`GET ${path} failed (${res.status}): ${JSON.stringify(body)}`);
+    throw new ApiError(res.status, `GET ${path} failed (${res.status}): ${JSON.stringify(body)}`);
   }
   return body;
 }
@@ -67,7 +85,10 @@ export async function apiPost(
   });
   const result = await res.json();
   if (!res.ok) {
-    throw new Error(`POST ${path} failed (${res.status}): ${JSON.stringify(result)}`);
+    throw new ApiError(
+      res.status,
+      `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`
+    );
   }
   return result;
 }
@@ -88,7 +109,10 @@ export async function apiDelete(
   });
   const result = await res.json();
   if (!res.ok) {
-    throw new Error(`DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`);
+    throw new ApiError(
+      res.status,
+      `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`
+    );
   }
   return result;
 }

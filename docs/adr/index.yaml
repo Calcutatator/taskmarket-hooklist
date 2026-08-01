@@ -163,3 +163,23 @@ adrs:
     title: "Per-PR preview environments: full redeploy per commit, disposable Anvil, self-provisioned facilitator"
     status: Accepted
     date: "2026-07-30"
+  - number: "0035"
+    file: "0035-submission-metering-bypasses-x402-not-price-at-zero.md"
+    title: Submission metering bypasses x402Middleware entirely rather than pricing free submissions at zero
+    status: Accepted
+    date: "2026-07-31"
+  - number: "0036"
+    file: "0036-free-submission-allowance-is-five.md"
+    title: "Free-submission allowance is 5 per (worker, task)"
+    status: Accepted
+    date: "2026-07-31"
+  - number: "0037"
+    file: "0037-tier-2-hard-ceiling-is-100-submissions.md"
+    title: "Tier 2 hard ceiling is 100 submissions per (worker, task) — NOT a platform-wide limit"
+    status: Accepted
+    date: "2026-07-31"
+  - number: "0038"
+    file: "0038-rate-limiting-is-a-shared-module-not-per-feature-bespoke-logic.md"
+    title: "Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction"
+    status: Accepted
+    date: "2026-07-31"

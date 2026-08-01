@@ -75,6 +75,13 @@ vi.mock('../../src/lib/api.js', () => ({
   apiPost: vi.fn(),
 }));
 
+// /submissions/from-keys is gated by submissionAllowanceGate (RFC-0006) and can
+// return a 402 payment challenge -- submit.ts uses x402Post for that call, not
+// apiPost, so it's mocked separately here.
+vi.mock('../../src/lib/x402.js', () => ({
+  x402Post: vi.fn(),
+}));
+
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn((message: string) => {
@@ -88,6 +95,7 @@ import { downloadCmd } from '../../src/commands/task/download.js';
 import { loadKeystore } from '../../src/lib/keystore.js';
 import { signMessage } from '../../src/lib/signer.js';
 import { apiPost } from '../../src/lib/api.js';
+import { x402Post } from '../../src/lib/x402.js';
 import { printResult } from '../../src/lib/output.js';
 import { createHash } from 'crypto';
 import { keccak256 } from 'viem';
@@ -108,18 +116,18 @@ describe('task artifact commands', () => {
   beforeEach(() => {
     vi.clearAllMocks();
     vi.mocked(apiPost).mockReset();
+    vi.mocked(x402Post).mockReset();
     vi.mocked(loadKeystore).mockResolvedValue(keystore as never);
     vi.mocked(signMessage).mockResolvedValue('0xsig');
     vi.spyOn(process.stderr, 'write').mockReturnValue(true);
   });
 
   it('requests upload URL then calls submitFromKeys for a single file', async () => {
-    vi.mocked(apiPost)
-      .mockResolvedValueOnce({
-        uploadUrl: 'http://localhost/upload',
-        artifactKey: 'submissions/0xtask/pending/key-one.png',
-      })
-      .mockResolvedValueOnce({ submissionId: 'submission-1' });
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      uploadUrl: 'http://localhost/upload',
+      artifactKey: 'submissions/0xtask/pending/key-one.png',
+    });
+    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-1' });
 
     await submitCmd.parseAsync(['node', 'submit', '0xtask', '--file', 'one.png'], {
       from: 'node',
@@ -135,7 +143,7 @@ describe('task artifact commands', () => {
       sizeBytes: 8,
     });
 
-    expect(apiPost).toHaveBeenNthCalledWith(2, '/api/tasks/0xtask/submissions/from-keys', {
+    expect(x402Post).toHaveBeenNthCalledWith(1, '/api/tasks/0xtask/submissions/from-keys', {
       taskId: '0xtask',
       workerAddress: keystore.walletAddress,
       artifacts: [
@@ -164,18 +172,19 @@ describe('task artifact commands', () => {
       .mockResolvedValueOnce({
         uploadUrl: 'http://localhost/upload2',
         artifactKey: 'key/logo.svg',
-      })
-      .mockResolvedValueOnce({ submissionId: 'submission-2' });
+      });
+    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-2' });
 
     await submitCmd.parseAsync(
       ['node', 'submit', '0xtask', '--file', 'logo.png', '--file', 'logo.svg'],
       { from: 'node' }
     );
 
-    // 2 requestUploadUrl + 1 submitFromKeys
-    expect(apiPost).toHaveBeenCalledTimes(3);
+    // 2 requestUploadUrl (apiPost) + 1 submitFromKeys (x402Post)
+    expect(apiPost).toHaveBeenCalledTimes(2);
+    expect(x402Post).toHaveBeenCalledTimes(1);
 
-    const submitCall = vi.mocked(apiPost).mock.calls[2];
+    const submitCall = vi.mocked(x402Post).mock.calls[0];
     expect(submitCall?.[0]).toBe('/api/tasks/0xtask/submissions/from-keys');
     const body = submitCall?.[1] as { artifacts: unknown[] };
     expect(body.artifacts).toHaveLength(2);
@@ -188,12 +197,11 @@ describe('task artifact commands', () => {
     // returns the same '0xsig' regardless of input, which would mask issue #323's
     // fix (the finalize call must sign a *different*, content-bound message).
     vi.mocked(signMessage).mockImplementation(async (message: string) => `0xsig-for:${message}`);
-    vi.mocked(apiPost)
-      .mockResolvedValueOnce({
-        uploadUrl: 'http://localhost/upload',
-        artifactKey: 'submissions/0xtask/pending/key-one.png',
-      })
-      .mockResolvedValueOnce({ submissionId: 'submission-3' });
+    vi.mocked(apiPost).mockResolvedValueOnce({
+      uploadUrl: 'http://localhost/upload',
+      artifactKey: 'submissions/0xtask/pending/key-one.png',
+    });
+    vi.mocked(x402Post).mockResolvedValueOnce({ submissionId: 'submission-3' });
 
     await submitCmd.parseAsync(['node', 'submit', '0xtask', '--file', 'one.png'], {
       from: 'node',
@@ -214,7 +222,7 @@ describe('task artifact commands', () => {
     expect(secondMessage).not.toBe(firstMessage);
 
     const requestUploadCall = vi.mocked(apiPost).mock.calls[0];
-    const submitCall = vi.mocked(apiPost).mock.calls[1];
+    const submitCall = vi.mocked(x402Post).mock.calls[0];
     const requestUploadSignature = (requestUploadCall?.[1] as { signature: string }).signature;
     const submitSignature = (submitCall?.[1] as { signature: string }).signature;
 

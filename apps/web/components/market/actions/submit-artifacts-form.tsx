@@ -4,7 +4,7 @@ import { formatDreams } from '@taskmarket/shared';
 import { CircleCheckIcon } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
-import { useAccount, useSignMessage } from 'wagmi';
+import { useAccount, useSignMessage, useSignTypedData, useSwitchChain } from 'wagmi';
 import { keccak256 } from 'viem';
 
 import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
@@ -20,6 +20,7 @@ import {
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { formatUsdcUnits } from '@/lib/format';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { payX402Post } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -130,6 +131,8 @@ function uploadToS3(
 export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionComponentProps) {
   const { address, isConnected } = useAccount();
   const { signMessageAsync } = useSignMessage();
+  const { signTypedDataAsync } = useSignTypedData();
+  const { switchChainAsync } = useSwitchChain();
   const inputRef = useRef<HTMLInputElement | null>(null);
   const [staged, setStaged] = useState<Staged[]>([]);
   const [pending, setPending] = useState(false);
@@ -247,6 +250,11 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
         })
       );
 
+      // /submissions/from-keys is gated by submissionAllowanceGate (RFC-0006): within the
+      // free allowance it succeeds directly like before; past it, the backend responds 402
+      // and payment is required. payX402Post assumes every call it probes is always paid, so
+      // it can't be used for the first attempt here -- only fall back to it once actually
+      // challenged with a 402, not before.
       const res = await fetch(`${apiUrl}/api/tasks/${task.id}/submissions/from-keys`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
@@ -258,7 +266,20 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
         }),
       });
 
-      if (!res.ok) {
+      if (res.status === 402) {
+        const paid = await payX402Post(
+          `/api/tasks/${task.id}/submissions/from-keys`,
+          { taskId: task.id, workerAddress: address, artifacts: artifactInputs, signature },
+          { address: address!, apiUrl, signTypedDataAsync, switchChainAsync }
+        );
+        if (!paid.ok) {
+          if (paid.rejected) {
+            setPending(false);
+            return;
+          }
+          throw new Error(paid.error);
+        }
+      } else if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
         throw new Error(body.error ?? `Submission failed (${res.status})`);
       }

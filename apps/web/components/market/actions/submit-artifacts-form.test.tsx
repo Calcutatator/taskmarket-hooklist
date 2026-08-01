@@ -11,6 +11,10 @@ vi.mock('wagmi', () => ({
     isConnected: true,
   }),
   useSignMessage: () => ({ signMessageAsync: vi.fn() }),
+  // RFC-0006: /submissions/from-keys can now return a 402 past the free allowance,
+  // so the form falls back to payX402Post (@/lib/x402-client), which needs these two.
+  useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
+  useSwitchChain: () => ({ switchChainAsync: vi.fn() }),
 }));
 
 const action = {

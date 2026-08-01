@@ -31,5 +31,5 @@ rfcs:
   - number: "0006"
     file: "0006-submission-spam-free-allowance-pricing.md"
     title: "Submission spam: free-allowance pricing for bounty submissions"
-    status: Draft
+    status: Discussion
     date: "2026-07-31"

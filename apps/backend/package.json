@@ -61,7 +61,8 @@
     "smoke:visibility": "tsx src/scripts/smoke-visibility.ts",
     "smoke:submission-visibility": "tsx src/scripts/smoke-submission-visibility.ts",
     "smoke:concurrent-tasks": "tsx src/scripts/smoke-concurrent-tasks.ts",
-    "smoke:payment-orphan-refund": "tsx src/scripts/smoke-payment-orphan-refund.ts"
+    "smoke:payment-orphan-refund": "tsx src/scripts/smoke-payment-orphan-refund.ts",
+    "smoke:rate-limit": "tsx --env-file=../../.env src/scripts/smoke-rate-limit.ts"
   },
   "dependencies": {
     "@aws-sdk/client-s3": "^3.0.0",

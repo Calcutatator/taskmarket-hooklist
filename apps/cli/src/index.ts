@@ -18,6 +18,7 @@ import { daemonCommand } from './commands/daemon.js';
 import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
+import { ApiError } from './lib/api.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -45,6 +46,10 @@ program.addCommand(requesterCmd);
 program.addCommand(legalCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
-  process.stderr.write(JSON.stringify({ ok: false, error: err.message }) + '\n');
+  const status = err instanceof ApiError ? err.status : undefined;
+  process.stderr.write(
+    JSON.stringify({ ok: false, error: err.message, ...(status !== undefined ? { status } : {}) }) +
+      '\n'
+  );
   process.exit(1);
 });

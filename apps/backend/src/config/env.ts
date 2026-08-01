@@ -61,6 +61,27 @@ const optionalDatabaseEnvironmentSchema = z.object({
   DATABASE_URL: databaseUrlSchema.optional(),
 });
 
+// Same isolation rationale as optionalDatabaseEnvironmentSchema above: apps/backend/src/
+// config/payments.ts's getFreeSubmissionAllowance() is called from request-handling code
+// (submissionAllowanceGate.ts) on every metered submission and must stay unit-testable
+// without a fully configured server environment. Routing it through the full
+// getServerConfig() -- as an earlier version of this code did -- turned a lookup of one
+// optional field into a hard process.exit(1) whenever ANY unrelated required env var was
+// missing, which is exactly the failure this isolated schema exists to avoid.
+const optionalSubmissionFreeAllowanceEnvironmentSchema = z.object({
+  SUBMISSION_FREE_ALLOWANCE: z.coerce.number().int().positive().optional(),
+});
+
+// Same isolation rationale as optionalSubmissionFreeAllowanceEnvironmentSchema above.
+// RFC-0006's own spec (docs/specs/submission-tier-2-hard-ceiling.md, "The constant") said no
+// override was needed for HARD_SUBMISSION_CEILING -- that call still holds for production. The
+// real need this override serves is test ergonomics: proving the exact ceiling boundary in a
+// smoke test cheaply (a small override value, e.g. 7) instead of doing ~94 real paid X402
+// round-trips to reach the real default of 100. See apps/backend/src/scripts/smoke-rate-limit.ts.
+const optionalHardSubmissionCeilingEnvironmentSchema = z.object({
+  HARD_SUBMISSION_CEILING: z.coerce.number().int().positive().optional(),
+});
+
 const envSchema = z
   .object({
     NODE_ENV: z.enum(['development', 'production', 'test']).default('development'),
@@ -75,6 +96,18 @@ const envSchema = z
     FORWARDER_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid forwarder address'),
     USDC_TOKEN_ADDRESS: z.string().regex(/^0x[a-fA-F0-9]{40}$/, 'Invalid USDC address'),
     DEFAULT_PLATFORM_FEE_BPS: z.coerce.number().min(0).max(10000).default(750),
+    // RFC-0006 Tier 1 (docs/rfc/0006-submission-spam-free-allowance-pricing.md): overrides
+    // FREE_SUBMISSION_ALLOWANCE (apps/backend/src/config/payments.ts) when set. Exists so
+    // smoke tests and other harnesses that legitimately submit many times to the same
+    // (worker, task) as part of ordinary multi-submission coverage -- not spam -- don't
+    // need to route through x402Post once they cross the small production default. Unset
+    // in normal deployments.
+    SUBMISSION_FREE_ALLOWANCE: z.coerce.number().int().positive().optional(),
+    // RFC-0006 Tier 2 (docs/specs/submission-tier-2-hard-ceiling.md): overrides
+    // HARD_SUBMISSION_CEILING (apps/backend/src/config/payments.ts) when set. Test-ergonomics
+    // only -- see getHardSubmissionCeilingOverride below. Unset in normal deployments; the
+    // production ceiling stays at the real default of 100.
+    HARD_SUBMISSION_CEILING: z.coerce.number().int().positive().optional(),
     AWS_REGION: z.string().optional(),
     AWS_S3_BUCKET: z.string().optional(),
     AWS_ENDPOINT_URL: z.string().url().optional(),
@@ -252,6 +285,38 @@ export function getOptionalDatabaseUrl(): string | undefined {
   }
 
   return result.data.DATABASE_URL;
+}
+
+/**
+ * Returns the SUBMISSION_FREE_ALLOWANCE override in isolation -- see
+ * optionalSubmissionFreeAllowanceEnvironmentSchema's rationale above. Application code
+ * that needs the full server environment must still use getServerConfig().
+ */
+export function getSubmissionFreeAllowanceOverride(): number | undefined {
+  const result = optionalSubmissionFreeAllowanceEnvironmentSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new Error(`Invalid SUBMISSION_FREE_ALLOWANCE: ${result.error.message}`);
+  }
+
+  return result.data.SUBMISSION_FREE_ALLOWANCE;
+}
+
+/**
+ * Implements: ADR-0037
+ * Returns the HARD_SUBMISSION_CEILING override in isolation -- see
+ * optionalHardSubmissionCeilingEnvironmentSchema's rationale above. Application code
+ * that needs the full server environment must still use getServerConfig(). The
+ * production default (100, apps/backend/src/config/payments.ts) is unchanged when this
+ * is unset; only smoke tests (and whoever explicitly sets the env var) get a different
+ * value.
+ */
+export function getHardSubmissionCeilingOverride(): number | undefined {
+  const result = optionalHardSubmissionCeilingEnvironmentSchema.safeParse(process.env);
+  if (!result.success) {
+    throw new Error(`Invalid HARD_SUBMISSION_CEILING: ${result.error.message}`);
+  }
+
+  return result.data.HARD_SUBMISSION_CEILING;
 }
 
 export function getServerConfig(): Env {

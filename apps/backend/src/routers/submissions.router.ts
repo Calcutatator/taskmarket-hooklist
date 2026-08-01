@@ -30,6 +30,7 @@ import { randomUUID } from 'crypto';
 import { keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
+import { assertUnderHardSubmissionCeilingForInsert } from '../services/submission-allowance';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
 import { verifySignedAddressOrThrow } from '../lib/agents';
@@ -486,6 +487,15 @@ export const submissionsRouter = router({
       );
 
       await ctx.db.transaction(async (tx) => {
+        // RFC-0006 Tier 2 (ADR-0037): submissionAllowanceGate's own hard-ceiling check
+        // ran in middleware, before file uploads and the on-chain submitWork call above --
+        // a real gap wide enough for concurrent requests to all read the same
+        // under-ceiling count. Re-validate atomically, immediately before the insert it
+        // actually guards, inside the same transaction.
+        if (task.mode === 'bounty' || task.mode === 'benchmark') {
+          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
+        }
+
         await tx.insert(submissions).values({
           id: submissionId,
           taskId: input.taskId,
@@ -754,6 +764,13 @@ export const submissionsRouter = router({
       );
 
       await ctx.db.transaction(async (tx) => {
+        // RFC-0006 Tier 2 (ADR-0037): see the sibling `submit` mutation's identical
+        // guard above for why this re-check exists and runs here, atomically, rather
+        // than only in submissionAllowanceGate's earlier, race-prone middleware check.
+        if (task.mode === 'bounty' || task.mode === 'benchmark') {
+          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
+        }
+
         await tx.insert(submissions).values({
           id: submissionId,
           taskId: input.taskId,

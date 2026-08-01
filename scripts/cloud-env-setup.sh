@@ -447,6 +447,13 @@ ERC8004_SEED_BLOCK=$ERC8004_SEED_BLOCK_PREVIEW
 X402_FACILITATOR_URL=http://127.0.0.1:$FACILITATOR_PORT
 X402_FACILITATOR_TOKEN=$FACILITATOR_TOKEN
 DEFAULT_PLATFORM_FEE_BPS=750
+# RFC-0006 Tier 1 (docs/rfc/0006-submission-spam-free-allowance-pricing.md): the smoke
+# suite deliberately submits many times to the same (worker, task) as part of ordinary
+# multi-submission coverage (smoke-bounty.ts's reject path, smoke-visibility.ts, etc.) --
+# that's legitimate test coverage, not the spam this RFC prices. Raise the allowance well
+# above anything any smoke script submits so none of them need to route through
+# x402Post just to keep submitting. Unset (production default: 3) everywhere else.
+SUBMISSION_FREE_ALLOWANCE=1000
 USDC_DOMAIN_NAME="USD Coin"
 CORS_ORIGIN=http://localhost:5173
 SERVER_PRIVATE_KEY=$SERVER_KEY

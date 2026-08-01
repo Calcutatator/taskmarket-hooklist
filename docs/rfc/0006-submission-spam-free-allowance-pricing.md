@@ -1,6 +1,6 @@
 # 0006 — Submission spam: free-allowance pricing for bounty submissions
 
-- **Status:** Draft
+- **Status:** Discussion
 - **Date:** 2026-07-31
 - **Author:** Beau (drafted by Claude Code for review)
 - **Supersedes / Superseded-by:** —
@@ -140,25 +140,84 @@ then cancels to recover escrow. It is idempotent across partial failures and cov
 definition. The "no USDC to start" goal is achievable for workers only, which is the side that
 matters for onboarding.
 
+## Implementation notes (Tier 1, added 2026-07-31)
+
+Tier 1 is implemented. Mechanism matches the Proposal section's code sketch closely, with the
+concrete pieces named here:
+
+- `apps/backend/src/config/payments.ts` — `FREE_SUBMISSION_ALLOWANCE`, now `5` per
+  ADR-0036 (see the constant's own doc comment). Shipped initially as an agent's own placeholder
+  judgment call of `3`; decided by Beau on 2026-07-31.
+- `apps/backend/src/services/submission-allowance.ts` — `countSuccessfulSubmissions` /
+  `isWithinFreeSubmissionAllowance`, both DB-backed reads against the `submissions` table
+  (`(taskId, lower(workerAddress))`), never against middleware attempts, exactly as this RFC
+  requires.
+- `apps/backend/src/middleware/submissionAllowanceGate.ts` — the bypass wrapper. For bounty/
+  benchmark tasks it calls `next()` directly while under the allowance, and only constructs/invokes
+  `x402Middleware` once the allowance is exhausted. For every other task mode (claim/pitch/
+  auction) it calls `next()` unconditionally, unmetered — matching this route's behavior before
+  this RFC, since claim/pitch/auction were never gated by x402 on this route to begin with (Open
+  question 5 below).
+- `apps/backend/src/app.ts` — `SUBMISSION_ROUTES.submit` / `SUBMISSION_ROUTES.submitFromKeys`
+  (`/api/tasks/:taskId/submissions`, `/api/tasks/:taskId/submissions/from-keys`) are now registered
+  with `validateBody(...)` + `submissionAllowanceGate(...)`, mounted before the OpenAPI handler,
+  the same pattern `TASK_CREATE_ROUTE` and `PAID_TASK_ACTION_ROUTES` already use.
+- `apps/backend/src/routers/submissions.router.ts` needed **no change**: it already derives worker
+  identity from the verified submit signature (`verifySignedAddressOrThrow`) and never reads
+  `res.locals.payer`, so the free path (which never sets `payer`) required no new guard.
+- Task-lookup failure or an unrecognized/missing `taskId` in the gate fails open to unmetered
+  (`next()`), not to the paid path — this route had no x402 gate at all before this RFC, so an
+  internal error here should not silently start charging a worker for something that used to be
+  free. This is a normal implementation default, not a re-litigated architecture call.
+- `apps/backend/src/config/env.ts` — `SUBMISSION_FREE_ALLOWANCE`, an optional env override read
+  by `getFreeSubmissionAllowance()` (`payments.ts`). Added after the smoke suite's existing
+  multi-submission coverage (`smoke-bounty.ts`'s 3x reject-path loop, `smoke-visibility.ts`,
+  `smoke-submission-visibility.ts`, etc.) was noticed as at risk of tripping the new allowance:
+  those scripts call the submission endpoints with the plain unauthenticated `post()` helper, not
+  `x402Post()`, so a submission that now requires payment would fail outright rather than exercise
+  the flow those scripts are actually testing. `scripts/cloud-env-setup.sh`'s generated `.env` sets
+  `SUBMISSION_FREE_ALLOWANCE=1000` so the smoke/sandbox environment never crosses the allowance;
+  every other deployment leaves it unset and gets the production default. Documented in
+  `.env.example` and `.env.sandbox`.
+
+Deviation from the Proposal section's sketch: the sketch shows a single inline wrapper function.
+The implementation splits that into three files (constant in `payments.ts`, DB read in
+`submission-allowance.ts`, Express wiring in `submissionAllowanceGate.ts`) to keep the allowance
+count independently unit-testable without spinning up Express, matching this repo's existing
+`task-payments.ts` / `x402.ts` split. No behavioral difference from the sketch.
+
+Tests: `apps/backend/test/unit/services/submission-allowance.test.ts` (counting, boundary at
+`FREE_SUBMISSION_ALLOWANCE`), `apps/backend/test/unit/middleware/submissionAllowanceGate.test.ts`
+(bypass under allowance, paid path at/over allowance, unmetered claim/pitch/auction, fail-open on
+lookup error), `apps/backend/test/unit/config/payments.test.ts` (env override honored, default
+fallback when unset).
+
+Tier 2 (the optional hard ceiling) is decided (ADR-0037: build it, ceiling = 100) but not yet
+implemented — see Open Question 3.
+
 ## Open questions
 
-1. **How large is the free allowance?** "First submission free" is the minimum that preserves the
-   on-ramp. Three (an initial submission plus two revisions) gives genuine iteration room. The
-   right number depends on what a real worker's revision count looks like in practice, which we
-   have not measured.
-2. **How does this interact with rejection being a permanent ban?** `submitWork` reverts
-   `SubmissionAlreadyRejected` for any already-rejected worker (`CoreFacet.sol:250`), so rejection
-   ends that worker's participation in the task outright — there is no path back in. A requester
-   rejecting eagerly to tidy their queue permanently excludes workers who might have iterated into
-   something good. This argues for a larger free allowance, and possibly for surfacing the
-   finality of rejection in the UI, but it may deserve separate treatment.
-3. **Is Tier 2 needed at all**, or does pricing alone bound the exposure acceptably?
+1. ~~**How large is the free allowance?**~~ **Resolved — 5, per ADR-0036.** Decided directly by
+   Beau on 2026-07-31, replacing the agent's own placeholder default of 3. Not derived from real
+   worker revision-count data — that gap is unchanged; a future retuning against real usage is
+   expected, not a sign this number was wrong. Retune in one place
+   (`FREE_SUBMISSION_ALLOWANCE`) if that data ever exists.
+2. ~~**How does this interact with rejection being a permanent ban?**~~ **Resolved — no change
+   needed.** Confirmed by Beau: rejection is a permanent ban from that specific task only, not
+   platform-wide (`taskRejectedWorkers[taskId][worker]` is per-task). A worker rejected from one
+   task can still work on every other task on the platform, so the finality concern this question
+   raised doesn't compound the way a platform-wide ban would.
+3. ~~**Is Tier 2 needed at all?**~~ **Resolved — yes, build it. Ceiling = 100, per ADR-0037.** Not
+   yet implemented — `Embodiment: Not started` on that ADR tracks this honestly; do not treat the
+   decision as done just because it's recorded.
 4. **What is the failure experience** for a worker who exhausts the allowance mid-task with an
-   empty wallet? Discovering a funding requirement partway through work is worse than discovering
-   it at signup; the error needs to be explicit about what happened and what to do.
-5. **Scope confirmation:** bounty and benchmark only? Claim, pitch and auction submissions are
-   single-deliverable and already gated behind worker selection, so they are not spammable the
-   same way.
+   empty wallet? **Still open — needs both CLI and web frontend changes** to clearly advertise that
+   the free allowance was exhausted, distinct from a generic payment failure, before either surface
+   is built. Not yet designed; may need its own ADR once a concrete approach (e.g. a distinct
+   response shape/error code from the backend) is chosen, not just implemented as UI polish.
+5. ~~**Scope confirmation: bounty and benchmark only?**~~ **Resolved — yes, confirmed by Beau.**
+   Claim, pitch, and auction submissions are single-deliverable and already gated behind worker
+   selection, so they are not spammable the same way and stay out of scope for both tiers.
 
 ## Non-goals
 
@@ -167,19 +226,50 @@ matters for onboarding.
 - **Not a change to `authorizedRelayer`.** The single-relayer property is what makes backend
   enforcement authoritative; this RFC depends on it and does not touch it.
 - **Not the review UI fix.** PR #369 groups submissions by worker and is the separate, already-open
-  answer to the unusable-gallery half of the problem.
+  answer to the unusable-gallery half of the problem — including, as of its Milestone 5, benchmark
+  tasks' optional submissions channel (metered by this RFC's Tier 1/2 the same as bounty's, but
+  with no review surface at all before that milestone).
 - **Not task creation pricing** — see above; the payment is the escrow.
 - **Not per-submission rejection.** Rejection is worker-level on-chain
   (`taskRejectedWorkers[taskId][worker]`), with no per-submission granularity to expose.
 - **Not a general anti-sybil or reputation system.** A per-address free allowance means a fresh
   address gets a fresh allowance; this RFC accepts that, as any free tier must.
+- **Not time-windowed or platform-wide rate limiting.** Both the free allowance (5, ADR-0036) and
+  the Tier 2 hard ceiling (100, ADR-0037) are counted **per individual `(worker, task)` pair** — a
+  fresh count for every task, not a running total across a worker's activity, and not a
+  platform-wide total across all workers. A worker could still reach the ceiling on each of many
+  different tasks; nothing here bounds that. Deliberately deferred, not designed here — see
+  ADR-0037's Considered options for the real tradeoff (a per-task count is cheap, a time-windowed
+  or cross-task/platform-wide bound is a materially bigger build).
+
+## Future ideas (not designed, recorded so they aren't lost)
+
+None of these are decided or designed — recorded only so a future "we're still seeing spam"
+discussion starts from what was already considered instead of re-deriving it. If any of these get
+picked up for real, they need their own RFC/ADR, not a quiet addition to this one.
+
+- **Time-windowed, per task** (e.g. 100 submissions per task per hour). Bounds burst rate on a
+  single task, not just total volume. Same per-task scope as ADR-0037's chosen ceiling, adding a
+  time dimension on top.
+- **Time-windowed, platform-wide** (e.g. 100 submissions across the whole platform per hour).
+  Bounds burst rate across all of a worker's (or all workers') activity at once, not scoped to any
+  one task. A materially different, and materially more expensive, kind of state to maintain than
+  either tier currently built — see ADR-0037's Considered options.
+- **A platform-wide free allowance instead of a per-task one** (e.g. 100 free submissions across
+  the whole platform, then every submission after that is priced, regardless of which task it's
+  to). This is a different *shape* of idea from the other two, not just a different scope for the
+  same idea — it would change ADR-0036's decision (a fresh allowance per task) into a single
+  allowance shared across everything a worker does on the platform, which is a real behavioral
+  change, not a tuning knob.
 
 ## References
 
 - PR: [#369](https://github.com/daydreamsai/taskmarket/pull/369) — Group submission review by
   worker (frontend-only; the UI half of this problem)
 - Spec: `docs/specs/worker-grouped-submission-review.md` (lands with PR #369; not yet on `main`)
-- Related: ADR-0030 (task/submission visibility), ADR-0032 (RFC-lite process)
+- Related: ADR-0030 (task/submission visibility), ADR-0032 (RFC-lite process), ADR-0035 (Tier 1
+  mechanism: bypass not price-at-zero), ADR-0036 (free allowance = 5), ADR-0037 (Tier 2 ceiling =
+  100)
 - Contract: `packages/contracts/src/facets/CoreFacet.sol` (`submitWork`, `rejectSubmission`,
   `cancelTask`), `packages/contracts/src/TaskMarketForwarder.sol` (`authorizedRelayer`)
 - Backend: `apps/backend/src/config/payments.ts`, `apps/backend/src/middleware/x402.ts`,
