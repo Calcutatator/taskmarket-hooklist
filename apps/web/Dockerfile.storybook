@@ -1,0 +1,23 @@
+FROM node:24-bookworm-slim AS build
+
+ENV PNPM_HOME=/pnpm
+ENV PATH=$PNPM_HOME:$PATH
+
+RUN apt-get update && \
+    apt-get install --yes --no-install-recommends g++ make python3 && \
+    rm -rf /var/lib/apt/lists/*
+RUN corepack enable && corepack prepare pnpm@8.15.0 --activate
+
+WORKDIR /app
+COPY . .
+
+RUN pnpm install --frozen-lockfile
+RUN pnpm --filter @taskmarket/shared build && \
+    pnpm --filter @taskmarket/web storybook:build
+
+FROM caddy:2.10.2-alpine
+
+COPY apps/web/Caddyfile.storybook /etc/caddy/Caddyfile
+COPY --from=build /app/apps/web/storybook-static /srv
+
+EXPOSE 8080

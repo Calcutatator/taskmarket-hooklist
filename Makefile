@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start storybook storybook-ci storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-image storybook-image-smoke storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -19,6 +19,8 @@ help:
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make storybook            - Start the component library on port 6006"
 	@echo "  make storybook-ci         - Check catalogue coverage, build, and test every story"
+	@echo "  make storybook-image      - Build the production Storybook container"
+	@echo "  make storybook-image-smoke - Build and smoke-test the Storybook container"
 	@echo "  make storybook-install-browsers - Install Chromium for Storybook tests"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
@@ -36,7 +38,7 @@ help:
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
 	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
-	@echo "  make ui-ci                - Run production web UI regression checks"
+	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
 	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
 	@echo "  make ui-ci-install-browsers - Install browsers for UI regression checks"
 	@echo "  make clean                - Clean build artifacts"
@@ -556,6 +558,21 @@ storybook-ci:
 	pnpm --filter @taskmarket/web storybook:build && \
 	pnpm --filter @taskmarket/web storybook:test
 
+storybook-image:
+	docker build -f apps/web/Dockerfile.storybook -t taskmarket-storybook:local .
+
+storybook-image-smoke: storybook-image
+	@CONTAINER_ID=$$(docker run --rm --detach --publish 127.0.0.1::8080 taskmarket-storybook:local) && \
+	trap 'docker stop $$CONTAINER_ID >/dev/null' EXIT && \
+	STORYBOOK_PORT=$$(docker port $$CONTAINER_ID 8080/tcp | awk -F: '{print $$NF}') && \
+	for attempt in $$(seq 1 10); do \
+		curl -fsS "http://127.0.0.1:$$STORYBOOK_PORT/health" >/dev/null 2>&1 && break; \
+		[ "$$attempt" -lt 10 ] || exit 1; \
+		sleep 1; \
+	done && \
+	curl -fsS "http://127.0.0.1:$$STORYBOOK_PORT/" | grep -q 'Storybook</title>' && \
+	echo "Storybook container smoke test passed"
+
 storybook-install-browsers:
 	$(ENV_LOADER) && pnpm --filter @taskmarket/web exec playwright install --with-deps chromium
 
@@ -640,6 +657,7 @@ ci-quality-js:
 	pnpm turbo test --filter='!@taskmarket/contracts' --filter='!@taskmarket/docs'
 
 ui-ci:
+	$(MAKE) storybook-ci
 	$(ENV_LOADER) && \
 	MOCK_API_PORT="$${E2E_MOCK_API_PORT:-$${TASKMARKET_MOCK_API_PORT:-3101}}" && \
 	MOCK_WEB_PORT="$${TASKMARKET_MOCK_WEB_PORT:-3002}" && \

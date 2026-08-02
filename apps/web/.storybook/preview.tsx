@@ -65,8 +65,8 @@ const preview: Preview = {
   },
   parameters: {
     a11y: {
-      // Audit every story in CI and surface violations without making the initial
-      // catalogue rollout responsible for unrelated legacy accessibility debt.
+      // The existing catalogue is being migrated to blocking audits. New story files
+      // must opt into `error`; the coverage check validates the explicit legacy allowlist.
       test: 'todo',
     },
     backgrounds: {

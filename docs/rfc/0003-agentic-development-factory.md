@@ -94,8 +94,12 @@ back. The lifecycle:
 3. **Workspace.** The agent branches, pushes, and opens a PR — which is also how it acquires
    its preview environment, since the environment is keyed to the PR. The PR is the agent's
    durable workspace and its progress log; there is deliberately no second tracking system.
-4. **Loop.** The agent iterates: edit, push, wait for the preview environment to rebuild,
-   drive the deployed app (browser or API) against its own Anvil chain and Postgres, repeat.
+4. **Loop.** The agent iterates locally before it pushes. For independently renderable UI,
+   it finds or creates the component's Storybook state, edits against the live catalogue,
+   and verifies relevant responsive, theme, interaction, and accessibility states in a
+   browser. For integrated behavior it drives the local app or API against its own Anvil and
+   Postgres. Once the inner loop is green, it pushes, waits for the preview environment to
+   rebuild, then drives both the deployed Storybook and production frontend before repeating.
 5. **Pause points.** Architectural decisions produce a `Proposed` ADR and stop that thread of
    work until a human accepts it. Questions that don't rise to ADR level go to the PR thread
    (or back to the triggering Discord thread) as ordinary review conversation.
@@ -253,10 +257,11 @@ no Docker and no external services. The pieces:
   mid-session. To be driven by what the first real cloud session actually hits, not
   built speculatively.
 - **Browser verification**: sandboxes run headless Chromium, not interactive Chrome — the
-  repo already ships the tooling (Playwright in `apps/web`,
-  `make ui-ci-install-browsers`). Agents drive deployed preview URLs or the local web app
-  via Playwright and read screenshots. Because the smoke loop is all-localhost, it also
-  survives the post-setup network egress restrictions some vendor sandboxes apply.
+  repo already ships the tooling (Playwright and Storybook in `apps/web`,
+  `make ui-ci-install-browsers`). Agents use Storybook as the UI inner loop, drive deployed
+  Storybook and frontend preview URLs for final verification, and read screenshots. Because
+  the smoke loop is all-localhost, it also survives the post-setup network egress
+  restrictions some vendor sandboxes apply.
 
 ### The agent's execution sandbox (distinct from the preview environment)
 
@@ -268,15 +273,18 @@ The factory involves two different compute contexts that must not be conflated:
   it the agent runs its own **local** stack: its own Anvil (deploy in seconds, fast-forward
   time, replay state at will), its own Postgres, its own backend — `make smoke` already
   defaults to localhost, so the entire smoke suite runs in-sandbox with no external
-  dependency. This is the **inner loop**: edit, build, deploy-to-local-anvil, smoke, repeat —
-  seconds per iteration, no Railway involvement, nothing pushed.
+  dependency. For UI work the sandbox also runs Storybook, using deterministic fixtures to
+  develop component states without waiting for the full stack. This is the **inner loop**:
+  find or define the story, edit, inspect, run story tests, then build, deploy-to-local-anvil,
+  and smoke as needed — seconds per iteration, no Railway involvement, nothing pushed.
 - **The preview environment is for previewing.** The per-PR Railway environment (per the
-  preview-environments RFC) is the deployed, production-like surface: the URL a human clicks
-  to see the work, the deployed build the agent drives with a browser for UI verification,
-  and proof that the change survives a real build and deployment rather than merely working
-  in the sandbox. This is the **outer loop**: push a commit, the environment rebuilds, verify
-  the deployed result — minutes per iteration, paid only when the agent believes the work is
-  ready to preview.
+  preview-environments RFC) is the deployed, production-like surface. It publishes both a
+  Storybook URL for isolated state review and the frontend URL a human uses for integrated
+  acceptance. The agent drives both with a browser, proving that the component catalogue and
+  application survive real builds and deployment rather than merely working in the sandbox.
+  This is the **outer loop**: push a commit, the environment rebuilds, verify the deployed
+  stories and application result — minutes per iteration, paid only when the agent believes
+  the work is ready to preview.
 
 This split is also what makes the preview environment's per-commit rebuild cost acceptable:
 the minutes-long rebuild bounds only the outer loop. An agent that pushes every exploratory
@@ -311,8 +319,9 @@ The developer's surface area is deliberately small:
 
 - **Two review moments**: accepting/rejecting ADRs when an agent pauses, and reviewing the
   final PR. Everything between is unattended.
-- **One pane of glass**: the PR carries the preview URL comment, the commit-by-commit
-  progress, links to any ADRs it spawned, and (if adopted) its running cost.
+- **One pane of glass**: the PR carries the Storybook and frontend preview URLs, the exact
+  stories and route reviewed, the commit-by-commit progress, links to any ADRs it spawned,
+  and (if adopted) its running cost.
 - **One escape hatch**: pull the agent's branch into a local worktree and continue attended
   on a subscription session at any time — cloud-vs-local is per-task, not structural.
 

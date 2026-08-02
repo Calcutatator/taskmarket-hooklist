@@ -123,9 +123,35 @@ For every `apps/web` change:
 - Treat deviations from the frontend guide as blocking review findings, even when the page
   appears visually correct.
 
+### Storybook-first UI workflow
+
+For a visual component, product surface, loading state, empty state, error state, or other
+UI treatment that can render independently, use Storybook as the inner development loop:
+
+1. Find the existing component and its story before editing. Search Storybook and
+   `apps/web/stories/`; do not start from a route screenshot when an isolated story exists.
+2. Add or update the story so it exposes every materially changed state before or alongside
+   the implementation. Include relevant responsive, theme, long-content, disconnected,
+   loading, empty, error, status, and boundary variants.
+3. Run `make storybook` and inspect the changed stories in a browser at every relevant
+   viewport and theme. Exercise keyboard and pointer interactions when behavior changes.
+4. Add a Storybook `play` assertion for meaningful component interactions. New or materially
+   changed stories must use blocking accessibility checks unless a specific, documented
+   legacy exception applies.
+5. In the PR or final handoff, name the Storybook stories reviewed and record the relevant
+   application route used for integrated verification.
+
+Storybook does not replace production-route verification. Routing, Server Component data,
+authentication, wallet behavior, provider wiring, and cross-page flows still require the
+production build, Playwright, and the deployed PR preview. If a route composition cannot be
+represented usefully in isolation, document why and test the narrowest reusable child
+surfaces in Storybook instead.
+
 Follow the validation matrix in `docs/FRONTEND_GUIDE.md`. Any UI change must pass
-`make ui-ci` (run `make ui-ci-install-browsers` once first). If that is not feasible locally,
-verify that the PR's `ui` CI job passes before calling the work complete.
+`make ui-ci`, which includes the Storybook and production-route gates (run
+`make ui-ci-install-browsers` once first). If that is not feasible locally, verify that the
+PR's `ui` CI job passes and review the PR's Storybook and frontend preview URLs before calling
+the work complete.
 
 ## Smoke Tests
 

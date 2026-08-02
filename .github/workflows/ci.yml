@@ -309,10 +309,13 @@ jobs:
 
   ui:
     if: always()
-    needs: ui-e2e
+    needs: [quality-js, storybook, ui-e2e]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
     steps:
       - name: Verify UI shards
-        run: test "${{ needs.ui-e2e.result }}" = "success"
+        run: |
+          test "${{ needs.quality-js.result }}" = "success"
+          test "${{ needs.storybook.result }}" = "success"
+          test "${{ needs.ui-e2e.result }}" = "success"

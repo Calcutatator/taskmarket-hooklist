@@ -6,6 +6,11 @@ Run it on its own with `make storybook`, or alongside the application with
 `make dev storybook`. Use `make storybook-ci` to run the same coverage, static
 build, browser-rendering, interaction, and accessibility audit used in CI.
 
+For independently renderable UI work, find or create the relevant story before editing the
+component. Iterate in the live Storybook, inspect the changed states at each relevant theme
+and viewport, and name those stories in the PR or final handoff. Verify the integrated route
+after the isolated treatment is correct.
+
 ## Story expectations
 
 Stories are grouped by the level at which a component is normally reviewed:
@@ -19,6 +24,12 @@ Each component should be shown with every materially different visual or data
 state it supports. Include empty, loading, error, disconnected, long-content,
 boundary-value, status, mode, and responsive variants where they apply. Composite
 stories should use representative data rather than placeholder-only content.
+
+Reusable components should have a searchable component-named story even when they also appear
+inside a broader catalogue or experience. Meaningful interactions need `play` assertions.
+New story files must set `parameters.a11y.test = 'error'`. Existing catalogues may inherit the
+temporary `todo` default only when listed with a specific reason in
+`.storybook/a11y-legacy.json`; the coverage check rejects implicit or stale exceptions.
 
 ## Coverage contract
 

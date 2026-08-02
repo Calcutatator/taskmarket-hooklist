@@ -108,19 +108,48 @@ components or helpers, unnecessarily broad client boundaries, and missing intera
 accessibility, or regression coverage as blocking findings even when the page appears
 visually correct.
 
+## Storybook-first visual development
+
+Storybook is the inner loop for visual work in `apps/web`. Before changing a component or
+product surface, find its existing story in `apps/web/stories/` and use `make storybook` to
+inspect the current treatment. If no useful story exists, add one before or alongside the
+implementation.
+
+A story is a reviewable state, not only a coverage marker. Show every materially different
+state affected by the change, including loading, empty, error, disconnected, long-content,
+boundary-value, status, mode, responsive, and theme variants where they apply. Prefer a
+searchable component-named story for a reusable component; retain broader catalogue and
+experience stories when they help review composition across several components.
+
+Interactive behavior needs a `play` function that exercises the user-visible result with
+keyboard or pointer input as appropriate. New story files must set
+`parameters.a11y.test` to `error`. Existing catalogue files may inherit `todo` only while
+listed with a specific reason in `.storybook/a11y-legacy.json`; materially changed stories
+should leave that allowlist as their accessibility findings are resolved. Use deterministic
+fixtures and disable incidental animation where it would make browser tests flaky, while
+keeping a dedicated motion-enabled story for motion that is itself under review.
+
+Before handoff, inspect each changed story at every relevant viewport and theme, then verify
+the integrated application route. Record the story names and route in the PR or final
+handoff. Storybook does not replace production validation for routing, Server Components,
+providers, authentication, wallet integration, or cross-page behavior.
+
 ## Running the frontend
 
 ```bash
-make dev          # starts dev services
-make start web    # starts the Next app at http://localhost:3001
+make storybook     # starts the component catalogue at http://localhost:6006
+make dev storybook # starts dev services and Storybook together
+make dev           # starts dev services
+make start web     # starts the Next app at http://localhost:3001
 ```
 
 Use the following validation matrix:
 
 - Non-UI `apps/web` changes must pass the package checks below.
 - Non-UI behavior changes must also pass `make test`, which runs the repository test suite.
-- UI changes must pass `make ui-ci`; it includes the package checks, unit tests, production
-  build, and E2E suite, so do not run both rows.
+- UI changes must pass `make ui-ci`; it includes Storybook catalogue coverage, browser story
+  tests, the package checks, unit tests, production build, and E2E suite, so do not run the
+  rows separately.
 
 ```bash
 # Non-UI apps/web change

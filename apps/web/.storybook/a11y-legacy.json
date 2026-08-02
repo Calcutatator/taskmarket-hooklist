@@ -1,0 +1,11 @@
+{
+  "stories/actions.stories.tsx": "Composite action catalogues contain existing axe findings that need component-level remediation.",
+  "stories/application-shell.stories.tsx": "Application shell states contain existing axe findings that need component-level remediation.",
+  "stories/artifacts-and-submissions.stories.tsx": "Artifact and submission catalogues contain existing axe findings that need component-level remediation.",
+  "stories/data-display.stories.tsx": "Data display catalogues contain existing axe findings that need component-level remediation.",
+  "stories/experiences.stories.tsx": "Experience catalogues contain existing axe findings that need component-level remediation.",
+  "stories/primitives.stories.tsx": "Primitive catalogues contain existing axe findings that need component-level remediation.",
+  "stories/task-drops.stories.tsx": "Task drop catalogues contain existing axe findings that need component-level remediation.",
+  "stories/task-surfaces.stories.tsx": "Task surface catalogues contain existing axe findings that need component-level remediation.",
+  "stories/visualizations.stories.tsx": "Visualization catalogues contain existing axe findings that need component-level remediation."
+}
