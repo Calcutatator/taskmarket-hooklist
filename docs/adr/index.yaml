@@ -183,3 +183,8 @@ adrs:
     title: "Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction"
     status: Accepted
     date: "2026-07-31"
+  - number: "0039"
+    file: "0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md"
+    title: Singleton RPC gateway owns runtime clients and transport accounting
+    status: Proposed
+    date: "2026-08-02"

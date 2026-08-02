@@ -1,6 +1,5 @@
 import { randomUUID } from 'crypto';
-import { createPublicClient, http, keccak256, parseAbiItem, slice, toBytes } from 'viem';
-import { base, baseSepolia } from 'viem/chains';
+import { keccak256, parseAbiItem, slice, toBytes } from 'viem';
 import { normalizeAddress } from '@taskmarket/shared';
 import { db } from '../db/client';
 // Allows the status-guarded handlers below to run against an injected test
@@ -23,6 +22,7 @@ import {
 import { and, eq, inArray, notInArray, sql } from 'drizzle-orm';
 import { getServerConfig } from '../config/env';
 import { createServerWallet } from '../lib/wallet';
+import { getPublicClient, runWithRpcOperation } from '../lib/rpc-gateway';
 import { shouldStartEvaluatorReview } from './task-evaluator';
 import {
   projectSettlementLogs,
@@ -43,10 +43,7 @@ import { recordRequesterReputationEvent } from './requester-reputation-recorder'
 
 const config = getServerConfig();
 
-const publicClient = createPublicClient({
-  chain: config.CHAIN_ID === 84532 ? baseSepolia : base,
-  transport: http(config.BASE_RPC_URL),
-});
+const publicClient = getPublicClient();
 
 const POLL_INTERVAL = 12000;
 const MAX_BLOCK_RANGE = 10_000n;
@@ -1248,7 +1245,9 @@ async function pollIndexerOnce(): Promise<void> {
   }
 }
 
-const pollIndexer = createSerializedPoll(pollIndexerOnce);
+const pollIndexer = createSerializedPoll(() =>
+  runWithRpcOperation({ kind: 'background', name: 'indexer' }, pollIndexerOnce)
+);
 let pollingStarted = false;
 
 /** Catch up every configured indexer and reject if any range remains incomplete. */

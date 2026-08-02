@@ -1,7 +1,5 @@
 import { randomBytes } from 'crypto';
 import {
-  createPublicClient,
-  http,
   parseAbi,
   parseAbiItem,
   decodeEventLog,
@@ -12,9 +10,9 @@ import {
   BaseError,
   type Log,
 } from 'viem';
-import { base, baseSepolia } from 'viem/chains';
 import { TRPCError } from '@trpc/server';
 import { createServerWallet } from '../lib/wallet';
+import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
 import {
@@ -319,12 +317,6 @@ function resolveForwarderAddress(): `0x${string}` {
   return addr as `0x${string}`;
 }
 
-function getPublicClient() {
-  const config = getServerConfig();
-  const chain = config.CHAIN_ID === 84532 ? baseSepolia : base;
-  return createPublicClient({ chain, transport: http(config.BASE_RPC_URL) });
-}
-
 /**
  * Retry a flaky RPC read with exponential backoff. Base Sepolia's provider
  * intermittently times out on eth_getBlockByNumber (both estimateFeesPerGas
@@ -339,7 +331,7 @@ async function retryWithBackoff<T>(
   let lastError: unknown;
   for (let attempt = 0; attempt < attempts; attempt++) {
     try {
-      return await fn();
+      return await runWithRpcApplicationAttempt(attempt + 1, fn);
     } catch (error) {
       lastError = error;
       if (attempt < attempts - 1) {
@@ -495,7 +487,9 @@ async function relayThroughForwarderResult(
     // fix exactly this kind of failure -- until manually resolved. Found via a genuine
     // concurrent-request race in scripts/smoke-payment-orphan-refund.ts.
     try {
-      await publicClient.simulateContract({ ...callArgs, account: account.address });
+      await runWithRpcApplicationAttempt(attempt + 1, () =>
+        publicClient.simulateContract({ ...callArgs, account: account.address })
+      );
     } catch (err) {
       lastError = err;
       continue;
@@ -503,7 +497,9 @@ async function relayThroughForwarderResult(
 
     let hash: `0x${string}`;
     try {
-      hash = await client.writeContract({ ...callArgs, ...gas });
+      hash = await runWithRpcApplicationAttempt(attempt + 1, () =>
+        client.writeContract({ ...callArgs, ...gas })
+      );
     } catch (err) {
       // writeContract threw before sending despite the simulate above having just
       // succeeded (e.g. state changed in the gap between the two calls, or a wallet/RPC
@@ -514,10 +510,12 @@ async function relayThroughForwarderResult(
     }
 
     // Transaction was sent — wait for receipt.
-    const receipt = await publicClient.waitForTransactionReceipt({
-      hash,
-      timeout: TX_RECEIPT_TIMEOUT,
-    });
+    const receipt = await runWithRpcApplicationAttempt(attempt + 1, () =>
+      publicClient.waitForTransactionReceipt({
+        hash,
+        timeout: TX_RECEIPT_TIMEOUT,
+      })
+    );
     if (receipt.status !== 'success') {
       // Replay via eth_call to decode the actual revert reason (e.g. SubmissionNotFound),
       // so callers that catch specific revert names see the same message format as pre-send failures.
@@ -525,13 +523,15 @@ async function relayThroughForwarderResult(
       try {
         const freshValidBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
         const freshNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
-        await publicClient.simulateContract({
-          address: forwarderAddr,
-          abi: FORWARDER_ABI,
-          functionName: 'relay',
-          args: [pgtrSenderAddr, paymentAmount, freshValidBefore, freshNonce, data],
-          account: account.address,
-        });
+        await runWithRpcApplicationAttempt(attempt + 1, () =>
+          publicClient.simulateContract({
+            address: forwarderAddr,
+            abi: FORWARDER_ABI,
+            functionName: 'relay',
+            args: [pgtrSenderAddr, paymentAmount, freshValidBefore, freshNonce, data],
+            account: account.address,
+          })
+        );
       } catch (simErr) {
         revertReason = decodeRelayRevert(simErr);
       }
@@ -1159,11 +1159,13 @@ export async function contractRegisterIdentity(): Promise<bigint> {
   // wrong agentId.
   for (let attempt = 0; attempt < 5; attempt++) {
     await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
-    const logs = await publicClient.getLogs({
-      address: config.ERC8004_IDENTITY_REGISTRY as `0x${string}`,
-      fromBlock: receipt.blockNumber,
-      toBlock: receipt.blockNumber,
-    });
+    const logs = await runWithRpcApplicationAttempt(attempt + 1, () =>
+      publicClient.getLogs({
+        address: config.ERC8004_IDENTITY_REGISTRY as `0x${string}`,
+        fromBlock: receipt.blockNumber,
+        toBlock: receipt.blockNumber,
+      })
+    );
     const ownLogs = logs.filter((log) => log.transactionHash === hash);
     const found = extractAgentId(ownLogs);
     if (found !== null) return found;

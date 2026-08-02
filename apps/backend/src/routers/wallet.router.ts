@@ -1,11 +1,11 @@
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
-import { createPublicClient, http, parseAbi } from 'viem';
-import { base, baseSepolia } from 'viem/chains';
+import { parseAbi } from 'viem';
 import { agents, dreamsWithdrawNonces } from '../db/schema';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import { getServerConfig } from '../config/env';
+import { getPublicClient } from '../lib/rpc-gateway';
 import {
   contractTransferWithAuthorization,
   contractGetDreamsClaimable,
@@ -49,8 +49,7 @@ export const walletRouter = router({
     )
     .query(async ({ input }) => {
       const config = getServerConfig();
-      const chain = config.CHAIN_ID === 84532 ? baseSepolia : base;
-      const publicClient = createPublicClient({ chain, transport: http(config.BASE_RPC_URL) });
+      const publicClient = getPublicClient();
       const raw = await publicClient.readContract({
         address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
         abi: USDC_ABI,

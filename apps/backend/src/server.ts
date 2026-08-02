@@ -10,6 +10,7 @@ import { startSmtpServer } from './services/smtp';
 import { migrationClient, db } from './db/client';
 import { runConfiguredTaskAwardsBackfill } from './services/configured-task-awards-backfill';
 import { prepareBackendState } from './services/startup-preparation';
+import { setRuntimeRpcTelemetrySink } from './lib/rpc-gateway';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -18,6 +19,8 @@ const PORT = config.PORT;
 
 const migrationDb = drizzle(migrationClient);
 const migrationsFolder = join(__dirname, '../drizzle/migrations');
+
+setRuntimeRpcTelemetrySink((event) => logger.http('rpc.provider_request', { rpc: event }));
 
 async function startServer(): Promise<void> {
   await prepareBackendState({

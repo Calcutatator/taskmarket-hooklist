@@ -1,7 +1,6 @@
 import { and, eq, sql } from 'drizzle-orm';
-import { createPublicClient, http } from 'viem';
-import { base, baseSepolia } from 'viem/chains';
 import { getServerConfig } from '../config/env';
+import { getPublicClient, runWithRpcOperation } from '../lib/rpc-gateway';
 import { db } from '../db/client';
 import { indexerState, taskAwards, tasks } from '../db/schema';
 import { contractGetSettlementChainState } from './contract';
@@ -84,7 +83,7 @@ function toOptionalBigInt(value: number | undefined): bigint | undefined {
   return value === undefined ? undefined : BigInt(value);
 }
 
-export async function runConfiguredTaskAwardsBackfill(
+async function runConfiguredTaskAwardsBackfillInternal(
   options: ConfiguredTaskAwardsBackfillOptions = {}
 ): Promise<TaskAwardsBackfillSummary> {
   const config = getServerConfig();
@@ -92,10 +91,7 @@ export async function runConfiguredTaskAwardsBackfill(
   const ignoreCheckpoint =
     options.ignoreCheckpoint ?? config.TASK_AWARDS_BACKFILL_IGNORE_CHECKPOINT;
   const toBlock = options.toBlock ?? toOptionalBigInt(config.TASK_AWARDS_BACKFILL_TO_BLOCK);
-  const client = createPublicClient({
-    chain: config.CHAIN_ID === 84532 ? baseSepolia : base,
-    transport: http(config.BASE_RPC_URL),
-  });
+  const client = getPublicClient();
   const contractAddress = config.CONTRACT_ADDRESS as `0x${string}`;
   const startBlock = fromBlock ?? BigInt(config.CONTRACT_DEPLOY_BLOCK);
   const chainStateByTask = new Map<string, SettlementChainState>();
@@ -282,4 +278,12 @@ export async function runConfiguredTaskAwardsBackfill(
 
   if (!summary) throw new Error('Task award backfill validation did not run');
   return summary;
+}
+
+export function runConfiguredTaskAwardsBackfill(
+  options: ConfiguredTaskAwardsBackfillOptions = {}
+): Promise<TaskAwardsBackfillSummary> {
+  return runWithRpcOperation({ kind: 'background', name: 'reconciliation' }, () =>
+    runConfiguredTaskAwardsBackfillInternal(options)
+  );
 }

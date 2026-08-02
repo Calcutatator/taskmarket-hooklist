@@ -1,11 +1,15 @@
 import { initTRPC, TRPCError } from '@trpc/server';
 import { OpenApiMeta } from 'trpc-to-openapi';
 import { type Context } from './context';
+import { runWithRpcOperation } from './lib/rpc-gateway';
 
 const t = initTRPC.meta<OpenApiMeta>().context<Context>().create();
 
 export const router = t.router;
-export const publicProcedure = t.procedure;
+const rpcObservedProcedure = t.procedure.use(({ path, next }) =>
+  runWithRpcOperation({ kind: 'procedure', name: path }, () => next())
+);
+export const publicProcedure = rpcObservedProcedure;
 
 /**
  * Same as publicProcedure -- ctx.caller is already resolved for every request
@@ -13,10 +17,10 @@ export const publicProcedure = t.procedure;
  * procedures actually branch their response on ctx.caller (Phase 2's
  * requester-sees-all/worker-sees-own role gating) versus ones that ignore it.
  */
-export const optionalAuthProcedure = t.procedure;
+export const optionalAuthProcedure = rpcObservedProcedure;
 
 /** Throws UNAUTHORIZED unless the caller proved address ownership (see context.ts). */
-export const protectedProcedure = t.procedure.use(({ ctx, next }) => {
+export const protectedProcedure = rpcObservedProcedure.use(({ ctx, next }) => {
   if (!ctx.caller) {
     throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Caller authentication required' });
   }

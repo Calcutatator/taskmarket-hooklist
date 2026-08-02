@@ -242,6 +242,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0036 — Free-submission allowance is 5 per (worker, task)](0036-free-submission-allowance-is-five.md)
 - [0037 — Tier 2 hard ceiling is 100 submissions per (worker, task) — NOT a platform-wide limit](0037-tier-2-hard-ceiling-is-100-submissions.md)
 - [0038 — Rate limiting lives in one shared module, not bespoke per-feature logic — with two distinct check shapes, not one forced abstraction](0038-rate-limiting-is-a-shared-module-not-per-feature-bespoke-logic.md)
+- [0039 — Singleton RPC gateway owns runtime clients and transport accounting](0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
