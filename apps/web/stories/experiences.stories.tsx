@@ -3,6 +3,7 @@
 // storybook-coverage: components/market/hero-dotted-wave.tsx
 // storybook-coverage: components/market/inbox-client.tsx
 // storybook-coverage: components/market/landing-motion.tsx
+// storybook-coverage: components/market/landing-typer.tsx
 // storybook-coverage: components/market/landing.tsx
 // storybook-coverage: components/market/live-market-pulse.tsx
 // storybook-coverage: components/market/live-tetris-background.tsx
