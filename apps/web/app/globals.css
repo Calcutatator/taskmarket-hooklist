@@ -444,6 +444,110 @@ body {
   height: 100%;
 }
 
+.landing-typer {
+  --landing-typer-fg: var(--foreground);
+  --landing-typer-bg: var(--background);
+  --landing-typer-accent: var(--primary);
+  --landing-typer-accent-ink: var(--primary-foreground);
+  --landing-typer-radius: 0.12em;
+  min-height: 2em;
+}
+
+.landing-typer-line {
+  display: block;
+}
+
+.landing-typer-word {
+  white-space: nowrap;
+}
+
+.landing-typer-char {
+  display: inline-block;
+  box-sizing: content-box;
+  color: var(--landing-typer-fg);
+  background: transparent;
+}
+
+.landing-typer-char.landing-typer-initial {
+  color: transparent;
+}
+
+.landing-typer-char.landing-typer-fill {
+  color: var(--landing-typer-bg);
+  background: var(--landing-typer-fg);
+  border-radius: var(--landing-typer-radius);
+}
+
+.landing-typer-char.landing-typer-inverse {
+  color: var(--landing-typer-bg);
+  background: var(--landing-typer-fg);
+}
+
+.landing-typer-char.landing-typer-accent {
+  color: var(--landing-typer-accent);
+}
+
+.landing-typer-char.landing-typer-accent-inverse {
+  color: var(--landing-typer-accent-ink);
+  background: var(--landing-typer-accent);
+  border-radius: var(--landing-typer-radius);
+}
+
+.landing-typer-char.landing-typer-accent-fill {
+  color: var(--landing-typer-accent);
+  background: var(--landing-typer-accent);
+}
+
+.landing-typer-char.landing-typer-border {
+  position: relative;
+  color: var(--landing-typer-fg);
+}
+
+.landing-typer-char.landing-typer-border::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--landing-typer-accent);
+  border-radius: var(--landing-typer-radius);
+  content: '';
+}
+
+.landing-typer-fill:has(+ .landing-typer-fill),
+.landing-typer-accent-inverse:has(+ .landing-typer-accent-inverse) {
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.landing-typer-fill + .landing-typer-fill,
+.landing-typer-accent-inverse + .landing-typer-accent-inverse {
+  border-radius: 0;
+}
+
+.landing-typer-fill + .landing-typer-fill:last-child,
+.landing-typer-fill + .landing-typer-fill:has(+ :not(.landing-typer-fill)),
+.landing-typer-accent-inverse + .landing-typer-accent-inverse:last-child,
+.landing-typer-accent-inverse
+  + .landing-typer-accent-inverse:has(+ :not(.landing-typer-accent-inverse)) {
+  border-radius: 0 var(--landing-typer-radius) var(--landing-typer-radius) 0;
+}
+
+.landing-typer-border:has(+ .landing-typer-border)::after {
+  border-right-color: transparent;
+  border-start-end-radius: 0;
+  border-end-end-radius: 0;
+}
+
+.landing-typer-border + .landing-typer-border::after {
+  border-right-color: transparent;
+  border-left-color: transparent;
+  border-radius: 0;
+}
+
+.landing-typer-border + .landing-typer-border:last-child::after,
+.landing-typer-border + .landing-typer-border:has(+ :not(.landing-typer-border))::after {
+  border-right-color: var(--landing-typer-accent);
+  border-radius: 0 var(--landing-typer-radius) var(--landing-typer-radius) 0;
+}
+
 .task-market-live-tetris {
   position: absolute;
   inset: 0;
@@ -931,6 +1035,10 @@ body {
 }
 
 @media (prefers-reduced-motion: reduce) {
+  .landing-typer-char.landing-typer-initial {
+    color: var(--landing-typer-fg);
+  }
+
   .skill-install-snippet--highlighted,
   .task-market-flow::before,
   .task-market-flow-card,

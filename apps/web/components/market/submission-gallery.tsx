@@ -445,7 +445,7 @@ function SubmissionGalleryDialogInner({
           <Button
             aria-label="Previous artifact"
             className={cn(
-              'absolute left-2 top-1/2 z-20 -translate-y-1/2 rounded-full',
+              'absolute left-2 top-1/2 z-20 -translate-y-1/2',
               // Swipe is the primary gesture on mobile, and the frame needs its full
               // surface for content (including untrusted-HTML touch input) -- so the
               // chevron stays out of view and out of the pointer-event path there,
@@ -465,7 +465,7 @@ function SubmissionGalleryDialogInner({
           <Button
             aria-label="Next artifact"
             className={cn(
-              'absolute right-2 top-1/2 z-20 -translate-y-1/2 rounded-full',
+              'absolute right-2 top-1/2 z-20 -translate-y-1/2',
               isMobile &&
                 'pointer-events-none opacity-0 focus-visible:pointer-events-auto focus-visible:opacity-100'
             )}

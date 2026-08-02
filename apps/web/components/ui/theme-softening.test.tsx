@@ -26,7 +26,8 @@ describe('softened UI primitives', () => {
     );
 
     expect(screen.getByRole('button', { name: /primary action/i })).toHaveClass(
-      'rounded-full',
+      'rounded-[var(--button-radius)]',
+      '[corner-shape:squircle]',
       'hover:-translate-y-0.5',
       'shadow-[var(--shadow-control),inset_0_1px_0_rgb(255_255_255_/_0.16)]'
     );

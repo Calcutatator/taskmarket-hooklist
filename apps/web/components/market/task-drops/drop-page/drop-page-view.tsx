@@ -459,14 +459,14 @@ export function DropPageView({
         <div className="mt-7 flex flex-wrap gap-3">
           <Button
             asChild
-            className="drop-display inline-flex min-h-11 items-center rounded-[11px] px-[22px] pt-[15px] pb-3 text-[20px] tracking-[0.06em]"
+            className="drop-display inline-flex min-h-11 items-center px-[22px] pt-[15px] pb-3 text-[20px] tracking-[0.06em]"
             variant="taskdrop-primary"
           >
             <Link href={enterHref as Route}>{enterLabel}</Link>
           </Button>
           <Button
             asChild
-            className="drop-display inline-flex min-h-11 items-center rounded-[11px] border-[1.5px] px-[22px] pt-[15px] pb-3 text-[20px] tracking-[0.06em]"
+            className="drop-display inline-flex min-h-11 items-center border-[1.5px] px-[22px] pt-[15px] pb-3 text-[20px] tracking-[0.06em]"
             variant="taskdrop-outline"
           >
             <a href="#drop-alerts">GET DROP ALERTS</a>

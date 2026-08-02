@@ -128,7 +128,7 @@ jobs:
           CREATED=""
           for i in $(seq 1 15); do
             OUTPUT=$(railway environment new "$ENV_NAME" --duplicate preview --json 2>&1) && { echo "$OUTPUT"; CREATED=1; break; }
-            if echo "$OUTPUT" | grep -q "one environment can be created"; then
+            if echo "$OUTPUT" | grep -Eiq "one environment can be created|being rate.?limited|too many requests"; then
               sleep 32
             elif echo "$OUTPUT" | grep -q "already exists"; then
               sleep 6

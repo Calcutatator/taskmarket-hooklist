@@ -208,9 +208,43 @@ jobs:
           path: packages/contracts/reports/coverage/lcov.info
           retention-days: 30
 
+  storybook:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - uses: pnpm/action-setup@v6
+        with:
+          version: 8.15.0
+
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: '.nvmrc'
+          cache: 'pnpm'
+
+      - run: make install
+
+      - run: make storybook-install-browsers
+
+      - run: make storybook-ci
+        env:
+          CI: true
+
+      - name: Upload Storybook
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: storybook-static
+          path: apps/web/storybook-static
+          retention-days: 14
+
   quality:
     if: always()
-    needs: [quality-js, quality-contracts, skill-conformance, adr]
+    needs: [quality-js, quality-contracts, skill-conformance, adr, storybook]
     runs-on: ubuntu-latest
     timeout-minutes: 2
 
@@ -221,6 +255,7 @@ jobs:
           test "${{ needs.quality-contracts.result }}" = "success"
           test "${{ needs.skill-conformance.result }}" = "success"
           test "${{ needs.adr.result }}" = "success"
+          test "${{ needs.storybook.result }}" = "success"
 
   ui-e2e:
     runs-on: ubuntu-latest

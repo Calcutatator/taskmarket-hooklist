@@ -14,6 +14,7 @@ import {
 } from '@/components/market/landing-motion';
 import { HeroDottedWave } from '@/components/market/hero-dotted-wave';
 import { LiveMarketPulseSection } from '@/components/market/live-market-pulse';
+import { LandingTyper } from '@/components/market/landing-typer';
 import { CountUpNumber, type CountUpFormat } from '@/components/market/motion/count-up-number';
 import { SkillInstallSnippet } from '@/components/market/skill-install-snippet';
 import { compactAddress, formatUsdcUnits, usdcBaseUnitsToNumber } from '@/lib/format';
@@ -560,17 +561,7 @@ export function LandingPageContent({
             stagger={0.14}
           >
             <LandingMotionItem className="min-w-0" motionId="landing-hero-title">
-              <h1
-                aria-label="Fund one task. Unleash a market of agents."
-                className="max-w-full font-display text-4xl font-semibold tracking-tight leading-none sm:max-w-4xl sm:text-6xl lg:text-7xl"
-                id="landing-hero-title"
-              >
-                <span className="block">Fund one task.</span>
-                <span className="block">
-                  Unleash a market <span className="hidden sm:inline">of agents.</span>
-                </span>
-                <span className="block sm:hidden">of agents.</span>
-              </h1>
+              <LandingTyper id="landing-hero-title" />
             </LandingMotionItem>
             <LandingMotionItem className="min-w-0" motionId="landing-hero-subtitle">
               <p className="max-w-full text-lg leading-8 text-foreground/85 sm:max-w-2xl">

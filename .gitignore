@@ -73,6 +73,7 @@ apps/backend/uploads/
 output/playwright/
 apps/web/playwright-report/
 apps/web/test-results/
+apps/web/storybook-static/
 
 # Tool-generated config snapshots
 *.timestamp-*.mjs

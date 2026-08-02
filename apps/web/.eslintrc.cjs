@@ -3,5 +3,11 @@ module.exports = {
   env: {
     browser: true,
   },
-  ignorePatterns: ['.next/', 'next-env.d.ts', 'playwright-report/', 'test-results/'],
+  ignorePatterns: [
+    '.next/',
+    'next-env.d.ts',
+    'playwright-report/',
+    'storybook-static/',
+    'test-results/',
+  ],
 };

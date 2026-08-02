@@ -5,7 +5,7 @@ ENV_LOADER := [ -f .env ] && set -a && source .env && set +a; export NVM_DIR="$$
 # Capture arguments for multi-word targets like: make start backend
 ARGS := $(wordlist 2,$(words $(MAKECMDGOALS)),$(MAKECMDGOALS))
 
-.PHONY: help init install build dev start deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
+.PHONY: help init install build dev start storybook storybook-ci storybook-install-browsers deploy deploy-reward-hook swap-reward-hook release upgrade upgrade-accept-pinning lint-check lint-fix format-check format-fix type-check check fix test skill-conformance skill-export docs-og-check contract ci-quality-js ui-ci ui-ci-e2e ui-ci-install-browsers clean db pre-commit lint-check-all lint-fix-all format-check-all format-fix-all type-check-all smoke design-system deploy-email-worker email-worker cli dither-kit
 
 help:
 	@echo "Taskmarket - Available targets:"
@@ -14,9 +14,12 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|all); 'contracts' also regenerates abi/TaskMarket.json"
-	@echo "  make dev                  - Start all dev servers in parallel"
-	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil)"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
+	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
+	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil|storybook)"
+	@echo "  make storybook            - Start the component library on port 6006"
+	@echo "  make storybook-ci         - Check catalogue coverage, build, and test every story"
+	@echo "  make storybook-install-browsers - Install Chromium for Storybook tests"
 	@echo "  make lint-check <app|all> - Check linting for specific app or all"
 	@echo "  make lint-fix <app|all>   - Fix linting for specific app or all"
 	@echo "  make format-check <app|all> - Check formatting for specific app or all"
@@ -282,7 +285,7 @@ release:
 build:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo build; \
@@ -292,6 +295,8 @@ build:
 		pnpm --filter @taskmarket/frontend build; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/web build; \
+	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/web storybook:build; \
 	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
 		pnpm --filter @taskmarket/docs build; \
 	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
@@ -307,12 +312,20 @@ open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
 print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
 		exit 1; \
 	fi
 
 dev:
-	$(ENV_LOADER) && pnpm turbo dev
+	@$(ENV_LOADER) && \
+	if [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm turbo dev & APP_PID=$$!; \
+		pnpm --filter @taskmarket/web storybook & STORYBOOK_PID=$$!; \
+		trap 'kill $$APP_PID $$STORYBOOK_PID 2>/dev/null || true' EXIT INT TERM; \
+		wait $$APP_PID $$STORYBOOK_PID; \
+	else \
+		pnpm turbo dev; \
+	fi
 
 start:
 	@$(ENV_LOADER) && \
@@ -324,6 +337,8 @@ start:
 		pnpm --filter @taskmarket/frontend dev; \
 	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
 		pnpm --filter @taskmarket/web dev; \
+	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/web storybook; \
 	elif [ "$(word 1,$(ARGS))" = "mock-api" ]; then \
 		pnpm --filter @taskmarket/backend exec tsx ../../apps/web/e2e/mock-api.ts; \
 	elif [ "$(word 1,$(ARGS))" = "mock-web" ]; then \
@@ -520,11 +535,29 @@ test:
 		cd apps/$(word 1,$(ARGS)) && pnpm test; \
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm test; \
+	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
+		pnpm --filter @taskmarket/web storybook:test; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make test [backend|frontend|web|docs|shared|contracts|email-worker|adr]"; \
+		echo "Usage: make test [backend|frontend|web|docs|shared|contracts|email-worker|adr|storybook]"; \
 		exit 1; \
 	fi
+
+storybook:
+	@if [ "$(word 1,$(MAKECMDGOALS))" = "build" ] || [ "$(word 1,$(MAKECMDGOALS))" = "dev" ] || [ "$(word 1,$(MAKECMDGOALS))" = "start" ] || [ "$(word 1,$(MAKECMDGOALS))" = "test" ]; then \
+		exit 0; \
+	fi; \
+	$(ENV_LOADER) && pnpm --filter @taskmarket/web storybook
+
+storybook-ci:
+	$(ENV_LOADER) && \
+	pnpm --filter @taskmarket/shared build && \
+	pnpm --filter @taskmarket/web storybook:coverage && \
+	pnpm --filter @taskmarket/web storybook:build && \
+	pnpm --filter @taskmarket/web storybook:test
+
+storybook-install-browsers:
+	$(ENV_LOADER) && pnpm --filter @taskmarket/web exec playwright install --with-deps chromium
 
 skill-conformance:
 	$(ENV_LOADER) && \
