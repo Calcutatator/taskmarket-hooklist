@@ -753,7 +753,7 @@ export function resolveGitDiffChangedFiles(repoRoot: string, base: string): stri
 }
 
 // ---------------------------------------------------------------------------
-// Citation-existence checking (RFC-0007 §8). Built after a real false-positive finding: a
+// Citation-existence checking (introduced by PR #370). Built after a real false-positive finding: a
 // generated document cited a real file, a naive existsSync-style check reported it as missing
 // (it was real, just sitting in an open, not-yet-merged PR, invisible to the current checkout),
 // and that was wrongly asserted as a fabricated reference. The fix isn't "check harder" -- it's

@@ -70,4 +70,5 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real RFC 
 - [0004 — A `phase` Field for "Deadline Passed, Still Awaiting Requester Closeout"](0004-task-phase-field.md)
 - [0005 — Task Visibility and Submission Visibility](0005-task-visibility-and-submission-visibility.md)
 - [0006 — Submission spam: free-allowance pricing for bounty submissions](0006-submission-spam-free-allowance-pricing.md)
+- [0007 — RPC efficiency and provider-load operating model](0007-rpc-efficiency-operating-model.md)
 <!-- RFC-INDEX:END -->

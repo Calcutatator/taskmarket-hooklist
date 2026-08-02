@@ -2,7 +2,7 @@
 // PreToolUse hook: blocks an Edit/Write/MultiEdit to a docs/adr/*.md file if the edit's new
 // stated `Embodiment:` value disagrees with the computed value from real back-pointer evidence
 // (packages/adr's own computeEmbodiment, via adr-audit.ts's summary.json) -- the enforcement
-// backstop for RFC-0007 SS1-3: an agent (or human) can still get this field wrong, but this hook
+// backstop introduced by PR #370: an agent (or human) can still get this field wrong, but this hook
 // makes that require an explicit, logged override rather than a silent, unnoticed edit.
 //
 // Prototype scope: single-file, single `old_string`/`new_string` replacement or a `content`

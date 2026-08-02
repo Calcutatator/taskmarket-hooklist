@@ -5,7 +5,7 @@
 // Warn-only, never blocking: flags when a diff touches a governance path (docs/adr/, docs/rfc/,
 // docs/specs/, or this package's own tooling under packages/adr/) alongside non-test application
 // source in the same diff -- the "a docs-scoped branch quietly also carried a production
-// behavior change" case (RFC-0007 SS4's motivating incident: a branch titled and scoped as an
+// behavior change" case (the incident that motivated PR #370: a branch titled and scoped as an
 // ADR-governance pass also carried a real, live-trading-affecting code change, undetected by any
 // tooling until a human reviewer noticed the diff by eye). This does not decide whether the
 // bundled change is actually a problem -- a governance pass legitimately does sometimes need a

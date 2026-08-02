@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// CLI wrapper for citation-existence checking (RFC-0007 §8). Checking logic lives in lib.ts
+// CLI wrapper for citation-existence checking introduced by PR #370. Checking logic lives in lib.ts
 // (unit tested in lib.test.ts); this file discovers documents, computes existence, and prints.
 //
 // Built after a real false-positive finding earlier in this harness's own development: a
