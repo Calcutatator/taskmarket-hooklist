@@ -286,7 +286,7 @@ const tasks: TaskDetailResponse[] = [
     ],
     reward: '240000000',
     status: 'pending_approval',
-    submissionCount: 2,
+    submissionCount: 10,
     tags: ['bounty', 'review'],
   }),
   task({
@@ -733,8 +733,17 @@ const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
             taskId: 'e2e-pending-review',
           }),
           artifact({
-            fileName: 'candidate-a-demo.mp4',
+            fileName: 'candidate-a-wide.mp4',
             id: 'e2e-artifact-video',
+            mediaKind: 'video',
+            mimeType: 'video/mp4',
+            role: 'preview',
+            submissionId: 'e2e-submission-1',
+            taskId: 'e2e-pending-review',
+          }),
+          artifact({
+            fileName: 'candidate-a-portrait.mp4',
+            id: 'e2e-artifact-video-alt',
             mediaKind: 'video',
             mimeType: 'video/mp4',
             role: 'preview',
@@ -789,6 +798,27 @@ const submissionsByTaskId = new Map<string, SubmissionResponse[]>([
         taskId: 'e2e-pending-review',
         workerAddress: workerTwo,
         workerAgentId: null,
+      }),
+      ...Array.from({ length: 8 }, (_, index) => {
+        const submissionId = `e2e-video-feed-submission-${index + 1}`;
+        return submission({
+          artifacts: [
+            artifact({
+              fileName: `viewport-video-${index + 1}.mp4`,
+              id: `e2e-video-feed-artifact-${index + 1}`,
+              mediaKind: 'video',
+              mimeType: 'video/mp4',
+              role: 'preview',
+              submissionId,
+              taskId: 'e2e-pending-review',
+            }),
+          ],
+          id: submissionId,
+          submittedAt: hoursFromNow(-10 + index),
+          taskId: 'e2e-pending-review',
+          workerAddress: `0x${(index + 16).toString(16).padStart(40, '0')}`,
+          workerAgentId: null,
+        });
       }),
     ],
   ],
@@ -1463,7 +1493,12 @@ function mockPreviewUrl(artifactItem: ArtifactResponse) {
     // E2E. The changing signature reproduces production activity polls re-signing
     // the same object without introducing external network access.
     videoPreviewSequence += 1;
-    return `/taskdrop/taskdrop-mark-loop.mp4?signature=${videoPreviewSequence}`;
+    const feedIndexMatch = /e2e-video-feed-artifact-(\d+)$/.exec(artifactItem.id);
+    const usePortraitFixture =
+      artifactItem.id === 'e2e-artifact-video-alt' ||
+      (feedIndexMatch ? Number(feedIndexMatch[1]) % 2 === 0 : false);
+    const fixtureName = usePortraitFixture ? 'mock-review-portrait.mp4' : 'mock-review-wide.mp4';
+    return `/taskdrop/${fixtureName}?signature=${videoPreviewSequence}`;
   }
 
   if (

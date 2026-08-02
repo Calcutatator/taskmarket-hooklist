@@ -571,6 +571,7 @@ export function ArtifactMediaTile({ artifact, taskId }: Props) {
                 artifact={artifact}
                 className="h-full w-full object-contain"
                 controls
+                deferSourceUntilNearViewport
                 muted
                 onPreviewUrlChange={setVideoPreviewUrl}
                 preload="metadata"
@@ -680,6 +681,7 @@ function MediaHeroSurface({
             <ResilientArtifactVideo
               artifact={artifact}
               className="h-full w-full object-contain"
+              deferSourceUntilNearViewport
               fallback={<MediaHeroVideoFallback onVisible={handleVideoFallbackVisible} />}
               muted
               onPreviewUrlChange={onVideoPreviewUrlChange}

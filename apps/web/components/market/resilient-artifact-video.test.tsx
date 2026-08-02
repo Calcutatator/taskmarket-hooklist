@@ -99,6 +99,40 @@ describe('ResilientArtifactVideo', () => {
     expect(play).toHaveBeenCalledTimes(1);
   });
 
+  it('does not resume a recovered source after playback becomes inactive', async () => {
+    const freshUrl = 'https://files.example.com/walkthrough.mp4?signature=recovered';
+    let resolveFetch: ((response: Response) => void) | undefined;
+    vi.spyOn(globalThis, 'fetch').mockImplementation(
+      () =>
+        new Promise<Response>((resolve) => {
+          resolveFetch = resolve;
+        })
+    );
+    const artifact = videoArtifact();
+    const { container, rerender } = render(
+      <ResilientArtifactVideo artifact={artifact} controls playbackActive />
+    );
+    const video = container.querySelector('video')!;
+    const pause = vi.fn();
+    const play = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(video, 'pause', { configurable: true, value: pause });
+    Object.defineProperty(video, 'paused', { configurable: true, value: false });
+    Object.defineProperty(video, 'play', { configurable: true, value: play });
+    video.currentTime = 18.5;
+    fireEvent.play(video);
+    fireEvent.error(video);
+
+    rerender(<ResilientArtifactVideo artifact={artifact} controls playbackActive={false} />);
+    expect(pause).toHaveBeenCalledTimes(1);
+
+    resolveFetch?.(successfulPreviewResponse(freshUrl));
+    await waitFor(() => expect(video).toHaveAttribute('src', freshUrl));
+    fireEvent.loadedMetadata(video);
+
+    expect(video.currentTime).toBe(18.5);
+    expect(play).not.toHaveBeenCalled();
+  });
+
   it('ignores duplicate errors from the original source while recovery is in flight', async () => {
     const freshUrl = 'https://files.example.com/walkthrough.mp4?signature=recovered';
     let resolveFetch: ((response: Response) => void) | undefined;

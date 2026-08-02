@@ -534,7 +534,10 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
     );
   });
 
-  it('renders a video artifact unchanged in the closed tile (regression guard)', () => {
+  it('keeps an off-screen video tile network-idle until it approaches the viewport', () => {
+    vi.unstubAllGlobals();
+    ManualIntersectionObserverStub.instances.length = 0;
+    vi.stubGlobal('IntersectionObserver', ManualIntersectionObserverStub);
     const videoArtifact = artifact({
       fileName: 'clip.mp4',
       id: 'artifact-video',
@@ -544,15 +547,23 @@ describe('ArtifactMediaTile poster (closed, pre-click)', () => {
     });
     const { container } = render(<ArtifactMediaTile artifact={videoArtifact} taskId="task-1" />);
 
-    expect(container.querySelector('video')).toHaveAttribute(
-      'src',
-      'https://files.example.com/clip.mp4'
-    );
+    expect(container.querySelector('video')).not.toHaveAttribute('src');
+
+    act(() => {
+      ManualIntersectionObserverStub.instances[0]?.trigger(true);
+    });
+
+    expect(container.querySelector('video')).toHaveAttribute('src', videoArtifact.previewUrl);
   });
 });
 
 describe('artifact video integration', () => {
+  beforeEach(() => {
+    vi.stubGlobal('IntersectionObserver', IntersectionObserverStub);
+  });
+
   afterEach(() => {
+    vi.unstubAllGlobals();
     vi.restoreAllMocks();
   });
 
@@ -589,6 +600,9 @@ describe('artifact video integration', () => {
   });
 
   it('preserves hero click-to-open behavior around the resilient video', async () => {
+    vi.unstubAllGlobals();
+    ManualIntersectionObserverStub.instances.length = 0;
+    vi.stubGlobal('IntersectionObserver', ManualIntersectionObserverStub);
     const user = userEvent.setup();
     const onOpen = vi.fn();
     const videoArtifact = artifact({
@@ -602,17 +616,23 @@ describe('artifact video integration', () => {
       <ArtifactMediaHero artifact={videoArtifact} onOpen={onOpen} taskId="task-1" />
     );
 
-    expect(container.querySelector('video')).toHaveAttribute(
-      'src',
-      'https://files.example.com/clip.mp4'
-    );
+    expect(container.querySelector('video')).not.toHaveAttribute('src');
 
     await user.click(screen.getByRole('button', { name: /open clip\.mp4 preview/i }));
 
     expect(onOpen).toHaveBeenCalledOnce();
+
+    act(() => {
+      ManualIntersectionObserverStub.instances[0]?.trigger(true);
+    });
+
+    expect(container.querySelector('video')).toHaveAttribute('src', videoArtifact.previewUrl);
   });
 
-  it('reuses the renderer-fetched URL when opening a standalone video dialog', async () => {
+  it('waits until a video tile approaches the viewport, then reuses its fetched URL when opening', async () => {
+    vi.unstubAllGlobals();
+    ManualIntersectionObserverStub.instances.length = 0;
+    vi.stubGlobal('IntersectionObserver', ManualIntersectionObserverStub);
     const user = userEvent.setup();
     const freshUrl = 'https://files.example.com/clip-fetched.mp4';
     const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
@@ -631,6 +651,13 @@ describe('artifact video integration', () => {
       previewUrl: undefined,
     });
     const { container } = render(<ArtifactMediaTile artifact={videoArtifact} taskId="task-1" />);
+
+    expect(fetchMock).not.toHaveBeenCalled();
+    expect(container.querySelector('video')).not.toHaveAttribute('src');
+
+    act(() => {
+      ManualIntersectionObserverStub.instances[0]?.trigger(true);
+    });
 
     await waitFor(() => expect(container.querySelector('video')).toHaveAttribute('src', freshUrl));
     await user.click(screen.getByRole('button', { name: /open clip\.mp4 preview/i }));

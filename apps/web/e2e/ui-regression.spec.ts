@@ -261,7 +261,7 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
     comparison.getByRole('button', { name: /Open candidate-a\.png preview/i })
   ).toBeVisible();
   await expect(
-    comparison.getByRole('button', { name: /Open candidate-a-demo\.mp4 preview/i })
+    comparison.getByRole('button', { name: /Open candidate-a-wide\.mp4 preview/i })
   ).toBeVisible();
   const taskSidebar = page.getByRole('complementary', { name: /Task sidebar/i });
   await expect(taskSidebar.getByRole('heading', { name: /Review status/i })).toBeVisible();
@@ -312,16 +312,16 @@ test('keeps a real task video playing when activity polling re-signs its URL', a
 
   await page.goto('/dashboard/tasks/e2e-pending-review');
   const comparison = page.getByRole('region', { name: /Artifact comparison/i });
-  await comparison.getByRole('button', { name: /Open candidate-a-demo\.mp4 preview/i }).click();
+  await comparison.getByRole('button', { name: /Open candidate-a-wide\.mp4 preview/i }).click();
 
-  const video = page.getByRole('dialog').locator('video').filter({ visible: true });
+  const video = page.getByRole('dialog').locator('[data-gallery-current="true"] video');
   await expect(video).toHaveCount(1);
   await expect
     .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
     .toBeGreaterThanOrEqual(2);
 
   const initialSrc = await video.getAttribute('src');
-  expect(initialSrc).toMatch(/^\/taskdrop\/taskdrop-mark-loop\.mp4\?signature=\d+$/);
+  expect(initialSrc).toMatch(/^\/taskdrop\/mock-review-wide\.mp4\?signature=\d+$/);
   const rangeResponse = await page.request.get(new URL(initialSrc!, page.url()).toString(), {
     headers: { range: 'bytes=0-1023' },
   });
@@ -347,6 +347,172 @@ test('keeps a real task video playing when activity polling re-signs its URL', a
   await expect
     .poll(() => video.evaluate((element) => (element as HTMLVideoElement).paused))
     .toBe(false);
+});
+
+test('hands gallery playback off without stealing native video arrow keys', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'Chromium desktop covers native media focus and playback handoff.'
+  );
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await comparison.getByRole('button', { name: /Open candidate-a-wide\.mp4 preview/i }).click();
+
+  const dialog = page.getByRole('dialog');
+  const announcement = dialog.locator('[aria-live="polite"]');
+  const firstVideo = dialog.locator('[data-gallery-current="true"] video');
+  await expect(announcement).toContainText('candidate-a-wide.mp4');
+  await expect(firstVideo).toHaveCount(1);
+  await expect
+    .poll(() => firstVideo.evaluate((element) => (element as HTMLVideoElement).readyState))
+    .toBeGreaterThanOrEqual(2);
+
+  await firstVideo.evaluate(async (element) => {
+    const video = element as HTMLVideoElement;
+    video.loop = true;
+    video.muted = true;
+    await video.play();
+  });
+  await expect
+    .poll(() => firstVideo.evaluate((element) => (element as HTMLVideoElement).currentTime))
+    .toBeGreaterThan(0.1);
+
+  await firstVideo.focus();
+  await page.keyboard.press('ArrowRight');
+  await expect(announcement).toContainText('candidate-a-wide.mp4');
+
+  const firstVideoHandle = await firstVideo.elementHandle();
+  expect(firstVideoHandle).not.toBeNull();
+  await dialog.focus();
+  await expect(dialog).toBeFocused();
+  await page.keyboard.press('ArrowRight');
+  await expect(announcement).toContainText('candidate-a-portrait.mp4');
+  await expect
+    .poll(() => firstVideoHandle!.evaluate((element) => (element as HTMLVideoElement).paused))
+    .toBe(true);
+
+  const secondVideo = dialog.locator('[data-gallery-current="true"] video');
+  await expect(secondVideo).toHaveCount(1);
+  await secondVideo.evaluate(async (element) => {
+    const video = element as HTMLVideoElement;
+    video.loop = true;
+    video.muted = true;
+    await video.play();
+  });
+  await expect
+    .poll(() =>
+      dialog
+        .locator('video')
+        .evaluateAll(
+          (videos) => videos.filter((video) => !(video as HTMLVideoElement).paused).length
+        )
+    )
+    .toBe(1);
+
+  const secondVideoHandle = await secondVideo.elementHandle();
+  expect(secondVideoHandle).not.toBeNull();
+  await closeArtifactDialog(page, dialog);
+  await expect(dialog).toHaveCount(0);
+  await expect
+    .poll(() => secondVideoHandle!.evaluate((element) => (element as HTMLVideoElement).paused))
+    .toBe(true);
+});
+
+test('loads task-page video cards only as they approach the viewport', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'One Chromium viewport covers IntersectionObserver-backed media loading.'
+  );
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  const cardVideos = comparison.locator('article video');
+  await expect(cardVideos).toHaveCount(8);
+
+  const viewportHeight = page.viewportSize()?.height ?? 0;
+  const farVideo = cardVideos.last();
+  await expect
+    .poll(async () => (await farVideo.boundingBox())?.y ?? 0)
+    .toBeGreaterThan(viewportHeight + 200);
+  await expect(farVideo).not.toHaveAttribute('src');
+
+  await farVideo.scrollIntoViewIfNeeded();
+  await expect(farVideo).toHaveAttribute(
+    'src',
+    /^\/taskdrop\/mock-review-(?:portrait|wide)\.mp4\?signature=\d+$/
+  );
+  await expect
+    .poll(() => farVideo.evaluate((element) => (element as HTMLVideoElement).readyState))
+    .toBeGreaterThanOrEqual(1);
+});
+
+test('uses a compact mobile playfield for video while keeping interactive HTML tall', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-mobile-390',
+    'The 390x844 Chromium project covers the target mobile viewer geometry.'
+  );
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+  const comparison = page.getByRole('region', { name: /Artifact comparison/i });
+  await comparison.getByRole('button', { name: /Open candidate-a-wide\.mp4 preview/i }).click();
+
+  const dialog = page.getByRole('dialog');
+  const frame = dialog.getByTestId('gallery-frame');
+  const video = dialog.locator('[data-gallery-current="true"] video');
+  await expect(video).toHaveCount(1);
+  await expect
+    .poll(() => video.evaluate((element) => (element as HTMLVideoElement).readyState))
+    .toBeGreaterThanOrEqual(1);
+  await expect
+    .poll(() =>
+      video.evaluate((element) => {
+        const videoElement = element as HTMLVideoElement;
+        return [videoElement.videoWidth, videoElement.videoHeight];
+      })
+    )
+    .toEqual([960, 360]);
+  const wideVideoBox = await frame.boundingBox();
+  const wideVideoHeight = wideVideoBox?.height ?? Number.POSITIVE_INFINITY;
+  expect(Math.abs((wideVideoBox?.width ?? 0) / wideVideoHeight - 960 / 360)).toBeLessThan(0.05);
+
+  const nextButton = dialog.getByRole('button', { name: 'Next artifact' });
+  await nextButton.focus();
+  await page.keyboard.press('Enter');
+  await expect(dialog.locator('[aria-live="polite"]')).toContainText('candidate-a-portrait.mp4');
+  await expect
+    .poll(() =>
+      video.evaluate((element) => {
+        const videoElement = element as HTMLVideoElement;
+        return [videoElement.videoWidth, videoElement.videoHeight];
+      })
+    )
+    .toEqual([360, 640]);
+  const portraitVideoBox = await frame.boundingBox();
+  const portraitVideoHeight = portraitVideoBox?.height ?? 0;
+  expect(Math.abs((portraitVideoBox?.width ?? 0) / portraitVideoHeight - 360 / 640)).toBeLessThan(
+    0.05
+  );
+  expect(portraitVideoHeight).toBeGreaterThan(wideVideoHeight * 2);
+  await nextButton.focus();
+  await page.keyboard.press('Enter');
+
+  const htmlFrame = dialog.getByTitle('Interactive preview of candidate-a-calculator.html');
+  await expect(htmlFrame).toBeVisible();
+  const htmlHeight = (await frame.boundingBox())?.height ?? 0;
+  const viewportHeight = page.viewportSize()?.height ?? 0;
+
+  expect(wideVideoHeight).toBeLessThan(viewportHeight * 0.6);
+  expect(htmlHeight).toBeGreaterThan(viewportHeight * 0.7);
+  expect(wideVideoHeight).toBeLessThan(htmlHeight * 0.75);
+  await expect(dialog.getByText('Details', { exact: true })).toBeVisible();
+  await expect(dialog.getByRole('button', { name: /Untrusted HTML/i })).toBeVisible();
 });
 
 test('runs submitted HTML inline while isolating it from the platform and network', async ({

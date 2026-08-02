@@ -10,6 +10,7 @@ import {
   useState,
   type KeyboardEvent,
   type PointerEvent as ReactPointerEvent,
+  type SyntheticEvent,
 } from 'react';
 
 import { ArtifactMetadata } from '@/components/market/artifact-preview-button';
@@ -50,6 +51,23 @@ const easeOut = [0.16, 1, 0.3, 1] as const;
 
 // A swipe shorter than this reads as an accidental tap/jitter, not navigation intent.
 const SWIPE_THRESHOLD_PX = 48;
+
+const INTERACTIVE_GALLERY_TARGETS = [
+  'a[href]',
+  'audio[controls]',
+  'button',
+  'input',
+  'select',
+  'summary',
+  'textarea',
+  'video[controls]',
+  '[contenteditable="true"]',
+  '[role="button"]',
+  '[role="link"]',
+  '[role="slider"]',
+  '[role="textbox"]',
+  '[tabindex]:not([tabindex="-1"])',
+].join(',');
 
 type SlideOffset = -1 | 0 | 1;
 
@@ -229,6 +247,15 @@ function SubmissionGalleryDialogInner({
   );
   const detailsPreviewUrl =
     currentPreview.artifactId === artifact.id ? currentPreview.previewUrl : null;
+  const [currentVideoAspect, setCurrentVideoAspect] = useState<{
+    artifactId: string;
+    ratio: number;
+  } | null>(null);
+  const handleCurrentVideoAspectChange = useCallback((artifactId: string, ratio: number) => {
+    setCurrentVideoAspect({ artifactId, ratio });
+  }, []);
+  const currentVideoAspectRatio =
+    currentVideoAspect?.artifactId === artifact.id ? currentVideoAspect.ratio : null;
 
   // Warm the browser cache for the two adjacent images so paging feels instant. Any
   // adjacent artifact's own preview URL (any media kind, including interactive HTML)
@@ -261,6 +288,15 @@ function SubmissionGalleryDialogInner({
 
   const handleKeyDown = (event: KeyboardEvent<HTMLDivElement>) => {
     if (count < 2) {
+      return;
+    }
+
+    const target = event.target;
+    if (
+      target instanceof Element &&
+      target !== event.currentTarget &&
+      target.closest(INTERACTIVE_GALLERY_TARGETS)
+    ) {
       return;
     }
 
@@ -312,6 +348,7 @@ function SubmissionGalleryDialogInner({
   const slots = gallerySlots(safeIndex, count);
   const isMobile = useIsMobile();
   const interactiveHtml = isInteractiveHtmlArtifact(artifact);
+  const compactMobileVideo = isMobile && artifact.mediaKind === 'video';
   // Desktop keeps the inline three-line warning note (unchanged, established
   // behavior). Mobile suppresses it here and surfaces the same warning as a
   // collapsed chip in the sheet's topbar instead -- the two must never compete for
@@ -325,13 +362,22 @@ function SubmissionGalleryDialogInner({
   );
 
   const playfield = (
-    <div className={cn('relative', isMobile && 'h-full')}>
+    <div
+      className={cn(
+        'relative',
+        isMobile && !compactMobileVideo && 'h-full',
+        compactMobileVideo && 'w-full self-center'
+      )}
+    >
       <div
         className={cn(
           'relative overflow-hidden rounded-xl border border-border/60 bg-background/52',
-          isMobile ? 'h-full' : 'h-[62vh]'
+          isMobile ? (compactMobileVideo ? 'aspect-video w-full' : 'h-full') : 'h-[62vh]'
         )}
         data-testid="gallery-frame"
+        style={
+          compactMobileVideo ? { aspectRatio: currentVideoAspectRatio ?? '16 / 9' } : undefined
+        }
       >
         {slots.map((slot) => {
           const slotEntry = entries[slot.index];
@@ -346,6 +392,7 @@ function SubmissionGalleryDialogInner({
               motionDisabled={motionDisabled}
               offset={slot.offset}
               onCurrentPreviewChange={handleCurrentPreviewChange}
+              onCurrentVideoAspectChange={handleCurrentVideoAspectChange}
               open={open}
               showWarning={showInlineWarning}
               taskId={taskId}
@@ -531,6 +578,7 @@ type GallerySlideProps = {
   motionDisabled: boolean;
   offset: SlideOffset;
   onCurrentPreviewChange: (artifactId: string, previewUrl: string | null) => void;
+  onCurrentVideoAspectChange: (artifactId: string, ratio: number) => void;
   open: boolean;
   showWarning: boolean;
   taskId: string;
@@ -545,12 +593,31 @@ function GallerySlide({
   motionDisabled,
   offset,
   onCurrentPreviewChange,
+  onCurrentVideoAspectChange,
   open,
   showWarning,
   taskId,
 }: GallerySlideProps) {
   const { artifact } = entry;
   const isCurrent = offset === 0;
+  const videoRef = useRef<HTMLVideoElement | null>(null);
+
+  useEffect(() => {
+    const video = videoRef.current;
+    if ((!open || !isCurrent) && video && !video.paused) {
+      video.pause();
+    } else if (open && isCurrent && video && video.videoHeight > 0 && video.videoWidth > 0) {
+      onCurrentVideoAspectChange(artifact.id, video.videoWidth / video.videoHeight);
+    }
+
+    return () => {
+      const currentVideo = videoRef.current;
+      if (currentVideo && !currentVideo.paused) {
+        currentVideo.pause();
+      }
+    };
+  }, [artifact.id, isCurrent, onCurrentVideoAspectChange, open]);
+
   const handleVideoPreviewChange = useCallback(
     (previewUrl: string | null) => {
       if (isCurrent) {
@@ -558,6 +625,15 @@ function GallerySlide({
       }
     },
     [artifact.id, isCurrent, onCurrentPreviewChange]
+  );
+  const handleVideoMetadata = useCallback(
+    (event: SyntheticEvent<HTMLVideoElement>) => {
+      const { videoHeight, videoWidth } = event.currentTarget;
+      if (isCurrent && videoHeight > 0 && videoWidth > 0) {
+        onCurrentVideoAspectChange(artifact.id, videoWidth / videoHeight);
+      }
+    },
+    [artifact.id, isCurrent, onCurrentVideoAspectChange]
   );
 
   const content =
@@ -567,7 +643,10 @@ function GallerySlide({
         className="max-h-full max-w-full"
         controls
         fetchMissingPreview={isCurrent}
+        onLoadedMetadata={handleVideoMetadata}
         onPreviewUrlChange={handleVideoPreviewChange}
+        playbackActive={open && isCurrent}
+        ref={videoRef}
       />
     ) : (
       <GalleryNonVideoPreview
@@ -583,7 +662,9 @@ function GallerySlide({
   const pane = (
     <div
       aria-hidden={isCurrent ? undefined : true}
-      className="grid h-full w-full place-items-center"
+      className={cn('grid h-full w-full place-items-center', !isCurrent && 'pointer-events-none')}
+      data-gallery-current={isCurrent ? 'true' : undefined}
+      inert={isCurrent ? undefined : true}
     >
       {content}
     </div>

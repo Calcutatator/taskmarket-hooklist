@@ -72,6 +72,39 @@ function setupMatchMedia(width: number) {
   });
 }
 
+class ImmediateIntersectionObserverStub {
+  private readonly callback: IntersectionObserverCallback;
+
+  constructor(callback: IntersectionObserverCallback) {
+    this.callback = callback;
+  }
+
+  disconnect() {}
+
+  observe(target: Element) {
+    this.callback(
+      [
+        {
+          boundingClientRect: target.getBoundingClientRect(),
+          intersectionRatio: 1,
+          intersectionRect: target.getBoundingClientRect(),
+          isIntersecting: true,
+          rootBounds: null,
+          target,
+          time: 0,
+        },
+      ],
+      this as unknown as IntersectionObserver
+    );
+  }
+
+  takeRecords() {
+    return [];
+  }
+
+  unobserve() {}
+}
+
 const { mockAccount } = vi.hoisted(() => ({
   mockAccount: { address: undefined as string | undefined },
 }));
@@ -140,6 +173,7 @@ vi.mock('next/link', () => ({
 
 afterEach(() => {
   mockAccount.address = undefined;
+  vi.unstubAllGlobals();
 });
 
 const task: TaskDetailResponse = {
@@ -713,6 +747,115 @@ describe('SubmissionGalleryDialog', () => {
     );
   });
 
+  it('pauses the current video when navigating away and when closing the gallery', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    const firstVideo = artifact({
+      fileName: 'first.mp4',
+      id: 'artifact-video-first',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/first.mp4',
+      submissionId: 'sub-video-first',
+    });
+    const secondVideo = artifact({
+      fileName: 'second.mp4',
+      id: 'artifact-video-second',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/second.mp4',
+      submissionId: 'sub-video-second',
+    });
+    const firstEntry = galleryEntry(
+      firstVideo,
+      submission('sub-video-first', '0x3333333333333333333333333333333333333333', [firstVideo])
+    );
+    const secondEntry = galleryEntry(
+      secondVideo,
+      submission('sub-video-second', '0x4444444444444444444444444444444444444444', [secondVideo])
+    );
+    const { rerender } = render(directGallery({ entries: [firstEntry, secondEntry] }));
+
+    const dialog = await screen.findByRole('dialog');
+    const firstPlayer = dialog.querySelector(
+      'video[src="https://files.example.com/first.mp4"]'
+    ) as HTMLVideoElement;
+    let firstPaused = false;
+    Object.defineProperty(firstPlayer, 'paused', {
+      configurable: true,
+      get: () => firstPaused,
+    });
+    vi.spyOn(firstPlayer, 'pause').mockImplementation(() => {
+      firstPaused = true;
+    });
+
+    await user.click(within(dialog).getByRole('button', { name: 'Next artifact' }));
+    expect(firstPlayer.paused).toBe(true);
+
+    const secondPlayer = dialog.querySelector(
+      'video[src="https://files.example.com/second.mp4"]'
+    ) as HTMLVideoElement;
+    let secondPaused = false;
+    Object.defineProperty(secondPlayer, 'paused', {
+      configurable: true,
+      get: () => secondPaused,
+    });
+    vi.spyOn(secondPlayer, 'pause').mockImplementation(() => {
+      secondPaused = true;
+    });
+
+    rerender(directGallery({ entries: [firstEntry, secondEntry], open: false }));
+    expect(secondPlayer.paused).toBe(true);
+  });
+
+  it('keeps inactive slides inert and leaves interactive descendant arrow keys untouched', async () => {
+    setupMatchMedia(1280);
+    const firstVideo = artifact({
+      fileName: 'first.mp4',
+      id: 'artifact-video-first',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/first.mp4',
+      submissionId: 'sub-video-first',
+    });
+    const secondVideo = artifact({
+      fileName: 'second.mp4',
+      id: 'artifact-video-second',
+      mediaKind: 'video',
+      mimeType: 'video/mp4',
+      previewUrl: 'https://files.example.com/second.mp4',
+      submissionId: 'sub-video-second',
+    });
+    const firstEntry = galleryEntry(
+      firstVideo,
+      submission('sub-video-first', '0x3333333333333333333333333333333333333333', [firstVideo])
+    );
+    const secondEntry = galleryEntry(
+      secondVideo,
+      submission('sub-video-second', '0x4444444444444444444444444444444444444444', [secondVideo])
+    );
+    render(directGallery({ entries: [firstEntry, secondEntry] }));
+
+    const dialog = await screen.findByRole('dialog');
+    const firstPlayer = dialog.querySelector(
+      'video[src="https://files.example.com/first.mp4"]'
+    ) as HTMLVideoElement;
+    const secondPlayer = dialog.querySelector(
+      'video[src="https://files.example.com/second.mp4"]'
+    ) as HTMLVideoElement;
+    const inactivePane = secondPlayer.closest('[aria-hidden="true"]');
+
+    expect(inactivePane).toHaveAttribute('inert');
+    expect(firstPlayer.closest('[aria-hidden="true"]')).toBeNull();
+
+    expect(fireEvent.keyDown(firstPlayer, { key: 'ArrowRight' })).toBe(true);
+    expect(within(dialog).getByText('1 / 2')).toBeInTheDocument();
+
+    const details = within(dialog).getByText('Details');
+    expect(fireEvent.keyDown(details, { key: 'ArrowLeft' })).toBe(true);
+    expect(within(dialog).getByText('1 / 2')).toBeInTheDocument();
+  });
+
   it('mirrors a recovered video URL into the current artifact Details action', async () => {
     setupMatchMedia(1280);
     const freshUrl = 'https://files.example.com/walkthrough.mp4?sig=recovered';
@@ -808,6 +951,7 @@ describe('SubmissionGalleryDialog', () => {
   });
 
   it('keeps an inline hero video src stable when a poll re-signs it', () => {
+    vi.stubGlobal('IntersectionObserver', ImmediateIntersectionObserverStub);
     const heroVideo = artifact({
       fileName: 'hero.mp4',
       id: 'artifact-hero',
@@ -1219,6 +1363,55 @@ describe('SubmissionGalleryDialog mobile surface', () => {
       freshUrl
     );
     expect(fetchMock).toHaveBeenCalledOnce();
+  });
+
+  it('fits video to its intrinsic aspect ratio while interactive HTML keeps the tall playfield', async () => {
+    setupMatchMedia(390);
+    const videoSubmission = submission('sub-video', '0x4444444444444444444444444444444444444444', [
+      videoC,
+    ]);
+    const { unmount } = render(
+      directGallery({
+        entries: [galleryEntry(videoC, videoSubmission)],
+        initialArtifactId: videoC.id,
+      })
+    );
+
+    const videoDialog = await screen.findByRole('dialog');
+    const videoFrame = within(videoDialog).getByTestId('gallery-frame');
+    const video = videoDialog.querySelector('video') as HTMLVideoElement;
+    Object.defineProperties(video, {
+      videoHeight: { configurable: true, value: 900 },
+      videoWidth: { configurable: true, value: 2100 },
+    });
+    fireEvent.loadedMetadata(video);
+
+    expect(videoFrame).toHaveStyle({ aspectRatio: `${2100 / 900}` });
+    expect(videoFrame).not.toHaveClass('h-full');
+    expect(within(videoDialog).getByTestId('gallery-mobile-footer')).toBeInTheDocument();
+
+    unmount();
+
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () => '<html><body><output>ready</output></body></html>',
+    } as Response);
+    const htmlSubmission = submission('sub-html', '0x7777777777777777777777777777777777777777', [
+      gameHtml,
+    ]);
+    render(
+      directGallery({
+        entries: [galleryEntry(gameHtml, htmlSubmission)],
+        initialArtifactId: gameHtml.id,
+      })
+    );
+
+    const htmlDialog = await screen.findByRole('dialog');
+    await within(htmlDialog).findByTitle('Interactive preview of game.html');
+    expect(within(htmlDialog).getByTestId('gallery-frame')).toHaveClass('h-full');
+    expect(within(htmlDialog).getByTestId('gallery-mobile-footer')).toBeInTheDocument();
+
+    fetchMock.mockRestore();
   });
 
   it('shows an optional context label above the mobile playfield', async () => {

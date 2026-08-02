@@ -19,11 +19,15 @@ type NativeVideoProps = Omit<ComponentPropsWithoutRef<'video'>, 'children' | 'sr
 
 export type ResilientArtifactVideoProps = NativeVideoProps & {
   artifact: ArtifactResponse;
+  // Feed surfaces can keep their layout shell mounted without exposing a media URL
+  // until the video is close enough to be useful to the viewer.
+  deferSourceUntilNearViewport?: boolean;
   fallback?: ReactNode;
   fetchMissingPreview?: boolean;
   initialPreviewExpiresAt?: string | null;
   initialPreviewUrl?: string | null;
   onPreviewUrlChange?: (previewUrl: string | null) => void;
+  playbackActive?: boolean;
   showOpenAction?: boolean;
 };
 
@@ -42,6 +46,7 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
   function ResilientArtifactVideo(
     {
       artifact,
+      deferSourceUntilNearViewport = false,
       fallback,
       fetchMissingPreview = true,
       initialPreviewExpiresAt,
@@ -52,6 +57,7 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
       onPause,
       onPlay,
       onPreviewUrlChange,
+      playbackActive = true,
       showOpenAction = true,
       ...videoProps
     },
@@ -70,8 +76,11 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
     const retrySourceActiveRef = useRef(false);
     const retrySrcRef = useRef<string | null>(null);
     const pendingRestoreRef = useRef<PendingRestore | null>(null);
+    const playbackActiveRef = useRef(playbackActive);
+    playbackActiveRef.current = playbackActive;
     const [activeSrc, setActiveSrc] = useState(previewUrl);
     const [failed, setFailed] = useState(false);
+    const [sourceEnabled, setSourceEnabled] = useState(!deferSourceUntilNearViewport);
 
     const setVideoRef = useCallback(
       (video: HTMLVideoElement | null) => {
@@ -93,19 +102,56 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
       pendingRestoreRef.current = null;
       setFailed(false);
       setActiveSrc(previewUrl);
-    }, [artifact.id]);
+      setSourceEnabled(!deferSourceUntilNearViewport);
+    }, [artifact.id, deferSourceUntilNearViewport]);
+
+    useEffect(() => {
+      if (sourceEnabled || !deferSourceUntilNearViewport) {
+        return;
+      }
+
+      const video = videoRef.current;
+      if (!video || typeof IntersectionObserver === 'undefined') {
+        return;
+      }
+
+      const observer = new IntersectionObserver(
+        (entries) => {
+          if (entries.some((entry) => entry.isIntersecting)) {
+            setSourceEnabled(true);
+          }
+        },
+        { rootMargin: '200px' }
+      );
+      observer.observe(video);
+      return () => observer.disconnect();
+    }, [deferSourceUntilNearViewport, sourceEnabled]);
+
+    useEffect(() => {
+      if (playbackActive) {
+        return;
+      }
+
+      if (pendingRestoreRef.current) {
+        pendingRestoreRef.current.resume = false;
+      }
+      const video = videoRef.current;
+      if (video && !video.paused) {
+        video.pause();
+      }
+    }, [playbackActive]);
 
     useEffect(() => {
       onPreviewUrlChange?.(previewUrl ?? activeSrc);
     }, [activeSrc, onPreviewUrlChange, previewUrl]);
 
     useEffect(() => {
-      if (!fetchMissingPreview || failed || previewUrl || loading || error) {
+      if (!sourceEnabled || !fetchMissingPreview || failed || previewUrl || loading || error) {
         return;
       }
 
       void ensurePreviewUrl();
-    }, [ensurePreviewUrl, error, failed, fetchMissingPreview, loading, previewUrl]);
+    }, [ensurePreviewUrl, error, failed, fetchMissingPreview, loading, previewUrl, sourceEnabled]);
 
     useEffect(() => {
       if (!previewUrl || previewUrl === activeSrc || playingRef.current || failed) {
@@ -162,7 +208,7 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
       if (restore) {
         pendingRestoreRef.current = null;
         event.currentTarget.currentTime = restore.currentTime;
-        if (restore.resume) {
+        if (restore.resume && playbackActiveRef.current) {
           void event.currentTarget.play().catch(() => {
             // The source recovered even if browser autoplay policy requires a new user gesture.
           });
@@ -193,7 +239,7 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
       const failedVideo = event.currentTarget;
       const restore: PendingRestore = {
         currentTime: readableCurrentTime(failedVideo),
-        resume: playingRef.current,
+        resume: playingRef.current && playbackActiveRef.current,
       };
 
       void ensurePreviewUrl(true).then((freshUrl) => {
@@ -219,6 +265,10 @@ export const ResilientArtifactVideo = forwardRef<HTMLVideoElement, ResilientArti
       if (url) {
         window.open(url, '_blank', 'noopener,noreferrer');
       }
+    }
+
+    if (!sourceEnabled) {
+      return <video {...videoProps} preload="none" ref={setVideoRef} />;
     }
 
     if (failed || (error && !activeSrc)) {
