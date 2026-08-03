@@ -21,7 +21,7 @@
  * Setup (task creation, claim, submit, evaluate) is done sequentially per task -- each of
  * those steps individually already has dedicated coverage in smoke-evaluator.ts, so nothing
  * is lost by not parallelizing them here. Only the finalize-verdict calls are fired
- * concurrently, which is the step that actually exercises the nonce manager.
+ * concurrently, which is the step that actually exercises the shared transaction dispatcher.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \

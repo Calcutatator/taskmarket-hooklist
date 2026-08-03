@@ -86,7 +86,7 @@ adrs:
   - number: "0019"
     file: "0019-server-wallet-nonce-manager-for-concurrent-relayed-calls.md"
     title: Server wallet uses a nonce manager to serialize concurrent relayed calls
-    status: Accepted
+    status: Superseded
     date: "2026-07-21"
   - number: "0020"
     file: "0020-normalize-wallet-addresses.md"
@@ -186,5 +186,10 @@ adrs:
   - number: "0039"
     file: "0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md"
     title: Singleton RPC gateway owns runtime clients and transport accounting
-    status: Proposed
+    status: Accepted
     date: "2026-08-02"
+  - number: "0040"
+    file: "0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md"
+    title: "Server-wallet transactions use a durable nonce allocator and outbox"
+    status: Accepted
+    date: "2026-08-03"

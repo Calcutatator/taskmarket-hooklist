@@ -2,19 +2,19 @@
 
 > **Decision (Y-statement):** In the context of long-lived backend blockchain access, facing
 > independently constructed clients, invisible provider retries, multicall amplification, and
-> concurrent server-wallet nonce allocation, we decided to route runtime public and server-wallet
+> concurrent server-wallet transaction dispatch, we decided to route runtime public and server-wallet
 > RPC through one process singleton gateway and measure requests at viem's raw transport seam, to
 > achieve exact bounded-cardinality provider accounting while preserving viem retry behavior and
-> ADR-0019's nonce guarantees, accepting process-local client state and one structured telemetry
+> ADR-0040's dispatcher boundary, accepting process-local client state and one structured telemetry
 > event per physical provider attempt.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-02
 - **Embodiment:** Verified
-- **Last audited:** 2026-08-02
+- **Last audited:** 2026-08-03
 - **Author:** Codex (drafted for review)
 - **Reviewers:** Codex — self-attested; no independent reviewer recorded
-- **Deciders:** Pending human approval
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** —
@@ -25,12 +25,12 @@
 Backend runtime chain access has historically been distributed across helpers that independently
 construct viem public and wallet clients. This makes provider traffic difficult to attribute and
 allows a supposedly logical request to conceal transport retries or multiple contract subcalls.
-It also makes the lifetime of the server wallet's account and nonce manager implicit.
+It also makes the lifetime of the server wallet's account and transaction dispatcher implicit.
 
 The draft RPC efficiency operating model in RFC-0007, published for review in PR #408, proposes a
 Tier 0 gateway before any load-reducing behavior changes. Issue #392 scopes that tier: centralize
 runtime client ownership and record every physical provider attempt without changing application
-functionality, viem's retry behavior, or the wallet safety established by ADR-0019.
+functionality, viem's retry behavior, or the wallet safety proposed by ADR-0040.
 
 The measurement boundary matters. Instrumenting service helpers misses viem transport retries.
 Instrumenting only completed actions collapses several provider requests into one. Conversely,
@@ -39,14 +39,16 @@ observability to provider behavior and could introduce correctness regressions. 
 also avoid high-cardinality or sensitive values such as addresses, task IDs, transaction hashes,
 calldata, raw errors, RPC URLs, and credentials.
 
-The implementation associated with this proposal is a reviewable prototype on a draft PR. It
-must not merge until a human Decider accepts this ADR and an independent reviewer acknowledges it.
+This ADR's own merge gate was not honoured: the implementation (PR #410) merged to `main` while
+this record was still `Proposed` with no Decider, so the code shipped ahead of the decision. It is
+recorded here retrospectively rather than pretending the sequence was clean, and `adr-lint` now
+blocks that class of merge rather than relying on a note inside the document being gated.
 
 ## Considered options
 
 | Option | Pros | Cons |
 |---|---|---|
-| One process singleton gateway for runtime public and server-wallet clients, with instrumentation at viem's raw transport request seam (proposed) | Counts each physical attempt while retaining viem behavior; gives the nonce-managed account and clients an explicit process lifetime; supports bounded operation attribution and automatic Multicall3 subcall counting | State and telemetry counters are process-local; every provider attempt emits an event; standalone tools need explicit exemptions |
+| One process singleton gateway for runtime public and server-wallet clients, with instrumentation at viem's raw transport request seam (proposed) | Counts each physical attempt while retaining viem behavior; gives the account, clients, and dispatcher an explicit process lifetime; supports bounded operation attribution and automatic Multicall3 subcall counting | State and telemetry counters are process-local; every provider attempt emits an event; standalone tools need explicit exemptions |
 | Instrument each contract service helper and keep constructing clients independently (rejected) | Smaller local change; operation names are immediately available | Misses internal transport retries and unattributed calls; duplicates instrumentation; leaves client and nonce lifecycle fragmented |
 | Replace viem retry and multicall behavior with application-owned implementations (rejected) | Attempts and logical subcalls would be directly visible to application code | Changes behavior in an observability milestone; risks divergent retry, batching, encoding, and error semantics; increases maintenance burden |
 | Keep independent public and wallet gateways that happen to share configuration (rejected) | Separates read and write concerns | Duplicates transport state and weakens the single ownership boundary; makes the lifetime relationship between wallet client, account, and nonce manager less explicit |
@@ -55,8 +57,9 @@ must not merge until a human Decider accepts this ADR and an independent reviewe
 
 If accepted, all long-lived backend runtime RPC access will use one lazily initialized,
 process-local gateway. The gateway owns one public client and one server wallet client constructed
-from one account carrying viem's nonce manager. It preserves ADR-0019's nonce mechanism while
-making its account and client lifetime explicit. Standalone smoke, deployment, and maintenance
+from one plain account. ADR-0040's dispatcher owns transaction serialization and explicit pending
+nonce selection while the gateway makes the account and client lifetime explicit. Standalone
+smoke, deployment, and maintenance
 processes may own clients only through a narrow, documented allowlist enforced structurally in
 tests.
 
@@ -91,8 +94,8 @@ creating labels dynamically from request data.
 - Provider request volume, retry amplification, multicall density, latency, failures, and
   concurrency can be measured from one runtime boundary.
 - Public and server-wallet clients are reused instead of reconstructed by runtime helpers.
-- The nonce-managed server account has one explicit process lifetime, preserving and clarifying
-  ADR-0019 rather than replacing its nonce mechanism.
+- The server account and ADR-0040 dispatcher have one explicit process lifetime, while Postgres
+  coordinates transaction dispatch across replicas.
 - Later RFC-0007 milestones can use measured baselines without first changing user-visible
   behavior.
 
@@ -104,20 +107,19 @@ creating labels dynamically from request data.
   sampled or aggregated appropriately at scale.
 - Automatic logical-subcall inference initially recognizes standard Multicall3 `aggregate3`
   requests; a future deployless or different batching protocol needs an explicit decoder.
-- A singleton nonce manager cannot coordinate separate backend processes; this decision does not
-  claim cross-replica nonce serialization.
+- The RPC gateway alone does not coordinate separate backend processes; ADR-0040 assigns that
+  responsibility to the database-coordinated dispatcher.
 
 **Neutral / follow-up:**
 
 - This ADR does not approve the caching, coalescing, batching, retry-policy, or indexer-leadership
   changes proposed by RFC-0007. Those require their own accepted decisions when implemented.
-- The associated implementation PR remains draft and merge-blocked until this ADR has a human
-  Decider and independent reviewer acknowledgement and its status is changed to `Accepted`.
+- The implementation had already merged when this decision was recorded; see Context.
 - Production RPC baselines and alert thresholds are follow-up work after the measurement boundary
   is accepted and deployed.
 
 ## References
 
-- [ADR-0019 — Server wallet uses a nonce manager to serialize concurrent relayed calls](0019-server-wallet-nonce-manager-for-concurrent-relayed-calls.md)
+- [ADR-0040 — Server-wallet transactions use a database-coordinated dispatcher](0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md)
 - [RFC-0007 draft and implementation plan in PR #408](https://github.com/daydreamsai/taskmarket/pull/408)
 - [Issue #392 — R01: Introduce a singleton backend RPC gateway and raw-transport instrumentation](https://github.com/daydreamsai/taskmarket/issues/392)

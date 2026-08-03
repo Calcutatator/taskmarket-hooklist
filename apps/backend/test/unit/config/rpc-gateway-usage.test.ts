@@ -20,6 +20,8 @@ const STANDALONE_CLIENT_ALLOWLIST: Record<string, string> = {
   'scripts/_x402.ts': 'X402 smoke helper signs and verifies against an explicitly selected stack.',
   'scripts/smoke-payment-orphan-refund.ts':
     'Orphan-refund smoke test owns isolated requester and owner clients.',
+  'scripts/smoke-nonce.ts':
+    'Nonce smoke test reads the relayer nonce straight from the chain to compare it against the allocator, so it must not share the backend gateway.',
   'scripts/smoke-rater-agent-id.ts': 'Rater smoke test reads a standalone testnet deployment.',
   'scripts/smoke-token-reward-hook.ts':
     'Reward-hook smoke test deploys fixtures with an isolated deployer.',

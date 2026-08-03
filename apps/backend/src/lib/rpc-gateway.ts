@@ -15,7 +15,6 @@ import {
 } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { base, baseSepolia } from 'viem/chains';
-import { nonceManager } from 'viem/nonce';
 import { getServerConfig } from '../config/env';
 
 const PROCEDURE_NAME_PATTERN = /^[a-z][a-zA-Z0-9-]{0,31}(?:\.[a-z][a-zA-Z0-9-]{0,31}){0,2}$/;
@@ -226,7 +225,7 @@ export function createRpcGateway(options: RpcGatewayOptions) {
       (event) => runtimeTelemetrySink(event),
       options.chainId
     );
-  const account = privateKeyToAccount(options.serverPrivateKey, { nonceManager });
+  const account = privateKeyToAccount(options.serverPrivateKey);
   const publicClient = createPublicClient({ chain, transport });
   const walletClient = createWalletClient({ account, chain, transport });
   const serverWallet = { account, address: account.address, client: walletClient };

@@ -10,6 +10,7 @@ import { startSmtpServer } from './services/smtp';
 import { migrationClient, db } from './db/client';
 import { runConfiguredTaskAwardsBackfill } from './services/configured-task-awards-backfill';
 import { prepareBackendState } from './services/startup-preparation';
+import { startServerWalletReconciler } from './lib/wallet';
 import { setRuntimeRpcTelemetrySink } from './lib/rpc-gateway';
 import { startRpcTelemetrySummary } from './lib/rpc-telemetry-aggregator';
 
@@ -53,6 +54,7 @@ async function startServer(): Promise<void> {
     logger.info(`Environment: ${config.NODE_ENV}`);
 
     startIndexerPolling();
+    startServerWalletReconciler();
     startSmtpServer(db);
   });
 }

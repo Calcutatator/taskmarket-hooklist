@@ -288,6 +288,13 @@
       "when": 1785198708000,
       "tag": "0040_add_pending_upload_keys",
       "breakpoints": true
+    },
+    {
+      "idx": 41,
+      "version": "7",
+      "when": 1785705442000,
+      "tag": "0041_add_server_wallet_transactions",
+      "breakpoints": true
     }
   ]
 }

@@ -11,7 +11,7 @@ import {
   type Log,
 } from 'viem';
 import { TRPCError } from '@trpc/server';
-import { createServerWallet } from '../lib/wallet';
+import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wallet';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
@@ -219,6 +219,17 @@ const ERC20_ABI = parseAbi([
   'function balanceOf(address) view returns (uint256)',
   'function transfer(address,uint256) returns (bool)',
   'function transferWithAuthorization(address from, address to, uint256 value, uint256 validAfter, uint256 validBefore, bytes32 nonce, uint8 v, bytes32 r, bytes32 s)',
+  // OpenZeppelin v5 reverts with custom errors rather than string reasons. Without these in
+  // the ABI viem cannot decode the selector, so an ordinary "you don't have enough USDC"
+  // rejection surfaces to the caller as an opaque 500 reading "Unable to decode signature
+  // 0xe450d38c" -- no indication of what actually went wrong. Declaring them turns the same
+  // revert into a named, readable error for API callers and for anything matching on it.
+  'error ERC20InsufficientBalance(address sender, uint256 balance, uint256 needed)',
+  'error ERC20InvalidSender(address sender)',
+  'error ERC20InvalidReceiver(address receiver)',
+  'error ERC20InsufficientAllowance(address spender, uint256 allowance, uint256 needed)',
+  'error ERC20InvalidApprover(address approver)',
+  'error ERC20InvalidSpender(address spender)',
 ]);
 const MARKET_ABI = parseAbi([
   'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
@@ -297,6 +308,12 @@ export const AUCTION_SUBTYPE_MAP: Record<string, `0x${string}`> = {
 };
 
 const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
+// Bounded on purpose. A broadcast nonce still has to be mined or replaced before later work
+// can proceed (issue #54), but that is the reconciler's job, not the request's -- see
+// lib/server-transaction-reconciler.ts. When this budget elapses the dispatcher raises
+// ServerTransactionPendingError and the transaction stays live in the outbox, so no request
+// waits indefinitely and no database or RPC resource is pinned while it waits.
+const SERVER_TX_RECEIPT_TIMEOUT = 60_000;
 const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
 const RELAY_VALID_WINDOW_SECS = 300;
@@ -435,23 +452,25 @@ async function relayThroughForwarderResult(
       args: [account.address, forwarderAddr],
     })) as bigint;
     if (allowance < paymentAmount) {
-      const approveTx = await client.writeContract({
+      const approveArgs = {
         address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
         abi: ERC20_ABI,
-        functionName: 'approve',
+        functionName: 'approve' as const,
         args: [
           forwarderAddr,
           BigInt('0xffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffffff'),
-        ],
-        ...gas,
+        ] as const,
+      };
+      const { receipt } = await dispatchServerWalletTransaction({
+        simulate: () => publicClient.simulateContract({ ...approveArgs, account: account.address }),
+        send: (nonce) => client.writeContract({ ...approveArgs, ...gas, nonce }),
+        confirm: (hash) =>
+          publicClient.waitForTransactionReceipt({
+            hash,
+            timeout: SERVER_TX_RECEIPT_TIMEOUT,
+          }),
       });
-      assertSuccess(
-        await publicClient.waitForTransactionReceipt({
-          hash: approveTx,
-          timeout: TX_RECEIPT_TIMEOUT,
-        }),
-        'approve'
-      );
+      assertSuccess(receipt, 'approve');
     }
   }
 
@@ -473,49 +492,33 @@ async function relayThroughForwarderResult(
       args: [pgtrSenderAddr, paymentAmount, validBefore, receiptNonce, data] as const,
     };
 
-    // Read-only pre-check before the real signed+broadcast call below. This is what
-    // actually makes retrying safe to recover from RPC read-after-write lag: a
-    // simulateContract call costs nothing but an RPC round-trip, but client.writeContract
-    // (with an account.nonceManager-configured wallet, as createServerWallet() sets up)
-    // consumes a real nonce as soon as it's called, whether or not the transaction is
-    // ultimately broadcast -- and viem's nonceManager has no way to release a consumed
-    // nonce back. Retrying writeContract directly on a deterministic on-chain revert
-    // (task already claimed, market paused, etc. -- these don't change between retries no
-    // matter how long you wait) burned a real nonce on every one of RELAY_MAX_RETRIES
-    // attempts, permanently gapping the server wallet's nonce sequence and jamming every
-    // later transaction from it -- including the orphaned-payment refund transfer meant to
-    // fix exactly this kind of failure -- until manually resolved. Found via a genuine
-    // concurrent-request race in scripts/smoke-payment-orphan-refund.ts.
-    try {
-      await runWithRpcApplicationAttempt(attempt + 1, () =>
-        publicClient.simulateContract({ ...callArgs, account: account.address })
-      );
-    } catch (err) {
-      lastError = err;
-      continue;
-    }
-
     let hash: `0x${string}`;
+    let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
     try {
-      hash = await runWithRpcApplicationAttempt(attempt + 1, () =>
-        client.writeContract({ ...callArgs, ...gas })
-      );
+      const result = await dispatchServerWalletTransaction({
+        simulate: () =>
+          runWithRpcApplicationAttempt(attempt + 1, () =>
+            publicClient.simulateContract({ ...callArgs, account: account.address })
+          ),
+        send: (nonce) =>
+          runWithRpcApplicationAttempt(attempt + 1, () =>
+            client.writeContract({ ...callArgs, ...gas, nonce })
+          ),
+        confirm: (transactionHash) =>
+          runWithRpcApplicationAttempt(attempt + 1, () =>
+            publicClient.waitForTransactionReceipt({
+              hash: transactionHash,
+              timeout: SERVER_TX_RECEIPT_TIMEOUT,
+            })
+          ),
+      });
+      hash = result.hash;
+      receipt = result.receipt;
     } catch (err) {
-      // writeContract threw before sending despite the simulate above having just
-      // succeeded (e.g. state changed in the gap between the two calls, or a wallet/RPC
-      // error unrelated to contract logic). Retry on transient errors; on the final
-      // attempt, decode and surface the revert reason.
       lastError = err;
       continue;
     }
 
-    // Transaction was sent — wait for receipt.
-    const receipt = await runWithRpcApplicationAttempt(attempt + 1, () =>
-      publicClient.waitForTransactionReceipt({
-        hash,
-        timeout: TX_RECEIPT_TIMEOUT,
-      })
-    );
     if (receipt.status !== 'success') {
       // Replay via eth_call to decode the actual revert reason (e.g. SubmissionNotFound),
       // so callers that catch specific revert names see the same message format as pre-send failures.
@@ -962,7 +965,7 @@ export async function contractTransferWithAuthorization(
   signature: string
 ): Promise<`0x${string}`> {
   const config = getServerConfig();
-  const { client } = createServerWallet();
+  const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
 
@@ -972,17 +975,23 @@ export async function contractTransferWithAuthorization(
   const s = `0x${sig.slice(64, 128)}` as `0x${string}`;
   const v = parseInt(sig.slice(128, 130), 16);
 
-  const hash = await client.writeContract({
+  const callArgs = {
     address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
-    functionName: 'transferWithAuthorization',
-    args: [from, to, value, validAfter, validBefore, nonce, v, r, s],
-    ...gas,
+    functionName: 'transferWithAuthorization' as const,
+    args: [from, to, value, validAfter, validBefore, nonce, v, r, s] as const,
+  };
+  const { hash, receipt } = await dispatchServerWalletTransaction({
+    simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
+    send: (transactionNonce) =>
+      client.writeContract({ ...callArgs, ...gas, nonce: transactionNonce }),
+    confirm: (transactionHash) =>
+      publicClient.waitForTransactionReceipt({
+        hash: transactionHash,
+        timeout: SERVER_TX_RECEIPT_TIMEOUT,
+      }),
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'transferWithAuthorization'
-  );
+  assertSuccess(receipt, 'transferWithAuthorization');
   return hash;
 }
 
@@ -999,21 +1008,26 @@ export async function contractRefundOrphanedPayment(
   amount: bigint
 ): Promise<`0x${string}`> {
   const config = getServerConfig();
-  const { client } = createServerWallet();
+  const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
 
-  const hash = await client.writeContract({
+  const callArgs = {
     address: config.USDC_TOKEN_ADDRESS as `0x${string}`,
     abi: ERC20_ABI,
-    functionName: 'transfer',
-    args: [payer, amount],
-    ...gas,
+    functionName: 'transfer' as const,
+    args: [payer, amount] as const,
+  };
+  const { hash, receipt } = await dispatchServerWalletTransaction({
+    simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
+    send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
+    confirm: (transactionHash) =>
+      publicClient.waitForTransactionReceipt({
+        hash: transactionHash,
+        timeout: SERVER_TX_RECEIPT_TIMEOUT,
+      }),
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'refund transfer'
-  );
+  assertSuccess(receipt, 'refund transfer');
   return hash;
 }
 
@@ -1106,22 +1120,25 @@ export async function contractUpdateTask(
 
 export async function contractRegisterIdentity(): Promise<bigint> {
   const config = getServerConfig();
-  const { client } = createServerWallet();
+  const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
 
   const gas = await getGasParams(publicClient);
 
-  const hash = await client.writeContract({
+  const callArgs = {
     address: config.ERC8004_IDENTITY_REGISTRY as `0x${string}`,
     abi: IDENTITY_REGISTRY_ABI,
-    functionName: 'register',
-    args: [],
-    ...gas,
-  });
-
-  const receipt = await publicClient.waitForTransactionReceipt({
-    hash,
-    timeout: TX_RECEIPT_TIMEOUT,
+    functionName: 'register' as const,
+    args: [] as const,
+  };
+  const { hash, receipt } = await dispatchServerWalletTransaction({
+    simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
+    send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
+    confirm: (transactionHash) =>
+      publicClient.waitForTransactionReceipt({
+        hash: transactionHash,
+        timeout: SERVER_TX_RECEIPT_TIMEOUT,
+      }),
   });
   assertSuccess(receipt, 'registerIdentity');
 
@@ -1188,21 +1205,26 @@ export async function contractWithdrawDreamsRewards(
       message: 'DREAMS_HOOK_ADDRESS is not configured',
     });
   }
-  const { client } = createServerWallet();
+  const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
   const gas = await getGasParams(publicClient);
 
-  const hash = await client.writeContract({
+  const callArgs = {
     address: config.DREAMS_HOOK_ADDRESS as `0x${string}`,
     abi: HOOK_ABI,
-    functionName: 'withdrawFor',
-    args: [worker, destination],
-    ...gas,
+    functionName: 'withdrawFor' as const,
+    args: [worker, destination] as const,
+  };
+  const { hash, receipt } = await dispatchServerWalletTransaction({
+    simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
+    send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
+    confirm: (transactionHash) =>
+      publicClient.waitForTransactionReceipt({
+        hash: transactionHash,
+        timeout: SERVER_TX_RECEIPT_TIMEOUT,
+      }),
   });
-  assertSuccess(
-    await publicClient.waitForTransactionReceipt({ hash, timeout: TX_RECEIPT_TIMEOUT }),
-    'withdrawFor'
-  );
+  assertSuccess(receipt, 'withdrawFor');
   return hash;
 }
 

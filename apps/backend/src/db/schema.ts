@@ -805,8 +805,76 @@ export const pendingUploadKeys = pgTable(
   })
 );
 
+// Implements: ADR-0040
+// Durable nonce allocator for the server wallet. One row per (wallet, chain); next_nonce is
+// the next value to hand out. Seeded once from the chain's pending transaction count, then
+// advanced entirely in the database so allocation never needs an RPC round trip while a row
+// lock is held. Resynced from the chain only when a broadcast reports a stale nonce.
+export const serverWalletNonces = pgTable(
+  'server_wallet_nonces',
+  {
+    walletAddress: text('wallet_address').notNull(),
+    chainId: integer('chain_id').notNull(),
+    nextNonce: integer('next_nonce').notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+  },
+  (table) => ({
+    pk: primaryKey({ columns: [table.walletAddress, table.chainId] }),
+  })
+);
+
+// Implements: ADR-0040
+// Outbox of every server-wallet transaction. A row is created when a nonce is allocated and
+// then advances independently of the request that created it, so confirmation never holds a
+// database transaction open. Status meanings:
+//   reserved  -- nonce allocated, not yet broadcast. Transient; a crash here leaves a gap the
+//                reconciler fills.
+//   broadcast -- accepted by the provider, awaiting a receipt. The reconciler owns it now.
+//   confirmed -- receipt observed.
+//   recycled  -- broadcast provably never happened, so the nonce is returned to the pool and
+//                the next allocation reuses it instead of leaving a gap (issue #54).
+//   failed    -- terminal, nonce consumed or superseded; not reusable.
+export const serverWalletTransactions = pgTable(
+  'server_wallet_transactions',
+  {
+    id: text('id').primaryKey(),
+    walletAddress: text('wallet_address').notNull(),
+    chainId: integer('chain_id').notNull(),
+    nonce: integer('nonce').notNull(),
+    status: text('status').notNull().default('reserved'),
+    txHash: text('tx_hash'),
+    context: text('context'),
+    attempts: integer('attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    broadcastAt: timestamp('broadcast_at', { withTimezone: true }),
+    confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    walletStatusIdx: index('idx_server_wallet_transactions_wallet_status').on(
+      table.walletAddress,
+      table.chainId,
+      table.status
+    ),
+    nonceIdx: index('idx_server_wallet_transactions_nonce').on(
+      table.walletAddress,
+      table.chainId,
+      table.nonce
+    ),
+    statusCheck: check(
+      'server_wallet_transactions_status_check',
+      sql`${table.status} IN ('reserved', 'broadcast', 'confirmed', 'recycled', 'failed')`
+    ),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
+export type ServerWalletNonce = typeof serverWalletNonces.$inferSelect;
+export type NewServerWalletNonce = typeof serverWalletNonces.$inferInsert;
+export type ServerWalletTransaction = typeof serverWalletTransactions.$inferSelect;
+export type NewServerWalletTransaction = typeof serverWalletTransactions.$inferInsert;
 export type TaskAward = typeof taskAwards.$inferSelect;
 export type NewTaskAward = typeof taskAwards.$inferInsert;
 export type TaskDrop = typeof taskDrops.$inferSelect;

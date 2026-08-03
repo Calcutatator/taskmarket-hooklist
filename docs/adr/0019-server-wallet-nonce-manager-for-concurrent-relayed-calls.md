@@ -11,14 +11,14 @@
 > does not fix the separate bug where a relayed call's eventual failure can still be silently
 > swallowed by a caller that doesn't await or handle it.
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-07-21
-- **Embodiment:** Implemented
-- **Last audited:** 2026-07-29
+- **Embodiment:** Deprecated
+- **Last audited:** 2026-08-03 (implementation replaced by ADR-0040)
 - **Author:** Agent — drafted per docs/adr/README.md's agent workflow
 - **Reviewers:** Agent — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
-- **Supersedes / Superseded-by:** —
+- **Supersedes / Superseded-by:** Superseded by ADR-0040
 
 ## Context
 
@@ -111,3 +111,11 @@ not just within one call — with no other code path changes required.
   site (`contractFinalizeVerdict`)
 - PR #110 deep-review smoke-test pass (this bug was found incidentally, unrelated to that
   PR's task-visibility scope)
+
+## 2026-08-03 implementation note
+
+The nonce-manager implementation was removed after a deterministic pre-broadcast revert advanced
+its process-local nonce cache without advancing the chain nonce, leaving every later relayer
+transaction pending behind the missing nonce. ADR-0040 records the replacement and supersedes this
+decision. `Embodiment` stays `Deprecated`: the nonce manager was genuinely built and running, and
+its realizing code has since been removed, so no back-pointer can resolve again.

@@ -429,6 +429,20 @@ DATABASE_URL=postgresql://$DB_USER:$DB_PASSWORD@localhost:$DB_PORT/$DB_NAME
 # one var for both, set explicitly so neither depends on its own fallback.
 TASKMARKET_API_URL=http://127.0.0.1:3000
 
+# The nonce smoke test strands a server-wallet nonce on purpose, to prove the
+# reconciler clears it without an operator restart. That is the only live
+# coverage the replacement path has, and a skipped run reads as a pass -- so
+# it is enabled explicitly here rather than left to whoever runs the smoke to
+# remember. smoke-nonce.ts also turns it on by default for any loopback RPC;
+# this line makes the intent visible in the sandbox's own environment.
+#
+# Note for anyone editing comments in this heredoc: it is unquoted
+# (cat > .env << EOF), so an unescaped backtick runs as command substitution
+# while the file is generated and writes its output into .env, which then fails
+# to source. Escape them as \` -- as the comments further down already do -- or
+# avoid them.
+SMOKE_NONCE_FAULT=1
+
 # Backend runtime config (apps/backend/src/config/env.ts) -- plain values, same
 # as .env.example's "Testnet overrides" comment block. The backend is one
 # running process handed one set of values for wherever it's deployed; there's

@@ -29,7 +29,7 @@ function deferred<T>() {
 }
 
 describe('RPC gateway', () => {
-  it('reuses one public client and one nonce-managed wallet client', () => {
+  it('reuses one public client and one wallet client without an in-memory nonce cache', () => {
     const provider = { request: vi.fn().mockResolvedValue('0x1') };
     const gateway = createRpcGateway({
       chainId: 84532,
@@ -41,7 +41,7 @@ describe('RPC gateway', () => {
     expect(gateway.getPublicClient()).toBe(gateway.getPublicClient());
     expect(gateway.getServerWallet().client).toBe(gateway.getServerWallet().client);
     expect(gateway.getServerWallet().account).toBe(gateway.getServerWallet().account);
-    expect(gateway.getServerWallet().account.nonceManager).toBeDefined();
+    expect(gateway.getServerWallet().account.nonceManager).toBeUndefined();
   });
 
   it('records every physical retry attempt without changing retry behavior', async () => {

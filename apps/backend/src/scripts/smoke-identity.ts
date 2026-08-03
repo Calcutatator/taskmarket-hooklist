@@ -100,9 +100,10 @@ async function main() {
   // ── Step 6: concurrent registration race ────────────────────────────────────
   // Regression coverage for two related bugs surfaced by concurrent registration:
   //  - createServerWallet() (apps/backend/src/lib/wallet.ts): the server wallet signs
-  //    on-chain calls for many concurrent requests from this one address, and without a
-  //    nonce manager, concurrent calls could read the same pending nonce -- only one
-  //    landed, the rest failed with "Nonce provided for the transaction is lower than the
+  //    on-chain calls for many concurrent requests from this one address. The shared
+  //    dispatcher must serialize those calls through confirmation so separate requests
+  //    cannot read and broadcast the same pending nonce. Without serialization, only one
+  //    landed; the rest failed with "Nonce provided for the transaction is lower than the
   //    current nonce of the account" and their device's background identity registration
   //    (devices.router.ts) silently failed forever (agentId stuck null).
   //  - contractRegisterIdentity() (apps/backend/src/services/contract.ts): its RPC-lag
