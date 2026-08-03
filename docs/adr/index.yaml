@@ -198,3 +198,8 @@ adrs:
     title: "Relayed writes are durable intents, not request-scoped transactions"
     status: Accepted
     date: "2026-08-03"
+  - number: "0046"
+    file: "0046-relayed-intents-chain-follow-on-writes.md"
+    title: "Relayed intents chain follow-on writes rather than relaying inside handlers"
+    status: Accepted
+    date: "2026-08-03"

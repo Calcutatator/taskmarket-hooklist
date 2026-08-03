@@ -256,6 +256,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0039 — Singleton RPC gateway owns runtime clients and transport accounting](0039-singleton-rpc-gateway-owns-runtime-clients-and-transport-accounting.md)
 - [0040 — Server-wallet transactions use a durable nonce allocator and outbox](0040-server-wallet-transactions-use-a-database-coordinated-dispatcher.md)
 - [0045 — Relayed writes are durable intents, not request-scoped transactions](0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md)
+- [0046 — Relayed intents chain follow-on writes rather than relaying inside handlers](0046-relayed-intents-chain-follow-on-writes.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

@@ -6,7 +6,7 @@ import type { RelayedIntentSettlement } from '../lib/server-transaction-reconcil
 import { logger } from '../lib/logger';
 import { handlePostPaymentFailure } from './orphaned-payments';
 import { completeRelayedIntent } from './relayed-intent-registry';
-import { findIntentByTransactionId, markIntentFailed } from './relayed-intents';
+import { findIntentByTransactionId, getRootIntent, markIntentFailed } from './relayed-intents';
 
 /**
  * Joins the reconciler's on-chain verdict to the intent layer.
@@ -39,19 +39,24 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
 
       await markIntentFailed({ db, intentId: intent.id, reason });
 
-      if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) return;
+      // The payment belongs to the root of the chain, not to the link that failed
+      // (ADR-0046). A follow-on carries no payment reference, so refunding against the root
+      // is both the only place the money is recorded and the reason a chain cannot refund
+      // twice. The parent's own transaction is already on chain and is not retracted.
+      const root = await getRootIntent({ db, intent });
+      if (!root.paymentTxHash || !root.payer || !root.paymentAmount) return;
 
       // handlePostPaymentFailure always throws -- it is written for a request context where
       // throwing is how the caller learns. Here there is no caller left to inform, so the
       // throw is the expected outcome and only a genuine refund failure is worth logging.
       try {
         await handlePostPaymentFailure({
-          amount: BigInt(intent.paymentAmount),
-          context: intent.operation,
+          amount: BigInt(root.paymentAmount),
+          context: root.operation,
           db,
           error: new Error(reason),
-          payer: intent.payer as `0x${string}`,
-          paymentTxHash: intent.paymentTxHash as `0x${string}`,
+          payer: root.payer as `0x${string}`,
+          paymentTxHash: root.paymentTxHash as `0x${string}`,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

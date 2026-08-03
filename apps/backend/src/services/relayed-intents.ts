@@ -28,6 +28,13 @@ export type RelayedIntentOperation =
 
 export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'failed';
 
+/**
+ * Maximum links in one chain (ADR-0046). Generous relative to real operations -- the longest
+ * today is two -- so hitting it means a handler is enqueuing in a loop, not that a legitimate
+ * operation grew. Recorded as a failure rather than allowed to cascade.
+ */
+export const MAX_INTENT_CHAIN_DEPTH = 8;
+
 export type RecordIntentInput = {
   db: Db;
   operation: RelayedIntentOperation;
@@ -35,6 +42,18 @@ export type RecordIntentInput = {
   paymentTxHash?: string;
   paymentAmount?: bigint;
   payload: unknown;
+};
+
+export type EnqueueFollowOnInput = {
+  db: Db;
+  parent: RelayedIntent;
+  operation: RelayedIntentOperation;
+  payload: unknown;
+  /**
+   * How an ancestor is loaded while walking a chain. Defaults to the database. Injectable so
+   * the walk can be exercised without one -- the same seam the transaction store uses.
+   */
+  loadIntent?: (intentId: string) => Promise<RelayedIntent | null>;
 };
 
 /**
@@ -85,6 +104,58 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   if (!existing)
     throw new Error(`Could not record or find intent for operation ${input.operation}`);
   return existing;
+}
+
+/**
+ * Enqueue the next link in a chain from inside a parent's completion handler (ADR-0046).
+ *
+ * A follow-on carries no payment reference: the payment belongs to the root, so a chain can
+ * never refund more than once, and a failed follow-on refunds against that root.
+ *
+ * Depth is bounded and ancestry is checked, so a handler that enqueues in a loop fails
+ * loudly here rather than cascading. The parent must already be confirmed on chain -- this is
+ * only reachable from a completion handler, which by definition runs after confirmation.
+ */
+export async function enqueueFollowOnIntent(input: EnqueueFollowOnInput): Promise<RelayedIntent> {
+  const depth = (input.parent.chainDepth ?? 0) + 1;
+  if (depth > MAX_INTENT_CHAIN_DEPTH) {
+    throw new Error(
+      `Relayed intent chain exceeded the maximum depth of ${MAX_INTENT_CHAIN_DEPTH} at operation ${input.operation}`
+    );
+  }
+
+  // Walk to the root and reject an operation that already appears, so a chain cannot cycle
+  // through the same step forever.
+  const load =
+    input.loadIntent ?? ((intentId: string) => getRelayedIntent({ db: input.db, intentId }));
+  const ancestry: string[] = [];
+  let cursor: RelayedIntent | null = input.parent;
+  while (cursor) {
+    ancestry.push(cursor.operation);
+    if (!cursor.parentIntentId) break;
+    cursor = await load(cursor.parentIntentId);
+  }
+  if (ancestry.includes(input.operation)) {
+    throw new Error(
+      `Relayed intent chain would cycle: ${input.operation} already appears in ${ancestry.join(' <- ')}`
+    );
+  }
+
+  const [row] = await input.db
+    .insert(relayedIntents)
+    .values({
+      chainDepth: depth,
+      id: randomUUID(),
+      operation: input.operation,
+      parentIntentId: input.parent.id,
+      payer: input.parent.payer,
+      payload: input.payload,
+      status: 'recorded',
+    })
+    .returning();
+
+  if (!row) throw new Error(`Could not enqueue follow-on intent for ${input.operation}`);
+  return row;
 }
 
 /** Link the intent to its broadcast transaction. Only confirmed evidence moves it on from here. */
@@ -190,6 +261,23 @@ export async function findIntentByTransactionId(input: {
     .where(eq(relayedIntents.serverWalletTransactionId, input.serverWalletTransactionId))
     .limit(1);
   return row ?? null;
+}
+
+/** The root of a chain -- the link that carries the payment, and the id callers hold onto. */
+export async function getRootIntent(input: {
+  db: Db;
+  intent: RelayedIntent;
+  loadIntent?: (intentId: string) => Promise<RelayedIntent | null>;
+}): Promise<RelayedIntent> {
+  const load =
+    input.loadIntent ?? ((intentId: string) => getRelayedIntent({ db: input.db, intentId }));
+  let cursor = input.intent;
+  while (cursor.parentIntentId) {
+    const parent = await load(cursor.parentIntentId);
+    if (!parent) break;
+    cursor = parent;
+  }
+  return cursor;
 }
 
 /**

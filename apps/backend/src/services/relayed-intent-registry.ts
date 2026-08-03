@@ -1,4 +1,5 @@
 // Implements: ADR-0045
+// Implements: ADR-0046
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
 import { logger } from '../lib/logger';
