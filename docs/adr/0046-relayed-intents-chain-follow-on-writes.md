@@ -14,9 +14,9 @@
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
-- **Pending Supersedes / Superseded-by:** —
+- **Pending Supersedes / Superseded-by:** Pending superseded by ADR-0047
 - **Amends / Amended-by:** Amends ADR-0045
-- **Pending Amends / Amended-by:** Amended by ADR-0047
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -100,8 +100,13 @@ the root's identifier is what callers hold onto.
   implementation deferred them to a ~10 s background poll anyway, which made the status-gated
   `assignEvaluator` call unreachable (`TaskNotOpen`, 4/4 intents stuck, evaluators silently
   never assigned). The claim under Decision that "a failed follow-on refunds against the root"
-  is also wrong: the root's transaction succeeded, so refunding it double-spends. ADR-0047
-  keeps the decision and corrects all three.
+  is also wrong: the root's transaction succeeded, so refunding it double-spends.
+- **2026-08-03 later note.** The paragraph above was written expecting ADR-0047 to keep this
+  decision and correct it. ADR-0047 as drafted does not: it withdraws chaining entirely, on the
+  grounds that the root cause is a contract API gap (`createTask` takes no evaluator config, and
+  `assignEvaluator`'s `Open` gate is correct), and that chaining has no justified user once
+  evaluator assignment is given its own endpoint and its own root intent. This ADR is pending
+  supersession by ADR-0047; nothing here is edited in place.
 
 ## References
 
