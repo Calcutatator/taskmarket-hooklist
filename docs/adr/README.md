@@ -260,6 +260,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0047 — Evaluator assignment is its own intent, and the chaining subsystem is withdrawn](0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md)
 - [0048 — Orphaning a payment is decided only by intent settlement; the ledger is retained](0048-orphaning-a-payment-is-decided-only-by-intent-settlement.md)
 - [0049 — In-flight paid writes are observable through a dedicated intent-status surface, not `pendingActions`](0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md)
+- [0050 — Durable writes follow the chain call, and an unbroadcast intent is retried before it is refunded](0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
