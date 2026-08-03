@@ -3,7 +3,12 @@ import { describe, expect, it, vi } from 'vitest';
 import { makeChain } from '../helpers';
 
 vi.mock('../../../src/services/contract', () => ({
+  blockNumberForTx: vi.fn().mockResolvedValue(100),
+  blockTimestampForTx: vi.fn().mockResolvedValue(1_800_000_000),
   contractAssignEvaluator: vi.fn().mockResolvedValue('0xassignhash'),
+  contractProjectSettlementForTx: vi.fn().mockResolvedValue({ settlement: null, settledAt: null }),
+  contractSubmitWork: vi.fn().mockResolvedValue('0xsubmitworkhash'),
+  resolveRegisteredAgentId: vi.fn().mockResolvedValue(42n),
 }));
 
 vi.mock('../../../src/services/task-notifications', () => ({
@@ -70,11 +75,34 @@ function makeDb() {
 }
 
 describe('relayed intent handler registration', () => {
-  it('registers a completion handler for every operation create can reach', () => {
-    // A missing handler is a silently unfinishable intent, not a runtime error, so the
-    // registration itself is worth asserting.
+  // Verifies: ADR-0045
+  it('registers a completion handler for every operation in the union', () => {
+    // A missing handler is a silently unfinishable intent, not a runtime error: the work its
+    // transaction paid for simply never reaches the database, and nothing says so. The union
+    // is the closed list of what can be recorded, so it is also the list that must be bound.
     expect(registeredRelayedIntentOperations()).toEqual(
-      expect.arrayContaining(['tasks.assignEvaluator', 'tasks.create'])
+      [
+        'acceptance.accept',
+        'acceptance.acceptSubmissions',
+        'acceptance.rate',
+        'bids.auctionAccept',
+        'bids.submit',
+        'evaluations.appeal',
+        'evaluations.evaluate',
+        'evaluations.evaluatorTimeout',
+        'evaluations.resolveDispute',
+        'identity.register',
+        'pitches.select',
+        'pitches.submit',
+        'proofs.anchorDeliverable',
+        'proofs.submit',
+        'tasks.assignEvaluator',
+        'tasks.cancel',
+        'tasks.create',
+        'tasks.refundExpired',
+        'tasks.rejectSubmission',
+        'tasks.update',
+      ].sort()
     );
   });
 

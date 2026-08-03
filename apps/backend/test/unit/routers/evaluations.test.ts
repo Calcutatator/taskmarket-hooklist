@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 
 const EVALUATED_AT = 1_800_000_000;
 
@@ -9,6 +9,11 @@ vi.mock('../../../src/services/contract', () => ({
     evaluatedAt: 1_800_000_000,
   }),
   contractEvaluatorTimeout: vi.fn().mockResolvedValue('0xevaluatortimeout'),
+  // Completion handlers re-derive from the confirmed transaction rather than from the intent
+  // payload, which predates it (ADR-0045).
+  blockTimestampForTx: vi.fn().mockResolvedValue(1_800_000_000),
+  contractProjectSettlementForTx: vi.fn().mockResolvedValue({ settlement: null, settledAt: null }),
+  contractAppeal: vi.fn().mockResolvedValue('0xappealtx'),
   contractFinalizeVerdict: vi.fn().mockResolvedValue({
     txHash: '0xfinalizetx',
     settlement: null,
@@ -30,6 +35,8 @@ vi.mock('../../../src/config/env', () => ({
 }));
 
 import { evaluationsRouter } from '../../../src/routers/evaluations.router';
+import { tasks } from '../../../src/db/schema';
+import { contractProjectSettlementForTx } from '../../../src/services/contract';
 import {
   contractEvaluate,
   contractEvaluatorTimeout,
@@ -85,9 +92,11 @@ describe('evaluations router', () => {
     const evalInput = { taskId: TASK_ID, verdict: 'approve' as const };
 
     it('calls contractEvaluate and returns txHash on happy path', async () => {
-      const ctx = createMockCtx(EVALUATOR);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
-      ctx.db.update.mockReturnValueOnce(makeChain());
+      const ctx = createIntentCtx(EVALUATOR);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([makeTask()]));
 
       const result = await evaluationsRouter.createCaller(ctx).evaluate(evalInput);
 
@@ -96,21 +105,23 @@ describe('evaluations router', () => {
     });
 
     it('updates task status to appealing with verdict fields', async () => {
-      const ctx = createMockCtx(EVALUATOR);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      const ctx = createIntentCtx(EVALUATOR);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask()]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([makeTask()]));
+      const updateChain = ctx.updateChain(tasks);
 
       await evaluationsRouter.createCaller(ctx).evaluate(evalInput);
 
-      expect(ctx.db.update).toHaveBeenCalledOnce();
+      expect(updateChain.set).toHaveBeenCalledOnce();
       expect(updateChain.set).toHaveBeenCalledWith(
         expect.objectContaining({ status: 'appealing', verdictType: 'APPROVE' })
       );
     });
 
     it('rejects when caller is not the assigned evaluator', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
@@ -119,7 +130,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when task has no evaluator assigned', async () => {
-      const ctx = createMockCtx(EVALUATOR);
+      const ctx = createIntentCtx(EVALUATOR);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ evaluator: null })]));
 
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
@@ -128,7 +139,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when task is not in an evaluatable state', async () => {
-      const ctx = createMockCtx(EVALUATOR);
+      const ctx = createIntentCtx(EVALUATOR);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'open', mode: 'claim' })]));
 
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
@@ -137,21 +148,24 @@ describe('evaluations router', () => {
     });
 
     it('allows evaluation when bounty/benchmark task is open', async () => {
-      const ctx = createMockCtx(EVALUATOR);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'open', mode: 'bounty' })]));
-      ctx.db.update.mockReturnValueOnce(makeChain());
+      const ctx = createIntentCtx(EVALUATOR);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'open', mode: 'bounty' })]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([makeTask({ status: 'open', mode: 'bounty' })]));
 
       const result = await evaluationsRouter.createCaller(ctx).evaluate(evalInput);
       expect(result).toEqual({ txHash: '0xevaluatetx' });
     });
 
     it('persists the lead award worker so a contest verdict can be appealed', async () => {
-      const ctx = createMockCtx(EVALUATOR);
-      ctx.db.select.mockReturnValueOnce(
-        makeChain([makeTask({ status: 'open', mode: 'bounty', claimedBy: null })])
-      );
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      const ctx = createIntentCtx(EVALUATOR);
+      const openBounty = makeTask({ status: 'open', mode: 'bounty', claimedBy: null });
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([openBounty]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([openBounty]));
+      const updateChain = ctx.updateChain(tasks);
 
       await evaluationsRouter.createCaller(ctx).evaluate({
         ...evalInput,
@@ -162,11 +176,13 @@ describe('evaluations router', () => {
     });
 
     it('keeps the assigned worker when a locked-worker mode verdict names another address', async () => {
-      const ctx = createMockCtx(EVALUATOR);
+      const ctx = createIntentCtx(EVALUATOR);
       const other = '0xOther0000000000000000000000000000000001';
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ claimedBy: WORKER })]));
-      const updateChain = makeChain();
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ claimedBy: WORKER })]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([makeTask({ claimedBy: WORKER })]));
+      const updateChain = ctx.updateChain(tasks);
 
       await evaluationsRouter.createCaller(ctx).evaluate({
         ...evalInput,
@@ -177,11 +193,13 @@ describe('evaluations router', () => {
     });
 
     it('mirrors the onchain expiry extension through the appeal deadline', async () => {
-      const ctx = createMockCtx(EVALUATOR);
-      const updateChain = makeChain();
+      const ctx = createIntentCtx(EVALUATOR);
+      const updateChain = ctx.updateChain(tasks);
       const originalExpiry = new Date((EVALUATED_AT - 3600) * 1000);
-      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ expiryTime: originalExpiry })]));
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ expiryTime: originalExpiry })]))
+        .mockReturnValueOnce(makeChain([]))
+        .mockReturnValueOnce(makeChain([makeTask({ expiryTime: originalExpiry })]));
 
       await evaluationsRouter.createCaller(ctx).evaluate(evalInput);
 
@@ -201,7 +219,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when task is not found', async () => {
-      const ctx = createMockCtx(EVALUATOR);
+      const ctx = createIntentCtx(EVALUATOR);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       await expect(evaluationsRouter.createCaller(ctx).evaluate(evalInput)).rejects.toThrow(
@@ -212,7 +230,7 @@ describe('evaluations router', () => {
 
   describe('finalizeVerdict', () => {
     it('rejects when task is not in appealing state', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'review' })]));
 
       await expect(
@@ -221,7 +239,7 @@ describe('evaluations router', () => {
     });
 
     it('finalizes verdict when task is appealing and appeal window has passed', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       const expiredDeadline = new Date(Date.now() - 1000);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
@@ -232,7 +250,6 @@ describe('evaluations router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain());
 
       const result = await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
 
@@ -241,8 +258,8 @@ describe('evaluations router', () => {
     });
 
     it('mirrors evaluator cleanup when a rejected verdict terminates the task', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      const updateChain = makeChain();
+      const ctx = createIntentCtx(REQUESTER);
+      const updateChain = ctx.updateChain(tasks);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({
@@ -270,7 +287,7 @@ describe('evaluations router', () => {
     });
 
     it('records task_awards synchronously instead of relying on the async indexer', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({
@@ -301,8 +318,8 @@ describe('evaluations router', () => {
 
   describe('resolveDispute', () => {
     it('persists the lead award worker selected onchain', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      const updateChain = makeChain();
+      const ctx = createIntentCtx(REQUESTER);
+      const updateChain = ctx.updateChain(tasks);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({ status: 'disputed', disputeResolver: REQUESTER, claimedBy: EVALUATOR }),
@@ -322,14 +339,15 @@ describe('evaluations router', () => {
     });
 
     it('records task_awards synchronously instead of relying on the async indexer', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           makeTask({ status: 'disputed', disputeResolver: REQUESTER, claimedBy: EVALUATOR }),
         ])
       );
-      vi.mocked(contractResolveDispute).mockResolvedValueOnce({
-        txHash: '0xresolvetx',
+      // The settlement is projected from the confirmed transaction's own logs by the
+      // completion handler, not returned to the request (ADR-0045).
+      vi.mocked(contractProjectSettlementForTx).mockResolvedValueOnce({
         settlement: SAMPLE_SETTLEMENT,
         settledAt: 1_800_000_000,
       });
@@ -347,7 +365,7 @@ describe('evaluations router', () => {
       });
       // No separate raw tasks.update -- recordTaskSettlement's own transaction
       // is the sole writer of status/awards for this path.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
     });
   });
 
@@ -355,8 +373,8 @@ describe('evaluations router', () => {
     const expiredDeadline = new Date(Date.now() - 1000);
 
     it('calls contractEvaluatorTimeout and returns txHash', async () => {
-      const ctx = createMockCtx(REQUESTER);
-      const updateChain = makeChain();
+      const ctx = createIntentCtx(REQUESTER);
+      const updateChain = ctx.updateChain(tasks);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ evaluatorDeadline: expiredDeadline })])
       );
@@ -374,7 +392,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when evaluator deadline has not passed', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       const futureDeadline = new Date(Date.now() + 60000);
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ evaluatorDeadline: futureDeadline })])
@@ -386,7 +404,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when evaluator deadline is null', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ evaluatorDeadline: null })]));
 
       await expect(
@@ -395,7 +413,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when task is not in review state', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'open' })]));
 
       await expect(
@@ -404,7 +422,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when caller is not the requester', async () => {
-      const ctx = createMockCtx('0xOtherAddress0000000000000000000000000001');
+      const ctx = createIntentCtx('0xOtherAddress0000000000000000000000000001');
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()]));
 
       await expect(
@@ -413,7 +431,7 @@ describe('evaluations router', () => {
     });
 
     it('rejects when task is not found', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       await expect(

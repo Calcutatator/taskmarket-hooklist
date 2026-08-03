@@ -6,10 +6,11 @@ import { and, eq } from 'drizzle-orm';
 import { randomUUID } from 'crypto';
 import { keccak256, toBytes } from 'viem';
 import { TRPCError } from '@trpc/server';
-import { contractSubmitProof, contractSubmitWork } from '../services/contract';
+import { contractSubmitProof } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
 import { lowerAddressEq } from '../lib/agents';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { ProofsSubmitIntentPayload } from '../services/intents/proofs-intents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
 import type { Context } from '../context';
 
@@ -131,77 +132,36 @@ export const proofsRouter = router({
       const proofId = randomUUID();
       const submissionId = randomUUID();
 
-      let proofTxHash: `0x${string}`;
-      try {
-        proofTxHash = await contractSubmitProof(
-          input.taskId as `0x${string}`,
-          input.workerAddress as `0x${string}`,
+      // One intent, one contract call (ADR-0047). The deliverable commitment that follows is
+      // a second call and gets its own intent, recorded and dispatched by this one's
+      // completion handler -- the shape task creation already uses for evaluator assignment.
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'proofs.submit',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          contractAddress: task.contractAddress,
+          metricValue: input.metricValue || null,
+          proofData: input.proofData,
           proofHash,
-          proofTypeBytes32,
-          metricValueBig,
-          task.contractAddress
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'proof_submit',
-          error,
-        });
-      }
-
-      // Benchmark acceptance is based on submitWork commitments. Register the
-      // canonical proof hash as the deliverable so a proof-only entry can be
-      // accepted without a separate artifact upload.
-      let submissionTxHash: `0x${string}`;
-      try {
-        submissionTxHash = await contractSubmitWork(
-          input.taskId as `0x${string}`,
-          input.workerAddress as `0x${string}`,
-          proofHash,
-          task.contractAddress
-        );
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Proof anchored onchain (${proofTxHash}) but deliverable commitment failed: ${reason}`,
-        });
-      }
-
-      try {
-        await ctx.db.transaction(async (tx) => {
-          await tx.insert(proofs).values({
-            id: proofId,
-            taskId: input.taskId,
-            workerAddress: input.workerAddress,
-            proofData: input.proofData,
-            proofType: input.proofType,
-            metricValue: input.metricValue || null,
-            signature: input.signature,
-            status: 'pending',
+          proofId,
+          proofType: input.proofType,
+          signature: input.signature,
+          submissionId,
+          taskId: input.taskId,
+          workerAddress: input.workerAddress,
+        } satisfies ProofsSubmitIntentPayload,
+        send: () =>
+          contractSubmitProof(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
             proofHash,
-            submitTxHash: proofTxHash,
-          });
-
-          await tx.insert(submissions).values({
-            id: submissionId,
-            taskId: input.taskId,
-            workerAddress: input.workerAddress,
-            fileUrl: `taskmarket-proof:${proofId}`,
-            signature: input.signature,
-            deliverableHash: proofHash,
-            submitTxHash: submissionTxHash,
-          });
-        });
-      } catch (error) {
-        const reason = error instanceof Error ? error.message : String(error);
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Proof and deliverable anchored onchain (${proofTxHash}, ${submissionTxHash}) but database sync failed: ${reason}`,
-        });
-      }
+            proofTypeBytes32,
+            metricValueBig,
+            task.contractAddress
+          ),
+      });
 
       return { success: true, proofId, submissionId };
     }),

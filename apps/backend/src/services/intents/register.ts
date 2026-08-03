@@ -5,6 +5,52 @@ import { tasks } from '../../db/schema';
 import { contractAssignEvaluator } from '../contract';
 import { registerRelayedIntentHandler } from '../relayed-intent-registry';
 import { completeTasksCreate, type TasksCreateIntentPayload } from './tasks-create-intent';
+import {
+  completeAcceptanceAccept,
+  completeAcceptanceRate,
+  type AcceptanceAcceptIntentPayload,
+  type AcceptanceRateIntentPayload,
+} from './acceptance-intents';
+import {
+  completeBidsAuctionAccept,
+  completeBidsSubmit,
+  type BidsAuctionAcceptIntentPayload,
+  type BidsSubmitIntentPayload,
+} from './bids-intents';
+import {
+  completeEvaluationsAppeal,
+  completeEvaluationsEvaluate,
+  completeEvaluationsEvaluatorTimeout,
+  completeEvaluationsResolveDispute,
+  type EvaluationsAppealIntentPayload,
+  type EvaluationsEvaluateIntentPayload,
+  type EvaluationsEvaluatorTimeoutIntentPayload,
+  type EvaluationsResolveDisputeIntentPayload,
+} from './evaluations-intents';
+import { completeIdentityRegister, type IdentityRegisterIntentPayload } from './identity-intents';
+import {
+  completePitchesSelect,
+  completePitchesSubmit,
+  type PitchesSelectIntentPayload,
+  type PitchesSubmitIntentPayload,
+} from './pitches-intents';
+import {
+  broadcastProofsAnchorDeliverable,
+  completeProofsAnchorDeliverable,
+  completeProofsSubmit,
+  type ProofsAnchorDeliverableIntentPayload,
+  type ProofsSubmitIntentPayload,
+} from './proofs-intents';
+import {
+  completeTasksCancel,
+  completeTasksRefundExpired,
+  completeTasksRejectSubmission,
+  completeTasksUpdate,
+  type TasksCancelIntentPayload,
+  type TasksRefundExpiredIntentPayload,
+  type TasksRejectSubmissionIntentPayload,
+  type TasksUpdateIntentPayload,
+} from './tasks-mutation-intents';
 
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
@@ -70,4 +116,124 @@ export function registerRelayedIntentHandlers(): void {
       await db.update(tasks).set(payload.assignment).where(eq(tasks.id, payload.taskId));
     },
   });
+
+  registerRelayedIntentHandler('tasks.update', async ({ db, intent }) =>
+    completeTasksUpdate({ db, payload: intent.payload as TasksUpdateIntentPayload })
+  );
+
+  registerRelayedIntentHandler('tasks.cancel', async ({ db, intent }) =>
+    completeTasksCancel({ db, payload: intent.payload as TasksCancelIntentPayload })
+  );
+
+  registerRelayedIntentHandler('tasks.refundExpired', async ({ db, intent }) =>
+    completeTasksRefundExpired({
+      db,
+      payload: intent.payload as TasksRefundExpiredIntentPayload,
+    })
+  );
+
+  registerRelayedIntentHandler('tasks.rejectSubmission', async ({ db, intent }) =>
+    completeTasksRejectSubmission({
+      db,
+      payload: intent.payload as TasksRejectSubmissionIntentPayload,
+    })
+  );
+
+  registerRelayedIntentHandler('acceptance.accept', async ({ db, intent }) =>
+    completeAcceptanceAccept({ db, payload: intent.payload as AcceptanceAcceptIntentPayload })
+  );
+
+  // Deliberately empty. Accepting many submissions has no off-chain half at all: awards,
+  // status and earnings are all derived by the indexer from the chain's own TaskCompleted
+  // events. The intent still matters -- it is the record that makes the payment refundable on
+  // a confirmed failure (ADR-0048), and inventing work here to fill the shape would be worse
+  // than saying so.
+  registerRelayedIntentHandler('acceptance.acceptSubmissions', async () => {});
+
+  registerRelayedIntentHandler('acceptance.rate', async ({ db, intent, txHash }) =>
+    completeAcceptanceRate({
+      db,
+      payload: intent.payload as AcceptanceRateIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
+
+  registerRelayedIntentHandler('bids.submit', async ({ db, intent }) =>
+    completeBidsSubmit({ db, payload: intent.payload as BidsSubmitIntentPayload })
+  );
+
+  registerRelayedIntentHandler('bids.auctionAccept', async ({ db, intent }) =>
+    completeBidsAuctionAccept({
+      db,
+      payload: intent.payload as BidsAuctionAcceptIntentPayload,
+    })
+  );
+
+  registerRelayedIntentHandler('pitches.submit', async ({ db, intent, txHash }) =>
+    completePitchesSubmit({
+      db,
+      payload: intent.payload as PitchesSubmitIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
+
+  registerRelayedIntentHandler('pitches.select', async ({ db, intent }) =>
+    completePitchesSelect({ db, payload: intent.payload as PitchesSelectIntentPayload })
+  );
+
+  registerRelayedIntentHandler('proofs.submit', async ({ db, intent, txHash }) =>
+    completeProofsSubmit({
+      db,
+      payload: intent.payload as ProofsSubmitIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
+
+  registerRelayedIntentHandler('proofs.anchorDeliverable', {
+    broadcast: async ({ intent }) =>
+      broadcastProofsAnchorDeliverable({
+        payload: intent.payload as ProofsAnchorDeliverableIntentPayload,
+      }),
+    complete: async ({ db, intent, txHash }) =>
+      completeProofsAnchorDeliverable({
+        db,
+        payload: intent.payload as ProofsAnchorDeliverableIntentPayload,
+        txHash: txHash as `0x${string}`,
+      }),
+  });
+
+  registerRelayedIntentHandler('evaluations.evaluate', async ({ db, intent, txHash }) =>
+    completeEvaluationsEvaluate({
+      db,
+      payload: intent.payload as EvaluationsEvaluateIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
+
+  registerRelayedIntentHandler('evaluations.appeal', async ({ db, intent }) =>
+    completeEvaluationsAppeal({ db, payload: intent.payload as EvaluationsAppealIntentPayload })
+  );
+
+  registerRelayedIntentHandler('evaluations.resolveDispute', async ({ db, intent, txHash }) =>
+    completeEvaluationsResolveDispute({
+      db,
+      payload: intent.payload as EvaluationsResolveDisputeIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
+
+  registerRelayedIntentHandler('evaluations.evaluatorTimeout', async ({ db, intent }) =>
+    completeEvaluationsEvaluatorTimeout({
+      db,
+      payload: intent.payload as EvaluationsEvaluatorTimeoutIntentPayload,
+    })
+  );
+
+  registerRelayedIntentHandler('identity.register', async ({ db, intent, txHash }) =>
+    completeIdentityRegister({
+      db,
+      payload: intent.payload as IdentityRegisterIntentPayload,
+      txHash: txHash as `0x${string}`,
+    })
+  );
 }

@@ -3,10 +3,11 @@ import { RegistrationSource } from '@taskmarket/shared';
 import { z } from 'zod';
 import { agents } from '../db/schema';
 import { sql } from 'drizzle-orm';
-import { contractRegisterIdentity } from '../services/contract';
+import { contractRegisterIdentityTx } from '../services/contract';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
 
 // Only trust a cached agentId if it was minted against the currently configured
 // registry contract AND chain -- see register()'s cacheIsFresh usage for why
@@ -73,48 +74,35 @@ export const identityRouter = router({
         return { agentId: existing[0].agentId, alreadyRegistered: true };
       }
 
-      // Mint a new ERC-8004 identity via the server wallet
-      let agentIdBigInt: bigint;
-      try {
-        agentIdBigInt = await contractRegisterIdentity();
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'identity_register',
-          error,
-        });
-      }
-      const agentIdStr = agentIdBigInt.toString();
+      // Mint a new ERC-8004 identity via the server wallet. The agentId the caller gets back
+      // is decoded from the mint's own Registered event by the completion handler and read
+      // back from the row here, rather than returned by the chain call: the completion is
+      // the one copy of that work that also runs when a reconciler finishes the intent.
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'identity.register',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          chainId,
+          existingAddress: existing[0]?.address ?? null,
+          payer,
+          registeredVia,
+          registryAddress,
+        } satisfies IdentityRegisterIntentPayload,
+        send: () => contractRegisterIdentityTx(),
+      });
 
-      if (existing[0]) {
-        // A row already exists for this address under a different casing (e.g. a
-        // public key published before this endpoint consistently lowercased
-        // addresses). agents.address has no case-insensitive uniqueness
-        // constraint, so onConflictDoUpdate below would not match it and would
-        // create a second row instead -- update the row we already found by its
-        // exact stored address rather than inserting a new one.
-        await ctx.db
-          .update(agents)
-          .set({
-            agentId: agentIdStr,
-            identityRegistryAddress: registryAddress,
-            chainId,
-            updatedAt: new Date(),
-          })
-          .where(sql`${agents.address} = ${existing[0].address}`);
-      } else {
-        await ctx.db
-          .insert(agents)
-          .values({
-            address: payer,
-            agentId: agentIdStr,
-            identityRegistryAddress: registryAddress,
-            chainId,
-            registeredVia,
-          })
-          .onConflictDoNothing();
+      const registered = await ctx.db
+        .select({ agentId: agents.agentId })
+        .from(agents)
+        .where(lowerAddressEq(payer))
+        .orderBy(sql`${agents.agentId} is not null desc`)
+        .limit(1);
+
+      const agentIdStr = registered[0]?.agentId;
+      if (!agentIdStr) {
+        throw new Error('Identity registered on chain but the agent id was not recorded');
       }
 
       return { agentId: agentIdStr, alreadyRegistered: false };

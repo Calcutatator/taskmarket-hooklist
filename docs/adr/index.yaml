@@ -216,5 +216,5 @@ adrs:
   - number: "0049"
     file: "0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md"
     title: "In-flight paid writes are observable through a dedicated intent-status surface, not `pendingActions`"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"

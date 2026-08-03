@@ -1,7 +1,7 @@
 // Verifies: ADR-0014 (public-by-default task visibility, unlisted/private opt-in)
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { PgDialect } from 'drizzle-orm/pg-core';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, createMockCtx, makeChain } from '../helpers';
 
 // Mock contract service before importing router
 vi.mock('../../../src/services/contract', () => ({
@@ -103,71 +103,7 @@ const baseTaskInput = {
  * reliable way to reach a particular table, so this context keeps a tiny in-memory intent
  * store and hands out one memoised chain per table.
  */
-function createTaskCtx(payer?: string) {
-  const ctx = createMockCtx(payer) as ReturnType<typeof createMockCtx> & {
-    insertChain: (table: unknown) => ReturnType<typeof makeChain>;
-    intents: Record<string, unknown>[];
-  };
-  const intents: Record<string, unknown>[] = [];
-  const insertChains = new Map<unknown, ReturnType<typeof makeChain>>();
-  const updateChains = new Map<unknown, ReturnType<typeof makeChain>>();
-
-  const intentInsert = () => {
-    let row: Record<string, unknown> = {};
-    const chain: any = {
-      onConflictDoNothing: () => chain,
-      returning: () => chain,
-      values: (values: Record<string, unknown>) => {
-        row = { ...values };
-        intents.push(row);
-        return chain;
-      },
-      then: (onfulfilled: any, onrejected?: any) =>
-        Promise.resolve([row]).then(onfulfilled, onrejected),
-    };
-    return chain;
-  };
-
-  // The claim, the broadcast link and the completion all target the same single intent in
-  // these tests, so returning the most recent row is enough to exercise the real path.
-  const intentUpdate = () => {
-    const chain: any = {
-      returning: () => chain,
-      set: (values: Record<string, unknown>) => {
-        Object.assign(intents[intents.length - 1] ?? {}, values);
-        return chain;
-      },
-      where: () => chain,
-      then: (onfulfilled: any, onrejected?: any) =>
-        Promise.resolve(intents.slice(-1)).then(onfulfilled, onrejected),
-    };
-    return chain;
-  };
-
-  const chainFor = (
-    store: Map<unknown, ReturnType<typeof makeChain>>,
-    table: unknown,
-    resolveValue?: unknown
-  ) => {
-    let chain = store.get(table);
-    if (!chain) {
-      chain = makeChain(resolveValue);
-      store.set(table, chain);
-    }
-    return chain;
-  };
-
-  ctx.db.insert = vi.fn((table: unknown) =>
-    table === relayedIntents ? intentInsert() : chainFor(insertChains, table)
-  );
-  ctx.db.update = vi.fn((table: unknown) =>
-    table === relayedIntents ? intentUpdate() : chainFor(updateChains, table, [])
-  );
-
-  ctx.insertChain = (table: unknown) => chainFor(insertChains, table);
-  ctx.intents = intents;
-  return ctx;
-}
+const createTaskCtx = createIntentCtx;
 
 const mockTaskRow = {
   id: '0xabc',
@@ -490,48 +426,31 @@ describe('tasks router', () => {
       );
     });
 
-    describe('payment-orphan refund (2026-06-11, 2026-07-24 incidents)', () => {
+    // Verifies: ADR-0048
+    describe('a failed create never decides the payment is orphaned', () => {
       const PAYMENT_TX_HASH = '0xpaymenttxhash';
 
-      it('refunds the settled reward and surfaces it in the error when createTask fails after payment', async () => {
+      it('propagates the chain failure unchanged and leaves the refund to settlement', async () => {
         vi.mocked(contractCreateTask).mockRejectedValueOnce(
           new Error('Contract call rejected: EnforcedPause')
         );
         const ctx = createTaskCtx(PAYER);
         ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
-        // attemptRefund's compare-and-swap claim step needs its update() call to
-        // return a non-empty row array (the default mock db.update resolves .returning()
-        // to []); the second update() call is the final 'refunded' status set.
-        ctx.db.update
-          .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
-          .mockReturnValueOnce(makeChain());
         const caller = tasksRouter.createCaller(ctx);
 
-        await expect(caller.create(baseTaskInput)).rejects.toThrow(/automatically refunded/);
+        await expect(caller.create(baseTaskInput)).rejects.toThrow(/EnforcedPause/);
 
-        expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(
-          PAYER,
-          BigInt(baseTaskInput.reward)
-        );
-        // No task row is ever persisted for a create that never succeeded on-chain -- the
-        // only inserts are the relayed intent recorded before the call and orphaned-payments'
-        // own ledger row.
-        expect(ctx.db.insert).toHaveBeenCalledTimes(2);
-      });
-
-      it('tells the caller to contact support when the automatic refund itself cannot be sent', async () => {
-        vi.mocked(contractCreateTask).mockRejectedValueOnce(new Error('unknown revert'));
-        vi.mocked(contractRefundOrphanedPayment).mockRejectedValueOnce(
-          new Error('insufficient funds for gas')
-        );
-        const ctx = createTaskCtx(PAYER);
-        ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
-        ctx.db.update
-          .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
-          .mockReturnValueOnce(makeChain());
-        const caller = tasksRouter.createCaller(ctx);
-
-        await expect(caller.create(baseTaskInput)).rejects.toThrow(/flagged for manual review/);
+        // Whether this payment is orphaned is decided by relayed-intent-settlement.ts from a
+        // confirmed on-chain verdict, never here: this catch also fires on a receipt timeout,
+        // where the transaction is live and refunding would pay for work that still lands.
+        expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+        // Only the relayed intent, recorded before the chain call; no task row, no ledger row.
+        expect(ctx.db.insert).toHaveBeenCalledOnce();
+        // Left claimable rather than marked failed: only the chain writes a terminal state.
+        expect(ctx.intents[0]!.status).toBe('recorded');
+        expect(ctx.intents[0]!.paymentTxHash).toBe(PAYMENT_TX_HASH);
+        // The payment reference is on the intent, which is what settlement refunds from.
+        expect(ctx.intents[0]!.paymentAmount).toBe(baseTaskInput.reward);
       });
 
       it('does not attempt a refund when createTask fails but no payment ever settled', async () => {
@@ -543,7 +462,6 @@ describe('tasks router', () => {
         await expect(caller.create(baseTaskInput)).rejects.toThrow('unknown revert');
 
         expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
-        // Only the relayed intent, recorded before the chain call; no task row, no ledger row.
         expect(ctx.db.insert).toHaveBeenCalledOnce();
       });
     });
@@ -1111,9 +1029,12 @@ describe('tasks router', () => {
     });
 
     it('allows reward/expiry changes while a bounty is open', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([openBountyRow]))
+        // linkIntentToBroadcast resolves the outbox row from the transaction hash, so the
+        // intent the reconciler settles against is the one this request broadcast.
+        .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([{ ...openBountyRow, reward: '5000000' }]))
         .mockReturnValueOnce(makeChain([{ count: 1 }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
@@ -1125,35 +1046,31 @@ describe('tasks router', () => {
       expect(result!.reward).toBe('5000000');
     });
 
-    it('refunds and never persists the reward change when the on-chain update fails', async () => {
-      // Regression test for the payment-orphan review finding: this handler's catch
-      // block must `return` out of the mutation on failure, not just call
-      // handlePostPaymentFailure and fall through -- otherwise the reward/expiry
-      // change below would be written to the DB despite the on-chain update having
-      // reverted, leaving the DB and chain permanently out of sync.
+    // Verifies: ADR-0048
+    it('never persists the reward change, and never refunds, when the on-chain update fails', async () => {
+      // The reward/expiry change must not be written to the DB when the on-chain update
+      // reverted, or the DB and chain go permanently out of sync. The refund is a separate
+      // question, and no longer this handler's to answer: the payment reference lives on the
+      // intent, and settlement decides from the reconciler's verdict (ADR-0048).
       vi.mocked(contractUpdateTask).mockRejectedValueOnce(
         new Error('Contract call rejected: EnforcedPause')
       );
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
       ctx.db.select.mockReturnValueOnce(makeChain([openBountyRow]));
-      // First update() call is orphaned-payments' compare-and-swap claim, second is
-      // its final 'refunded' status set -- neither is the tasks-table dbUpdate write,
-      // which must never be reached.
-      ctx.db.update
-        .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
-        .mockReturnValueOnce(makeChain());
       const caller = tasksRouter.createCaller(ctx);
 
       await expect(caller.update({ taskId: '0xabc', reward: '5000000' })).rejects.toThrow(
-        /automatically refunded/
+        /EnforcedPause/
       );
 
+      expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
       // computeUpdatePaymentAmount(currentReward='1000000', requestedReward='5000000')
-      // = STANDARD_X402_ACTION_AMOUNT (1000) + the 4000000 increase.
-      expect(contractRefundOrphanedPayment).toHaveBeenCalledWith(PAYER, 4001000n);
-      // Exactly the 2 orphaned-payments calls above -- the tasks-table update never runs.
-      expect(ctx.db.update).toHaveBeenCalledTimes(2);
+      // = STANDARD_X402_ACTION_AMOUNT (1000) + the 4000000 increase. Recorded on the intent,
+      // which is what settlement would refund from.
+      expect(ctx.intents[0]!.paymentAmount).toBe('4001000');
+      expect(ctx.intents[0]!.status).toBe('recorded');
     });
 
     it('returns the stored taskVisibility after an unrelated field update', async () => {
@@ -1248,10 +1165,12 @@ describe('tasks router', () => {
         auctionType: 'english',
         maxPrice: openBountyRow.reward,
       };
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([auction]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
+        // The outbox lookup linkIntentToBroadcast makes after the chain call.
+        .mockReturnValueOnce(makeChain([]))
         .mockReturnValueOnce(makeChain([{ ...auction, reward: '5000000', maxPrice: '5000000' }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
@@ -1259,8 +1178,7 @@ describe('tasks router', () => {
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.update({ taskId: '0xabc', reward: '5000000' });
 
-      const updateChain = ctx.db.update.mock.results[0]?.value;
-      expect(updateChain.set).toHaveBeenCalledWith(
+      expect(ctx.updateChain(tasks).set).toHaveBeenCalledWith(
         expect.objectContaining({ reward: '5000000', maxPrice: '5000000' })
       );
       expect(result?.maxPrice).toBe('5000000');
@@ -1386,7 +1304,7 @@ describe('tasks router', () => {
     });
 
     it('allows cancelling an open bounty with no active submissions', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([{ ...mockTaskRow, status: 'open' }]))
         .mockReturnValueOnce(makeChain([{ count: 0 }]));
@@ -1412,7 +1330,7 @@ describe('tasks router', () => {
 
   describe('refundExpired', () => {
     it('allows an expired locked-worker task with a submitted deliverable', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           {
@@ -1428,13 +1346,14 @@ describe('tasks router', () => {
 
       expect(contractRefundExpired).toHaveBeenCalledOnce();
       expect(result.txHash).toBe('0xrefundhash');
-      expect(ctx.db.select).toHaveBeenCalledOnce();
+      // The task lookup, plus linkIntentToBroadcast's outbox lookup after the chain call.
+      expect(ctx.db.select).toHaveBeenCalledTimes(2);
     });
 
     // Verifies: ADR-0026
     it('allows a non-requester payer to refund an expired task (permissionless)', async () => {
       const NON_REQUESTER = '0x2222222222222222222222222222222222222222';
-      const ctx = createMockCtx(NON_REQUESTER);
+      const ctx = createTaskCtx(NON_REQUESTER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           {

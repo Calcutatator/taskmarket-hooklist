@@ -75,16 +75,16 @@ import {
   reserveTaskDropForCreation,
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
-import {
-  handlePostPaymentFailure,
-  handleStandardFeePostPaymentFailure,
-} from '../services/orphaned-payments';
 import { computeUpdatePaymentAmount } from '../services/task-payments';
-import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
-import { completeRelayedIntent } from '../services/relayed-intent-registry';
-import { linkIntentToBroadcast, recordRelayedIntent } from '../services/relayed-intents';
+import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import type { TasksCreateIntentPayload } from '../services/intents/tasks-create-intent';
+import type {
+  TasksCancelIntentPayload,
+  TasksRefundExpiredIntentPayload,
+  TasksRejectSubmissionIntentPayload,
+  TasksUpdateIntentPayload,
+} from '../services/intents/tasks-mutation-intents';
 
 // Registration is idempotent, and the completion handlers must exist before the first request
 // reaches create() -- not merely by the time the reconciler runs. Asking for it here rather
@@ -360,7 +360,11 @@ export const tasksRouter = router({
       // hash: there is none yet, and inventing a placeholder would leave the persisted copy
       // -- the only thing a reconciler pass reads back hours later -- half true. The
       // confirmed hash reaches the completion handler as its own argument instead.
-      const intent = await recordRelayedIntent({
+      //
+      // The post-receipt work -- task row, drop, viewers, evaluator follow-on and
+      // notifications -- belongs to the intent, not to this request, and runs through the
+      // registry so a reconciler pass observing the same receipt cannot run it twice.
+      await runRelayedIntent({
         db: ctx.db,
         operation: 'tasks.create',
         payer,
@@ -378,43 +382,14 @@ export const tasksRouter = router({
           taskDropReservationId,
           taskId,
         } satisfies TasksCreateIntentPayload,
-      });
-
-      let escrowTxHash: `0x${string}`;
-      try {
-        escrowTxHash = await contractCreateTask(
-          payer as `0x${string}`,
-          reward,
-          durationSecs,
-          mode,
-          pitchDeadlineSecs,
-          bidDeadlineSecs,
-          auctionSubtype,
-          input.stakeRequired ?? false,
-          input.stakeBps ?? 0,
-          hookContractAddr,
-          hashedTags,
-          hookDataBytes,
-          paymentTxHash
-        );
-      } catch (error) {
-        // A pending transaction is live, not failed (ADR-0045): it may still create the task,
-        // so the reservation stays held and the intent is linked to the broadcast so the
-        // reconciler can settle it. handlePostPaymentFailure refuses to refund on this error,
-        // and the raw ServerTransactionPendingError propagates to the caller unchanged.
-        if (error instanceof ServerTransactionPendingError) {
-          await linkIntentToBroadcast({
-            db: ctx.db,
-            intentId: intent.id,
-            txHash: error.hash,
-          });
-          throw error;
-        }
-
-        // Anything else never reached the chain, so the intent is left in 'recorded' rather
-        // than marked failed here: only confirmed on-chain evidence writes a terminal state
-        // (ADR-0045), and an intent stuck in 'recorded' is exactly the abandoned case.
-        if (taskDropReservationId) {
+        describeCompletionFailure: (intentId) =>
+          `Task ${taskId} was created on chain but recording it did not complete; it will be retried automatically (intent ${intentId}).`,
+        // Non-monetary cleanup only: the reservation is released because nothing reached the
+        // chain, not because the payment is being written off. Whether it is orphaned is
+        // settlement's decision alone (ADR-0048). A pending outcome never reaches here -- the
+        // transaction is live, so the reservation stays held.
+        onNotBroadcast: async () => {
+          if (!taskDropReservationId) return;
           try {
             await releaseTaskDropReservation({
               db: ctx.db,
@@ -427,51 +402,24 @@ export const tasksRouter = router({
               }`
             );
           }
-        }
-
-        // x402 already settled the reward into the server wallet before this handler
-        // ran (see middleware/x402.ts) -- createTask failing here means that payment
-        // is now orphaned: no task exists on-chain or in the DB to account for it.
-        // Payment and on-chain create are two separate transactions and can't be made
-        // atomic, so the mitigation is an immediate automatic refund plus a durable
-        // record of the attempt (see incident 2026-07-24: a prior occurrence of this
-        // exact failure had no rollback and no ledger entry to trace afterward).
-        //
-        // `return` (not a bare `await`): handlePostPaymentFailure is typed to always
-        // throw, but that guarantee isn't visible to TypeScript's control-flow
-        // analysis across an `await` in a catch block -- a plain `await
-        // handlePostPaymentFailure(...)` would let execution fall through into the DB
-        // transaction below with escrowTxHash never assigned if that guarantee were
-        // ever violated. `return` makes the exit unconditional regardless.
-        return handlePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          amount: reward,
-          paymentTxHash,
-          context: 'task_create',
-          error,
-        });
-      }
-
-      // The post-receipt work -- task row, drop, viewers, evaluator follow-on and
-      // notifications -- belongs to the intent, not to this request (ADR-0045). Running it
-      // through the registry rather than calling the handler directly is what makes it run
-      // exactly once: a reconciler pass can observe the same receipt concurrently, and the
-      // conditional claim inside completeRelayedIntent lets only one of the two proceed.
-      await linkIntentToBroadcast({ db: ctx.db, intentId: intent.id, txHash: escrowTxHash });
-      const completed = await completeRelayedIntent({
-        db: ctx.db,
-        intent,
-        txHash: escrowTxHash,
+        },
+        send: () =>
+          contractCreateTask(
+            payer as `0x${string}`,
+            reward,
+            durationSecs,
+            mode,
+            pitchDeadlineSecs,
+            bidDeadlineSecs,
+            auctionSubtype,
+            input.stakeRequired ?? false,
+            input.stakeBps ?? 0,
+            hookContractAddr,
+            hashedTags,
+            hookDataBytes,
+            paymentTxHash
+          ),
       });
-      if (!completed) {
-        // The escrow is on chain and is not refundable here -- the work happened. The intent
-        // stays claimable so the reconciler retries it; the caller is told the task exists.
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Task ${taskId} was created on chain but recording it did not complete; it will be retried automatically (intent ${intent.id}).`,
-        });
-      }
 
       return { success: true, taskId, taskDropId: resolvedTaskDropId };
     }),
@@ -1208,28 +1156,20 @@ export const tasksRouter = router({
         }
       }
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractCancelTask(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
-          task.contractAddress
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_cancel',
-          error,
-        });
-      }
-
-      await ctx.db
-        .update(tasks)
-        .set({ status: 'cancelled', cancelledAt: new Date() })
-        .where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'tasks.cancel',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: { taskId: input.taskId } satisfies TasksCancelIntentPayload,
+        send: () =>
+          contractCancelTask(
+            input.taskId as `0x${string}`,
+            payer as `0x${string}`,
+            task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
+            task.contractAddress
+          ),
+      });
 
       return { txHash };
     }),
@@ -1292,20 +1232,19 @@ export const tasksRouter = router({
         }
       }
 
-      const txHash = await contractRefundExpired(
-        input.taskId as `0x${string}`,
-        payer as `0x${string}`,
-        task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n
-      );
-
-      try {
-        await ctx.db.update(tasks).set({ status: 'expired' }).where(eq(tasks.id, input.taskId));
-      } catch {
-        throw new TRPCError({
-          code: 'INTERNAL_SERVER_ERROR',
-          message: `Refund sent on-chain (${txHash}) but DB sync failed — contact support with this tx hash`,
-        });
-      }
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'tasks.refundExpired',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: { taskId: input.taskId } satisfies TasksRefundExpiredIntentPayload,
+        send: () =>
+          contractRefundExpired(
+            input.taskId as `0x${string}`,
+            payer as `0x${string}`,
+            task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n
+          ),
+      });
 
       return { txHash };
     }),
@@ -1387,39 +1326,6 @@ export const tasksRouter = router({
         newBidDeadline !== 0n ||
         newPitchDeadline !== 0n;
 
-      if (hasOnChainChange) {
-        try {
-          await contractUpdateTask(
-            input.taskId as `0x${string}`,
-            payer as `0x${string}`,
-            newReward,
-            newExpiryTime,
-            newBidDeadline,
-            newPitchDeadline,
-            BigInt(task.reward),
-            task.contractAddress
-          );
-        } catch (error) {
-          // computeUpdatePaymentAmount must be given the SAME (currentReward,
-          // requestedReward) pair the X402 middleware used to size this payment
-          // (services/task-payments.ts's getUpdatePaymentAmount) -- task.reward here
-          // is still the pre-update value read above, so this reproduces that amount
-          // exactly, including any reward-increase escrow on top of the flat action fee.
-          //
-          // `return`, not a bare `await`: the dbUpdate write below must never run if
-          // the on-chain update failed, and an explicit return is the only way to
-          // guarantee that regardless of handlePostPaymentFailure's runtime behavior.
-          return handlePostPaymentFailure({
-            db: ctx.db,
-            payer: payer as `0x${string}`,
-            amount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
-            paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-            context: 'task_update',
-            error,
-          });
-        }
-      }
-
       const dbUpdate: Record<string, unknown> = {};
       if (input.reward && input.reward !== task.reward) {
         dbUpdate.reward = input.reward;
@@ -1452,7 +1358,35 @@ export const tasksRouter = router({
         dbUpdate.metricDescription = input.metricDescription;
       }
 
-      if (Object.keys(dbUpdate).length > 0) {
+      if (hasOnChainChange) {
+        // computeUpdatePaymentAmount must be given the SAME (currentReward, requestedReward)
+        // pair the X402 middleware used to size this payment (services/task-payments.ts's
+        // getUpdatePaymentAmount) -- task.reward here is still the pre-update value read
+        // above, so this reproduces that amount exactly, including any reward-increase escrow
+        // on top of the flat action fee. It is what a confirmed failure would refund
+        // (ADR-0048), which is why the intent has to carry it.
+        await runRelayedIntent({
+          db: ctx.db,
+          operation: 'tasks.update',
+          payer,
+          paymentAmount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
+          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          payload: { dbUpdate, taskId: input.taskId } satisfies TasksUpdateIntentPayload,
+          send: () =>
+            contractUpdateTask(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              newReward,
+              newExpiryTime,
+              newBidDeadline,
+              newPitchDeadline,
+              BigInt(task.reward),
+              task.contractAddress
+            ),
+        });
+      } else if (Object.keys(dbUpdate).length > 0) {
+        // Nothing on chain to wait on: an off-chain-only edit has no transaction, so there is
+        // no intent for it and nothing for settlement to decide about.
         await ctx.db.update(tasks).set(dbUpdate).where(eq(tasks.id, input.taskId));
       }
 
@@ -1685,29 +1619,22 @@ export const tasksRouter = router({
         });
       }
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractRejectSubmission(
-          input.taskId as `0x${string}`,
-          input.worker as `0x${string}`,
-          payer as `0x${string}`
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_reject_submission',
-          error,
-        });
-      }
-
-      await ctx.db
-        .update(submissions)
-        .set({ rejectedAt: new Date() })
-        .where(
-          and(eq(submissions.taskId, input.taskId), eq(submissions.workerAddress, input.worker))
-        );
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'tasks.rejectSubmission',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          taskId: input.taskId,
+          worker: input.worker,
+        } satisfies TasksRejectSubmissionIntentPayload,
+        send: () =>
+          contractRejectSubmission(
+            input.taskId as `0x${string}`,
+            input.worker as `0x${string}`,
+            payer as `0x${string}`
+          ),
+      });
 
       return { txHash };
     }),

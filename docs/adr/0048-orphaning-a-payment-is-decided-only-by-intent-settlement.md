@@ -12,7 +12,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Not started
+- **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded

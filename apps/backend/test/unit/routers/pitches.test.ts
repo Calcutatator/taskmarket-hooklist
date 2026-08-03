@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 import { buildSelectWorkerMessage } from '@taskmarket/shared';
 import { privateKeyToAccount } from 'viem/accounts';
 
@@ -8,7 +8,18 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitPitch: vi.fn().mockResolvedValue('0xpitchtx'),
 }));
 
+vi.mock('../../../src/config/env', () => ({
+  getServerConfig: vi.fn().mockReturnValue({
+    BACKEND_URL: 'http://localhost:3000',
+    CHAIN_ID: 84532,
+    CONTRACT_ADDRESS: '0xD17485087c2d31bf5562ACf0C5295111982A1CBF',
+    DEFAULT_PLATFORM_FEE_BPS: 500,
+    ERC8004_IDENTITY_REGISTRY: '0x8004A818BFB912233c491871b3d84c89A494BD9e',
+  }),
+}));
+
 import { pitchesRouter } from '../../../src/routers/pitches.router';
+import { proposals, tasks } from '../../../src/db/schema';
 import { contractSelectWorker } from '../../../src/services/contract';
 
 const REQUESTER_ACCOUNT = privateKeyToAccount(`0x${'11'.repeat(32)}`);
@@ -84,7 +95,7 @@ describe('pitches router', () => {
     };
 
     it('throws when task not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -92,7 +103,7 @@ describe('pitches router', () => {
     });
 
     it('throws when task mode is not pitch', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'benchmark' })]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -100,7 +111,7 @@ describe('pitches router', () => {
     });
 
     it('throws when task is not open', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'worker_selected' })]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -108,7 +119,7 @@ describe('pitches router', () => {
     });
 
     it('throws when pitch deadline has passed', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ pitchDeadline: new Date(Date.now() - 1000) })])
       );
@@ -118,7 +129,7 @@ describe('pitches router', () => {
     });
 
     it('throws when worker already submitted a pitch', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         // existing pitch check returns a duplicate
@@ -131,7 +142,7 @@ describe('pitches router', () => {
     });
 
     it('inserts pitch and returns proposalId on happy path', async () => {
-      const ctx = createMockCtx(WORKER); // X402 payer = worker
+      const ctx = createIntentCtx(WORKER); // X402 payer = worker
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -139,11 +150,11 @@ describe('pitches router', () => {
 
       expect(result.success).toBe(true);
       expect(typeof result.pitchId).toBe('string');
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.insertChain(proposals).values).toHaveBeenCalledOnce();
     });
 
     it('throws BAD_REQUEST when X402 payer is missing', async () => {
-      const ctx = createMockCtx(); // no payer
+      const ctx = createIntentCtx(); // no payer
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -152,7 +163,7 @@ describe('pitches router', () => {
 
     it('throws FORBIDDEN when X402 payer does not match workerAddress', async () => {
       const OTHER = '0x9999999999999999999999999999999999999999';
-      const ctx = createMockCtx(OTHER);
+      const ctx = createIntentCtx(OTHER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask()])).mockReturnValueOnce(makeChain([])); // no duplicate
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -169,7 +180,7 @@ describe('pitches router', () => {
     }
 
     it('throws FORBIDDEN when an outsider with zero standing submits a pitch', async () => {
-      const ctx = createMockCtx(OUTSIDER);
+      const ctx = createIntentCtx(OUTSIDER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
         .mockReturnValueOnce(makeChain([])) // no duplicate pitch
@@ -183,7 +194,7 @@ describe('pitches router', () => {
     });
 
     it('throws FORBIDDEN for an outsider even when holding a taskAccessGrant for this task', async () => {
-      const ctx = createMockCtx(OUTSIDER, undefined, { taskId: TASK_ID });
+      const ctx = createIntentCtx(OUTSIDER, undefined, { taskId: TASK_ID });
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
         .mockReturnValueOnce(makeChain([])) // no duplicate pitch
@@ -197,7 +208,7 @@ describe('pitches router', () => {
     });
 
     it('allows an allowlisted wallet to submit a pitch on a private task', async () => {
-      const ctx = createMockCtx(ALLOWED);
+      const ctx = createIntentCtx(ALLOWED);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
         .mockReturnValueOnce(makeChain([])) // no duplicate pitch
@@ -210,7 +221,7 @@ describe('pitches router', () => {
     });
 
     it('allows an awarded worker to submit a pitch on a private task', async () => {
-      const ctx = createMockCtx(ALLOWED);
+      const ctx = createIntentCtx(ALLOWED);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
         .mockReturnValueOnce(makeChain([])) // no duplicate pitch
@@ -223,7 +234,7 @@ describe('pitches router', () => {
     });
 
     it('allows the task requester to submit a pitch on their own private task', async () => {
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask({ taskVisibility: 'private' })]))
         .mockReturnValueOnce(makeChain([])); // no duplicate pitch; requester short-circuits before allowlist query
@@ -236,7 +247,7 @@ describe('pitches router', () => {
 
   describe('listByTask', () => {
     it('returns pitches with worker stats', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
         .mockReturnValueOnce(makeChain([makeTask()]))
@@ -276,7 +287,7 @@ describe('pitches router', () => {
     });
 
     it('returns pitches with no workerStats when agent not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         // Phase 3 (ADR-0030): resolveTaskViewability's task lookup runs first.
         .mockReturnValueOnce(makeChain([makeTask()]))
@@ -306,7 +317,7 @@ describe('pitches router', () => {
     it('throws when the selection signature is not from the requester', async () => {
       const other = privateKeyToAccount(`0x${'22'.repeat(32)}`);
       const selectInput = await signedSelectInput(other);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makePitch()]));
@@ -319,7 +330,7 @@ describe('pitches router', () => {
 
     it('throws when task is not found', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -328,7 +339,7 @@ describe('pitches router', () => {
 
     it('throws when task mode is not pitch', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty' })]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -337,7 +348,7 @@ describe('pitches router', () => {
 
     it('throws when task is not open', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx(REQUESTER);
+      const ctx = createIntentCtx(REQUESTER);
       ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ status: 'worker_selected' })]));
 
       const caller = pitchesRouter.createCaller(ctx);
@@ -346,7 +357,7 @@ describe('pitches router', () => {
 
     it('throws when the selected worker does not own the pitch', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(
@@ -361,7 +372,7 @@ describe('pitches router', () => {
 
     it('throws when the pitch already left the pending state', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makePitch({ status: 'selected' })]));
@@ -372,7 +383,7 @@ describe('pitches router', () => {
 
     it('calls contractSelectWorker and updates 3 DB rows on happy path', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx('0xpayer000000000000000000000000000000000');
+      const ctx = createIntentCtx('0xpayer000000000000000000000000000000000');
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makePitch()]));
@@ -382,13 +393,14 @@ describe('pitches router', () => {
 
       expect(result.success).toBe(true);
       expect(contractSelectWorker).toHaveBeenCalledOnce();
-      // selected pitch, rejected others, task status update = 3 update calls
-      expect(ctx.db.update).toHaveBeenCalledTimes(3);
+      // selected pitch, rejected others, task status update
+      expect(ctx.updateChain(proposals).set).toHaveBeenCalledTimes(2);
+      expect(ctx.updateChain(tasks).set).toHaveBeenCalledOnce();
     });
 
     it('throws when called with no settled X402 payment (missing payer)', async () => {
       const selectInput = await signedSelectInput();
-      const ctx = createMockCtx(); // no payer set -- the X402 middleware never ran/settled
+      const ctx = createIntentCtx(); // no payer set -- the X402 middleware never ran/settled
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()]))
         .mockReturnValueOnce(makeChain([makePitch()]));

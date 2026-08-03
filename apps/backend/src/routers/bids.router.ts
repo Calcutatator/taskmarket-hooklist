@@ -17,7 +17,11 @@ import {
   resolveTaskViewability,
 } from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type {
+  BidsAuctionAcceptIntentPayload,
+  BidsSubmitIntentPayload,
+} from '../services/intents/bids-intents';
 
 // Implements: ADR-0023 (myBids self-auth converged onto ctx.caller)
 // myBids below is now a protectedProcedure deriving the caller's address from
@@ -136,51 +140,39 @@ export const bidsRouter = router({
         }
       }
 
-      try {
-        await contractSubmitBid(
-          input.taskId as `0x${string}`,
-          workerAddress as `0x${string}`,
-          BigInt(input.price),
-          task.contractAddress
-        );
-      } catch (error) {
-        // `return`: the DB upsert below must never run for a bid that was never
-        // placed on-chain -- an explicit return guarantees that regardless of
-        // handlePostPaymentFailure's runtime behavior.
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: workerAddress as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'bid_submit',
-          error,
-        });
-      }
+      // The bid id is generated here rather than in the completion so the response can name
+      // it without a second read, but the row that actually persists wins: a re-bid or the
+      // indexer's own write of the same BidSubmitted event may already hold this
+      // (task, worker) pair, and the unique constraint means there is only ever one row.
+      const bidId = randomUUID();
 
-      // Upsert: if worker already has a bid on this task, replace it (English and Reverse
-      // English) -- the bids_task_worker_unique constraint enforces one bid per worker
-      // per task. A single atomic upsert instead of a separate select-then-branch: the
-      // indexer's processBidSubmittedEvent (services/indexer.ts) reconciles the same
-      // on-chain BidSubmitted event with its own select-then-insert, and can win the race
-      // against this handler's write -- a plain insert here would then hit the same
-      // unique constraint and throw. onConflictDoUpdate resolves that the same way a
-      // genuine re-bid already does (price/createdAt updated on the existing row), and
-      // .returning() picks up whichever row's id actually persisted rather than trusting
-      // a locally-generated one that may never have been written.
-      const [bidRow] = await ctx.db
-        .insert(bids)
-        .values({
-          id: randomUUID(),
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'bids.submit',
+        payer: workerAddress,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          bidId,
+          price: input.price,
           taskId: input.taskId,
           workerAddress,
-          price: input.price,
-        })
-        .onConflictDoUpdate({
-          target: [bids.taskId, bids.workerAddress],
-          set: { price: input.price, createdAt: new Date() },
-        })
-        .returning({ id: bids.id });
+        } satisfies BidsSubmitIntentPayload,
+        send: () =>
+          contractSubmitBid(
+            input.taskId as `0x${string}`,
+            workerAddress as `0x${string}`,
+            BigInt(input.price),
+            task.contractAddress
+          ),
+      });
 
-      return { success: true, bidId: bidRow.id };
+      const [bidRow] = await ctx.db
+        .select({ id: bids.id })
+        .from(bids)
+        .where(and(eq(bids.taskId, input.taskId), eq(bids.workerAddress, workerAddress)))
+        .limit(1);
+
+      return { success: true, bidId: bidRow?.id ?? bidId };
     }),
 
   listByTask: optionalAuthProcedure
@@ -461,50 +453,25 @@ export const bidsRouter = router({
         }
       }
 
-      // Call contract first — if it reverts, DB is untouched and the task stays open
-      try {
-        await contractAcceptAuction(
-          input.taskId as `0x${string}`,
-          workerAddress as `0x${string}`,
-          clockPrice,
-          task.contractAddress
-        );
-      } catch (error) {
-        // `return`: the task-claim update and bid insert below must never run for an
-        // auction accept that was never placed on-chain.
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: workerAddress as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'auction_accept',
-          error,
-        });
-      }
-
-      // Conditional DB update: only succeeds if task is still 'open' (race guard)
-      const updated = await ctx.db
-        .update(tasks)
-        .set({
-          status: 'claimed',
-          claimedBy: workerAddress,
-          claimedAt: now,
-        })
-        .where(and(eq(tasks.id, input.taskId), eq(tasks.status, 'open')))
-        .returning();
-
-      if (!updated || updated.length === 0) {
-        throw new TRPCError({
-          code: 'BAD_REQUEST',
-          message: 'Auction already claimed by another worker',
-        });
-      }
-
-      // Record the bid in DB
-      await ctx.db.insert(bids).values({
-        id: randomUUID(),
-        taskId: input.taskId,
-        workerAddress,
-        price: clockPrice.toString(),
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'bids.auctionAccept',
+        payer: workerAddress,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          acceptedAt: now.toISOString(),
+          bidId: randomUUID(),
+          price: clockPrice.toString(),
+          taskId: input.taskId,
+          workerAddress,
+        } satisfies BidsAuctionAcceptIntentPayload,
+        send: () =>
+          contractAcceptAuction(
+            input.taskId as `0x${string}`,
+            workerAddress as `0x${string}`,
+            clockPrice,
+            task.contractAddress
+          ),
       });
 
       return {

@@ -18,13 +18,22 @@ export type RelayedIntentOperation =
   | 'tasks.create'
   | 'tasks.assignEvaluator'
   | 'tasks.update'
+  | 'tasks.cancel'
+  | 'tasks.refundExpired'
+  | 'tasks.rejectSubmission'
   | 'acceptance.accept'
-  | 'acceptance.acceptMany'
+  | 'acceptance.acceptSubmissions'
   | 'acceptance.rate'
+  | 'bids.submit'
   | 'bids.auctionAccept'
   | 'pitches.submit'
+  | 'pitches.select'
   | 'proofs.submit'
+  | 'proofs.anchorDeliverable'
   | 'evaluations.evaluate'
+  | 'evaluations.appeal'
+  | 'evaluations.resolveDispute'
+  | 'evaluations.evaluatorTimeout'
   | 'identity.register';
 
 export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'failed';

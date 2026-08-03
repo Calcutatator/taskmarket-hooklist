@@ -5,6 +5,7 @@ import { db } from '../db/client';
 import { relayedIntents } from '../db/schema';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
+import { settleAbandonedIntents } from './relayed-intent-settlement';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
 const MAX_INTENTS_PER_PASS = 10;
@@ -63,6 +64,11 @@ export function createRelayedIntentWorker(options?: {
       // it. It never throws.
       await dispatchRelayedIntent({ db: database, intent });
     }
+
+    // The other half of `recorded`: an intent that does carry a payment and never reached the
+    // chain is not rebroadcast, it is written off. Settlement makes that call, not this
+    // worker -- the worker only says when to look (ADR-0048).
+    await settleAbandonedIntents(MAX_INTENTS_PER_PASS);
   };
 }
 

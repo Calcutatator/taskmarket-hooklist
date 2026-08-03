@@ -383,6 +383,37 @@ type RelayResult = {
 };
 
 /**
+ * Rebuild a RelayResult from nothing but a confirmed transaction hash.
+ *
+ * A relayed intent's completion handler may run in a process that never made the call --
+ * hours later, from the reconciler (ADR-0045) -- so anything the original request read off
+ * the receipt has to be re-derivable from the hash alone. The receipt is the durable copy
+ * of that information; the request's in-memory one is not.
+ */
+export async function relayResultFromTxHash(txHash: `0x${string}`): Promise<RelayResult> {
+  const receipt = await retryWithBackoff(
+    () => getPublicClient().getTransactionReceipt({ hash: txHash }),
+    5,
+    500
+  );
+  return { blockNumber: receipt.blockNumber, logs: receipt.logs, txHash };
+}
+
+/** Block timestamp of a confirmed transaction, in seconds. */
+export async function blockTimestampForTx(txHash: `0x${string}`): Promise<number> {
+  const { blockNumber } = await relayResultFromTxHash(txHash);
+  // Same load-balanced-RPC-lag concern as contractEvaluate's getBlock call: the transaction
+  // is already confirmed, so a read served by a lagging node is worth retrying, not failing.
+  const block = await retryWithBackoff(() => getPublicClient().getBlock({ blockNumber }), 5, 500);
+  return Number(block.timestamp);
+}
+
+/** Block number of a confirmed transaction. */
+export async function blockNumberForTx(txHash: `0x${string}`): Promise<number> {
+  return Number((await relayResultFromTxHash(txHash)).blockNumber);
+}
+
+/**
  * Decode TaskCompleted logs out of a transaction receipt. The contract only
  * emits one per award with amount > 0 (EvaluatorFacet._distributeEvalAwards),
  * so an all-zero-award verdict legitimately decodes to zero logs here.
@@ -753,6 +784,17 @@ async function projectSettlementFromReceipt(
   }
 }
 
+/**
+ * Project a settlement from a confirmed transaction hash rather than from a receipt held in
+ * memory. The form a relayed intent's completion handler needs (ADR-0045).
+ */
+export async function contractProjectSettlementForTx(
+  taskId: `0x${string}`,
+  txHash: `0x${string}`
+): Promise<{ settlement: ProjectedSettlement | null; settledAt: number | null }> {
+  return projectSettlementFromReceipt(taskId, await relayResultFromTxHash(txHash));
+}
+
 export async function contractFinalizeVerdict(
   taskId: `0x${string}`
 ): Promise<ResolvedSettlementResult> {
@@ -1118,7 +1160,14 @@ export async function contractUpdateTask(
   return relayThroughForwarder(requester, additionalPayment, data);
 }
 
-export async function contractRegisterIdentity(): Promise<bigint> {
+/**
+ * Broadcast the registry mint and return only its hash.
+ *
+ * Split out from contractRegisterIdentity so a relayed intent can record the transaction and
+ * resolve the minted agentId separately (ADR-0045): the intent's completion handler may run
+ * in a process that never made this call, and can only work from the hash.
+ */
+export async function contractRegisterIdentityTx(): Promise<`0x${string}`> {
   const config = getServerConfig();
   const { client, account } = createServerWallet();
   const publicClient = getPublicClient();
@@ -1141,6 +1190,18 @@ export async function contractRegisterIdentity(): Promise<bigint> {
       }),
   });
   assertSuccess(receipt, 'registerIdentity');
+  return hash;
+}
+
+/** The agentId minted by a confirmed registerIdentity transaction. */
+export async function resolveRegisteredAgentId(hash: `0x${string}`): Promise<bigint> {
+  const config = getServerConfig();
+  const publicClient = getPublicClient();
+  const receipt = await retryWithBackoff(
+    () => publicClient.getTransactionReceipt({ hash }),
+    5,
+    500
+  );
 
   // Parse agentId from Registered(uint256 indexed agentId, ...) event.
   // Retry up to 5 times in case RPC logs lag behind the confirmed receipt.
@@ -1192,6 +1253,10 @@ export async function contractRegisterIdentity(): Promise<bigint> {
     code: 'INTERNAL_SERVER_ERROR',
     message: 'Registered event not found in registerIdentity receipt',
   });
+}
+
+export async function contractRegisterIdentity(): Promise<bigint> {
+  return resolveRegisteredAgentId(await contractRegisterIdentityTx());
 }
 
 export async function contractWithdrawDreamsRewards(

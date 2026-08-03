@@ -18,7 +18,13 @@ import {
 } from '../services/contract';
 import { recordTaskSettlement } from '../services/settlement-recorder';
 import { getServerConfig } from '../config/env';
-import { handleStandardFeePostPaymentFailure } from '../services/orphaned-payments';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type {
+  EvaluationsAppealIntentPayload,
+  EvaluationsEvaluateIntentPayload,
+  EvaluationsEvaluatorTimeoutIntentPayload,
+  EvaluationsResolveDisputeIntentPayload,
+} from '../services/intents/evaluations-intents';
 
 const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
@@ -64,52 +70,37 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      let txHash: `0x${string}`;
-      let evaluatedAt: number;
-      try {
-        ({ txHash, evaluatedAt } = await contractEvaluate(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          VERDICT_MAP[input.verdict] ?? 0,
-          input.score,
-          input.confidence,
-          input.evidenceHash as `0x${string}`,
-          awards
-        ));
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_evaluate',
-          error,
-        });
-      }
-
-      const appealDeadline =
-        task.appealWindow != null ? new Date((evaluatedAt + task.appealWindow) * 1000) : null;
-      const expiryTime =
-        appealDeadline && appealDeadline > task.expiryTime ? appealDeadline : task.expiryTime;
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'appealing',
-          verdictType: input.verdict.toUpperCase(),
-          verdictScore: input.score,
-          verdictConfidence: input.confidence,
-          verdictEvidenceHash: input.evidenceHash,
-          evaluatorStake: '0',
-          appealDeadline,
-          expiryTime,
-          // The contract only reassigns the worker for contest modes
-          // (EvaluatorFacet.evaluate); mirror that so locked-worker modes keep
-          // the on-chain worker and the appeal window stays usable.
-          claimedBy:
-            task.mode === 'bounty' || task.mode === 'benchmark'
-              ? (input.awards[0]?.worker ?? task.claimedBy)
-              : task.claimedBy,
-        })
-        .where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'evaluations.evaluate',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          awards: input.awards.map((a) => ({
+            amount: a.amount,
+            rank: a.rank,
+            worker: a.worker,
+          })),
+          confidence: input.confidence,
+          evidenceHash: input.evidenceHash,
+          mode: task.mode,
+          score: input.score,
+          taskId: input.taskId,
+          verdict: input.verdict,
+        } satisfies EvaluationsEvaluateIntentPayload,
+        send: async () =>
+          (
+            await contractEvaluate(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              VERDICT_MAP[input.verdict] ?? 0,
+              input.score,
+              input.confidence,
+              input.evidenceHash as `0x${string}`,
+              awards
+            )
+          ).txHash,
+      });
 
       return { txHash };
     }),
@@ -142,19 +133,15 @@ export const evaluationsRouter = router({
       }
       if (task.status !== 'appealing') throw new Error('Task is not in Appealing state');
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`);
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_appeal',
-          error,
-        });
-      }
-      await ctx.db.update(tasks).set({ status: 'disputed' }).where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'evaluations.appeal',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: { taskId: input.taskId } satisfies EvaluationsAppealIntentPayload,
+        send: () => contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`),
+      });
+
       return { txHash };
     }),
 
@@ -263,46 +250,26 @@ export const evaluationsRouter = router({
         rank: a.rank,
       }));
 
-      let txHash: `0x${string}`;
-      let settlement: Awaited<ReturnType<typeof contractResolveDispute>>['settlement'];
-      let settledAt: number | null;
-      try {
-        ({ txHash, settlement, settledAt } = await contractResolveDispute(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`,
-          VERDICT_MAP[input.verdict] ?? 0,
-          awards
-        ));
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_resolve_dispute',
-          error,
-        });
-      }
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'evaluations.resolveDispute',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          firstAwardWorker: input.awards[0].worker,
+          taskId: input.taskId,
+        } satisfies EvaluationsResolveDisputeIntentPayload,
+        send: async () =>
+          (
+            await contractResolveDispute(
+              input.taskId as `0x${string}`,
+              payer as `0x${string}`,
+              VERDICT_MAP[input.verdict] ?? 0,
+              awards
+            )
+          ).txHash,
+      });
 
-      if (settlement && settledAt != null) {
-        // Record task_awards synchronously from the same receipt this mutation
-        // already waited for, instead of relying solely on the async indexer to
-        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
-        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
-        // processes the same event too.
-        await recordTaskSettlement(ctx.db, {
-          chainId: getServerConfig().CHAIN_ID,
-          settledAt: new Date(settledAt * 1000),
-          settlement,
-        });
-      } else {
-        // All-zero-award verdict: the contract still transitions the task to
-        // Accepted/completed, but emits no TaskCompleted log, so there is no
-        // settlement to record.
-        await ctx.db
-          .update(tasks)
-          .set({ status: 'completed', claimedBy: input.awards[0].worker })
-          .where(eq(tasks.id, input.taskId));
-      }
       return { txHash };
     }),
 
@@ -337,31 +304,14 @@ export const evaluationsRouter = router({
         throw new Error('Evaluator deadline has not yet passed');
       }
 
-      let txHash: `0x${string}`;
-      try {
-        txHash = await contractEvaluatorTimeout(
-          input.taskId as `0x${string}`,
-          payer as `0x${string}`
-        );
-      } catch (error) {
-        return handleStandardFeePostPaymentFailure({
-          db: ctx.db,
-          payer: payer as `0x${string}`,
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          context: 'task_evaluator_timeout',
-          error,
-        });
-      }
-
-      await ctx.db
-        .update(tasks)
-        .set({
-          status: 'pending_approval',
-          evaluator: null,
-          evaluatorStake: '0',
-          evaluatorDeadline: null,
-        })
-        .where(eq(tasks.id, input.taskId));
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'evaluations.evaluatorTimeout',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: { taskId: input.taskId } satisfies EvaluationsEvaluatorTimeoutIntentPayload,
+        send: () => contractEvaluatorTimeout(input.taskId as `0x${string}`, payer as `0x${string}`),
+      });
 
       return { txHash };
     }),

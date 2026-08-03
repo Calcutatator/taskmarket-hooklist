@@ -8,6 +8,7 @@ import { handlePostPaymentFailure } from './orphaned-payments';
 import { completeRelayedIntent } from './relayed-intent-registry';
 import {
   findIntentByTransactionId,
+  listAbandonedIntents,
   listConfirmedUnsettledIntents,
   markIntentFailed,
 } from './relayed-intents';
@@ -19,6 +20,63 @@ import {
  * only here, reached only from `onFailed`, which the reconciler calls only on a reverted
  * receipt or a mined replacement. There is deliberately no path from a timeout to this code.
  */
+/**
+ * How long a payment-carrying intent must sit in `recorded` before it is written off.
+ *
+ * Generous on purpose. The only way to reach this state is for the process to die between
+ * persisting the intent and broadcasting, or for the broadcast to be rejected outright before
+ * a nonce was ever spent -- in both cases nothing is on chain and nothing ever will be. The
+ * window exists solely so a request still executing its own chain call cannot be overtaken.
+ */
+export const ABANDONED_INTENT_CUTOFF_MS = 15 * 60 * 1000;
+
+/**
+ * Refund payments whose intent never reached the chain at all.
+ *
+ * The reconciler settles transactions, so it can only speak for intents that have one. An
+ * intent stuck in `recorded` has no transaction and never will -- there is no verdict coming,
+ * and without this the payer would simply never be repaid. It is still the same rule ADR-0045
+ * states and ADR-0048 places here: a refund is issued only when the system knows the work did
+ * not happen, and "no nonce was ever allocated for it" is knowing that, not guessing it.
+ *
+ * Scoped to intents with no linked outbox row and no hash, so an intent whose transaction is
+ * live but whose linking write was lost is never mistaken for one that never started.
+ */
+export async function settleAbandonedIntents(limit: number): Promise<void> {
+  const cutoff = new Date(Date.now() - ABANDONED_INTENT_CUTOFF_MS);
+  for (const intent of await listAbandonedIntents({ cutoff, db, limit })) {
+    if (intent.serverWalletTransactionId || intent.txHash) continue;
+    if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) continue;
+
+    await markIntentFailed({
+      db,
+      intentId: intent.id,
+      reason: 'Intent was never broadcast; no transaction was ever sent for it',
+    });
+
+    try {
+      await handlePostPaymentFailure({
+        amount: BigInt(intent.paymentAmount),
+        context: intent.operation,
+        db,
+        error: new Error('Intent was never broadcast'),
+        payer: intent.payer as `0x${string}`,
+        paymentTxHash: intent.paymentTxHash as `0x${string}`,
+      });
+    } catch (error) {
+      // Always throws by design (see onFailed below); only a genuine refund failure matters.
+      const message = error instanceof Error ? error.message : String(error);
+      if (!message.includes('refunded')) {
+        logger.error('Refund for an abandoned intent did not complete', {
+          error: message,
+          intentId: intent.id,
+          operation: intent.operation,
+        });
+      }
+    }
+  }
+}
+
 export function createRelayedIntentSettlement(): RelayedIntentSettlement {
   return {
     onConfirmed: async (transactionId: string, hash: Hex) => {

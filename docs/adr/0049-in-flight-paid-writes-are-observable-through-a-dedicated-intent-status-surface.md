@@ -9,17 +9,17 @@
 > can always answer "what happened to my money and my write" without guessing, accepting that the
 > answer is discovered by polling and that a payer who never polls still learns nothing.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Not started
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** None recorded — drafted for review, no independent reviewer yet
-- **Deciders:** (pending human approval)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0045
+- **Amends / Amended-by:** Amends ADR-0045
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -97,20 +97,23 @@ The question is where in-flight and settled-late states are surfaced, and in wha
 | Intent id is the caller's handle; intent state is exposed on its own payer-scoped read surface; the in-flight outcome is a structured result carrying that id (selected) | One surface covers every operation kind, including ones with no task to hang off (`tasks.create` before the task exists, `identity.register`); "in flight" and "failed" become structurally different answers rather than two prose messages behind the same 500; a refund becomes queryable rather than inferable; the shape's meaning ("here is the state of a thing you started") matches what is actually being reported, so no consumer has to be taught an exception | A new endpoint, a new client integration, and a new authorization surface over rows carrying payment references; the payer must poll to learn anything, so a payer who walks away still learns nothing; intent rows now have a reader, which constrains how freely they can be pruned |
 | Extend `pendingActions` with an in-flight entry (rejected) | Zero new integration — the CLI, the web app and the agent skill already poll it every loop; it is exactly where an agent's attention already is; no new auth surface | Inverts the meaning of the array. Every existing entry is "an action you may take"; this one is "an action you must not take", and the skill's own gate instructs agents to *find the entry and execute it*. The cost of a consumer reading it the established way is a duplicate payment — the precise outcome the entry exists to prevent. It is also derived per task, so it cannot represent an in-flight `tasks.create` (no task yet) or `identity.register` (no task ever), which are among the cases most needing it |
 | Return the state synchronously in the failing response and stop there (rejected as sufficient; adopted as *part* of the selected option) | Smallest change; the caller learns at the moment they are still listening; no polling, no new endpoint | Only covers the instant the request ends. A refund decided minutes later by settlement — the specific gap ADR-0048 left open — has no request left to return into. Solving only the synchronous half leaves the asynchronous half exactly as invisible as it is today, which is the actual complaint |
-| Push notification (webhook or XMTP) to the payer on settlement (rejected for now) | The payer learns without asking, which is the only option that serves a caller who has disconnected; no polling load | Requires a delivery endpoint per payer, retry and backoff for failed deliveries, an at-least-once contract, and a security review of pushing payment-bearing facts to a caller-supplied URL — a subsystem, for a notification. ADR-0047 records the cost of building machinery ahead of the need, and this is the same trade in a different coat. It also cannot be the *only* answer: a client that missed a push still needs somewhere to ask, so the queryable surface is required either way and push is a strict addition on top of it |
+| Push notification (webhook or XMTP) to the payer on settlement (rejected) | The payer learns without asking, which is the only option that serves a caller who has disconnected; no polling load | Requires a delivery endpoint per payer, retry and backoff for failed deliveries, an at-least-once contract, and a security review of pushing payment-bearing facts to a caller-supplied URL — a subsystem, for a notification. ADR-0047 records the cost of building machinery ahead of the need, and this is the same trade in a different coat. It also cannot be the *only* answer: a client that missed a push still needs somewhere to ask, so the queryable surface is required either way and push is a strict addition on top of it |
 | Do nothing; document that callers infer state from task reads (status quo, rejected) | No work; agents already re-fetch tasks after an ambiguous result | Does not work for operations with no observable task effect (a refund, a failed `identity.register`), cannot distinguish "not yet" from "never", and leaves the payer's money question unanswerable by any read. It also makes the correct client behaviour unverifiable: an agent told never to retry has no way to know when it is safe to stop waiting |
 
 ## Decision
-
-If accepted:
 
 **1. The intent id is the identifier a caller holds onto.** Every paid or relayed write returns its
 intent id, on success and on an in-flight result alike. It is the stable handle: it exists from the
 moment the durable record is written, which is *before* the payment is consumed and before anything
 is broadcast, so there is no window in which a caller has started something they cannot name.
 
-A transaction hash is included as an additional field when one is known, and is explicitly **not**
-the handle. It can be absent (an intent in `recorded` has no hash), and it can change: the
+Both fields are returned on **every** outcome where they exist — success, in flight, confirmed
+failure, and a failure caught before broadcast (which has an intent id but no hash, because none
+was ever created). A caller logs both without branching on the outcome. This matters most for the
+case that previously gave a caller nothing: a deterministic revert threw a message and no handle,
+which is exactly when someone most needs an identifier to quote.
+
+A transaction hash is included whenever one is known, and is explicitly **not** the handle. It can be absent (an intent in `recorded` has no hash), and it can change: the
 reconciler may land a replacement at the same nonce, which is a different hash for the same intent.
 A caller holding only a hash can find themselves holding a hash that will never appear on chain.
 Callers may log a hash; they must key on the intent id.
@@ -125,9 +128,10 @@ that meaning is preserved precisely because an in-flight write is the opposite k
 **3. In flight and failed are structurally different answers.** An in-flight result is returned as
 its own outcome — an identified, machine-readable state carrying the intent id and status — not as
 a generic 500 whose prose must be parsed. A caller distinguishes the two by a field, never by
-string-matching a message. **An in-flight result carries no settlement meaning of any kind**: it
-does not say the write succeeded, does not say it failed, and above all does not claim anything
-about the payment. Conflating "we stopped waiting" with "it failed" is the original defect one
+string-matching a message. **An in-flight result makes no claim about whether the payment moved**: it
+does not say the write succeeded and does not say it failed. It does say, precisely and usefully,
+that the nonce has not yet been consumed either way -- that is informative, and it is not the same
+as saying nothing. What it must never be read as is a verdict. Conflating "we stopped waiting" with "it failed" is the original defect one
 layer down; reproducing that conflation in the response format would reintroduce it at the client.
 
 **4. Client contract: never resubmit an intent that is in flight.** This is an obligation, not
@@ -147,8 +151,8 @@ instead of being visible only to operators with database access. The trade-off i
 open eyes: **polling means a payer who never asks is never told**, which is strictly worse than
 push for a disconnected caller. It is chosen because it needs no delivery infrastructure, no retry
 semantics, and no security review of caller-supplied endpoints, and because a queryable surface is
-required regardless — a client that misses a push still has to have somewhere to ask. Push is a
-later addition on top of this, not an alternative to it (see follow-up).
+required regardless -- a client that misses a push still has to have somewhere to ask. Polling is
+the answer, not a stepping stone to one.
 
 **6. The surface is payer-scoped.** An intent row carries a payer address, a payment amount and a
 payment transaction hash. Reading one is authenticated as the payer through the existing general
@@ -193,11 +197,12 @@ to re-fetch.
 
 **Neutral / follow-up:**
 
-- **Push delivery (webhook or XMTP) is explicitly not decided here.** It is the right answer for a
-  disconnected payer and remains a genuine gap. It needs its own ADR when a caller actually needs
-  it, covering delivery guarantees, retries, and the security of pushing payment-bearing facts to a
-  caller-supplied destination. Committing to that machinery now would repeat the mistake ADR-0047
-  recorded.
+- **Push delivery is decided against, not deferred.** A payer learns about a refund by asking. The
+  disconnected-caller gap is real and is accepted: a payer who never queries is never told. Adding
+  a delivery channel would bring retry semantics, delivery guarantees, and the security question of
+  pushing payment-bearing facts to a caller-supplied destination -- for a case a queryable surface
+  already covers on demand. If that gap ever proves costly in practice, it can be revisited with
+  evidence rather than anticipated.
 - Intent retention and pruning are not decided here. Nothing prunes intents today, so nothing
   breaks; a retention policy needs to account for this reader when one is written.
 - Whether the web app surfaces in-flight state in its own UI is not decided here. This ADR settles
