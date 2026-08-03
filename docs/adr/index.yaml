@@ -211,5 +211,5 @@ adrs:
   - number: "0048"
     file: "0048-orphaning-a-payment-is-decided-only-by-intent-settlement.md"
     title: Orphaning a payment is decided only by intent settlement; the ledger is retained
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"

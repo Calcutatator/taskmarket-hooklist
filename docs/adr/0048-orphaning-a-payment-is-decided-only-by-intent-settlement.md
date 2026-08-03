@@ -10,13 +10,13 @@
 > made on evidence that does not, accepting that the two-transaction reality of a paid write is
 > still not atomic and a compensating refund is still what covers it.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Not started
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** None recorded — drafted for review, no independent reviewer yet
-- **Deciders:** (pending human approval)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** —
@@ -97,8 +97,6 @@ The question is **where the orphaning decision is made**, not what records it.
 | Retire `orphaned_payments` entirely once settlement owns the decision (rejected) | Fewer tables; one less thing to operate | Strands any live non-terminal row — real payers, real USDC — and destroys the ledger of the 2026-06-11 and 2026-07-24 incidents, which is the evidence anyone would want during the next one. The record is valuable in its own right, independently of what triggers a write to it: money moved for something that did not happen, and that is worth keeping whoever decided it |
 
 ## Decision
-
-If accepted:
 
 **1. Intent settlement is the sole decision path for orphaning a payment.** A payment is declared
 orphaned in exactly one place: `relayed-intent-settlement.ts`'s `onFailed`, reached only from the
