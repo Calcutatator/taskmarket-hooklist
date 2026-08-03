@@ -129,9 +129,12 @@ that meaning is preserved precisely because an in-flight write is the opposite k
 its own outcome — an identified, machine-readable state carrying the intent id and status — not as
 a generic 500 whose prose must be parsed. A caller distinguishes the two by a field, never by
 string-matching a message. **An in-flight result makes no claim about whether the payment moved**: it
-does not say the write succeeded and does not say it failed. It does say, precisely and usefully,
-that the nonce has not yet been consumed either way -- that is informative, and it is not the same
-as saying nothing. What it must never be read as is a verdict. Conflating "we stopped waiting" with "it failed" is the original defect one
+does not say the write succeeded and does not say it failed, and it does not establish whether the
+nonce has been consumed -- an intent in `broadcast` may already have a live transaction under it,
+and an in-flight result cannot tell a caller which. What it does say, precisely and usefully, is
+that no terminal outcome has been established yet and that the intent is still owned by the
+settlement path -- that is informative, and it is not the same as saying nothing. What it must
+never be read as is a verdict. Conflating "we stopped waiting" with "it failed" is the original defect one
 layer down; reproducing that conflation in the response format would reintroduce it at the client.
 
 **4. Client contract: never resubmit an intent that is in flight.** This is an obligation, not

@@ -105,8 +105,8 @@ the root's identifier is what callers hold onto.
   decision and correct it. ADR-0047 as drafted does not: it withdraws chaining entirely, on the
   grounds that the root cause is a contract API gap (`createTask` takes no evaluator config, and
   `assignEvaluator`'s `Open` gate is correct), and that chaining has no justified user once
-  evaluator assignment is given its own endpoint and its own root intent. This ADR is pending
-  supersession by ADR-0047; nothing here is edited in place.
+  evaluator assignment is given its own endpoint and its own root intent. ADR-0047 was accepted on
+  that basis and superseded this ADR; nothing here is edited in place.
 
 ## References
 

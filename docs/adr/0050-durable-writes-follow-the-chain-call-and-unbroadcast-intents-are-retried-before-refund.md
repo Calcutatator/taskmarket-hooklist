@@ -114,16 +114,20 @@ happens to an intent that provably never reached the chain**.
 
 ## Decision
 
-**1. Durable state changes belong after the chain call, without exception.** The ordering for every
-relayed write is:
+**1. Durable state changes belong after the chain call is confirmed, without exception.** The
+ordering for every relayed write is:
 
 ```
-record intent  →  chain call  →  database writes (in the completion handler)
+record intent  →  chain call  →  confirmed receipt  →  database writes (in the completion handler)
 ```
 
-No relayed path may write **outcome state** before its contract call lands — a row asserting that
-something happened. Reads, validation, signature verification, authorization checks and pre-flight
-simulation all happen before; they assert nothing and leave nothing behind.
+No relayed path may write **outcome state** before its contract call is **confirmed on chain** — a
+row asserting that something happened. "Confirmed" here means a receipt whose status the completion
+handler has actually observed; it is not RPC acceptance, not a transaction hash coming back from
+submission, and not the absence of an error. A hash names a transaction that may still revert or
+never mine, so nothing about it licenses an outcome write. Reads, validation, signature
+verification, authorization checks and pre-flight simulation all happen before; they assert nothing
+and leave nothing behind.
 
 **There is one exception, and it is a real one: a write whose purpose is to prevent a concurrent
 duplicate must precede the call.** A guard acquired after the critical section is not a guard. The

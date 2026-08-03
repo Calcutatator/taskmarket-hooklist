@@ -85,7 +85,13 @@ chain-mutating step, and the intent — not the request — owns the outcome.
 **Intent lifecycle.** Each paid or relayed write persists an intent row carrying its operation
 kind, the validated inputs needed to complete it, the payment reference where one exists, and a
 link to the `server_wallet_transactions` row once a nonce is allocated. Status moves
-`recorded → broadcast → completed | failed`, and only the reconciler writes the terminal states.
+`recorded → broadcast → completed | failed`. The reconciler owns the terminal transition for any
+intent that was actually broadcast — nothing else may conclude anything about a live transaction.
+Dispatch itself records the one class of terminal state that needs no chain observation: a
+deterministic pre-broadcast failure, where simulation reverts before a nonce is ever allocated, so
+nothing was signed and nothing can land later. An unpaid intent in that position is marked `failed`
+by `dispatchRelayedIntent`; a paid one still reaches `failed` through settlement, which is the only
+place allowed to decide a payment is orphaned.
 
 **Settlement is evidence-based.** A refund is issued only on a reverted receipt or on a confirmed
 replacement, per the table above. No timeout, cancelled request, disconnected client, or process
@@ -93,8 +99,13 @@ restart may cause a refund. This is the rule the current code breaks.
 
 **Completion is idempotent and belongs to the intent.** The work that today runs inline after the
 receipt — writing the task row, recording awards, sending notifications — moves into a completion
-handler keyed on the intent, so it runs exactly once whether the receipt arrives during the
-original request or during a reconciler pass an hour later.
+handler keyed on the intent, so it runs whether the receipt arrives during the original request or
+during a reconciler pass an hour later. Execution is **at least once**, not exactly once: a
+conditional claim narrows completion to a single caller per attempt, but a process that dies
+mid-handler leaves the intent claimable and a later pass reruns it from the start. The handler's
+side effects must therefore be idempotent and tolerate partial prior application. Keying on the
+intent is what makes that possible: the same intent id identifies the same work across the original
+request and every subsequent reconciler pass.
 
 **The request reports progress.** It may still wait a bounded time and return the completed result
 in the common case. When it returns early it reports the intent identifier and its state, and that

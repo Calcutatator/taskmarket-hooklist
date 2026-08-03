@@ -86,7 +86,7 @@ a floor under it rather than being an open-ended bet against a fee spike.
 
 | Option | Pros | Cons |
 | --- | --- | --- |
-| Geometric escalation from the fee being replaced, floored by the live oracle, clamped by a cap expressed as a multiple of the original fee, all configured per deployment (selected) | Every attempt clears the provider's minimum bump by construction, because the base of the multiplication is the price that failed, not a reading that may not have moved; escalation is genuinely monotonic, so attempt *n* is strictly more competitive than attempt *n-1*; the oracle floor means a chain-wide fee jump is picked up immediately rather than being approached one multiplication at a time; the cap bounds the worst case at a number an operator can reason about in advance; Base and Ethereum get different numbers without different code | A curve plus a cap plus a floor is three knobs where there was one constant; the previous attempt's fee must be read back from the outbox row, which the current `sendReplacement(nonce)` signature does not carry; a badly configured cap below the first bump would silently flatten the curve, so it needs a cross-field validation check |
+| Geometric escalation from the fee being replaced, floored by the live oracle, clamped by a cap expressed as a multiple of the original fee, all configured per deployment (selected) | Every attempt clears the provider's minimum bump by construction, because the base of the multiplication is the price that failed, not a reading that may not have moved; escalation is genuinely monotonic, so attempt *n* is strictly more competitive than attempt *n-1*; the oracle floor means a chain-wide fee jump is picked up immediately rather than being approached one multiplication at a time; the cap bounds the worst case at a number an operator can reason about in advance; Base and Ethereum get different numbers without different code | A curve plus a cap plus a floor is three knobs where there was one constant; the previous attempt's fee must be read back from the outbox row, which the current `sendReplacement(nonce)` signature does not carry; a badly configured cap below the first bump would silently flatten the curve, so it needs a validation check — and because the cap and the bid are multiples of different quantities, that check can only be made per transaction, not at boot |
 | Flat multiplier applied to the live oracle (status quo, rejected) | One constant, no state to read back, no configuration surface; works whenever the oracle is rising, which during genuine congestion it usually is | Produces an identical price on a flat oracle, which providers reject as an insufficient bump, so the "retry" can consist entirely of rejected sends; no attempt is more likely to land than the last; cannot be right for two chains at once; the one case where it fails hardest — a transaction stuck for a reason other than a rising market, e.g. a propagation problem — is exactly the case a replacement is for |
 | Additive escalation: add a fixed absolute premium (in gwei) per attempt (rejected) | Trivially monotonic; the absolute cost of each step is knowable in advance; no multiplication overflow concerns | An absolute premium is chain-specific in the hardest way — a step meaningful on Base is a rounding error on Ethereum mainnet during a spike, and one large enough for mainnet is absurd on Base; on a low base fee, a fixed addend can also be a far larger *proportional* jump than intended. Percentages travel across chains and fee regimes; absolute gwei amounts do not, so this pushes more configuration burden onto the operator, not less |
 | Track the network fee oracle per attempt, with no escalation of our own (rejected) | Always priced at what the network currently says is sufficient; never overpays relative to the market; nothing to tune | This is the status quo minus its multiplier, and it fails for the same reason: on a flat oracle the resubmission is priced at or below its predecessor and gets rejected for an insufficient bump. It also assumes the oracle is why we are stuck, and a transaction can be stuck for reasons the oracle knows nothing about. The oracle is the right *floor* — it catches a market that moved faster than our curve — but it cannot be the whole policy, so this option is folded into the selected one rather than standing alone |
@@ -100,14 +100,29 @@ a floor under it rather than being an open-ended bet against a fee spike.
 For a nonce being replaced for the *n*-th time, the replacement fee is:
 
 ```
-attempt 1:  fee = oracle x FIRST_BUMP_PCT / 100
-attempt n:  fee = max( previous_attempt_fee x ESCALATION_PCT / 100,
-                       oracle x FIRST_BUMP_PCT / 100 )
+ceilDiv(a, b)   = (a + b - 1n) / b
+
+attempt 1:  fee = ceilDiv( oracle x FIRST_BUMP_PCT, 100n )
+attempt n:  fee = max( ceilDiv( previous_attempt_fee x ESCALATION_PCT, 100n ),
+                       ceilDiv( oracle x FIRST_BUMP_PCT, 100n ),
+                       previous_attempt_fee + 1n )
             then clamped to  original_fee x MAX_MULTIPLE
 ```
 
 applied independently to `maxFeePerGas` and `maxPriorityFeePerGas`, in bigint arithmetic
 (multiply first, divide by 100 last).
+
+**Division rounds up, and every escalated fee is strictly greater than the fee it replaces.** Both
+clauses exist for the same reason and neither is cosmetic. Bigint division truncates, so on a small
+enough fee a percentage increase can round away entirely — `1n x 150n / 100n` is `1n`, an
+"escalation" that produces the identical price the network already rejected as an insufficient
+bump. That is the exact failure this ADR exists to remove, reappearing at the bottom of the number
+range rather than the top. Ceiling division fixes the common case; the `previous_attempt_fee + 1n`
+floor is what guarantees the property outright, so monotonicity does not depend on the configured
+percentages being large enough to survive truncation. The floor is applied **before** the
+`original_fee x MAX_MULTIPLE` clamp, so the cap still binds: once escalation reaches the ceiling,
+attempts stop increasing and hold there, which is point 2's clamp-and-continue behaviour and not a
+licence to creep past the cap by one wei per pass.
 
 Three properties, each doing a distinct job:
 
@@ -156,6 +171,16 @@ the deadline the cancel becomes the strictly preferred action: it is cheap, it i
 produces the confirmed-replacement evidence ADR-0045 requires to settle the intent as failed. So the
 deadline does not end escalation; it converts a speed-up into a cancel.
 
+**This applies only to an intent that actually holds a nonce.** A cancel exists to free a nonce, so
+there has to be one. An intent still in `recorded` with `server_wallet_transaction_id IS NULL` was
+never allocated a nonce — ADR-0050 point 4's positive evidence that nothing was ever signed — so it
+occupies nothing, blocks nothing, and has nothing to cancel. Broadcasting a self-transfer for it
+would spend a *fresh* nonce to clear a nonce that does not exist. Such an intent goes straight to
+terminal settlement instead: marked failed with its reason, its guard released, and its payment
+refunded if it carries one, exactly as ADR-0050 point 6 describes. The deadline-converts-a-speed-up-
+into-a-cancel rule is therefore scoped to intents with an allocated nonce; for the rest, the
+deadline simply ends the intent.
+
 Escalation therefore has no attempt limit of its own. `validBefore` bounds retry of the payload; the
 cap bounds the price; nothing needs to bound the count, and adding one would only reintroduce the
 abandoned-nonce failure the cap was designed to avoid.
@@ -192,11 +217,35 @@ and the rest:
 | `REPLACEMENT_GAS_MAX_MULTIPLE` | `10` | `int`, `min(2)` | Ceiling, as a multiple of the original transaction's fee. |
 | `REPLACEMENT_GAS_MAX_FEE_WEI` | unset | `int`, `positive`, optional | Optional absolute per-gas ceiling, applied after the multiple. An operator's circuit breaker for a fee regime nobody anticipated; unset by default because a wei value is meaningless without knowing the chain. |
 
-Plus one cross-field `superRefine` check: `REPLACEMENT_GAS_MAX_MULTIPLE * 100` must be greater than
-or equal to `REPLACEMENT_GAS_FIRST_BUMP_PCT`. A cap below the opening bid would silently flatten the
-curve into the status quo — the exact defect this ADR exists to remove — while every individual
-value still looked reasonable. This is precisely the class of misconfiguration that must fail at
-boot rather than be discovered during an incident.
+The dangerous misconfiguration is a cap that sits below the opening bid: the first attempt is then
+clamped on the way out, the curve flattens into the status quo — the exact defect this ADR exists to
+remove — and every individual value still looks reasonable in isolation.
+
+**That check cannot be made at boot, and attempting it there is worse than not making it.** The cap
+is `original_fee x MAX_MULTIPLE` and the opening bid is `oracle x FIRST_BUMP_PCT / 100`. These are
+multiples of two different quantities: the fee this specific transaction was originally broadcast
+with, and whatever the oracle reads at the moment of replacement. Comparing `MAX_MULTIPLE x 100`
+against `FIRST_BUMP_PCT` compares a multiple of the original fee against a percentage of the
+oracle — two different bases, so the comparison is not meaningful and does not catch the case it is
+aimed at. Whether the cap clamps the opening bid depends entirely on how far the oracle has moved
+since the original broadcast, which no boot-time value knows. A boot check here would be worse than
+none: it would pass on every sensible configuration and thereby imply a guarantee it never provided.
+
+**So the validation is per transaction, at replacement time.** When a replacement fee is computed,
+if the `original_fee x MAX_MULTIPLE` cap would clamp the fee below the oracle-derived opening bid —
+that is, if the cap alone prevents the attempt from clearing what the market currently says is
+sufficient — the replacement is priced at the cap and **the clamp is recorded and logged as a named
+condition**, distinct from an ordinary capped attempt. It is not a boot failure and it does not stop
+the replacement: point 2 is explicit that clearing the nonce never stops, and refusing to send is
+strictly worse than sending an underpriced attempt. What it is, is the signal that this deployment's
+`REPLACEMENT_GAS_MAX_MULTIPLE` is too low for the fee regime it is now operating in, surfaced at the
+moment it becomes true rather than inferred afterwards from a nonce that would not clear. That is
+the alert an operator needs, and it is the same signal as "a nonce has reached the cap and stayed
+there", which the follow-ups below already name as unbuilt.
+
+The per-value validations in the table above stand and are genuine boot checks — `min(110)`,
+`min(125)`, `min(2)` each rule out a value that is wrong on its own terms, independent of any
+runtime quantity.
 
 `min(125)` on the escalation percentage is deliberate and load-bearing: the provider minimum is
 around 10%, and validating at 25% keeps every attempt clear of it with room for rounding in bigint
@@ -227,17 +276,18 @@ ADR.
   original fee and the cap, instead of being whatever the market does.
 - Base and Ethereum mainnet can run the same code with appropriate numbers, and the numbers can be
   changed during an incident without a deploy.
-- A misconfiguration that would flatten the curve back to the status quo fails at boot with a named
-  error, rather than degrading silently.
+- A misconfiguration that would flatten the curve back to the status quo is detected and reported by
+  name at the moment it actually bites, rather than degrading silently. It cannot be caught at boot,
+  because whether it bites depends on how far the oracle has moved since the original broadcast.
 - Adopting this changes nothing about the common case: the first replacement is still 2x the oracle,
   which is what ships today. The new behaviour only appears on the second and later attempts, which
   are the attempts that are currently broken.
 
 **Negative / trade-offs:**
 
-- Four environment variables and a cross-field check where there was one constant. Configuration is
-  a place bugs live, and the `superRefine` exists because the most dangerous misconfiguration here
-  is one that looks fine.
+- Four environment variables and a runtime clamp check where there was one constant. Configuration is
+  a place bugs live, and the most dangerous misconfiguration here is one that looks fine at boot and
+  only reveals itself against a fee regime the operator did not anticipate.
 - `sendReplacement(nonce)` must learn what the previous attempt paid, which means reading it back
   from the `server_wallet_transactions` row. The current signature does not carry it, and the fee
   actually used per attempt may need persisting if it is not already recoverable — a schema change
@@ -290,7 +340,7 @@ ADR.
 - `apps/backend/src/lib/wallet.ts` — `sendReplacement` and `REPLACEMENT_GAS_MULTIPLIER`
 - `apps/backend/src/lib/server-transaction-reconciler.ts` — `replaceStuckNonce`,
   `DEFAULT_STUCK_AFTER_MS`
-- `apps/backend/src/config/env.ts` — the `z.coerce.number()` default-and-validate pattern, and the
-  `superRefine` cross-field convention
+- `apps/backend/src/config/env.ts` — the `z.coerce.number()` default-and-validate pattern the four
+  variables follow
 - `packages/contracts/src/TaskMarketForwarder.sol` — `relay`'s `ReceiptExpired` check, the bound
   that converts a speed-up into a cancel
