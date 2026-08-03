@@ -76,7 +76,7 @@ export function broadcastWalletWithdrawDreams(context: {
 export async function completeWalletWithdrawDreams(): Promise<void> {}
 
 /**
- * Hand back the replay nonce when nothing reached the chain.
+ * Hand back the replay nonce once the chain has said the withdrawal did not happen.
  *
  * The nonce claim is the one piece of durable state that genuinely cannot move into the
  * completion handler. `withdrawFor` is executed by the backend wallet rather than as a user
@@ -85,10 +85,19 @@ export async function completeWalletWithdrawDreams(): Promise<void> {}
  * requests carrying the same captured signature both broadcast.
  *
  * Claiming first leaves the opposite risk -- a nonce burned for a withdrawal that never
- * happened, locking the user out of an authorization they legitimately still hold. Releasing
- * it here closes that, and only here: this runs solely on the path where the broadcast
- * provably never reached the chain. A receipt timeout does not come through here, because a
- * timed-out transaction may still be mined and its nonce must stay spent.
+ * happened, locking the user out of an authorization they legitimately still hold. This is
+ * what closes that, and it is deliberately registered as the operation's `releaseGuard` rather
+ * than wired to the request's failure path (ADR-0050). "The send threw" is not the question.
+ * `already known` and `already imported` mean the transaction is in a mempool and may still
+ * mine; a connection reset mid-send means the node may have taken it and we simply never heard
+ * back. Deleting this row in either case lets a captured signature be replayed against a
+ * withdrawal that is still live -- a double spend of DREAMS on the one path where this table
+ * is the only replay protection there is.
+ *
+ * So the only callers are the sites that write a terminal `failed`: a reverted receipt, a
+ * mined replacement, or an exhausted retry budget on an intent for which no nonce was ever
+ * allocated. Each of those is the chain having answered, or us having stopped asking. A
+ * timeout is neither and never reaches here.
  */
 export async function releaseWalletWithdrawDreamsNonce(context: {
   db: Db;

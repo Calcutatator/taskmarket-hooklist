@@ -16,7 +16,6 @@ import {
 } from '../services/contract';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import {
-  releaseWalletWithdrawDreamsNonce,
   type WalletWithdrawDreamsIntentPayload,
   type WalletWithdrawIntentPayload,
 } from '../services/intents/wallet-intents';
@@ -344,9 +343,11 @@ export const walletRouter = router({
       // let two concurrent requests carrying the same captured signature both broadcast.
       //
       // Claiming first leaves the mirror-image risk -- a nonce spent on a withdrawal that
-      // never happened -- which is what onNotBroadcast repairs: it runs only where nothing
-      // reached the chain. A receipt timeout deliberately does not reach it, because a
-      // timed-out transaction may still be mined and its nonce must stay spent.
+      // never happened -- and nothing in this request may repair it. The request only ever
+      // sees an exception, and an exception cannot answer "did anything reach the chain?":
+      // `already known` means it did, and a connection reset means we do not know. Release is
+      // the intent's own `releaseGuard`, run by settlement once the chain has said the call
+      // failed or once the retry budget is spent (ADR-0050).
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
         operation: 'wallet.withdrawDreams',
@@ -361,7 +362,6 @@ export const walletRouter = router({
             input.workerAddress as `0x${string}`,
             input.destination as `0x${string}`
           ),
-        onNotBroadcast: () => releaseWalletWithdrawDreamsNonce({ db: ctx.db, nonce: input.nonce }),
       });
 
       const dreamsPerUsdc = await contractGetDreamsPerUsdc();

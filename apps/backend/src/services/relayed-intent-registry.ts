@@ -54,9 +54,36 @@ export type RelayedIntentBroadcaster = (context: {
   intent: RelayedIntent;
 }) => Promise<string>;
 
+/**
+ * Hand back the guard state an operation claimed before its chain call.
+ *
+ * ADR-0050 draws the line between *outcome* state, which records that something happened and
+ * so belongs after confirmation, and *guard* state, which reserves the right to attempt
+ * something and so must be claimed before -- a mutex acquired after the critical section is
+ * not a mutex. The `dreams_withdraw_nonces` row is the second kind, and today the only one
+ * wired here: `withdrawFor` is relayed by the backend wallet rather than sent as a user
+ * transaction, so that row is the entire replay protection for a signed authorization.
+ *
+ * Claiming before the call leaves the mirror-image problem -- a guard consumed for a call that
+ * never landed, locking the user out of an authorization they legitimately still hold -- and
+ * this is what closes it. It is declared alongside `broadcast` and `complete` so an operation
+ * states its whole lifecycle in one place, and so the release is resolved from the payload on
+ * the intent row rather than from a request that has long since gone.
+ *
+ * Releasing is security-relevant in a way completing is not: it reopens a window. So it is
+ * invoked from exactly the sites that write a terminal `failed`, all of which reach that state
+ * only from confirmed on-chain evidence or from an exhausted retry budget -- never from a
+ * timeout and never from an ambiguous send error, where the transaction may still be live.
+ */
+export type RelayedIntentGuardRelease = (context: {
+  db: Db;
+  intent: RelayedIntent;
+}) => Promise<void>;
+
 type RegisteredOperation = {
   broadcast?: RelayedIntentBroadcaster;
   complete: RelayedIntentCompletionHandler;
+  releaseGuard?: RelayedIntentGuardRelease;
 };
 
 const handlers = new Map<RelayedIntentOperation, RegisteredOperation>();
@@ -82,6 +109,33 @@ export function getRelayedIntentBroadcaster(
 
 export function registeredRelayedIntentOperations(): RelayedIntentOperation[] {
   return [...handlers.keys()].sort();
+}
+
+/**
+ * Release an intent's guard state, if its operation claimed any.
+ *
+ * Call this immediately after writing `failed`, and nowhere else. The precondition is not
+ * "the send threw" but "the chain has said no, or we have stopped asking": a release on an
+ * ambiguous outcome hands back a replay guard while the original transaction may still mine,
+ * which on the DREAMS path is a double-spend of rewards.
+ *
+ * Never throws. A guard left claimed is the safe direction of this failure -- the user retries
+ * with a fresh authorization -- whereas propagating would abort a settlement pass part way
+ * through and leave a payment unrefunded, so the error is logged and the sweep continues.
+ */
+export async function releaseIntentGuard(input: { db: Db; intent: RelayedIntent }): Promise<void> {
+  const release = handlers.get(input.intent.operation as RelayedIntentOperation)?.releaseGuard;
+  if (!release) return;
+
+  try {
+    await release({ db: input.db, intent: input.intent });
+  } catch (error) {
+    logger.error('Releasing the guard for a failed relayed intent did not complete', {
+      error: error instanceof Error ? error.message : String(error),
+      intentId: input.intent.id,
+      operation: input.intent.operation,
+    });
+  }
 }
 
 /**
@@ -238,6 +292,11 @@ export async function dispatchRelayedIntent(input: {
       // it wait: an intent that never reaches a terminal state is invisible to anything
       // watching for failures.
       await markIntentFailed({ db: input.db, intentId: claimed.id, reason });
+      // A deterministic revert is the chain's own verdict, so it satisfies the same
+      // confirmed-failure precondition settlement's release does. This branch is only reached
+      // for an unpaid intent; a paid one exhausts its budget above and is released by
+      // settleAbandonedIntents instead, so the guard is handed back exactly once either way.
+      await releaseIntentGuard({ db: input.db, intent: claimed });
       return 'failed';
     }
 

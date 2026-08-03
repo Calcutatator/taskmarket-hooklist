@@ -1,4 +1,4 @@
-// Verifies: ADR-0045
+// Verifies: ADR-0045, ADR-0050
 import { describe, expect, it, vi } from 'vitest';
 import { makeChain } from '../helpers';
 
@@ -39,6 +39,7 @@ import {
   getRelayedIntentBroadcaster,
   getRelayedIntentHandler,
   registeredRelayedIntentOperations,
+  releaseIntentGuard,
 } from '../../../src/services/relayed-intent-registry';
 import { tasks } from '../../../src/db/schema';
 import type { RelayedIntent } from '../../../src/db/schema';
@@ -190,5 +191,76 @@ describe('relayed intent handler registration', () => {
 
     expect(db.update).toHaveBeenCalledWith(tasks);
     expect(taskUpdate.set).toHaveBeenCalledWith(assignment);
+  });
+
+  /**
+   * The DREAMS replay guard, end to end against a stand-in for the table.
+   *
+   * Both directions matter and each is a different bug. A guard that is never released locks
+   * the user out of an authorization they still hold; a guard released too eagerly lets a
+   * captured signature be replayed against a withdrawal that may still be mining.
+   */
+  describe('the wallet.withdrawDreams replay guard', () => {
+    const DREAMS_NONCE = `0x${'cd'.repeat(32)}`;
+
+    /** Stands in for dreams_withdraw_nonces: a unique index with onConflictDoNothing on top. */
+    function makeNonceStore() {
+      const claimed = new Set<string>();
+      const db: any = {
+        claim: (nonce: string) => {
+          if (claimed.has(nonce)) return [];
+          claimed.add(nonce);
+          return [{ nonce }];
+        },
+        delete: vi.fn().mockImplementation(() => ({
+          where: (predicate: { nonce: string }) => {
+            claimed.delete(predicate.nonce);
+            return Promise.resolve([]);
+          },
+        })),
+        held: () => [...claimed],
+      };
+      return db;
+    }
+
+    // Drizzle's eq() is opaque here, so the fake reads the nonce off the intent instead; the
+    // assertion that matters is which nonce the release targets, and that it targets one.
+    function releaseFor(db: any, nonce: string) {
+      return releaseIntentGuard({
+        db: { ...db, delete: () => ({ where: () => db.delete().where({ nonce }) }) },
+        intent: intent({
+          id: 'intent-dreams',
+          operation: 'wallet.withdrawDreams',
+          payload: { destination: PAYER, nonce, workerAddress: PAYER },
+        } as Partial<RelayedIntent>),
+      });
+    }
+
+    it('rejects a resubmission while the guard is still held', () => {
+      const store = makeNonceStore();
+      expect(store.claim(DREAMS_NONCE)).toHaveLength(1);
+      // Zero rows inserted is what the router turns into CONFLICT.
+      expect(store.claim(DREAMS_NONCE)).toHaveLength(0);
+    });
+
+    it('permits a resubmission of the same authorization once the guard is released', async () => {
+      const store = makeNonceStore();
+      store.claim(DREAMS_NONCE);
+
+      await releaseFor(store, DREAMS_NONCE);
+
+      expect(store.held()).toEqual([]);
+      expect(store.claim(DREAMS_NONCE)).toHaveLength(1);
+    });
+
+    it('does nothing for an operation that claimed no guard', async () => {
+      const store = makeNonceStore();
+      store.claim(DREAMS_NONCE);
+
+      await releaseIntentGuard({ db: store, intent: intent({ operation: 'tasks.create' }) });
+
+      expect(store.delete).not.toHaveBeenCalled();
+      expect(store.held()).toEqual([DREAMS_NONCE]);
+    });
   });
 });

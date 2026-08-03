@@ -37,9 +37,29 @@ export type RelayedIntentRequestInput = {
   /** Broadcasts the one contract call this intent stands for. */
   send: () => Promise<`0x${string}`>;
   /**
-   * Non-monetary cleanup for a call that never reached the chain -- releasing a reservation,
-   * say. Never a refund: whether a payment is orphaned is settlement's decision alone
-   * (ADR-0048), made from a confirmed on-chain verdict this code has not seen.
+   * Best-effort cleanup of something whose loss costs nothing, for a send that threw.
+   *
+   * **The name overstates what this knows, and the overstatement is the trap.** "Not
+   * broadcast" is not something a thrown error establishes. `already known` and
+   * `already imported` mean the transaction *is* in a mempool and can still mine; a connection
+   * reset mid-send means the node may have taken it and we never heard the answer. All of them
+   * arrive here indistinguishable from a request that was rejected outright.
+   *
+   * So nothing security-relevant or monetary may hang off this, and neither may anything whose
+   * correctness depends on the call genuinely not having landed:
+   *
+   *   - **No refunds.** Whether a payment is orphaned is settlement's decision alone
+   *     (ADR-0048), made from a confirmed on-chain verdict this code has not seen.
+   *   - **No releasing guard state** -- a replay nonce, a claim, anything whose whole job is
+   *     to stop a second attempt. Releasing one here reopens the window it exists to close
+   *     while the first transaction may still be live. Register a `releaseGuard` on the
+   *     operation instead; settlement runs it on confirmed failure or exhausted retry
+   *     (ADR-0050).
+   *
+   * What is left is cleanup that is merely tidy: `tasks.create`'s task-drop reservation, which
+   * costs nothing if it is released in error and expires on its own if it is never released at
+   * all. If losing the race in either direction would be harmless, it belongs here. If it
+   * would not, it does not.
    */
   onNotBroadcast?: () => Promise<void>;
   /** How to describe the operation in the error a failed completion raises. */
@@ -97,8 +117,10 @@ export async function runRelayedIntent(
       throw error;
     }
 
-    // Nothing reached the chain, so the intent stays in 'recorded' rather than being marked
-    // failed here: only confirmed on-chain evidence writes a terminal state (ADR-0045).
+    // The intent stays in 'recorded' rather than being marked failed here: only confirmed
+    // on-chain evidence writes a terminal state (ADR-0045). Note what this branch does *not*
+    // know -- whether anything reached the chain. The error may well be `already known`. Only
+    // harmless cleanup may run from here; see the field's own doc.
     if (input.onNotBroadcast) await input.onNotBroadcast();
     throw error;
   }

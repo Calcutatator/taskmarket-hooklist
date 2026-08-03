@@ -5,7 +5,7 @@ import { db } from '../db/client';
 import type { RelayedIntentSettlement } from '../lib/server-transaction-reconciler';
 import { logger } from '../lib/logger';
 import { handlePostPaymentFailure } from './orphaned-payments';
-import { completeRelayedIntent } from './relayed-intent-registry';
+import { completeRelayedIntent, releaseIntentGuard } from './relayed-intent-registry';
 import {
   findIntentByTransactionId,
   listAbandonedIntents,
@@ -31,7 +31,7 @@ import {
 export const ABANDONED_INTENT_CUTOFF_MS = 15 * 60 * 1000;
 
 /**
- * Refund payments whose intent never reached the chain and will not be tried again.
+ * Write off intents that never reached the chain and will not be tried again.
  *
  * The last resort, deliberately. A payer who paid for a task would rather have the task, so an
  * intent that never broadcast is rebroadcast by the worker first; only once its retry budget
@@ -46,18 +46,29 @@ export const ABANDONED_INTENT_CUTOFF_MS = 15 * 60 * 1000;
  *
  * Scoped to intents with no linked outbox row and no hash, so an intent whose transaction is
  * live but whose linking write was lost is never mistaken for one that never started.
+ *
+ * Two things happen here, and only one of them is about money. Every exhausted intent reaches
+ * `failed` and hands back whatever guard state it claimed, paid or not (ADR-0050): exhaustion
+ * is the point at which we stop asking, so the reservation it was holding is no longer
+ * reserving an attempt anyone will make. Refund applies only to the ones carrying a payment.
  */
 export async function settleAbandonedIntents(limit: number): Promise<void> {
   const cutoff = new Date(Date.now() - ABANDONED_INTENT_CUTOFF_MS);
   for (const intent of await listAbandonedIntents({ cutoff, db, limit })) {
     if (intent.serverWalletTransactionId || intent.txHash) continue;
-    if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) continue;
 
     await markIntentFailed({
       db,
       intentId: intent.id,
       reason: 'Intent was never broadcast; no transaction was ever sent for it',
     });
+
+    // Safe here for the same reason the refund below is: `listAbandonedIntents` requires a
+    // spent retry budget, and the two conditions above require positive evidence that no nonce
+    // was ever allocated. Nothing is live, so nothing can land later against a released guard.
+    await releaseIntentGuard({ db, intent });
+
+    if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) continue;
 
     try {
       await handlePostPaymentFailure({
@@ -117,6 +128,13 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
       if (intent.status === 'completed' || intent.status === 'failed') return;
 
       await markIntentFailed({ db, intentId: intent.id, reason });
+
+      // The reconciler reaches onFailed only on a reverted receipt or a mined replacement, so
+      // by here the chain has answered and the call this intent stood for provably did not
+      // happen. That is the one precondition under which handing back a replay guard is safe:
+      // release it on a timeout instead and a captured signature could be replayed while the
+      // original transaction is still in a mempool, waiting to mine (ADR-0050).
+      await releaseIntentGuard({ db, intent });
 
       // Refund only what this intent itself was paid for. An intent with no payment reference
       // has nothing to refund: whatever it was going to do on chain did not happen, and the

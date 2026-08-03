@@ -48,6 +48,7 @@ import {
   broadcastWalletWithdrawDreams,
   completeWalletWithdraw,
   completeWalletWithdrawDreams,
+  releaseWalletWithdrawDreamsNonce,
   type WalletWithdrawDreamsIntentPayload,
   type WalletWithdrawIntentPayload,
 } from './wallet-intents';
@@ -311,6 +312,14 @@ export function registerRelayedIntentHandlers(): void {
         payload: intent.payload as WalletWithdrawDreamsIntentPayload,
       }),
     complete: completeWalletWithdrawDreams,
+    // The replay nonce the router claimed before the chain call. Declared here, next to the
+    // broadcast that spends it, so the release is driven by the intent reaching `failed` on
+    // chain evidence rather than by whatever the request's send happened to throw (ADR-0050).
+    releaseGuard: async ({ db, intent }) =>
+      releaseWalletWithdrawDreamsNonce({
+        db,
+        nonce: (intent.payload as WalletWithdrawDreamsIntentPayload).nonce,
+      }),
   });
 
   registerRelayedIntentHandler('identity.register', {

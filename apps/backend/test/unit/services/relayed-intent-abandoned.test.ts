@@ -15,6 +15,7 @@ vi.mock('../../../src/services/relayed-intents', () => ({
 
 vi.mock('../../../src/services/relayed-intent-registry', () => ({
   completeRelayedIntent: vi.fn().mockResolvedValue(true),
+  releaseIntentGuard: vi.fn(),
 }));
 
 vi.mock('../../../src/services/orphaned-payments', () => ({
@@ -82,7 +83,11 @@ describe('abandoned intent settlement', () => {
     expect(markIntentFailed).not.toHaveBeenCalled();
   });
 
-  it('has nothing to refund for an intent that carried no payment', async () => {
+  // Verifies: ADR-0050
+  it('has nothing to refund for an intent that carried no payment, but still ends it', async () => {
+    // Refund is payment-specific; reaching a terminal state is not. An exhausted unpaid intent
+    // left in `recorded` would be re-examined on every worker pass forever and would never
+    // hand back any guard state it claimed.
     vi.mocked(listAbandonedIntents).mockResolvedValue([
       abandoned({ payer: null, paymentAmount: null, paymentTxHash: null }),
     ]);
@@ -90,5 +95,8 @@ describe('abandoned intent settlement', () => {
     await settleAbandonedIntents(10);
 
     expect(handlePostPaymentFailure).not.toHaveBeenCalled();
+    expect(markIntentFailed).toHaveBeenCalledWith(
+      expect.objectContaining({ intentId: 'intent-1' })
+    );
   });
 });

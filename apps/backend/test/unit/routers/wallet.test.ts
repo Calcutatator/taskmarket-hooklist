@@ -35,6 +35,7 @@ import {
   contractGetDreamsPerUsdc,
 } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
+import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 import { getServerConfig } from '../../../src/config/env';
 import { createIntentCtx, makeChain } from '../helpers';
 
@@ -358,30 +359,50 @@ describe('wallet router', () => {
       expect(result.usdEquivalent).toBe((50n * BigInt(10 ** 6)).toString());
     });
 
-    // Verifies: ADR-0045
-    it('hands the replay nonce back when the chain call never lands', async () => {
-      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
-      vi.mocked(contractWithdrawDreamsRewards).mockRejectedValueOnce(new Error('NothingToClaim'));
-      const ctx = createIntentCtx();
-      ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
+    /**
+     * The replay guard is never handed back from the request, whatever the send threw.
+     *
+     * `withdrawFor` is relayed by the server wallet rather than signed as a user transaction,
+     * so `dreams_withdraw_nonces` is the entire replay protection for the authorization. A
+     * thrown error cannot establish that nothing reached the chain -- and since the relay
+     * envelope is now pinned per intent, a rebroadcast is byte-identical to the original,
+     * which makes `already known` a routine outcome rather than an exotic one. Releasing on
+     * any of these lets a captured signature be replayed against a withdrawal that is still
+     * live. Settlement releases it, on a verdict or an exhausted budget (ADR-0050).
+     */
+    const sendFailuresThatProveNothing: [string, () => Error][] = [
+      // The transaction IS in a mempool and can still mine.
+      ['the node already has the transaction', () => new Error('already known')],
+      // The node may have taken it; we simply never got the answer.
+      ['the connection dropped mid-send', () => new Error('socket hang up ECONNRESET')],
+      // Explicitly in flight and owned by the reconciler.
+      [
+        'the receipt did not arrive within the request budget',
+        () => new ServerTransactionPendingError(`0x${'ee'.repeat(32)}`, 7),
+      ],
+    ];
 
-      await expect(
-        walletRouter.createCaller(ctx).withdrawDreams({
-          workerAddress: WALLET,
-          destination: WITHDRAWAL,
-          nonce: dreamsNonce,
-          validBefore,
-          signature: '0x' + 'aa'.repeat(65),
-        })
-      ).rejects.toThrow('NothingToClaim');
+    for (const [when, makeError] of sendFailuresThatProveNothing) {
+      // Verifies: ADR-0050
+      it(`keeps the replay nonce claimed when ${when}`, async () => {
+        vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+        vi.mocked(contractWithdrawDreamsRewards).mockRejectedValueOnce(makeError());
+        const ctx = createIntentCtx();
+        ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
 
-      // The nonce has to be claimed before the call -- it is the only replay guard, since
-      // withdrawFor is relayed by the server wallet rather than signed as a user transaction.
-      // Claiming it early means it must be handed back when nothing reached the chain, or the
-      // user is locked out of an authorization they still legitimately hold.
-      expect(ctx.db.delete).toHaveBeenCalledOnce();
-      expect(ctx.intents[0]!.status).toBe('recorded');
-    });
+        await expect(
+          walletRouter.createCaller(ctx).withdrawDreams({
+            workerAddress: WALLET,
+            destination: WITHDRAWAL,
+            nonce: dreamsNonce,
+            validBefore,
+            signature: '0x' + 'aa'.repeat(65),
+          })
+        ).rejects.toThrow();
+
+        expect(ctx.db.delete).not.toHaveBeenCalled();
+      });
+    }
 
     it('throws UNAUTHORIZED when signature is from different wallet', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
