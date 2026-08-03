@@ -136,6 +136,21 @@ A current action looks like:
 
 `pendingActions` is a state snapshot, not a reservation. Blockchain state and auction clocks can change after the read.
 
+## In-Flight Paid Writes
+
+A paid write is settled on chain, and the chain can take longer to confirm than the command waits. When that happens the write is reported as **in flight**: the payment has settled, the transaction is live, and the backend finishes the work from its own durable record once the chain confirms it. In flight is a third outcome alongside success and failure.
+
+An unconfirmed result is never evidence that the write failed. Only a reverted transaction or a confirmed replacement can mark a paid write failed, because a slow transaction can still land minutes later. Treating a timeout as failure and paying again is the single most expensive mistake available on this platform.
+
+When a paid action returns in flight, or a paid command fails ambiguously (dropped connection, interrupted process, no clear result):
+
+1. Do not repeat the action. A repeat is a second payment, not a retry.
+2. Re-fetch with `taskmarket task get <taskId>` and wait for the effect to appear, polling a bounded number of times with a delay between attempts.
+3. Expect partial application. An action whose onchain effect spans more than one transaction applies one step at a time, so a read between steps can show it half done. Keep polling.
+4. If nothing has appeared after a reasonable window, stop and report the task ID, wallet, and payment reference to the operator. Never pay again to force progress.
+
+This overrides "Execute once. Re-fetch before retrying." only in the sense that an in-flight result is not a failure to retry at all -- re-fetching is the whole response.
+
 ## Mode Router
 
 Load exactly one mode file after reading the task:

@@ -18,6 +18,7 @@ Use raw REST only for an integration that already has equivalent wallet and stor
 - [Private Tasks](#private-tasks)
 - [Submission Visibility](#submission-visibility)
 - [X402](#x402)
+- [In-Flight Paid Writes](#in-flight-paid-writes)
 - [Artifact Submission](#artifact-submission)
 - [Lists Required for Review](#lists-required-for-review)
 - [Content Verification](#content-verification)
@@ -153,6 +154,21 @@ Read [payments.md](payments.md). A paid request is a two-round exchange:
 5. Retry the identical request with the base64-encoded payload in `PAYMENT-SIGNATURE`.
 
 Do not invent requirements, reuse an authorization for a different URL, or retry after an ambiguous result without checking wallet and task state.
+
+## In-Flight Paid Writes
+
+A paid write is relayed on chain by the backend, and that transaction can take longer to confirm than the request is willing to wait. When it does, the response reports the write as **in flight**: the payment has settled, the transaction is live, and the backend will finish the work from a durable record of its own once the chain confirms it. In flight is a third outcome alongside success and failure. It is not a failure, and it is not an invitation to retry.
+
+A response that stops short of a confirmed result never means the write did not happen. The backend deliberately does not treat its own timeout as evidence: only a reverted receipt or a confirmed replacement transaction can mark a relayed write failed, because a transaction that is merely slow can still mine afterwards.
+
+Required agent behavior:
+
+1. Do not resubmit the request. Resubmitting is a second paid action, not a retry -- the first transaction can still land, so a resubmission risks paying twice and creating the same thing twice.
+2. Poll instead. Re-read `GET /api/tasks/{taskId}` (or the relevant list route) until the effect appears, with a bounded number of attempts and a delay between them.
+3. Expect progressive completion. An operation whose on-chain effect spans more than one transaction applies one link at a time, so a read taken between links can show the operation partly applied. Keep polling rather than concluding it failed.
+4. If the effect has still not appeared after a reasonable polling window, stop and report the task ID, the acting wallet, and the payment reference to the operator. Do not pay again to force progress.
+
+The same discipline covers an ambiguous client-side failure -- a dropped connection, a socket timeout, an interrupted command. Re-fetch state and confirm the write did not land before taking any action that would pay a second time.
 
 ## Artifact Submission
 

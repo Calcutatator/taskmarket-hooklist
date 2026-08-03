@@ -245,6 +245,17 @@ Two helpers used by every command:
 - `printResult(data)` — prints `{ ok: true, data }` to stdout
 - `printError(message)` — prints `{ ok: false, error }` to stderr and calls `process.exit(1)`
 
+## In-flight paid writes
+
+A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting and reports the write as **in flight** rather than as a success or a failure. The transaction is still live and will still be settled -- the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
+
+Two practical consequences for CLI code and for anything scripting the CLI:
+
+- **Never resubmit an in-flight write.** It is not a retry, it is a second paid action: the first transaction can still mine, so resubmitting risks paying twice and creating the same thing twice. Treat in flight as its own outcome, distinct from failure.
+- **Poll instead.** Re-read the task (`taskmarket task get <taskId>`) until the effect appears. An operation whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0046).
+
+The same rule applies to an ambiguous failure -- a dropped connection or a timeout on the client side. Re-fetch state and confirm the write did not land before doing anything that would pay again.
+
 ## Environment variables
 
 | Variable | Default | Description |
