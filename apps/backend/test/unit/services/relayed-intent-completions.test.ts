@@ -91,8 +91,29 @@ function makeDb(
   };
 }
 
-function intent(operation: string, payload: unknown): RelayedIntent {
+/**
+ * Flatten a drizzle `where` condition to readable text.
+ *
+ * A guard is a property of the predicate, not of the values written, so `set` assertions
+ * cannot see it -- these completions differ from their unguarded ancestors only here.
+ */
+function sqlText(node: any): string {
+  if (node == null) return '';
+  if (Array.isArray(node)) return node.map(sqlText).join(' ');
+  if (typeof node === 'string') return node;
+  if (node.queryChunks) return node.queryChunks.map(sqlText).join(' ');
+  if (typeof node.name === 'string') return node.name;
+  if ('value' in node) return JSON.stringify(node.value);
+  return '';
+}
+
+function whereText(chain: ReturnType<typeof makeChain>): string {
+  return chain.where.mock.calls.map((call: unknown[]) => sqlText(call[0])).join(' | ');
+}
+
+function intent(operation: string, payload: unknown, createdAt = new Date()): RelayedIntent {
   return {
+    createdAt,
     id: 'intent-1',
     operation,
     payer: REQUESTER,
@@ -101,10 +122,10 @@ function intent(operation: string, payload: unknown): RelayedIntent {
   } as unknown as RelayedIntent;
 }
 
-async function complete(operation: string, payload: unknown, db: unknown) {
+async function complete(operation: string, payload: unknown, db: unknown, createdAt?: Date) {
   await getRelayedIntentHandler(operation)!({
     db: db as never,
-    intent: intent(operation, payload),
+    intent: intent(operation, payload, createdAt),
     txHash: TX_HASH,
   });
 }
@@ -112,6 +133,64 @@ async function complete(operation: string, payload: unknown, db: unknown) {
 describe('relayed intent completions', () => {
   beforeEach(() => {
     vi.clearAllMocks();
+  });
+
+  // Verifies: ADR-0050
+  it('derives every task deadline from the intent record time, not the completion clock', async () => {
+    // The requester paid for a task of a particular duration starting when they asked for it.
+    // A completion running late off a reconciler pass must produce the same row as one that
+    // ran inline, so two attempts at the same intent cannot disagree about when it expires.
+    const recordedAt = new Date('2030-06-01T00:00:00.000Z');
+    const createPayload = {
+      allowedViewerAddresses: [],
+      escrowTxHash: '0xescrow',
+      evaluatorAssignment: null,
+      inlineTaskDrop: null,
+      input: { bidDeadline: 48, description: 'work', duration: 24, pitchDeadline: 3600, reward: '1000000' },
+      normalizedPayer: REQUESTER.toLowerCase(),
+      payer: REQUESTER,
+      resolvedTaskDropId: null,
+      taskDropReservationId: null,
+      taskId: TASK_ID,
+    };
+
+    vi.useFakeTimers();
+    try {
+      vi.setSystemTime(recordedAt);
+      const first = makeDb();
+      await complete('tasks.create', createPayload, first.db, recordedAt);
+
+      // An hour of reconciler backlog later, replaying the very same intent.
+      vi.setSystemTime(new Date(recordedAt.getTime() + 3600 * 1000));
+      const second = makeDb();
+      await complete('tasks.create', createPayload, second.db, recordedAt);
+
+      const deadlinesOf = (chain: ReturnType<typeof makeDb>['insertChain']) => {
+        const values = chain(tasks).values.mock.calls[0]![0] as Record<string, Date>;
+        return {
+          bidDeadline: values.bidDeadline,
+          expiryTime: values.expiryTime,
+          pitchDeadline: values.pitchDeadline,
+        };
+      };
+
+      expect(deadlinesOf(first.insertChain)).toEqual({
+        bidDeadline: new Date(recordedAt.getTime() + 48 * 3600 * 1000),
+        expiryTime: new Date(recordedAt.getTime() + 24 * 3600 * 1000),
+        pitchDeadline: new Date(recordedAt.getTime() + 3600 * 1000),
+      });
+      expect(deadlinesOf(second.insertChain)).toEqual(deadlinesOf(first.insertChain));
+
+      // The conflict path patches the same row the indexer may have inserted first, so it has
+      // to agree with the insert rather than re-deriving from a second clock reading.
+      const conflict = second.insertChain(tasks).onConflictDoUpdate.mock.calls[0]![0] as {
+        set: Record<string, Date>;
+      };
+      expect(conflict.set.bidDeadline).toEqual(deadlinesOf(first.insertChain).bidDeadline);
+      expect(conflict.set.pitchDeadline).toEqual(deadlinesOf(first.insertChain).pitchDeadline);
+    } finally {
+      vi.useRealTimers();
+    }
   });
 
   it('applies a confirmed task update, restoring the dates jsonb flattened to strings', async () => {
@@ -135,6 +214,15 @@ describe('relayed intent completions', () => {
     expect(updateChain(tasks).set).toHaveBeenCalledWith(
       expect.objectContaining({ status: 'cancelled' })
     );
+  });
+
+  // Verifies: ADR-0050
+  it('does not move an already-cancelled task cancelledAt forward on a retry', async () => {
+    const { db, updateChain } = makeDb();
+    await complete('tasks.cancel', { taskId: TASK_ID }, db);
+    const where = whereText(updateChain(tasks));
+    expect(where).toContain('cancelled_at');
+    expect(where).toContain('is null');
   });
 
   it('expires a task on a confirmed refund', async () => {
@@ -218,6 +306,38 @@ describe('relayed intent completions', () => {
     expect(updateChain(agents).set).not.toHaveBeenCalled();
   });
 
+  // Verifies: ADR-0045
+  it('claims the award and bumps the aggregate in one transaction', async () => {
+    // The award claim is a single-use token: it is what makes the counter increment safe. If
+    // the process dies between the two, the guard is spent and no retry can restore the star,
+    // so they have to commit together.
+    const seen: unknown[] = [];
+    const { db, updateChain } = makeDb({ update: new Map([[taskAwards, [{ id: 1 }]]]) });
+    db.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
+      const inner = { ...db, update: vi.fn((table: unknown) => (seen.push(table), updateChain(table))) };
+      return callback(inner);
+    });
+
+    await complete(
+      'acceptance.rate',
+      {
+        feedbackId: 'feedback-1',
+        feedbackText: null,
+        fileContent: '{}',
+        rating: 5,
+        requesterAddress: REQUESTER,
+        requesterAgentId: null,
+        taskId: TASK_ID,
+        worker: WORKER,
+        workerAgentId: null,
+      },
+      db
+    );
+
+    expect(seen).toEqual([taskAwards, agents]);
+    expect(db.update).not.toHaveBeenCalledWith(agents);
+  });
+
   it('upserts a confirmed bid rather than failing on the indexer having written it first', async () => {
     const { db, insertChain } = makeDb();
     await complete(
@@ -226,6 +346,20 @@ describe('relayed intent completions', () => {
       db
     );
     expect(insertChain(bids).onConflictDoUpdate).toHaveBeenCalledOnce();
+  });
+
+  // Verifies: ADR-0050
+  it('leaves a bid createdAt alone when the completion is retried', async () => {
+    const { db, insertChain } = makeDb();
+    await complete(
+      'bids.submit',
+      { bidId: 'bid-1', price: '2000000', taskId: TASK_ID, workerAddress: WORKER },
+      db
+    );
+    const conflict = insertChain(bids).onConflictDoUpdate.mock.calls[0]![0] as {
+      set: Record<string, unknown>;
+    };
+    expect(conflict.set).toEqual({ price: '2000000' });
   });
 
   it('claims the task for the worker whose auction accept confirmed', async () => {
@@ -372,6 +506,37 @@ describe('relayed intent completions', () => {
     );
   });
 
+  // Verifies: ADR-0050
+  it('will not drag a task that has moved past its appeal window back to appealing', async () => {
+    // 'appealing' is mid-lifecycle, so a late retry must not undo disputed/completed/cancelled
+    // -- unlike finalizeVerdict below, whose writes are terminal and deliberately unguarded.
+    const { db, updateChain } = makeDb({
+      select: [{ appealWindow: 86_400, expiryTime: new Date(0) }],
+    });
+    await complete(
+      'evaluations.evaluate',
+      {
+        awards: [],
+        confidence: 90,
+        evidenceHash: `0x${'d'.repeat(64)}`,
+        mode: 'bounty',
+        score: 80,
+        taskId: TASK_ID,
+        verdict: 'approve',
+      },
+      db
+    );
+
+    const where = whereText(updateChain(tasks));
+    expect(where).toContain('status');
+    // 'appealing' is in the allowed set on purpose: the indexer can write the status first,
+    // and the fields it cannot derive still have to land.
+    for (const status of ['open', 'pending_approval', 'review', 'appealing']) {
+      expect(where).toContain(status);
+    }
+    expect(where).not.toContain('disputed');
+  });
+
   it('disputes a task on a confirmed appeal', async () => {
     const { db, updateChain } = makeDb();
     await complete('evaluations.appeal', { taskId: TASK_ID }, db);
@@ -448,5 +613,30 @@ describe('relayed intent completions', () => {
     await complete('acceptance.acceptSubmissions', { taskId: TASK_ID, winners: [] }, db);
     expect(db.insert).not.toHaveBeenCalled();
     expect(db.update).not.toHaveBeenCalled();
+  });
+
+  // Verifies: ADR-0045
+  it('rejects an artifact-less submission payload before opening a transaction', async () => {
+    // The payload is jsonb read back by a process that never saw the request, so the empty
+    // case is representable however carefully the routers build it. It must name the problem
+    // rather than surfacing as a TypeError from inside the transaction.
+    const { db } = makeDb();
+    await expect(
+      complete(
+        'submissions.submit',
+        {
+          artifacts: [],
+          contractAddress: null,
+          deliverableHash: `0x${'e'.repeat(64)}`,
+          mode: 'bounty',
+          signature: '0xsig',
+          submissionId: 'submission-1',
+          taskId: TASK_ID,
+          workerAddress: WORKER,
+        },
+        db
+      )
+    ).rejects.toThrow('has no artifacts');
+    expect(db.transaction).not.toHaveBeenCalled();
   });
 });

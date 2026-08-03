@@ -122,6 +122,10 @@ export function registerRelayedIntentHandlers(): void {
       // call, precisely so no transaction is ever live without a record. The confirmed hash
       // arrives here instead, from the request that broadcast it or from the reconciler.
       payload: { ...payload, escrowTxHash: payload.escrowTxHash || txHash },
+      // The intent row's own creation time is the task's creation time: written before the
+      // chain call, never rewritten, and identical on every completion attempt. That makes it
+      // the anchor every deadline is derived from, rather than the clock at completion time.
+      recordedAt: intent.createdAt,
     });
   });
 

@@ -37,7 +37,10 @@ export async function completeBidsSubmit(context: {
     })
     .onConflictDoUpdate({
       target: [bids.taskId, bids.workerAddress],
-      set: { createdAt: new Date(), price: payload.price },
+      // `createdAt` is deliberately absent: a second completion attempt for the same intent is
+      // the same bid, and re-dating it would make the row differ per attempt (ADR-0050). The
+      // insert's own default still stamps a genuine first bid.
+      set: { price: payload.price },
     });
 }
 

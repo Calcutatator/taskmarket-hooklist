@@ -42,7 +42,14 @@ function restoreDateColumns(dbUpdate: Record<string, unknown>): Record<string, u
 
 export type TasksCancelIntentPayload = { taskId: string };
 
-/** A confirmed cancel closes the task. Idempotent by assignment. */
+/**
+ * A confirmed cancel closes the task.
+ *
+ * Scoped to tasks not already cancelled, for the same reason
+ * `completeTasksRejectSubmission` is: `cancelledAt` is a wall-clock stamp, so a second
+ * completion attempt would move the original cancellation forward in time (ADR-0050). The
+ * status assignment is idempotent either way, and the first attempt already applied it.
+ */
 export async function completeTasksCancel(context: {
   db: Db;
   payload: TasksCancelIntentPayload;
@@ -50,7 +57,7 @@ export async function completeTasksCancel(context: {
   await context.db
     .update(tasks)
     .set({ cancelledAt: new Date(), status: 'cancelled' })
-    .where(eq(tasks.id, context.payload.taskId));
+    .where(and(eq(tasks.id, context.payload.taskId), isNull(tasks.cancelledAt)));
 }
 
 export type TasksRefundExpiredIntentPayload = { taskId: string };

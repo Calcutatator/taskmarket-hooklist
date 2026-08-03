@@ -90,26 +90,33 @@ export async function completeAcceptanceRate(context: {
 
   // Only bump the running totals if this award had not already been rated -- a re-run of the
   // completion must not count the same star twice.
-  const claimed = await db
-    .update(taskAwards)
-    .set({ rating: payload.rating })
-    .where(
-      and(
-        eq(taskAwards.taskId, payload.taskId),
-        sql`lower(${taskAwards.workerAddress}) = lower(${payload.worker})`,
-        sql`${taskAwards.rating} is null`
+  //
+  // The claim and the increment are one transaction because the claim is what makes the
+  // increment safe: it is a single-use token, and consuming it outside the transaction that
+  // spends it means a crash in between loses the rating from the aggregate permanently. The
+  // guard is already gone, so no retry can redo it.
+  await db.transaction(async (tx) => {
+    const claimed = await tx
+      .update(taskAwards)
+      .set({ rating: payload.rating })
+      .where(
+        and(
+          eq(taskAwards.taskId, payload.taskId),
+          sql`lower(${taskAwards.workerAddress}) = lower(${payload.worker})`,
+          sql`${taskAwards.rating} is null`
+        )
       )
-    )
-    .returning({ id: taskAwards.id });
+      .returning({ id: taskAwards.id });
 
-  if (claimed.length === 0) return;
+    if (claimed.length === 0) return;
 
-  await db
-    .update(agents)
-    .set({
-      ratedTasks: sql`${agents.ratedTasks} + 1`,
-      totalStars: sql`${agents.totalStars} + ${payload.rating}`,
-      updatedAt: new Date(),
-    })
-    .where(sql`lower(${agents.address}) = lower(${payload.worker})`);
+    await tx
+      .update(agents)
+      .set({
+        ratedTasks: sql`${agents.ratedTasks} + 1`,
+        totalStars: sql`${agents.totalStars} + ${payload.rating}`,
+        updatedAt: new Date(),
+      })
+      .where(sql`lower(${agents.address}) = lower(${payload.worker})`);
+  });
 }

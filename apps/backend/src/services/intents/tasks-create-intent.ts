@@ -64,8 +64,9 @@ export type TasksCreateIntentPayload = {
 export async function completeTasksCreate(context: {
   db: Db;
   payload: TasksCreateIntentPayload;
+  recordedAt: Date;
 }): Promise<void> {
-  const { db, payload } = context;
+  const { db, payload, recordedAt } = context;
   const input = payload.input as {
     accessPassword?: string;
     allowedViewers?: string[];
@@ -91,7 +92,14 @@ export async function completeTasksCreate(context: {
 
   const config = getServerConfig();
   const { taskId } = payload;
-  const expiryTime = new Date(Date.now() + input.duration * 3600 * 1000);
+  // Every deadline is derived from the intent's own record time, never from the wall clock at
+  // completion time. The requester signed and paid for a task with a particular duration
+  // starting when they asked for it; a completion that runs an hour late off a reconciler pass
+  // must produce the same row as one that ran inline, or two attempts at the same intent
+  // disagree about when the task expires (ADR-0050 point 7 -- a payload is replayed verbatim,
+  // nothing time-derived is recomputed per attempt).
+  const createdAtMs = recordedAt.getTime();
+  const expiryTime = new Date(createdAtMs + input.duration * 3600 * 1000);
   const taskVisibility = input.taskVisibility ?? 'public';
   const submissionVisibility = input.submissionVisibility ?? 'public';
   const privateAccessPasswordHash =
@@ -113,10 +121,10 @@ export async function completeTasksCreate(context: {
     const requesterPubkeyValue =
       normalizeRequesterPublicKey(requesterAgent[0]?.publicKey, null) ?? '';
     const pitchDeadlineValue = input.pitchDeadline
-      ? new Date(Date.now() + input.pitchDeadline * 1000)
+      ? new Date(createdAtMs + input.pitchDeadline * 1000)
       : null;
     const bidDeadlineValue = input.bidDeadline
-      ? new Date(Date.now() + input.bidDeadline * 3600 * 1000)
+      ? new Date(createdAtMs + input.bidDeadline * 3600 * 1000)
       : null;
     const requesterAgentIdValue = requesterAgent[0]?.agentId ?? null;
 

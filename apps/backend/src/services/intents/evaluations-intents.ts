@@ -1,5 +1,5 @@
 // Implements: ADR-0045
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import { getServerConfig } from '../../config/env';
 import type { db as DbType } from '../../db/client';
@@ -12,6 +12,9 @@ import {
 import { recordTaskSettlement } from '../settlement-recorder';
 
 type Db = typeof DbType;
+
+/** The statuses `evaluate()` is callable from (evaluations.router.ts), plus its own result. */
+const EVALUATABLE_STATUSES = ['open', 'pending_approval', 'review', 'appealing'] as const;
 
 export type EvaluationsEvaluateIntentPayload = {
   awards: { amount: string; rank: number; worker: string }[];
@@ -67,7 +70,17 @@ export async function completeEvaluationsEvaluate(context: {
       verdictScore: payload.score,
       verdictType: payload.verdict.toUpperCase(),
     })
-    .where(eq(tasks.id, payload.taskId));
+    // Guarded to the states evaluate() is callable from, plus 'appealing' itself so the
+    // indexer's processTaskEvaluatedEvent winning the race does not cost us the fields it
+    // cannot derive (appealDeadline, confidence, evidence hash, evaluator stake).
+    //
+    // This does NOT contradict completeEvaluationsFinalizeVerdict's deliberately unguarded
+    // updates below. That one writes a terminal state, so an indexer-first row can only be
+    // moved forward by it. This one writes 'appealing', which is mid-lifecycle: a late retry
+    // landing after the task reached disputed, completed or cancelled would drag it backwards
+    // -- the exact regression ADR-0007 records, and which the indexer's own handler guards
+    // against for the same event.
+    .where(and(eq(tasks.id, payload.taskId), inArray(tasks.status, EVALUATABLE_STATUSES)));
 }
 
 export type EvaluationsAppealIntentPayload = { taskId: string };

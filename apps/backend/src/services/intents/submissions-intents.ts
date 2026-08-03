@@ -72,6 +72,18 @@ export async function completeSubmissionsSubmit(context: {
 }): Promise<void> {
   const { db, payload } = context;
 
+  // Every producer of this payload builds at least one artifact -- the deliverable hash is a
+  // manifest over them -- but the payload is jsonb read back by a process that never saw the
+  // request, so an empty array is representable. Fail here with a statement of what is wrong
+  // rather than a TypeError from `artifacts[0]!` inside the transaction. The type cannot carry
+  // this: the routers build the array with `push`, so a non-empty tuple type would not fit.
+  const [primaryArtifact] = payload.artifacts;
+  if (!primaryArtifact) {
+    throw new Error(
+      `submissions.submit intent for submission ${payload.submissionId} has no artifacts`
+    );
+  }
+
   await db.transaction(async (tx) => {
     // RFC-0006 Tier 2 (ADR-0037). Unchanged in substance and deliberately still here rather
     // than moved before the chain call: the ceiling has to be evaluated in the same
@@ -85,7 +97,7 @@ export async function completeSubmissionsSubmit(context: {
       .insert(submissions)
       .values({
         deliverableHash: payload.deliverableHash,
-        fileUrl: payload.artifacts[0]!.storageUri,
+        fileUrl: primaryArtifact.storageUri,
         id: payload.submissionId,
         signature: payload.signature,
         submitTxHash: context.txHash,

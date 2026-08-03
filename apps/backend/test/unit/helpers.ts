@@ -98,7 +98,10 @@ export function createIntentCtx(
       onConflictDoNothing: () => chain,
       returning: () => chain,
       values: (values: Record<string, unknown>) => {
-        row = { ...values };
+        // `created_at` is a notNull column with a database default, so a real row read back
+        // always has one -- and completion handlers derive from it (tasks.create anchors every
+        // deadline there). The double has to supply it or it is not the row they will see.
+        row = { createdAt: new Date(), ...values };
         intents.push(row);
         return chain;
       },

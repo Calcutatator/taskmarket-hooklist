@@ -60,6 +60,8 @@ const assignment = {
 
 function intent(overrides: Partial<RelayedIntent> = {}): RelayedIntent {
   return {
+    // notNull with a database default, and tasks.create anchors its deadlines to it.
+    createdAt: new Date('2030-01-01T00:00:00.000Z'),
     id: 'intent-1',
     operation: 'tasks.create',
     payer: PAYER,
