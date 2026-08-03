@@ -11,6 +11,11 @@ import { migrationClient, db } from './db/client';
 import { runConfiguredTaskAwardsBackfill } from './services/configured-task-awards-backfill';
 import { prepareBackendState } from './services/startup-preparation';
 import { startServerWalletReconciler } from './lib/wallet';
+import { registerRelayedIntentHandlers } from './services/intents/register';
+import {
+  createRelayedIntentWorker,
+  startRelayedIntentWorker,
+} from './services/relayed-intent-worker';
 import { setRuntimeRpcTelemetrySink } from './lib/rpc-gateway';
 import { startRpcTelemetrySummary } from './lib/rpc-telemetry-aggregator';
 
@@ -55,6 +60,10 @@ async function startServer(): Promise<void> {
 
     startIndexerPolling();
     startServerWalletReconciler();
+    // Follow-on intents (ADR-0046) are enqueued from inside a completion handler, long after
+    // the request that started the chain has gone, so nothing else would ever broadcast them.
+    registerRelayedIntentHandlers();
+    startRelayedIntentWorker(createRelayedIntentWorker());
     startSmtpServer(db);
   });
 }

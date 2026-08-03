@@ -59,6 +59,8 @@ vi.mock('../../../src/config/env', () => ({
 }));
 
 import { tasksRouter } from '../../../src/routers/tasks.router';
+import { relayedIntents, taskDropTaskReservations, tasks } from '../../../src/db/schema';
+import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 import {
   contractAssignEvaluator,
   contractCreateTask,
@@ -80,6 +82,7 @@ const flushAsync = () => new Promise((resolve) => setImmediate(resolve));
 
 const PAYER = '0x1111111111111111111111111111111111111111';
 const DROP_ID = 'drop-1';
+const EVALUATOR = '0x2222222222222222222222222222222222222222';
 
 const baseTaskInput = {
   description: 'Test task',
@@ -90,6 +93,81 @@ const baseTaskInput = {
   stakeRequired: false,
   stakeBps: 0,
 };
+
+/**
+ * Verifies: ADR-0045, ADR-0046
+ *
+ * create() now records a durable intent before the chain call and runs its post-receipt work
+ * through the intent registry, which claims the row with a conditional UPDATE and reads the
+ * payload back. Neither survives the default empty chains, and insert order is no longer a
+ * reliable way to reach a particular table, so this context keeps a tiny in-memory intent
+ * store and hands out one memoised chain per table.
+ */
+function createTaskCtx(payer?: string) {
+  const ctx = createMockCtx(payer) as ReturnType<typeof createMockCtx> & {
+    insertChain: (table: unknown) => ReturnType<typeof makeChain>;
+    intents: Record<string, unknown>[];
+  };
+  const intents: Record<string, unknown>[] = [];
+  const insertChains = new Map<unknown, ReturnType<typeof makeChain>>();
+  const updateChains = new Map<unknown, ReturnType<typeof makeChain>>();
+
+  const intentInsert = () => {
+    let row: Record<string, unknown> = {};
+    const chain: any = {
+      onConflictDoNothing: () => chain,
+      returning: () => chain,
+      values: (values: Record<string, unknown>) => {
+        row = { ...values };
+        intents.push(row);
+        return chain;
+      },
+      then: (onfulfilled: any, onrejected?: any) =>
+        Promise.resolve([row]).then(onfulfilled, onrejected),
+    };
+    return chain;
+  };
+
+  // The claim, the broadcast link and the completion all target the same single intent in
+  // these tests, so returning the most recent row is enough to exercise the real path.
+  const intentUpdate = () => {
+    const chain: any = {
+      returning: () => chain,
+      set: (values: Record<string, unknown>) => {
+        Object.assign(intents[intents.length - 1] ?? {}, values);
+        return chain;
+      },
+      where: () => chain,
+      then: (onfulfilled: any, onrejected?: any) =>
+        Promise.resolve(intents.slice(-1)).then(onfulfilled, onrejected),
+    };
+    return chain;
+  };
+
+  const chainFor = (
+    store: Map<unknown, ReturnType<typeof makeChain>>,
+    table: unknown,
+    resolveValue?: unknown
+  ) => {
+    let chain = store.get(table);
+    if (!chain) {
+      chain = makeChain(resolveValue);
+      store.set(table, chain);
+    }
+    return chain;
+  };
+
+  ctx.db.insert = vi.fn((table: unknown) =>
+    table === relayedIntents ? intentInsert() : chainFor(insertChains, table)
+  );
+  ctx.db.update = vi.fn((table: unknown) =>
+    table === relayedIntents ? intentUpdate() : chainFor(updateChains, table, [])
+  );
+
+  ctx.insertChain = (table: unknown) => chainFor(insertChains, table);
+  ctx.intents = intents;
+  return ctx;
+}
 
 const mockTaskRow = {
   id: '0xabc',
@@ -123,19 +201,20 @@ describe('tasks router', () => {
 
   describe('create', () => {
     it('throws when payer is missing', async () => {
-      const ctx = createMockCtx(); // no payer
+      const ctx = createTaskCtx(); // no payer
       const caller = tasksRouter.createCaller(ctx);
       await expect(caller.create(baseTaskInput)).rejects.toThrow('Payment required: missing payer');
     });
 
     it('creates task and returns taskId on valid input', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       const result = await caller.create(baseTaskInput);
 
       expect(contractCreateTask).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      // The durable intent (ADR-0045) plus the task row itself.
+      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
       expect(result.success).toBe(true);
       expect(typeof result.taskId).toBe('string');
       expect(result.taskId.startsWith('0x')).toBe(true);
@@ -143,7 +222,7 @@ describe('tasks router', () => {
     });
 
     it('passes mode to contractCreateTask', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       await caller.create({ ...baseTaskInput, mode: 'claim' });
@@ -153,7 +232,7 @@ describe('tasks router', () => {
     });
 
     it('passes stakeRequired/stakeBps to contractCreateTask', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       await caller.create({ ...baseTaskInput, stakeRequired: true, stakeBps: 1500 });
@@ -164,7 +243,7 @@ describe('tasks router', () => {
     });
 
     it('defaults stakeRequired/stakeBps to false/0 for contractCreateTask when unset', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       const {
@@ -180,7 +259,7 @@ describe('tasks router', () => {
     });
 
     it('fires targeted new-task notifications and skips Task Drops email without a drop', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       const result = await caller.create(baseTaskInput);
@@ -197,7 +276,7 @@ describe('tasks router', () => {
     });
 
     it('attaches an owned existing drop and notifies only that drop', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const dropChain = makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]);
       ctx.db.select.mockReturnValueOnce(dropChain).mockReturnValueOnce(makeChain([]));
       const caller = tasksRouter.createCaller(ctx);
@@ -222,12 +301,10 @@ describe('tasks router', () => {
     });
 
     it('reserves the drop before chain settlement and clears it with task persistence', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const dropChain = makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]);
-      const reservationInsert = makeChain();
-      const taskInsert = makeChain();
+      const reservationInsert = ctx.insertChain(taskDropTaskReservations);
       ctx.db.select.mockReturnValueOnce(dropChain).mockReturnValueOnce(makeChain([]));
-      ctx.db.insert.mockReturnValueOnce(reservationInsert).mockReturnValueOnce(taskInsert);
       const caller = tasksRouter.createCaller(ctx);
 
       await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
@@ -240,15 +317,19 @@ describe('tasks router', () => {
       });
       expect(ctx.db.delete).toHaveBeenCalledOnce();
 
+      // insert order: drop reservation, relayed intent, then the task row itself.
       const reservationOrder = ctx.db.insert.mock.invocationCallOrder[0];
+      const intentOrder = ctx.db.insert.mock.invocationCallOrder[1];
       const chainOrder = vi.mocked(contractCreateTask).mock.invocationCallOrder[0];
-      const taskInsertOrder = ctx.db.insert.mock.invocationCallOrder[1];
-      expect(reservationOrder).toBeLessThan(chainOrder);
+      const taskInsertOrder = ctx.db.insert.mock.invocationCallOrder[2];
+      expect(reservationOrder).toBeLessThan(intentOrder);
+      // The intent is durable before anything reaches the chain (ADR-0045).
+      expect(intentOrder).toBeLessThan(chainOrder);
       expect(chainOrder).toBeLessThan(taskInsertOrder);
     });
 
     it('reuses the reservation created by the X402 preflight', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.res.locals.taskDropReservation = {
         id: 'reservation-preflight',
         taskDropId: DROP_ID,
@@ -259,13 +340,13 @@ describe('tasks router', () => {
       await caller.create({ ...baseTaskInput, taskDropId: DROP_ID });
 
       expect(ctx.db.transaction).toHaveBeenCalledOnce();
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
+      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
       expect(ctx.db.delete).toHaveBeenCalledOnce();
       expect(contractCreateTask).toHaveBeenCalledOnce();
     });
 
     it('rejects attaching another requester owned drop', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([{ id: DROP_ID, ownerAddress: '0x2222222222222222222222222222222222222222' }])
       );
@@ -281,7 +362,7 @@ describe('tasks router', () => {
     });
 
     it('rejects adding a task to an announced official drop', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           {
@@ -302,7 +383,7 @@ describe('tasks router', () => {
     });
 
     it('creates an inline drop owned by the payer and attaches the task', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       const caller = tasksRouter.createCaller(ctx);
 
@@ -313,7 +394,8 @@ describe('tasks router', () => {
 
       expect(result.success).toBe(true);
       expect(result.taskDropId).toMatch(/^drop_/);
-      expect(ctx.db.insert).toHaveBeenCalledTimes(2);
+      // Relayed intent, inline drop, task row.
+      expect(ctx.db.insert).toHaveBeenCalledTimes(3);
       expect(notifyTaskDropSubscribers).toHaveBeenCalledOnce();
       expect(vi.mocked(notifyTaskDropSubscribers).mock.calls[0][0].taskDropId).toBe(
         result.taskDropId
@@ -321,7 +403,7 @@ describe('tasks router', () => {
     });
 
     it('passes task tags through to the notifier for skill targeting', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       await caller.create({ ...baseTaskInput, tags: ['design', 'logo'] });
@@ -332,9 +414,8 @@ describe('tasks router', () => {
     });
 
     it('persists visibility from input, defaulting to public', async () => {
-      const ctx = createMockCtx(PAYER);
-      const taskInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(taskInsert);
+      const ctx = createTaskCtx(PAYER);
+      const taskInsert = ctx.insertChain(tasks);
       const caller = tasksRouter.createCaller(ctx);
 
       await caller.create(baseTaskInput);
@@ -345,9 +426,8 @@ describe('tasks router', () => {
     });
 
     it('persists an unlisted visibility choice and skips outbound notifications', async () => {
-      const ctx = createMockCtx(PAYER);
-      const taskInsert = makeChain();
-      ctx.db.insert.mockReturnValueOnce(taskInsert);
+      const ctx = createTaskCtx(PAYER);
+      const taskInsert = ctx.insertChain(tasks);
       const caller = tasksRouter.createCaller(ctx);
 
       const result = await caller.create({ ...baseTaskInput, taskVisibility: 'unlisted' });
@@ -364,7 +444,7 @@ describe('tasks router', () => {
 
     it('still returns success when the notification send fails (fire-and-forget)', async () => {
       vi.mocked(notifyNewTask).mockRejectedValueOnce(new Error('mailer down'));
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
       const result = await caller.create(baseTaskInput);
@@ -377,21 +457,31 @@ describe('tasks router', () => {
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
 
-    it('persists the task before surfacing an evaluator assignment failure', async () => {
-      vi.mocked(contractAssignEvaluator).mockRejectedValueOnce(new Error('assignment reverted'));
-      const ctx = createMockCtx(PAYER);
+    // Verifies: ADR-0046
+    it('enqueues evaluator assignment as a follow-on intent instead of relaying inline', async () => {
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
-      await expect(
-        caller.create({
-          ...baseTaskInput,
-          evaluator: '0x2222222222222222222222222222222222222222',
-        })
-      ).rejects.toThrow('assignment reverted');
+      const result = await caller.create({
+        ...baseTaskInput,
+        evaluator: EVALUATOR,
+      });
 
-      expect(ctx.db.insert).toHaveBeenCalledOnce();
-      expect(ctx.db.insert.mock.invocationCallOrder[0]).toBeLessThan(
-        vi.mocked(contractAssignEvaluator).mock.invocationCallOrder[0]
+      expect(result.success).toBe(true);
+      // The second contract call gets its own durable record and is broadcast by the intent
+      // worker, so nothing reaches the chain from inside the completion handler.
+      expect(contractAssignEvaluator).not.toHaveBeenCalled();
+      const followOn = ctx.intents.find((row) => row.operation === 'tasks.assignEvaluator');
+      expect(followOn).toBeDefined();
+      expect(followOn!.parentIntentId).toBe(ctx.intents[0]!.id);
+      expect(followOn!.chainDepth).toBe(1);
+      // A follow-on never carries the payment -- that belongs to the root alone.
+      expect(followOn!.paymentTxHash).toBeUndefined();
+      expect(followOn!.payload).toEqual(
+        expect.objectContaining({
+          assignment: expect.objectContaining({ evaluator: EVALUATOR }),
+          taskId: result.taskId,
+        })
       );
     });
 
@@ -402,7 +492,7 @@ describe('tasks router', () => {
         vi.mocked(contractCreateTask).mockRejectedValueOnce(
           new Error('Contract call rejected: EnforcedPause')
         );
-        const ctx = createMockCtx(PAYER);
+        const ctx = createTaskCtx(PAYER);
         ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
         // attemptRefund's compare-and-swap claim step needs its update() call to
         // return a non-empty row array (the default mock db.update resolves .returning()
@@ -418,9 +508,10 @@ describe('tasks router', () => {
           PAYER,
           BigInt(baseTaskInput.reward)
         );
-        // No task row (or anything else) is ever persisted for a create that never
-        // succeeded on-chain -- the only insert is orphaned-payments' own ledger row.
-        expect(ctx.db.insert).toHaveBeenCalledOnce();
+        // No task row is ever persisted for a create that never succeeded on-chain -- the
+        // only inserts are the relayed intent recorded before the call and orphaned-payments'
+        // own ledger row.
+        expect(ctx.db.insert).toHaveBeenCalledTimes(2);
       });
 
       it('tells the caller to contact support when the automatic refund itself cannot be sent', async () => {
@@ -428,7 +519,7 @@ describe('tasks router', () => {
         vi.mocked(contractRefundOrphanedPayment).mockRejectedValueOnce(
           new Error('insufficient funds for gas')
         );
-        const ctx = createMockCtx(PAYER);
+        const ctx = createTaskCtx(PAYER);
         ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
         ctx.db.update
           .mockReturnValueOnce(makeChain([{ id: 'orphan_x' }]))
@@ -440,14 +531,56 @@ describe('tasks router', () => {
 
       it('does not attempt a refund when createTask fails but no payment ever settled', async () => {
         vi.mocked(contractCreateTask).mockRejectedValueOnce(new Error('unknown revert'));
-        const ctx = createMockCtx(PAYER);
+        const ctx = createTaskCtx(PAYER);
         // No ctx.res.locals.paymentTxHash set.
         const caller = tasksRouter.createCaller(ctx);
 
         await expect(caller.create(baseTaskInput)).rejects.toThrow('unknown revert');
 
         expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
-        expect(ctx.db.insert).not.toHaveBeenCalled();
+        // Only the relayed intent, recorded before the chain call; no task row, no ledger row.
+        expect(ctx.db.insert).toHaveBeenCalledOnce();
+      });
+    });
+
+    // Verifies: ADR-0045
+    describe('pending on-chain outcome', () => {
+      it('never refunds and never persists a task when the escrow is still in flight', async () => {
+        vi.mocked(contractCreateTask).mockRejectedValueOnce(
+          new ServerTransactionPendingError('0xpendinghash', 7)
+        );
+        const ctx = createTaskCtx(PAYER);
+        ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+        const caller = tasksRouter.createCaller(ctx);
+
+        await expect(caller.create(baseTaskInput)).rejects.toThrow(/remains in flight/);
+
+        // "We stopped waiting" is not "it failed": the transaction is live and the
+        // reconciler owns the outcome, so refunding here could pay for work that lands.
+        expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+        expect(ctx.db.insert).toHaveBeenCalledOnce();
+        expect(notifyNewTask).not.toHaveBeenCalled();
+        // The intent is linked to the broadcast so the reconciler can complete it later.
+        expect(ctx.intents[0]!.status).toBe('broadcast');
+        expect(ctx.intents[0]!.txHash).toBe('0xpendinghash');
+      });
+
+      it('keeps the task drop reservation held while the escrow is still in flight', async () => {
+        vi.mocked(contractCreateTask).mockRejectedValueOnce(
+          new ServerTransactionPendingError('0xpendinghash', 8)
+        );
+        const ctx = createTaskCtx(PAYER);
+        ctx.db.select
+          .mockReturnValueOnce(makeChain([{ announcedAt: null, id: DROP_ID, ownerAddress: PAYER }]))
+          .mockReturnValueOnce(makeChain([]));
+        const caller = tasksRouter.createCaller(ctx);
+
+        await expect(caller.create({ ...baseTaskInput, taskDropId: DROP_ID })).rejects.toThrow(
+          /remains in flight/
+        );
+
+        // Releasing it would let another task take the slot a still-live escrow may fill.
+        expect(ctx.db.delete).not.toHaveBeenCalled();
       });
     });
 
@@ -456,9 +589,8 @@ describe('tasks router', () => {
       // the on-chain TaskCreated event (onConflictDoNothing on its side), with only
       // on-chain-derivable fields populated, and can win the race against this insert.
       it('upserts on conflict with the indexer instead of failing on a duplicate id', async () => {
-        const ctx = createMockCtx(PAYER);
-        const taskInsert = makeChain();
-        ctx.db.insert.mockReturnValueOnce(taskInsert);
+        const ctx = createTaskCtx(PAYER);
+        const taskInsert = ctx.insertChain(tasks);
         const caller = tasksRouter.createCaller(ctx);
 
         const result = await caller.create({
@@ -1338,7 +1470,7 @@ describe('tasks router', () => {
 
   describe('create auction validation', () => {
     it('throws when auction mode is missing maxPrice', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       await expect(
         caller.create({ ...baseTaskInput, mode: 'auction', auctionType: 'english' })
@@ -1346,7 +1478,7 @@ describe('tasks router', () => {
     });
 
     it('throws when auction mode is missing auctionType', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       await expect(
         caller.create({ ...baseTaskInput, mode: 'auction', maxPrice: '1000000' })
@@ -1354,7 +1486,7 @@ describe('tasks router', () => {
     });
 
     it('throws when auction maxPrice differs from escrow reward', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       await expect(
         caller.create({
@@ -1367,7 +1499,7 @@ describe('tasks router', () => {
     });
 
     it('throws when dutch auction is missing auctionFloorPrice', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       await expect(
         caller.create({
@@ -1380,7 +1512,7 @@ describe('tasks router', () => {
     });
 
     it('throws when reverse_dutch auction is missing auctionStartPrice', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       await expect(
         caller.create({
@@ -1393,7 +1525,7 @@ describe('tasks router', () => {
     });
 
     it('creates dutch auction with all required fields', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.create({
         ...baseTaskInput,
@@ -1406,7 +1538,7 @@ describe('tasks router', () => {
     });
 
     it('creates reverse_dutch auction with all required fields', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.create({
         ...baseTaskInput,
@@ -1419,7 +1551,7 @@ describe('tasks router', () => {
     });
 
     it('creates english auction with only maxPrice and auctionType', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.create({
         ...baseTaskInput,
@@ -1431,7 +1563,7 @@ describe('tasks router', () => {
     });
 
     it('creates reverse_english auction with only maxPrice and auctionType', async () => {
-      const ctx = createMockCtx(PAYER);
+      const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
       const result = await caller.create({
         ...baseTaskInput,
@@ -1607,7 +1739,12 @@ describe('tasks router', () => {
       const query = await captureListWhere({ tags: 'creative,dev' as unknown as string[] });
 
       expect(query.sql).toContain('&&');
-      expect(query.params).toEqual(['unlisted', 'private', REV007_CUTOFF_ISO, '{"creative","dev"}']);
+      expect(query.params).toEqual([
+        'unlisted',
+        'private',
+        REV007_CUTOFF_ISO,
+        '{"creative","dev"}',
+      ]);
     });
 
     it('always excludes unlisted tasks from discovery listings (ADR-0014)', async () => {

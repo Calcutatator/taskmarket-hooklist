@@ -3,7 +3,7 @@ import { randomUUID } from 'crypto';
 import { and, eq, inArray, lt, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
-import { relayedIntents, type RelayedIntent } from '../db/schema';
+import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
 
 type Db = typeof DbType;
 
@@ -175,6 +175,33 @@ export async function markIntentBroadcast(input: {
       updatedAt: new Date(),
     })
     .where(eq(relayedIntents.id, input.intentId));
+}
+
+/**
+ * Mark an intent broadcast, resolving the outbox row from the transaction hash.
+ *
+ * The dispatcher hands callers a hash, not the id of the `server_wallet_transactions` row it
+ * allocated -- but the reconciler settles by that id, so an intent left without it can never
+ * be settled by anything except the request that started it. Looking the row up by hash is
+ * what closes that gap, and it is why this is the form request paths should call.
+ */
+export async function linkIntentToBroadcast(input: {
+  db: Db;
+  intentId: string;
+  txHash: string;
+}): Promise<void> {
+  const [row] = await input.db
+    .select({ id: serverWalletTransactions.id })
+    .from(serverWalletTransactions)
+    .where(eq(serverWalletTransactions.txHash, input.txHash))
+    .limit(1);
+
+  await markIntentBroadcast({
+    db: input.db,
+    intentId: input.intentId,
+    serverWalletTransactionId: row?.id,
+    txHash: input.txHash,
+  });
 }
 
 /**
