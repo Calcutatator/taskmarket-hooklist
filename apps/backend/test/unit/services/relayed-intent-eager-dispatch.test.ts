@@ -7,7 +7,7 @@ const restoreServerEnvironment = stubServerEnvironment();
 const { ServerTransactionPendingError } = await import(
   '../../../src/lib/server-transaction-dispatcher'
 );
-const { dispatchRelayedIntent, registerRelayedIntentHandler } = await import(
+const { completeRelayedIntent, dispatchRelayedIntent, registerRelayedIntentHandler } = await import(
   '../../../src/services/relayed-intent-registry'
 );
 const { serverWalletTransactions } = await import('../../../src/db/schema');
@@ -136,8 +136,47 @@ describe('eager intent dispatch', () => {
     // that waits for a poll interval loses to any worker agent claiming the task.
     expect(outcome).toBe('broadcast');
     expect(broadcast).toHaveBeenCalledTimes(1);
-    expect(intent.status).toBe('broadcast');
     expect(intent.txHash).toBe(ASSIGN_TX_HASH);
+  });
+
+  it('completes the intent inline when the broadcast returns confirmed', async () => {
+    const complete = vi.fn().mockResolvedValue(undefined);
+    registerRelayedIntentHandler('tasks.assignEvaluator', {
+      broadcast: vi.fn().mockResolvedValue(ASSIGN_TX_HASH),
+      complete,
+    });
+    const intent = row();
+    const { db } = makeDb([intent]);
+
+    await dispatchRelayedIntent({ db: db as never, intent: intent as never });
+
+    // A broadcaster that returned normally already awaited its receipt, so its outbox row is
+    // `confirmed` -- a status the reconciler's broadcast pass never examines. Without the inline
+    // completion the intent is stranded forever with the transaction live on chain.
+    expect(complete).toHaveBeenCalledTimes(1);
+    expect(intent.status).toBe('completed');
+  });
+
+  it('completes the intent exactly once when a reconciler pass sees the same receipt', async () => {
+    const complete = vi.fn().mockResolvedValue(undefined);
+    registerRelayedIntentHandler('tasks.assignEvaluator', {
+      broadcast: vi.fn().mockResolvedValue(ASSIGN_TX_HASH),
+      complete,
+    });
+    const intent = row();
+    const { db } = makeDb([intent]);
+
+    await dispatchRelayedIntent({ db: db as never, intent: intent as never });
+    // The sweep observes the same confirmed row. The conditional claim is what stops the
+    // handler running a second time.
+    const settled = await completeRelayedIntent({
+      db: db as never,
+      intent: intent as never,
+      txHash: ASSIGN_TX_HASH,
+    });
+
+    expect(settled).toBe(true);
+    expect(complete).toHaveBeenCalledTimes(1);
   });
 
   it('marks an intent failed on a deterministic revert instead of retrying forever', async () => {
@@ -181,9 +220,10 @@ describe('eager intent dispatch', () => {
   });
 
   it('records a pending broadcast as in flight rather than sending it a second time', async () => {
+    const complete = vi.fn().mockResolvedValue(undefined);
     registerRelayedIntentHandler('tasks.assignEvaluator', {
       broadcast: vi.fn().mockRejectedValue(new ServerTransactionPendingError(ASSIGN_TX_HASH, 7)),
-      complete: async () => undefined,
+      complete,
     });
     const intent = row();
     const { db } = makeDb([intent]);
@@ -195,5 +235,8 @@ describe('eager intent dispatch', () => {
     expect(outcome).toBe('broadcast');
     expect(intent.status).toBe('broadcast');
     expect(intent.txHash).toBe(ASSIGN_TX_HASH);
+    // No receipt exists yet, so there is nothing to complete: the outbox row really is in
+    // `broadcast` and the reconciler owns it from here.
+    expect(complete).not.toHaveBeenCalled();
   });
 });

@@ -18,6 +18,16 @@ export type RelayedIntentSettlement = {
    * mined in its place. This is the only path that may refund.
    */
   onFailed: (transactionId: string, reason: string) => Promise<void>;
+  /**
+   * Complete any intent whose transaction is already `confirmed` while the intent itself is
+   * not finished.
+   *
+   * The passes above only ever see rows still in `broadcast`, so a transaction confirmed
+   * inside its own dispatch -- the common case, since the dispatcher awaits the receipt --
+   * never reaches them. Without this sweep a caller that forgets to run the completion itself
+   * strands its intent permanently and silently; with it, the worst case is completed late.
+   */
+  sweepConfirmed?: (limit: number) => Promise<void>;
 };
 
 export type ServerTransactionReconcilerOptions = {
@@ -149,6 +159,19 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
 
       if (row.broadcastAt && row.broadcastAt < stuckBefore) {
         await replaceStuckNonce(row.id, row.nonce);
+      }
+    }
+
+    // Safety net for intents whose transaction confirmed without anyone completing them. Last,
+    // and never allowed to throw, for the same reason as settleIntent: nonce hygiene above must
+    // not be held hostage to the intent layer.
+    if (intents?.sweepConfirmed) {
+      try {
+        await intents.sweepConfirmed(MAX_ROWS_PER_PASS);
+      } catch (error) {
+        logger.error('Confirmed-intent sweep failed during reconciliation', {
+          error: error instanceof Error ? error.message : String(error),
+        });
       }
     }
   };

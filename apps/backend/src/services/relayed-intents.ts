@@ -256,6 +256,38 @@ export async function findIntentByTransactionId(input: {
 }
 
 /**
+ * Intents whose transaction is confirmed on chain but which have not finished.
+ *
+ * The reconciler's main pass only ever looks at outbox rows still in `broadcast`, so any row
+ * that reached `confirmed` without its intent being completed is invisible to it -- which is
+ * exactly what happens when a dispatch awaits its own receipt and the confirmation is recorded
+ * before anyone runs the completion. That is a real defect (see dispatchRelayedIntent), and it
+ * was undetectable because nothing ever asked this question. Asking it turns "stranded
+ * forever" into "completed on the next pass" for any future path that forgets.
+ */
+export async function listConfirmedUnsettledIntents(input: {
+  db: Db;
+  limit: number;
+}): Promise<RelayedIntent[]> {
+  const rows = await input.db
+    .select({ intent: relayedIntents })
+    .from(relayedIntents)
+    .innerJoin(
+      serverWalletTransactions,
+      eq(serverWalletTransactions.id, relayedIntents.serverWalletTransactionId)
+    )
+    .where(
+      and(
+        eq(serverWalletTransactions.status, 'confirmed'),
+        inArray(relayedIntents.status, ['recorded', 'broadcast'])
+      )
+    )
+    .limit(input.limit);
+
+  return rows.map((row) => row.intent);
+}
+
+/**
  * Intents stuck in 'recorded' past the cutoff: the process died between persisting the intent
  * and broadcasting, so nothing is live on chain and any payment is genuinely refundable.
  */

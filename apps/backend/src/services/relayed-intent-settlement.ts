@@ -6,7 +6,11 @@ import type { RelayedIntentSettlement } from '../lib/server-transaction-reconcil
 import { logger } from '../lib/logger';
 import { handlePostPaymentFailure } from './orphaned-payments';
 import { completeRelayedIntent } from './relayed-intent-registry';
-import { findIntentByTransactionId, markIntentFailed } from './relayed-intents';
+import {
+  findIntentByTransactionId,
+  listConfirmedUnsettledIntents,
+  markIntentFailed,
+} from './relayed-intents';
 
 /**
  * Joins the reconciler's on-chain verdict to the intent layer.
@@ -27,6 +31,18 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
       if (!intent) return;
 
       await completeRelayedIntent({ db, intent, txHash: hash });
+    },
+
+    sweepConfirmed: async (limit: number) => {
+      // Only the intent's own recorded hash is used: the sweep is about work whose receipt is
+      // already known good, so there is nothing to re-read from the chain, and a row with no
+      // hash was never linked to a broadcast and has nothing to complete against.
+      for (const intent of await listConfirmedUnsettledIntents({ db, limit })) {
+        if (!intent.txHash) continue;
+        // Late, not lost. Errors are already recorded on the intent by completeRelayedIntent,
+        // and the next pass sees it again, so one bad intent must not end the sweep.
+        await completeRelayedIntent({ db, intent, txHash: intent.txHash });
+      }
     },
 
     onFailed: async (transactionId: string, reason: string) => {

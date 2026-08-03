@@ -207,6 +207,40 @@ describe('server transaction reconciler', () => {
 
       await expect(reconcile()).resolves.toBeUndefined();
     });
+
+    it('sweeps intents left unfinished behind an already-confirmed transaction', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      const sweepConfirmed = vi.fn().mockResolvedValue(undefined);
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn(),
+        intents: { ...settlementSpies(), sweepConfirmed },
+        sendReplacement: vi.fn(),
+        store,
+      });
+      await reconcile();
+
+      // Nothing is in `broadcast` here at all -- that is the point. A transaction confirmed
+      // inside its own dispatch is invisible to every other pass, so the sweep must run
+      // regardless of what the broadcast queue looks like.
+      expect(sweepConfirmed).toHaveBeenCalledTimes(1);
+    });
+
+    it('keeps the pass alive when the confirmed sweep throws', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn(),
+        intents: {
+          ...settlementSpies(),
+          sweepConfirmed: vi.fn().mockRejectedValue(new Error('sweep exploded')),
+        },
+        sendReplacement: vi.fn(),
+        store,
+      });
+
+      await expect(reconcile()).resolves.toBeUndefined();
+    });
   });
 
   it('fills a recycled nonce that is blocking an in-flight transaction', async () => {

@@ -180,6 +180,18 @@ export async function dispatchRelayedIntent(input: {
     // has nothing to settle the intent against, so the intent would sit in `broadcast` forever
     // even after its receipt landed.
     await linkIntentToBroadcast({ db: input.db, intentId: claimed.id, txHash });
+    // A broadcaster that returns normally has already awaited its receipt -- that is what the
+    // shared dispatcher guarantees -- so the outbox row is `confirmed` before we get here, and
+    // the reconciler's main pass only ever examines rows still in `broadcast`. Nothing else
+    // will observe this receipt, so the completion has to run here, exactly as the tasks.create
+    // request path runs it after its own dispatch returns. Omitting it strands the intent at
+    // `completion_attempts: 0` with the transaction sitting confirmed on chain.
+    //
+    // Safe to run inline even though a completion handler may itself record and dispatch
+    // further intents: those are distinct rows, so the recursion is bounded by the operation
+    // graph rather than by this call, and the conditional claim inside completeRelayedIntent
+    // still admits only one caller per intent if a reconciler pass observes the same receipt.
+    await completeRelayedIntent({ db: input.db, intent: claimed, txHash });
     return 'broadcast';
   } catch (error) {
     // The transaction is live and owned by the reconciler (ADR-0045). Recording the hash is

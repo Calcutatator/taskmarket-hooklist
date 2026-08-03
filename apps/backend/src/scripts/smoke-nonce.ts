@@ -607,8 +607,10 @@ async function main() {
   // contract call, because the contract's createTask cannot take evaluator configuration. It
   // cannot be broadcast bare from inside the create's completion handler: a transaction sent
   // from there would have no durable record of its own, so nothing could settle it. It gets an
-  // intent of its own instead -- recorded once the create is confirmed, broadcast immediately,
-  // completed by the reconciler, with no request anywhere in the sequence.
+  // intent of its own instead -- recorded once the create is confirmed, then broadcast and
+  // completed by the dispatch itself, with no request anywhere in the sequence. The dispatcher
+  // awaits the receipt, so by the time the broadcast returns the transaction is confirmed and
+  // the completion runs there; the reconciler's sweep is the backstop, not the normal route.
   if (sql) {
     log('7/9', 'Following the evaluator assignment...');
     const assignIntent = await pollIntent(
