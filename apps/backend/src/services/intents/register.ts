@@ -18,16 +18,44 @@ import {
   type BidsSubmitIntentPayload,
 } from './bids-intents';
 import {
+  broadcastEvaluationsFinalizeVerdict,
   completeEvaluationsAppeal,
   completeEvaluationsEvaluate,
   completeEvaluationsEvaluatorTimeout,
+  completeEvaluationsFinalizeVerdict,
   completeEvaluationsResolveDispute,
   type EvaluationsAppealIntentPayload,
   type EvaluationsEvaluateIntentPayload,
   type EvaluationsEvaluatorTimeoutIntentPayload,
+  type EvaluationsFinalizeVerdictIntentPayload,
   type EvaluationsResolveDisputeIntentPayload,
 } from './evaluations-intents';
-import { completeIdentityRegister, type IdentityRegisterIntentPayload } from './identity-intents';
+import {
+  broadcastClaimsClaim,
+  broadcastClaimsForfeit,
+  completeClaimsClaim,
+  completeClaimsForfeit,
+  type ClaimsClaimIntentPayload,
+  type ClaimsForfeitIntentPayload,
+} from './claims-intents';
+import {
+  broadcastIdentityRegister,
+  completeIdentityRegister,
+  type IdentityRegisterIntentPayload,
+} from './identity-intents';
+import {
+  broadcastWalletWithdraw,
+  broadcastWalletWithdrawDreams,
+  completeWalletWithdraw,
+  completeWalletWithdrawDreams,
+  type WalletWithdrawDreamsIntentPayload,
+  type WalletWithdrawIntentPayload,
+} from './wallet-intents';
+import {
+  broadcastSubmissionsSubmit,
+  completeSubmissionsSubmit,
+  type SubmissionsSubmitIntentPayload,
+} from './submissions-intents';
 import {
   completePitchesSelect,
   completePitchesSubmit,
@@ -229,11 +257,69 @@ export function registerRelayedIntentHandlers(): void {
     })
   );
 
-  registerRelayedIntentHandler('identity.register', async ({ db, intent, txHash }) =>
-    completeIdentityRegister({
-      db,
-      payload: intent.payload as IdentityRegisterIntentPayload,
-      txHash: txHash as `0x${string}`,
-    })
-  );
+  registerRelayedIntentHandler('evaluations.finalizeVerdict', {
+    broadcast: async ({ intent }) =>
+      broadcastEvaluationsFinalizeVerdict({
+        payload: intent.payload as EvaluationsFinalizeVerdictIntentPayload,
+      }),
+    complete: async ({ db, intent, txHash }) =>
+      completeEvaluationsFinalizeVerdict({
+        db,
+        payload: intent.payload as EvaluationsFinalizeVerdictIntentPayload,
+        txHash: txHash as `0x${string}`,
+      }),
+  });
+
+  registerRelayedIntentHandler('claims.claim', {
+    broadcast: async ({ intent }) =>
+      broadcastClaimsClaim({ payload: intent.payload as ClaimsClaimIntentPayload }),
+    complete: async ({ db, intent, txHash }) =>
+      completeClaimsClaim({
+        db,
+        payload: intent.payload as ClaimsClaimIntentPayload,
+        txHash: txHash as `0x${string}`,
+      }),
+  });
+
+  registerRelayedIntentHandler('claims.forfeit', {
+    broadcast: async ({ intent }) =>
+      broadcastClaimsForfeit({ payload: intent.payload as ClaimsForfeitIntentPayload }),
+    complete: async ({ db, intent }) =>
+      completeClaimsForfeit({ db, payload: intent.payload as ClaimsForfeitIntentPayload }),
+  });
+
+  registerRelayedIntentHandler('submissions.submit', {
+    broadcast: async ({ intent }) =>
+      broadcastSubmissionsSubmit({ payload: intent.payload as SubmissionsSubmitIntentPayload }),
+    complete: async ({ db, intent, txHash }) =>
+      completeSubmissionsSubmit({
+        db,
+        payload: intent.payload as SubmissionsSubmitIntentPayload,
+        txHash: txHash as `0x${string}`,
+      }),
+  });
+
+  registerRelayedIntentHandler('wallet.withdraw', {
+    broadcast: async ({ intent }) =>
+      broadcastWalletWithdraw({ payload: intent.payload as WalletWithdrawIntentPayload }),
+    complete: completeWalletWithdraw,
+  });
+
+  registerRelayedIntentHandler('wallet.withdrawDreams', {
+    broadcast: async ({ intent }) =>
+      broadcastWalletWithdrawDreams({
+        payload: intent.payload as WalletWithdrawDreamsIntentPayload,
+      }),
+    complete: completeWalletWithdrawDreams,
+  });
+
+  registerRelayedIntentHandler('identity.register', {
+    broadcast: async () => broadcastIdentityRegister(),
+    complete: async ({ db, intent, txHash }) =>
+      completeIdentityRegister({
+        db,
+        payload: intent.payload as IdentityRegisterIntentPayload,
+        txHash: txHash as `0x${string}`,
+      }),
+  });
 }

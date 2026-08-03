@@ -1,16 +1,19 @@
-// Implements: ADR-0045
+// Implements: ADR-0045, ADR-0050
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
 import { logger } from '../lib/logger';
 import { classifyRelayFailure, relayFailureReason } from '../lib/relay-failure';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
+import { withRelayEnvelope } from './relay-envelope';
 import {
   claimIntentForBroadcast,
   claimIntentForCompletion,
+  exhaustIntentBroadcastAttempts,
   linkIntentToBroadcast,
   markIntentCompleted,
   markIntentFailed,
   recordIntentCompletionError,
+  relayEnvelopeForIntent,
   releaseIntentForRetry,
   type RelayedIntentOperation,
 } from './relayed-intents';
@@ -157,12 +160,16 @@ export async function dispatchRelayedIntent(input: {
 }): Promise<IntentDispatchOutcome> {
   const broadcast = getRelayedIntentBroadcaster(input.intent.operation);
   if (!broadcast) {
-    // An operation dispatched this way shipped without a way to send it. Its intent is
-    // durable, so nothing is lost, but nothing will ever advance it either.
+    // An operation dispatched this way shipped without a way to send it: its payload cannot
+    // be turned back into a transaction, so there is no attempt to make now or later. Its
+    // budget is spent outright rather than left intact, so the intent stops being re-examined
+    // on every worker pass and reaches the abandoned path -- where a paid one is refunded, as
+    // it was before rebroadcasting existed.
     logger.error('No broadcaster registered for relayed intent', {
       intentId: input.intent.id,
       operation: input.intent.operation,
     });
+    await exhaustIntentBroadcastAttempts({ db: input.db, intentId: input.intent.id });
     await recordIntentCompletionError({
       db: input.db,
       intentId: input.intent.id,
@@ -175,7 +182,11 @@ export async function dispatchRelayedIntent(input: {
   if (!claimed) return 'skipped';
 
   try {
-    const txHash = await broadcast({ db: input.db, intent: claimed });
+    // The stored envelope, not a fresh one: this is the rebroadcast path, and replaying the
+    // deadline the intent was recorded with is what makes the deadline mean anything.
+    const txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () =>
+      broadcast({ db: input.db, intent: claimed })
+    );
     // linkIntentToBroadcast, not markIntentBroadcast: without the outbox row id the reconciler
     // has nothing to settle the intent against, so the intent would sit in `broadcast` forever
     // even after its receipt landed.
@@ -203,17 +214,30 @@ export async function dispatchRelayedIntent(input: {
 
     if (classifyRelayFailure(error) === 'deterministic') {
       const reason = relayFailureReason(error);
-      // Terminal: the inputs and the on-chain state that produced this revert will not change
-      // by waiting, and an intent that never reaches a terminal state is invisible to anything
-      // watching for failures. No refund is involved either way -- an intent dispatched from
-      // here carries no payment reference of its own, and the refund rule is a confirmed
-      // failure of an intent that actually carries a payment (relayed-intent-settlement.ts).
-      await markIntentFailed({ db: input.db, intentId: claimed.id, reason });
       logger.error('Relayed intent rejected by the chain; not retrying', {
         intentId: claimed.id,
         operation: claimed.operation,
         reason,
       });
+
+      // Retrying is pointless either way -- the inputs and the on-chain state that produced
+      // this revert will not change by waiting -- but who writes the terminal state depends
+      // on whether money is involved.
+      if (claimed.paymentTxHash) {
+        // A paid intent must reach `failed` through settlement, because that is the only
+        // place allowed to decide a payment is orphaned (ADR-0048). Marking it failed here
+        // would strand the payer: settlement's abandoned sweep only ever looks at `recorded`,
+        // so it would never see this intent and never refund it. Spending the retry budget
+        // instead leaves it exactly where that sweep will find it on its next pass.
+        await exhaustIntentBroadcastAttempts({ db: input.db, intentId: claimed.id });
+        await recordIntentCompletionError({ db: input.db, intentId: claimed.id, error });
+        return 'failed';
+      }
+
+      // Nothing was paid, so there is nothing for settlement to decide and no reason to make
+      // it wait: an intent that never reaches a terminal state is invisible to anything
+      // watching for failures.
+      await markIntentFailed({ db: input.db, intentId: claimed.id, reason });
       return 'failed';
     }
 

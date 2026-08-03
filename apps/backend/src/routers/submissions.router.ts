@@ -30,7 +30,8 @@ import { randomUUID } from 'crypto';
 import { keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
-import { assertUnderHardSubmissionCeilingForInsert } from '../services/submission-allowance';
+import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { SubmissionsSubmitIntentPayload } from '../services/intents/submissions-intents';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
 import { verifySignedAddressOrThrow } from '../lib/agents';
@@ -479,47 +480,39 @@ export const submissionsRouter = router({
 
       const deliverableHash = buildArtifactManifestHash(artifactRows);
 
-      const submitTxHash = await contractSubmitWork(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        deliverableHash,
-        task.contractAddress
-      );
-
-      await ctx.db.transaction(async (tx) => {
-        // RFC-0006 Tier 2 (ADR-0037): submissionAllowanceGate's own hard-ceiling check
-        // ran in middleware, before file uploads and the on-chain submitWork call above --
-        // a real gap wide enough for concurrent requests to all read the same
-        // under-ceiling count. Re-validate atomically, immediately before the insert it
-        // actually guards, inside the same transaction.
-        if (task.mode === 'bounty' || task.mode === 'benchmark') {
-          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
-        }
-
-        await tx.insert(submissions).values({
-          id: submissionId,
+      // Free, but still an intent (ADR-0045), and this is the path where it matters most: a
+      // worker whose deliverable hash the chain has committed to, and whose submission row
+      // never got written because the receipt arrived after the request ended, has done work
+      // the product cannot see, show or pay for. The completion handler owns every write that
+      // used to run inline below it -- including the Tier 2 ceiling re-check, which has to
+      // stay in the same transaction as the insert it guards.
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'submissions.submit',
+        payer: input.workerAddress,
+        payload: {
+          artifacts: artifactRows,
+          contractAddress: task.contractAddress,
+          deliverableHash,
+          mode: task.mode,
+          signature: input.signature,
+          submissionId,
           taskId: input.taskId,
           workerAddress: input.workerAddress,
-          fileUrl: artifactRows[0]!.storageUri,
-          signature: input.signature,
-          deliverableHash,
-          submitTxHash,
-        });
-
-        await tx.insert(artifacts).values(artifactRows);
-
-        // Bounty/Benchmark are open contests: the task stays `open` and keeps
-        // accepting submissions until the requester accepts one or it expires. No
-        // status flip on submit -- "has submissions" is derived from the submissions
-        // table, and the requester keeps full cancel/update control while live.
-        // Claim/pitch/auction have a single designated worker, so flip to
-        // pending_approval on submission so the requester can accept.
-        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
-          await tx
-            .update(tasks)
-            .set({ status: 'pending_approval' })
-            .where(eq(tasks.id, input.taskId));
-        }
+        } satisfies SubmissionsSubmitIntentPayload,
+        send: () =>
+          contractSubmitWork(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            deliverableHash,
+            task.contractAddress
+          ),
+        // The completion can fail for one reason a worker can act on -- the Tier 2 ceiling
+        // (ADR-0037) -- and the generic "it will be retried" message would tell them nothing
+        // about why their submission is not showing up. The specific reason is on the intent's
+        // lastError either way; this is what puts it in front of the person who hit it.
+        describeCompletionFailure: (intentId) =>
+          `Your work was committed on chain but recording the submission did not complete; it will be retried automatically (intent ${intentId}). If this task is at its submission limit, the submission will not be recorded.`,
       });
 
       return { success: true, submissionId };
@@ -756,42 +749,36 @@ export const submissionsRouter = router({
 
       const deliverableHash = buildArtifactManifestHash(artifactRows);
 
-      const submitTxHash = await contractSubmitWork(
-        input.taskId as `0x${string}`,
-        input.workerAddress as `0x${string}`,
-        deliverableHash,
-        task.contractAddress
-      );
-
-      await ctx.db.transaction(async (tx) => {
-        // RFC-0006 Tier 2 (ADR-0037): see the sibling `submit` mutation's identical
-        // guard above for why this re-check exists and runs here, atomically, rather
-        // than only in submissionAllowanceGate's earlier, race-prone middleware check.
-        if (task.mode === 'bounty' || task.mode === 'benchmark') {
-          await assertUnderHardSubmissionCeilingForInsert(tx, input.taskId, input.workerAddress);
-        }
-
-        await tx.insert(submissions).values({
-          id: submissionId,
+      // Same operation as the sibling `submit` mutation: the two differ only in how they
+      // obtain the artifact rows, and by this point both hold the same deliverable hash. One
+      // intent kind, one completion handler (ADR-0045).
+      await runRelayedIntent({
+        db: ctx.db,
+        operation: 'submissions.submit',
+        payer: input.workerAddress,
+        payload: {
+          artifacts: artifactRows,
+          contractAddress: task.contractAddress,
+          deliverableHash,
+          mode: task.mode,
+          signature: input.signature,
+          submissionId,
           taskId: input.taskId,
           workerAddress: input.workerAddress,
-          fileUrl: artifactRows[0]!.storageUri,
-          signature: input.signature,
-          deliverableHash,
-          submitTxHash,
-        });
-
-        await tx.insert(artifacts).values(artifactRows);
-
-        // Bounty/Benchmark stay `open` while accepting submissions -- no status flip.
-        // Claim/pitch/auction have a single designated worker, so flip to
-        // pending_approval on submission so the requester can accept.
-        if (task.mode !== 'bounty' && task.mode !== 'benchmark') {
-          await tx
-            .update(tasks)
-            .set({ status: 'pending_approval' })
-            .where(eq(tasks.id, input.taskId));
-        }
+        } satisfies SubmissionsSubmitIntentPayload,
+        send: () =>
+          contractSubmitWork(
+            input.taskId as `0x${string}`,
+            input.workerAddress as `0x${string}`,
+            deliverableHash,
+            task.contractAddress
+          ),
+        // The completion can fail for one reason a worker can act on -- the Tier 2 ceiling
+        // (ADR-0037) -- and the generic "it will be retried" message would tell them nothing
+        // about why their submission is not showing up. The specific reason is on the intent's
+        // lastError either way; this is what puts it in front of the person who hit it.
+        describeCompletionFailure: (intentId) =>
+          `Your work was committed on chain but recording the submission did not complete; it will be retried automatically (intent ${intentId}). If this task is at its submission limit, the submission will not be recorded.`,
       });
 
       return { success: true, submissionId };

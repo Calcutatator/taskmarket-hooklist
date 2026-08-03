@@ -16,6 +16,17 @@ CREATE TABLE IF NOT EXISTS "relayed_intents" (
 	"server_wallet_transaction_id" text,
 	"tx_hash" text,
 	"completion_attempts" integer NOT NULL DEFAULT 0,
+	-- Counted separately from completion_attempts: an intent can be broadcast once and
+	-- completed several times, so one counter cannot bound both.
+	"broadcast_attempts" integer NOT NULL DEFAULT 0,
+	-- The relay envelope, fixed when the intent is recorded and replayed verbatim on every
+	-- rebroadcast. Recomputing either on retry would hand each attempt a fresh 300-second
+	-- window, so the deadline would never arrive and the only real bound on retrying would be
+	-- gone -- unbounded retry wearing a deadline as a disguise. Held here so the value that
+	-- goes on chain is the same one every time, and TaskMarketForwarder.relay's ReceiptExpired
+	-- is what ends it.
+	"relay_valid_before" numeric(20, 0),
+	"relay_receipt_nonce" text,
 	"last_error" text,
 	"created_at" timestamp with time zone DEFAULT now() NOT NULL,
 	"updated_at" timestamp with time zone DEFAULT now() NOT NULL,

@@ -899,6 +899,14 @@ export const relayedIntents = pgTable(
     serverWalletTransactionId: text('server_wallet_transaction_id'),
     txHash: text('tx_hash'),
     completionAttempts: integer('completion_attempts').notNull().default(0),
+    // Broadcast attempts are counted separately from completion attempts: an intent can be
+    // broadcast once and completed several times, so one counter cannot bound both. A
+    // belt-and-braces guard against hot-looping; the real bound is relayValidBefore.
+    broadcastAttempts: integer('broadcast_attempts').notNull().default(0),
+    // The relay envelope, fixed at record time and replayed verbatim. Recomputing either on a
+    // rebroadcast would give every attempt a fresh window, so the deadline would never arrive.
+    relayValidBefore: numeric('relay_valid_before', { precision: 20, scale: 0 }),
+    relayReceiptNonce: text('relay_receipt_nonce'),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),

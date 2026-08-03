@@ -12,17 +12,16 @@ import { eq } from 'drizzle-orm';
 import {
   contractEvaluate,
   contractAppeal,
-  contractFinalizeVerdict,
+  contractFinalizeVerdictTx,
   contractResolveDispute,
   contractEvaluatorTimeout,
 } from '../services/contract';
-import { recordTaskSettlement } from '../services/settlement-recorder';
-import { getServerConfig } from '../config/env';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
   EvaluationsAppealIntentPayload,
   EvaluationsEvaluateIntentPayload,
   EvaluationsEvaluatorTimeoutIntentPayload,
+  EvaluationsFinalizeVerdictIntentPayload,
   EvaluationsResolveDisputeIntentPayload,
 } from '../services/intents/evaluations-intents';
 
@@ -170,48 +169,19 @@ export const evaluationsRouter = router({
         throw new Error('Appeal window not yet expired');
       }
 
-      const { txHash, settlement, settledAt } = await contractFinalizeVerdict(
-        input.taskId as `0x${string}`
-      );
-
-      const rejected = task.verdictType === 'REJECT';
-      if (rejected) {
-        // REJECT refunds the (post-evaluator-fee) remainder to the requester and
-        // terminates the task -- it does not reopen it. A worker who claimed a
-        // reopened task would find acceptSubmission reverting on the empty
-        // escrow left behind by the refund (EvaluatorFacet.finalizeVerdict).
-        // The contract emits no TaskCompleted event on this path, so there is
-        // no settlement to record.
-        await ctx.db
-          .update(tasks)
-          .set({
-            status: 'cancelled',
-            claimedBy: null,
-            evaluator: null,
-            evaluatorStake: '0',
-            evaluationWindow: null,
-            appealWindow: null,
-            evaluatorDeadline: null,
-            appealDeadline: null,
-          })
-          .where(eq(tasks.id, input.taskId));
-      } else if (settlement && settledAt != null) {
-        // Record task_awards synchronously from the same receipt this mutation
-        // already waited for, instead of relying solely on the async indexer to
-        // pick up the TaskCompleted event(s) on its next poll -- idempotent via
-        // recordTaskSettlement's onConflictDoNothing, safe if the indexer later
-        // processes the same event too.
-        await recordTaskSettlement(ctx.db, {
-          chainId: getServerConfig().CHAIN_ID,
-          settledAt: new Date(settledAt * 1000),
-          settlement,
-        });
-      } else {
-        // All-zero-award verdict: the contract still transitions the task to
-        // Accepted/completed, but emits no TaskCompleted log, so there is no
-        // settlement to record.
-        await ctx.db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, input.taskId));
-      }
+      // Permissionless, and an intent all the same. An intent records what the server
+      // relayed, not who asked for it: the transaction is sent by the server wallet either
+      // way, and the settlement it produces has to reach the database whether or not this
+      // request is still around to write it (ADR-0045). Free, so nothing here is refundable.
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'evaluations.finalizeVerdict',
+        payload: {
+          rejected: task.verdictType === 'REJECT',
+          taskId: input.taskId,
+        } satisfies EvaluationsFinalizeVerdictIntentPayload,
+        send: () => contractFinalizeVerdictTx(input.taskId as `0x${string}`),
+      });
 
       return { txHash };
     }),

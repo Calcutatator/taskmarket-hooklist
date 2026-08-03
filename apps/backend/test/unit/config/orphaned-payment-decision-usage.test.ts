@@ -112,6 +112,45 @@ export function decidesOrphanedPayment(source: string, filename = 'source.ts'): 
   return found;
 }
 
+/**
+ * Names imported from the contract service that read the chain rather than write to it.
+ *
+ * Matching on the import, and excluding by an explicit list rather than by a prefix guessed
+ * from the body, is what keeps this from producing false positives -- the failure mode that
+ * gets a structural assertion deleted rather than fixed. A read has no receipt and so nothing
+ * that needs to outlive the request; `contractProjectSettlementForTx` is here for the same
+ * reason, since it decodes a hash somebody else's write produced.
+ */
+const CHAIN_READ_IMPORTS = /^(contractGet|contractProjectSettlementForTx$|resolveRegisteredAgentId$)/;
+
+/** True when the source imports something from the contract service that relays a write. */
+export function relaysChainWrite(source: string, filename = 'source.ts'): boolean {
+  const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
+  const isContractModule = (specifier: string): boolean =>
+    /(^|\/)contract(\.js|\.ts)?$/.test(specifier);
+  const isWrite = (name: string): boolean =>
+    name.startsWith('contract') && !CHAIN_READ_IMPORTS.test(name);
+
+  for (const statement of sourceFile.statements) {
+    if (
+      !ts.isImportDeclaration(statement) ||
+      !ts.isStringLiteral(statement.moduleSpecifier) ||
+      !isContractModule(statement.moduleSpecifier.text)
+    )
+      continue;
+    const bindings = statement.importClause?.namedBindings;
+    // A namespace import hides which members are used, so treat it as a write and let the
+    // file prove otherwise by not being a router that relays. No router does this today.
+    if (bindings && ts.isNamespaceImport(bindings)) return true;
+    if (bindings && ts.isNamedImports(bindings)) {
+      for (const element of bindings.elements) {
+        if (isWrite(element.propertyName?.text ?? element.name.text)) return true;
+      }
+    }
+  }
+  return false;
+}
+
 describe('who may decide a payment is orphaned', () => {
   it('allows the decision only in intent settlement', () => {
     const decisionSites = sourceFiles(SRC_ROOT)
@@ -125,26 +164,49 @@ describe('who may decide a payment is orphaned', () => {
     expect(decisionSites, FAILURE_EXPLANATION).toEqual(Object.keys(DECISION_ALLOWLIST).sort());
   });
 
-  it('requires every payer-gated router to record an intent instead', () => {
-    // Coarse on purpose: this is a per-file check, not a per-procedure one, so it proves a
-    // paid router participates in the intent mechanism rather than that each of its paid
-    // procedures does. A per-procedure rule would have to decide which `.mutation()` a payer
-    // read belongs to, which is exactly the kind of inference that produces false positives
-    // and gets an assertion disabled. The stronger guarantee is the one above: with no way to
-    // compensate inline, a paid path that skips the intent has no refund path at all.
+  it('requires every router that relays a chain write to record an intent', () => {
+    // Widened from "payer-gated" to "relays a write at all". Being paid was never what made
+    // an intent necessary; it only made refunds necessary. An intent does two jobs, and the
+    // second -- letting the post-receipt database work outlive the request -- applies to every
+    // relayed write. A free write whose receipt lands after the request has gone diverges the
+    // chain from the database just as silently as a paid one, with no payment involved to make
+    // anybody notice.
+    //
+    // Coarse on purpose, and per-file rather than per-procedure, for the same reason as
+    // before: deciding which `.mutation()` an import belongs to is the kind of inference that
+    // produces false positives and gets an assertion disabled.
     const routers = sourceFiles(join(SRC_ROOT, 'routers'));
     const missing = routers
       .filter((path) => {
         const source = readFileSync(path, 'utf8');
-        return source.includes('ctx.res.locals.payer') && !source.includes('runRelayedIntent');
+        return relaysChainWrite(source, path) && !source.includes('runRelayedIntent');
       })
       .map((path) => relative(SRC_ROOT, path))
       .sort();
 
     expect(
       missing,
-      'A payer-gated router must record a relayed intent before its chain call (ADR-0045): the intent is what carries the payment reference settlement needs to refund it on a confirmed failure.'
+      'A router that relays an on-chain write must record a relayed intent before making it (ADR-0045). The intent is what carries the post-receipt database work, so a receipt that outlives the request still lands in the database instead of leaving the chain and the database silently disagreeing -- and, where a payment is involved, what carries the reference settlement needs to refund it.'
     ).toEqual([]);
+  });
+
+  it('reads a relayed write from the import, not from a naming convention in the body', () => {
+    const writes = `import { contractSubmitWork } from '../services/contract';`;
+    const aliased = `import { contractClaimTask as claim } from '../services/contract';`;
+    const namespaced = `import * as chain from '../services/contract'; chain.contractSubmitWork();`;
+    for (const source of [writes, aliased, namespaced]) {
+      expect(relaysChainWrite(source)).toBe(true);
+    }
+
+    // Reads are not writes: there is no receipt, so there is nothing to outlive the request.
+    expect(
+      relaysChainWrite(`import { contractGetDreamsClaimable } from '../services/contract';`)
+    ).toBe(false);
+    // Neither is projecting a settlement out of a hash somebody else's write produced.
+    expect(
+      relaysChainWrite(`import { contractProjectSettlementForTx } from '../services/contract';`)
+    ).toBe(false);
+    expect(relaysChainWrite(`import { z } from 'zod';`)).toBe(false);
   });
 
   it('catches a reintroduced inline decision under an alias, a namespace, or a dynamic import', () => {

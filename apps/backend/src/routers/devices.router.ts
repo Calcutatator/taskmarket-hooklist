@@ -1,4 +1,4 @@
-// Implements: ADR-0018 (devices.register requires signature proof of address ownership)
+// Implements: ADR-0018 (devices.register requires signature proof of address ownership), ADR-0045
 import { router, publicProcedure } from '../trpc';
 import { z } from 'zod';
 import { TRPCError } from '@trpc/server';
@@ -6,7 +6,10 @@ import { devices, agents } from '../db/schema';
 import { eq } from 'drizzle-orm';
 import { getServerConfig, DEFAULT_PLATFORM_MASTER_KEY } from '../config/env';
 import { hkdfSync, randomBytes, randomUUID } from 'crypto';
-import { contractRegisterIdentity } from '../services/contract';
+import { registerRelayedIntentHandlers } from '../services/intents/register';
+import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
+import { dispatchRelayedIntent } from '../services/relayed-intent-registry';
+import { recordRelayedIntent } from '../services/relayed-intents';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import {
   Secp256k1PublicKeySchema,
@@ -119,33 +122,43 @@ export const devicesRouter = router({
           },
         });
 
-      // Register ERC-8004 identity in the background — platform sponsors this.
-      // The client should poll GET /api/identity/status?address=... until agentId appears.
-      contractRegisterIdentity()
-        .then(async (agentIdBigInt) => {
-          const id = agentIdBigInt.toString();
-          const registryAddress = config.ERC8004_IDENTITY_REGISTRY.toLowerCase();
-          await ctx.db
-            .insert(agents)
-            .values({
-              address: walletAddress,
-              agentId: id,
-              identityRegistryAddress: registryAddress,
-              chainId: config.CHAIN_ID,
-            })
-            .onConflictDoUpdate({
-              target: agents.address,
-              set: {
-                agentId: id,
-                identityRegistryAddress: registryAddress,
-                chainId: config.CHAIN_ID,
-                updatedAt: new Date(),
-              },
-            });
-        })
-        .catch((err) => {
-          console.error('[devices] background identity registration failed:', err);
-        });
+      // Register the ERC-8004 identity in the background -- the platform sponsors this, and
+      // the client polls GET /api/identity/status?address=... until agentId appears.
+      //
+      // ADR-0019 recorded the defect this replaces: the mint was a bare fire-and-forget
+      // promise whose only failure handling was a console log, so a failed registration left
+      // agents.agentId permanently null with no error, no retry and nothing anywhere that
+      // said so. The intent is what fixes it, and it is deliberately split from the dispatch:
+      //
+      //   - Recording is awaited, so the durable row exists before this request answers. That
+      //     is the whole guarantee -- from here on the work survives a crash, a deploy, or
+      //     this request being abandoned, because the intent worker will pick up anything
+      //     left in `recorded`.
+      //   - Dispatching is not awaited. The request must not block on a chain round trip: the
+      //     endpoint's contract is that it returns `agentId: null` and the caller polls, and
+      //     making it wait would be a client-visible change for no benefit.
+      //
+      // The completion handler binds the minted agentId to this wallet later, from the
+      // transaction's own Registered event, whether it runs from the dispatch below or from a
+      // worker pass an hour after this process died.
+      registerRelayedIntentHandlers();
+      const registerIntent = await recordRelayedIntent({
+        db: ctx.db,
+        operation: 'identity.register',
+        payer: walletAddress,
+        payload: {
+          chainId: config.CHAIN_ID,
+          // The agents row was just upserted under this exact (normalized) address, so the
+          // completion must update that row rather than insert a second one.
+          existingAddress: walletAddress,
+          payer: walletAddress,
+          registeredVia: 'device',
+          registryAddress: config.ERC8004_IDENTITY_REGISTRY.toLowerCase(),
+        } satisfies IdentityRegisterIntentPayload,
+      });
+
+      // Never throws, and never awaited: every outcome is already durable on the intent row.
+      void dispatchRelayedIntent({ db: ctx.db, intent: registerIntent });
 
       return { deviceId, apiToken, deviceEncryptionKey, agentId: null };
     }),

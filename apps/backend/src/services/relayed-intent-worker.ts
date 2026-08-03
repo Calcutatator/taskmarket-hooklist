@@ -1,11 +1,9 @@
-// Implements: ADR-0045
-import { and, asc, eq, isNull, lt } from 'drizzle-orm';
-
+// Implements: ADR-0045, ADR-0050
 import { db } from '../db/client';
-import { relayedIntents } from '../db/schema';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
 import { settleAbandonedIntents } from './relayed-intent-settlement';
+import { listUnbroadcastIntents } from './relayed-intents';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
 const MAX_INTENTS_PER_PASS = 10;
@@ -29,10 +27,26 @@ export const INTENT_ORPHAN_GRACE_MS = 30_000;
  * handed it back for another try. Nothing is on chain in either case, so rebroadcasting is
  * safe, and this is the only thing that will ever do it.
  *
- * Scoped to intents that carry no payment, which today means the evaluator assignment a
- * confirmed task creation starts. An intent that *does* carry a payment and never reached the
- * chain is a different situation with a different answer -- the payment is genuinely
- * refundable, and refunding it is the abandoned-intent path's job, not a rebroadcast here.
+ * Paid intents are rebroadcast too, and that is the point. A requester who paid for a task
+ * wants the task; refunding them is the consolation prize, and we are holding the payload that
+ * would have produced it. It is safe because `listUnbroadcastIntents` requires positive
+ * evidence that nothing was ever sent -- no outbox row and no hash, and the outbox row is
+ * written at nonce allocation, before any broadcast. Refund is what happens after the retry
+ * budget is spent, not instead of it.
+ *
+ * A rebroadcast replays the persisted payload verbatim and amends nothing -- no deadline, no
+ * quoted price, no time-derived field. What the caller authorised is what goes on chain, the
+ * same rule a wallet follows when it lets a stale transaction die rather than quietly
+ * rewriting it. A replay that arrives after its deadline reverts, and the chain failing it is
+ * a better bound than any attempt counter: `TaskMarketForwarder.relay` enforces the relay
+ * `validBefore`, and a user-signed authorisation carries its own expiry inside the payload.
+ * The cost is that a withdrawal whose broadcast was lost and whose authorisation has since
+ * expired must be re-signed -- no funds move, nothing is lost but a round trip.
+ *
+ * The relay envelope is ours rather than the caller's, and is held to the same rule for a
+ * different reason: it is fixed when the intent is recorded and replayed from the row, because
+ * a regenerated one would hand every attempt a fresh five-minute window and the deadline would
+ * never arrive at all -- unbounded retry wearing a deadline as a disguise.
  */
 export function createRelayedIntentWorker(options?: {
   database?: typeof db;
@@ -45,18 +59,11 @@ export function createRelayedIntentWorker(options?: {
 
   return async function processUnbroadcastIntents(): Promise<void> {
     const cutoff = new Date(now() - graceMs);
-    const pending = await database
-      .select()
-      .from(relayedIntents)
-      .where(
-        and(
-          eq(relayedIntents.status, 'recorded'),
-          isNull(relayedIntents.paymentTxHash),
-          lt(relayedIntents.updatedAt, cutoff)
-        )
-      )
-      .orderBy(asc(relayedIntents.createdAt))
-      .limit(MAX_INTENTS_PER_PASS);
+    const pending = await listUnbroadcastIntents({
+      cutoff,
+      db: database,
+      limit: MAX_INTENTS_PER_PASS,
+    });
 
     for (const intent of pending) {
       // Classification, claiming and the terminal-vs-retry decision all live in the shared
@@ -65,9 +72,10 @@ export function createRelayedIntentWorker(options?: {
       await dispatchRelayedIntent({ db: database, intent });
     }
 
-    // The other half of `recorded`: an intent that does carry a payment and never reached the
-    // chain is not rebroadcast, it is written off. Settlement makes that call, not this
-    // worker -- the worker only says when to look (ADR-0048).
+    // The far end of `recorded`: an intent that is out of rebroadcast attempts, or whose
+    // operation has no way to be sent at all. Retrying is over, so a payment it carries is
+    // finally refundable. Settlement makes that call, not this worker -- the worker only says
+    // when to look (ADR-0048).
     await settleAbandonedIntents(MAX_INTENTS_PER_PASS);
   };
 }

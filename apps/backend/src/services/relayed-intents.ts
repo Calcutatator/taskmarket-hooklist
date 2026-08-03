@@ -1,11 +1,26 @@
-// Implements: ADR-0045
+// Implements: ADR-0045, ADR-0050
 import { randomUUID } from 'crypto';
-import { and, eq, inArray, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
+import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
 
 type Db = typeof DbType;
+
+/**
+ * The envelope this intent's transaction must carry, on every attempt.
+ *
+ * Falls back to a fresh one only for a row written before the columns existed; a stored
+ * envelope is always preferred, because reusing it is the entire point.
+ */
+export function relayEnvelopeForIntent(intent: RelayedIntent): RelayEnvelope {
+  if (!intent.relayValidBefore || !intent.relayReceiptNonce) return newRelayEnvelope();
+  return {
+    receiptNonce: intent.relayReceiptNonce as `0x${string}`,
+    validBefore: BigInt(intent.relayValidBefore),
+  };
+}
 
 /**
  * Operation kinds that can be recorded as a durable intent.
@@ -32,8 +47,14 @@ export type RelayedIntentOperation =
   | 'proofs.anchorDeliverable'
   | 'evaluations.evaluate'
   | 'evaluations.appeal'
+  | 'evaluations.finalizeVerdict'
   | 'evaluations.resolveDispute'
   | 'evaluations.evaluatorTimeout'
+  | 'claims.claim'
+  | 'claims.forfeit'
+  | 'submissions.submit'
+  | 'wallet.withdraw'
+  | 'wallet.withdrawDreams'
   | 'identity.register';
 
 export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'failed';
@@ -70,6 +91,11 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
     if (existing[0]) return existing[0];
   }
 
+  // Fixed here, once, and replayed verbatim by every broadcast attempt. This is the intent's
+  // deadline: a rebroadcast that regenerated it would buy itself another full window on every
+  // pass, so the deadline would never arrive and retrying would be unbounded in all but name.
+  const envelope = newRelayEnvelope();
+
   const [row] = await input.db
     .insert(relayedIntents)
     .values({
@@ -79,6 +105,8 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       paymentAmount: input.paymentAmount ? input.paymentAmount.toString() : null,
       paymentTxHash: input.paymentTxHash ?? null,
       payload: input.payload,
+      relayReceiptNonce: envelope.receiptNonce,
+      relayValidBefore: envelope.validBefore.toString(),
       status: 'recorded',
     })
     .onConflictDoNothing()
@@ -98,6 +126,28 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
 }
 
 /**
+ * Belt-and-braces cap on rebroadcast attempts. Not the real bound.
+ *
+ * The real bound is the deadline the caller authorised. A relayed call carries a `validBefore`
+ * that `TaskMarketForwarder.relay` enforces, and anything a user signed carries its own expiry
+ * inside the payload; once chain time passes either, a replay reverts and the intent is failed
+ * by contract enforcement rather than by a number somebody had to tune. That is the mechanism
+ * to reason about, and the reason a payload is replayed verbatim and never amended: you do not
+ * mutate what a user authorised, so an expired authorisation dies and is re-signed.
+ *
+ * This counter exists only so an intent whose broadcast fails for reasons unrelated to any
+ * deadline -- a persistently unreachable RPC, say -- cannot hot-loop the worker forever, and
+ * so a paid intent eventually reaches the refund path instead of being retried indefinitely.
+ *
+ * Set deliberately high enough that it does not bind first. The worker's orphan grace is 30s,
+ * so an intent gets at most ~10 attempts inside a 300s receipt window; a cap of 20 sits well
+ * clear of that, which is the point -- a cap low enough to end retrying before the deadline
+ * would quietly make this constant the real bound again, and tuning it would then be tuning
+ * something the payer never agreed to.
+ */
+export const MAX_BROADCAST_ATTEMPTS = 20;
+
+/**
  * Claim an intent for broadcast.
  *
  * There is no distinct in-flight status to move it to -- `recorded` means "not on chain", and
@@ -105,6 +155,10 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
  * conditional bump of `updatedAt`. The worker's own query skips rows touched within its grace
  * window, which is what keeps an eager dispatch and a worker pass from both spending a nonce
  * on the same intent.
+ *
+ * The attempt is counted here rather than on success or failure so that a process dying
+ * mid-broadcast still consumes one: an attempt that leaves no trace is an attempt that can be
+ * repeated forever.
  */
 export async function claimIntentForBroadcast(input: {
   db: Db;
@@ -112,10 +166,43 @@ export async function claimIntentForBroadcast(input: {
 }): Promise<RelayedIntent | null> {
   const [claimed] = await input.db
     .update(relayedIntents)
-    .set({ updatedAt: new Date() })
+    .set({
+      broadcastAttempts: sql`${relayedIntents.broadcastAttempts} + 1`,
+      updatedAt: new Date(),
+    })
     .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'recorded')))
     .returning();
   return claimed ?? null;
+}
+
+/**
+ * Intents that provably never reached the chain and are still worth another attempt.
+ *
+ * "Provably" is the load-bearing word, and it is why this is safe to run for paid intents too.
+ * The outbox row is written when a nonce is allocated, which happens before anything is
+ * broadcast, so an intent with no `serverWalletTransactionId` and no `txHash` cannot have a
+ * transaction live under it. That is positive evidence of nothing having happened, not an
+ * inference from an absent receipt -- the distinction ADR-0045 turns on.
+ */
+export async function listUnbroadcastIntents(input: {
+  db: Db;
+  cutoff: Date;
+  limit: number;
+}): Promise<RelayedIntent[]> {
+  return input.db
+    .select()
+    .from(relayedIntents)
+    .where(
+      and(
+        eq(relayedIntents.status, 'recorded'),
+        isNull(relayedIntents.serverWalletTransactionId),
+        isNull(relayedIntents.txHash),
+        lt(relayedIntents.broadcastAttempts, MAX_BROADCAST_ATTEMPTS),
+        lt(relayedIntents.updatedAt, input.cutoff)
+      )
+    )
+    .orderBy(asc(relayedIntents.createdAt))
+    .limit(input.limit);
 }
 
 /**
@@ -208,6 +295,25 @@ export async function claimIntentForCompletion(input: {
   return claimed ?? null;
 }
 
+/**
+ * Retire an intent's remaining rebroadcast attempts without sending anything.
+ *
+ * For an operation with no registered broadcaster there is no attempt to make: its payload
+ * cannot be turned back into a transaction. Spending the budget outright is what keeps such an
+ * intent from sitting in `recorded` forever being skipped on every worker pass -- it falls
+ * through to the abandoned path, where a paid one is refunded, exactly as it was before
+ * rebroadcasting existed.
+ */
+export async function exhaustIntentBroadcastAttempts(input: {
+  db: Db;
+  intentId: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({ broadcastAttempts: MAX_BROADCAST_ATTEMPTS, updatedAt: new Date() })
+    .where(eq(relayedIntents.id, input.intentId));
+}
+
 export async function markIntentCompleted(input: { db: Db; intentId: string }): Promise<void> {
   const now = new Date();
   await input.db
@@ -297,8 +403,12 @@ export async function listConfirmedUnsettledIntents(input: {
 }
 
 /**
- * Intents stuck in 'recorded' past the cutoff: the process died between persisting the intent
- * and broadcasting, so nothing is live on chain and any payment is genuinely refundable.
+ * Intents stuck in 'recorded' that are out of rebroadcast attempts.
+ *
+ * Refund is the fallback, not the reflex. An intent that never reached the chain is first
+ * retried -- giving the payer the thing they paid for beats giving them their money back --
+ * and only once `MAX_BROADCAST_ATTEMPTS` is spent does it become a write-off. Nothing is live
+ * on chain in either case, so a payment here is genuinely refundable.
  */
 export async function listAbandonedIntents(input: {
   db: Db;
@@ -308,6 +418,12 @@ export async function listAbandonedIntents(input: {
   return input.db
     .select()
     .from(relayedIntents)
-    .where(and(eq(relayedIntents.status, 'recorded'), lt(relayedIntents.updatedAt, input.cutoff)))
+    .where(
+      and(
+        eq(relayedIntents.status, 'recorded'),
+        gte(relayedIntents.broadcastAttempts, MAX_BROADCAST_ATTEMPTS),
+        lt(relayedIntents.updatedAt, input.cutoff)
+      )
+    )
     .limit(input.limit);
 }

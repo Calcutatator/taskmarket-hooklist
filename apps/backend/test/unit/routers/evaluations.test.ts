@@ -14,11 +14,7 @@ vi.mock('../../../src/services/contract', () => ({
   blockTimestampForTx: vi.fn().mockResolvedValue(1_800_000_000),
   contractProjectSettlementForTx: vi.fn().mockResolvedValue({ settlement: null, settledAt: null }),
   contractAppeal: vi.fn().mockResolvedValue('0xappealtx'),
-  contractFinalizeVerdict: vi.fn().mockResolvedValue({
-    txHash: '0xfinalizetx',
-    settlement: null,
-    settledAt: null,
-  }),
+  contractFinalizeVerdictTx: vi.fn().mockResolvedValue('0xfinalizetx'),
   contractResolveDispute: vi.fn().mockResolvedValue({
     txHash: '0xresolvetx',
     settlement: null,
@@ -40,7 +36,7 @@ import { contractProjectSettlementForTx } from '../../../src/services/contract';
 import {
   contractEvaluate,
   contractEvaluatorTimeout,
-  contractFinalizeVerdict,
+  contractFinalizeVerdictTx,
   contractResolveDispute,
 } from '../../../src/services/contract';
 import { recordTaskSettlement } from '../../../src/services/settlement-recorder';
@@ -253,7 +249,7 @@ describe('evaluations router', () => {
 
       const result = await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
 
-      expect(contractFinalizeVerdict).toHaveBeenCalledWith(TASK_ID);
+      expect(contractFinalizeVerdictTx).toHaveBeenCalledWith(TASK_ID);
       expect(result).toEqual({ txHash: '0xfinalizetx' });
     });
 
@@ -275,14 +271,14 @@ describe('evaluations router', () => {
       await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
 
       expect(updateChain.set).toHaveBeenCalledWith({
-        status: 'cancelled',
-        claimedBy: null,
-        evaluator: null,
-        evaluatorStake: '0',
-        evaluationWindow: null,
-        appealWindow: null,
-        evaluatorDeadline: null,
         appealDeadline: null,
+        appealWindow: null,
+        claimedBy: null,
+        evaluationWindow: null,
+        evaluator: null,
+        evaluatorDeadline: null,
+        evaluatorStake: '0',
+        status: 'cancelled',
       });
     });
 
@@ -297,14 +293,16 @@ describe('evaluations router', () => {
           }),
         ])
       );
-      vi.mocked(contractFinalizeVerdict).mockResolvedValueOnce({
-        txHash: '0xfinalizetx',
+      // The settlement is projected from the confirmed hash, not returned by the send: the
+      // completion may run in a process that never made the call (ADR-0045).
+      vi.mocked(contractProjectSettlementForTx).mockResolvedValueOnce({
         settlement: SAMPLE_SETTLEMENT,
         settledAt: 1_800_000_000,
       });
 
       await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
 
+      expect(contractProjectSettlementForTx).toHaveBeenCalledWith(TASK_ID, '0xfinalizetx');
       expect(recordTaskSettlement).toHaveBeenCalledWith(ctx.db, {
         chainId: 84532,
         settledAt: new Date(1_800_000_000 * 1000),
@@ -312,7 +310,33 @@ describe('evaluations router', () => {
       });
       // No separate raw tasks.update -- recordTaskSettlement's own transaction
       // is the sole writer of status/awards for this path.
-      expect(ctx.db.update).not.toHaveBeenCalled();
+      expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0045
+    it('records an intent even though anyone may call it', async () => {
+      const ctx = createIntentCtx(REQUESTER);
+      ctx.db.select.mockReturnValueOnce(
+        makeChain([
+          makeTask({
+            status: 'appealing',
+            verdictType: 'APPROVE',
+            appealDeadline: new Date(Date.now() - 1000),
+          }),
+        ])
+      );
+
+      await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
+
+      // Permissionlessness changes nothing here: an intent records what the server relayed,
+      // not who asked for it, and the settlement still has to reach the database when the
+      // receipt outlives the request.
+      const intent = ctx.intents[0]!;
+      expect(intent.operation).toBe('evaluations.finalizeVerdict');
+      expect(intent.paymentTxHash).toBeNull();
+      expect(intent.payer).toBeNull();
+      expect((intent.payload as { rejected: boolean }).rejected).toBe(false);
+      expect(intent.status).toBe('completed');
     });
   });
 

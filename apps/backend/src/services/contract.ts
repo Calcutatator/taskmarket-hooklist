@@ -15,6 +15,7 @@ import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wall
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
+import { currentRelayEnvelope, newRelayEnvelope, RELAY_VALID_WINDOW_SECS } from './relay-envelope';
 import {
   projectSettlementLogs,
   toSettlementCompletionLogs,
@@ -316,7 +317,6 @@ const TX_RECEIPT_TIMEOUT = 60_000; // 1 minute
 const SERVER_TX_RECEIPT_TIMEOUT = 60_000;
 const GAS_MULTIPLIER = 2n;
 // Receipt validity window for relay calls (5 minutes)
-const RELAY_VALID_WINDOW_SECS = 300;
 // Retry config for relay simulation failures (RPC read-after-write lag).
 // 6 attempts, 5 gaps of 6s = ~30s total retry window -- sized against Base's
 // ~12s block time. Only helps if the failure is transient lag; a persistent
@@ -505,6 +505,14 @@ async function relayThroughForwarderResult(
     }
   }
 
+  // The envelope is resolved once, outside the retry loop, and every attempt sends the same
+  // deadline and the same receipt nonce. It used to be regenerated per attempt, which meant
+  // the deadline could never actually arrive -- each try bought another five minutes. When a
+  // relayed intent binds an envelope (relay-envelope.ts) that stored value is used instead, so
+  // a rebroadcast hours later still carries the deadline the original submission fixed, and
+  // TaskMarketForwarder.relay's ReceiptExpired is what ends it rather than a tuned counter.
+  const { receiptNonce, validBefore } = currentRelayEnvelope() ?? newRelayEnvelope();
+
   // Retry loop to handle RPC read-after-write lag: the node may confirm a receipt
   // but simulation for the next call still sees the pre-tx state. Retrying after a
   // short delay allows the node's state to catch up.
@@ -514,8 +522,6 @@ async function relayThroughForwarderResult(
       await new Promise<void>((resolve) => setTimeout(resolve, RELAY_RETRY_DELAY_MS));
     }
 
-    const validBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
-    const receiptNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
     const callArgs = {
       address: forwarderAddr,
       abi: FORWARDER_ABI,
@@ -555,6 +561,11 @@ async function relayThroughForwarderResult(
       // so callers that catch specific revert names see the same message format as pre-send failures.
       let revertReason = 'unknown revert';
       try {
+        // Fresh deadline and nonce for the synthetic call only. This is a read-only
+        // simulateContract whose sole purpose is to surface the revert reason behind an
+        // already-failed transaction; nothing is broadcast and no real deadline is extended.
+        // They are refreshed so the diagnostic does not trip over an expired deadline or a
+        // spent nonce before it reaches the revert we are actually trying to read.
         const freshValidBefore = BigInt(Math.floor(Date.now() / 1000) + RELAY_VALID_WINDOW_SECS);
         const freshNonce = `0x${randomBytes(32).toString('hex')}` as `0x${string}`;
         await runWithRpcApplicationAttempt(attempt + 1, () =>
@@ -793,6 +804,24 @@ export async function contractProjectSettlementForTx(
   txHash: `0x${string}`
 ): Promise<{ settlement: ProjectedSettlement | null; settledAt: number | null }> {
   return projectSettlementFromReceipt(taskId, await relayResultFromTxHash(txHash));
+}
+
+/**
+ * Broadcast finalizeVerdict and return only its hash.
+ *
+ * The form a relayed intent needs (ADR-0045): the settlement this transaction produces is
+ * projected by the completion handler from the hash, because that handler may run in a process
+ * that never made this call and has no receipt in hand.
+ */
+export async function contractFinalizeVerdictTx(taskId: `0x${string}`): Promise<`0x${string}`> {
+  // Anyone can call finalizeVerdict — use server wallet as the acting principal
+  const { address } = createServerWallet();
+  const data = encodeFunctionData({
+    abi: MARKET_ABI,
+    functionName: 'finalizeVerdict',
+    args: [taskId],
+  });
+  return relayThroughForwarder(address, 0n, data);
 }
 
 export async function contractFinalizeVerdict(

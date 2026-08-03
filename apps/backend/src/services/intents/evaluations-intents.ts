@@ -4,7 +4,11 @@ import { eq } from 'drizzle-orm';
 import { getServerConfig } from '../../config/env';
 import type { db as DbType } from '../../db/client';
 import { tasks } from '../../db/schema';
-import { blockTimestampForTx, contractProjectSettlementForTx } from '../contract';
+import {
+  blockTimestampForTx,
+  contractFinalizeVerdictTx,
+  contractProjectSettlementForTx,
+} from '../contract';
 import { recordTaskSettlement } from '../settlement-recorder';
 
 type Db = typeof DbType;
@@ -77,6 +81,81 @@ export async function completeEvaluationsAppeal(context: {
     .update(tasks)
     .set({ status: 'disputed' })
     .where(eq(tasks.id, context.payload.taskId));
+}
+
+export type EvaluationsFinalizeVerdictIntentPayload = {
+  /** The verdict recorded when the evaluation landed; REJECT terminates instead of settling. */
+  rejected: boolean;
+  taskId: string;
+};
+
+export function broadcastEvaluationsFinalizeVerdict(context: {
+  payload: EvaluationsFinalizeVerdictIntentPayload;
+}): Promise<`0x${string}`> {
+  return contractFinalizeVerdictTx(context.payload.taskId as `0x${string}`);
+}
+
+/**
+ * Settle the task a confirmed finalizeVerdict closed.
+ *
+ * finalizeVerdict is permissionless -- anyone may call it once the appeal window has passed --
+ * and that changes nothing here. An intent records what the server relayed, not who asked for
+ * it: the transaction is sent by the server wallet either way, and its receipt has exactly the
+ * same post-receipt database work to do whether the requester, the worker or a passing bot
+ * triggered it. What the intent buys is that the settlement still gets recorded when the
+ * receipt outlives the request, which for an endpoint bots poll is if anything more likely.
+ *
+ * Idempotent: `recordTaskSettlement` conflicts-do-nothing, and both status writes are fixed
+ * values derived from the payload. The updates are deliberately unguarded by prior status, as
+ * they were when they ran inline -- the indexer can legitimately reach this task first, and a
+ * guard would then skip the write the chain has already justified.
+ */
+export async function completeEvaluationsFinalizeVerdict(context: {
+  db: Db;
+  payload: EvaluationsFinalizeVerdictIntentPayload;
+  txHash: `0x${string}`;
+}): Promise<void> {
+  const { db, payload } = context;
+
+  if (payload.rejected) {
+    // REJECT refunds the (post-evaluator-fee) remainder to the requester and terminates the
+    // task -- it does not reopen it. A worker who claimed a reopened task would find
+    // acceptSubmission reverting on the empty escrow left behind by the refund
+    // (EvaluatorFacet.finalizeVerdict). The contract emits no TaskCompleted event on this
+    // path, so there is no settlement to record and nothing to read back from the receipt.
+    await db
+      .update(tasks)
+      .set({
+        appealDeadline: null,
+        appealWindow: null,
+        claimedBy: null,
+        evaluationWindow: null,
+        evaluator: null,
+        evaluatorDeadline: null,
+        evaluatorStake: '0',
+        status: 'cancelled',
+      })
+      .where(eq(tasks.id, payload.taskId));
+    return;
+  }
+
+  const { settlement, settledAt } = await contractProjectSettlementForTx(
+    payload.taskId as `0x${string}`,
+    context.txHash
+  );
+
+  if (settlement && settledAt != null) {
+    await recordTaskSettlement(db, {
+      chainId: getServerConfig().CHAIN_ID,
+      settledAt: new Date(settledAt * 1000),
+      settlement,
+    });
+    return;
+  }
+
+  // All-zero-award verdict: the contract still transitions the task to Accepted/completed, but
+  // emits no TaskCompleted log, so there is no settlement to record.
+  await db.update(tasks).set({ status: 'completed' }).where(eq(tasks.id, payload.taskId));
 }
 
 export type EvaluationsResolveDisputeIntentPayload = {

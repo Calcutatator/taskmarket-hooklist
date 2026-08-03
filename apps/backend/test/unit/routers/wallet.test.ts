@@ -36,7 +36,7 @@ import {
 } from '../../../src/services/contract';
 import { recoverMessageAddress } from 'viem';
 import { getServerConfig } from '../../../src/config/env';
-import { createMockCtx, makeChain } from '../helpers';
+import { createIntentCtx, makeChain } from '../helpers';
 
 const WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const WITHDRAWAL = '0x70997970C51812dc3A010C7d01b50e0d17dc79C8';
@@ -80,7 +80,7 @@ describe('wallet router', () => {
   describe('setWithdrawalAddress', () => {
     it('sets withdrawal address when signature is valid', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // Agent exists but no withdrawal address
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: null })]));
 
@@ -99,7 +99,7 @@ describe('wallet router', () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
         '0x0000000000000000000000000000000000000001' as `0x${string}`
       );
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
 
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -113,7 +113,7 @@ describe('wallet router', () => {
 
     it('throws BAD_REQUEST when recoverMessageAddress throws', async () => {
       vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
 
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -127,7 +127,7 @@ describe('wallet router', () => {
 
     it('throws CONFLICT when withdrawal address is already set', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -143,7 +143,7 @@ describe('wallet router', () => {
 
   describe('getWithdrawalAddress', () => {
     it('returns null withdrawalAddress when agent is not in DB', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -155,7 +155,7 @@ describe('wallet router', () => {
     });
 
     it('returns set withdrawalAddress when agent has one', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -170,7 +170,7 @@ describe('wallet router', () => {
 
   describe('withdraw', () => {
     it('throws when authorization.from does not match input.from', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
 
       await expect(
@@ -184,7 +184,7 @@ describe('wallet router', () => {
     });
 
     it('throws when agent has no withdrawal address', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: null })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -199,7 +199,7 @@ describe('wallet router', () => {
     });
 
     it('throws when agent is not found', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -214,7 +214,7 @@ describe('wallet router', () => {
     });
 
     it('throws when authorization.to does not match registered withdrawal address', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -229,7 +229,7 @@ describe('wallet router', () => {
     });
 
     it('throws when authorization.value does not match amountBaseUnits', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -244,7 +244,7 @@ describe('wallet router', () => {
     });
 
     it('throws when authorization has expired', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -261,7 +261,7 @@ describe('wallet router', () => {
     });
 
     it('executes transfer and returns txHash when all inputs are valid', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
 
       const caller = walletRouter.createCaller(ctx);
@@ -277,11 +277,39 @@ describe('wallet router', () => {
       expect(result.amountBaseUnits).toBe('5000000');
       expect(result.to).toBe(WITHDRAWAL);
     });
+
+    // Verifies: ADR-0045
+    it('records the authorization verbatim so a rebroadcast cannot amend it', async () => {
+      const ctx = createIntentCtx();
+      ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
+      const authorization = makeAuthorization();
+
+      await walletRouter.createCaller(ctx).withdraw({
+        from: WALLET,
+        amountBaseUnits: '5000000',
+        authorization,
+        signature: '0x' + 'aa'.repeat(65),
+      });
+
+      const intent = ctx.intents[0]!;
+      expect(intent.operation).toBe('wallet.withdraw');
+      expect(intent.paymentTxHash).toBeNull();
+      // The user signed this deadline; a retry replays it rather than refreshing it, so a
+      // lost broadcast dies with the authorization instead of being silently extended.
+      expect(intent.payload).toMatchObject({
+        nonce: authorization.nonce,
+        validBefore: String(authorization.validBefore),
+      });
+      // Fixed at record time, and the same value on every attempt.
+      expect(intent.relayValidBefore).toEqual(expect.any(String));
+      expect(intent.relayReceiptNonce).toMatch(/^0x[a-f0-9]{64}$/);
+      expect(intent.status).toBe('completed');
+    });
   });
 
   describe('dreamsBalance', () => {
     it('returns claimableBaseUnits when hook is configured', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.dreamsBalance({ address: WALLET });
       expect(contractGetDreamsClaimable).toHaveBeenCalledWith(WALLET);
@@ -298,7 +326,7 @@ describe('wallet router', () => {
         NODE_ENV: 'test' as const,
         DREAMS_HOOK_ADDRESS: undefined,
       } as unknown as ReturnType<typeof getServerConfig>);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.dreamsBalance({ address: WALLET });
       expect(result.claimableBaseUnits).toBe('0');
@@ -310,7 +338,7 @@ describe('wallet router', () => {
 
     it('executes withdrawal and returns txHash when signature and nonce are valid', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.withdrawDreams({
@@ -321,6 +349,7 @@ describe('wallet router', () => {
         signature: '0x' + 'aa'.repeat(65),
       });
       expect(contractWithdrawDreamsRewards).toHaveBeenCalledWith(WALLET, WITHDRAWAL);
+      expect(ctx.intents[0]!.operation).toBe('wallet.withdrawDreams');
       expect(result.txHash).toBe('0xcafebabe');
       expect(result.destination).toBe(WITHDRAWAL);
       expect(result.claimedBaseUnits).toBe((500n * BigInt(10 ** 18)).toString());
@@ -329,11 +358,36 @@ describe('wallet router', () => {
       expect(result.usdEquivalent).toBe((50n * BigInt(10 ** 6)).toString());
     });
 
+    // Verifies: ADR-0045
+    it('hands the replay nonce back when the chain call never lands', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
+      vi.mocked(contractWithdrawDreamsRewards).mockRejectedValueOnce(new Error('NothingToClaim'));
+      const ctx = createIntentCtx();
+      ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
+
+      await expect(
+        walletRouter.createCaller(ctx).withdrawDreams({
+          workerAddress: WALLET,
+          destination: WITHDRAWAL,
+          nonce: dreamsNonce,
+          validBefore,
+          signature: '0x' + 'aa'.repeat(65),
+        })
+      ).rejects.toThrow('NothingToClaim');
+
+      // The nonce has to be claimed before the call -- it is the only replay guard, since
+      // withdrawFor is relayed by the server wallet rather than signed as a user transaction.
+      // Claiming it early means it must be handed back when nothing reached the chain, or the
+      // user is locked out of an authorization they still legitimately hold.
+      expect(ctx.db.delete).toHaveBeenCalledOnce();
+      expect(ctx.intents[0]!.status).toBe('recorded');
+    });
+
     it('throws UNAUTHORIZED when signature is from different wallet', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(
         '0x0000000000000000000000000000000000000001' as `0x${string}`
       );
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       await expect(
         caller.withdrawDreams({
@@ -348,7 +402,7 @@ describe('wallet router', () => {
 
     it('throws BAD_REQUEST when recoverMessageAddress throws', async () => {
       vi.mocked(recoverMessageAddress).mockRejectedValueOnce(new Error('invalid sig'));
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       await expect(
         caller.withdrawDreams({
@@ -364,7 +418,7 @@ describe('wallet router', () => {
     it('throws BAD_REQUEST when claimable is zero', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
       vi.mocked(contractGetDreamsClaimable).mockResolvedValueOnce(0n);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       ctx.db.insert.mockReturnValueOnce(makeChain([{ nonce: dreamsNonce }]));
       const caller = walletRouter.createCaller(ctx);
       await expect(
@@ -379,7 +433,7 @@ describe('wallet router', () => {
     });
 
     it('throws BAD_REQUEST when the authorization has expired', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       await expect(
         caller.withdrawDreams({
@@ -396,7 +450,7 @@ describe('wallet router', () => {
 
     it('throws CONFLICT when the nonce has already been used (replay)', async () => {
       vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WALLET as `0x${string}`);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       // onConflictDoNothing inserts zero rows when the nonce already exists.
       ctx.db.insert.mockReturnValueOnce(makeChain([]));
       const caller = walletRouter.createCaller(ctx);
@@ -415,7 +469,7 @@ describe('wallet router', () => {
 
   describe('exchangeRate', () => {
     it('returns dreamsPerUsdc when hook is configured', async () => {
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.exchangeRate();
       expect(result.dreamsPerUsdc).toBe((10n * BigInt(10 ** 18)).toString());
@@ -433,7 +487,7 @@ describe('wallet router', () => {
         DREAMS_HOOK_ADDRESS: undefined,
       } as unknown as ReturnType<typeof getServerConfig>);
       vi.mocked(contractGetDreamsPerUsdc).mockResolvedValueOnce(0n);
-      const ctx = createMockCtx();
+      const ctx = createIntentCtx();
       const caller = walletRouter.createCaller(ctx);
       const result = await caller.exchangeRate();
       expect(result.dreamsPerUsdc).toBe('0');

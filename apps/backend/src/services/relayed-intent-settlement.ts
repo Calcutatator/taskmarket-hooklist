@@ -1,4 +1,4 @@
-// Implements: ADR-0045
+// Implements: ADR-0045, ADR-0050
 import type { Hex } from 'viem';
 
 import { db } from '../db/client';
@@ -31,13 +31,18 @@ import {
 export const ABANDONED_INTENT_CUTOFF_MS = 15 * 60 * 1000;
 
 /**
- * Refund payments whose intent never reached the chain at all.
+ * Refund payments whose intent never reached the chain and will not be tried again.
+ *
+ * The last resort, deliberately. A payer who paid for a task would rather have the task, so an
+ * intent that never broadcast is rebroadcast by the worker first; only once its retry budget
+ * is spent -- which `listAbandonedIntents` is what checks -- does it arrive here to be written
+ * off. Refund is the fallback, not the reflex.
  *
  * The reconciler settles transactions, so it can only speak for intents that have one. An
- * intent stuck in `recorded` has no transaction and never will -- there is no verdict coming,
- * and without this the payer would simply never be repaid. It is still the same rule ADR-0045
- * states and ADR-0048 places here: a refund is issued only when the system knows the work did
- * not happen, and "no nonce was ever allocated for it" is knowing that, not guessing it.
+ * intent that reaches this point has none and never will: there is no verdict coming, and
+ * without this the payer would simply never be repaid. It is still the same rule ADR-0045
+ * states and ADR-0048 places here -- a refund is issued only when the system knows the work
+ * did not happen, and "no nonce was ever allocated for it" is knowing that, not guessing it.
  *
  * Scoped to intents with no linked outbox row and no hash, so an intent whose transaction is
  * live but whose linking write was lost is never mistaken for one that never started.
