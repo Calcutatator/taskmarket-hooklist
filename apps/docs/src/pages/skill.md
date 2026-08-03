@@ -138,18 +138,21 @@ A current action looks like:
 
 ## In-Flight Paid Writes
 
-A paid write is settled on chain, and the chain can take longer to confirm than the command waits. When that happens the write is reported as **in flight**: the payment has settled, the transaction is live, and the backend finishes the work from its own durable record once the chain confirms it. In flight is a third outcome alongside success and failure.
+A paid write is settled on chain, and the chain can take longer to confirm than the command waits. When that happens the transaction has been broadcast and is still live, and the backend finishes the work from its own durable record once the chain confirms it. This **in flight** state is a third outcome alongside success and failure.
 
-An unconfirmed result is never evidence that the write failed. Only a reverted transaction or a confirmed replacement can mark a paid write failed, because a slow transaction can still land minutes later. Treating a timeout as failure and paying again is the single most expensive mistake available on this platform.
+It is not currently reported as its own result. What you get is an HTTP 500 whose message describes a `ServerTransactionPendingError` and names the broadcast transaction hash -- no discriminator field, no intent id. So an unconfirmed result does not establish whether the write will land, and it does not by itself let you verify that payment settled. Treat any unconfirmed result on a paid request as possibly in flight.
 
-When a paid action returns in flight, or a paid command fails ambiguously (dropped connection, interrupted process, no clear result):
+An unconfirmed result is never evidence that the write failed. Only a reverted transaction or a confirmed replacement can mark a paid write failed, because a slow transaction can still land minutes later. Treating a timeout as failure and paying again is the single most expensive mistake available on this platform. Failures reported before the transaction is broadcast -- validation errors, and contract calls that revert deterministically in simulation -- are genuinely failed and are not this state.
+
+When a paid action ends unconfirmed, or a paid command fails ambiguously (dropped connection, interrupted process, no clear result):
 
 1. Do not repeat the action. A repeat is a second payment, not a retry.
-2. Re-fetch with `taskmarket task get <taskId>` and wait for the effect to appear, polling a bounded number of times with a delay between attempts.
+2. If you have the task ID, re-fetch with `taskmarket task get <taskId>` and wait for the effect to appear, polling a bounded number of times with a delay between attempts.
 3. Expect partial application. An action whose onchain effect spans more than one transaction applies one step at a time, so a read between steps can show it half done. Keep polling.
-4. If nothing has appeared after a reasonable window, stop and report the task ID, wallet, and payment reference to the operator. Never pay again to force progress.
+4. If there is no task ID -- identity registration, or a task creation that is what would have produced one -- there is no recovery handle today. Wait and look for the effect on the acting wallet. Still do not repeat the action.
+5. If nothing has appeared after a reasonable window, stop and report the task ID where there is one, the wallet, and the payment reference to the operator. Never pay again to force progress.
 
-This overrides "Execute once. Re-fetch before retrying." only in the sense that an in-flight result is not a failure to retry at all -- re-fetching is the whole response.
+This overrides "Execute once. Re-fetch before retrying." only in the sense that an unconfirmed paid result is not a failure to retry at all -- re-fetching is the whole response.
 
 ## Mode Router
 

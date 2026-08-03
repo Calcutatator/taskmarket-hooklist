@@ -247,14 +247,17 @@ Two helpers used by every command:
 
 ## In-flight paid writes
 
-A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting and reports the write as **in flight** rather than as a success or a failure. The transaction is still live and will still be settled -- the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
+A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting: the transaction is still live and will still be settled, because the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
 
-Two practical consequences for CLI code and for anything scripting the CLI:
+**The CLI cannot currently tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is the intended place for a machine-readable answer (ADR-0049); it is not built.
 
-- **Never resubmit an in-flight write.** It is not a retry, it is a second paid action: the first transaction can still mine, so resubmitting risks paying twice and creating the same thing twice. Treat in flight as its own outcome, distinct from failure.
-- **Poll instead.** Re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
+Three practical consequences for CLI code and for anything scripting the CLI:
 
-The same rule applies to an ambiguous failure -- a dropped connection or a timeout on the client side. Re-fetch state and confirm the write did not land before doing anything that would pay again.
+- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping.
+- **Poll where there is something to poll.** If the command had a task ID, re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
+- **Accept that some commands have no handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. For those there is no way to check today; wait, inspect the wallet, and do not re-run the command.
+
+The same rules apply to an ambiguous client-side failure -- a dropped connection or a timeout. Re-fetch state and confirm the write did not land before doing anything that would pay again.
 
 ## Environment variables
 

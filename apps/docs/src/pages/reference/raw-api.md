@@ -157,18 +157,19 @@ Do not invent requirements, reuse an authorization for a different URL, or retry
 
 ## In-Flight Paid Writes
 
-A paid write is relayed on chain by the backend, and that transaction can take longer to confirm than the request is willing to wait. When it does, the response reports the write as **in flight**: the payment has settled, the transaction is live, and the backend will finish the work from a durable record of its own once the chain confirms it. In flight is a third outcome alongside success and failure. It is not a failure, and it is not an invitation to retry.
+A paid write is relayed on chain by the backend, and that transaction can take longer to confirm than the request is willing to wait. When it does the request ends without a confirmed result: the transaction has been broadcast and is still live, and the backend owns finishing the work from a durable record of its own once the chain confirms it. In flight is a third outcome alongside success and failure. It is not a failure, and it is not an invitation to retry.
 
-A response that stops short of a confirmed result never means the write did not happen. The backend deliberately does not treat its own timeout as evidence: only a reverted receipt or a confirmed replacement transaction can mark a relayed write failed, because a transaction that is merely slow can still mine afterwards.
+Today that outcome arrives as an HTTP 500 whose message describes a `ServerTransactionPendingError`, naming the broadcast transaction hash. There is no discriminator field and no intent id in the response, so an unconfirmed result cannot be told apart from an ordinary server error by shape alone, and it does not by itself establish whether the write will land. The x402 payment for the request is settled by the facilitator before the handler runs, so a paid request that got this far has paid -- but the response gives you nothing you can verify that with. A dedicated, payer-scoped intent-status surface is the intended home for both the discriminator and the durable handle; it does not exist yet.
 
-Required agent behavior:
+An unconfirmed result is never evidence that the write did not happen. The backend deliberately does not treat its own timeout as evidence: only a reverted receipt or a confirmed replacement transaction can mark a relayed write failed, because a transaction that is merely slow can still mine afterwards. Failures reported *before* broadcast are different -- a request rejected by validation, or one whose contract call reverts deterministically in simulation, fails before any transaction exists and is genuinely failed.
 
-1. Do not resubmit the request. Resubmitting is a second paid action, not a retry -- the first transaction can still land, so a resubmission risks paying twice and creating the same thing twice.
-2. Poll instead. Re-read `GET /api/tasks/{taskId}` (or the relevant list route) until the effect appears, with a bounded number of attempts and a delay between them.
+Required agent behavior when a response is explicitly pending or in flight, or when a paid request ends ambiguously (dropped connection, socket timeout, interrupted command):
+
+1. Do not resubmit the request. Resubmitting is a second paid action, not a retry -- the first transaction can still land, so a resubmission risks paying twice and creating the same thing twice. This holds regardless of whether you can recover any other information about the write.
+2. If you already have the task ID, poll. Re-read `GET /api/tasks/{taskId}` (or the relevant list route) until the effect appears, with a bounded number of attempts and a delay between them.
 3. Expect progressive completion. An operation whose on-chain effect spans more than one transaction applies one link at a time, so a read taken between links can show the operation partly applied. Keep polling rather than concluding it failed.
-4. If the effect has still not appeared after a reasonable polling window, stop and report the task ID, the acting wallet, and the payment reference to the operator. Do not pay again to force progress.
-
-The same discipline covers an ambiguous client-side failure -- a dropped connection, a socket timeout, an interrupted command. Re-fetch state and confirm the write did not land before taking any action that would pay a second time.
+4. If there is no task ID to poll -- `POST /api/identity/register`, which never has a task, or `POST /api/tasks`, which is what would have produced one -- there is currently no recovery handle at all. Look for the effect on whatever list or lookup route covers the acting wallet, and otherwise wait for it to appear. Do not send the request again. The intent-status surface is where a durable handle for these cases will live once it exists.
+5. If the effect has still not appeared after a reasonable window, stop and report the task ID where there is one, the acting wallet, and the payment reference to the operator. Do not pay again to force progress.
 
 ## Artifact Submission
 
