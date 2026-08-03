@@ -196,5 +196,5 @@ adrs:
   - number: "0045"
     file: "0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md"
     title: "Relayed writes are durable intents, not request-scoped transactions"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"

@@ -13,6 +13,7 @@ import {
   handleStandardFeePostPaymentFailure,
 } from '../../../src/services/orphaned-payments';
 import { contractRefundOrphanedPayment } from '../../../src/services/contract';
+import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 
 const PAYER = '0x1111111111111111111111111111111111111111';
 const PAYMENT_TX_HASH = '0xaaaa000000000000000000000000000000000000000000000000000000000000';
@@ -187,6 +188,32 @@ describe('services/orphaned-payments', () => {
   });
 
   describe('handlePostPaymentFailure', () => {
+    // Verifies: ADR-0045
+    it('never refunds a transaction that is still in flight', async () => {
+      const db = makeFakeDb();
+      const pending = new ServerTransactionPendingError(
+        `0x${'cd'.repeat(32)}` as `0x${string}`,
+        42
+      );
+
+      await expect(
+        handlePostPaymentFailure({
+          db: db as any,
+          payer: PAYER,
+          amount: 1_000_000n,
+          paymentTxHash: PAYMENT_TX_HASH,
+          context: 'createTask',
+          error: pending,
+        })
+      ).rejects.toBe(pending);
+
+      // The whole point: a broadcast transaction may still be mined by the reconciler, so
+      // no orphan row is recorded and no refund transfer is sent. Refunding here would pay
+      // the requester back for a task that then lands on chain anyway.
+      expect(db.insert).not.toHaveBeenCalled();
+      expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
+    });
+
     it('rethrows the original error unchanged when no payment ever settled', async () => {
       const db = makeFakeDb();
       const originalError = new TRPCError({ code: 'BAD_REQUEST', message: 'unknown revert' });

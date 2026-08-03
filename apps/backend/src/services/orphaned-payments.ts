@@ -6,6 +6,7 @@ import type { db as DbType } from '../db/client';
 import { orphanedPayments } from '../db/schema';
 import { contractRefundOrphanedPayment } from './contract';
 import { STANDARD_X402_ACTION_AMOUNT } from '../config/payments';
+import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 // Deliberately console.error, not lib/logger: logger.ts calls getServerConfig() at
 // module load time, and this module is imported by every X402-gated router (tasks,
 // bids, pitches, proofs, identity, ...). Pulling that in transitively broke unit
@@ -174,6 +175,7 @@ export async function retryFailedOrphanedRefunds(
  * a bug upstream, or a code path reached without X402), in which case there is nothing
  * to refund and the original error is rethrown unchanged.
  */
+// Implements: ADR-0045
 export async function handlePostPaymentFailure(input: {
   db: Db;
   payer: `0x${string}`;
@@ -182,6 +184,15 @@ export async function handlePostPaymentFailure(input: {
   context: string;
   error: unknown;
 }): Promise<never> {
+  // A pending transaction is not a failed one. It was broadcast, it is recorded in the
+  // outbox, and the reconciler will either see it mined or replace it -- so refunding here
+  // can pay the requester back for work that then lands on chain anyway, leaving the escrow
+  // funded from the server wallet. Settlement waits for confirmed evidence (ADR-0045); this
+  // is the single choke point every paid path funnels through, so the rule holds everywhere.
+  if (input.error instanceof ServerTransactionPendingError) {
+    throw input.error;
+  }
+
   const failureMessage = input.error instanceof Error ? input.error.message : String(input.error);
 
   if (!input.paymentTxHash) {

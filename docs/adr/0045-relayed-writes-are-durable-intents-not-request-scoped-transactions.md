@@ -7,17 +7,17 @@
 > outcome, to achieve settlement decisions made only on confirmed on-chain results, accepting that
 > every paid endpoint becomes asynchronous and its client contract changes.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Not started
+- **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** None recorded — drafted for review, no independent reviewer yet
-- **Deciders:** Pending human approval
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending amends ADR-0040
+- **Amends / Amended-by:** Amends ADR-0040
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
