@@ -869,10 +869,61 @@ export const serverWalletTransactions = pgTable(
   })
 );
 
+// Implements: ADR-0045
+// Durable record of a relayed write. Created before any payment-consuming or chain-mutating
+// step, so the work survives the request that started it: if the receipt arrives after the
+// caller has gone, the reconciler still has everything needed to finish the job.
+//
+// Status meanings:
+//   recorded  -- intent persisted, chain call not yet broadcast. A crash here means nothing
+//                happened on chain; the payment (if any) is refundable.
+//   broadcast -- linked to a server_wallet_transactions row and live on chain. Only confirmed
+//                on-chain evidence may move it out of this state -- never a timeout.
+//   completed -- the transaction succeeded and the completion handler has run.
+//   failed    -- the chain confirmed the work did not happen (reverted receipt, or the
+//                reconciler's replacement mined instead), so any payment is refundable.
+export const relayedIntents = pgTable(
+  'relayed_intents',
+  {
+    id: text('id').primaryKey(),
+    // Operation kind, e.g. 'tasks.create'. Resolved against the completion-handler registry;
+    // a kind with no registered handler is a startup error, not a runtime surprise.
+    operation: text('operation').notNull(),
+    status: text('status').notNull().default('recorded'),
+    payer: text('payer'),
+    paymentTxHash: text('payment_tx_hash'),
+    paymentAmount: numeric('payment_amount', { precision: 78, scale: 0 }),
+    // Everything the completion handler needs, already validated by the router's input schema.
+    payload: jsonb('payload').notNull(),
+    // Set once a nonce is allocated. Null while the intent is still 'recorded'.
+    serverWalletTransactionId: text('server_wallet_transaction_id'),
+    txHash: text('tx_hash'),
+    completionAttempts: integer('completion_attempts').notNull().default(0),
+    lastError: text('last_error'),
+    createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
+    updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
+    completedAt: timestamp('completed_at', { withTimezone: true }),
+  },
+  (table) => ({
+    statusIdx: index('idx_relayed_intents_status').on(table.status),
+    txIdx: index('idx_relayed_intents_server_wallet_tx').on(table.serverWalletTransactionId),
+    payerIdx: index('idx_relayed_intents_payer').on(table.payer),
+    // One intent per settled payment: a retried request that reuses the same x402 payment
+    // must not create a second intent and a second chain call for one payment.
+    paymentUnique: uniqueIndex('idx_relayed_intents_payment_tx').on(table.paymentTxHash),
+    statusCheck: check(
+      'relayed_intents_status_check',
+      sql`${table.status} IN ('recorded', 'broadcast', 'completed', 'failed')`
+    ),
+  })
+);
+
 export type Task = typeof tasks.$inferSelect;
 export type NewTask = typeof tasks.$inferInsert;
 export type ServerWalletNonce = typeof serverWalletNonces.$inferSelect;
 export type NewServerWalletNonce = typeof serverWalletNonces.$inferInsert;
+export type RelayedIntent = typeof relayedIntents.$inferSelect;
+export type NewRelayedIntent = typeof relayedIntents.$inferInsert;
 export type ServerWalletTransaction = typeof serverWalletTransactions.$inferSelect;
 export type NewServerWalletTransaction = typeof serverWalletTransactions.$inferInsert;
 export type TaskAward = typeof taskAwards.$inferSelect;
