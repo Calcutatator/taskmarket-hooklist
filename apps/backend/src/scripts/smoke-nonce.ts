@@ -1,29 +1,47 @@
 /**
- * Server-wallet nonce management smoke test (ADR-0040).
+ * Server-wallet relay path smoke test: nonce allocator, outbox, and durable intents.
+ *
+ * Verifies: ADR-0040
+ * Verifies: ADR-0045
+ * Verifies: ADR-0046
+ *
+ * These are one subsystem, not three. ADR-0040 gave the server wallet a durable nonce
+ * allocator, an outbox and a reconciler. ADR-0045 amends it: a paid write is now a durable
+ * intent recorded before the chain call, and the reconciler that already kept nonces healthy
+ * also finishes the work once the chain has answered. ADR-0046 adds chaining, so an operation
+ * whose on-chain effect spans several transactions keeps one durable record per transaction.
+ * A single script covers the stack because the interesting failures live where the layers
+ * meet -- a nonce stranded underneath a transaction somebody has already paid for.
  *
  * Regression coverage for daydreamsai/skills-market#54: a deterministic pre-broadcast
  * failure advanced viem's cached nonce without sending a transaction, so every later
  * relayer transaction queued behind the resulting gap until the backend restarted.
  *
  * Unlike smoke-withdraw.ts, which exercises the incident's user-facing path, this test
- * asserts against the durable allocator itself. It needs both the API and the backend's
+ * asserts against the durable tables themselves. It needs both the API and the backend's
  * database, so run it in the sandbox (or any environment where DATABASE_URL points at the
  * same Postgres the backend uses):
  *
  *   make smoke nonce
  *
  * What it covers:
- *   1. The migration is applied and re-applying it is a genuine no-op (idempotency).
+ *   1. Both migrations are applied and re-applying either is a genuine no-op (idempotency).
  *   2. A deterministic preflight failure allocates no nonce and writes no outbox row.
  *   3. The very next transaction succeeds -- no restart, which is the #54 regression.
  *   4. Concurrent relayed writes take distinct, contiguous nonces rather than serializing.
- *   5. A deliberately stranded nonce is cleared by the reconciler with no operator restart.
+ *   5. A paid write leaves a durable intent carrying its payment reference, and completing
+ *      that intent -- not the request handler -- is what produces the task row.
+ *   6. An operation spanning two transactions chains a follow-on intent that carries no
+ *      payment of its own and is broadcast and completed with no request in play.
+ *   7. A deliberately stranded nonce is cleared by the reconciler with no operator restart,
+ *      the paid intent queued behind it still completes, and no refund is issued for it.
  *      This runs automatically against a loopback RPC (the sandbox and local dev), because it
  *      broadcasts a transaction that is intentionally stuck and strands a nonce on purpose.
  *      Set SMOKE_NONCE_FAULT=1 to force it on elsewhere, or 0 to force it off.
- *   6. The allocator agrees with the chain afterwards, with nothing stranded mid-flight.
+ *   8. The allocator agrees with the chain afterwards, with nothing stranded mid-flight, one
+ *      intent per payment, and no successful payment recorded as orphaned.
  *
- * Without DATABASE_URL the allocator assertions are skipped and the API-level behavior is
+ * Without DATABASE_URL the durable assertions are skipped and the API-level behavior is
  * still checked, so the test degrades usefully against a remote deployment.
  *
  * Usage:
@@ -38,14 +56,30 @@ import postgres from 'postgres';
 import { createPublicClient, createWalletClient, defineChain, http, toHex } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSetWithdrawalAddressMessage, buildSubmitMessage } from '@taskmarket/shared';
-import { API_URL, get, getAccounts, log, ok, pollTaskStatus, post, sleep, x402Post } from './_x402';
+import {
+  API_URL,
+  get,
+  getAccounts,
+  log,
+  ok,
+  pollTaskStatus,
+  pollUntil,
+  post,
+  sleep,
+  x402Post,
+} from './_x402';
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const MIGRATION_FILE = join(
-  __dirname,
-  '../../drizzle/migrations/0041_add_server_wallet_transactions.sql'
-);
+const MIGRATION_FILES = [
+  '0041_add_server_wallet_transactions.sql',
+  '0042_add_relayed_intents.sql',
+].map((name) => join(__dirname, '../../drizzle/migrations', name));
 const CONCURRENCY = 3;
+const RELAY_TABLES = [
+  'server_wallet_nonces',
+  'server_wallet_transactions',
+  'relayed_intents',
+] as const;
 
 // Matches the CLI's withdraw command (apps/cli/src/commands/withdraw.ts) so the smoke test
 // signs the same authorization a real client would.
@@ -62,6 +96,22 @@ const USDC_TYPES = {
 
 type AllocatorRow = { next_nonce: number; wallet_address: string };
 type OutboxRow = { nonce: number; status: string; context: string | null };
+
+type IntentRow = {
+  chain_depth: number;
+  completed_at: Date | null;
+  created_at: Date;
+  id: string;
+  last_error: string | null;
+  operation: string;
+  parent_intent_id: string | null;
+  payer: string | null;
+  payment_amount: string | null;
+  payment_tx_hash: string | null;
+  server_wallet_transaction_id: string | null;
+  status: string;
+  tx_hash: string | null;
+};
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -93,6 +143,88 @@ async function readOutbox(sql: postgres.Sql, wallet: string): Promise<OutboxRow[
     where lower(wallet_address) = ${wallet}
     order by nonce asc
   `;
+}
+
+/**
+ * Intents are located by the taskId inside their persisted payload, because the create
+ * endpoint's response deliberately carries no intent identifier -- callers are handed a task,
+ * not a piece of the mechanism. The payload is the completion handler's only input, so keying
+ * off it also confirms the handler would have everything it needs in a fresh process.
+ */
+async function readIntents(
+  sql: postgres.Sql,
+  taskId: string,
+  operation: string
+): Promise<IntentRow[]> {
+  return sql<IntentRow[]>`
+    select id, operation, status, payer, payment_tx_hash, payment_amount,
+           server_wallet_transaction_id, tx_hash, parent_intent_id, chain_depth,
+           last_error, created_at, completed_at
+    from relayed_intents
+    where operation = ${operation} and payload->>'taskId' = ${taskId}
+    order by created_at asc
+  `;
+}
+
+async function pollIntent(
+  sql: postgres.Sql,
+  taskId: string,
+  operation: string,
+  predicate: (row: IntentRow) => boolean,
+  label: string,
+  timeoutMs = 180_000
+): Promise<IntentRow> {
+  const deadline = Date.now() + timeoutMs;
+  let last: IntentRow | undefined;
+  while (Date.now() < deadline) {
+    const [row] = await readIntents(sql, taskId, operation);
+    last = row;
+    if (row && predicate(row)) return row;
+    await sleep(3000);
+  }
+  throw new Error(
+    `Timed out waiting for ${label}. Last seen: ${
+      last
+        ? JSON.stringify({ id: last.id, lastError: last.last_error, status: last.status })
+        : '(no intent row)'
+    }`
+  );
+}
+
+/** Orphaned-payment rows for the given payment hashes. Any row here means a refund path ran. */
+async function readOrphanedPayments(
+  sql: postgres.Sql,
+  paymentHashes: string[]
+): Promise<{ context: string; payment_tx_hash: string; refund_status: string }[]> {
+  if (paymentHashes.length === 0) return [];
+  return sql<{ context: string; payment_tx_hash: string; refund_status: string }[]>`
+    select payment_tx_hash, context, refund_status from orphaned_payments
+    where payment_tx_hash = any(${sql.array(paymentHashes)})
+  `;
+}
+
+/**
+ * A plain paid create with no evaluator, so its intent is a single-link chain.
+ *
+ * The fault injection deletes and re-creates this task's row, and a chain root with a
+ * follow-on would drag a second intent through that surgery for no additional coverage.
+ */
+async function setupPaidTask(
+  requester: ReturnType<typeof getAccounts>['requester'],
+  label: string
+): Promise<string> {
+  const { taskId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: `Nonce smoke test task ${label}`,
+      reward: '1000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-nonce'],
+    },
+    requester
+  )) as { taskId: string };
+  return taskId;
 }
 
 /**
@@ -199,7 +331,7 @@ async function main() {
   const wallet = serverWalletAddress();
   const sql = openDatabase();
 
-  console.log('=== Taskmarket Smoke Test — Server Wallet Nonce Management ===');
+  console.log('=== Taskmarket Smoke Test — Server Wallet Relay Path (nonces, outbox, intents) ===');
   console.log('requester:  ', requester.address);
   console.log('worker:     ', worker.address);
   console.log('api:        ', API_URL);
@@ -221,41 +353,53 @@ async function main() {
       '\nNote: set DATABASE_URL and SERVER_PRIVATE_KEY to assert against the allocator itself.'
     );
   }
+  if (!sql) {
+    console.log(
+      'Note: without DATABASE_URL the intent assertions are skipped entirely. This run then' +
+        '\nproves the paid endpoints still respond, not that a paid write is durable.'
+    );
+  }
 
-  // 1. Migration applied, and re-applying it is a no-op.
+  // Every payment this run settles. Two of the final invariants are stated over exactly these:
+  // one intent per payment, and no refund for any of them.
+  const paymentHashes: string[] = [];
+
+  // 1. Migrations applied, and re-applying either is a no-op.
   if (sql) {
-    log('1/6', 'Checking allocator tables exist and the migration is idempotent...');
+    log('1/9', 'Checking relay tables exist and both migrations are idempotent...');
     const tables = await sql<{ table_name: string }[]>`
       select table_name from information_schema.tables
-      where table_name in ('server_wallet_nonces', 'server_wallet_transactions')
+      where table_name = any(${sql.array([...RELAY_TABLES])})
     `;
-    if (tables.length !== 2) {
+    if (tables.length !== RELAY_TABLES.length) {
       throw new Error(
-        `Expected both allocator tables, found: ${tables.map((t) => t.table_name).join(', ') || 'none'}`
+        `Expected ${RELAY_TABLES.length} relay tables, found: ${tables.map((t) => t.table_name).join(', ') || 'none'}`
       );
     }
-    ok('allocator tables present', tables.map((t) => t.table_name).sort());
+    ok('relay tables present', tables.map((t) => t.table_name).sort());
 
-    // Re-run the migration verbatim. Every statement is guarded, so this must not throw
+    // Re-run both migrations verbatim. Every statement is guarded, so this must not throw
     // against a database where it already applied -- the property AGENTS.md requires and
     // that a mis-timed journal entry would otherwise turn into a boot crash loop.
-    const statements = readFileSync(MIGRATION_FILE, 'utf8')
-      .split('--> statement-breakpoint')
-      .map((statement) => statement.trim())
-      .filter(Boolean);
-    for (const statement of statements) {
-      await sql.unsafe(statement);
+    for (const file of MIGRATION_FILES) {
+      const statements = readFileSync(file, 'utf8')
+        .split('--> statement-breakpoint')
+        .map((statement) => statement.trim())
+        .filter(Boolean);
+      for (const statement of statements) {
+        await sql.unsafe(statement);
+      }
+      ok(`re-applied as a no-op: ${file.split('/').pop()}`, `${statements.length} statements`);
     }
-    ok('migration re-applied as a no-op', `${statements.length} statements`);
   } else {
-    log('1/6', 'Skipping migration idempotency check (no DATABASE_URL)');
+    log('1/9', 'Skipping migration idempotency check (no DATABASE_URL)');
   }
 
   // 2. Baseline.
   let baselineNextNonce: number | null = null;
   let baselineOutbox = 0;
   if (deepChecks && sql && wallet) {
-    log('2/6', 'Reading allocator baseline...');
+    log('2/9', 'Reading allocator baseline...');
     const allocator = await readAllocator(sql, wallet);
     const outbox = await readOutbox(sql, wallet);
     baselineNextNonce = allocator?.next_nonce ?? null;
@@ -263,13 +407,13 @@ async function main() {
     ok('allocator next_nonce', baselineNextNonce ?? '(not seeded yet)');
     ok('outbox rows', baselineOutbox);
   } else {
-    log('2/6', 'Skipping allocator baseline (no DATABASE_URL)');
+    log('2/9', 'Skipping allocator baseline (no DATABASE_URL)');
   }
 
   // 3. The #54 trigger: a valid EIP-3009 authorization whose value exceeds the source
   // wallet's balance. It passes every input check and fails only at gas estimation, which
   // is exactly the shape that poisoned the old in-memory nonce cache.
-  log('3/6', 'Triggering a deterministic pre-broadcast failure (over-balance withdrawal)...');
+  log('3/9', 'Triggering a deterministic pre-broadcast failure (over-balance withdrawal)...');
 
   // A withdrawal address must exist before /wallet/withdraw will build an authorization.
   // Setting it is idempotent from this test's point of view: a second attempt is rejected
@@ -348,7 +492,7 @@ async function main() {
   }
 
   // 4. Recovery: the next transaction must work without a restart.
-  log('4/6', 'Setting up tasks and confirming the relayer still works after the failure...');
+  log('4/9', 'Setting up tasks and confirming the relayer still works after the failure...');
   const taskIds: string[] = [];
   for (let i = 0; i < CONCURRENCY; i++) {
     taskIds.push(await setupFinalizableTask(requester, worker, String(i)));
@@ -356,7 +500,7 @@ async function main() {
   ok('relayer still working after failed preflight', `${taskIds.length} tasks created`);
 
   // 5. Concurrency: distinct nonces, not one-at-a-time.
-  log('5/6', `Waiting for appeal windows, then finalizing ${CONCURRENCY} verdicts concurrently...`);
+  log('5/9', `Waiting for appeal windows, then finalizing ${CONCURRENCY} verdicts concurrently...`);
   await sleep(8000);
   const results = await Promise.all(
     taskIds.map((taskId) => post(`/api/tasks/${taskId}/finalize-verdict`, { taskId }))
@@ -378,14 +522,170 @@ async function main() {
   }
   ok('every task reached completed', true);
 
-  // 5b. Deliberate fault injection: strand a nonce and prove the reconciler heals it without
+  // 6. The durable intent behind a paid write (ADR-0045).
+  //
+  // The row has to exist for the reconciler to have anything to decide about later: it carries
+  // the payment reference, so a verdict reached minutes after the request has gone can still be
+  // matched to the money. Before this, settlement was decided by whoever happened to still be
+  // waiting, which is how a slow chain turned into a refund for work that then landed.
+  //
+  // Completion, not the request handler, is what writes the task row -- so a completed intent
+  // with a task row is also proof that the inline path is gone.
+  if (sql) {
+    log('6/9', 'Inspecting the durable intent behind a paid task creation...');
+    const createRows = await readIntents(sql, taskIds[0]!, 'tasks.create');
+    if (createRows.length !== 1) {
+      throw new Error(
+        `Expected exactly one tasks.create intent for ${taskIds[0]}, found ${createRows.length}`
+      );
+    }
+    const createIntent = createRows[0]!;
+    if (!createIntent.payment_tx_hash || !createIntent.payer || !createIntent.payment_amount) {
+      throw new Error(
+        `Intent ${createIntent.id} is missing payment fields: ${JSON.stringify({
+          payer: createIntent.payer,
+          paymentAmount: createIntent.payment_amount,
+          paymentTxHash: createIntent.payment_tx_hash,
+        })}`
+      );
+    }
+    if (createIntent.parent_intent_id !== null || createIntent.chain_depth !== 0) {
+      throw new Error(`Intent ${createIntent.id} is a paid write, so it must be a chain root`);
+    }
+    paymentHashes.push(createIntent.payment_tx_hash);
+    ok('intent recorded with its payment reference', {
+      id: createIntent.id,
+      operation: createIntent.operation,
+      payer: createIntent.payer,
+    });
+
+    const completed = await pollIntent(
+      sql,
+      taskIds[0]!,
+      'tasks.create',
+      (row) => row.status === 'completed',
+      `tasks.create intent for ${taskIds[0]} to complete`
+    );
+    if (!completed.completed_at) {
+      throw new Error(`Intent ${completed.id} is completed but has no completed_at`);
+    }
+    if (!completed.tx_hash) {
+      throw new Error(`Intent ${completed.id} completed with no transaction hash recorded`);
+    }
+    const taskRows = await sql<{ id: string }[]>`select id from tasks where id = ${taskIds[0]!}`;
+    if (taskRows.length !== 1) {
+      throw new Error(`Intent ${completed.id} completed but no task row exists for ${taskIds[0]}`);
+    }
+    ok('intent completed and the task row it produced exists', {
+      completedAt: completed.completed_at,
+      txHash: completed.tx_hash,
+    });
+
+    // Every remaining paid create in this run must also have left exactly one intent, so the
+    // per-payment invariants at the end are stated over the whole run rather than one sample.
+    for (const taskId of taskIds.slice(1)) {
+      const rows = await readIntents(sql, taskId, 'tasks.create');
+      if (rows.length !== 1 || !rows[0]!.payment_tx_hash) {
+        throw new Error(`Task ${taskId} has ${rows.length} tasks.create intent(s) with a payment`);
+      }
+      paymentHashes.push(rows[0]!.payment_tx_hash);
+    }
+  } else {
+    log('6/9', 'Skipping durable intent checks (no DATABASE_URL)');
+  }
+
+  // 7. Chaining (ADR-0046). These tasks carry an evaluator, and assigning one is a second
+  // contract call. It cannot be broadcast from inside the create's completion handler: a
+  // transaction sent from there would have no durable record of its own, so nothing could
+  // settle it and nothing could refund against it. It becomes the next link instead --
+  // enqueued once the parent is confirmed, broadcast by the intent worker, completed by the
+  // reconciler, with no request anywhere in the sequence.
+  if (sql) {
+    log('7/9', 'Following the evaluator-assignment chain...');
+    const parentRows = await readIntents(sql, taskIds[0]!, 'tasks.create');
+    const followOn = await pollIntent(
+      sql,
+      taskIds[0]!,
+      'tasks.assignEvaluator',
+      () => true,
+      `a tasks.assignEvaluator follow-on for ${taskIds[0]} to be enqueued`,
+      60_000
+    );
+    if (followOn.parent_intent_id !== parentRows[0]!.id) {
+      throw new Error(
+        `Follow-on ${followOn.id} has parent ${followOn.parent_intent_id}, expected ${parentRows[0]!.id}`
+      );
+    }
+    if (followOn.chain_depth !== 1) {
+      throw new Error(
+        `Follow-on ${followOn.id} has chain_depth ${followOn.chain_depth}, expected 1`
+      );
+    }
+    // Only the root of a chain carries the payment. That is what makes it structurally
+    // impossible for one payment to be refunded twice when more than one link fails.
+    if (followOn.payment_tx_hash !== null || followOn.payment_amount !== null) {
+      throw new Error(
+        `Follow-on ${followOn.id} carries a payment reference; only the root of a chain may`
+      );
+    }
+    ok('follow-on chained to its root with no payment of its own', {
+      chainDepth: followOn.chain_depth,
+      id: followOn.id,
+      parent: followOn.parent_intent_id,
+    });
+
+    const settledFollowOn = await pollIntent(
+      sql,
+      taskIds[0]!,
+      'tasks.assignEvaluator',
+      (row) => row.status === 'completed',
+      `the tasks.assignEvaluator follow-on for ${taskIds[0]} to complete`
+    );
+    ok('follow-on broadcast and completed with no request in play', settledFollowOn.tx_hash);
+  } else {
+    log('7/9', 'Skipping chained-intent checks (no DATABASE_URL)');
+  }
+
+  // The evaluator reaches the task only through the follow-on's completion handler, so this
+  // is the end-to-end form of the same claim: the chain did the work, not just moved rows.
+  // It runs with or without a database, which is what the API-only mode is worth.
+  const evaluated = await pollUntil(
+    () => get(`/api/tasks/${taskIds[0]}`) as Promise<{ evaluator: string | null }>,
+    (task) => Boolean(task.evaluator),
+    { label: `an evaluator to be recorded on task ${taskIds[0]}`, timeoutMs: 120_000 }
+  );
+  if (evaluated.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+    throw new Error(
+      `Task ${taskIds[0]} evaluator is ${evaluated.evaluator}, expected ${requester.address}`
+    );
+  }
+  ok('evaluator recorded on the task by the chained intent', evaluated.evaluator);
+
+  // 8. Deliberate fault injection: strand a nonce and prove the reconciler heals it without
   // an operator restart. This is the property the incident actually exposed, and the only way
   // to exercise it is to create the failure on purpose.
   //
   // Enabled automatically against a loopback RPC; see faultInjectionEnabled() for why the
   // chain ID cannot be used for this and why the default is on rather than off.
   if (deepChecks && sql && wallet && faultInjection.enabled) {
-    log('5b', 'Injecting a stranded nonce and waiting for the reconciler to clear it...');
+    log('8/9', 'Injecting a stranded nonce underneath a paid intent...');
+
+    // A real paid create, so the transaction that is about to be stranded is one somebody has
+    // already been charged for. That is what makes the three assertions at the end of this
+    // step meaningful rather than a nonce-hygiene check with money bolted on.
+    const strandedTaskId = await setupPaidTask(requester, 'stranded');
+    const paidIntent = await pollIntent(
+      sql,
+      strandedTaskId,
+      'tasks.create',
+      (row) => row.status === 'completed',
+      `tasks.create intent for ${strandedTaskId} to complete`
+    );
+    if (!paidIntent.payment_tx_hash) {
+      throw new Error(`Intent ${paidIntent.id} has no payment reference to reason about`);
+    }
+    paymentHashes.push(paidIntent.payment_tx_hash);
+    ok('paid intent to strand', { id: paidIntent.id, taskId: strandedTaskId });
 
     const rpcUrl = process.env.BASE_RPC_URL || 'http://127.0.0.1:8545';
     const faultPublicClient = createPublicClient({ transport: http(rpcUrl) });
@@ -434,14 +734,43 @@ async function main() {
       values (${`smoke-nonce-stranded-${strandedNonce}`}, ${wallet}, ${chainId},
         ${strandedNonce}, 'recycled', 'smoke-nonce fault injection', now() - interval '1 hour')
     `;
+    // The blocked row keeps a current broadcast_at, unlike the recycled one. It is legitimately
+    // in flight, and a row past the stuck threshold gets a replacement -- which is confirmed
+    // evidence the original never landed, and would rightly refund the intent about to be
+    // attached to it. Manufacturing that would prove nothing about timeouts.
+    const blockedTransactionId = `smoke-nonce-blocked-${blockedNonce}`;
     await sql`
       insert into server_wallet_transactions
         (id, wallet_address, chain_id, nonce, status, tx_hash, context, broadcast_at, updated_at)
-      values (${`smoke-nonce-blocked-${blockedNonce}`}, ${wallet}, ${chainId},
+      values (${blockedTransactionId}, ${wallet}, ${chainId},
         ${blockedNonce}, 'broadcast', ${blockedHash}, 'smoke-nonce fault injection',
-        now() - interval '1 hour', now() - interval '1 hour')
+        now(), now())
     `;
     ok('stranded nonce recorded', strandedNonce);
+
+    // Put the paid intent back into the state a request that returned early leaves behind, and
+    // attach it to the blocked transaction: in flight, no completion done, and stuck behind a
+    // hole in the nonce sequence. A marker tag is written into the payload first because the
+    // chain-event indexer also inserts a row for this task id from the on-chain TaskCreated
+    // event -- without something only the completion handler can produce, a reappearing task
+    // row would not say which path wrote it.
+    const marker = `smoke-nonce-reconciled-${Date.now()}`;
+    await sql`
+      update relayed_intents
+      set payload = jsonb_set(payload, '{input,tags}', ${sql.json(['smoke-nonce', marker])}::jsonb),
+          server_wallet_transaction_id = ${blockedTransactionId},
+          tx_hash = ${blockedHash},
+          status = 'broadcast',
+          completed_at = null,
+          last_error = null,
+          updated_at = now()
+      where id = ${paidIntent.id}
+    `;
+    await sql`delete from tasks where id = ${strandedTaskId}`;
+    ok('paid intent left in flight with its work undone', {
+      intentId: paidIntent.id,
+      nonce: blockedNonce,
+    });
 
     // The reconciler polls every 15s; give it several passes plus mining time.
     const deadline = Date.now() + 180_000;
@@ -476,13 +805,58 @@ async function main() {
       );
     }
     ok('the transaction queued behind it mined', blockedHash);
+
+    // The three-part assertion this whole script exists to make, and the only place the layers
+    // are proven together.
+    //
+    // The intent spent minutes in flight with no caller waiting on it. Under the old rule that
+    // was indistinguishable from failure, and the request's broad catch refunded the payer --
+    // after which the reconciler landed the very transaction it had declared dead. The rule
+    // now is that a timeout is not evidence: only a reverted receipt or a mined replacement is.
+    // So all three of these must hold at once, and any one of them failing is the same defect
+    // seen from a different side.
+    //
+    //   1. the nonce is cleared with no operator restart (asserted above);
+    //   2. the work the payment bought actually happens, however late the receipt arrives;
+    //   3. the money does not move, because nothing ever confirmed a failure.
+    const reconciled = await pollIntent(
+      sql,
+      strandedTaskId,
+      'tasks.create',
+      (row) => row.status === 'completed' && row.completed_at !== null,
+      `the reconciler to complete paid intent ${paidIntent.id} with no restart`
+    );
+    const rewritten = await sql<{ tags: string[] }[]>`
+      select tags from tasks where id = ${strandedTaskId}
+    `;
+    if (rewritten.length !== 1) {
+      throw new Error(`Intent ${reconciled.id} completed but its task row was never written`);
+    }
+    if (!rewritten[0]!.tags?.includes(marker)) {
+      throw new Error(
+        `Task ${strandedTaskId} came back without the completion marker, so the completion ` +
+          'handler did not write it and the row cannot be attributed to the reconciler'
+      );
+    }
+    ok('a receipt arriving after the caller had gone still produced the work', {
+      completedAt: reconciled.completed_at,
+      taskId: strandedTaskId,
+    });
+
+    const refunded = await readOrphanedPayments(sql, [paidIntent.payment_tx_hash]);
+    if (refunded.length > 0) {
+      throw new Error(
+        `A stranded-but-successful paid intent was refunded: ${JSON.stringify(refunded)}`
+      );
+    }
+    ok('no refund was issued while the paid intent was stranded', paidIntent.payment_tx_hash);
   } else if (deepChecks) {
-    log('5b', `Skipping fault injection: ${faultInjection.reason}`);
+    log('8/9', `Skipping fault injection: ${faultInjection.reason}`);
   }
 
   // 6. The master invariant: the allocator agrees with the chain and nothing is stranded.
   if (deepChecks && sql && wallet) {
-    log('6/6', 'Verifying the allocator agrees with the chain...');
+    log('9/9', 'Verifying the allocator agrees with the chain and no payment was refunded...');
     const outbox = await readOutbox(sql, wallet);
     const issued = outbox.filter((row) => row.status !== 'recycled').map((row) => row.nonce);
     const uniqueIssued = new Set(issued);
@@ -523,11 +897,39 @@ async function main() {
       chain: chainNonce,
     });
   } else {
-    log('6/6', 'Skipping allocator invariants (no DATABASE_URL)');
+    log('9/9', 'Skipping allocator invariants (no DATABASE_URL or SERVER_PRIVATE_KEY)');
+  }
+
+  if (sql && paymentHashes.length > 0) {
+    // The payment hash is uniquely indexed precisely so the record is the idempotency key for
+    // a paid operation: a retried request reusing a settled x402 payment must reuse its intent
+    // rather than making a second chain call and a second escrow for one payment.
+    const duplicates = await sql<{ count: string; payment_tx_hash: string }[]>`
+      select payment_tx_hash, count(*) as count from relayed_intents
+      where payment_tx_hash = any(${sql.array(paymentHashes)})
+      group by payment_tx_hash having count(*) > 1
+    `;
+    if (duplicates.length > 0) {
+      throw new Error(`Payments with more than one intent: ${JSON.stringify(duplicates)}`);
+    }
+    ok('one intent per payment', `${paymentHashes.length} payments`);
+
+    // Stated over every payment this run made, not only the stranded one. A refund for a
+    // create that succeeded is the defect ADR-0045 exists to remove, and it is silent: the
+    // task exists on chain, funded from the server wallet, and the payer has their money back.
+    const orphans = await readOrphanedPayments(sql, paymentHashes);
+    if (orphans.length > 0) {
+      throw new Error(
+        `Successful paid writes were recorded as orphaned payments: ${JSON.stringify(orphans)}`
+      );
+    }
+    ok('no successful payment was refunded', `${paymentHashes.length} payments`);
+  } else if (!sql) {
+    ok('skipped per-payment intent invariants', 'no DATABASE_URL');
   }
 
   await sql?.end();
-  console.log('\n=== Nonce management smoke test passed ===');
+  console.log('\n=== Server wallet relay path smoke test passed ===');
 }
 
 main().catch(async (err) => {
