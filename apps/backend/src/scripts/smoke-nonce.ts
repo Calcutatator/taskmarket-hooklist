@@ -191,7 +191,13 @@ async function pollIntent(
   );
 }
 
-/** Orphaned-payment rows for the given payment hashes. Any row here means a refund path ran. */
+/**
+ * Orphaned-payment rows for the given payment hashes. Any row here means a refund path ran.
+ *
+ * Uses an expanded `in` value list rather than `= any(sql.array(...))` for the same reason as the
+ * relay-table check in step 1: array parameters need element-type inference the driver cannot
+ * always do, and a scalar value list needs none.
+ */
 async function readOrphanedPayments(
   sql: postgres.Sql,
   paymentHashes: string[]
@@ -199,7 +205,7 @@ async function readOrphanedPayments(
   if (paymentHashes.length === 0) return [];
   return sql<{ context: string; payment_tx_hash: string; refund_status: string }[]>`
     select payment_tx_hash, context, refund_status from orphaned_payments
-    where payment_tx_hash = any(${sql.array(paymentHashes)})
+    where payment_tx_hash in ${sql(paymentHashes)}
   `;
 }
 
@@ -367,10 +373,20 @@ async function main() {
   // 1. Migrations applied, and re-applying either is a no-op.
   if (sql) {
     log('1/9', 'Checking relay tables exist and both migrations are idempotent...');
-    const tables = await sql<{ table_name: string }[]>`
-      select table_name from information_schema.tables
-      where table_name = any(${sql.array([...RELAY_TABLES])})
-    `;
+    // Deliberately one query per table with a single scalar parameter, rather than the obvious
+    // `where table_name = any(${sql.array([...RELAY_TABLES])})`. postgres.js has to infer an
+    // element OID for an array parameter, and on a connection whose type cache is still cold --
+    // which this query always is, being the very first statement the smoke runs -- that inference
+    // fails reproducibly and takes every later step down with it. A plain scalar equality needs no
+    // inference at all. Do not "simplify" this back into an array parameter.
+    const tables: { table_name: string }[] = [];
+    for (const table of RELAY_TABLES) {
+      const rows = await sql<{ table_name: string }[]>`
+        select table_name from information_schema.tables
+        where table_name = ${table}
+      `;
+      tables.push(...rows);
+    }
     if (tables.length !== RELAY_TABLES.length) {
       throw new Error(
         `Expected ${RELAY_TABLES.length} relay tables, found: ${tables.map((t) => t.table_name).join(', ') || 'none'}`
@@ -906,7 +922,7 @@ async function main() {
     // rather than making a second chain call and a second escrow for one payment.
     const duplicates = await sql<{ count: string; payment_tx_hash: string }[]>`
       select payment_tx_hash, count(*) as count from relayed_intents
-      where payment_tx_hash = any(${sql.array(paymentHashes)})
+      where payment_tx_hash in ${sql(paymentHashes)}
       group by payment_tx_hash having count(*) > 1
     `;
     if (duplicates.length > 0) {
