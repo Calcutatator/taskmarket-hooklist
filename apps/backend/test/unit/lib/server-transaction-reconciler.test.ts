@@ -115,6 +115,100 @@ describe('server transaction reconciler', () => {
     expect(state.rows[0]).toMatchObject({ status: 'broadcast' });
   });
 
+  // Verifies: ADR-0045
+  describe('relayed intent settlement', () => {
+    function settlementSpies() {
+      return { onConfirmed: vi.fn().mockResolvedValue(undefined), onFailed: vi.fn().mockResolvedValue(undefined) };
+    }
+
+    it('completes the intent when the receipt confirms success', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      await broadcastOne(store);
+      const intents = settlementSpies();
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn().mockResolvedValue('success'),
+        intents,
+        sendReplacement: vi.fn(),
+        store,
+      });
+      await reconcile();
+
+      expect(intents.onConfirmed).toHaveBeenCalledTimes(1);
+      expect(intents.onFailed).not.toHaveBeenCalled();
+    });
+
+    it('fails the intent when the receipt confirms a revert', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      await broadcastOne(store);
+      const intents = settlementSpies();
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn().mockResolvedValue('reverted'),
+        intents,
+        sendReplacement: vi.fn(),
+        store,
+      });
+      await reconcile();
+
+      expect(intents.onFailed).toHaveBeenCalledTimes(1);
+      expect(intents.onConfirmed).not.toHaveBeenCalled();
+    });
+
+    it('fails the intent when a replacement supersedes the original', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      await broadcastOne(store);
+      const intents = settlementSpies();
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn().mockResolvedValue(null),
+        intents,
+        sendReplacement: vi.fn().mockResolvedValue(REPLACEMENT_HASH),
+        store,
+        stuckAfterMs: STUCK_AFTER_MS,
+      });
+      await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+
+      expect(intents.onFailed).toHaveBeenCalledTimes(1);
+    });
+
+    it('settles nothing while the transaction is merely unmined', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      await broadcastOne(store);
+      const intents = settlementSpies();
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn().mockResolvedValue(null),
+        intents,
+        sendReplacement: vi.fn(),
+        store,
+      });
+      await reconcile();
+
+      // Still in flight is not evidence of anything. Refunding here is the defect ADR-0045
+      // exists to prevent.
+      expect(intents.onConfirmed).not.toHaveBeenCalled();
+      expect(intents.onFailed).not.toHaveBeenCalled();
+    });
+
+    it('keeps reconciling the queue when intent settlement throws', async () => {
+      const { store } = createMemoryServerTransactionStore(10);
+      await broadcastOne(store);
+
+      const reconcile = createServerTransactionReconciler({
+        getReceiptStatus: vi.fn().mockResolvedValue('success'),
+        intents: {
+          onConfirmed: vi.fn().mockRejectedValue(new Error('completion handler exploded')),
+          onFailed: vi.fn(),
+        },
+        sendReplacement: vi.fn(),
+        store,
+      });
+
+      await expect(reconcile()).resolves.toBeUndefined();
+    });
+  });
+
   it('fills a recycled nonce that is blocking an in-flight transaction', async () => {
     // The scenario: two concurrent dispatches take nonces 10 and 11. The 11 broadcasts and
     // sits pending; the 10 is rejected by the provider and returns to the recycled pool. On a

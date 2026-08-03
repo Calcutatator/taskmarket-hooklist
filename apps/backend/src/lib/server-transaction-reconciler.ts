@@ -1,11 +1,30 @@
 // Implements: ADR-0040
+// Implements: ADR-0045
 import type { Hex } from 'viem';
 import { logger } from './logger';
 import type { ServerTransactionStore } from './server-transaction-store';
 
+/**
+ * What the reconciler does with an intent once the chain has answered (ADR-0045).
+ *
+ * Injected rather than imported so the reconciler stays free of the database and the payment
+ * layer, and so these branches are directly testable without either.
+ */
+export type RelayedIntentSettlement = {
+  /** Transaction succeeded: run the intent's completion handler. */
+  onConfirmed: (transactionId: string, hash: Hex) => Promise<void>;
+  /**
+   * The chain confirmed the work did not happen -- a reverted receipt, or a replacement that
+   * mined in its place. This is the only path that may refund.
+   */
+  onFailed: (transactionId: string, reason: string) => Promise<void>;
+};
+
 export type ServerTransactionReconcilerOptions = {
   /** Resolves to the receipt status, or null when the transaction is still unmined. */
   getReceiptStatus: (hash: Hex) => Promise<'success' | 'reverted' | null>;
+  /** Optional: absent in contexts with no intent layer, e.g. focused unit tests. */
+  intents?: RelayedIntentSettlement;
   /**
    * Broadcast a no-op self-transfer at the given nonce with escalated gas, to clear a nonce
    * that is blocking every higher nonce behind it.
@@ -34,11 +53,38 @@ const MAX_ROWS_PER_PASS = 25;
  */
 export function createServerTransactionReconciler(options: ServerTransactionReconcilerOptions) {
   const stuckAfterMs = options.stuckAfterMs ?? DEFAULT_STUCK_AFTER_MS;
-  const { getReceiptStatus, sendReplacement, store } = options;
+  const { getReceiptStatus, intents, sendReplacement, store } = options;
+
+  async function settleIntent(
+    outcome: 'confirmed' | 'failed',
+    transactionId: string,
+    hash: Hex | null,
+    reason: string
+  ): Promise<void> {
+    if (!intents) return;
+    try {
+      if (outcome === 'confirmed' && hash) {
+        await intents.onConfirmed(transactionId, hash);
+      } else if (outcome === 'failed') {
+        await intents.onFailed(transactionId, reason);
+      }
+    } catch (error) {
+      // Never let intent settlement break nonce hygiene -- a failure here is retried on the
+      // next pass, whereas an exception escaping would abandon the rest of the queue.
+      logger.error('Relayed intent settlement failed during reconciliation', {
+        error: error instanceof Error ? error.message : String(error),
+        outcome,
+        transactionId,
+      });
+    }
+  }
 
   async function replaceStuckNonce(id: string, nonce: number): Promise<void> {
     try {
       const hash = await sendReplacement(nonce);
+      // The replacement occupies the nonce, so the original can never be mined. That is the
+      // second form of confirmed evidence that the work did not happen (ADR-0045).
+      await settleIntent('failed', id, null, `superseded by replacement at nonce ${nonce}`);
       logger.warn('Replaced stuck server wallet transaction', {
         nonce,
         replacementHash: hash,
@@ -86,11 +132,18 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
 
       if (status === 'success') {
         await store.setStatus(row.id, 'confirmed', { hash: row.txHash });
+        // Confirmed on chain: the work really happened, so finish whatever it was for. This
+        // is what makes a late receipt still produce its task row and notifications instead
+        // of vanishing with the request that started it (ADR-0045).
+        await settleIntent('confirmed', row.id, row.txHash as Hex, '');
         continue;
       }
       if (status === 'reverted') {
-        // The nonce is spent on chain, so the row is terminal and creates no gap.
+        // The nonce is spent on chain, so the row is terminal and creates no gap. This is one
+        // of only two outcomes that count as evidence the work did not happen, and therefore
+        // one of only two that may trigger a refund.
         await store.setStatus(row.id, 'failed', { hash: row.txHash });
+        await settleIntent('failed', row.id, null, 'transaction reverted on chain');
         continue;
       }
 

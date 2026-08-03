@@ -11,6 +11,7 @@ import {
 } from './server-transaction-reconciler';
 import { createDrizzleServerTransactionStore } from './server-transaction-store';
 import { getPublicClient, getServerWallet } from './rpc-gateway';
+import { createRelayedIntentSettlement } from '../services/relayed-intent-settlement';
 
 export function createServerWallet() {
   return getServerWallet();
@@ -70,6 +71,9 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
   const publicClient = getPublicClient();
 
   const reconcileOnce = createServerTransactionReconciler({
+    // Settles the durable intent behind each transaction once the chain has answered, and is
+    // the only route to a refund (ADR-0045).
+    intents: createRelayedIntentSettlement(),
     getReceiptStatus: async (hash) => {
       const receipt = await publicClient.getTransactionReceipt({ hash }).catch(() => null);
       if (!receipt) return null;
