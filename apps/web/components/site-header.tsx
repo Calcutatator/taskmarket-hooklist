@@ -51,7 +51,7 @@ export function SiteHeader() {
         <h1 className="min-w-0 flex-1 truncate text-base font-medium">{routeTitle(pathname)}</h1>
         <ButtonGroup
           aria-label="Dashboard actions"
-          className="shrink-0 gap-2 [&>*]:border-l! [&>[data-slot=button]]:px-3.5 [&>[data-slot=button]]:py-0"
+          className="shrink-0 [&>[data-slot=button]]:px-3.5 [&>[data-slot=button]]:py-0"
         >
           <Button asChild className="hidden sm:inline-flex" size="sm" variant="default">
             <Link href="/dashboard/drops">Latest Drop</Link>

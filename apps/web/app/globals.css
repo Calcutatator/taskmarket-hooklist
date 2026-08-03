@@ -148,7 +148,7 @@
   --card-foreground: #242024;
   --popover: #fffefd;
   --popover-foreground: #242024;
-  --primary: #b55c70;
+  --primary: #af566b;
   --primary-foreground: #fffefd;
   --secondary: #eee8e4;
   --secondary-foreground: #242024;
@@ -160,13 +160,13 @@
   --destructive-foreground: #fffefd;
   --border: #ded6d1;
   --input: #e6ded9;
-  --ring: #b55c70;
+  --ring: #af566b;
   --surface: #fff9f6;
   --surface-2: #f1ece8;
-  --success: #508c7b;
+  --success: #3c7163;
   --warning: #8b6d25;
   --info: #4d7199;
-  --chart-1: #b55c70;
+  --chart-1: #af566b;
   --chart-2: #508c7b;
   --chart-3: #4d7199;
   --chart-4: #8b6d25;

@@ -15,11 +15,13 @@ import type {
 import { formatDreams, getAgentName } from '@taskmarket/shared';
 import {
   ArrowUpDown,
+  Check,
   ChevronDown,
   ExternalLinkIcon,
   FileIcon,
   FileJsonIcon,
   FileTextIcon,
+  Filter,
   FilterX,
   Plus,
   SlidersHorizontal,
@@ -718,6 +720,7 @@ function TaskGallerySkeletonGrid() {
 }
 
 export function TaskTable({
+  contained = false,
   createHref = '/dashboard/tasks/new',
   detailBasePath = '/dashboard/tasks',
   errorMessage,
@@ -727,6 +730,7 @@ export function TaskTable({
   tasks,
   view = 'table',
 }: {
+  contained?: boolean;
   createHref?: string;
   detailBasePath?: string;
   errorMessage?: string;
@@ -738,7 +742,7 @@ export function TaskTable({
 }) {
   if (errorMessage) {
     return (
-      <Card>
+      <Card className={contained ? 'rounded-none border-0 bg-transparent shadow-none' : undefined}>
         <CardContent className="grid gap-4">
           <p className="font-mono text-sm text-destructive" role="alert">
             {errorMessage}
@@ -755,11 +759,15 @@ export function TaskTable({
     // In the gallery view the loading state mirrors the cover grid (aspect-[4/3] tiles) so
     // switching views does not collapse into the table's row bars and back.
     if (view === 'gallery') {
-      return <TaskGallerySkeletonGrid />;
+      return (
+        <div className={contained ? 'p-3 sm:p-4' : undefined}>
+          <TaskGallerySkeletonGrid />
+        </div>
+      );
     }
 
     return (
-      <Card>
+      <Card className={contained ? 'rounded-none border-0 bg-transparent shadow-none' : undefined}>
         <CardHeader>
           <CardTitle>Loading tasks</CardTitle>
         </CardHeader>
@@ -774,7 +782,13 @@ export function TaskTable({
 
   if (tasks.length === 0) {
     return (
-      <Card className="w-full border-dashed border-border/68 bg-card/60 py-14 shadow-[var(--shadow-soft)]">
+      <Card
+        className={
+          contained
+            ? 'w-full rounded-none border-0 bg-transparent py-14 shadow-none'
+            : 'w-full border-dashed border-border/68 bg-card/60 py-14 shadow-[var(--shadow-soft)]'
+        }
+      >
         <CardContent className="flex items-center justify-center">
           <div className="grid max-w-md gap-4 text-center">
             <div className="grid gap-2">
@@ -807,27 +821,41 @@ export function TaskTable({
   // browser can see what was produced before opening a task. The table stays the default,
   // lightweight view (no per-row preview requests).
   if (view === 'gallery') {
-    return <TaskGalleryGrid detailBasePath={detailBasePath} tasks={tasks} />;
+    return (
+      <div className={contained ? 'p-3 sm:p-4' : undefined}>
+        <TaskGalleryGrid detailBasePath={detailBasePath} tasks={tasks} />
+      </div>
+    );
   }
 
   return (
-    <div className="min-w-0 max-w-full overflow-hidden md:rounded-lg md:border md:border-border/58 md:bg-card/38">
-      <ul aria-label="Task cards" className="grid gap-2 md:hidden" role="list">
+    <div
+      className={
+        contained
+          ? 'min-w-0 max-w-full overflow-hidden'
+          : 'min-w-0 max-w-full overflow-hidden md:rounded-lg md:border md:border-border/58 md:bg-card/38'
+      }
+    >
+      <ul
+        aria-label="Task cards"
+        className={`grid gap-2 md:hidden ${contained ? 'p-3' : ''}`}
+        role="list"
+      >
         {tasks.map((task) => (
           <TaskMobileCard detailBasePath={detailBasePath} key={task.id} task={task} />
         ))}
       </ul>
       <div className="hidden w-full max-w-full overflow-x-auto md:block">
-        <Table className="[&_td]:py-2.5">
+        <Table className="min-w-[64rem] table-fixed [&_td]:py-2.5">
           <TableHeader>
             <TableRow>
               <TableHead>Task</TableHead>
-              <TableHead>Mode</TableHead>
-              <TableHead>Status</TableHead>
-              <TableHead>Requester</TableHead>
-              <TableHead>Due</TableHead>
-              <TableHead className="text-right">Activity</TableHead>
-              <TableHead className="text-right">Reward</TableHead>
+              <TableHead className="w-24">Mode</TableHead>
+              <TableHead className="w-28">Status</TableHead>
+              <TableHead className="w-40">Requester</TableHead>
+              <TableHead className="w-28">Due</TableHead>
+              <TableHead className="w-36 text-right">Activity</TableHead>
+              <TableHead className="w-24 text-right">Reward</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -836,13 +864,14 @@ export function TaskTable({
 
               return (
                 <TableRow key={task.id}>
-                  <TableCell className="min-w-72">
+                  <TableCell className="max-w-0">
                     <Link
-                      className="font-medium text-foreground hover:text-primary"
+                      className="block truncate font-medium text-foreground hover:text-primary"
                       href={
                         `${normalizeBasePath(detailBasePath)}/${encodeURIComponent(task.id)}` as Route
                       }
                       prefetch={false}
+                      title={taskFullTitle(task)}
                     >
                       {taskTitle(task)}
                     </Link>
@@ -902,7 +931,6 @@ const actors: Array<'ALL' | 'agent' | 'human'> = ['ALL', 'agent', 'human'];
 type TaskFilterControlsProps = {
   basePath?: string;
   deadlineHours?: string;
-  idPrefix: string;
   maxReward?: string;
   minReward?: string;
   selectedActor?: 'ALL' | 'agent' | 'human' | string;
@@ -916,14 +944,8 @@ type TaskFilterControlsProps = {
   worker?: string;
 };
 
-// Filter options are radio-group facts, not actions: quiet text rows keep the rail
-// scannable and reserve the pill treatment for horizontal chip rows (sort, active
-// filters). Active state is a tonal primary fill instead of a bordered button.
-const FILTER_ROW_CLASS =
-  'flex min-h-11 items-center rounded-md px-2 text-sm text-muted-foreground transition-colors duration-200 hover:bg-accent/10 hover:text-foreground data-[active=true]:bg-primary/10 data-[active=true]:font-medium data-[active=true]:text-primary sm:min-h-8';
-
-// Sentence-case a labelize()d value for the rail rows ("pending approval" -> "Pending
-// approval"); the old uppercase chips hid casing, quiet text rows do not.
+// Sentence-case a labelize()d value for compact filter labels ("pending approval" ->
+// "Pending approval").
 function sentenceLabel(value: string) {
   return value.charAt(0).toUpperCase() + value.slice(1);
 }
@@ -964,6 +986,7 @@ function TaskFilterHiddenInputs({
 function TaskAdvancedFilterFields({
   compact = false,
   deadlineHours,
+  horizontal = false,
   idPrefix,
   maxReward,
   minReward,
@@ -974,12 +997,19 @@ function TaskAdvancedFilterFields({
   'deadlineHours' | 'maxReward' | 'minReward' | 'tags' | 'taskDropId'
 > & {
   compact?: boolean;
+  horizontal?: boolean;
   idPrefix: string;
 }) {
   const inputClassName = compact ? 'h-11 md:h-11' : undefined;
 
   return (
-    <div className="grid gap-4">
+    <div
+      className={
+        horizontal
+          ? 'grid gap-3 md:grid-cols-2 xl:grid-cols-[minmax(9rem,1.15fr)_minmax(9rem,1.15fr)_minmax(7rem,0.8fr)_minmax(7rem,0.8fr)_minmax(8rem,0.85fr)]'
+          : 'grid gap-4'
+      }
+    >
       <div className="grid gap-2">
         <Label htmlFor={`task-filter-${idPrefix}-task-drop`}>Task Drop ID</Label>
         <Input
@@ -1000,7 +1030,11 @@ function TaskAdvancedFilterFields({
           placeholder="scrape, react"
         />
       </div>
-      <div className={`grid gap-2 ${compact ? 'grid-cols-2' : 'grid-cols-1'}`}>
+      <div
+        className={`grid gap-3 ${compact ? 'grid-cols-2' : 'grid-cols-1'} ${
+          horizontal ? 'md:col-span-2 md:grid-cols-2 xl:contents' : ''
+        }`}
+      >
         <div className="grid gap-2">
           <Label htmlFor={`task-filter-${idPrefix}-min-reward`}>Min reward</Label>
           <Input
@@ -1044,190 +1078,82 @@ function TaskAdvancedFilterFields({
   );
 }
 
-function TaskFilterControls({
-  basePath = '/dashboard/tasks',
-  deadlineHours = '',
-  idPrefix,
-  maxReward = '',
-  minReward = '',
-  selectedActor = 'ALL',
-  selectedMode = 'ALL',
-  selectedSort = 'newest',
-  selectedStatus = 'ALL',
-  selectedView = 'table',
-  tags = '',
-  taskDropId = '',
-  requester = '',
-  worker = '',
-}: TaskFilterControlsProps) {
-  const currentFilters: TaskSearchParams = {
-    actor: selectedActor,
-    deadlineHours,
-    maxReward,
-    minReward,
-    mode: selectedMode,
-    sort: selectedSort,
-    status: selectedStatus,
-    tags,
-    taskDropId,
-    requester,
-    view: selectedView,
-    worker,
-  };
-
-  return (
-    <div className="grid gap-4">
-      <div className="grid gap-1.5">
-        <p className="font-mono text-xs uppercase text-muted-foreground">Mode</p>
-        <div className="grid grid-cols-1 gap-0.5">
-          {modes.map((mode) => (
-            <Link
-              className={FILTER_ROW_CLASS}
-              data-active={selectedMode === mode}
-              href={taskFiltersHref(basePath, currentFilters, { mode }) as Route}
-              key={mode}
-            >
-              {mode === 'ALL' ? 'All modes' : sentenceLabel(labelize(mode))}
-            </Link>
-          ))}
-        </div>
-      </div>
-      <div className="grid gap-1.5">
-        <p className="font-mono text-xs uppercase text-muted-foreground">Status</p>
-        <div className="grid grid-cols-1 gap-0.5">
-          {statuses.map((status) => (
-            <Link
-              className={FILTER_ROW_CLASS}
-              data-active={selectedStatus === status}
-              href={taskFiltersHref(basePath, currentFilters, { status }) as Route}
-              key={status}
-            >
-              {status === 'ALL' ? 'All statuses' : sentenceLabel(labelize(status))}
-            </Link>
-          ))}
-        </div>
-      </div>
-      <div className="grid gap-1.5">
-        <p className="font-mono text-xs uppercase text-muted-foreground">Actor</p>
-        <div className="grid grid-cols-1 gap-0.5">
-          {actors.map((actor) => (
-            <Link
-              className={FILTER_ROW_CLASS}
-              data-active={selectedActor === actor}
-              href={taskFiltersHref(basePath, currentFilters, { actor }) as Route}
-              key={actor}
-            >
-              {actor === 'ALL' ? 'Any' : sentenceLabel(actor)}
-            </Link>
-          ))}
-        </div>
-      </div>
-      <form action={normalizeBasePath(basePath)} className="grid gap-4">
-        <TaskFilterHiddenInputs
-          requester={requester}
-          selectedActor={selectedActor}
-          selectedMode={selectedMode}
-          selectedSort={selectedSort}
-          selectedStatus={selectedStatus}
-          selectedView={selectedView}
-          worker={worker}
-        />
-        <TaskAdvancedFilterFields
-          deadlineHours={deadlineHours}
-          idPrefix={idPrefix}
-          maxReward={maxReward}
-          minReward={minReward}
-          tags={tags}
-          taskDropId={taskDropId}
-        />
-        <div className="grid grid-cols-1 gap-2">
-          <Button type="submit" variant="terminal">
-            Apply filters
-          </Button>
-          <Button asChild variant="outline">
-            <Link
-              aria-label="Clear filters"
-              href={taskFiltersHref(basePath, { view: selectedView }) as Route}
-            >
-              Clear
-            </Link>
-          </Button>
-        </div>
-      </form>
-    </div>
-  );
-}
-
-export function TaskFilterRail(props: Omit<TaskFilterControlsProps, 'idPrefix'>) {
-  return (
-    <aside aria-label="Task filters" className="hidden gap-4 lg:sticky lg:top-20 lg:grid">
-      <div className="grid gap-4 border-r border-border/58 pr-4 lg:max-h-[calc(100dvh-6rem)] lg:overflow-y-auto">
-        <div className="border-b border-border/58 pb-3">
-          <h2 className="font-sans text-sm font-semibold tracking-tight text-foreground">
-            Task filters
-          </h2>
-        </div>
-        <div>
-          <TaskFilterControls {...props} idPrefix="rail" />
-        </div>
-      </div>
-    </aside>
-  );
-}
-
-const MOBILE_CONTROL_CLASS = 'h-11 min-h-11 sm:h-11 sm:min-h-11';
-const MOBILE_FILTER_CHIP_CLASS =
-  'flex min-h-11 items-center rounded-full border border-border/68 bg-background/36 px-3 font-mono text-xs uppercase tracking-tight text-foreground shadow-[var(--shadow-soft)] transition-colors duration-200 hover:border-primary/50 hover:bg-primary/10 hover:text-primary focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-ring/35 focus-visible:outline-none data-[active=true]:border-primary/56 data-[active=true]:bg-primary/12 data-[active=true]:text-primary';
-
-function MobileFilterLinks({
+function TaskBrowseDropdown({
   basePath,
   currentFilters,
   filterKey,
   label,
+  mobile = false,
   options,
   selectedValue,
 }: {
   basePath: string;
   currentFilters: TaskSearchParams;
-  filterKey: 'actor' | 'mode' | 'status';
+  filterKey: 'actor' | 'mode' | 'sort' | 'status';
   label: string;
+  mobile?: boolean;
   options: Array<{ label: string; value: string }>;
   selectedValue: string;
 }) {
+  const selectedOption = options.find((option) => option.value === selectedValue) ?? options[0];
+
   return (
-    <fieldset className="grid gap-2">
-      <legend className="font-mono text-xs uppercase text-muted-foreground">{label}</legend>
-      <div className="flex flex-wrap gap-2">
+    <DropdownMenu modal={false}>
+      <Button
+        asChild
+        className={
+          mobile
+            ? 'h-11 min-h-11 w-full justify-between px-3 sm:h-11 sm:min-h-11'
+            : 'min-w-32 justify-between px-3'
+        }
+        size="sm"
+        variant="outline"
+      >
+        <DropdownMenuTrigger aria-label={`${label}: ${selectedOption?.label ?? selectedValue}`}>
+          <span className="font-mono text-[0.65rem] uppercase text-muted-foreground">{label}</span>
+          <span className="min-w-0 truncate">{selectedOption?.label ?? selectedValue}</span>
+          <ChevronDown aria-hidden="true" className="size-3.5 text-muted-foreground" />
+        </DropdownMenuTrigger>
+      </Button>
+      <DropdownMenuContent align="start" className={mobile ? 'min-w-56' : 'min-w-48'}>
         {options.map((option) => {
           const active = selectedValue === option.value;
 
           return (
-            <Link
-              aria-current={active ? 'page' : undefined}
-              className={MOBILE_FILTER_CHIP_CLASS}
-              data-active={active}
-              href={
-                taskFiltersHref(basePath, currentFilters, {
-                  [filterKey]: option.value,
-                }) as Route
-              }
+            <DropdownMenuItem
+              asChild
+              className={mobile ? 'min-h-11 cursor-pointer' : 'min-h-9 cursor-pointer'}
               key={option.value}
             >
-              {option.label}
-            </Link>
+              <Link
+                aria-current={active ? 'page' : undefined}
+                href={
+                  taskFiltersHref(basePath, currentFilters, {
+                    cursor: undefined,
+                    cursorStack: undefined,
+                    [filterKey]: option.value,
+                  }) as Route
+                }
+              >
+                <span className="flex-1">{option.label}</span>
+                {active ? <Check aria-hidden="true" className="size-4 text-primary" /> : null}
+              </Link>
+            </DropdownMenuItem>
           );
         })}
-      </div>
-    </fieldset>
+      </DropdownMenuContent>
+    </DropdownMenu>
   );
 }
+
+const MOBILE_CONTROL_CLASS = 'h-11 min-h-11 sm:h-11 sm:min-h-11';
 
 function MobileTaskFilterDrawer({
   activeFilterCount,
   hasMoreResults,
   resultCount,
   ...props
-}: Omit<TaskFilterControlsProps, 'idPrefix'> & {
+}: TaskFilterControlsProps & {
   activeFilterCount: number;
   hasMoreResults: boolean;
   resultCount: number;
@@ -1308,33 +1234,36 @@ function MobileTaskFilterDrawer({
           data-testid="mobile-task-filter-body"
         >
           <div className="grid gap-5">
-            <MobileFilterLinks
+            <TaskBrowseDropdown
               basePath={basePath}
               currentFilters={currentFilters}
               filterKey="mode"
               label="Mode"
+              mobile
               options={modes.map((mode) => ({
                 label: mode === 'ALL' ? 'All modes' : sentenceLabel(labelize(mode)),
                 value: mode,
               }))}
               selectedValue={selectedMode}
             />
-            <MobileFilterLinks
+            <TaskBrowseDropdown
               basePath={basePath}
               currentFilters={currentFilters}
               filterKey="status"
               label="Status"
+              mobile
               options={statuses.map((status) => ({
                 label: status === 'ALL' ? 'All statuses' : sentenceLabel(labelize(status)),
                 value: status,
               }))}
               selectedValue={selectedStatus}
             />
-            <MobileFilterLinks
+            <TaskBrowseDropdown
               basePath={basePath}
               currentFilters={currentFilters}
               filterKey="actor"
               label="Actor"
+              mobile
               options={actors.map((actor) => ({
                 label: actor === 'ALL' ? 'Any' : sentenceLabel(actor),
                 value: actor,
@@ -1445,28 +1374,159 @@ function MobileTaskSortControl({
   );
 }
 
-function TaskSortControl({
+function TaskDesktopBrowseControls({
+  activeFilterCount,
+  advancedFilterCount,
   basePath,
   currentFilters,
+  deadlineHours,
+  maxReward,
+  minReward,
+  requester,
+  selectedActor = 'ALL',
+  selectedMode,
   selectedSort,
+  selectedStatus,
+  selectedView,
+  tags,
+  taskDropId,
+  viewFilters,
+  worker,
 }: {
+  activeFilterCount: number;
+  advancedFilterCount: number;
   basePath: string;
   currentFilters: TaskSearchParams;
+  deadlineHours?: string;
+  maxReward?: string;
+  minReward?: string;
+  requester?: string;
+  selectedActor?: string;
+  selectedMode: string;
   selectedSort: TaskSortValue;
+  selectedStatus: string;
+  selectedView: TaskListView;
+  tags?: string;
+  taskDropId?: string;
+  viewFilters: TaskSearchParams;
+  worker?: string;
 }) {
   return (
-    <div className="flex flex-wrap items-center gap-1.5">
-      <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">Sort</span>
-      {TASK_SORT_OPTIONS.map((option) => (
-        <Button asChild key={option.value} size="chip" variant="chip">
-          <Link
-            data-active={selectedSort === option.value}
-            href={taskFiltersHref(basePath, currentFilters, { sort: option.value }) as Route}
-          >
-            {option.label}
-          </Link>
-        </Button>
-      ))}
+    <div className="hidden lg:block">
+      <div
+        aria-label="Task browse controls"
+        className="flex flex-wrap items-center gap-x-3 gap-y-3 border-b border-border/58 px-4 py-3"
+        data-testid="task-toolbar"
+      >
+        <div className="flex shrink-0 items-center gap-2 font-sans text-sm font-semibold tracking-tight text-foreground">
+          <SlidersHorizontal aria-hidden="true" className="size-4 text-muted-foreground" />
+          <span>Filters</span>
+          {activeFilterCount > 0 ? (
+            <Badge className="font-mono" variant="secondary">
+              {activeFilterCount}
+            </Badge>
+          ) : null}
+        </div>
+        <TaskBrowseDropdown
+          basePath={basePath}
+          currentFilters={currentFilters}
+          filterKey="mode"
+          label="Mode"
+          options={modes.map((mode) => ({
+            label: mode === 'ALL' ? 'All modes' : sentenceLabel(labelize(mode)),
+            value: mode,
+          }))}
+          selectedValue={selectedMode}
+        />
+        <TaskBrowseDropdown
+          basePath={basePath}
+          currentFilters={currentFilters}
+          filterKey="status"
+          label="Status"
+          options={statuses.map((status) => ({
+            label: status === 'ALL' ? 'All statuses' : sentenceLabel(labelize(status)),
+            value: status,
+          }))}
+          selectedValue={selectedStatus}
+        />
+        <TaskBrowseDropdown
+          basePath={basePath}
+          currentFilters={currentFilters}
+          filterKey="actor"
+          label="Actor"
+          options={actors.map((actor) => ({
+            label: actor === 'ALL' ? 'Any' : sentenceLabel(actor),
+            value: actor,
+          }))}
+          selectedValue={selectedActor}
+        />
+        <div className="flex min-w-0 flex-wrap items-center gap-3 xl:ml-auto">
+          <TaskBrowseDropdown
+            basePath={basePath}
+            currentFilters={currentFilters}
+            filterKey="sort"
+            label="Sort"
+            options={[...TASK_SORT_OPTIONS]}
+            selectedValue={selectedSort}
+          />
+          <TaskViewToggle basePath={basePath} currentFilters={viewFilters} view={selectedView} />
+        </div>
+      </div>
+      <details
+        className="group border-b border-border/58"
+        data-testid="task-advanced-filters"
+        open={advancedFilterCount > 0 || undefined}
+      >
+        <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 px-4 py-2 font-sans text-sm font-medium text-foreground focus-visible:border-ring focus-visible:ring-[3px] focus-visible:ring-inset focus-visible:ring-ring/35 focus-visible:outline-none [&::-webkit-details-marker]:hidden">
+          <span className="flex items-center gap-2">
+            <span>Advanced filters</span>
+            {advancedFilterCount > 0 ? (
+              <span className="font-mono text-xs font-normal text-primary">
+                {advancedFilterCount} active
+              </span>
+            ) : null}
+          </span>
+          <ChevronDown className="size-4 text-muted-foreground transition-transform group-open:rotate-180 motion-reduce:transition-none" />
+        </summary>
+        <form
+          action={normalizeBasePath(basePath)}
+          className="grid items-end gap-4 border-t border-border/58 bg-background/22 px-4 py-4 xl:grid-cols-[minmax(0,1fr)_auto]"
+        >
+          <TaskFilterHiddenInputs
+            requester={requester}
+            selectedActor={selectedActor}
+            selectedMode={selectedMode}
+            selectedSort={selectedSort}
+            selectedStatus={selectedStatus}
+            selectedView={selectedView}
+            worker={worker}
+          />
+          <TaskAdvancedFilterFields
+            deadlineHours={deadlineHours}
+            horizontal
+            idPrefix="desktop"
+            maxReward={maxReward}
+            minReward={minReward}
+            tags={tags}
+            taskDropId={taskDropId}
+          />
+          <div className="flex items-center gap-2 xl:pb-px">
+            <Button type="submit" variant="terminal">
+              <Filter aria-hidden="true" />
+              Apply filters
+            </Button>
+            <Button asChild variant="outline">
+              <Link
+                aria-label="Clear filters"
+                href={taskFiltersHref(basePath, { view: selectedView }) as Route}
+              >
+                <FilterX aria-hidden="true" />
+                Clear
+              </Link>
+            </Button>
+          </div>
+        </form>
+      </details>
     </div>
   );
 }
@@ -1560,6 +1620,7 @@ export function TaskListPageContent({
   detailBasePath = '/dashboard/tasks',
   errorMessage,
   filterParams,
+  isLoading = false,
   listHref = '/dashboard/tasks',
   pagination,
   tasks,
@@ -1583,6 +1644,7 @@ export function TaskListPageContent({
     requester?: string;
     worker?: string;
   };
+  isLoading?: boolean;
   listHref?: string;
   pagination?: TaskPaginationState;
   tasks: TaskResponse[];
@@ -1611,6 +1673,17 @@ export function TaskListPageContent({
     cursorStack: pagination?.cursorStack,
   };
   const clearFiltersHref = taskFiltersHref(listHref, { view: selectedView });
+  const advancedFilterCount = [
+    filterParams.taskDropId,
+    filterParams.tags,
+    filterParams.minReward,
+    filterParams.maxReward,
+    filterParams.deadlineHours,
+  ].filter(Boolean).length;
+  const showPagination =
+    !isLoading &&
+    filterParams.selectedSort === 'newest' &&
+    Boolean(pagination && (pagination.currentCursor || pagination.hasMore));
 
   // Reflect the active status filter so a completed/cancelled view is not mislabelled "Open tasks".
   const { selectedStatus } = filterParams;
@@ -1620,67 +1693,32 @@ export function TaskListPageContent({
       : 'Open tasks';
 
   return (
-    <div className="@container/main mx-auto grid w-full max-w-[96rem] grid-cols-[minmax(0,1fr)] items-start gap-4 px-4 py-6 sm:gap-5 sm:px-6 sm:py-10 lg:grid-cols-[210px_minmax(0,1fr)] lg:px-8 xl:grid-cols-[220px_minmax(0,1fr)]">
-      <TaskFilterRail
-        basePath={basePath}
-        deadlineHours={filterParams.deadlineHours}
-        maxReward={filterParams.maxReward}
-        minReward={filterParams.minReward}
-        selectedActor={filterParams.selectedActor}
-        selectedMode={filterParams.selectedMode}
-        selectedSort={filterParams.selectedSort}
-        selectedStatus={filterParams.selectedStatus}
-        selectedView={selectedView}
-        tags={filterParams.tags}
-        taskDropId={filterParams.taskDropId}
-        requester={filterParams.requester}
-        worker={filterParams.worker}
-      />
-      <section
-        aria-label="Task list"
-        className="grid w-full min-w-0 max-w-full gap-3 overflow-hidden sm:gap-5"
-      >
+    <div className="@container/main mx-auto grid w-full max-w-[96rem] items-start gap-4 px-4 py-6 sm:gap-5 sm:px-6 sm:py-10 lg:px-8">
+      <section aria-label="Task list" className="grid w-full min-w-0 max-w-full gap-3 sm:gap-5">
         <div className="flex items-center justify-between gap-3 sm:items-end">
           <h1 className="font-display text-2xl font-semibold tracking-tight sm:text-4xl">
             {heading}
           </h1>
           <Button asChild className="size-11 px-0 sm:h-10 sm:w-auto sm:px-4" aria-label="Post task">
             <Link href={createHref as Route}>
-              <Plus className="sm:hidden" />
+              <Plus aria-hidden="true" />
               <span className="hidden sm:inline">Post task</span>
             </Link>
           </Button>
         </div>
-        {activeFilters.length > 0 ? (
-          <div className="flex flex-wrap items-center gap-2">
-            <span className="font-mono text-xs uppercase text-muted-foreground">
-              Active filters
-            </span>
-            {activeFilters.map((filter) => (
-              <Badge key={`${filter.label}:${filter.value}`} variant="outline">
-                {filter.label}: {filter.value}
-              </Badge>
-            ))}
-            <Button asChild className="hidden lg:inline-flex" size="xs" variant="link">
-              <Link href={clearFiltersHref as Route}>Clear filters</Link>
-            </Button>
-          </div>
-        ) : null}
         <div
-          aria-label="Task browse controls"
-          className={`grid ${
-            activeFilters.length > 0 ? 'grid-cols-5' : 'grid-cols-4'
-          } gap-2 lg:hidden`}
-          data-testid="mobile-task-toolbar"
+          className="min-w-0 overflow-hidden rounded-lg border border-border/68 bg-card/38 shadow-[var(--shadow-soft)]"
+          data-testid="task-results-frame"
         >
-          <MobileTaskFilterDrawer
+          <TaskDesktopBrowseControls
             activeFilterCount={activeFilters.length}
+            advancedFilterCount={advancedFilterCount}
             basePath={basePath}
+            currentFilters={paginationFilters}
             deadlineHours={filterParams.deadlineHours}
-            hasMoreResults={Boolean(pagination?.hasMore)}
             maxReward={filterParams.maxReward}
             minReward={filterParams.minReward}
-            resultCount={tasks.length}
+            requester={filterParams.requester}
             selectedActor={filterParams.selectedActor}
             selectedMode={filterParams.selectedMode}
             selectedSort={filterParams.selectedSort}
@@ -1688,53 +1726,95 @@ export function TaskListPageContent({
             selectedView={selectedView}
             tags={filterParams.tags}
             taskDropId={filterParams.taskDropId}
-            requester={filterParams.requester}
+            viewFilters={boardFilters}
             worker={filterParams.worker}
           />
-          <MobileTaskSortControl
-            basePath={basePath}
-            currentFilters={sortFilters}
-            selectedSort={filterParams.selectedSort}
-          />
-          <TaskViewToggle
-            basePath={basePath}
-            currentFilters={boardFilters}
-            presentation="mobile"
-            view={selectedView}
-          />
-          {activeFilters.length > 0 ? (
-            <Button asChild className={`w-full ${MOBILE_CONTROL_CLASS} px-0`} variant="outline">
-              <Link aria-label="Clear filters" href={clearFiltersHref as Route}>
-                <FilterX />
-              </Link>
-            </Button>
-          ) : null}
-        </div>
-        <TaskListBoard
-          basePath={basePath}
-          createHref={createHref}
-          currentFilters={boardFilters}
-          detailBasePath={detailBasePath}
-          errorMessage={errorMessage}
-          hasActiveFilters={activeFilters.length > 0}
-          listHref={clearFiltersHref}
-          tasks={tasks}
-          toolbarStart={
-            <TaskSortControl
+          <div
+            aria-label="Task browse controls"
+            className={`grid ${
+              activeFilters.length > 0 ? 'grid-cols-5' : 'grid-cols-4'
+            } h-11 gap-2 border-b border-border/58 px-3 lg:hidden`}
+            data-testid="mobile-task-toolbar"
+          >
+            <MobileTaskFilterDrawer
+              activeFilterCount={activeFilters.length}
+              basePath={basePath}
+              deadlineHours={filterParams.deadlineHours}
+              hasMoreResults={Boolean(pagination?.hasMore)}
+              maxReward={filterParams.maxReward}
+              minReward={filterParams.minReward}
+              resultCount={tasks.length}
+              selectedActor={filterParams.selectedActor}
+              selectedMode={filterParams.selectedMode}
+              selectedSort={filterParams.selectedSort}
+              selectedStatus={filterParams.selectedStatus}
+              selectedView={selectedView}
+              tags={filterParams.tags}
+              taskDropId={filterParams.taskDropId}
+              requester={filterParams.requester}
+              worker={filterParams.worker}
+            />
+            <MobileTaskSortControl
               basePath={basePath}
               currentFilters={sortFilters}
               selectedSort={filterParams.selectedSort}
             />
-          }
-          view={selectedView}
-        />
-        {filterParams.selectedSort === 'newest' ? (
-          <TaskPaginationControl
+            <TaskViewToggle
+              basePath={basePath}
+              currentFilters={boardFilters}
+              presentation="mobile"
+              view={selectedView}
+            />
+            {activeFilters.length > 0 ? (
+              <Button asChild className={`w-full ${MOBILE_CONTROL_CLASS} px-0`} variant="outline">
+                <Link aria-label="Clear filters" href={clearFiltersHref as Route}>
+                  <FilterX />
+                </Link>
+              </Button>
+            ) : null}
+          </div>
+          {activeFilters.length > 0 ? (
+            <div className="flex flex-wrap items-center gap-2 border-b border-border/58 px-3 py-2.5 sm:px-4">
+              <span className="font-mono text-xs uppercase text-muted-foreground">
+                Active filters
+              </span>
+              {activeFilters.map((filter) => (
+                <Badge key={`${filter.label}:${filter.value}`} variant="outline">
+                  {filter.label}: {filter.value}
+                </Badge>
+              ))}
+              <Button asChild className="ml-auto hidden lg:inline-flex" size="xs" variant="link">
+                <Link href={clearFiltersHref as Route}>
+                  <FilterX aria-hidden="true" />
+                  Clear filters
+                </Link>
+              </Button>
+            </div>
+          ) : null}
+          <h2 className="sr-only">Task results</h2>
+          <TaskListBoard
             basePath={basePath}
-            currentFilters={paginationFilters}
-            pagination={pagination}
+            contained
+            createHref={createHref}
+            currentFilters={boardFilters}
+            detailBasePath={detailBasePath}
+            errorMessage={errorMessage}
+            hasActiveFilters={activeFilters.length > 0}
+            isLoading={isLoading}
+            listHref={clearFiltersHref}
+            tasks={tasks}
+            view={selectedView}
           />
-        ) : null}
+          {showPagination ? (
+            <div className="border-t border-border/58 px-3 py-3 sm:px-4">
+              <TaskPaginationControl
+                basePath={basePath}
+                currentFilters={paginationFilters}
+                pagination={pagination}
+              />
+            </div>
+          ) : null}
+        </div>
       </section>
     </div>
   );

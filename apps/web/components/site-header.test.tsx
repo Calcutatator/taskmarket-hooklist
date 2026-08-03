@@ -109,7 +109,8 @@ describe('SiteHeader', () => {
     const postTaskLink = screen.getByRole('link', { name: /^post a task$/i });
 
     expect(actionGroup).toHaveAttribute('data-slot', 'button-group');
-    expect(actionGroup).toHaveClass('gap-2');
+    expect(actionGroup).not.toHaveClass('gap-2');
+    expect(actionGroup).toHaveClass('[&>*:not(:first-child)]:border-l-0');
     expect(postTaskLink).toHaveAttribute('href', '/dashboard/tasks/new');
     expect(postTaskLink).toHaveClass('max-[360px]:hidden');
     expect(screen.getByRole('heading', { name: /^dashboard$/i })).toHaveClass('min-w-0', 'flex-1');

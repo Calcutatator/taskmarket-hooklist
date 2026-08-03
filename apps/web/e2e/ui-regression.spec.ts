@@ -248,6 +248,61 @@ test('keeps the top-level market routes public instead of redirecting them', asy
   await expect(page.getByRole('heading', { name: /Task Market Protocol/i })).toBeVisible();
 });
 
+test('joins desktop task filters, sorting, views, and results in one frame', async ({
+  page,
+}, testInfo) => {
+  test.skip(testInfo.project.name.includes('mobile'), 'Desktop task browse composition.');
+
+  await page.goto('/tasks?mode=auction&tags=auction');
+
+  const taskList = page.getByRole('region', { name: /Task list/i });
+  const resultsFrame = taskList.getByTestId('task-results-frame');
+  await expect(resultsFrame).toBeVisible();
+  await expect(page.getByRole('complementary', { name: /Task filters/i })).toHaveCount(0);
+
+  const modeFilter = resultsFrame.getByRole('button', { name: /Mode: Auction/i });
+  await modeFilter.focus();
+  await page.keyboard.press('Enter');
+  await expect(page.getByRole('menuitem', { name: /^Auction$/i })).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
+  await page.keyboard.press('Escape');
+  await expect(modeFilter).toBeFocused();
+
+  await resultsFrame.getByRole('button', { name: /Sort: Newest/i }).click();
+  const rewardSortOption = page.getByRole('menuitem', { name: /Reward: high/i });
+  await expect(rewardSortOption).toBeVisible();
+  await page.keyboard.press('Escape');
+  await expect(rewardSortOption).toHaveCount(0);
+  await expect(resultsFrame.getByRole('link', { name: /Table view/i })).toHaveAttribute(
+    'aria-current',
+    'page'
+  );
+  await expect(resultsFrame.getByRole('table')).toBeVisible();
+
+  const advancedFilters = resultsFrame.getByTestId('task-advanced-filters');
+  const advancedSummary = advancedFilters.locator('summary');
+  await expect(advancedFilters).toHaveAttribute('open', '');
+  await expect(resultsFrame.getByLabel(/Tags/i)).toHaveValue('auction');
+
+  await advancedSummary.focus();
+  await page.keyboard.press('Enter');
+  await expect(advancedFilters).not.toHaveAttribute('open');
+  await page.keyboard.press('Enter');
+  await expect(advancedFilters).toHaveAttribute('open', '');
+  await expect(advancedSummary).toBeFocused();
+
+  const galleryView = resultsFrame.getByRole('link', { name: /Gallery view/i });
+  await expect(galleryView).toHaveAttribute(
+    'href',
+    '/tasks?mode=auction&tags=auction&view=gallery'
+  );
+  await page.goto('/tasks?mode=auction&tags=auction&view=gallery');
+  await expect(page.getByTestId('task-results-frame')).toContainText('Advanced filters');
+  await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
+});
+
 test('keeps pending-review detail usable without horizontal overflow', async ({ page }) => {
   await page.goto('/dashboard/tasks/e2e-pending-review');
 
@@ -819,10 +874,12 @@ test('prioritizes mobile task results and moves filters into a drawer', async ({
   await expect(advancedFilters).not.toHaveAttribute('open');
   await page.keyboard.press('Enter');
   await expect(advancedFilters).toHaveAttribute('open', '');
-  await expect(filterDialog.getByRole('link', { name: /^auction$/i })).toHaveAttribute(
+  await filterDialog.getByRole('button', { name: /Mode: All modes/i }).click();
+  await expect(page.getByRole('menuitem', { name: /^auction$/i })).toHaveAttribute(
     'href',
     '/dashboard/tasks?mode=auction&taskDropId=launch-drop'
   );
+  await page.keyboard.press('Escape');
   await filterDialog.getByRole('button', { name: /Show \d+ results?/i }).click();
   await expect
     .poll(() => {

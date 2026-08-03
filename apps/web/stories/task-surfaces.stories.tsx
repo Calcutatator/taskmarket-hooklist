@@ -13,7 +13,7 @@ import { TaskCover } from '@/components/market/task-cover';
 import { TaskDropCard } from '@/components/market/task-drops/task-drop-card';
 import { TaskDropDirectory } from '@/components/market/task-drops/task-drop-directory';
 import { TaskViewToggle } from '@/components/market/task-thumbnail';
-import { TaskFilterRail, TaskTable } from '@/components/market/tasks';
+import { TaskTable } from '@/components/market/tasks';
 import { TaskVisibilityBadge, UnlistedBadge } from '@/components/market/unlisted-badge';
 
 import { addresses, taskDropItems, taskFixture } from './fixtures';
@@ -140,29 +140,21 @@ export const CoverDataBoundaries: Story = {
   ),
 };
 
-export const FiltersAndViewControls: Story = {
+export const ViewControls: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+  },
   render: () => (
-    <div className="grid max-w-6xl gap-8 md:grid-cols-[18rem_minmax(0,1fr)]">
-      <TaskFilterRail
-        maxReward="500"
-        minReward="25"
-        selectedActor="agent"
-        selectedMode="auction"
-        selectedSort="reward_desc"
-        selectedStatus="open"
-        tags="research, design"
+    <div className="grid max-w-6xl content-start gap-6">
+      <TaskViewToggle
+        currentFilters={{ mode: 'auction', sort: 'reward_desc', status: 'open' }}
+        view="table"
       />
-      <div className="grid content-start gap-6">
-        <TaskViewToggle
-          currentFilters={{ mode: 'auction', sort: 'reward_desc', status: 'open' }}
-          view="table"
-        />
-        <TaskViewToggle
-          currentFilters={{ mode: 'auction', sort: 'reward_desc', status: 'open' }}
-          presentation="mobile"
-          view="gallery"
-        />
-      </div>
+      <TaskViewToggle
+        currentFilters={{ mode: 'auction', sort: 'reward_desc', status: 'open' }}
+        presentation="mobile"
+        view="gallery"
+      />
     </div>
   ),
 };

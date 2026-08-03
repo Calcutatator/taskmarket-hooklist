@@ -238,8 +238,7 @@ test('persists task views while resetting cursor pagination through reload and h
 
   // Gallery is an explicit URL-backed preference. Selecting it clears both cursor
   // parameters, and the preference survives a reload.
-  await galleryView.focus();
-  await page.keyboard.press('Enter');
+  await galleryView.click();
   await expect(page).toHaveURL(/\/tasks\?mode=auction&status=open&view=gallery$/);
   await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
   await page.reload({ waitUntil: 'networkidle' });
@@ -253,12 +252,14 @@ test('persists task views while resetting cursor pagination through reload and h
   await filters.click();
   const filterDialog = page.getByRole('dialog', { name: /Task filters/i });
   await expect(filterDialog).toBeVisible();
-  const bountyMode = filterDialog.getByRole('link', { name: /^Bounty$/i });
-  await expect(bountyMode).toHaveAttribute('href', '/tasks?mode=bounty&status=open&view=gallery');
-  await bountyMode.focus();
+  const modeFilter = filterDialog.getByRole('button', { name: /Mode: Auction/i });
+  await modeFilter.focus();
   await page.keyboard.press('Enter');
+  const bountyMode = page.getByRole('menuitem', { name: /^Bounty$/i });
+  await expect(bountyMode).toHaveAttribute('href', '/tasks?mode=bounty&status=open&view=gallery');
+  await bountyMode.click();
   await expect(page).toHaveURL(/\/tasks\?mode=bounty&status=open&view=gallery$/);
-  await page.keyboard.press('Escape');
+  await page.locator('[data-slot="drawer-overlay"]').click({ position: { x: 4, y: 4 } });
   await expect(filterDialog).toBeHidden();
   await expect(filters).toBeFocused();
   await expect(page.getByRole('list', { name: /Task gallery/i })).toBeVisible();
