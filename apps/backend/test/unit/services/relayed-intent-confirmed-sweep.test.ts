@@ -35,7 +35,11 @@ describe('confirmed-intent sweep', () => {
     const intent = { id: 'intent-1', operation: 'tasks.assignEvaluator', txHash: TX_HASH };
     vi.mocked(listConfirmedUnsettledIntents).mockResolvedValue([intent as never]);
 
-    await createRelayedIntentSettlement().sweepConfirmed?.(25);
+    // Resolved and asserted rather than called optionally: `sweepConfirmed?.()` on an undefined
+    // method short-circuits, and the test would pass having exercised nothing.
+    const { sweepConfirmed } = createRelayedIntentSettlement();
+    expect(sweepConfirmed).toBeDefined();
+    await sweepConfirmed!(25);
 
     // This is the state nothing used to look for: the receipt is good, the work happened, and
     // the reconciler's broadcast pass will never examine the row again.
@@ -51,7 +55,9 @@ describe('confirmed-intent sweep', () => {
       { id: 'intent-2', operation: 'tasks.assignEvaluator', txHash: null } as never,
     ]);
 
-    await createRelayedIntentSettlement().sweepConfirmed?.(25);
+    const { sweepConfirmed } = createRelayedIntentSettlement();
+    expect(sweepConfirmed).toBeDefined();
+    await sweepConfirmed!(25);
 
     expect(completeRelayedIntent).not.toHaveBeenCalled();
   });

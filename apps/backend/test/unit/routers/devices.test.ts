@@ -144,7 +144,13 @@ describe('devices router', () => {
 
     // Verifies: ADR-0045
     it('still answers the request when the identity mint fails', async () => {
-      vi.mocked(contractRegisterIdentityTx).mockRejectedValueOnce(new Error('rpc down'));
+      // Records that the rejecting call really ran, so the assertions below are about the mint
+      // failing rather than about a mint that was never reached.
+      let mintAttempted = false;
+      vi.mocked(contractRegisterIdentityTx).mockImplementationOnce(async () => {
+        mintAttempted = true;
+        throw new Error('rpc down');
+      });
       const ctx = createIntentCtx();
       ctx.db.select.mockReturnValueOnce(makeChain([]));
       mockValidSignature();
@@ -154,6 +160,12 @@ describe('devices router', () => {
         signature: SIGNATURE,
       });
       await new Promise((resolve) => setImmediate(resolve));
+
+      // Prove the failure is the one under test. A `recorded` intent is also what a run that
+      // never reached the mint at all would leave behind, so the status alone says nothing
+      // unless the rejecting call is known to have happened.
+      expect(contractRegisterIdentityTx).toHaveBeenCalledOnce();
+      expect(mintAttempted).toBe(true);
 
       expect(result.deviceId).toBeTruthy();
       // Left claimable rather than lost: the worker picks it up and tries again, which is the

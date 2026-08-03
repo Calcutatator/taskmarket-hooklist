@@ -193,10 +193,14 @@ describe('server transaction reconciler', () => {
 
     it('keeps reconciling the queue when intent settlement throws', async () => {
       const { store } = createMemoryServerTransactionStore(10);
+      // Two entries, because a pass that stopped dead on the first throwing entry would still
+      // resolve. Only a second entry being examined proves the pass actually continued.
+      await broadcastOne(store);
       await broadcastOne(store);
 
+      const getReceiptStatus = vi.fn().mockResolvedValue('success');
       const reconcile = createServerTransactionReconciler({
-        getReceiptStatus: vi.fn().mockResolvedValue('success'),
+        getReceiptStatus,
         intents: {
           onConfirmed: vi.fn().mockRejectedValue(new Error('completion handler exploded')),
           onFailed: vi.fn(),
@@ -206,6 +210,7 @@ describe('server transaction reconciler', () => {
       });
 
       await expect(reconcile()).resolves.toBeUndefined();
+      expect(getReceiptStatus).toHaveBeenCalledTimes(2);
     });
 
     it('sweeps intents left unfinished behind an already-confirmed transaction', async () => {

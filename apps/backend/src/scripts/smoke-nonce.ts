@@ -381,12 +381,13 @@ async function main() {
         select table_name from information_schema.tables
         where table_name = ${table}
       `;
+      // Assert per table rather than on the total count. The same table name can appear in
+      // more than one schema on a shared database, and a duplicate row would otherwise make
+      // up the count for a table that is genuinely missing.
+      if (rows.length === 0) {
+        throw new Error(`Relay table is missing: ${table}`);
+      }
       tables.push(...rows);
-    }
-    if (tables.length !== RELAY_TABLES.length) {
-      throw new Error(
-        `Expected ${RELAY_TABLES.length} relay tables, found: ${tables.map((t) => t.table_name).join(', ') || 'none'}`
-      );
     }
     ok('relay tables present', tables.map((t) => t.table_name).sort());
 
@@ -847,11 +848,20 @@ async function main() {
       );
     }
     ok('no refund was issued while the paid intent was stranded', paidIntent.payment_tx_hash);
-  } else if (deepChecks) {
-    log('8/9', `Skipping fault injection: ${faultInjection.reason}`);
+  } else {
+    // Always announce the skip, including when the deep checks themselves are off. A step that
+    // vanishes from the output is indistinguishable from a step that passed, and this script's
+    // own header argues that a silently skipped fault injection reading as a pass is the worse
+    // failure of the two.
+    log(
+      '8/9',
+      `Skipping fault injection: ${faultInjection.reason}${
+        deepChecks ? '' : ' (deep checks are off: no DATABASE_URL or wallet)'
+      }`
+    );
   }
 
-  // 6. The master invariant: the allocator agrees with the chain and nothing is stranded.
+  // 9. The master invariant: the allocator agrees with the chain and nothing is stranded.
   if (deepChecks && sql && wallet) {
     log('9/9', 'Verifying the allocator agrees with the chain and no payment was refunded...');
     const outbox = await readOutbox(sql, wallet);

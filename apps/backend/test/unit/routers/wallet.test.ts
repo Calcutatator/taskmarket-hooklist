@@ -37,6 +37,7 @@ import {
 import { recoverMessageAddress } from 'viem';
 import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 import { getServerConfig } from '../../../src/config/env';
+import { RELAY_VALID_WINDOW_SECS } from '../../../src/services/relay-envelope';
 import { createIntentCtx, makeChain } from '../helpers';
 
 const WALLET = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
@@ -285,12 +286,14 @@ describe('wallet router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([makeAgent({ withdrawalAddress: WITHDRAWAL })]));
       const authorization = makeAuthorization();
 
+      const recordedAtLowerBound = Math.floor(Date.now() / 1000);
       await walletRouter.createCaller(ctx).withdraw({
         from: WALLET,
         amountBaseUnits: '5000000',
         authorization,
         signature: '0x' + 'aa'.repeat(65),
       });
+      const recordedAtUpperBound = Math.floor(Date.now() / 1000);
 
       const intent = ctx.intents[0]!;
       expect(intent.operation).toBe('wallet.withdraw');
@@ -301,8 +304,17 @@ describe('wallet router', () => {
         nonce: authorization.nonce,
         validBefore: String(authorization.validBefore),
       });
-      // Fixed at record time, and the same value on every attempt.
-      expect(intent.relayValidBefore).toEqual(expect.any(String));
+      // Fixed at record time, and the same value on every attempt. Note this is NOT the
+      // authorization's own deadline asserted just above: `relayValidBefore` is the relay
+      // envelope's deadline, minted by recordRelayedIntent as now + RELAY_VALID_WINDOW_SECS.
+      // The two happen to coincide here only because makeAuthorization also uses a 300s
+      // window, so pin it to the record-time window rather than to authorization.validBefore.
+      expect(Number(intent.relayValidBefore)).toBeGreaterThanOrEqual(
+        recordedAtLowerBound + RELAY_VALID_WINDOW_SECS
+      );
+      expect(Number(intent.relayValidBefore)).toBeLessThanOrEqual(
+        recordedAtUpperBound + RELAY_VALID_WINDOW_SECS
+      );
       expect(intent.relayReceiptNonce).toMatch(/^0x[a-f0-9]{64}$/);
       expect(intent.status).toBe('completed');
     });
