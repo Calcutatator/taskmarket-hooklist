@@ -10,17 +10,17 @@
 > they paid for rather than their money back, accepting that a payload whose deadline has passed
 > simply fails and must be re-signed rather than being silently amended on the payer's behalf.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Not started
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** (pending)
-- **Deciders:** (pending human approval)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0048
+- **Amends / Amended-by:** Amends ADR-0048
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -121,11 +121,27 @@ relayed write is:
 record intent  →  chain call  →  database writes (in the completion handler)
 ```
 
-No relayed path may make a durable state change before its contract call lands. Reads, validation,
-signature verification, authorization checks and pre-flight simulation all happen before — they
-assert nothing and leave nothing behind. Writes that outlive the request do not. This restates
-ADR-0045's guarantee as an ordering rule with no exemption class: **"the chain has not spoken yet"
-is a reason to write nothing, in either direction.**
+No relayed path may write **outcome state** before its contract call lands — a row asserting that
+something happened. Reads, validation, signature verification, authorization checks and pre-flight
+simulation all happen before; they assert nothing and leave nothing behind.
+
+**There is one exception, and it is a real one: a write whose purpose is to prevent a concurrent
+duplicate must precede the call.** A guard acquired after the critical section is not a guard. The
+distinction is what the row means:
+
+- **Outcome state** records that something happened. It belongs after confirmation, because before
+  it the claim is not yet true.
+- **Guard state** reserves the right to attempt something, so that two concurrent requests cannot
+  both attempt it. It belongs before, because after the call the race it exists to prevent has
+  already run.
+
+`orphaned_payments`' atomic claim in `attemptRefund` and `dreams_withdraw_nonces` are both guard
+state, and both are correct where they are. **A guard must, however, be released on confirmed
+failure** — otherwise it permanently consumes something the user can never retry, which is the
+defect described below.
+
+So the ordering rule is: **"the chain has not spoken yet" is a reason to assert nothing, in either
+direction — but it is not a reason to leave a race unguarded.**
 
 **2. "Is this path payer-gated?" is not the criterion for whether a path needs an intent.** An
 intent does two jobs — making a payment refundable, and making completion outlive the request — and
@@ -133,12 +149,26 @@ only the first is payment-specific. Any path that dispatches a contract call and
 to do around it needs an intent, free or paid. A free path simply carries no payment reference and
 has nothing to refund.
 
-**3. `wallet.withdrawDreams` is the named instance to fix.** Its nonce claim must move into the
-completion handler, so a call that never lands leaves the authorization usable. The nonce table
-remains the replay guard and its atomic `onConflictDoNothing` claim is preserved exactly — the
-claim is what makes it a guard, and it must be inherited, not reimplemented. What changes is when
-it is claimed, not how. Any other path found to write durably before its chain call is fixed the
-same way.
+**3. `wallet.withdrawDreams` keeps its nonce claim where it is, and gains a release.** An earlier
+draft of this ADR said the claim should move into the completion handler. **That would have been a
+critical vulnerability, and the reasoning is worth recording so it is not repeated.**
+
+`withdrawFor` is executed by the trusted backend wallet, not by a user transaction, so replay
+protection cannot live on chain — `dreams_withdraw_nonces` is the only replay guard that exists.
+Move the claim after the chain call and a captured signature can be replayed concurrently: every
+copy passes signature verification, because it is the same genuinely valid signature, and every
+copy reaches the chain call before any completion handler claims the nonce. N copies, N
+withdrawals. The claim is a mutex, and a mutex acquired after the critical section is not a mutex.
+
+The actual defect is not *when* the nonce is claimed but that **nothing ever releases it**. A chain
+call that never lands leaves the authorization permanently unusable, and the guard cannot
+distinguish "already withdrawn" from "claimed for a withdrawal that evaporated" — not
+distinguishing those is precisely what it was built to do.
+
+So: the claim stays before the call, exactly as written, atomic `onConflictDoNothing` preserved.
+Settlement releases it when the intent reaches `failed` on confirmed evidence, or exhausts retry.
+Release is settlement-driven, which means it can only follow confirmed failure and never a timeout
+— the same rule that governs refunds, applied to a guard.
 
 **4. An intent that provably never reached the chain is rebroadcast, paid or unpaid.** The
 condition is `status = 'recorded'` with `server_wallet_transaction_id IS NULL` and
@@ -257,12 +287,17 @@ to refund under point 6. That is the correct use of refund.
 - The retry window is now effectively `RELAY_VALID_WINDOW_SECS` (300s today), which is much shorter
   than the 15-minute abandonment cutoff. A transient RPC outage outlasting five minutes still ends in
   a refund, and lengthening that window means changing what payers sign, not tuning a retry constant.
-- Fixing `wallet.withdrawDreams` means restructuring a path whose replay guard is security-relevant.
-  Moving an atomic claim is exactly the kind of change that reintroduces a deliberately-fixed bug if
-  done carelessly; the claim must be carried, not rewritten.
+- Releasing a guard on failure is itself security-relevant. The release must be reachable only from
+  confirmed failure; a release triggered by a timeout would reopen the replay window on an
+  authorization whose transaction may still land.
 - Retry is only safe while the "never broadcast" condition is genuinely exhaustive. If any future
   code path can broadcast without first writing an outbox row, this decision silently becomes a
-  double-spend. That invariant is now load-bearing in a way it was not before.
+  double-spend. That invariant is now load-bearing in a way it was not before — and it is already
+  enforced: `test/unit/config/server-wallet-transaction-usage.test.ts` fails the build if any
+  `writeContract`, `sendTransaction`, `sendRawTransaction` or `deployContract` appears outside
+  `dispatchServerWalletTransaction`, which writes the outbox row at nonce allocation. That test was
+  written for ADR-0040 to prevent nonce collisions; it now also protects this decision, and anyone
+  widening its allowlist needs to know what else they would be unlocking.
 
 **Neutral / follow-up:**
 

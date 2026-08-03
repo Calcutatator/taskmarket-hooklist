@@ -10,13 +10,13 @@
 > a small configuration surface and a deliberate bias towards overpaying for gas rather than letting
 > the relayer stall.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Not started
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** (pending)
-- **Deciders:** (pending human approval)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** —
@@ -254,6 +254,13 @@ ADR.
   comment: a speed-up must stop at the deadline while a cancel at the same nonce must not.
 
 **Neutral / follow-up:**
+
+- **Decided, not open: the fee actually used is persisted on the outbox row.** Escalation multiplies
+  the fee being replaced, not a freshly read oracle, so each attempt needs to know what the previous
+  attempt actually paid. `sendReplacement(nonce)` cannot see that today. The value belongs on the
+  ADR-0040 `server_wallet_transactions` row alongside the nonce and hash it already carries, written
+  when the transaction is broadcast and read by the next escalation. Reading the oracle again in its
+  place is what produces the status-quo defect this ADR exists to fix.
 
 - Whether the per-attempt fee history belongs on the `server_wallet_transactions` row or a child
   table is an implementation detail, not a decision. The requirement is only that attempt *n* can

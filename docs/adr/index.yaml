@@ -221,10 +221,10 @@ adrs:
   - number: "0050"
     file: "0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md"
     title: "Durable writes follow the chain call, and an unbroadcast intent is retried before it is refunded"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"
   - number: "0051"
     file: "0051-replacement-gas-escalates-geometrically-under-a-configured-cap.md"
     title: "Replacement gas escalates geometrically under a configured, per-deployment cap"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"
