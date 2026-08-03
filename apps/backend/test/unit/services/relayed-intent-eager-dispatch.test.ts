@@ -239,4 +239,47 @@ describe('eager intent dispatch', () => {
     // `broadcast` and the reconciler owns it from here.
     expect(complete).not.toHaveBeenCalled();
   });
+
+  // Verifies: ADR-0050
+  it('does not hand an intent back for rebroadcast when the failure came after the send', async () => {
+    const broadcast = vi.fn().mockResolvedValue(ASSIGN_TX_HASH);
+    // A completion handler that throws stands in for anything that can fail after the hash
+    // exists -- the outbox lookup, the completion claim, the handler itself.
+    registerRelayedIntentHandler('tasks.assignEvaluator', {
+      broadcast,
+      complete: vi.fn().mockRejectedValue(new Error('connection terminated unexpectedly')),
+    });
+    const intent = row();
+    const { db } = makeDb([intent]);
+
+    const outcome = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
+
+    // The transaction is live. Classifying a post-send failure as transient would return it to
+    // `recorded` with no hash, which is exactly what `listUnbroadcastIntents` reads as provably
+    // never broadcast -- so the sweep would send it again: one payment, two chain calls.
+    expect(outcome).toBe('broadcast');
+    expect(intent.status).not.toBe('recorded');
+    expect(intent.txHash).toBe(ASSIGN_TX_HASH);
+    expect(broadcast).toHaveBeenCalledTimes(1);
+  });
+
+  // Verifies: ADR-0045
+  it('refuses to complete an intent from a receipt belonging to another transaction', async () => {
+    const complete = vi.fn().mockResolvedValue(undefined);
+    registerRelayedIntentHandler('tasks.assignEvaluator', { complete });
+    const intent = row({ status: 'broadcast', txHash: ASSIGN_TX_HASH });
+    const { db } = makeDb([intent]);
+
+    const settled = await completeRelayedIntent({
+      db: db as never,
+      intent: intent as never,
+      // What the reconciler reads once it has replaced a stuck nonce: the receipt of the no-op
+      // replacement, whose success means this intent's own call never landed.
+      txHash: `0x${'ef'.repeat(32)}`,
+    });
+
+    expect(settled).toBe(false);
+    expect(complete).not.toHaveBeenCalled();
+    expect(intent.status).toBe('broadcast');
+  });
 });

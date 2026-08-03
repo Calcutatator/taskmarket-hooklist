@@ -70,13 +70,21 @@ export function classifyRelayFailure(error: unknown): RelayFailureKind {
 
   const message = (error instanceof Error ? error.message : String(error)).toLowerCase();
 
-  if (TRANSIENT_MARKERS.some((marker) => message.includes(marker))) return 'transient';
-
+  // The revert prefix is parsed before the marker scan, and the order matters. A decoded revert
+  // reason is a verdict the contract stated in its own vocabulary, and that vocabulary is not
+  // chosen to avoid our transport words: `SubmissionRateLimited`, `EvaluatorTimeout`,
+  // `DeadlineExceeded` all contain a marker substring. Scanning the whole message first would
+  // read the contract's answer as a network hiccup and retry a call that can only ever revert
+  // again -- ADR-0047's unbounded loop, arrived at from the opposite direction.
   const prefixAt = message.indexOf(REVERT_PREFIX);
   if (prefixAt !== -1) {
     const reason = message.slice(prefixAt + REVERT_PREFIX.length).trim();
     return reason.startsWith(UNDECODED_REVERT) ? 'transient' : 'deterministic';
   }
+
+  // No decoded reason, so nothing has spoken for the contract and the transport is the only
+  // thing left that could have. This is where the markers belong.
+  if (TRANSIENT_MARKERS.some((marker) => message.includes(marker))) return 'transient';
 
   return 'transient';
 }

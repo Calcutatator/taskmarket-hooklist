@@ -65,6 +65,25 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
   const stuckAfterMs = options.stuckAfterMs ?? DEFAULT_STUCK_AFTER_MS;
   const { getReceiptStatus, intents, sendReplacement, store } = options;
 
+  /**
+   * Replacements this process broadcast, by outbox row id, until their receipt resolves.
+   *
+   * A replaced row carries the replacement's hash, so the receipt the next pass reads is the
+   * replacement's -- a no-op self-transfer whose success means the original work did *not*
+   * happen. Without this the pass would read that success as the intent succeeding. Entries are
+   * dropped as soon as the receipt settles the row, so this holds at most the nonces currently
+   * being unstuck.
+   *
+   * In memory, and that is a real limitation: a restart between broadcasting a replacement and
+   * reading its receipt loses the association, and the intent behind it is then left
+   * non-terminal rather than settled. That is the safe direction -- an unsettled intent is
+   * visible and recoverable, whereas completing one on a replacement's receipt would assert
+   * work that never happened, and settling it failed on a replacement that was itself dropped
+   * would refund work that did. Making it survive a restart needs a durable marker on the
+   * outbox row, which is a schema change beyond this fix.
+   */
+  const replacements = new Map<string, { hash: Hex; nonce: number }>();
+
   async function settleIntent(
     outcome: 'confirmed' | 'failed',
     transactionId: string,
@@ -92,15 +111,21 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
   async function replaceStuckNonce(id: string, nonce: number): Promise<void> {
     try {
       const hash = await sendReplacement(nonce);
-      // The replacement occupies the nonce, so the original can never be mined. That is the
-      // second form of confirmed evidence that the work did not happen (ADR-0045).
-      await settleIntent('failed', id, null, `superseded by replacement at nonce ${nonce}`);
+      // Durable first: `recordReplacement` puts the row back in `broadcast` under the new hash,
+      // which is what makes the next pass read the replacement's receipt rather than the
+      // original's. A process that dies before this write leaves the row pointing at a
+      // transaction that can no longer mine and no record that anything replaced it.
+      await store.recordReplacement(id, hash);
+      // Deliberately no settlement here. A *broadcast* replacement is not evidence of anything:
+      // it can be dropped in turn, and the original then mines after all. Only a mined
+      // replacement occupies the nonce, and only that is the second form of confirmed evidence
+      // ADR-0045 admits -- so the intent is settled on the pass that reads this hash's receipt.
+      replacements.set(id, { hash, nonce });
       logger.warn('Replaced stuck server wallet transaction', {
         nonce,
         replacementHash: hash,
         transactionId: id,
       });
-      await store.recordReplacement(id, hash);
     } catch (error) {
       // A replacement rejected because the original already landed is the good case: the next
       // pass reads the receipt and settles the row normally.
@@ -138,6 +163,28 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
           transactionId: row.id,
         });
         continue;
+      }
+
+      if (status === 'success' || status === 'reverted') {
+        // This row's hash is a replacement we sent, and the chain has now answered for it. The
+        // nonce is spent by a transaction that did none of the intent's work, so the original
+        // can never mine: this, and not the moment we broadcast it, is the confirmed evidence
+        // ADR-0045 requires before an intent may be failed and its payment refunded. A reverted
+        // replacement spends the nonce just as thoroughly, so both verdicts settle the same way.
+        const replacement = replacements.get(row.id);
+        if (replacement && replacement.hash === row.txHash) {
+          await store.setStatus(row.id, status === 'success' ? 'confirmed' : 'failed', {
+            hash: row.txHash,
+          });
+          await settleIntent(
+            'failed',
+            row.id,
+            null,
+            `superseded by replacement ${replacement.hash} mined at nonce ${replacement.nonce}`
+          );
+          replacements.delete(row.id);
+          continue;
+        }
       }
 
       if (status === 'success') {

@@ -8,7 +8,7 @@ import { registerRelayedIntentHandlers } from './intents/register';
 import { withRelayEnvelope } from './relay-envelope';
 import { completeRelayedIntent } from './relayed-intent-registry';
 import {
-  linkIntentToBroadcast,
+  persistIntentBroadcast,
   recordRelayedIntent,
   relayEnvelopeForIntent,
   type RelayedIntentOperation,
@@ -103,6 +103,24 @@ export async function runRelayedIntent(
     payload: input.payload,
   });
 
+  // The row that came back may not be new. `recordRelayedIntent` is keyed on the payment hash,
+  // so a retried request carrying an x402 payment that has already been settled once gets the
+  // *original* intent back -- which may already have a transaction on chain or be finished. The
+  // reuse is what makes the payment idempotent, and sending regardless would undo it: one
+  // payment, two chain calls (ADR-0045). So what the caller gets depends on where that intent
+  // already is, and only a genuinely fresh one is sent.
+  if (intent.status === 'completed' && intent.txHash) {
+    return { intent, txHash: intent.txHash as `0x${string}` };
+  }
+  if (intent.status !== 'recorded' || intent.txHash) {
+    // In flight, or terminally failed. Either way the payment has been spent on an attempt that
+    // exists, and the outcome belongs to the reconciler and to settlement, not to a second send.
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: `${input.operation} for this payment is already ${intent.status} and cannot be submitted again (intent ${intent.id}).`,
+    });
+  }
+
   let txHash: `0x${string}`;
   try {
     // Bound so the first attempt uses the same envelope every later rebroadcast will use.
@@ -113,7 +131,7 @@ export async function runRelayedIntent(
     // Live, not failed. Link it so the reconciler owns the outcome and let the caller see the
     // pending error as-is; the intent stays non-terminal until the chain says otherwise.
     if (error instanceof ServerTransactionPendingError) {
-      await linkIntentToBroadcast({ db: input.db, intentId: intent.id, txHash: error.hash });
+      await persistIntentBroadcast({ db: input.db, intentId: intent.id, txHash: error.hash });
       throw error;
     }
 
@@ -125,7 +143,10 @@ export async function runRelayedIntent(
     throw error;
   }
 
-  await linkIntentToBroadcast({ db: input.db, intentId: intent.id, txHash });
+  // The send returned a hash, so the transaction is live. Recording it is what keeps the
+  // rebroadcast sweep from reading this intent as one that never reached the chain and sending
+  // it a second time, so it happens before anything else that could fail and it never throws.
+  await persistIntentBroadcast({ db: input.db, intentId: intent.id, txHash });
 
   const completed = await completeRelayedIntent({ db: input.db, intent, txHash });
   if (!completed) {

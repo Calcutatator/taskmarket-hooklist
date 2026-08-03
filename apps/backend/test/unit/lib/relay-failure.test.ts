@@ -25,6 +25,18 @@ describe('relay failure classification', () => {
     expect(classifyRelayFailure(new Error(message))).toBe('transient');
   });
 
+  it.each(['DeadlineExceeded', 'EvaluatorTimedOut', 'SubmissionRateLimited'])(
+    'reads a decoded revert as the contract meant it, marker substring or not: %s',
+    (reason) => {
+      // The contract's error vocabulary is not chosen to avoid our transport words, so scanning
+      // the whole message for markers before parsing the revert prefix reads the chain's own
+      // verdict as a network hiccup -- and retries a call that can only ever revert again.
+      const error = new Error(`Contract call rejected: ${reason}`);
+      expect(classifyRelayFailure(error)).toBe('deterministic');
+      expect(relayFailureReason(error)).toBe(reason);
+    }
+  );
+
   it('defaults to transient for an unrecognised error', () => {
     // Never invent a terminal verdict: stranding work that a retry would have finished is the
     // more expensive of the two mistakes.

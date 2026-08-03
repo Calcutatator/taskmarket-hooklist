@@ -9,9 +9,9 @@ import {
   claimIntentForBroadcast,
   claimIntentForCompletion,
   exhaustIntentBroadcastAttempts,
-  linkIntentToBroadcast,
   markIntentCompleted,
   markIntentFailed,
+  persistIntentBroadcast,
   recordIntentCompletionError,
   relayEnvelopeForIntent,
   releaseIntentForRetry,
@@ -170,6 +170,22 @@ export async function completeRelayedIntent(input: {
   const claimed = await claimIntentForCompletion({ db: input.db, intentId: input.intent.id });
   if (!claimed) return true; // Already completed or failed by another caller.
 
+  // The receipt must belong to this intent's own transaction. They can differ: the reconciler
+  // replaces a stuck nonce with a no-op self-transfer, and the outbox row then carries the
+  // replacement's hash while the intent still carries the original's. A success on that hash
+  // means the replacement mined, which is precisely the evidence that the intent's work did
+  // *not* happen -- so completing here would write a database row asserting something the chain
+  // never did. Settlement decides what such an intent becomes; this only refuses to finish it.
+  if (claimed.txHash && claimed.txHash.toLowerCase() !== input.txHash.toLowerCase()) {
+    logger.error('Refusing to complete a relayed intent from another transaction receipt', {
+      intentId: claimed.id,
+      intentTxHash: claimed.txHash,
+      operation: claimed.operation,
+      receiptTxHash: input.txHash,
+    });
+    return false;
+  }
+
   try {
     await handler({ db: input.db, intent: claimed, txHash: input.txHash });
     await markIntentCompleted({ db: input.db, intentId: claimed.id });
@@ -232,37 +248,31 @@ export async function dispatchRelayedIntent(input: {
     return 'skipped';
   }
 
-  const claimed = await claimIntentForBroadcast({ db: input.db, intentId: input.intent.id });
+  const claimed = await claimIntentForBroadcast({
+    db: input.db,
+    expectedAttempts: input.intent.broadcastAttempts,
+    intentId: input.intent.id,
+  });
   if (!claimed) return 'skipped';
 
+  // Only the send is inside the try, and the boundary is load-bearing. Everything below it runs
+  // after a hash exists, which means the transaction is live; the catch classifies failures and
+  // its transient branch hands the intent back to the rebroadcast sweep as never broadcast. A
+  // post-broadcast failure routed through there would be read as provably unsent and sent again
+  // -- one payment, two chain calls (ADR-0045, ADR-0050). So the send's verdict is the only
+  // thing that classification is ever allowed to see.
+  let txHash: string;
   try {
     // The stored envelope, not a fresh one: this is the rebroadcast path, and replaying the
     // deadline the intent was recorded with is what makes the deadline mean anything.
-    const txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () =>
+    txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () =>
       broadcast({ db: input.db, intent: claimed })
     );
-    // linkIntentToBroadcast, not markIntentBroadcast: without the outbox row id the reconciler
-    // has nothing to settle the intent against, so the intent would sit in `broadcast` forever
-    // even after its receipt landed.
-    await linkIntentToBroadcast({ db: input.db, intentId: claimed.id, txHash });
-    // A broadcaster that returns normally has already awaited its receipt -- that is what the
-    // shared dispatcher guarantees -- so the outbox row is `confirmed` before we get here, and
-    // the reconciler's main pass only ever examines rows still in `broadcast`. Nothing else
-    // will observe this receipt, so the completion has to run here, exactly as the tasks.create
-    // request path runs it after its own dispatch returns. Omitting it strands the intent at
-    // `completion_attempts: 0` with the transaction sitting confirmed on chain.
-    //
-    // Safe to run inline even though a completion handler may itself record and dispatch
-    // further intents: those are distinct rows, so the recursion is bounded by the operation
-    // graph rather than by this call, and the conditional claim inside completeRelayedIntent
-    // still admits only one caller per intent if a reconciler pass observes the same receipt.
-    await completeRelayedIntent({ db: input.db, intent: claimed, txHash });
-    return 'broadcast';
   } catch (error) {
     // The transaction is live and owned by the reconciler (ADR-0045). Recording the hash is
     // the whole job here -- rebroadcasting would spend a second nonce on the same work.
     if (error instanceof ServerTransactionPendingError) {
-      await linkIntentToBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
+      await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
       return 'broadcast';
     }
 
@@ -311,4 +321,35 @@ export async function dispatchRelayedIntent(input: {
     });
     return 'retry';
   }
+
+  // Past the boundary: the hash exists, so the outcome is 'broadcast' whatever happens from
+  // here. Persisting the hash comes first and cannot throw, because that write is what stops
+  // the rebroadcast sweep treating this intent as one that never reached the chain.
+  await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash });
+
+  // A broadcaster that returns normally has already awaited its receipt -- that is what the
+  // shared dispatcher guarantees -- so the outbox row is `confirmed` before we get here, and
+  // the reconciler's main pass only ever examines rows still in `broadcast`. Nothing else
+  // will observe this receipt, so the completion has to run here, exactly as the tasks.create
+  // request path runs it after its own dispatch returns. Omitting it strands the intent at
+  // `completion_attempts: 0` with the transaction sitting confirmed on chain.
+  //
+  // Safe to run inline even though a completion handler may itself record and dispatch
+  // further intents: those are distinct rows, so the recursion is bounded by the operation
+  // graph rather than by this call, and the conditional claim inside completeRelayedIntent
+  // still admits only one caller per intent if a reconciler pass observes the same receipt.
+  //
+  // completeRelayedIntent swallows a handler's own failure, but not a database failure of its
+  // own; either way an unfinished completion is recovered by `listConfirmedUnsettledIntents`,
+  // and neither is a reason to send the transaction again.
+  try {
+    await completeRelayedIntent({ db: input.db, intent: claimed, txHash });
+  } catch (error) {
+    logger.error('Completing a broadcast relayed intent failed; the sweep will retry it', {
+      error: error instanceof Error ? error.message : String(error),
+      intentId: claimed.id,
+      operation: claimed.operation,
+    });
+  }
+  return 'broadcast';
 }

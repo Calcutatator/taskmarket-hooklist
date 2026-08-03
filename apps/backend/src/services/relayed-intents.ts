@@ -1,9 +1,10 @@
 // Implements: ADR-0045, ADR-0050
 import { randomUUID } from 'crypto';
-import { and, asc, eq, gte, inArray, isNull, lt, sql } from 'drizzle-orm';
+import { and, asc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
+import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
 
 type Db = typeof DbType;
@@ -159,9 +160,24 @@ export const MAX_BROADCAST_ATTEMPTS = 20;
  * The attempt is counted here rather than on success or failure so that a process dying
  * mid-broadcast still consumes one: an attempt that leaves no trace is an attempt that can be
  * repeated forever.
+ *
+ * `expectedAttempts` makes the claim a compare-and-swap against the counter the caller read.
+ * Status alone does not distinguish two claimants: `recorded` stays `recorded` across a
+ * broadcast attempt by design, so two passes that listed the same intent in the same window
+ * both match on status and both send. The counter is the only field that moves, so requiring it
+ * to be untouched since the read is what makes the claim exclusive -- and the second claimant
+ * gets null and stops, rather than spending a second nonce on the same work.
+ *
+ * The attempt cap is deliberately not enforced here. `listUnbroadcastIntents` applies it, which
+ * is the right place: it governs *re*broadcasting, and an eager dispatch is the first attempt by
+ * design, made by the request that just recorded the intent. Enforcing the cap at the claim
+ * would only matter if a caller reached this with an exhausted budget, which is exactly the
+ * state `exhaustIntentBroadcastAttempts` uses to mean "hand this to settlement" -- and settlement
+ * finds it through that query, not through here.
  */
 export async function claimIntentForBroadcast(input: {
   db: Db;
+  expectedAttempts: number;
   intentId: string;
 }): Promise<RelayedIntent | null> {
   const [claimed] = await input.db
@@ -170,7 +186,13 @@ export async function claimIntentForBroadcast(input: {
       broadcastAttempts: sql`${relayedIntents.broadcastAttempts} + 1`,
       updatedAt: new Date(),
     })
-    .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'recorded')))
+    .where(
+      and(
+        eq(relayedIntents.id, input.intentId),
+        eq(relayedIntents.status, 'recorded'),
+        eq(relayedIntents.broadcastAttempts, input.expectedAttempts)
+      )
+    )
     .returning();
   return claimed ?? null;
 }
@@ -244,24 +266,72 @@ export async function markIntentBroadcast(input: {
  * allocated -- but the reconciler settles by that id, so an intent left without it can never
  * be settled by anything except the request that started it. Looking the row up by hash is
  * what closes that gap, and it is why this is the form request paths should call.
+ *
+ * The lookup is allowed to fail without taking the hash write down with it. The two writes are
+ * not equally important: the outbox id decides *who* settles the intent, while the hash decides
+ * whether the intent still looks like one that never reached the chain. `listUnbroadcastIntents`
+ * rebroadcasts on exactly that question, so losing the hash because a `select` failed would
+ * spend a second nonce on a transaction that is already live. A missing outbox id is recovered
+ * by `listConfirmedUnsettledIntents`; a missing hash is recovered by nothing.
  */
 export async function linkIntentToBroadcast(input: {
   db: Db;
   intentId: string;
   txHash: string;
 }): Promise<void> {
-  const [row] = await input.db
-    .select({ id: serverWalletTransactions.id })
-    .from(serverWalletTransactions)
-    .where(eq(serverWalletTransactions.txHash, input.txHash))
-    .limit(1);
+  let serverWalletTransactionId: string | undefined;
+  try {
+    const [row] = await input.db
+      .select({ id: serverWalletTransactions.id })
+      .from(serverWalletTransactions)
+      .where(eq(serverWalletTransactions.txHash, input.txHash))
+      .limit(1);
+    serverWalletTransactionId = row?.id;
+  } catch (error) {
+    logger.error('Outbox lookup for a broadcast relayed intent failed; recording the hash anyway', {
+      error: error instanceof Error ? error.message : String(error),
+      intentId: input.intentId,
+      txHash: input.txHash,
+    });
+  }
 
   await markIntentBroadcast({
     db: input.db,
     intentId: input.intentId,
-    serverWalletTransactionId: row?.id,
+    serverWalletTransactionId,
     txHash: input.txHash,
   });
+}
+
+/**
+ * Record that an intent's transaction is live, for a caller that has already sent it.
+ *
+ * The one thing every post-broadcast path must do, and the reason it never throws: once
+ * `send` has returned a hash the transaction exists whether or not we manage to write it down,
+ * so an error here is not a reason to treat the intent as unsent. The pre-broadcast retry path
+ * -- `releaseIntentForRetry`, and the rebroadcast sweep behind it -- is reachable only from a
+ * failure that happened *before* a hash existed. Routing a failure from after the hash into it
+ * hands `listUnbroadcastIntents` an intent it will read as provably never broadcast and send a
+ * second time, which for a paid intent is one payment and two chain calls (ADR-0045, ADR-0050).
+ *
+ * Failing to persist the hash is still bad -- the intent is then genuinely indistinguishable
+ * from an unsent one -- so it is logged at error level rather than swallowed. What the caller
+ * must not do is make it worse by reporting the send as not having happened.
+ */
+export async function persistIntentBroadcast(input: {
+  db: Db;
+  intentId: string;
+  txHash: string;
+}): Promise<void> {
+  try {
+    await linkIntentToBroadcast(input);
+  } catch (error) {
+    logger.error('Recording the broadcast of a relayed intent failed; the transaction is live', {
+      error: error instanceof Error ? error.message : String(error),
+      intentId: input.intentId,
+      txHash: input.txHash,
+    });
+  }
 }
 
 /**
@@ -322,7 +392,16 @@ export async function markIntentCompleted(input: { db: Db; intentId: string }): 
     .where(eq(relayedIntents.id, input.intentId));
 }
 
-/** Terminal failure. Only the chain may put an intent here -- never a timeout (ADR-0045). */
+/**
+ * Terminal failure. Only the chain may put an intent here -- never a timeout (ADR-0045).
+ *
+ * `completed` is excluded in the predicate rather than by a read-then-write in the caller,
+ * because the race this loses is not hypothetical: a request completing an intent and a
+ * reconciler pass reading a replacement's verdict for the same nonce run concurrently, and a
+ * check made before the UPDATE is already stale by the time the UPDATE runs. Overwriting a
+ * `completed` intent would hide work that demonstrably happened, and on a paid intent it points
+ * settlement at a refund for a task the requester already has.
+ */
 export async function markIntentFailed(input: {
   db: Db;
   intentId: string;
@@ -331,7 +410,7 @@ export async function markIntentFailed(input: {
   await input.db
     .update(relayedIntents)
     .set({ lastError: input.reason.slice(0, 500), status: 'failed', updatedAt: new Date() })
-    .where(eq(relayedIntents.id, input.intentId));
+    .where(and(eq(relayedIntents.id, input.intentId), ne(relayedIntents.status, 'completed')));
 }
 
 export async function recordIntentCompletionError(input: {
@@ -394,6 +473,10 @@ export async function listConfirmedUnsettledIntents(input: {
     .where(
       and(
         eq(serverWalletTransactions.status, 'confirmed'),
+        // The outbox row must still carry this intent's own transaction. A differing hash means
+        // the reconciler replaced a stuck nonce, so what confirmed is a no-op self-transfer and
+        // not this work -- sweeping it would complete an intent whose call never landed.
+        eq(serverWalletTransactions.txHash, relayedIntents.txHash),
         inArray(relayedIntents.status, ['recorded', 'broadcast'])
       )
     )

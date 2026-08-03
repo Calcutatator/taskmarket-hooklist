@@ -155,21 +155,37 @@ describe('server transaction reconciler', () => {
       expect(intents.onConfirmed).not.toHaveBeenCalled();
     });
 
-    it('fails the intent when a replacement supersedes the original', async () => {
+    it('fails the intent only once the replacement itself is mined', async () => {
       const { store } = createMemoryServerTransactionStore(10);
       await broadcastOne(store);
       const intents = settlementSpies();
 
+      // Null until the replacement has been sent, then success for the replacement's own hash.
+      const getReceiptStatus = vi
+        .fn()
+        .mockResolvedValueOnce(null)
+        .mockResolvedValue('success' as const);
       const reconcile = createServerTransactionReconciler({
-        getReceiptStatus: vi.fn().mockResolvedValue(null),
+        getReceiptStatus,
         intents,
         sendReplacement: vi.fn().mockResolvedValue(REPLACEMENT_HASH),
         store,
         stuckAfterMs: STUCK_AFTER_MS,
       });
-      await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
 
+      // Pass one broadcasts the replacement. Broadcast is not mined, so nothing is settled:
+      // a replacement can be dropped in turn and the original mine after all, and a refund
+      // issued now would be a refund for work that then happens (ADR-0045).
+      await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+      expect(intents.onFailed).not.toHaveBeenCalled();
+
+      // Pass two reads the replacement's receipt. Now the nonce is provably spent by a
+      // transaction that did none of the intent's work, which is the confirmed evidence.
+      await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 3));
       expect(intents.onFailed).toHaveBeenCalledTimes(1);
+      expect(intents.onFailed.mock.calls[0]?.[1]).toContain(REPLACEMENT_HASH);
+      // And never as a success: the receipt that landed belongs to the replacement.
+      expect(intents.onConfirmed).not.toHaveBeenCalled();
     });
 
     it('settles nothing while the transaction is merely unmined', async () => {
