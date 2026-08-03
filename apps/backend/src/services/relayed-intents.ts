@@ -16,6 +16,7 @@ type Db = typeof DbType;
  */
 export type RelayedIntentOperation =
   | 'tasks.create'
+  | 'tasks.assignEvaluator'
   | 'tasks.update'
   | 'acceptance.accept'
   | 'acceptance.acceptMany'

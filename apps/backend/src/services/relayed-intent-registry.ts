@@ -30,19 +30,42 @@ export type RelayedIntentCompletionHandler = (context: {
   txHash: string;
 }) => Promise<void>;
 
-const handlers = new Map<RelayedIntentOperation, RelayedIntentCompletionHandler>();
+/**
+ * How a follow-on intent gets on chain (ADR-0046).
+ *
+ * A root intent is broadcast by the request that created it. A follow-on has no request left
+ * -- it was enqueued from inside a completion handler -- so the intent worker broadcasts it,
+ * and any operation reachable as a follow-on must provide this.
+ */
+export type RelayedIntentBroadcaster = (context: {
+  db: Db;
+  intent: RelayedIntent;
+}) => Promise<string>;
+
+type RegisteredOperation = {
+  broadcast?: RelayedIntentBroadcaster;
+  complete: RelayedIntentCompletionHandler;
+};
+
+const handlers = new Map<RelayedIntentOperation, RegisteredOperation>();
 
 export function registerRelayedIntentHandler(
   operation: RelayedIntentOperation,
-  handler: RelayedIntentCompletionHandler
+  handler: RelayedIntentCompletionHandler | RegisteredOperation
 ): void {
-  handlers.set(operation, handler);
+  handlers.set(operation, typeof handler === 'function' ? { complete: handler } : handler);
 }
 
 export function getRelayedIntentHandler(
   operation: string
 ): RelayedIntentCompletionHandler | undefined {
-  return handlers.get(operation as RelayedIntentOperation);
+  return handlers.get(operation as RelayedIntentOperation)?.complete;
+}
+
+export function getRelayedIntentBroadcaster(
+  operation: string
+): RelayedIntentBroadcaster | undefined {
+  return handlers.get(operation as RelayedIntentOperation)?.broadcast;
 }
 
 export function registeredRelayedIntentOperations(): RelayedIntentOperation[] {
