@@ -95,7 +95,7 @@ const baseTaskInput = {
 };
 
 /**
- * Verifies: ADR-0045, ADR-0046
+ * Verifies: ADR-0045, ADR-0047
  *
  * create() now records a durable intent before the chain call and runs its post-receipt work
  * through the intent registry, which claims the row with a conditional UPDATE and reads the

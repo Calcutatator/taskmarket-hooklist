@@ -6,15 +6,15 @@
 > directly, to achieve one durable record per on-chain transaction with no untracked writes,
 > accepting that a single user action can span several intents and completes progressively.
 
-- **Status:** Accepted
+- **Status:** Superseded
 - **Date:** 2026-08-03
-- **Embodiment:** Verified
+- **Embodiment:** Deprecated
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review); decision made directly by Beau in conversation
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
-- **Supersedes / Superseded-by:** —
-- **Pending Supersedes / Superseded-by:** Pending superseded by ADR-0047
+- **Supersedes / Superseded-by:** Superseded by ADR-0047
+- **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0045
 - **Pending Amends / Amended-by:** —
 

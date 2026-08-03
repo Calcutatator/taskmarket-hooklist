@@ -9,17 +9,17 @@
 > abstraction, accepting that a requester whose task is claimed before they assign an evaluator
 > cannot assign one at all until the contract API is changed.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Not started
+- **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** None recorded — drafted for review, no independent reviewer yet
-- **Deciders:** (pending human approval)
-- **Supersedes / Superseded-by:** —
-- **Pending Supersedes / Superseded-by:** Supersedes ADR-0046
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0045
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
+- **Supersedes / Superseded-by:** Supersedes ADR-0046
+- **Pending Supersedes / Superseded-by:** —
+- **Amends / Amended-by:** Amends ADR-0045
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
@@ -95,7 +95,6 @@ database in step.
 
 ## Decision
 
-If accepted:
 
 **1. ADR-0046 is superseded, and the chaining subsystem is withdrawn.** Parent links on intents,
 chain depth bounds, cycle detection, root resolution, follow-on enqueueing from completion

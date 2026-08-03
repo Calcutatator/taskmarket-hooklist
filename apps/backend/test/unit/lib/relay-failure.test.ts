@@ -1,4 +1,4 @@
-// Verifies: ADR-0046
+// Verifies: ADR-0047
 import { describe, expect, it } from 'vitest';
 import { classifyRelayFailure, relayFailureReason } from '../../../src/lib/relay-failure';
 

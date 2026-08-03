@@ -1,4 +1,4 @@
-// Implements: ADR-0046
+// Implements: ADR-0047
 import { BaseError, ContractFunctionRevertedError } from 'viem';
 
 /**
