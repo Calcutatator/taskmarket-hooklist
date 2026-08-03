@@ -15,8 +15,7 @@ name: Preview Environment
 # those prompts). The workspace ID below is TASK MARKET's (`Loaf's Projects`). Where linking
 # is only needed for project-level context, any environment/service that's guaranteed to
 # exist works, since the actual environment delete/new/deploy target is specified
-# separately on each command. DEVNET is that always-present environment, and is also the
-# template each per-PR environment is duplicated from.
+# separately on each command.
 
 on:
   pull_request:
@@ -62,7 +61,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment DEVNET --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
 
           # anvil/facilitator/Storybook are per-PR services (see the top-level env block) -- delete
           # them explicitly before deleting the environment, or they become permanent
@@ -122,7 +121,7 @@ jobs:
         env:
           RAILWAY_API_TOKEN: ${{ secrets.RAILWAY_API_TOKEN }}
         run: |
-          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment DEVNET --service "@taskmarket/backend" --json
+          railway link --project "${{ secrets.RAILWAY_PROJECT_ID }}" --workspace "$RAILWAY_WORKSPACE_ID" --environment preview --service "@taskmarket/backend" --json
           railway environment delete "$ENV_NAME" --yes --json || true
           # Deletion is asynchronous -- `environment list` can report the name gone before
           # Railway's name-uniqueness check on `environment new` agrees, so retry the actual
@@ -130,7 +129,7 @@ jobs:
           # Railway also hard rate-limits environment creation to one per user per 30s.
           CREATED=""
           for i in $(seq 1 15); do
-            OUTPUT=$(railway environment new "$ENV_NAME" --duplicate DEVNET --json 2>&1) && { echo "$OUTPUT"; CREATED=1; break; }
+            OUTPUT=$(railway environment new "$ENV_NAME" --duplicate preview --json 2>&1) && { echo "$OUTPUT"; CREATED=1; break; }
             if echo "$OUTPUT" | grep -Eiq "one environment can be created|being rate.?limited|too many requests"; then
               sleep 32
             elif echo "$OUTPUT" | grep -q "already exists"; then
