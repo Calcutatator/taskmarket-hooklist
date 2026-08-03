@@ -201,10 +201,15 @@ adrs:
   - number: "0046"
     file: "0046-relayed-intents-chain-follow-on-writes.md"
     title: "Relayed intents chain follow-on writes rather than relaying inside handlers"
-    status: Accepted
+    status: Superseded
     date: "2026-08-03"
   - number: "0047"
     file: "0047-evaluator-assignment-is-its-own-intent-and-chaining-is-withdrawn.md"
     title: "Evaluator assignment is its own intent, and the chaining subsystem is withdrawn"
+    status: Accepted
+    date: "2026-08-03"
+  - number: "0048"
+    file: "0048-orphaning-a-payment-is-decided-only-by-intent-settlement.md"
+    title: Orphaning a payment is decided only by intent settlement; the ledger is retained
     status: Proposed
     date: "2026-08-03"
