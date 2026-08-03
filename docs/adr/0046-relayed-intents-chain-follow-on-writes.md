@@ -16,7 +16,7 @@
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0045
-- **Pending Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** Amended by ADR-0047
 
 ## Context
 
@@ -92,6 +92,16 @@ the root's identifier is what callers hold onto.
   scope. Today it does not, and the parent's effect stands.
 - Alerting should treat a chain stalled with an unstarted follow-on the same as an intent stuck
   in `recorded`.
+- **2026-08-03 correction (see ADR-0047).** Two things above are wrong and were found in
+  sandbox testing, not review. First, evaluator assignment is used throughout as the motivating
+  case; it is not. The real multi-transaction chain is the x402 payment followed by the
+  forwarded contract call, present on every paid write. Second, this ADR requires only that a
+  handler not *broadcast* — it does not require that follow-ons be broadcast *later*, but the
+  implementation deferred them to a ~10 s background poll anyway, which made the status-gated
+  `assignEvaluator` call unreachable (`TaskNotOpen`, 4/4 intents stuck, evaluators silently
+  never assigned). The claim under Decision that "a failed follow-on refunds against the root"
+  is also wrong: the root's transaction succeeded, so refunding it double-spends. ADR-0047
+  keeps the decision and corrects all three.
 
 ## References
 

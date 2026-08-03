@@ -203,3 +203,8 @@ adrs:
     title: "Relayed intents chain follow-on writes rather than relaying inside handlers"
     status: Accepted
     date: "2026-08-03"
+  - number: "0047"
+    file: "0047-follow-on-intents-are-broadcast-eagerly-and-deterministic-reverts-are-terminal.md"
+    title: "Follow-on intents are broadcast eagerly, and a deterministic revert is terminal"
+    status: Proposed
+    date: "2026-08-03"

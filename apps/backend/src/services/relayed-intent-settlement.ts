@@ -6,7 +6,7 @@ import type { RelayedIntentSettlement } from '../lib/server-transaction-reconcil
 import { logger } from '../lib/logger';
 import { handlePostPaymentFailure } from './orphaned-payments';
 import { completeRelayedIntent } from './relayed-intent-registry';
-import { findIntentByTransactionId, getRootIntent, markIntentFailed } from './relayed-intents';
+import { findIntentByTransactionId, markIntentFailed } from './relayed-intents';
 
 /**
  * Joins the reconciler's on-chain verdict to the intent layer.
@@ -39,11 +39,28 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
 
       await markIntentFailed({ db, intentId: intent.id, reason });
 
-      // The payment belongs to the root of the chain, not to the link that failed
-      // (ADR-0046). A follow-on carries no payment reference, so refunding against the root
-      // is both the only place the money is recorded and the reason a chain cannot refund
-      // twice. The parent's own transaction is already on chain and is not retracted.
-      const root = await getRootIntent({ db, intent });
+      // Only the failure of a *root* can refund. The payment belongs to the root of the
+      // chain (ADR-0046), and a root that failed bought nothing: no escrow was created, so
+      // returning the payment is the only honest outcome.
+      //
+      // A follow-on is the opposite case, and refunding one would be a double spend. Reaching
+      // a follow-on at all means its parent's transaction succeeded: the escrow is on chain,
+      // funded, and holds the requester's money against a task that genuinely exists. Paying
+      // the requester back while the contract still holds the same funds pays twice for one
+      // task. What the requester is owed there is the missing follow-on effect -- an evaluator
+      // assignment, say -- not their money back, and the intent row records exactly where the
+      // chain stopped so that can be pursued. The parent's effect stands and is not retracted.
+      if (intent.parentIntentId) {
+        logger.error('Follow-on intent failed on chain; parent effect stands, no refund issued', {
+          intentId: intent.id,
+          operation: intent.operation,
+          reason,
+        });
+        return;
+      }
+
+      // Past the guard above, the intent has no parent, so it is its own root.
+      const root = intent;
       if (!root.paymentTxHash || !root.payer || !root.paymentAmount) return;
 
       // handlePostPaymentFailure always throws -- it is written for a request context where

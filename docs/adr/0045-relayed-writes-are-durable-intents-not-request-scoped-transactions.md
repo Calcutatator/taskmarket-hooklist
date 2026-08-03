@@ -17,7 +17,7 @@
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0040; amended by ADR-0046
-- **Pending Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** Amended by ADR-0047
 
 ## Context
 
@@ -135,6 +135,12 @@ integration. Clients must never resubmit an intent that is in flight.
 - This amends ADR-0040 rather than superseding it: the allocator, outbox and reconciler are
   unchanged, and this decision gives the reconciler a second responsibility.
 - Whether external agents need a webhook rather than polling is deliberately out of scope.
+- **2026-08-03 framing correction (see ADR-0047).** This ADR is written around the refund
+  defect it fixes, and so understates what it introduced: a settlement layer that syncs the
+  chain to the database. It also does not say that a paid write is inherently a chain of two
+  on-chain transactions — an x402 payment we *observe* (broadcast by the facilitator) and a
+  forwarded contract call we *dispatch* — which is what `orphaned_payments` compensates for by
+  hand. No decision here changes; ADR-0047 states the model.
 
 ## References
 

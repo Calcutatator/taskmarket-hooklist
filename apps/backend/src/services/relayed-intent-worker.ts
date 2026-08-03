@@ -2,84 +2,67 @@
 import { and, asc, eq, isNotNull, lt } from 'drizzle-orm';
 
 import { db } from '../db/client';
-import { relayedIntents, type RelayedIntent } from '../db/schema';
+import { relayedIntents } from '../db/schema';
 import { logger } from '../lib/logger';
-import { getRelayedIntentBroadcaster } from './relayed-intent-registry';
-import { markIntentBroadcast, recordIntentCompletionError } from './relayed-intents';
+import { dispatchFollowOnIntent } from './relayed-intent-registry';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
 const MAX_INTENTS_PER_PASS = 10;
 
 /**
- * Broadcasts follow-on intents.
+ * How long a follow-on must have sat untouched before the worker treats it as orphaned.
  *
- * A root intent is broadcast by the request that created it. A follow-on is enqueued from
- * inside its parent's completion handler, long after any request has gone, so something has to
- * pick it up -- otherwise a chain would stall permanently at its second link and the operation
- * would be silently half-applied, which is the failure mode ADR-0045 exists to remove.
+ * A follow-on is normally broadcast by whoever completed its parent, immediately after the
+ * durable row is written. Claiming a follow-on updates its
+ * `updatedAt`, so anything newer than this window is either being broadcast right now or was
+ * just handed back after a transient failure -- picking it up would spend a second nonce on
+ * the same link, or retry a network blip harder than it deserves.
+ */
+export const FOLLOW_ON_ORPHAN_GRACE_MS = 30_000;
+
+/**
+ * Crash and reconciler fallback for follow-on intents. Nothing more.
+ *
+ * The common case never reaches here: a completion broadcasts its follow-ons eagerly, in
+ * whatever context completed the parent, so a chain advances at request speed rather than at
+ * poll speed. This exists only for the links that had nobody to do that -- a process that died
+ * between enqueuing a follow-on and sending it, or a transient RPC failure that handed one
+ * back for another try.
  *
  * Scoped to intents with a parent on purpose. A *root* stuck in `recorded` means the process
  * died before broadcasting, so nothing is on chain and the payment is genuinely refundable --
  * a different situation with a different answer, handled by the abandoned-intent path rather
  * than by rebroadcasting here.
  */
-export function createRelayedIntentWorker(options?: { database?: typeof db }) {
+export function createRelayedIntentWorker(options?: {
+  database?: typeof db;
+  graceMs?: number;
+  now?: () => number;
+}) {
   const database = options?.database ?? db;
-
-  async function claimFollowOn(intent: RelayedIntent): Promise<RelayedIntent | null> {
-    // Same conditional-claim pattern as completion: two workers, or a worker racing a retry,
-    // must not both broadcast the same intent and spend two nonces for one link.
-    const [claimed] = await database
-      .update(relayedIntents)
-      .set({ updatedAt: new Date() })
-      .where(and(eq(relayedIntents.id, intent.id), eq(relayedIntents.status, 'recorded')))
-      .returning();
-    return claimed ?? null;
-  }
+  const graceMs = options?.graceMs ?? FOLLOW_ON_ORPHAN_GRACE_MS;
+  const now = options?.now ?? Date.now;
 
   return async function processFollowOnIntents(): Promise<void> {
+    const cutoff = new Date(now() - graceMs);
     const pending = await database
       .select()
       .from(relayedIntents)
-      .where(and(eq(relayedIntents.status, 'recorded'), isNotNull(relayedIntents.parentIntentId)))
+      .where(
+        and(
+          eq(relayedIntents.status, 'recorded'),
+          isNotNull(relayedIntents.parentIntentId),
+          lt(relayedIntents.updatedAt, cutoff)
+        )
+      )
       .orderBy(asc(relayedIntents.createdAt))
       .limit(MAX_INTENTS_PER_PASS);
 
     for (const intent of pending) {
-      const broadcast = getRelayedIntentBroadcaster(intent.operation);
-      if (!broadcast) {
-        logger.error('No broadcaster registered for follow-on intent', {
-          intentId: intent.id,
-          operation: intent.operation,
-        });
-        await recordIntentCompletionError({
-          db: database,
-          intentId: intent.id,
-          error: new Error(`No broadcaster registered for operation ${intent.operation}`),
-        });
-        continue;
-      }
-
-      const claimed = await claimFollowOn(intent);
-      if (!claimed) continue;
-
-      try {
-        const txHash = await broadcast({ db: database, intent: claimed });
-        await markIntentBroadcast({ db: database, intentId: claimed.id, txHash });
-      } catch (error) {
-        // Leave it in `recorded` so the next pass retries. Nothing reached the chain, so the
-        // parent's effect stands and the chain simply has not advanced yet.
-        await database
-          .update(relayedIntents)
-          .set({ status: 'recorded', updatedAt: new Date() })
-          .where(eq(relayedIntents.id, claimed.id));
-        await recordIntentCompletionError({ db: database, intentId: claimed.id, error });
-        logger.warn('Follow-on intent broadcast failed; will retry', {
-          error: error instanceof Error ? error.message : String(error),
-          intentId: claimed.id,
-          operation: claimed.operation,
-        });
-      }
+      // Classification, claiming and the terminal-vs-retry decision all live in the shared
+      // dispatch path, so a follow-on behaves identically whether a request or this worker
+      // sent it. It never throws.
+      await dispatchFollowOnIntent({ db: database, intent });
     }
   };
 }
