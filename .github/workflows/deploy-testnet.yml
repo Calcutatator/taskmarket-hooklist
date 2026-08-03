@@ -17,9 +17,12 @@ name: Deploy to Railway Testnet
 # workflow.
 #
 # RAILWAY_TOKEN_TESTNET, not RAILWAY_TOKEN: Railway's own project tokens are scoped to a single
-# environment, not the whole project -- the existing RAILWAY_TOKEN secret was issued for
-# taskmarket.io specifically and can't see the testnet environment at all ("Environment
-# testnet not found"), confirmed live on this workflow's first real run.
+# environment, not the whole project -- the existing RAILWAY_TOKEN secret was issued for the
+# production environment specifically and can't see this one at all ("Environment not found"),
+# confirmed live on this workflow's first real run.
+#
+# The Railway environments were renamed to DEVNET and PRODUCTION; this workflow targets DEVNET.
+# The environment name is not a label -- railway up fails outright when it does not resolve.
 
 on:
   workflow_run:
@@ -56,7 +59,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
-            --environment testnet \
+            --environment DEVNET \
             --detach
 
       - name: Deploy web to Railway testnet
@@ -65,7 +68,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
-            --environment testnet \
+            --environment DEVNET \
             --detach
 
       - name: Deploy docs to Railway testnet
@@ -74,7 +77,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
-            --environment testnet \
+            --environment DEVNET \
             --detach
 
       - name: Report deployment

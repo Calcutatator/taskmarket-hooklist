@@ -53,7 +53,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_BACKEND_SERVICE_NAME }}" \
-            --environment taskmarket.io \
+            --environment PRODUCTION \
             --detach
 
       - name: Deploy web to Railway production
@@ -62,7 +62,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_FRONTEND_SERVICE_NAME }}" \
-            --environment taskmarket.io \
+            --environment PRODUCTION \
             --detach
 
       - name: Deploy docs to Railway production
@@ -71,7 +71,7 @@ jobs:
         run: |
           railway up \
             --service "${{ secrets.RAILWAY_DOCS_SERVICE_NAME }}" \
-            --environment taskmarket.io \
+            --environment PRODUCTION \
             --detach
 
       - name: Report deployment
