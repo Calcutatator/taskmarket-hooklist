@@ -1,4 +1,4 @@
-// Verifies: ADR-0046
+// Verifies: ADR-0045
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 
@@ -7,27 +7,21 @@ const restoreServerEnvironment = stubServerEnvironment();
 const { ServerTransactionPendingError } = await import(
   '../../../src/lib/server-transaction-dispatcher'
 );
-const {
-  completeRelayedIntent,
-  dispatchFollowOnIntent,
-  registerRelayedIntentHandler,
-} = await import('../../../src/services/relayed-intent-registry');
+const { dispatchRelayedIntent, registerRelayedIntentHandler } = await import(
+  '../../../src/services/relayed-intent-registry'
+);
 const { serverWalletTransactions } = await import('../../../src/db/schema');
 
 afterAll(restoreServerEnvironment);
 
-const PARENT_ID = 'intent-parent';
-const CHILD_ID = 'intent-child';
-const TX_HASH = `0x${'ab'.repeat(32)}`;
-const FOLLOW_ON_TX_HASH = `0x${'cd'.repeat(32)}` as `0x${string}`;
+const INTENT_ID = 'intent-assign';
+const ASSIGN_TX_HASH = `0x${'cd'.repeat(32)}` as `0x${string}`;
 
 type Row = {
-  chainDepth: number;
   completionAttempts: number;
   id: string;
   lastError: string | null;
   operation: string;
-  parentIntentId: string | null;
   payload: unknown;
   status: string;
   txHash: string | null;
@@ -35,14 +29,12 @@ type Row = {
 
 function row(overrides: Partial<Row> = {}): Row {
   return {
-    chainDepth: 0,
     completionAttempts: 0,
-    id: PARENT_ID,
+    id: INTENT_ID,
     lastError: null,
-    operation: 'tasks.create',
-    parentIntentId: null,
+    operation: 'tasks.assignEvaluator',
     payload: {},
-    status: 'broadcast',
+    status: 'recorded',
     txHash: null,
     ...overrides,
   };
@@ -51,8 +43,7 @@ function row(overrides: Partial<Row> = {}): Row {
 /**
  * Drizzle predicates are opaque objects, so the fake resolves an update's target by looking
  * for a known intent id anywhere inside the predicate it was handed. That keeps the fake
- * honest about which row each call actually touches, which is the whole point of a test that
- * distinguishes a parent from its follow-on.
+ * honest about which row each call actually touches.
  */
 function findId(node: unknown, ids: string[], seen = new Set<unknown>()): string | undefined {
   if (typeof node === 'string') return ids.includes(node) ? node : undefined;
@@ -86,7 +77,7 @@ function makeDb(rows: Row[]) {
     select: (_fields?: unknown) => ({
       from: (table: unknown) => {
         if (table === serverWalletTransactions) return thenable(() => [{ id: 'swt-1' }]);
-        return thenable(() => rows.filter((r) => r.status === 'recorded' && r.parentIntentId));
+        return thenable(() => rows.filter((r) => r.status === 'recorded'));
       },
     }),
     update: (_table: unknown) => ({
@@ -102,8 +93,8 @@ function makeDb(rows: Row[]) {
           };
           const chain = {
             // Mirrors both real conditional claims: completion accepts recorded|broadcast,
-            // follow-on broadcast accepts recorded only. Both are expressed here as "the row
-            // must not already be terminal", which is enough to model losing the race.
+            // broadcast accepts recorded only. Both are expressed here as "the row must not
+            // already be terminal", which is enough to model losing the race.
             returning: async () => {
               if (!target) return [];
               if (target.status !== 'recorded' && target.status !== 'broadcast') return [];
@@ -125,73 +116,53 @@ function makeDb(rows: Row[]) {
   return { db, rows };
 }
 
-describe('eager follow-on dispatch', () => {
+describe('eager intent dispatch', () => {
   beforeEach(() => {
     registerRelayedIntentHandler('tasks.create', async () => undefined);
   });
 
-  it('broadcasts a follow-on in the request path rather than waiting for the worker', async () => {
-    const broadcast = vi.fn().mockResolvedValue(FOLLOW_ON_TX_HASH);
+  it('broadcasts a recorded intent immediately rather than waiting for the worker', async () => {
+    const broadcast = vi.fn().mockResolvedValue(ASSIGN_TX_HASH);
     registerRelayedIntentHandler('tasks.assignEvaluator', {
       broadcast,
       complete: async () => undefined,
     });
-    const parent = row();
-    const child = row({
-      chainDepth: 1,
-      id: CHILD_ID,
-      operation: 'tasks.assignEvaluator',
-      parentIntentId: PARENT_ID,
-      status: 'recorded',
-    });
-    const { db } = makeDb([parent, child]);
+    const intent = row();
+    const { db } = makeDb([intent]);
 
-    const done = await completeRelayedIntent({
-      db: db as never,
-      intent: parent as never,
-      txHash: TX_HASH,
-    });
+    const outcome = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
 
-    // Timing is the point: assignEvaluator is gated on the task still being Open, so a
-    // follow-on that waits for a poll interval loses to any worker agent claiming the task.
-    expect(done).toBe(true);
+    // Timing is the point: assignEvaluator is gated on the task still being Open, so an intent
+    // that waits for a poll interval loses to any worker agent claiming the task.
+    expect(outcome).toBe('broadcast');
     expect(broadcast).toHaveBeenCalledTimes(1);
-    expect(parent.status).toBe('completed');
-    expect(child.status).toBe('broadcast');
-    expect(child.txHash).toBe(FOLLOW_ON_TX_HASH);
+    expect(intent.status).toBe('broadcast');
+    expect(intent.txHash).toBe(ASSIGN_TX_HASH);
   });
 
-  it('marks a follow-on failed on a deterministic revert instead of retrying forever', async () => {
-    const broadcast = vi
-      .fn()
-      .mockRejectedValue(new Error('Contract call rejected: TaskNotOpen'));
+  it('marks an intent failed on a deterministic revert instead of retrying forever', async () => {
+    const broadcast = vi.fn().mockRejectedValue(new Error('Contract call rejected: TaskNotOpen'));
     registerRelayedIntentHandler('tasks.assignEvaluator', {
       broadcast,
       complete: async () => undefined,
     });
-    const child = row({
-      chainDepth: 1,
-      id: CHILD_ID,
-      operation: 'tasks.assignEvaluator',
-      parentIntentId: PARENT_ID,
-      status: 'recorded',
-    });
-    const { db } = makeDb([child]);
+    const intent = row();
+    const { db } = makeDb([intent]);
 
-    const outcome = await dispatchFollowOnIntent({ db: db as never, intent: child as never });
+    const outcome = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
 
     expect(outcome).toBe('failed');
-    expect(child.status).toBe('failed');
-    expect(child.lastError).toContain('TaskNotOpen');
+    expect(intent.status).toBe('failed');
+    expect(intent.lastError).toContain('TaskNotOpen');
 
     // Terminal means terminal: a later pass finds nothing to claim and never calls the chain
     // a second time for an answer that cannot change.
-    const again = await dispatchFollowOnIntent({ db: db as never, intent: child as never });
+    const again = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
     expect(again).toBe('skipped');
     expect(broadcast).toHaveBeenCalledTimes(1);
   });
 
-  it('leaves a follow-on recorded for retry when the failure is transient', async () => {
+  it('leaves an intent recorded for retry when the failure is transient', async () => {
     const broadcast = vi
       .fn()
       .mockRejectedValue(new Error('Timed out while waiting for transaction receipt'));
@@ -199,42 +170,30 @@ describe('eager follow-on dispatch', () => {
       broadcast,
       complete: async () => undefined,
     });
-    const child = row({
-      chainDepth: 1,
-      id: CHILD_ID,
-      operation: 'tasks.assignEvaluator',
-      parentIntentId: PARENT_ID,
-      status: 'recorded',
-    });
-    const { db } = makeDb([child]);
+    const intent = row();
+    const { db } = makeDb([intent]);
 
-    const outcome = await dispatchFollowOnIntent({ db: db as never, intent: child as never });
+    const outcome = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
 
     expect(outcome).toBe('retry');
-    expect(child.status).toBe('recorded');
-    expect(child.lastError).toContain('Timed out');
+    expect(intent.status).toBe('recorded');
+    expect(intent.lastError).toContain('Timed out');
   });
 
   it('records a pending broadcast as in flight rather than sending it a second time', async () => {
     registerRelayedIntentHandler('tasks.assignEvaluator', {
-      broadcast: vi.fn().mockRejectedValue(new ServerTransactionPendingError(FOLLOW_ON_TX_HASH, 7)),
+      broadcast: vi.fn().mockRejectedValue(new ServerTransactionPendingError(ASSIGN_TX_HASH, 7)),
       complete: async () => undefined,
     });
-    const child = row({
-      chainDepth: 1,
-      id: CHILD_ID,
-      operation: 'tasks.assignEvaluator',
-      parentIntentId: PARENT_ID,
-      status: 'recorded',
-    });
-    const { db } = makeDb([child]);
+    const intent = row();
+    const { db } = makeDb([intent]);
 
-    const outcome = await dispatchFollowOnIntent({ db: db as never, intent: child as never });
+    const outcome = await dispatchRelayedIntent({ db: db as never, intent: intent as never });
 
     // The transaction is live and owned by the reconciler (ADR-0045); rebroadcasting would
     // spend a second nonce assigning the same evaluator.
     expect(outcome).toBe('broadcast');
-    expect(child.status).toBe('broadcast');
-    expect(child.txHash).toBe(FOLLOW_ON_TX_HASH);
+    expect(intent.status).toBe('broadcast');
+    expect(intent.txHash).toBe(ASSIGN_TX_HASH);
   });
 });

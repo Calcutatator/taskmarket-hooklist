@@ -1,5 +1,4 @@
 // Implements: ADR-0045
-// Implements: ADR-0046
 import { eq } from 'drizzle-orm';
 
 import type { db as DbType } from '../../db/client';
@@ -17,8 +16,8 @@ import { logger } from '../../lib/logger';
 import { normalizeRequesterPublicKey } from '../../lib/task';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
-import { enqueueFollowOnIntent } from '../relayed-intents';
-import type { RelayedIntent } from '../../db/schema';
+import { dispatchRelayedIntent } from '../relayed-intent-registry';
+import { recordRelayedIntent } from '../relayed-intents';
 
 type Db = typeof DbType;
 
@@ -64,7 +63,6 @@ export type TasksCreateIntentPayload = {
  */
 export async function completeTasksCreate(context: {
   db: Db;
-  intent?: RelayedIntent;
   payload: TasksCreateIntentPayload;
 }): Promise<void> {
   const { db, payload } = context;
@@ -204,20 +202,31 @@ export async function completeTasksCreate(context: {
     }
   });
 
-  // Evaluator assignment is a second on-chain call, so it becomes the next link in the chain
-  // rather than being broadcast from here -- a transaction sent from a completion handler
-  // would have no durable record of its own (ADR-0046).
-  if (payload.evaluatorAssignment && context.intent) {
-    await enqueueFollowOnIntent({
+  // Evaluator assignment is a second on-chain call, because the contract's createTask cannot
+  // take evaluator configuration. It is an ordinary intent of its own -- recorded, then
+  // broadcast immediately (ADR-0045) -- and not linked to the creation in any way: it carries
+  // no payment, so it has nothing to refund and nothing to inherit. Ordering is all it needs
+  // from the creation, and it gets that by being started only from here, after the escrow is
+  // confirmed. Immediately, not on a poll: assignEvaluator reverts with TaskNotOpen once a
+  // worker claims the task, which happens in milliseconds.
+  //
+  // Interim shape. A POST /api/tasks/{id}/evaluator endpoint is the intended home for this,
+  // at which point the caller records and dispatches this intent directly.
+  if (payload.evaluatorAssignment) {
+    const assignIntent = await recordRelayedIntent({
       db,
       operation: 'tasks.assignEvaluator',
-      parent: context.intent,
+      payer: payload.payer,
       payload: {
         assignment: payload.evaluatorAssignment,
         payer: payload.payer,
         taskId,
       },
     });
+    // Never throws: the escrow is on chain and the task exists whatever happens to the
+    // assignment, so a failure here must not make the creation look incomplete. The intent row
+    // records where it stopped.
+    await dispatchRelayedIntent({ db, intent: assignIntent });
   }
 
   // Unlisted and private tasks opt out of Taskmarket's own discovery surfaces (ADR-0014,

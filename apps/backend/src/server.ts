@@ -60,9 +60,11 @@ async function startServer(): Promise<void> {
 
     startIndexerPolling();
     startServerWalletReconciler();
-    // Follow-on intents (ADR-0046) are enqueued from inside a completion handler, long after
-    // the request that started the chain has gone, so nothing else would ever broadcast them.
+    // Handlers must exist in this process whether or not it served the request that recorded
+    // an intent: the reconciler settles from confirmed on-chain evidence wherever it lands.
     registerRelayedIntentHandlers();
+    // Crash fallback only: an intent whose process died between recording and broadcasting has
+    // nobody else to send it.
     startRelayedIntentWorker(createRelayedIntentWorker());
     startSmtpServer(db);
   });

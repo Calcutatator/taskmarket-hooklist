@@ -3,14 +3,11 @@
  *
  * Verifies: ADR-0040
  * Verifies: ADR-0045
- * Verifies: ADR-0046
  *
  * These are one subsystem, not three. ADR-0040 gave the server wallet a durable nonce
  * allocator, an outbox and a reconciler. ADR-0045 amends it: a paid write is now a durable
  * intent recorded before the chain call, and the reconciler that already kept nonces healthy
- * also finishes the work once the chain has answered. ADR-0046 adds chaining, so an operation
- * whose on-chain effect spans several transactions keeps one durable record per transaction.
- * A single script covers the stack because the interesting failures live where the layers
+ * also finishes the work once the chain has answered. A single script covers the stack because the interesting failures live where the layers
  * meet -- a nonce stranded underneath a transaction somebody has already paid for.
  *
  * Regression coverage for daydreamsai/skills-market#54: a deterministic pre-broadcast
@@ -31,8 +28,8 @@
  *   4. Concurrent relayed writes take distinct, contiguous nonces rather than serializing.
  *   5. A paid write leaves a durable intent carrying its payment reference, and completing
  *      that intent -- not the request handler -- is what produces the task row.
- *   6. An operation spanning two transactions chains a follow-on intent that carries no
- *      payment of its own and is broadcast and completed with no request in play.
+ *   6. An operation spanning two transactions records a second intent that carries no payment
+ *      of its own and is broadcast and completed with no request in play.
  *   7. A deliberately stranded nonce is cleared by the reconciler with no operator restart,
  *      the paid intent queued behind it still completes, and no refund is issued for it.
  *      This runs automatically against a loopback RPC (the sandbox and local dev), because it
@@ -98,13 +95,11 @@ type AllocatorRow = { next_nonce: number; wallet_address: string };
 type OutboxRow = { nonce: number; status: string; context: string | null };
 
 type IntentRow = {
-  chain_depth: number;
   completed_at: Date | null;
   created_at: Date;
   id: string;
   last_error: string | null;
   operation: string;
-  parent_intent_id: string | null;
   payer: string | null;
   payment_amount: string | null;
   payment_tx_hash: string | null;
@@ -158,7 +153,7 @@ async function readIntents(
 ): Promise<IntentRow[]> {
   return sql<IntentRow[]>`
     select id, operation, status, payer, payment_tx_hash, payment_amount,
-           server_wallet_transaction_id, tx_hash, parent_intent_id, chain_depth,
+           server_wallet_transaction_id, tx_hash,
            last_error, created_at, completed_at
     from relayed_intents
     where operation = ${operation} and payload->>'taskId' = ${taskId}
@@ -210,10 +205,11 @@ async function readOrphanedPayments(
 }
 
 /**
- * A plain paid create with no evaluator, so its intent is a single-link chain.
+ * A plain paid create with no evaluator, so it produces exactly one intent.
  *
- * The fault injection deletes and re-creates this task's row, and a chain root with a
- * follow-on would drag a second intent through that surgery for no additional coverage.
+ * The fault injection deletes and re-creates this task's row, and a create that also triggers
+ * an evaluator assignment would drag a second intent through that surgery for no additional
+ * coverage.
  */
 async function setupPaidTask(
   requester: ReturnType<typeof getAccounts>['requester'],
@@ -565,9 +561,6 @@ async function main() {
         })}`
       );
     }
-    if (createIntent.parent_intent_id !== null || createIntent.chain_depth !== 0) {
-      throw new Error(`Intent ${createIntent.id} is a paid write, so it must be a chain root`);
-    }
     paymentHashes.push(createIntent.payment_tx_hash);
     ok('intent recorded with its payment reference', {
       id: createIntent.id,
@@ -610,60 +603,46 @@ async function main() {
     log('6/9', 'Skipping durable intent checks (no DATABASE_URL)');
   }
 
-  // 7. Chaining (ADR-0046). These tasks carry an evaluator, and assigning one is a second
-  // contract call. It cannot be broadcast from inside the create's completion handler: a
-  // transaction sent from there would have no durable record of its own, so nothing could
-  // settle it and nothing could refund against it. It becomes the next link instead --
-  // enqueued once the parent is confirmed, broadcast by the intent worker, completed by the
-  // reconciler, with no request anywhere in the sequence.
+  // 7. The evaluator assignment. These tasks carry an evaluator, and assigning one is a second
+  // contract call, because the contract's createTask cannot take evaluator configuration. It
+  // cannot be broadcast bare from inside the create's completion handler: a transaction sent
+  // from there would have no durable record of its own, so nothing could settle it. It gets an
+  // intent of its own instead -- recorded once the create is confirmed, broadcast immediately,
+  // completed by the reconciler, with no request anywhere in the sequence.
   if (sql) {
-    log('7/9', 'Following the evaluator-assignment chain...');
-    const parentRows = await readIntents(sql, taskIds[0]!, 'tasks.create');
-    const followOn = await pollIntent(
+    log('7/9', 'Following the evaluator assignment...');
+    const assignIntent = await pollIntent(
       sql,
       taskIds[0]!,
       'tasks.assignEvaluator',
       () => true,
-      `a tasks.assignEvaluator follow-on for ${taskIds[0]} to be enqueued`,
+      `a tasks.assignEvaluator intent for ${taskIds[0]} to be recorded`,
       60_000
     );
-    if (followOn.parent_intent_id !== parentRows[0]!.id) {
-      throw new Error(
-        `Follow-on ${followOn.id} has parent ${followOn.parent_intent_id}, expected ${parentRows[0]!.id}`
-      );
+    // It carries no payment: nothing was paid for it, so a confirmed failure of it has nothing
+    // to refund, and one payment can never be refunded twice.
+    if (assignIntent.payment_tx_hash !== null || assignIntent.payment_amount !== null) {
+      throw new Error(`Intent ${assignIntent.id} carries a payment reference; it should not`);
     }
-    if (followOn.chain_depth !== 1) {
-      throw new Error(
-        `Follow-on ${followOn.id} has chain_depth ${followOn.chain_depth}, expected 1`
-      );
-    }
-    // Only the root of a chain carries the payment. That is what makes it structurally
-    // impossible for one payment to be refunded twice when more than one link fails.
-    if (followOn.payment_tx_hash !== null || followOn.payment_amount !== null) {
-      throw new Error(
-        `Follow-on ${followOn.id} carries a payment reference; only the root of a chain may`
-      );
-    }
-    ok('follow-on chained to its root with no payment of its own', {
-      chainDepth: followOn.chain_depth,
-      id: followOn.id,
-      parent: followOn.parent_intent_id,
-    });
+    ok('evaluator assignment recorded as its own intent with no payment', assignIntent.id);
 
-    const settledFollowOn = await pollIntent(
+    const settledAssign = await pollIntent(
       sql,
       taskIds[0]!,
       'tasks.assignEvaluator',
       (row) => row.status === 'completed',
-      `the tasks.assignEvaluator follow-on for ${taskIds[0]} to complete`
+      `the tasks.assignEvaluator intent for ${taskIds[0]} to complete`
     );
-    ok('follow-on broadcast and completed with no request in play', settledFollowOn.tx_hash);
+    ok(
+      'evaluator assignment broadcast and completed with no request in play',
+      settledAssign.tx_hash
+    );
   } else {
-    log('7/9', 'Skipping chained-intent checks (no DATABASE_URL)');
+    log('7/9', 'Skipping evaluator-assignment intent checks (no DATABASE_URL)');
   }
 
-  // The evaluator reaches the task only through the follow-on's completion handler, so this
-  // is the end-to-end form of the same claim: the chain did the work, not just moved rows.
+  // The evaluator reaches the task only through that intent's completion handler, so this is
+  // the end-to-end form of the same claim: the intent did the work, not just moved rows.
   // It runs with or without a database, which is what the API-only mode is worth.
   const evaluated = await pollUntil(
     () => get(`/api/tasks/${taskIds[0]}`) as Promise<{ evaluator: string | null }>,
@@ -675,7 +654,7 @@ async function main() {
       `Task ${taskIds[0]} evaluator is ${evaluated.evaluator}, expected ${requester.address}`
     );
   }
-  ok('evaluator recorded on the task by the chained intent', evaluated.evaluator);
+  ok('evaluator recorded on the task by its own intent', evaluated.evaluator);
 
   // 8. Deliberate fault injection: strand a nonce and prove the reconciler heals it without
   // an operator restart. This is the property the incident actually exposed, and the only way

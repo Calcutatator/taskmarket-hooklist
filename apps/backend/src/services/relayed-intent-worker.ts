@@ -1,38 +1,37 @@
-// Implements: ADR-0046
-import { and, asc, eq, isNotNull, lt } from 'drizzle-orm';
+// Implements: ADR-0045
+import { and, asc, eq, isNull, lt } from 'drizzle-orm';
 
 import { db } from '../db/client';
 import { relayedIntents } from '../db/schema';
 import { logger } from '../lib/logger';
-import { dispatchFollowOnIntent } from './relayed-intent-registry';
+import { dispatchRelayedIntent } from './relayed-intent-registry';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
 const MAX_INTENTS_PER_PASS = 10;
 
 /**
- * How long a follow-on must have sat untouched before the worker treats it as orphaned.
+ * How long an intent must have sat untouched before the worker treats it as orphaned.
  *
- * A follow-on is normally broadcast by whoever completed its parent, immediately after the
- * durable row is written. Claiming a follow-on updates its
- * `updatedAt`, so anything newer than this window is either being broadcast right now or was
- * just handed back after a transient failure -- picking it up would spend a second nonce on
- * the same link, or retry a network blip harder than it deserves.
+ * Every intent is broadcast eagerly by whoever recorded it, immediately after the durable row
+ * is written. Claiming an intent for broadcast updates its `updatedAt`, so anything newer than
+ * this window is either being broadcast right now or was just handed back after a transient
+ * failure -- picking it up would spend a second nonce on the same work, or retry a network blip
+ * harder than it deserves.
  */
-export const FOLLOW_ON_ORPHAN_GRACE_MS = 30_000;
+export const INTENT_ORPHAN_GRACE_MS = 30_000;
 
 /**
- * Crash and reconciler fallback for follow-on intents. Nothing more.
+ * Crash fallback. Nothing more.
  *
- * The common case never reaches here: a completion broadcasts its follow-ons eagerly, in
- * whatever context completed the parent, so a chain advances at request speed rather than at
- * poll speed. This exists only for the links that had nobody to do that -- a process that died
- * between enqueuing a follow-on and sending it, or a transient RPC failure that handed one
- * back for another try.
+ * With eager dispatch there is exactly one way an intent can be stuck in `recorded`: the
+ * process died between writing the row and broadcasting its transaction, or an RPC failure
+ * handed it back for another try. Nothing is on chain in either case, so rebroadcasting is
+ * safe, and this is the only thing that will ever do it.
  *
- * Scoped to intents with a parent on purpose. A *root* stuck in `recorded` means the process
- * died before broadcasting, so nothing is on chain and the payment is genuinely refundable --
- * a different situation with a different answer, handled by the abandoned-intent path rather
- * than by rebroadcasting here.
+ * Scoped to intents that carry no payment, which today means the evaluator assignment a
+ * confirmed task creation starts. An intent that *does* carry a payment and never reached the
+ * chain is a different situation with a different answer -- the payment is genuinely
+ * refundable, and refunding it is the abandoned-intent path's job, not a rebroadcast here.
  */
 export function createRelayedIntentWorker(options?: {
   database?: typeof db;
@@ -40,10 +39,10 @@ export function createRelayedIntentWorker(options?: {
   now?: () => number;
 }) {
   const database = options?.database ?? db;
-  const graceMs = options?.graceMs ?? FOLLOW_ON_ORPHAN_GRACE_MS;
+  const graceMs = options?.graceMs ?? INTENT_ORPHAN_GRACE_MS;
   const now = options?.now ?? Date.now;
 
-  return async function processFollowOnIntents(): Promise<void> {
+  return async function processUnbroadcastIntents(): Promise<void> {
     const cutoff = new Date(now() - graceMs);
     const pending = await database
       .select()
@@ -51,7 +50,7 @@ export function createRelayedIntentWorker(options?: {
       .where(
         and(
           eq(relayedIntents.status, 'recorded'),
-          isNotNull(relayedIntents.parentIntentId),
+          isNull(relayedIntents.paymentTxHash),
           lt(relayedIntents.updatedAt, cutoff)
         )
       )
@@ -60,9 +59,9 @@ export function createRelayedIntentWorker(options?: {
 
     for (const intent of pending) {
       // Classification, claiming and the terminal-vs-retry decision all live in the shared
-      // dispatch path, so a follow-on behaves identically whether a request or this worker
-      // sent it. It never throws.
-      await dispatchFollowOnIntent({ db: database, intent });
+      // dispatch path, so an intent behaves identically whether a request or this worker sent
+      // it. It never throws.
+      await dispatchRelayedIntent({ db: database, intent });
     }
   };
 }
@@ -78,13 +77,4 @@ export function startRelayedIntentWorker(
   }, intervalMs);
   timer.unref?.();
   return timer;
-}
-
-/** Intents that never reached the chain, so their payment is genuinely refundable. */
-export async function listAbandonedRootIntents(cutoff: Date, limit = MAX_INTENTS_PER_PASS) {
-  return db
-    .select()
-    .from(relayedIntents)
-    .where(and(eq(relayedIntents.status, 'recorded'), lt(relayedIntents.updatedAt, cutoff)))
-    .limit(limit);
 }

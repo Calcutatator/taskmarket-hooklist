@@ -1,19 +1,17 @@
 // Implements: ADR-0045
-// Implements: ADR-0046
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
 import { logger } from '../lib/logger';
 import { classifyRelayFailure, relayFailureReason } from '../lib/relay-failure';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import {
-  claimFollowOnForBroadcast,
+  claimIntentForBroadcast,
   claimIntentForCompletion,
   linkIntentToBroadcast,
-  listPendingFollowOns,
   markIntentCompleted,
   markIntentFailed,
   recordIntentCompletionError,
-  releaseFollowOnForRetry,
+  releaseIntentForRetry,
   type RelayedIntentOperation,
 } from './relayed-intents';
 
@@ -28,8 +26,10 @@ type Db = typeof DbType;
  *      successful receipt. `claimIntentForCompletion` narrows that to one caller, but a
  *      process can still die mid-handler and be retried, so the handler itself must tolerate
  *      partial prior application.
- *   2. **No chain calls.** By the time this runs the transaction is already confirmed. A
- *      handler that relays further work would need its own intent.
+ *   2. **No bare chain calls.** By the time this runs the transaction is already confirmed.
+ *      A handler that needs further on-chain work records its own intent for it and hands
+ *      that to `dispatchRelayedIntent`, so that transaction has a durable record of its own
+ *      before it is sent (ADR-0045), exactly as a request path does.
  */
 export type RelayedIntentCompletionHandler = (context: {
   db: Db;
@@ -38,12 +38,13 @@ export type RelayedIntentCompletionHandler = (context: {
 }) => Promise<void>;
 
 /**
- * How a follow-on intent gets on chain (ADR-0046).
+ * How an intent gets on chain from its persisted payload alone.
  *
- * A root intent is broadcast by the request that created it, which holds the validated inputs
- * in hand. A follow-on is enqueued from inside a completion handler and must be sendable from
- * its persisted payload alone -- by whoever completed the parent, or by the worker hours
- * later -- so any operation reachable as a follow-on must provide this.
+ * Most intents are broadcast by the request that recorded them, which still holds the
+ * validated inputs in hand and needs nothing from here. An operation that can be started
+ * somewhere with no request context -- today, the evaluator assignment a confirmed task
+ * creation triggers -- must be sendable from its jsonb payload by whoever picks it up, which
+ * is what this provides.
  */
 export type RelayedIntentBroadcaster = (context: {
   db: Db;
@@ -115,12 +116,6 @@ export async function completeRelayedIntent(input: {
   try {
     await handler({ db: input.db, intent: claimed, txHash: input.txHash });
     await markIntentCompleted({ db: input.db, intentId: claimed.id });
-    // The handler may have enqueued the next link in the chain. Broadcast it now rather than
-    // leaving it for the worker's next poll: the durable record is already written, which is
-    // the whole of ADR-0046's guarantee, and deferring the send adds nothing but latency. For
-    // a status-gated follow-on such as assignEvaluator that latency is not cosmetic -- a
-    // worker agent can claim the task in the interval, after which the call can never succeed.
-    await dispatchPendingFollowOns({ db: input.db, parentIntentId: claimed.id });
     return true;
   } catch (error) {
     logger.error('Relayed intent completion failed', {
@@ -133,8 +128,8 @@ export async function completeRelayedIntent(input: {
   }
 }
 
-/** What became of one follow-on broadcast attempt. */
-export type FollowOnDispatchOutcome =
+/** What became of one broadcast attempt. */
+export type IntentDispatchOutcome =
   /** On chain, or in flight and owned by the reconciler. */
   | 'broadcast'
   /** Somebody else claimed it, or the operation has no registered broadcaster. */
@@ -145,26 +140,26 @@ export type FollowOnDispatchOutcome =
   | 'retry';
 
 /**
- * Get one follow-on intent onto the chain (ADR-0046).
+ * Get one intent's transaction onto the chain from its persisted payload.
  *
- * The single broadcast path, shared by whoever completed the parent and by the worker that
- * sweeps up follow-ons nobody broadcast. Which of the two calls it changes only when it runs,
- * never what it does, so a follow-on created during a reconciler pass with no request context
- * is handled identically to one created milliseconds ago.
+ * The single broadcast path for an intent whose sender is not the request that recorded it:
+ * used eagerly by whoever recorded it, and by the worker that sweeps up anything nobody sent.
+ * Which of the two calls it changes only when it runs, never what it does, so an intent picked
+ * up by the worker hours later is handled identically to one dispatched milliseconds ago.
  *
- * Never throws: the parent's transaction is already on chain by the time any of this runs, so
- * there is no caller for whom a follow-on problem is actionable, and letting it propagate
- * would misreport a completed parent as incomplete.
+ * Never throws. Every caller is already past the point where a failure here is actionable to
+ * anyone -- the recording caller has a durable row either way -- and letting it propagate would
+ * misreport unrelated work as having failed.
  */
-export async function dispatchFollowOnIntent(input: {
+export async function dispatchRelayedIntent(input: {
   db: Db;
   intent: RelayedIntent;
-}): Promise<FollowOnDispatchOutcome> {
+}): Promise<IntentDispatchOutcome> {
   const broadcast = getRelayedIntentBroadcaster(input.intent.operation);
   if (!broadcast) {
-    // An operation reachable as a follow-on shipped without a way to send it. Its intent is
+    // An operation dispatched this way shipped without a way to send it. Its intent is
     // durable, so nothing is lost, but nothing will ever advance it either.
-    logger.error('No broadcaster registered for follow-on intent', {
+    logger.error('No broadcaster registered for relayed intent', {
       intentId: input.intent.id,
       operation: input.intent.operation,
     });
@@ -176,19 +171,19 @@ export async function dispatchFollowOnIntent(input: {
     return 'skipped';
   }
 
-  const claimed = await claimFollowOnForBroadcast({ db: input.db, intentId: input.intent.id });
+  const claimed = await claimIntentForBroadcast({ db: input.db, intentId: input.intent.id });
   if (!claimed) return 'skipped';
 
   try {
     const txHash = await broadcast({ db: input.db, intent: claimed });
     // linkIntentToBroadcast, not markIntentBroadcast: without the outbox row id the reconciler
-    // has nothing to settle the intent against, so a follow-on would sit in `broadcast`
-    // forever even after its receipt landed.
+    // has nothing to settle the intent against, so the intent would sit in `broadcast` forever
+    // even after its receipt landed.
     await linkIntentToBroadcast({ db: input.db, intentId: claimed.id, txHash });
     return 'broadcast';
   } catch (error) {
     // The transaction is live and owned by the reconciler (ADR-0045). Recording the hash is
-    // the whole job here -- rebroadcasting would spend a second nonce on the same link.
+    // the whole job here -- rebroadcasting would spend a second nonce on the same work.
     if (error instanceof ServerTransactionPendingError) {
       await linkIntentToBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
       return 'broadcast';
@@ -196,15 +191,13 @@ export async function dispatchFollowOnIntent(input: {
 
     if (classifyRelayFailure(error) === 'deterministic') {
       const reason = relayFailureReason(error);
-      // Terminal, and deliberately with no refund. A deterministic revert here happens at
-      // simulation, before a nonce is spent, so there is no on-chain evidence of failure to
-      // settle against -- and the money in question is not this link's anyway. The payment
-      // belongs to the root, whose own transaction (the escrow) already succeeded: the task
-      // exists and is funded. Refunding the escrow while the contract still holds the same
-      // funds would pay for one task twice, which is the double spend ADR-0045 exists to
-      // prevent. The chain records where it stopped; the parent's effect stands.
+      // Terminal: the inputs and the on-chain state that produced this revert will not change
+      // by waiting, and an intent that never reaches a terminal state is invisible to anything
+      // watching for failures. No refund is involved either way -- an intent dispatched from
+      // here carries no payment reference of its own, and the refund rule is a confirmed
+      // failure of an intent that actually carries a payment (relayed-intent-settlement.ts).
       await markIntentFailed({ db: input.db, intentId: claimed.id, reason });
-      logger.error('Follow-on intent rejected by the chain; not retrying', {
+      logger.error('Relayed intent rejected by the chain; not retrying', {
         intentId: claimed.id,
         operation: claimed.operation,
         reason,
@@ -212,38 +205,15 @@ export async function dispatchFollowOnIntent(input: {
       return 'failed';
     }
 
-    // Transient: nothing reached the chain, so the parent's effect stands and the chain simply
-    // has not advanced yet. Back to `recorded` for the worker's next pass.
-    await releaseFollowOnForRetry({ db: input.db, intentId: claimed.id });
+    // Transient: nothing reached the chain, so this work simply has not happened yet. Back to
+    // `recorded` for the worker's next pass.
+    await releaseIntentForRetry({ db: input.db, intentId: claimed.id });
     await recordIntentCompletionError({ db: input.db, intentId: claimed.id, error });
-    logger.warn('Follow-on intent broadcast failed; will retry', {
+    logger.warn('Relayed intent broadcast failed; will retry', {
       error: error instanceof Error ? error.message : String(error),
       intentId: claimed.id,
       operation: claimed.operation,
     });
     return 'retry';
-  }
-}
-
-/** Broadcast every follow-on a just-completed parent enqueued, without ever throwing. */
-export async function dispatchPendingFollowOns(input: {
-  db: Db;
-  parentIntentId: string;
-}): Promise<void> {
-  try {
-    const followOns = await listPendingFollowOns({
-      db: input.db,
-      parentIntentId: input.parentIntentId,
-    });
-    for (const followOn of followOns) {
-      await dispatchFollowOnIntent({ db: input.db, intent: followOn });
-    }
-  } catch (error) {
-    // The follow-ons are durable rows and the worker will find them. Never let this failure be
-    // mistaken for the parent's completion having failed.
-    logger.error('Eager follow-on dispatch failed; leaving them for the worker', {
-      error: error instanceof Error ? error.message : String(error),
-      parentIntentId: input.parentIntentId,
-    });
   }
 }

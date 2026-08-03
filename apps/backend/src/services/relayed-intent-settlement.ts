@@ -39,19 +39,14 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
 
       await markIntentFailed({ db, intentId: intent.id, reason });
 
-      // Only the failure of a *root* can refund. The payment belongs to the root of the
-      // chain (ADR-0046), and a root that failed bought nothing: no escrow was created, so
-      // returning the payment is the only honest outcome.
-      //
-      // A follow-on is the opposite case, and refunding one would be a double spend. Reaching
-      // a follow-on at all means its parent's transaction succeeded: the escrow is on chain,
-      // funded, and holds the requester's money against a task that genuinely exists. Paying
-      // the requester back while the contract still holds the same funds pays twice for one
-      // task. What the requester is owed there is the missing follow-on effect -- an evaluator
-      // assignment, say -- not their money back, and the intent row records exactly where the
-      // chain stopped so that can be pursued. The parent's effect stands and is not retracted.
-      if (intent.parentIntentId) {
-        logger.error('Follow-on intent failed on chain; parent effect stands, no refund issued', {
+      // Refund only what this intent itself was paid for. An intent with no payment reference
+      // has nothing to refund: whatever it was going to do on chain did not happen, and the
+      // intent row records that, but no money of the caller's is sitting in the server wallet
+      // waiting to be returned. Refunding on its behalf would have to guess whose payment it
+      // meant, and the only available guess -- some earlier operation's -- is a double spend,
+      // since that operation's own transaction succeeded and bought what it bought.
+      if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) {
+        logger.error('Relayed intent failed on chain; nothing to refund, it carried no payment', {
           intentId: intent.id,
           operation: intent.operation,
           reason,
@@ -59,21 +54,17 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
         return;
       }
 
-      // Past the guard above, the intent has no parent, so it is its own root.
-      const root = intent;
-      if (!root.paymentTxHash || !root.payer || !root.paymentAmount) return;
-
       // handlePostPaymentFailure always throws -- it is written for a request context where
       // throwing is how the caller learns. Here there is no caller left to inform, so the
       // throw is the expected outcome and only a genuine refund failure is worth logging.
       try {
         await handlePostPaymentFailure({
-          amount: BigInt(root.paymentAmount),
-          context: root.operation,
+          amount: BigInt(intent.paymentAmount),
+          context: intent.operation,
           db,
           error: new Error(reason),
-          payer: root.payer as `0x${string}`,
-          paymentTxHash: root.paymentTxHash as `0x${string}`,
+          payer: intent.payer as `0x${string}`,
+          paymentTxHash: intent.paymentTxHash as `0x${string}`,
         });
       } catch (error) {
         const message = error instanceof Error ? error.message : String(error);

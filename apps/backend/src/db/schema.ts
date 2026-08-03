@@ -898,10 +898,6 @@ export const relayedIntents = pgTable(
     // Set once a nonce is allocated. Null while the intent is still 'recorded'.
     serverWalletTransactionId: text('server_wallet_transaction_id'),
     txHash: text('tx_hash'),
-    // Implements: ADR-0046 -- a follow-on enqueued by its parent's completion handler. Null
-    // for a root intent, which is the only link in a chain that carries a payment.
-    parentIntentId: text('parent_intent_id'),
-    chainDepth: integer('chain_depth').notNull().default(0),
     completionAttempts: integer('completion_attempts').notNull().default(0),
     lastError: text('last_error'),
     createdAt: timestamp('created_at', { withTimezone: true }).defaultNow().notNull(),
@@ -912,7 +908,6 @@ export const relayedIntents = pgTable(
     statusIdx: index('idx_relayed_intents_status').on(table.status),
     txIdx: index('idx_relayed_intents_server_wallet_tx').on(table.serverWalletTransactionId),
     payerIdx: index('idx_relayed_intents_payer').on(table.payer),
-    parentIdx: index('idx_relayed_intents_parent').on(table.parentIntentId),
     // One intent per settled payment: a retried request that reuses the same x402 payment
     // must not create a second intent and a second chain call for one payment.
     paymentUnique: uniqueIndex('idx_relayed_intents_payment_tx').on(table.paymentTxHash),

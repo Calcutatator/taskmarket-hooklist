@@ -1,5 +1,4 @@
 // Implements: ADR-0045
-// Implements: ADR-0046
 import { eq } from 'drizzle-orm';
 
 import { tasks } from '../../db/schema';
@@ -10,9 +9,9 @@ import { completeTasksCreate, type TasksCreateIntentPayload } from './tasks-crea
 const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
 
 /**
- * The follow-on enqueued by a task creation that carries an evaluator (ADR-0046). Assigning
- * an evaluator is a second contract call, so it gets its own intent rather than being
- * broadcast from inside the create completion.
+ * The intent a task creation that carries an evaluator starts once its escrow is confirmed.
+ * Assigning an evaluator is a second contract call -- the contract's createTask cannot take
+ * evaluator configuration -- so it gets a durable record of its own before it is sent.
  */
 export type TasksAssignEvaluatorIntentPayload = {
   assignment: {
@@ -44,7 +43,6 @@ export function registerRelayedIntentHandlers(): void {
     const payload = intent.payload as TasksCreateIntentPayload;
     await completeTasksCreate({
       db,
-      intent,
       // The escrow hash cannot be in the payload: the intent is recorded before the chain
       // call, precisely so no transaction is ever live without a record. The confirmed hash
       // arrives here instead, from the request that broadcast it or from the reconciler.

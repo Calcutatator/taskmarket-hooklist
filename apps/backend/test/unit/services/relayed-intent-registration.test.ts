@@ -1,5 +1,4 @@
 // Verifies: ADR-0045
-// Verifies: ADR-0046
 import { describe, expect, it, vi } from 'vitest';
 import { makeChain } from '../helpers';
 
@@ -49,10 +48,8 @@ const assignment = {
 
 function intent(overrides: Partial<RelayedIntent> = {}): RelayedIntent {
   return {
-    chainDepth: 0,
     id: 'intent-1',
     operation: 'tasks.create',
-    parentIntentId: null,
     payer: PAYER,
     status: 'broadcast',
     ...overrides,
@@ -111,17 +108,15 @@ describe('relayed intent handler registration', () => {
     );
   });
 
-  it('broadcasts an evaluator assignment follow-on with the arguments the contract expects', async () => {
+  it('broadcasts an evaluator assignment with the arguments the contract expects', async () => {
     const { db } = makeDb();
     const broadcast = getRelayedIntentBroadcaster('tasks.assignEvaluator')!;
 
     const txHash = await broadcast({
       db,
       intent: intent({
-        chainDepth: 1,
         id: 'intent-2',
         operation: 'tasks.assignEvaluator',
-        parentIntentId: 'intent-1',
         payload: { assignment, payer: PAYER, taskId: TASK_ID },
       } as Partial<RelayedIntent>),
     });
@@ -139,17 +134,15 @@ describe('relayed intent handler registration', () => {
     );
   });
 
-  it('writes the evaluator assignment onto the task once the follow-on confirms', async () => {
+  it('writes the evaluator assignment onto the task once its transaction confirms', async () => {
     const { db, taskUpdate } = makeDb();
     const handler = getRelayedIntentHandler('tasks.assignEvaluator')!;
 
     await handler({
       db,
       intent: intent({
-        chainDepth: 1,
         id: 'intent-2',
         operation: 'tasks.assignEvaluator',
-        parentIntentId: 'intent-1',
         payload: { assignment, payer: PAYER, taskId: TASK_ID },
       } as Partial<RelayedIntent>),
       txHash: '0xassignhash',

@@ -457,8 +457,8 @@ describe('tasks router', () => {
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
 
-    // Verifies: ADR-0046
-    it('enqueues evaluator assignment as a follow-on intent instead of relaying inline', async () => {
+    // Verifies: ADR-0045
+    it('records evaluator assignment as its own intent before relaying it', async () => {
       const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
@@ -468,16 +468,21 @@ describe('tasks router', () => {
       });
 
       expect(result.success).toBe(true);
-      // The second contract call gets its own durable record and is broadcast by the intent
-      // worker, so nothing reaches the chain from inside the completion handler.
-      expect(contractAssignEvaluator).not.toHaveBeenCalled();
-      const followOn = ctx.intents.find((row) => row.operation === 'tasks.assignEvaluator');
-      expect(followOn).toBeDefined();
-      expect(followOn!.parentIntentId).toBe(ctx.intents[0]!.id);
-      expect(followOn!.chainDepth).toBe(1);
-      // A follow-on never carries the payment -- that belongs to the root alone.
-      expect(followOn!.paymentTxHash).toBeUndefined();
-      expect(followOn!.payload).toEqual(
+      // The contract's createTask cannot take evaluator configuration, so the assignment is a
+      // second contract call. It gets a durable record of its own before it is sent, and is
+      // then sent immediately -- assignEvaluator reverts once a worker claims the task, so
+      // deferring it to a poll loses the race.
+      const assignIntent = ctx.intents.find((row) => row.operation === 'tasks.assignEvaluator');
+      expect(assignIntent).toBeDefined();
+      // The fake intent store applies every update to its most recent row, so the status
+      // assertion belongs to the create intent; the assignment's own broadcast is asserted by
+      // the relay call and the linked hash.
+      expect(contractAssignEvaluator).toHaveBeenCalledOnce();
+      expect(assignIntent!.txHash).toBe('0xassignhash');
+      // It carries no payment reference: nothing was paid for it, so a confirmed failure of it
+      // has nothing to refund.
+      expect(assignIntent!.paymentTxHash).toBeNull();
+      expect(assignIntent!.payload).toEqual(
         expect.objectContaining({
           assignment: expect.objectContaining({ evaluator: EVALUATOR }),
           taskId: result.taskId,

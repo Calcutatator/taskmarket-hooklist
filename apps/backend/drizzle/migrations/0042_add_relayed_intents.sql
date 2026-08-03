@@ -36,13 +36,3 @@ CREATE INDEX IF NOT EXISTS "idx_relayed_intents_payer" ON "relayed_intents" ("pa
 -- One intent per settled payment: a retried request reusing the same x402 payment must not
 -- create a second intent and a second chain call for one payment.
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_relayed_intents_payment_tx" ON "relayed_intents" ("payment_tx_hash");
---> statement-breakpoint
--- Chained follow-on writes (ADR-0046): an operation whose on-chain effect spans more than one
--- transaction enqueues the next link from its parent's completion handler, so every
--- transaction keeps exactly one durable record. Null parent = root, and only a root carries a
--- payment, so a chain can never refund more than once.
-ALTER TABLE "relayed_intents" ADD COLUMN IF NOT EXISTS "parent_intent_id" text;
---> statement-breakpoint
-ALTER TABLE "relayed_intents" ADD COLUMN IF NOT EXISTS "chain_depth" integer NOT NULL DEFAULT 0;
---> statement-breakpoint
-CREATE INDEX IF NOT EXISTS "idx_relayed_intents_parent" ON "relayed_intents" ("parent_intent_id");
