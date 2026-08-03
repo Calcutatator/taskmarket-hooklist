@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'vitest';
 import fc from 'fast-check';
-import { mkdtempSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -72,6 +72,7 @@ import {
   RFC_INDEX_YAML_OPTIONS,
   lintRfcDir,
   checkCoverage,
+  checkProposedAdrImplementation,
   checkScopeMismatch,
   extractReferencesSection,
   extractCitedFilePaths,
@@ -1317,6 +1318,106 @@ describe('checkDocIndexFreshness', () => {
     const issues = checkDocIndexFreshness(entries, freshYaml, null, ADR_INDEX_FRESHNESS_OPTIONS);
     expect(issues).toHaveLength(1);
     expect(issues[0]).toMatchObject({ type: 'ERROR', file: 'docs/adr/README.md' });
+  });
+});
+
+describe('checkProposedAdrImplementation', () => {
+  function withSourceFile(relativePath: string, contents: string) {
+    const root = mkdtempSync(join(tmpdir(), 'adr-implements-fixture-'));
+    const full = join(root, relativePath);
+    mkdirSync(dirname(full), { recursive: true });
+    writeFileSync(full, contents);
+    return { cleanup: () => rmSync(root, { recursive: true, force: true }), root };
+  }
+
+  const SOURCE = `${COVERAGE_PATHS[1]}lib/thing.ts`;
+
+  test('blocks source implementing a Proposed ADR', () => {
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\nexport const a = 1;');
+    try {
+      const issues = checkProposedAdrImplementation(
+        [SOURCE],
+        root,
+        new Map([['0040', 'Proposed']])
+      );
+      expect(issues).toHaveLength(1);
+      expect(issues[0].type).toBe('ERROR');
+      expect(issues[0].message).toContain('ADR-0040');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('allows source implementing an Accepted ADR', () => {
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\nexport const a = 1;');
+    try {
+      expect(
+        checkProposedAdrImplementation([SOURCE], root, new Map([['0040', 'Accepted']]))
+      ).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('allows a Proposed ADR added on its own, with no implementing source', () => {
+    expect(
+      checkProposedAdrImplementation(
+        ['docs/adr/0099-a-proposal.md'],
+        '/nonexistent',
+        new Map([['0099', 'Proposed']])
+      )
+    ).toEqual([]);
+  });
+
+  test('ignores tests that merely verify a Proposed ADR', () => {
+    const testPath = `${COVERAGE_PATHS[1]}lib/thing.test.ts`;
+    const { cleanup, root } = withSourceFile(testPath, '// Verifies: ADR-0040');
+    try {
+      expect(
+        checkProposedAdrImplementation([testPath], root, new Map([['0040', 'Proposed']]))
+      ).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('rethrows a read failure that is not a missing file, so nothing bypasses the gate', () => {
+    const root = mkdtempSync(join(tmpdir(), 'adr-implements-fixture-'));
+    const asDirectory = `${COVERAGE_PATHS[1]}lib/thing.ts`;
+    mkdirSync(join(root, asDirectory), { recursive: true });
+    try {
+      expect(() =>
+        checkProposedAdrImplementation([asDirectory], root, new Map([['0040', 'Proposed']]))
+      ).toThrow();
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+
+  test('ignores a file deleted in the same diff', () => {
+    expect(
+      checkProposedAdrImplementation([SOURCE], '/nonexistent', new Map([['0040', 'Proposed']]))
+    ).toEqual([]);
+  });
+
+  test('reports each Proposed ADR a file claims, once', () => {
+    const { cleanup, root } = withSourceFile(
+      SOURCE,
+      '// Implements: ADR-0040\n// Implements: ADR-0040\n// Implements: ADR-0041\n'
+    );
+    try {
+      const issues = checkProposedAdrImplementation(
+        [SOURCE],
+        root,
+        new Map([
+          ['0040', 'Proposed'],
+          ['0041', 'Proposed'],
+        ])
+      );
+      expect(issues).toHaveLength(2);
+    } finally {
+      cleanup();
+    }
   });
 });
 

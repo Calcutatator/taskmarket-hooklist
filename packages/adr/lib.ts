@@ -697,6 +697,66 @@ export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
   yamlOptions: ADR_INDEX_YAML_OPTIONS,
 };
 
+// Matches the `Implements: ADR-NNNN` back-pointer convention the audit already relies on.
+export const IMPLEMENTS_ADR_RE = /Implements:\s*ADR-(\d{4})/g;
+
+/**
+ * Blocking: application source that claims to implement an ADR must not merge while that ADR
+ * is still `Proposed`.
+ *
+ * This exists because the convention was stated and then not honoured. ADR-0039 said in its own
+ * text that the implementation "must not merge until a human Decider accepts this ADR"; PR #410
+ * merged to `main` anyway with the ADR still `Proposed` and no Decider, because nothing checked.
+ * Prose in an ADR is not a gate. This is.
+ *
+ * Scope is deliberately narrow. Adding a `Proposed` ADR on its own is fine and expected -- that
+ * is how a decision gets drafted for review. What is blocked is shipping the code that carries
+ * its `Implements: ADR-NNNN` marker before a human has recorded the decision.
+ */
+export function checkProposedAdrImplementation(
+  changedFiles: string[],
+  repoRoot: string,
+  statusByNumber: Map<string, string>
+): Issue[] {
+  if (changedFiles.length === 0) return [];
+
+  const issues: Issue[] = [];
+  const sourceFiles = changedFiles.filter(
+    (f) => COVERAGE_PATHS.some((p) => f.startsWith(p)) && !TEST_FILE_RE.test(f)
+  );
+
+  for (const file of sourceFiles) {
+    let content: string;
+    try {
+      content = readFileSync(join(repoRoot, file), 'utf8');
+    } catch (e) {
+      // Only a genuinely absent file means "deleted in this diff". Any other read failure
+      // (permissions, path is a directory) would otherwise let a real file skip the gate.
+      if ((e as NodeJS.ErrnoException).code !== 'ENOENT') throw e;
+      continue;
+    }
+
+    const claimed = new Set<string>();
+    // A fresh clone per file: IMPLEMENTS_ADR_RE is a shared module-level global, and matchAll
+    // seeds its iterator from the regex's current lastIndex, so reusing it directly can skip
+    // matches depending on what another consumer left behind.
+    const implementsRe = new RegExp(IMPLEMENTS_ADR_RE.source, IMPLEMENTS_ADR_RE.flags);
+    for (const match of content.matchAll(implementsRe)) claimed.add(match[1]);
+
+    for (const number of [...claimed].sort()) {
+      const status = statusByNumber.get(number);
+      if (status !== 'Proposed') continue;
+      issues.push({
+        type: 'ERROR',
+        file,
+        message: `implements ADR-${number}, which is still Proposed — a human Decider must accept it (Status: Accepted) before the implementation can merge`,
+      });
+    }
+  }
+
+  return issues;
+}
+
 export function checkCoverage(changedFiles: string[]): Issue[] {
   if (changedFiles.length === 0) return [];
   const hasAdrChange = changedFiles.some((f) => f.startsWith('docs/adr/'));
@@ -1028,6 +1088,12 @@ export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot
   issues.push(...checkDocIndexFreshness(indexEntries, indexYamlContent, readmeContent, ADR_INDEX_FRESHNESS_OPTIONS));
 
   issues.push(...checkCoverage(changedFiles));
+
+  const resolvedStatuses = new Map<string, string>();
+  for (const [number, status] of statusByFile) {
+    if (status) resolvedStatuses.set(number, status);
+  }
+  issues.push(...checkProposedAdrImplementation(changedFiles, repoRoot, resolvedStatuses));
 
   return { issues, adrFiles };
 }

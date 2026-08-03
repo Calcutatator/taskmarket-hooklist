@@ -125,6 +125,17 @@ draft, propose, and argue for a decision, but may not self-approve one — this 
 required human-in-the-loop checkpoint in the flow below; everything upstream of it (research,
 drafting, prototyping) can happen without a human present.
 
+`adr-lint` enforces the shipping half of that: a changed file carrying an `Implements: ADR-NNNN`
+back-pointer fails the lint while that ADR is still `Proposed`. Drafting is unaffected — adding or
+editing a Proposed ADR on its own always passes, and tests are exempt because they carry
+`Verifies:` rather than `Implements:`. What is blocked is landing the implementation before the
+human checkpoint above has actually happened.
+
+This exists because the rule was stated and then not honoured. ADR-0039 said in its own text that
+the implementation "must not merge until a human Decider accepts this ADR"; PR #410 merged to
+`main` anyway with the ADR still `Proposed` and no Decider recorded, because nothing checked. A
+merge gate written inside the document being gated is a note, not a gate.
+
 ## Embodiment (realization tracking)
 
 `Status` answers "has this been decided" (`Proposed → Accepted`). `Embodiment` is a separate,
