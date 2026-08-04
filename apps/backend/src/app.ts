@@ -20,9 +20,14 @@ import {
   PAID_TASK_ACTION_ROUTES,
   STANDARD_X402_ACTION_AMOUNT,
   SUBMISSION_ROUTES,
+  TASK_ASSIGN_EVALUATOR_ROUTE,
   TASK_CREATE_ROUTE,
 } from './config/payments';
 import { CANONICAL_PREIMAGE_ROUTES } from './config/routes';
+import {
+  assertEvaluatorAssignable,
+  EvaluatorAssignmentError,
+} from './services/evaluator-assignment';
 import {
   TaskCreateSchema,
   ProofSubmitSchema,
@@ -30,6 +35,7 @@ import {
   PitchSelectSchema,
   UpdateTaskInputSchema,
   CancelTaskInputSchema,
+  AssignEvaluatorInputSchema,
   RefundExpiredInputSchema,
   RejectSubmissionInputSchema,
   BidCreateSchema,
@@ -564,6 +570,36 @@ for (const action of Object.keys(PAID_TASK_ACTION_ROUTES) as PaidTaskAction[]) {
     })
   );
 }
+// Implements: ADR-0047. Mounted on its own rather than through the loop above because
+// assigning an evaluator is not one of the pending actions that map keys on -- see
+// TASK_ASSIGN_EVALUATOR_ROUTE. The preflight is not optional decoration: without it a caller
+// who is not the requester, or whose task a worker claimed a moment ago, would settle the
+// action fee and only then be refused, having paid for a call that could never have reached
+// the chain. Every other paid task action refuses in preflight for the same reason.
+app.post(
+  TASK_ASSIGN_EVALUATOR_ROUTE,
+  validateBody(AssignEvaluatorInputSchema),
+  x402Middleware({
+    getAmount: () => STANDARD_X402_ACTION_AMOUNT,
+    description: 'Assign evaluator',
+    preflight: async (req, payer) => {
+      try {
+        await assertEvaluatorAssignable({
+          db,
+          disputeResolver: req.body.disputeResolver as string | undefined,
+          evaluator: String(req.body.evaluator ?? ''),
+          payer,
+          taskId: String(req.params.taskId ?? req.body.taskId ?? ''),
+        });
+      } catch (error) {
+        if (error instanceof EvaluatorAssignmentError) {
+          throw new X402PreflightError(error.message, error.status);
+        }
+        throw error;
+      }
+    },
+  })
+);
 app.post(
   IDENTITY_REGISTER_ROUTE,
   x402Middleware({

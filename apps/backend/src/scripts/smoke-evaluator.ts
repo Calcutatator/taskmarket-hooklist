@@ -1,9 +1,12 @@
 /**
- * Evaluator flow smoke test — three scenarios:
+ * Evaluator flow smoke test — four scenarios:
  *   A. APPROVE verdict, no appeal, finalize → completed
  *   B. REJECT verdict, no appeal, finalize → cancelled (refund + terminate,
  *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
  *   C. APPROVE verdict, worker appeals, dispute resolver settles → completed
+ *   D. POST /api/tasks/{taskId}/evaluator assigns an evaluator after creation,
+ *      and refuses an unknown task, a non-requester, the zero address, a second
+ *      assignment, and a task a worker has already claimed
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -33,6 +36,32 @@ async function pollStatus(taskId: string, expected: string[]): Promise<string> {
     timeoutMs: 45_000,
   });
   return task.status;
+}
+
+/**
+ * Assert a request is refused with a particular HTTP status.
+ *
+ * The helpers in _x402.ts surface a failure as `<path> failed (HTTP <status>): <message>`, so
+ * the status is matched out of the message. A call that unexpectedly *succeeds* is the more
+ * dangerous outcome here -- it means a gate is missing rather than merely worded differently
+ * -- so it fails loudly instead of being folded into the same branch.
+ */
+async function expectFailure(
+  label: string,
+  status: number,
+  attempt: Promise<unknown>
+): Promise<void> {
+  try {
+    await attempt;
+  } catch (err) {
+    const message = err instanceof Error ? err.message : String(err);
+    if (!message.includes(`HTTP ${status}`)) {
+      throw new Error(`Expected ${label} (HTTP ${status}), got: ${message}`);
+    }
+    ok(label, `HTTP ${status}`);
+    return;
+  }
+  throw new Error(`Expected ${label} (HTTP ${status}), but the request succeeded`);
 }
 
 async function runScenario(label: string, fn: () => Promise<void>): Promise<boolean> {
@@ -274,6 +303,138 @@ async function scenarioC(
   ok('final status', finalStatus);
 }
 
+// --- Scenario D: POST /api/tasks/{taskId}/evaluator, happy path plus every refusal ---
+//
+// Verified against packages/contracts/src/facets/EvaluatorFacet.sol's assignEvaluator, which
+// gates on requester != task.requester (NotRequester), status != Open (TaskNotOpen),
+// evaluator == address(0) (InvalidEvaluator), an evaluator already set
+// (EvaluatorAlreadyAssigned) and feeBps > 10000 (FeeBpsTooHigh). Each refusal below is checked
+// off chain before the X402 payment settles, so a rejected caller is never charged.
+async function scenarioD(
+  requester: ReturnType<typeof getAccounts>['requester'],
+  worker: ReturnType<typeof getAccounts>['worker']
+) {
+  log('1/9', '[D] Creating claim task with NO evaluator...');
+  const { taskId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Evaluator smoke test — D (assign after creation)',
+      reward: '1000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-evaluator'],
+    },
+    requester
+  )) as { taskId: string };
+  ok('taskId', taskId);
+
+  log('2/9', '[D] Rejecting an unknown task...');
+  await expectFailure(
+    '404 for an unknown task',
+    404,
+    x402Post(
+      `/api/tasks/0x${'ff'.repeat(32)}/evaluator`,
+      { taskId: `0x${'ff'.repeat(32)}`, evaluator: worker.address },
+      requester
+    )
+  );
+
+  log('3/9', '[D] Rejecting a caller who is not the requester...');
+  await expectFailure(
+    '403 for a non-requester payer',
+    403,
+    x402Post(`/api/tasks/${taskId}/evaluator`, { taskId, evaluator: worker.address }, worker)
+  );
+
+  log('4/9', '[D] Rejecting the zero address as evaluator...');
+  await expectFailure(
+    '400 for the zero-address evaluator',
+    400,
+    x402Post(
+      `/api/tasks/${taskId}/evaluator`,
+      { taskId, evaluator: `0x${'00'.repeat(20)}` },
+      requester
+    )
+  );
+
+  log('5/9', '[D] Requester assigning the evaluator...');
+  const { txHash: assignTx } = (await x402Post(
+    `/api/tasks/${taskId}/evaluator`,
+    {
+      taskId,
+      evaluator: requester.address,
+      disputeResolver: requester.address,
+      evaluatorFeeBps: 100,
+      evaluationWindowHours: 0.00139, // ~5 seconds
+      appealWindowHours: 0.00139, // ~5 seconds
+    },
+    requester
+  )) as { txHash: string };
+  ok('assign txHash', assignTx);
+
+  const assigned = (await get(`/api/tasks/${taskId}`)) as {
+    evaluator: string | null;
+    evaluatorFeeBps: number | null;
+  };
+  if (assigned.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+    throw new Error(`Expected evaluator ${requester.address}, got ${assigned.evaluator}`);
+  }
+  if (assigned.evaluatorFeeBps !== 100) {
+    throw new Error(`Expected evaluatorFeeBps 100, got ${assigned.evaluatorFeeBps}`);
+  }
+  ok('evaluator', assigned.evaluator);
+
+  log('6/9', '[D] Rejecting a second assignment...');
+  await expectFailure(
+    '400 for an already-assigned evaluator',
+    400,
+    x402Post(`/api/tasks/${taskId}/evaluator`, { taskId, evaluator: worker.address }, requester)
+  );
+
+  log('7/9', '[D] Worker claiming, so the task leaves Open...');
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
+  const claimed = await pollStatus(taskId, ['claimed']);
+  ok('status after claim', claimed);
+
+  // The TaskNotOpen gate, which is the whole reason assignment cannot be deferred: this task
+  // now refuses assignment permanently, and would have done so regardless of who asked.
+  log('8/9', '[D] Rejecting assignment on a claimed task...');
+  await expectFailure(
+    '400 once the task is claimed',
+    400,
+    x402Post(`/api/tasks/${taskId}/evaluator`, { taskId, evaluator: worker.address }, requester)
+  );
+
+  // Proves the assignment took effect on chain and not merely in the database: submitWork
+  // only auto-transitions a claim-mode task to review when the contract itself holds an
+  // evaluator for it.
+  log('9/9', '[D] Worker submitting, expecting the on-chain evaluator to force review...');
+  const submitPayload = 'smoke-evaluator-payload-D';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from(submitPayload).toString('base64'),
+      },
+    ],
+  });
+  const reviewStatus = await pollStatus(taskId, ['review']);
+  ok('status after submit', reviewStatus);
+}
+
 async function main() {
   const { requester, worker } = getAccounts();
 
@@ -303,10 +464,17 @@ async function main() {
     )
   );
 
+  results.push(
+    await runScenario(
+      'D — assign an evaluator after creation, and every refusal that route must make',
+      () => scenarioD(requester, worker)
+    )
+  );
+
   console.log('\n' + '='.repeat(60));
   console.log('RESULTS');
   console.log('='.repeat(60));
-  const labels = ['A', 'B', 'C'];
+  const labels = ['A', 'B', 'C', 'D'];
   results.forEach((passed, i) => {
     console.log(`  Scenario ${labels[i]}: ${passed ? 'PASS' : 'FAIL'}`);
   });

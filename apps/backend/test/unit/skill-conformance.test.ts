@@ -15,6 +15,7 @@ import { stubServerEnvironment } from '../helpers/server-environment';
 import {
   IDENTITY_REGISTER_ROUTE,
   PAID_TASK_ACTION_ROUTES,
+  TASK_ASSIGN_EVALUATOR_ROUTE,
   TASK_CREATE_ROUTE,
 } from '../../src/config/payments';
 import { expressPathToDocumentedApiPath } from '../../src/config/routes';
@@ -116,9 +117,7 @@ function documentedPendingAction(file: string): { action: string; role: string }
 describe('shipped skill platform conformance', () => {
   it('runs as a dedicated GitHub Actions job', () => {
     const workflow = readFileSync(path.join(repositoryRoot, '.github/workflows/ci.yml'), 'utf8');
-    const job = workflow.match(
-      /\n  skill-conformance:\n[\s\S]*?(?=\n  [a-zA-Z0-9_-]+:\n|$)/
-    )?.[0];
+    const job = workflow.match(/\n  skill-conformance:\n[\s\S]*?(?=\n  [a-zA-Z0-9_-]+:\n|$)/)?.[0];
     expect(job).toBeDefined();
     expect(job).toContain('run: make skill-conformance');
   });
@@ -137,9 +136,7 @@ describe('shipped skill platform conformance', () => {
       .find((line) => line.startsWith('Valid action values are'));
     expect(backtickValues(actionParagraph ?? '')).toEqual(PendingActionName.options);
 
-    const modeCells = tableRows(section(root, 'Mode Router')).map(([mode]) =>
-      backtickValues(mode)
-    );
+    const modeCells = tableRows(section(root, 'Mode Router')).map(([mode]) => backtickValues(mode));
     expect([...new Set(modeCells.map(([mode]) => mode))].sort()).toEqual(
       [...TaskMode.options].sort()
     );
@@ -200,10 +197,7 @@ describe('shipped skill platform conformance', () => {
     ] as const;
 
     for (const [file, overrides] of cases) {
-      const runtimeActions = computePendingActions(
-        pendingActionTask(overrides, expiryTime),
-        now
-      );
+      const runtimeActions = computePendingActions(pendingActionTask(overrides, expiryTime), now);
       expect(runtimeActions, file).toContainEqual(
         expect.objectContaining(documentedPendingAction(file))
       );
@@ -217,9 +211,7 @@ describe('shipped skill platform conformance', () => {
     const standardFeeText = `${standardFee} USDC`;
 
     expect(payments).toContain(`${standardFeeText} = ${STANDARD_X402_ACTION_AMOUNT} base units`);
-    expect(root).toContain(
-      `\`${STANDARD_X402_ACTION_AMOUNT}\` is ${standardFeeText}.`
-    );
+    expect(root).toContain(`\`${STANDARD_X402_ACTION_AMOUNT}\` is ${standardFeeText}.`);
 
     expect(Object.keys(PAID_TASK_ACTION_ROUTES).sort()).toEqual(
       [...PAID_PENDING_ACTION_NAMES].sort()
@@ -230,6 +222,9 @@ describe('shipped skill platform conformance', () => {
     const runtimePaidRoutes = [
       TASK_CREATE_ROUTE,
       ...Object.values(PAID_TASK_ACTION_ROUTES),
+      // Paid, but not a pending action, so it is mounted on its own rather than through the
+      // PAID_TASK_ACTION_ROUTES loop (ADR-0047).
+      TASK_ASSIGN_EVALUATOR_ROUTE,
       IDENTITY_REGISTER_ROUTE,
     ].map((route) => `POST ${expressPathToDocumentedApiPath(route)}`);
     expect(documentedPaidRoutes.sort()).toEqual(runtimePaidRoutes.sort());

@@ -202,6 +202,18 @@ An artifact has `fileName`, `mimeType`, `role`, and file data or upload-key meta
 
 Under the default `submissionVisibility: "public"`, submission metadata and preview URLs are not a confidentiality boundary. A task created with a non-`public` `submissionVisibility` mode gates them by caller identity and lifecycle instead (see "Submission Visibility" above) -- but this is confidentiality from other *users*, not from the platform operator. Encrypt sensitive bytes first if you need confidentiality from the platform itself; see [encryption.md](encryption.md).
 
+## Evaluator Assignment
+
+```text
+POST /api/tasks/{taskId}/evaluator
+```
+
+Requester only, X402. Body fields: `taskId`, `evaluator` (required), and optional `evaluatorFeeBps` (0-10000, default `0`), `evaluationWindowHours` (default `24`), `appealWindowHours` (default `24`), and `disputeResolver`. Returns `txHash`.
+
+The task must still be `open`, unclaimed, and without an evaluator. Once a worker claims the task the contract refuses the assignment, because appointing a judge after a worker committed would change the terms they accepted. There is no route that reassigns or removes an evaluator.
+
+Passing the same five fields to `POST /api/tasks` assigns the evaluator as part of creation, which is the reliable way to get one onto a task that workers may claim within milliseconds. Use this route when the evaluator is decided after the task is already live.
+
 ## Lists Required for Review
 
 ```text

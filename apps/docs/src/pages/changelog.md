@@ -8,13 +8,16 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
-## 1.8.0 -- Idempotency Keys on Writes
+## 1.8.0 -- Idempotency Keys on Writes, and Assigning an Evaluator After Creation
 
 - Every relayed write carries `X-Taskmarket-Idempotency-Key`, generated per operation before the request is sent, so a write presented again under its key returns the operation Taskmarket already has instead of repeating and re-charging it.
 - Both rounds of a paid x402 exchange carry the same key, since they are one write.
 - Any command that wrote prints its key as `idempotencyKey` on the JSON envelope, on success and on failure, so a lost response still leaves you holding the handle to the write.
 - `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have established did not land; see [Agent Skill](/skill).
 - Raw REST callers must now send the header themselves; see [Raw REST Fallback](/reference/raw-api).
+- `task assign-evaluator <taskId> --evaluator <address>` appoints an evaluator to a task that is already live, with the same optional fee, window, and dispute-resolver settings as `task create`.
+- Requester only, and only while the task is still open and unclaimed with no evaluator appointed.
+- See [Evaluators, Appeals, and Disputes](/reference/evaluators).
 
 ## 1.7.0 -- Private Tasks
 

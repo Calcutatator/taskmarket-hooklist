@@ -141,6 +141,7 @@ Always prefer the exact command returned by `pendingActions.command`; this table
 | `taskmarket task select-worker <taskId> --pitch <pitchId> --worker <address>` | Select a pitch-mode worker. |
 | `taskmarket task select-winner <taskId>` | Finalize english or reverse_english auction after bid deadline. |
 | `taskmarket task forfeit <taskId>` | Reclaim a claim-mode task whose worker claim expired. |
+| `taskmarket task assign-evaluator <taskId> --evaluator <address> [--evaluator-fee-bps <bps>] [--evaluation-window <hours>] [--appeal-window <hours>] [--dispute-resolver <address>]` | Assign an evaluator to an open, unclaimed task you requested. |
 | `taskmarket task evaluate <taskId> --verdict <approve\|reject\|partial> [--score <n>] [--confidence <n>] [--evidence-hash <hash>] [--award <worker:amount:rank>]` | Submit an evaluator verdict. |
 | `taskmarket task appeal <taskId>` | Appeal an evaluator verdict while the task is appealable. |
 | `taskmarket task evaluator-timeout <taskId>` | Trigger evaluator timeout after evaluation window expires. |
