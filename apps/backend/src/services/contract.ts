@@ -254,7 +254,12 @@ const MARKET_ABI = parseAbi([
   // appealWindow, disputeResolver), added at rev016 so a task with an evaluator is one
   // transaction. Adding the parameter changed the selector, and rev016 removes the old one from
   // the diamond, so this string and the deployed contract must move together.
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address)) returns (bytes32)',
+  // Five calldata structs, not ten loose arguments (rev018). The six former scalars --
+  // reward, duration, mode, pitchDeadline, bidDeadline, auctionSubtype -- are the same fields
+  // in the same order, wrapped one level deeper in TaskConfig. Selector 0xa810726c; the
+  // pre-rev018 form 0xa595d889 survives as a deprecated shim until rev019 removes it, so this
+  // must not be encoded against the old shape once the facet is cut in.
+  'function createTask((uint256,uint256,bytes4,uint256,uint256,bytes4),(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address)) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -738,12 +743,14 @@ export async function contractCreateTask(
     abi: MARKET_ABI,
     functionName: 'createTask',
     args: [
-      reward,
-      durationSecs,
-      mode as `0x${string}`,
-      pitchDeadlineSecs,
-      bidDeadlineSecs,
-      auctionSubtype,
+      [
+        reward,
+        durationSecs,
+        mode as `0x${string}`,
+        pitchDeadlineSecs,
+        bidDeadlineSecs,
+        auctionSubtype,
+      ] as const,
       [stakeRequired, stakeBps] as const,
       [hookContracts, hookData] as const,
       [
