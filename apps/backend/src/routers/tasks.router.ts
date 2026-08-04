@@ -71,7 +71,6 @@ import {
   reserveTaskDropForCreation,
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
-import { computeUpdatePaymentAmount } from '../services/task-payments';
 import {
   assertEvaluatorAssignable,
   buildEvaluatorAssignment,
@@ -79,6 +78,7 @@ import {
   sendEvaluatorAssignment,
   type TasksAssignEvaluatorIntentPayload,
 } from '../services/evaluator-assignment';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import {
@@ -295,8 +295,6 @@ export const tasksRouter = router({
         }
       }
 
-      const reward = BigInt(input.reward);
-
       let taskDropReservationId: string | null = null;
       const existingTaskDropId = input.taskDropId;
       if (existingTaskDropId) {
@@ -332,7 +330,11 @@ export const tasksRouter = router({
         }
       }
 
-      const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
+      // The escrow is priced at the reward rather than the flat action fee, and the middleware
+      // is what settled it at that price. Reading it back here rather than reconstructing it
+      // from `input.reward` keeps the refundable amount equal to the billed amount by
+      // construction, on the one route where they are most easily made to differ.
+      const payment = settledPaymentReference(ctx.res);
 
       const taskVisibility = input.taskVisibility ?? 'public';
       const allowedViewerAddresses =
@@ -371,8 +373,7 @@ export const tasksRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.create',
         payer,
-        paymentAmount: reward,
-        paymentTxHash,
+        payment,
         payload,
         describeCompletionFailure: (intentId) =>
           `The task was created on chain but recording it did not complete; it will be retried automatically (intent ${intentId}).`,
@@ -397,7 +398,7 @@ export const tasksRouter = router({
         },
         // The same builder the rebroadcast sweep uses, from the same payload, so the call a
         // retry makes cannot drift from the call this request made.
-        send: () => broadcastTasksCreate({ payload, paymentTxHash: paymentTxHash ?? null }),
+        send: () => broadcastTasksCreate({ payload, paymentTxHash: payment?.txHash ?? null }),
       });
 
       // Returning here means the escrow confirmed and the completion ran, so the transaction
@@ -1145,7 +1146,7 @@ export const tasksRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.cancel',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         // Carries the whole call, not just what the completion reads: a rebroadcast has only
         // this row to work from, and re-reading the task at broadcast time would be reading a
         // world that has moved on (ADR-0050).
@@ -1221,7 +1222,7 @@ export const tasksRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.assignEvaluator',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           assignment,
           payer,
@@ -1303,7 +1304,7 @@ export const tasksRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.refundExpired',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: refundPayload,
         // The same call the broadcaster reconstructs from the payload alone, so the request's
         // attempt and any rebroadcast are the same transaction (ADR-0050).
@@ -1437,8 +1438,8 @@ export const tasksRouter = router({
         // Every argument the relay needs, resolved here and recorded, so a rebroadcast sends
         // this exact call rather than re-deriving it from a task row the first attempt may
         // already have moved (ADR-0050). currentReward is the field that makes this necessary:
-        // it sizes the delta the forwarder pulls, and it is the same pre-update value
-        // computeUpdatePaymentAmount is given below.
+        // it sizes the delta the forwarder pulls, and it is the same pre-update value the
+        // middleware priced this payment from.
         const updatePayload = {
           contractAddress: task.contractAddress,
           currentReward: task.reward,
@@ -1450,19 +1451,19 @@ export const tasksRouter = router({
           taskId: input.taskId,
         } satisfies TasksUpdateIntentPayload;
 
-        // computeUpdatePaymentAmount must be given the SAME (currentReward, requestedReward)
-        // pair the X402 middleware used to size this payment (services/task-payments.ts's
-        // getUpdatePaymentAmount) -- task.reward here is still the pre-update value read
-        // above, so this reproduces that amount exactly, including any reward-increase escrow
-        // on top of the flat action fee. It is what a confirmed failure would refund
-        // (ADR-0048), which is why the intent has to carry it.
+        // An update is charged the flat action fee plus any increase in the reward, so its
+        // refundable amount is not the flat fee. It used to be reproduced here by handing
+        // `computeUpdatePaymentAmount` the same (currentReward, requestedReward) pair the
+        // middleware's `getUpdatePaymentAmount` had used -- correct, but correct only for as
+        // long as the two stayed in step, and a refund sized from a diverged copy pays the
+        // wrong sum out of pooled escrow. The middleware publishes what it settled instead,
+        // so there is one number and no pairing to keep.
         await runRelayedIntent({
           db: ctx.db,
           idempotencyKey: ctx.idempotencyKey,
           operation: 'tasks.update',
           payer,
-          paymentAmount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
-          paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+          payment: settledPaymentReference(ctx.res),
           payload: updatePayload,
           send: () => broadcastTasksUpdate({ payer, payload: updatePayload }),
         });
@@ -1706,7 +1707,7 @@ export const tasksRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.rejectSubmission',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           requester: payer,
           taskId: input.taskId,

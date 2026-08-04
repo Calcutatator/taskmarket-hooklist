@@ -13,6 +13,7 @@ import { contractSelectWorker, contractSubmitPitch } from '../services/contract'
 import { TRPCError } from '@trpc/server';
 import { buildPitchHash } from '../lib/canonical-hashes';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
   PitchesSelectIntentPayload,
@@ -151,7 +152,7 @@ export const pitchesRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'pitches.submit',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           contractAddress: task.contractAddress,
           estimatedDuration: input.estimatedDuration || null,
@@ -319,7 +320,7 @@ export const pitchesRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'pitches.select',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         // `requester` is recorded separately from `payer` on purpose: this route accepts
         // payment from anyone and authorises the selection by the requester's signature, so
         // the two addresses genuinely differ and a rebroadcast must relay as the requester.

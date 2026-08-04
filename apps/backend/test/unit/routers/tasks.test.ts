@@ -443,6 +443,9 @@ describe('tasks router', () => {
           new Error('Contract call rejected: EnforcedPause')
         );
         const ctx = createTaskCtx(PAYER);
+        // Both halves, because the middleware publishes both: a create is priced at the
+        // reward, and an amount the router cannot see is one settlement cannot refund.
+        ctx.res.locals.paymentAmount = baseTaskInput.reward;
         ctx.res.locals.paymentTxHash = PAYMENT_TX_HASH;
         const caller = tasksRouter.createCaller(ctx);
 
@@ -481,6 +484,7 @@ describe('tasks router', () => {
           new ServerTransactionPendingError('0xpendinghash', 7)
         );
         const ctx = createTaskCtx(PAYER);
+        ctx.res.locals.paymentAmount = baseTaskInput.reward;
         ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
         const caller = tasksRouter.createCaller(ctx);
 
@@ -1094,6 +1098,10 @@ describe('tasks router', () => {
         new Error('Contract call rejected: EnforcedPause')
       );
       const ctx = createTaskCtx(PAYER);
+      // What getUpdatePaymentAmount charged for this request: the flat action fee plus the
+      // 4000000 reward increase over openBountyRow's 1000000. An update is one of the two
+      // routes not priced at the flat fee, so refunding the flat fee here would be wrong.
+      ctx.res.locals.paymentAmount = '4001000';
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
       ctx.db.select.mockReturnValueOnce(makeChain([openBountyRow]));
       const caller = tasksRouter.createCaller(ctx);
@@ -1104,9 +1112,8 @@ describe('tasks router', () => {
 
       expect(contractRefundOrphanedPayment).not.toHaveBeenCalled();
       expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
-      // computeUpdatePaymentAmount(currentReward='1000000', requestedReward='5000000')
-      // = STANDARD_X402_ACTION_AMOUNT (1000) + the 4000000 increase. Recorded on the intent,
-      // which is what settlement would refund from.
+      // Recorded on the intent verbatim from what the middleware settled, which is what
+      // settlement would refund from.
       expect(ctx.intents[0]!.paymentAmount).toBe('4001000');
       expect(ctx.intents[0]!.status).toBe('recorded');
     });

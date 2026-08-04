@@ -16,6 +16,7 @@ import {
   contractResolveDispute,
   contractEvaluatorTimeout,
 } from '../services/contract';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 // Shared with the rebroadcast path rather than duplicated here, so the first send and every
 // retry of it map a verdict to the same on-chain enum (ADR-0050).
@@ -75,7 +76,7 @@ export const evaluationsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.evaluate',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           awards: input.awards.map((a) => ({
             amount: a.amount,
@@ -139,7 +140,7 @@ export const evaluationsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.appeal',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: { taskId: input.taskId } satisfies EvaluationsAppealIntentPayload,
         send: () => contractAppeal(input.taskId as `0x${string}`, payer as `0x${string}`),
       });
@@ -229,7 +230,7 @@ export const evaluationsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.resolveDispute',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         // The whole decision, not just the part the completion happens to read. A payload that
         // records only a projection of the call cannot be turned back into the call, which is
         // what a rebroadcast needs (ADR-0050).
@@ -293,7 +294,7 @@ export const evaluationsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.evaluatorTimeout',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: { taskId: input.taskId } satisfies EvaluationsEvaluatorTimeoutIntentPayload,
         send: () => contractEvaluatorTimeout(input.taskId as `0x${string}`, payer as `0x${string}`),
       });

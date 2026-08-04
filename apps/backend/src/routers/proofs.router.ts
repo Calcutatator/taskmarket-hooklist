@@ -9,6 +9,7 @@ import { TRPCError } from '@trpc/server';
 import { contractSubmitProof } from '../services/contract';
 import { buildProofHash } from '../lib/canonical-hashes';
 import { lowerAddressEq } from '../lib/agents';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type { ProofsSubmitIntentPayload } from '../services/intents/proofs-intents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
@@ -140,7 +141,7 @@ export const proofsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'proofs.submit',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           contractAddress: task.contractAddress,
           metricValue: input.metricValue || null,

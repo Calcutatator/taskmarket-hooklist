@@ -16,6 +16,14 @@ const PAYER = '0x1111111111111111111111111111111111111111';
 const OTHER_PAYER = '0x2222222222222222222222222222222222222222';
 const PAYMENT = `0x${'99'.repeat(32)}`;
 
+/**
+ * A payment reference is whole or absent, so a test cannot name one by its hash alone any
+ * more than production can -- which is the point of the type (ADR-0048).
+ */
+function settledPayment() {
+  return { amount: 1_000n, payer: PAYER, txHash: PAYMENT as `0x${string}` };
+}
+
 type StoredRow = Record<string, unknown>;
 
 const dialect = new PgDialect();
@@ -108,12 +116,16 @@ describe('recordRelayedIntent idempotency', () => {
 
   it('refuses a fresh key that reuses a settled payment', async () => {
     const { db } = indexedDb();
-    await record({ db, paymentTxHash: PAYMENT });
+    await record({ db, payment: settledPayment() });
 
     // The payment index is no longer the idempotency mechanism, but it still guards the one
     // thing it was always really guarding: one settled payment funds at most one intent.
     await expect(
-      record({ db, idempotencyKey: 'ffffffff-1111-4222-8333-444444444444', paymentTxHash: PAYMENT })
+      record({
+        db,
+        idempotencyKey: 'ffffffff-1111-4222-8333-444444444444',
+        payment: settledPayment(),
+      })
     ).rejects.toThrow(/already funded/);
   });
 

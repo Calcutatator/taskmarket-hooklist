@@ -6,6 +6,7 @@ import { sql } from 'drizzle-orm';
 import { contractRegisterIdentityTx } from '../services/contract';
 import { lowerAddressEq } from '../lib/agents';
 import { getServerConfig } from '../config/env';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
 
@@ -83,7 +84,7 @@ export const identityRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'identity.register',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           chainId,
           existingAddress: existing[0]?.address ?? null,

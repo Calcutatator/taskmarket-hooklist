@@ -30,6 +30,7 @@ import { randomUUID } from 'crypto';
 import { keccak256 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type { SubmissionsSubmitIntentPayload } from '../services/intents/submissions-intents';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
@@ -491,6 +492,11 @@ export const submissionsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'submissions.submit',
         payer: input.workerAddress,
+        // Present only past the free allowance (RFC-0006 Tier 1): the first few submissions
+        // bypass x402 entirely and have nothing to refund, and the ones after it are charged
+        // the flat action fee. Before this the paid ones recorded no payment reference at
+        // all, so a submission that never reached the chain could not be refunded either.
+        payment: settledPaymentReference(ctx.res),
         payload: {
           artifacts: artifactRows,
           contractAddress: task.contractAddress,
@@ -758,6 +764,11 @@ export const submissionsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'submissions.submit',
         payer: input.workerAddress,
+        // Present only past the free allowance (RFC-0006 Tier 1): the first few submissions
+        // bypass x402 entirely and have nothing to refund, and the ones after it are charged
+        // the flat action fee. Before this the paid ones recorded no payment reference at
+        // all, so a submission that never reached the chain could not be refunded either.
+        payment: settledPaymentReference(ctx.res),
         payload: {
           artifacts: artifactRows,
           contractAddress: task.contractAddress,

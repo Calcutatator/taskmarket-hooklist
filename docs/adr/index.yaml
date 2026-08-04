@@ -253,3 +253,8 @@ adrs:
     title: "createTask takes the evaluator configuration, and creation stops needing a second call"
     status: Proposed
     date: "2026-08-04"
+  - number: "0057"
+    file: "0057-a-settled-payment-is-one-indivisible-reference-published-by-the-middleware.md"
+    title: "A settled payment is one indivisible reference, published by the middleware that settled it"
+    status: Proposed
+    date: "2026-08-04"

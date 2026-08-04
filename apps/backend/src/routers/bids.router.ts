@@ -17,6 +17,7 @@ import {
   resolveTaskViewability,
 } from '../lib/task-visibility';
 import { TRPCError } from '@trpc/server';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
   BidsAuctionAcceptIntentPayload,
@@ -151,7 +152,7 @@ export const bidsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'bids.submit',
         payer: workerAddress,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           bidId,
           contractAddress: task.contractAddress,
@@ -460,7 +461,7 @@ export const bidsRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'bids.auctionAccept',
         payer: workerAddress,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         // The clock price is recorded as quoted, and a rebroadcast replays it rather than
         // re-reading the clock -- what the worker accepted is what lands (ADR-0050 point 7).
         payload: {

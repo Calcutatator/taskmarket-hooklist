@@ -79,7 +79,7 @@ async function run(send: () => Promise<`0x${string}`>) {
     idempotencyKey: KEY,
     operation: 'tasks.create',
     payload: {},
-    paymentTxHash: PAYMENT_HASH,
+    payment: { amount: 1_000n, payer: '0xpayer', txHash: PAYMENT_HASH },
     send,
   });
 }

@@ -63,6 +63,29 @@ export type RelayedIntentOperation =
 
 export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'failed';
 
+/**
+ * A settled x402 payment an intent is answerable for.
+ *
+ * One object rather than three optional fields, and that is the whole design. Settlement can
+ * only refund a payment it can name in full -- it needs the payer to send to, the hash to key
+ * the `orphaned_payments` row on, and the amount to transfer -- so any two of the three are
+ * worth exactly as much as none of them, while looking from the outside like a payment that
+ * is covered. Three independently optional fields let a caller record a hash with no amount
+ * and be silently skipped by the sweep; a single object cannot be built that way, so the
+ * mistake stops being possible rather than being caught later (ADR-0048, ADR-0050).
+ *
+ * Build it with `settledPaymentReference` from the x402 middleware, never by hand: the
+ * amount must be the one the facilitator settled, not one a router re-derived from a pricing
+ * rule it might have got wrong.
+ */
+export type IntentPaymentReference = {
+  /** What the payer was charged, in USDC base units. */
+  amount: bigint;
+  payer: string;
+  /** The settled x402 transfer, and the key `orphaned_payments` deduplicates refunds on. */
+  txHash: `0x${string}`;
+};
+
 export type RecordIntentInput = {
   db: Db;
   /**
@@ -72,9 +95,13 @@ export type RecordIntentInput = {
    */
   idempotencyKey: string | undefined;
   operation: RelayedIntentOperation;
+  /**
+   * Who the relay acted for. Recorded on every path, paid or free. Where `payment` is also
+   * present its payer wins, because that one is the address the facilitator confirmed paid.
+   */
   payer?: string;
-  paymentTxHash?: string;
-  paymentAmount?: bigint;
+  /** Present exactly when the request was charged; absent on every free relayed write. */
+  payment?: IntentPaymentReference;
   payload: unknown;
 };
 
@@ -191,7 +218,7 @@ export async function findIntentByIdempotencyKey(
 function intentBelongsToCaller(intent: RelayedIntent, input: RecordIntentInput): boolean {
   if (intent.operation !== input.operation) return false;
   const stored = intent.payer?.toLowerCase() ?? null;
-  const asking = input.payer?.toLowerCase() ?? null;
+  const asking = (input.payment?.payer ?? input.payer)?.toLowerCase() ?? null;
   return stored === asking;
 }
 
@@ -222,9 +249,9 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       id: randomUUID(),
       idempotencyKey,
       operation: input.operation,
-      payer: input.payer ?? null,
-      paymentAmount: input.paymentAmount ? input.paymentAmount.toString() : null,
-      paymentTxHash: input.paymentTxHash ?? null,
+      payer: input.payment?.payer ?? input.payer ?? null,
+      paymentAmount: input.payment?.amount.toString() ?? null,
+      paymentTxHash: input.payment?.txHash ?? null,
       payload: input.payload,
       relayReceiptNonce: envelope.receiptNonce,
       relayValidBefore: envelope.validBefore.toString(),
@@ -251,11 +278,11 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
     });
   }
 
-  if (input.paymentTxHash) {
+  if (input.payment) {
     const [settled] = await input.db
       .select()
       .from(relayedIntents)
-      .where(eq(relayedIntents.paymentTxHash, input.paymentTxHash))
+      .where(eq(relayedIntents.paymentTxHash, input.payment.txHash))
       .limit(1);
     if (settled) {
       // Same payment, fresh key: a retry that failed to reuse its key, or a client replaying

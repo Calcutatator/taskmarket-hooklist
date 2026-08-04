@@ -77,7 +77,27 @@ export async function settleAbandonedIntents(limit: number): Promise<void> {
     // was ever allocated. Nothing is live, so nothing can land later against a released guard.
     await releaseIntentGuard({ db, intent });
 
-    if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) continue;
+    // `payer` alone does not mean paid: every intent records one for provenance, free or not.
+    // A payment hash or an amount is what says money moved for this intent.
+    if (!intent.paymentTxHash && !intent.paymentAmount) continue;
+
+    // A row carrying part of a payment reference is a bug, not a state to move past. It was
+    // reachable while the reference lived in three independently optional fields: a paid path
+    // that recorded a hash and no amount produced a row that looks paid-for to anyone reading
+    // it, and that this sweep silently skipped -- so the payer was neither served nor
+    // refunded, and nothing said so. `IntentPaymentReference` makes that unrepresentable
+    // going forward; this says so out loud for anything already written, because there is no
+    // alerting and a structured error log is the whole reporting surface (ADR-0053).
+    if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) {
+      logger.error('Abandoned intent carries an incomplete payment reference; cannot refund it', {
+        hasAmount: Boolean(intent.paymentAmount),
+        hasPayer: Boolean(intent.payer),
+        hasTxHash: Boolean(intent.paymentTxHash),
+        intentId: intent.id,
+        operation: intent.operation,
+      });
+      continue;
+    }
 
     try {
       await handlePostPaymentFailure({
@@ -151,12 +171,31 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
       // waiting to be returned. Refunding on its behalf would have to guess whose payment it
       // meant, and the only available guess -- some earlier operation's -- is a double spend,
       // since that operation's own transaction succeeded and bought what it bought.
-      if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) {
+      if (!intent.paymentTxHash && !intent.paymentAmount) {
         logger.error('Relayed intent failed on chain; nothing to refund, it carried no payment', {
           intentId: intent.id,
           operation: intent.operation,
           reason,
         });
+        return;
+      }
+
+      // Distinguished from the line above rather than folded into it, because the two mean
+      // opposite things: "free write, nothing owed" is expected, while "money moved and we
+      // cannot say how much" is a defect that leaves a payer out of pocket with no ledger row
+      // to find them by. Reporting them identically is how the first one hid the second.
+      if (!intent.paymentTxHash || !intent.payer || !intent.paymentAmount) {
+        logger.error(
+          'Confirmed-failed intent carries an incomplete payment reference; cannot refund it',
+          {
+            hasAmount: Boolean(intent.paymentAmount),
+            hasPayer: Boolean(intent.payer),
+            hasTxHash: Boolean(intent.paymentTxHash),
+            intentId: intent.id,
+            operation: intent.operation,
+            reason,
+          }
+        );
         return;
       }
 

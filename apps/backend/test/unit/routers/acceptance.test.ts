@@ -1,3 +1,4 @@
+import { STANDARD_X402_ACTION_AMOUNT } from '@taskmarket/shared';
 import { describe, it, expect, vi, beforeEach } from 'vitest';
 import { createIntentCtx, makeChain } from '../helpers';
 
@@ -127,6 +128,10 @@ describe('acceptance router', () => {
         new Error('Contract call rejected: TaskNotOpen')
       );
       const ctx = createIntentCtx(REQUESTER);
+      // An accept is charged the flat action fee. Both halves are set because the middleware
+      // publishes both, and an intent that recorded only the hash is one settlement cannot
+      // refund -- it has no amount to transfer, so it skips the row.
+      ctx.res.locals.paymentAmount = STANDARD_X402_ACTION_AMOUNT;
       ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
       ctx.db.select
         .mockReturnValueOnce(makeChain([makeTask()])) // task fetch
@@ -142,6 +147,7 @@ describe('acceptance router', () => {
       expect(ctx.updateChain(tasks).set).not.toHaveBeenCalled();
       expect(ctx.intents[0]!.status).toBe('recorded');
       expect(ctx.intents[0]!.paymentTxHash).toBe('0xpaymenttxhash');
+      expect(ctx.intents[0]!.paymentAmount).toBe(STANDARD_X402_ACTION_AMOUNT);
     });
   });
 

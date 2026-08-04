@@ -16,6 +16,7 @@ import {
   AcceptSubmissionsInputSchema,
   RateInputSchema,
 } from '../schemas/acceptance.schemas';
+import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
   AcceptanceAcceptIntentPayload,
@@ -126,7 +127,7 @@ export const acceptanceRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'acceptance.accept',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         // The deliverable hash is recorded, not left to be re-resolved later: the query above
         // picks the newest unrejected submission, and on a bounty that is a different worker's
         // work by the time a rebroadcast runs. What the requester accepted is a fact about
@@ -248,7 +249,7 @@ export const acceptanceRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'acceptance.acceptSubmissions',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           contractAddress: task.contractAddress,
           deliverables,
@@ -382,7 +383,7 @@ export const acceptanceRouter = router({
         idempotencyKey: ctx.idempotencyKey,
         operation: 'acceptance.rate',
         payer,
-        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payment: settledPaymentReference(ctx.res),
         payload: {
           contractAddress: task.contractAddress,
           feedbackHash,

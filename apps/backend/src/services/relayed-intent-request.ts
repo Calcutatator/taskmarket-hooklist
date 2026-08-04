@@ -10,6 +10,7 @@ import { completeRelayedIntent } from './relayed-intent-registry';
 import {
   claimIntentForBroadcast,
   getRelayedIntent,
+  type IntentPaymentReference,
   persistIntentBroadcast,
   recordRelayedIntent,
   relayEnvelopeForIntent,
@@ -32,18 +33,22 @@ export type RelayedIntentRequestInput = {
   operation: RelayedIntentOperation;
   /**
    * Who the relay acted for. Recorded for provenance on every path, paid or not; it is the
-   * presence of `paymentTxHash` and `paymentAmount`, not this, that makes an intent refundable.
+   * presence of `payment`, not this, that makes an intent refundable.
    * A free relayed write (claiming a task, submitting work, finalizing a verdict) still needs
    * an intent so its post-receipt database work survives the request, and there is simply
    * nothing to refund when it fails.
    */
   payer?: string;
   /**
-   * What the payer was charged, in USDC base units. Every paid mutation except tasks.create
-   * and tasks.update charges the flat action fee, so callers of those two pass their own.
+   * The settled payment this intent is answerable for, from `settledPaymentReference`.
+   *
+   * Whole or absent, never partial. Three optional fields let a paid path record a hash with
+   * no amount, which reads as a covered payment everywhere except the one place it matters:
+   * `settleAbandonedIntents` cannot transfer an amount it does not know, so it skipped the
+   * row, and the payer was neither served nor refunded. One object removes the shape that
+   * mistake needs (ADR-0048, ADR-0050).
    */
-  paymentAmount?: bigint;
-  paymentTxHash?: `0x${string}`;
+  payment?: IntentPaymentReference;
   payload: unknown;
   /** Broadcasts the one contract call this intent stands for. */
   send: () => Promise<`0x${string}`>;
@@ -110,8 +115,7 @@ export async function runRelayedIntent(
     idempotencyKey: input.idempotencyKey,
     operation: input.operation,
     payer: input.payer,
-    paymentAmount: input.paymentAmount,
-    paymentTxHash: input.paymentTxHash,
+    payment: input.payment,
     payload: input.payload,
   });
 

@@ -1,9 +1,13 @@
+// Implements: ADR-0052
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
-import { checkRelayedWriteIdempotency } from '../services/relayed-intents';
+import {
+  checkRelayedWriteIdempotency,
+  type IntentPaymentReference,
+} from '../services/relayed-intents';
 import { logger } from '../lib/logger';
 import { createServerWallet } from '../lib/wallet';
 
@@ -25,6 +29,49 @@ export class X402PreflightError extends Error {
     super(message);
     this.name = 'X402PreflightError';
   }
+}
+
+/**
+ * The settled payment behind this request, or nothing if the request was never charged.
+ *
+ * The only supported way to build an `IntentPaymentReference`. A handler cannot assemble one
+ * out of `res.locals` by hand and get it half right, because there is no half: this returns
+ * the whole reference or `undefined`, and `runRelayedIntent` accepts nothing else.
+ *
+ * Reading the amount from here rather than recomputing it is the point. A refund is paid out
+ * of pooled escrow, so a wrong amount is worse than a missing one -- it returns somebody
+ * else's money. The middleware already resolved the price for this exact request, including
+ * the two routes that are not the flat action fee, so a handler that asks this question
+ * cannot answer it differently from the facilitator that settled it.
+ *
+ * A free path (an unmetered submission, a claim, a withdrawal) simply has no locals set and
+ * gets `undefined`, which is the accurate answer: there is nothing to refund.
+ */
+export function settledPaymentReference(res: Response): IntentPaymentReference | undefined {
+  const payer = res.locals.payer as string | undefined;
+  const amount = res.locals.paymentAmount as string | undefined;
+  const txHash = res.locals.paymentTxHash as `0x${string}` | undefined;
+
+  // A hash or an amount is what says money moved. `payer` alone does not: it is also set by
+  // anything that authenticates a caller, and treating that as a broken payment would fire the
+  // error below on ordinary free traffic -- the fastest way to make a log nobody reads. This
+  // is the same test `settleAbandonedIntents` applies to a stored row, deliberately.
+  if (!amount && !txHash) return undefined;
+  if (!payer || !amount || !txHash) {
+    // Reachable only if the middleware settled and then published an incomplete set --
+    // today, a facilitator that reports success with no transaction hash. Loud rather than
+    // silent, because the consequence is a payment nothing can refund: without a hash there
+    // is no reference for `orphaned_payments` to key on, so the payer's money is in the
+    // server wallet with nothing recording why (ADR-0048, ADR-0053).
+    logger.error('Settled payment is missing part of its reference; it cannot be refunded', {
+      hasAmount: Boolean(amount),
+      hasPayer: Boolean(payer),
+      hasTxHash: Boolean(txHash),
+    });
+    return undefined;
+  }
+
+  return { amount: BigInt(amount), payer, txHash };
 }
 
 export function x402Middleware(opts: X402Options): RequestHandler {
@@ -228,8 +275,20 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         throw new Error('Facilitator payer does not match payment authorization');
       }
 
-      // Settlement confirmed — USDC is now in server wallet
+      // Settlement confirmed -- USDC is now in server wallet.
+      //
+      // All three facts are published together because they are one fact: this payer moved
+      // this much in this transaction. A handler that could see two of them and not the third
+      // would be able to record a payment reference that settlement cannot refund, which is
+      // exactly the defect `settledPaymentReference` below exists to make unrepresentable.
+      //
+      // `expectedAmount` rather than anything recomputed downstream: it is the number the
+      // authorization was checked against a few lines up and the number the facilitator
+      // settled, so it is what the payer was actually billed. Every variable-priced route
+      // (tasks.create's reward, tasks.update's reward increase) is already resolved here, so
+      // nothing further down has to know a pricing rule to refund correctly.
       res.locals.payer = payer;
+      res.locals.paymentAmount = expectedAmount;
       res.locals.paymentTxHash = settle.transaction;
       res.setHeader(
         'PAYMENT-RESPONSE',
