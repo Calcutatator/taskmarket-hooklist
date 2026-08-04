@@ -11,6 +11,7 @@ import { IERC20 } from "@openzeppelin/contracts/token/ERC20/IERC20.sol";
 import "./helpers/DiamondTestHelper.sol";
 import "../src/interfaces/ITMPDiamond.sol";
 import { noEvaluatorConfig } from "./helpers/EvaluatorConfigHelper.sol";
+import { taskConfig } from "./helpers/TaskConfigHelper.sol";
 
 /// @dev Minimal PGTR forwarder for compliance tests.
 contract ComplianceMockForwarder is IPGTRForwarder {
@@ -134,12 +135,7 @@ contract ITMPCompliance is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        _reward,
-                        _dur,
-                        _mode,
-                        _pd,
-                        _bd,
-                        _auctionSubtype,
+                        taskConfig(_reward, _dur, _mode, _pd, _bd, _auctionSubtype),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -495,12 +491,7 @@ contract ITMPCompliance is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.BOUNTY(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -523,12 +514,7 @@ contract ITMPCompliance is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),

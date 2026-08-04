@@ -22,7 +22,7 @@ import { RegistryFacet } from "../../src/facets/RegistryFacet.sol";
 ///      DiamondFullUpgrade.s.sol.
 library FacetSelectors {
     /// @dev Rev018 kept the pre-rev018 nine-parameter `createTask` routed alongside the
-    ///      evaluator-aware ten-parameter one, so off-chain callers can be migrated after the
+    ///      evaluator-aware struct-form one, so off-chain callers can be migrated after the
     ///      facet cut rather than in lockstep with it. It has no `.selector` expression available
     ///      -- `CoreFacet.createTask` is overloaded, so the compiler cannot resolve which one is
     ///      meant -- hence the explicit signature hash, the same idiom the constant getters above
@@ -34,12 +34,12 @@ library FacetSelectors {
         )
     );
 
-    /// @dev Rev018's evaluator-aware `createTask`. Spelled out for the same reason as
-    ///      LEGACY_CREATE_TASK: with two overloads in scope, `CoreFacet.createTask.selector` no
-    ///      longer compiles.
+    /// @dev Rev018's evaluator-aware `createTask`, whose task-shape scalars are grouped into
+    ///      ITMPCore.TaskConfig. Spelled out for the same reason as LEGACY_CREATE_TASK: with two
+    ///      overloads in scope, `CoreFacet.createTask.selector` no longer compiles.
     bytes4 internal constant CREATE_TASK = bytes4(
         keccak256(
-            "createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address))"
+            "createTask((uint256,uint256,bytes4,uint256,uint256,bytes4),(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address))"
         )
     );
 

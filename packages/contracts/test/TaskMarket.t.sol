@@ -25,6 +25,7 @@ import { AdminFacet } from "../src/facets/AdminFacet.sol";
 import { Diamond } from "../src/Diamond.sol";
 import { FacetSelectors } from "../script/lib/FacetSelectors.sol";
 import { noEvaluatorConfig } from "./helpers/EvaluatorConfigHelper.sol";
+import { taskConfig } from "./helpers/TaskConfigHelper.sol";
 import { TMP_CLAIM } from "../src/interfaces/ITMPModes.sol";
 
 contract MockERC20 is ERC20 {
@@ -132,12 +133,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        _reward,
-                        _dur,
-                        _mode,
-                        _pd,
-                        _bd,
-                        _auctionSubtype,
+                        taskConfig(_reward, _dur, _mode, _pd, _bd, _auctionSubtype),
                         ITMPCore.StakeConfig({ required: _stakeRequired, bps: _stakeBps }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -164,12 +160,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        _reward,
-                        _dur,
-                        _mode,
-                        _dur,
-                        _dur,
-                        bytes4(0),
+                        taskConfig(_reward, _dur, _mode, _dur, _dur, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -623,12 +614,7 @@ contract TaskMarketTest is DiamondTestHelper {
         vm.prank(alice);
         vm.expectRevert(ITMPCore.NotTrustedForwarder.selector);
         market.createTask(
-            REWARD,
-            DURATION,
-            bounty,
-            0,
-            0,
-            bytes4(0),
+            taskConfig(REWARD, DURATION, bounty, 0, 0, bytes4(0)),
             ITMPCore.StakeConfig({ required: false, bps: 0 }),
             ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
             ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -704,12 +690,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.BOUNTY(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -733,12 +714,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -796,12 +772,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -816,12 +787,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                0,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(0, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -836,12 +802,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                0,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, 0, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -856,12 +817,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                bytes4(0xdeadbeef),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, bytes4(0xdeadbeef), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -876,12 +832,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.AUCTION(),
-                0,
-                1 days,
-                bytes4(0xdeadbeef),
+                taskConfig(REWARD, DURATION, market.AUCTION(), 0, 1 days, bytes4(0xdeadbeef)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -928,12 +879,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: true, bps: 10001 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -2778,12 +2724,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                mode,
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, mode, 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -2802,12 +2743,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                mode,
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, mode, 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -2958,12 +2894,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.BOUNTY(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -2992,12 +2923,7 @@ contract TaskMarketTest is DiamondTestHelper {
         bytes memory data = abi.encodeCall(
             market.createTask,
             (
-                REWARD,
-                DURATION,
-                market.BOUNTY(),
-                0,
-                0,
-                bytes4(0),
+                taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: hooks, data: hex"" }),
                 ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -3079,12 +3005,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.BOUNTY(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: tags }),
@@ -3135,12 +3056,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        TMP_CLAIM,
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, TMP_CLAIM, 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -3636,12 +3552,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.AUCTION(),
-                        0,
-                        1 days,
-                        market.AUCTION_DUTCH(),
+                        taskConfig(REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH()),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -3674,12 +3585,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.AUCTION(),
-                        0,
-                        1 days,
-                        market.AUCTION_DUTCH(),
+                        taskConfig(REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH()),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -4016,12 +3922,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.CLAIM(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.CLAIM(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -4830,12 +4731,7 @@ contract TaskMarketTest is DiamondTestHelper {
             abi.encodeCall(
                 market.createTask,
                 (
-                    REWARD,
-                    DURATION,
-                    bountyMode,
-                    0,
-                    0,
-                    bytes4(0),
+                    taskConfig(REWARD, DURATION, bountyMode, 0, 0, bytes4(0)),
                     ITMPCore.StakeConfig({ required: false, bps: 0 }),
                     ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                     ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
@@ -4946,12 +4842,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.BOUNTY(),
-                        0,
-                        0,
-                        bytes4(0),
+                        taskConfig(REWARD, DURATION, market.BOUNTY(), 0, 0, bytes4(0)),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: contentHash, contentURI: "ipfs://xyz", tags: emptyTags }),
@@ -5229,12 +5120,7 @@ contract TaskMarketTest is DiamondTestHelper {
                 abi.encodeCall(
                     market.createTask,
                     (
-                        REWARD,
-                        DURATION,
-                        market.AUCTION(),
-                        0,
-                        1 days,
-                        market.AUCTION_DUTCH(),
+                        taskConfig(REWARD, DURATION, market.AUCTION(), 0, 1 days, market.AUCTION_DUTCH()),
                         ITMPCore.StakeConfig({ required: false, bps: 0 }),
                         ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: hex"" }),
                         ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),

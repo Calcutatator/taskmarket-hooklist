@@ -163,12 +163,14 @@ contract Rev018UpgradeTest is Test, DiamondTestHelper {
     function _createTaskCalldata() private pure returns (bytes memory) {
         return abi.encodeWithSelector(
             FacetSelectors.CREATE_TASK,
-            uint256(1),
-            uint256(1 days),
-            bytes4(0),
-            uint256(0),
-            uint256(0),
-            bytes4(0),
+            ITMPCore.TaskConfig({
+                reward: 1,
+                duration: 1 days,
+                mode: bytes4(0),
+                pitchDeadline: 0,
+                bidDeadline: 0,
+                auctionSubtype: bytes4(0)
+            }),
             ITMPCore.StakeConfig({ required: false, bps: 0 }),
             ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
             ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),

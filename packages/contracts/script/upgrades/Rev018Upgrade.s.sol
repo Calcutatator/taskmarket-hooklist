@@ -18,7 +18,8 @@ import { FacetSelectors } from "../lib/FacetSelectors.sol";
 ///
 /// @dev Two facets change:
 ///
-///      CoreFacet — `createTask` gained a parameter, so there is a new selector
+///      CoreFacet — `createTask`'s signature changed (evaluator terms added, and the task-shape
+///        scalars grouped into ITMPCore.TaskConfig), so there is a new selector
 ///        (FacetSelectors.CREATE_TASK). The pre-rev018 nine-parameter selector
 ///        (FacetSelectors.LEGACY_CREATE_TASK) is NOT removed: it stays routed to the same newly
 ///        deployed CoreFacet, where a deprecated overload forwards it to the shared body with an

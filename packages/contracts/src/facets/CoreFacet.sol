@@ -39,12 +39,8 @@ contract CoreFacet {
     ///         Task ID is contract-generated:
     ///           keccak256(abi.encode(block.chainid, address(this), requester, nonce))
     ///         The USDC reward MUST be transferred to this contract by the forwarder before calling.
-    /// @param reward          USDC reward (6 decimals); for Auction = max price
-    /// @param duration        Task lifetime in seconds
-    /// @param mode            4-byte mode selector (use BOUNTY/CLAIM/PITCH/BENCHMARK/AUCTION)
-    /// @param pitchDeadline   Seconds from now for pitch window (Pitch mode only, 0 otherwise)
-    /// @param bidDeadline     Seconds from now for bid window (Auction mode only, 0 otherwise)
-    /// @param auctionSubtype  Auction subtype selector (bytes4(0) for non-auction tasks)
+    /// @param config          Reward (6-decimal USDC; for Auction = max price), duration, mode,
+    ///                        and the mode-specific pitch/bid deadlines and auction subtype.
     /// @param stakeConfig     Requester's stake requirement (Rev014); informational only -- not
     ///                        currently enforced by claimTask
     /// @param hookConfig      Hook contracts + hookData packed into one calldata pointer (Rev008).
@@ -56,29 +52,13 @@ contract CoreFacet {
     ///                        instant this transaction mines, and `assignEvaluator` reverts
     ///                        `TaskNotOpen` once a worker has claimed.
     function createTask(
-        uint256 reward,
-        uint256 duration,
-        bytes4 mode,
-        uint256 pitchDeadline,
-        uint256 bidDeadline,
-        bytes4 auctionSubtype,
+        ITMPCore.TaskConfig calldata config,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
         ITMPCore.TaskContent calldata content,
         ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
     ) external returns (bytes32 taskId) {
-        return _createTask(
-            reward,
-            duration,
-            mode,
-            pitchDeadline,
-            bidDeadline,
-            auctionSubtype,
-            stakeConfig,
-            hookConfig,
-            content,
-            evaluatorConfig
-        );
+        return _createTask(config, stakeConfig, hookConfig, content, evaluatorConfig);
     }
 
     /// @notice Deprecated: `createTask` without evaluator terms. Behaves exactly as before --
@@ -109,12 +89,14 @@ contract CoreFacet {
         // meant. It shares the whole body below, so the shim cannot drift from the real path.
         ITMPCore.TaskEvaluatorConfig memory noEvaluator;
         return _createTask(
-            reward,
-            duration,
-            mode,
-            pitchDeadline,
-            bidDeadline,
-            auctionSubtype,
+            ITMPCore.TaskConfig({
+                reward: reward,
+                duration: duration,
+                mode: mode,
+                pitchDeadline: pitchDeadline,
+                bidDeadline: bidDeadline,
+                auctionSubtype: auctionSubtype
+            }),
             stakeConfig,
             hookConfig,
             content,
@@ -124,12 +106,7 @@ contract CoreFacet {
 
     // solhint-disable-next-line code-complexity
     function _createTask(
-        uint256 reward,
-        uint256 duration,
-        bytes4 mode,
-        uint256 pitchDeadline,
-        uint256 bidDeadline,
-        bytes4 auctionSubtype,
+        ITMPCore.TaskConfig memory config,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
         ITMPCore.TaskContent calldata content,
@@ -142,14 +119,16 @@ contract CoreFacet {
 
         address requester = LibTaskMarket._effectiveSender(s);
         if (requester == address(0)) revert ITMPCore.InvalidRequester();
-        if (reward == 0) revert ITMPCore.RewardMustBeGreaterThanZero();
-        if (duration == 0) revert ITMPCore.DurationMustBeGreaterThanZero();
-        if (!(mode == BOUNTY || mode == CLAIM || mode == PITCH || mode == BENCHMARK || mode == AUCTION)) {
+        if (config.reward == 0) revert ITMPCore.RewardMustBeGreaterThanZero();
+        if (config.duration == 0) revert ITMPCore.DurationMustBeGreaterThanZero();
+        if (!(config.mode == BOUNTY || config.mode == CLAIM || config.mode == PITCH || config.mode == BENCHMARK
+                    || config.mode == AUCTION)) {
             revert ITMPCore.InvalidMode();
         }
-        if (mode == AUCTION) {
-            if (!(auctionSubtype == AUCTION_DUTCH || auctionSubtype == AUCTION_ENGLISH
-                        || auctionSubtype == AUCTION_REVERSE_DUTCH || auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.InvalidAuctionSubtype();
+        if (config.mode == AUCTION) {
+            if (!(config.auctionSubtype == AUCTION_DUTCH || config.auctionSubtype == AUCTION_ENGLISH
+                        || config.auctionSubtype == AUCTION_REVERSE_DUTCH
+                        || config.auctionSubtype == AUCTION_REVERSE_ENGLISH)) revert ITMPCore.InvalidAuctionSubtype();
         }
         if (stakeConfig.bps > 10000) revert ITMPCore.StakeBpsTooHigh();
 
@@ -158,10 +137,10 @@ contract CoreFacet {
         ITMPCore.Task storage t = s.tasks[taskId];
         t.id = taskId;
         t.requester = requester;
-        t.reward = reward;
-        t.expiryTime = block.timestamp + duration;
+        t.reward = config.reward;
+        t.expiryTime = block.timestamp + config.duration;
         t.status = ITMPCore.TaskStatus.Open;
-        t.mode = mode;
+        t.mode = config.mode;
         t.feeBps = s.defaultFeeBps;
         t.stakeRequired = stakeConfig.required;
         t.stakeBps = stakeConfig.bps;
@@ -171,16 +150,16 @@ contract CoreFacet {
         meta.contentHash = content.contentHash;
         meta.contentURI = content.contentURI;
 
-        if (mode == PITCH) {
-            if (pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
-            s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + pitchDeadline;
+        if (config.mode == PITCH) {
+            if (config.pitchDeadline == 0) revert ITMPCore.PitchDeadlineMustBeGreaterThanZero();
+            s.taskPitchConfigs[taskId].pitchDeadline = block.timestamp + config.pitchDeadline;
         }
-        if (mode == AUCTION) {
-            if (bidDeadline == 0) revert ITMPCore.BidDeadlineMustBeGreaterThanZero();
+        if (config.mode == AUCTION) {
+            if (config.bidDeadline == 0) revert ITMPCore.BidDeadlineMustBeGreaterThanZero();
             ITMPCore.TaskAuctionConfig storage ac = s.taskAuctionConfigs[taskId];
-            ac.bidDeadline = block.timestamp + bidDeadline;
-            ac.maxPrice = reward;
-            ac.auctionSubtype = auctionSubtype;
+            ac.bidDeadline = block.timestamp + config.bidDeadline;
+            ac.maxPrice = config.reward;
+            ac.auctionSubtype = config.auctionSubtype;
         }
 
         if (content.tags.length > 0) {
@@ -194,7 +173,13 @@ contract CoreFacet {
         _buildAndCheckHooks(taskId, hookConfig, s);
 
         emit ITMPCore.TaskCreated(
-            taskId, requester, reward, mode, block.timestamp + duration, stakeConfig.required, stakeConfig.bps
+            taskId,
+            requester,
+            config.reward,
+            config.mode,
+            block.timestamp + config.duration,
+            stakeConfig.required,
+            stakeConfig.bps
         );
         LibTaskMarket._nonReentrantAfter(s);
     }

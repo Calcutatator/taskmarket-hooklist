@@ -56,7 +56,7 @@ deploy become one indivisible operation across two systems that deploy on differ
 
 ## Changes
 
-### 1. `createTask` takes `TaskEvaluatorConfig`
+### 1. `createTask` takes `TaskEvaluatorConfig`, and its scalars are grouped into `TaskConfig`
 
 Before:
 
@@ -79,13 +79,17 @@ function createTask(
 After:
 
 ```solidity
+struct TaskConfig {
+    uint256 reward;
+    uint256 duration;
+    bytes4 mode;
+    uint256 pitchDeadline;
+    uint256 bidDeadline;
+    bytes4 auctionSubtype;
+}
+
 function createTask(
-    uint256 reward,
-    uint256 duration,
-    bytes4 mode,
-    uint256 pitchDeadline,
-    uint256 bidDeadline,
-    bytes4 auctionSubtype,
+    ITMPCore.TaskConfig calldata config,
     ITMPCore.StakeConfig calldata stakeConfig,
     ITMPCore.HookConfig calldata hookConfig,
     ITMPCore.TaskContent calldata content,
@@ -98,6 +102,11 @@ function createTask(
 
     _buildAndCheckHooks(taskId, hookConfig, s);
 ```
+
+The six loose scalars are grouped into `ITMPCore.TaskConfig` in the same revision that adds the
+evaluator terms. They are the same fields as before, in the same order, reached as `config.reward`,
+`config.mode`, and so on; only the calldata shape changes. `AppStorage` is untouched -- no field is
+added, moved, or resized, and nothing about the struct is stored.
 
 The zero struct means "no evaluator", which is the common case. Evaluator terms supplied with a
 zero `evaluator` address revert `InvalidEvaluator` rather than being silently discarded:
@@ -248,6 +257,29 @@ consumer would see the protocol interface change twice -- once for the real sign
 again when rev019 removes the shim. Declaring it only on the concrete facet keeps the shim invisible
 to interface detection.
 
+### Why not add `evaluatorConfig` and leave the six scalars as they were?
+
+Because the resulting ten-parameter function could not be coverage-checked. `forge coverage`
+compiles with `--ir-minimum`, whose instrumentation needs more stack slots than the default
+`via_ir` profile, and the tenth parameter pushed `createTask` past what it can allocate:
+`Cannot swap Variable var_mode with Variable var_taskId: too deep in the stack by 4 slots`. The
+contract compiled and all 574 tests passed -- which is precisely the problem, since
+`make contract coverage-check` runs in CI and the shipped code could not satisfy it.
+
+The durable reason is the one behind the immediate one. `stakeConfig`, `hookConfig` and `content`
+are each an earlier round of exactly this fix, made one field at a time as the signature crossed
+the stack window again; `evaluatorConfig` was simply the field that made the next round due. A
+ten-parameter external function was one field away from unmaintainable regardless of the compiler,
+and each of these rounds costs a selector change and a coordinated off-chain migration. Folding the
+remaining scalars into `TaskConfig` takes the signature to five calldata pointers, ends the stack
+pressure rather than deferring it, and makes the next task-shape field a struct member -- free,
+with no selector change and no migration.
+
+Doing it now was also the cheap moment and the only cheap moment: rev018 already changes
+`createTask`'s selector and has not merged, so the fold costs nothing extra. Deferring it would
+have meant a second full expand-then-contract cycle, and a third routed selector for rev019 to
+remove instead of one.
+
 ### Why revert on evaluator terms with no evaluator, rather than ignoring them?
 
 A dropped configuration is unobservable. Nothing ever reports the discarded fields, so a requester
@@ -257,9 +289,15 @@ misconfigured escrow that cannot be corrected once a worker has claimed.
 
 ## API Changes
 
-- `ITMPCore.createTask` and `ITMPDiamond.createTask` take a tenth parameter,
-  `ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig`. Selector changes from `0xa595d889` to
-  `0x95d5ec3f`. `type(ITMPCore).interfaceId` changes accordingly.
+- `ITMPCore.createTask` and `ITMPDiamond.createTask` take five calldata structs:
+  `(ITMPCore.TaskConfig, ITMPCore.StakeConfig, ITMPCore.HookConfig, ITMPCore.TaskContent,
+  ITMPCore.TaskEvaluatorConfig)`. The evaluator terms are new; the six task-shape scalars
+  (`reward`, `duration`, `mode`, `pitchDeadline`, `bidDeadline`, `auctionSubtype`) move unchanged
+  and in the same order into the new `ITMPCore.TaskConfig` struct. Selector changes from
+  `0xa595d889` to `0xa810726c`. `type(ITMPCore).interfaceId` changes accordingly.
+- `ITMPCore.TaskConfig` is a new struct: `(uint256 reward, uint256 duration, bytes4 mode,
+  uint256 pitchDeadline, uint256 bidDeadline, bytes4 auctionSubtype)`. It is calldata only --
+  nothing stores it.
 - The nine-parameter `createTask` (`0xa595d889`) remains callable on the diamond, routed to a
   deprecated overload declared on `CoreFacet` only. It creates a task with no evaluator, exactly
   as before. It is scheduled for removal in rev019 and is not part of `ITMPCore`/`ITMPDiamond`.
@@ -274,11 +312,11 @@ misconfigured escrow that cannot be corrected once a worker has claimed.
 
 | File | Change |
 | --- | --- |
-| `packages/contracts/src/facets/CoreFacet.sol` | `createTask` takes `TaskEvaluatorConfig`; deprecated nine-parameter overload added; shared body extracted to private `_createTask`; `_applyCreationEvaluatorConfig` added |
+| `packages/contracts/src/facets/CoreFacet.sol` | `createTask` takes `TaskConfig` and `TaskEvaluatorConfig`; deprecated nine-parameter overload added; shared body extracted to private `_createTask`; `_applyCreationEvaluatorConfig` added |
 | `packages/contracts/src/facets/EvaluatorFacet.sol` | `assignEvaluator` delegates term validation, writes, stake pull and event to `LibTaskMarket._applyEvaluatorConfig` |
 | `packages/contracts/src/libraries/LibTaskMarket.sol` | `_applyEvaluatorConfig` added, shared by both entry points |
-| `packages/contracts/src/interfaces/ITMPCore.sol` | `createTask` declaration gains `evaluatorConfig` |
-| `packages/contracts/src/interfaces/ITMPDiamond.sol` | `createTask` declaration gains `evaluatorConfig` |
+| `packages/contracts/src/interfaces/ITMPCore.sol` | `TaskConfig` struct added; `createTask` declaration takes `config` and `evaluatorConfig` |
+| `packages/contracts/src/interfaces/ITMPDiamond.sol` | `createTask` declaration takes `config` and `evaluatorConfig` |
 | `packages/contracts/script/lib/FacetSelectors.sol` | `CREATE_TASK`/`LEGACY_CREATE_TASK` constants; `coreFacetSelectors()` grows to 22 |
 | `packages/contracts/script/upgrades/Rev018Upgrade.s.sol` | New: rev017 to rev018 step (Replace + Add, no Remove) |
 | `packages/contracts/script/upgrades/Rev014Upgrade.s.sol` | Uses `FacetSelectors.LEGACY_CREATE_TASK` for the selector it historically added |
@@ -289,4 +327,5 @@ misconfigured escrow that cannot be corrected once a worker has claimed.
 | `packages/contracts/test/TaskMarket.t.sol` | Creation-with-evaluator tests, entry-point validation parity tests, legacy-overload tests |
 | `packages/contracts/test/DiamondSelectorParity.t.sol` | Pre-rev018 CoreFacet selector set for the old-state diamond |
 | `packages/contracts/test/helpers/EvaluatorConfigHelper.sol` | New: `noEvaluatorConfig()` for the many call sites that use no evaluator |
+| `packages/contracts/test/helpers/TaskConfigHelper.sol` | New: `taskConfig(...)` builders so call sites do not repeat a six-field literal |
 | `packages/contracts/test/ITMP.t.sol`, `TaskMarketForwarder.t.sol`, `TaskTokenRewardHook.t.sol`, `Rev012Upgrade.t.sol`, `Rev013Upgrade.t.sol`, `Diamond.t.sol` | Updated for the new `createTask` signature and the now-overloaded selector expression |
