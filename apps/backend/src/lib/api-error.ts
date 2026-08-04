@@ -62,6 +62,10 @@ const REASON_CODES: Record<ApiErrorReason, TRPCError['code']> = {
   intent_not_found: 'NOT_FOUND',
   payment_rejected: 'BAD_REQUEST',
   payment_preflight_rejected: 'BAD_REQUEST',
+  // The caller is identified and the request is well-formed; what they are not is entitled to
+  // have this payment stand for this write. FORBIDDEN, the same status the sibling paid routes
+  // answer their own payer/actor mismatch with.
+  payment_payer_mismatch: 'FORBIDDEN',
   unclassified: 'INTERNAL_SERVER_ERROR',
 };
 

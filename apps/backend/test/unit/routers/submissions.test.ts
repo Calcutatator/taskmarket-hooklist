@@ -40,6 +40,7 @@ import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { recoverMessageAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
+import { envelopeForError } from '../../../src/lib/api-error';
 import { getStorageBackend } from '../../../src/lib/storage';
 import { contractSubmitWork } from '../../../src/services/contract';
 import {
@@ -500,7 +501,9 @@ describe('submissions router', () => {
 
         expect(result.success).toBe(true);
         // auction task flips to pending_approval after submission so requester can accept
-        expect(ctx.updateChain(tasksTable).set).toHaveBeenCalledWith({ status: 'pending_approval' });
+        expect(ctx.updateChain(tasksTable).set).toHaveBeenCalledWith({
+          status: 'pending_approval',
+        });
       });
 
       it('rejects a valid-signature caller who is not the winning bidder on an auction task', async () => {
@@ -1914,6 +1917,139 @@ describe('submissions router', () => {
 
       expect(result).toHaveLength(1);
       expect(result[0].taskId).toBe(TASK_ID);
+    });
+  });
+
+  describe('who pays for a paid submission', () => {
+    const FUNDER = '0xFunder00000000000000000000000000000001';
+    const FROM_KEYS_ARTIFACT_KEY = `submissions/${TASK_ID}/pending/submission.txt`;
+    const fromKeysInput = {
+      taskId: TASK_ID,
+      workerAddress: WORKER,
+      signature: '0xsig',
+      artifacts: [
+        {
+          artifactKey: FROM_KEYS_ARTIFACT_KEY,
+          fileName: 'submission.txt',
+          mimeType: 'text/plain',
+          role: 'attachment' as const,
+          sizeBytes: 123,
+          sha256Hash: 'a'.repeat(64),
+          keccak256Hash: `0x${'b'.repeat(64)}`,
+        },
+      ],
+    };
+
+    /** What the x402 middleware publishes once it has settled a fee (ADR-0057). */
+    function settlePayment(ctx: ReturnType<typeof createIntentCtx>, payer: string) {
+      ctx.res.locals.payer = payer;
+      ctx.res.locals.paymentAmount = '10000';
+      ctx.res.locals.paymentTxHash = '0xpaymenttxhash';
+    }
+
+    // `vi.clearAllMocks` clears calls but not queued one-shot implementations, so a
+    // `mockResolvedValueOnce` an earlier test never consumed would otherwise decide the head
+    // size here. Restated per test rather than assumed.
+    beforeEach(() => {
+      vi.mocked(getStorageBackend().headObject)
+        .mockReset()
+        .mockResolvedValue({ contentLength: 123 });
+    });
+
+    function openTaskCtx(payerAddress?: string) {
+      const ctx = createIntentCtx();
+      ctx.db.select
+        .mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]))
+        .mockReturnValueOnce(
+          makeChain([{ artifactKey: FROM_KEYS_ARTIFACT_KEY, workerAddress: WORKER }])
+        );
+      if (payerAddress) settlePayment(ctx, payerAddress);
+      return ctx;
+    }
+
+    // Verifies: ADR-0059
+    it('accepts a paid submit whose fee the worker paid', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(WORKER);
+
+      const result = await submissionsRouter.createCaller(ctx).submit(baseSubmitInput);
+
+      expect(result.success).toBe(true);
+      // The initiator ADR-0059 scopes `intents.get` to is now unambiguously the author of the
+      // work: the settled payer and the signature-verified worker are the same address.
+      expect(ctx.intents[0]!.payer).toBe(WORKER);
+      expect(ctx.intents[0]!.paymentTxHash).toBe('0xpaymenttxhash');
+    });
+
+    // Verifies: ADR-0059
+    it('refuses a paid submit funded by an address other than the worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(FUNDER);
+
+      const error = await submissionsRouter
+        .createCaller(ctx)
+        .submit(baseSubmitInput)
+        .catch((thrown: unknown) => thrown);
+
+      expect(envelopeForError(error).reason).toBe('payment_payer_mismatch');
+      // Refused before the intent exists, so nothing was broadcast and no row records a write
+      // whose initiator is not its author.
+      expect(ctx.intents).toHaveLength(0);
+      expect(contractSubmitWork).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0059
+    it('leaves a free submit alone, since it has no payer to compare against', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      // No paymentAmount and no paymentTxHash: the RFC-0006 allowance path, which is most
+      // submissions. `res.locals.payer` is set anyway, because anything that authenticates a
+      // caller sets it -- so a check reading that field rather than the settled payment would
+      // reject the common path outright.
+      const ctx = openTaskCtx();
+      ctx.res.locals.payer = FUNDER;
+
+      const result = await submissionsRouter.createCaller(ctx).submit(baseSubmitInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.paymentTxHash).toBeNull();
+    });
+
+    // Verifies: ADR-0059
+    it('accepts a paid submitFromKeys whose fee the worker paid', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(WORKER);
+
+      const result = await submissionsRouter.createCaller(ctx).submitFromKeys(fromKeysInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.payer).toBe(WORKER);
+    });
+
+    // Verifies: ADR-0059
+    it('refuses a paid submitFromKeys funded by an address other than the worker', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx(FUNDER);
+
+      const error = await submissionsRouter
+        .createCaller(ctx)
+        .submitFromKeys(fromKeysInput)
+        .catch((thrown: unknown) => thrown);
+
+      expect(envelopeForError(error).reason).toBe('payment_payer_mismatch');
+      expect(ctx.intents).toHaveLength(0);
+      expect(contractSubmitWork).not.toHaveBeenCalled();
+    });
+
+    // Verifies: ADR-0059
+    it('leaves a free submitFromKeys alone', async () => {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = openTaskCtx();
+      ctx.res.locals.payer = FUNDER;
+
+      const result = await submissionsRouter.createCaller(ctx).submitFromKeys(fromKeysInput);
+
+      expect(result.success).toBe(true);
+      expect(ctx.intents[0]!.paymentTxHash).toBeNull();
     });
   });
 });
