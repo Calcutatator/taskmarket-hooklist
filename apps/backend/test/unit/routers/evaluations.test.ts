@@ -340,6 +340,46 @@ describe('evaluations router', () => {
       expect((intent.payload as { rejected: boolean }).rejected).toBe(false);
       expect(intent.status).toBe('completed');
     });
+
+    /**
+     * Verifies: ADR-0059
+     *
+     * The endpoint stays permissionless either way -- both calls below succeed, and neither
+     * caller had to prove anything to make the write. What identifying yourself buys is the
+     * ability to ask about it afterwards, since `intents.get` is scoped to the recorded
+     * initiator and a row with none is readable by nobody.
+     */
+    describe('who the intent records as having initiated it', () => {
+      const appealingTask = () =>
+        makeTask({
+          status: 'appealing',
+          verdictType: 'APPROVE',
+          appealDeadline: new Date(Date.now() - 1000),
+        });
+
+      it('records the caller when they supplied the read-auth headers', async () => {
+        const ctx = createIntentCtx(undefined, { address: WORKER.toLowerCase() });
+        ctx.db.select.mockReturnValueOnce(makeChain([appealingTask()]));
+
+        await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
+
+        expect(ctx.intents[0]!.payer).toBe(WORKER.toLowerCase());
+      });
+
+      it('records nobody when they did not', async () => {
+        const ctx = createIntentCtx();
+        ctx.db.select.mockReturnValueOnce(makeChain([appealingTask()]));
+
+        // Not an error and not a challenge: an anonymous caller is served exactly as before,
+        // and simply leaves no address for the read surface to compare against later.
+        const result = await evaluationsRouter
+          .createCaller(ctx)
+          .finalizeVerdict({ taskId: TASK_ID });
+
+        expect(result).toEqual({ txHash: '0xfinalizetx' });
+        expect(ctx.intents[0]!.payer).toBeNull();
+      });
+    });
   });
 
   describe('resolveDispute', () => {

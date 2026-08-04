@@ -919,6 +919,18 @@ export const relayedIntents = pgTable(
     // a kind with no registered handler is a startup error, not a runtime surprise.
     operation: text('operation').notNull(),
     status: text('status').notNull().default('recorded'),
+    // The address the relay acted for -- who *initiated* this write, not evidence that anything
+    // was paid. Since payment became one indivisible reference (ADR-0057) it is the presence of
+    // `payment_tx_hash` and `payment_amount` that makes an intent refundable; this column is
+    // populated on every path, free or paid. It holds the settled x402 payer where the route is
+    // paid, the signature-verified actor where the route authenticates by signature, and null
+    // only on a permissionless call whose caller did not identify themselves.
+    //
+    // The name is kept deliberately rather than renamed to `initiator`: settlement reads this
+    // column as the address a refund is transferred to, and a money path reading a field called
+    // `initiator` to decide where to send money is the more dangerous of the two misnamings.
+    // The two facts are the same address on every path, because whoever pays is whoever started
+    // the write. Visibility on `intents.get` is scoped to it (ADR-0059).
     payer: text('payer'),
     paymentTxHash: text('payment_tx_hash'),
     paymentAmount: numeric('payment_amount', { precision: 78, scale: 0 }),

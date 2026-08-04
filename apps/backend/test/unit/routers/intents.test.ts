@@ -1,5 +1,6 @@
 // Verifies: ADR-0049, ADR-0052
 // Verifies: ADR-0055
+// Verifies: ADR-0059
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 import { createMockCtx, makeChain } from '../helpers';
@@ -37,9 +38,12 @@ function intentRow(overrides: Record<string, unknown> = {}) {
 function ctxFor(
   intent: Record<string, unknown> | null,
   refund?: Record<string, unknown>,
-  task?: Record<string, unknown>
+  task?: Record<string, unknown>,
+  callerAddress: string = PAYER
 ) {
-  const ctx = createMockCtx(undefined, { address: PAYER });
+  // Lowercased the way `resolveCaller` lowercases a verified address, so a test cannot pass by
+  // comparing two strings the real context would never have produced.
+  const ctx = createMockCtx(undefined, { address: callerAddress.toLowerCase() });
   ctx.db.select = vi.fn((columns?: Record<string, unknown>) => {
     if (columns === undefined) return makeChain(intent ? [intent] : []);
     if ('refundStatus' in columns) return makeChain(refund ? [refund] : []);
@@ -83,6 +87,64 @@ describe('intents.get', () => {
     // Payment facts are not public reads, and the two answers must be indistinguishable or
     // this becomes an oracle for which intent ids exist.
     expect(await asStranger).toBe(await asNobody);
+  });
+
+  /**
+   * Verifies: ADR-0059
+   *
+   * One rule, not two. The same comparison that answers a paid intent answers a free one, so
+   * these cases are here to pin that the free path is not a second branch with its own
+   * behaviour -- it is the same branch, reached with no payment on the row.
+   */
+  describe('a free write, with no payment facts on the row at all', () => {
+    const freeIntent = (overrides: Record<string, unknown> = {}) =>
+      intentRow({ operation: 'evaluations.finalizeVerdict', paymentTxHash: null, ...overrides });
+
+    it('is readable by the address recorded as having initiated it', async () => {
+      const ctx = ctxFor(freeIntent());
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ intentId: 'intent-1' });
+
+      // Without this the caller ADR-0058 hands an intent id to, and tells to poll rather than
+      // resubmit, is told their own write does not exist.
+      expect(result).toMatchObject({ operation: 'evaluations.finalizeVerdict', refund: null });
+    });
+
+    it('gives a non-initiator exactly what it gives someone asking about nothing', async () => {
+      const ctx = ctxFor(freeIntent({ payer: OTHER }));
+      const missing = ctxFor(null);
+
+      const asStranger = intentsRouter
+        .createCaller(ctx as never)
+        .get({ intentId: 'intent-1' })
+        .catch((error: Error) => error.message);
+      const asNobody = intentsRouter
+        .createCaller(missing as never)
+        .get({ intentId: 'nope' })
+        .catch((error: Error) => error.message);
+
+      // "Not yours" stays indistinguishable from "does not exist" whether or not money is
+      // involved: the surface must not become an oracle for which intent ids exist.
+      expect(await asStranger).toBe(await asNobody);
+    });
+
+    it('is readable by nobody when no initiator was recorded', async () => {
+      const ctx = ctxFor(freeIntent({ payer: null }));
+      const missing = ctxFor(null);
+
+      const asAnyone = intentsRouter
+        .createCaller(ctx as never)
+        .get({ intentId: 'intent-1' })
+        .catch((error: Error) => error.message);
+      const asNobody = intentsRouter
+        .createCaller(missing as never)
+        .get({ intentId: 'nope' })
+        .catch((error: Error) => error.message);
+
+      // A permissionless caller who never said who they were left nothing to compare against.
+      // Readable by nobody is the honest answer, not a fallback rule invented to fill the space.
+      expect(await asAnyone).toBe(await asNobody);
+    });
   });
 
   it('reports the refund state for an intent whose payment was written off', async () => {

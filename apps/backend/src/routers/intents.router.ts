@@ -1,5 +1,10 @@
 // Implements: ADR-0049, ADR-0052
 // Implements: ADR-0055
+//
+// The scoping rule below is ADR-0059's, which is still `Proposed`, so it cannot carry an
+// implements-marker back-pointer yet -- adr-lint blocks one while an ADR is unaccepted, and an
+// agent may not self-approve. It is claimed against ADR-0049 above instead, whose point 6 it
+// restates and whose promise it makes true. Add ADR-0059 to that marker list when it is accepted.
 import type { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { IntentStatusInputSchema, IntentStatusResponseSchema } from '@taskmarket/shared';
@@ -11,29 +16,31 @@ import { protectedProcedure, router } from '../trpc';
 import type { Context } from '../context';
 
 /**
- * Payer scoping (ADR-0049 point 6).
+ * Initiator scoping (ADR-0049 point 6, restated by ADR-0059).
  *
- * An intent row carries a payer address, an amount and a payment hash, so reading one is
- * reading someone's payment facts. A caller who is not the payer gets exactly what a caller
- * asking about an id that does not exist gets -- the same error, with nothing in it that
- * distinguishes "not yours" from "no such thing", since telling those apart would turn this
- * into an oracle for which intent ids and idempotency keys exist.
+ * One comparison, and deliberately only one. `relayed_intents.payer` records the address the
+ * relay acted for on every path, paid or free -- since ADR-0057 moved payment into its own
+ * indivisible reference, it is the presence of `payment` that makes an intent refundable, and
+ * this column is provenance. So it is the initiator under an older name, and authorizing on it
+ * is not a new concept: it is the one this surface was already comparing against.
  *
- * An intent with no payer is a free relayed write with no payment facts on it at all, and it
- * is still not public: `evaluations.finalizeVerdict` is permissionless, so there is no owner
- * to scope it to, and rather than invent one those rows are readable by nobody through this
- * surface. Operators read them from the database, which is where they were readable before.
+ * Branching on whether a payment exists -- payer-scoped when paid, something else when free --
+ * would give a surface deliberately built with one authorization rule a second one, and two
+ * rules for one question is how they drift apart and how a gap opens between them. ADR-0049
+ * already counted its single rule as "a place to get authorization wrong that did not exist
+ * before"; there is no second place here.
  *
- * That last paragraph is a live gap, not a settled position. It means an intent recording a
- * permissionless write is readable by nobody at all -- not by the caller who started it -- while
- * ADR-0058 hands that same caller an intent id and tells them to poll here rather than resubmit.
- * ADR-0059 proposes scoping those rows to a participant of the task they name. It is `Proposed`,
- * so nothing here changes until it is decided; the comment lives at the gap so it is findable
- * from the code rather than only from the ADR directory.
+ * A caller who is not the initiator gets exactly what a caller asking about an id that does not
+ * exist gets -- the same error, with nothing in it that distinguishes "not yours" from "no such
+ * thing", since telling those apart would turn this into an oracle for which intent ids and
+ * idempotency keys exist.
+ *
+ * A null initiator is readable by nobody. That is the honest answer to "who started this" when
+ * nothing was recorded, not a fallback: it happens only when a permissionless caller declined to
+ * identify themselves, and inventing a reader for that row would be inventing the second rule.
  */
 function intentVisibleTo(intent: RelayedIntent, callerAddress: string): boolean {
-  if (!intent.payer) return false;
-  return intent.payer.toLowerCase() === callerAddress.toLowerCase();
+  return intent.payer?.toLowerCase() === callerAddress.toLowerCase();
 }
 
 function notFound(): TRPCError {

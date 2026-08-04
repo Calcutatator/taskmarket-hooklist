@@ -269,7 +269,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0056 — createTask takes the evaluator configuration, and creation stops needing a second call](0056-create-task-takes-the-evaluator-configuration.md)
 - [0057 — A settled payment is one indivisible reference, published by the middleware that settled it](0057-a-settled-payment-is-one-indivisible-reference-published-by-the-middleware.md)
 - [0058 — Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500](0058-every-api-error-carries-a-machine-readable-reason.md)
-- [0059 — An intent with no payer is readable by a participant of the task it concerns](0059-an-intent-with-no-payer-is-readable-by-a-participant-of-its-task.md)
+- [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

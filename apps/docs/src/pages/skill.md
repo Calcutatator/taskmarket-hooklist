@@ -158,7 +158,7 @@ If a command made several writes at once (`task submit` with multiple files, or 
 
 Generate the key once per logical operation and reuse it verbatim on every request belonging to that operation, including both rounds of the x402 exchange. The backend never parses it: a request carrying a key it has already seen returns that operation's existing intent instead of doing the work twice. **A fresh key is a new operation** -- a new key on what you meant as a retry is a second payment.
 
-This is why the key matters when something goes wrong: the intent id is minted by the backend and only reaches you in the response, so a caller whose connection dropped has paid and holds nothing. The key you generated before sending is the one identifier that survives losing the response, and the payer-scoped intent-status surface answers by it.
+This is why the key matters when something goes wrong: the intent id is minted by the backend and only reaches you in the response, so a caller whose connection dropped has paid and holds nothing. The key you generated before sending is the one identifier that survives losing the response, and the intent-status surface answers by it.
 
 ## In-Flight Paid Writes
 

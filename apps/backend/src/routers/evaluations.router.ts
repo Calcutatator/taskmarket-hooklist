@@ -178,13 +178,21 @@ export const evaluationsRouter = router({
       }
 
       // Permissionless, and an intent all the same. An intent records what the server
-      // relayed, not who asked for it: the transaction is sent by the server wallet either
-      // way, and the settlement it produces has to reach the database whether or not this
-      // request is still around to write it (ADR-0045). Free, so nothing here is refundable.
+      // relayed: the transaction is sent by the server wallet either way, and the settlement it
+      // produces has to reach the database whether or not this request is still around to write
+      // it (ADR-0045). Free, so nothing here is refundable.
+      //
+      // The initiator is recorded only when the caller identified themselves with the ADR-0023
+      // read-auth headers, and is null otherwise. This does not gate the call -- the endpoint
+      // stays permissionless, and an anonymous caller is served exactly as before. What
+      // identifying yourself buys is the ability to ask about the write afterwards: ADR-0059
+      // scopes `intents.get` to the recorded initiator, so a row with none is readable by
+      // nobody, which is the honest answer rather than a rule invented to fill the space.
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
         idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.finalizeVerdict',
+        payer: ctx.caller?.address,
         payload: {
           rejected: task.verdictType === 'REJECT',
           taskId: input.taskId,

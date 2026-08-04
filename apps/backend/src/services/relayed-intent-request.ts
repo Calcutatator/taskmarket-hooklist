@@ -34,11 +34,17 @@ export type RelayedIntentRequestInput = {
   idempotencyKey: string | undefined;
   operation: RelayedIntentOperation;
   /**
-   * Who the relay acted for. Recorded for provenance on every path, paid or not; it is the
-   * presence of `payment`, not this, that makes an intent refundable.
+   * Who the relay acted for -- the address that initiated this write. Recorded on every path,
+   * paid or not; it is the presence of `payment`, not this, that makes an intent refundable.
    * A free relayed write (claiming a task, submitting work, finalizing a verdict) still needs
    * an intent so its post-receipt database work survives the request, and there is simply
    * nothing to refund when it fails.
+   *
+   * Pass the settled x402 payer on a paid route, the signature-verified actor on a route that
+   * authenticates by signature, and `ctx.caller?.address` on a permissionless one -- in every
+   * case the address that started the write, never a bystander. `intents.get` is scoped to it
+   * (ADR-0059), so an address recorded here that did not initiate the write hands the wrong
+   * party a read, and omitting one that did leaves the caller unable to poll their own intent.
    */
   payer?: string;
   /**
