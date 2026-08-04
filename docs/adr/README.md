@@ -262,6 +262,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0049 — In-flight paid writes are observable through a dedicated intent-status surface, not `pendingActions`](0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md)
 - [0050 — Durable writes follow the chain call, and an unbroadcast intent is retried before it is refunded](0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md)
 - [0051 — Replacement gas escalates geometrically under a configured, per-deployment cap](0051-replacement-gas-escalates-geometrically-under-a-configured-cap.md)
+- [0053 — Relayed-write observability is by query, not by alerting](0053-relayed-write-observability-is-by-query-not-by-alerting.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

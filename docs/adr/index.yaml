@@ -228,3 +228,8 @@ adrs:
     title: "Replacement gas escalates geometrically under a configured, per-deployment cap"
     status: Accepted
     date: "2026-08-03"
+  - number: "0053"
+    file: "0053-relayed-write-observability-is-by-query-not-by-alerting.md"
+    title: "Relayed-write observability is by query, not by alerting"
+    status: Accepted
+    date: "2026-08-03"
