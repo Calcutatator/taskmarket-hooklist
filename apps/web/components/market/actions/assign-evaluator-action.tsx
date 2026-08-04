@@ -49,6 +49,48 @@ export function canAssignEvaluator(
 
 const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
 
+const PERCENT_PATTERN = /^\d+(\.\d+)?$/;
+
+/**
+ * The entered fee percentage as integral basis points, or the field error explaining why it is
+ * not one.
+ *
+ * The contract stores basis points, so a percentage with a third decimal has no representation:
+ * `1.235%` is 123.5 bps. Rounding it would store 1.24% while the confirmation dialog quoted
+ * 1.235%, and there is no route that reassigns or removes an evaluator once appointed -- the
+ * user would be permanently bound to a number they never agreed to. Refusing the entry keeps
+ * consent and storage in step, and costs the user one correction.
+ *
+ * The digits are read from the decimal string rather than from `percent * 100`, because binary
+ * floating point makes `1.23 * 100` equal 122.99999999999999 -- a precision check against that
+ * product would reject perfectly representable input.
+ */
+export function evaluatorFeeBpsOf(input: string): { bps: number } | { error: string } {
+  const trimmed = input.trim();
+  const rangeError = 'Fee must be between 0 and 100 percent';
+  if (!PERCENT_PATTERN.test(trimmed)) {
+    return { error: rangeError };
+  }
+
+  const [whole, fraction = ''] = trimmed.split('.');
+  // Trailing zeros carry no precision, so `1.2300` is still 123 bps rather than a rejection.
+  const significant = fraction.replace(/0+$/, '');
+  if (significant.length > 2) {
+    return { error: 'Fee cannot be finer than one basis point (0.01 percent)' };
+  }
+
+  const bps = Number(whole) * 100 + Number((significant + '00').slice(0, 2));
+  if (bps > 10000) {
+    return { error: rangeError };
+  }
+  return { bps };
+}
+
+/** The normalized fee as a percentage string, for quoting back exactly what will be sent. */
+export function evaluatorFeePercentLabel(bps: number): string {
+  return String(bps / 100);
+}
+
 /**
  * The in-flight outcome of an appointment, wrapped in the evaluation section so it takes the
  * place of the form it replaces.
@@ -110,6 +152,9 @@ export function AssignEvaluatorAction({
   }
 
   const busy = step !== 'idle';
+  // Parsed at render, not only on submit, so the confirmation dialog quotes the value that will
+  // actually be sent rather than the raw keystrokes.
+  const fee = evaluatorFeeBpsOf(feePercent);
 
   // Replaces the form outright, so the error path below -- and the button that would buy a
   // second appointment -- is unreachable from here.
@@ -138,9 +183,8 @@ export function AssignEvaluatorAction({
       errors.disputeResolver = 'Enter a valid 0x wallet address, or leave blank';
     }
 
-    const percent = Number(feePercent);
-    if (!Number.isFinite(percent) || percent < 0 || percent > 100) {
-      errors.feePercent = 'Fee must be between 0 and 100 percent';
+    if ('error' in fee) {
+      errors.feePercent = fee.error;
     }
 
     const evaluationHours = Number(evaluationWindowHours);
@@ -153,7 +197,7 @@ export function AssignEvaluatorAction({
       errors.appealWindowHours = 'Must be a positive number of hours';
     }
 
-    if (Object.keys(errors).length > 0) {
+    if (Object.keys(errors).length > 0 || 'error' in fee) {
       setFieldErrors(errors);
       return;
     }
@@ -164,7 +208,7 @@ export function AssignEvaluatorAction({
       {
         taskId: task.id,
         evaluator: evaluatorAddress,
-        evaluatorFeeBps: Math.round(percent * 100),
+        evaluatorFeeBps: fee.bps,
         evaluationWindowHours: evaluationHours,
         appealWindowHours: appealHours,
         ...(resolverAddress.length > 0 ? { disputeResolver: resolverAddress } : {}),
@@ -274,9 +318,12 @@ export function AssignEvaluatorAction({
           ) : null}
         </div>
 
+        {/* The dialog quotes the normalized fee, never the raw entry: what is confirmed here has
+            to be the number that gets stored. An unparseable entry falls back to its own text and
+            is refused with a field error before anything is sent. */}
         <ConfirmDialog
           confirmCta="Appoint evaluator"
-          description={`Hand judgement of this task to ${evaluator.trim() || 'the address above'} for ${feePercent || '0'}% of the reward. This can only be done while the task is open and unclaimed, and it changes the terms a worker is deciding on.`}
+          description={`Hand judgement of this task to ${evaluator.trim() || 'the address above'} for ${'bps' in fee ? evaluatorFeePercentLabel(fee.bps) : feePercent.trim() || '0'}% of the reward. This can only be done while the task is open and unclaimed, and it changes the terms a worker is deciding on.`}
           disabled={busy}
           loadingCta="Appointing..."
           onConfirm={handleAssign}

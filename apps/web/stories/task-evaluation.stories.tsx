@@ -273,7 +273,145 @@ export const AppointedDark: Story = {
   render: () => <TaskEvaluationTerms task={appointedTask} />,
 };
 
+// A task that names a dispute resolver and no evaluator. Real: the appointment endpoint takes
+// the resolver as an optional field, and nothing requires the pair to arrive together.
+const resolverOnlyTask = taskDetailFixture({
+  ...appointedTask,
+  evaluator: null,
+  // Deliberately non-zero: a fee left on a task with no evaluator is stale data, not a
+  // deduction anyone collects, and it must not be shown as one.
+  evaluatorFeeBps: 750,
+  id: 'task-eval-3',
+});
+
+/**
+ * The claim this card must not make. With no evaluator appointed, "an independent evaluator
+ * judges this work" and "the payout to the worker is less than the advertised reward" are both
+ * false -- and the second is a statement about a worker's money on the page they decide whether
+ * to work from. The resolver's own row still belongs here; the evaluator's copy does not.
+ */
+export const DisputeResolverOnly: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/No evaluator is appointed/)).toBeVisible();
+    await expect(canvas.queryByText(/An independent evaluator judges this work/)).toBeNull();
+    await expect(
+      canvas.queryByText(/payout to the worker is less than the advertised reward/)
+    ).toBeNull();
+    // The fee and both windows describe an evaluator's obligations, so they go with it.
+    await expect(canvas.queryByText('Evaluator fee')).toBeNull();
+    await expect(canvas.queryByText('Evaluation window')).toBeNull();
+    await expect(canvas.queryByText('Appeal window')).toBeNull();
+    // What remains is the information the task actually carries.
+    await expect(canvas.getByText('Dispute resolver')).toBeVisible();
+    await expect(canvas.getByTitle(DISPUTE_RESOLVER)).toBeVisible();
+  },
+  render: () => <TaskEvaluationTerms task={resolverOnlyTask} />,
+};
+
+/** Resolver-only, dark theme. */
+export const DisputeResolverOnlyDark: Story = {
+  globals: { theme: 'dark' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/No evaluator is appointed/)).toBeVisible();
+  },
+  render: () => <TaskEvaluationTerms task={resolverOnlyTask} />,
+};
+
+/** Resolver-only at the narrowest supported width, where the shortened card must still read. */
+export const DisputeResolverOnlyMobile: Story = {
+  globals: { viewport: { value: 'mobile' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('Dispute resolver')).toBeVisible();
+    await expect(canvas.queryByText('Evaluator fee')).toBeNull();
+  },
+  render: () => <TaskEvaluationTerms task={resolverOnlyTask} />,
+};
+
+/**
+ * An appointed evaluator charging nothing. The worker keeps the whole reward, so the opening
+ * paragraph must not tell them otherwise -- the fee caption already words this correctly.
+ */
+export const ZeroFeeDisclosure: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/charge no fee/)).toBeVisible();
+    await expect(
+      canvas.queryByText(/payout to the worker is less than the advertised reward/)
+    ).toBeNull();
+  },
+  render: () => (
+    <TaskEvaluationTerms task={taskDetailFixture({ ...appointedTask, evaluatorFeeBps: 0 })} />
+  ),
+};
+
+/**
+ * A fee with a third decimal has no basis-point representation. It must be refused rather than
+ * rounded: the dialog would quote 1.235% while 1.24% was stored, and no route on the platform
+ * reassigns or removes an evaluator afterwards.
+ */
+export const FeeFinerThanOneBasisPoint: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await typeExactly(await canvas.findByLabelText('Fee (%)'), '1.235');
+    await typeExactly(await canvas.findByLabelText('Evaluator address'), addresses.evaluator);
+    await userEvent.click(canvas.getByRole('button', { name: 'Appoint evaluator' }));
+    const dialog = await findConfirmDialog();
+    await userEvent.click(within(dialog).getByRole('button', { name: 'Appoint evaluator' }));
+    await waitFor(() => expect(canvas.getByText(/one basis point/)).toBeVisible());
+  },
+  render: () => (
+    <ConnectedAs account={addresses.requester}>
+      <AssignEvaluatorAction task={unassignedTask} />
+    </ConnectedAs>
+  ),
+};
+
+/** The dialog quotes the normalized fee, so what is confirmed is what gets sent. */
+export const FeeConfirmedAsNormalized: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await typeExactly(await canvas.findByLabelText('Fee (%)'), '1.2300');
+    await userEvent.click(canvas.getByRole('button', { name: 'Appoint evaluator' }));
+    const dialog = await findConfirmDialog();
+    await expect(within(dialog).getByText(/for 1\.23% of the reward/)).toBeVisible();
+  },
+  render: () => (
+    <ConnectedAs account={addresses.requester}>
+      <AssignEvaluatorAction task={unassignedTask} />
+    </ConnectedAs>
+  ),
+};
+
 // --- story-local helpers -------------------------------------------------------------
+
+/**
+ * Types into a controlled input and waits until the field really holds the whole string.
+ *
+ * In the browser story runner `userEvent.type` drops characters on a React controlled input
+ * under load -- a 42-character address landed as 39, which then failed address validation and
+ * put a second, unrelated field error on screen. A story is a reviewable state, so it has to
+ * reach the state it claims to show rather than a nearly-typed approximation of it.
+ */
+async function typeExactly(field: HTMLElement, value: string) {
+  await userEvent.clear(field);
+  await userEvent.type(field, value);
+  // Re-type only the dropped tail rather than one keystroke at a time, which would put fifty
+  // entries in the interactions log for a single address.
+  for (let attempt = 0; attempt < 5; attempt += 1) {
+    const current = (field as HTMLInputElement).value;
+    if (current === value) break;
+    if (!value.startsWith(current)) {
+      await userEvent.clear(field);
+      await userEvent.type(field, value);
+      continue;
+    }
+    await userEvent.type(field, value.slice(current.length));
+  }
+  await waitFor(() => expect(field).toHaveValue(value));
+}
 
 // The confirm dialog portals outside the canvas element, so this reaches for the document.
 async function findConfirmDialog(): Promise<HTMLElement> {

@@ -4,7 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 
 import type { TaskDetailResponse } from '@taskmarket/shared';
 
-import { AssignEvaluatorAction, canAssignEvaluator } from './assign-evaluator-action';
+import {
+  AssignEvaluatorAction,
+  canAssignEvaluator,
+  evaluatorFeeBpsOf,
+} from './assign-evaluator-action';
 
 const { payX402Post, refresh, toastError, toastInfo, toastSuccess, walletState } = vi.hoisted(
   () => ({
@@ -100,6 +104,38 @@ describe('canAssignEvaluator', () => {
   });
 });
 
+describe('evaluatorFeeBpsOf', () => {
+  it('converts a whole and a two-decimal percentage to basis points', () => {
+    expect(evaluatorFeeBpsOf('5')).toEqual({ bps: 500 });
+    expect(evaluatorFeeBpsOf('0')).toEqual({ bps: 0 });
+    expect(evaluatorFeeBpsOf('100')).toEqual({ bps: 10_000 });
+    expect(evaluatorFeeBpsOf(' 12.5 ')).toEqual({ bps: 1250 });
+    // 1.23 * 100 is 122.99999999999999 in binary floating point; reading the decimal digits
+    // rather than the product is what keeps this exact.
+    expect(evaluatorFeeBpsOf('1.23')).toEqual({ bps: 123 });
+  });
+
+  it('ignores trailing zeros rather than reading them as precision', () => {
+    expect(evaluatorFeeBpsOf('1.2300')).toEqual({ bps: 123 });
+  });
+
+  // The whole point: 1.235% has no basis-point representation, and rounding it to 1.24% would
+  // store a fee the confirmation dialog never quoted, permanently -- no route reassigns or
+  // removes an evaluator.
+  it('refuses a precision finer than one basis point instead of rounding it', () => {
+    const result = evaluatorFeeBpsOf('1.235');
+    expect(result).toHaveProperty('error');
+    expect('error' in result && result.error).toMatch(/one basis point/);
+  });
+
+  it('refuses a value outside 0 to 100 percent, and anything not a plain decimal', () => {
+    expect(evaluatorFeeBpsOf('100.01')).toHaveProperty('error');
+    expect(evaluatorFeeBpsOf('-1')).toHaveProperty('error');
+    expect(evaluatorFeeBpsOf('')).toHaveProperty('error');
+    expect(evaluatorFeeBpsOf('abc')).toHaveProperty('error');
+  });
+});
+
 describe('AssignEvaluatorAction', () => {
   beforeEach(() => {
     payX402Post.mockReset();
@@ -143,6 +179,34 @@ describe('AssignEvaluatorAction', () => {
     expect(body).toMatchObject({ evaluator, evaluatorFeeBps: 500 });
     expect(typeof idempotencyKey).toBe('string');
     expect(idempotencyKey).not.toHaveLength(0);
+  });
+
+  // The consent problem, end to end: the dialog quoted 1.235% while 124 bps (1.24%) went to
+  // the API, and nothing on the platform can change it afterwards.
+  it('refuses a fee finer than one basis point rather than rounding it away', async () => {
+    const user = userEvent.setup();
+    render(<AssignEvaluatorAction task={taskFixture()} />);
+    await user.clear(screen.getByLabelText('Fee (%)'));
+    await user.type(screen.getByLabelText('Fee (%)'), '1.235');
+    await user.clear(screen.getByLabelText('Evaluator address'));
+    await user.type(screen.getByLabelText('Evaluator address'), evaluator);
+    await user.click(screen.getByRole('button', { name: 'Appoint evaluator' }));
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Appoint evaluator' }));
+
+    await waitFor(() => expect(screen.getByText(/one basis point/)).toBeInTheDocument());
+    expect(payX402Post).not.toHaveBeenCalled();
+  });
+
+  it('quotes the fee it will actually send in the confirmation dialog', async () => {
+    const user = userEvent.setup();
+    render(<AssignEvaluatorAction task={taskFixture()} />);
+    await user.clear(screen.getByLabelText('Fee (%)'));
+    await user.type(screen.getByLabelText('Fee (%)'), '1.2300');
+    await user.click(screen.getByRole('button', { name: 'Appoint evaluator' }));
+
+    const dialog = await screen.findByRole('dialog');
+    expect(within(dialog).getByText(/for 1\.23% of the reward/)).toBeInTheDocument();
   });
 
   it('omits the dispute resolver when the field is left blank', async () => {

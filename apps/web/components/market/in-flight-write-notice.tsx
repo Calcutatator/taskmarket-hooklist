@@ -130,8 +130,11 @@ export function InFlightWriteNotice({
             : 'it is already recorded, and a second submission is a second write rather than a retry.'}
         </p>
       )}
-      <p className="break-all font-mono text-[0.68rem] uppercase text-muted-foreground">
-        Reference {idempotencyKey}
+      {/* `uppercase` is scoped to the label, never the key. The key is lowercase hex that a user
+          reads aloud or types out to support, and an uppercased rendering is a visibly different
+          string from the one the backend holds. */}
+      <p className="break-all font-mono text-[0.68rem] text-muted-foreground">
+        <span className="uppercase">Reference</span> {idempotencyKey}
       </p>
       {stalled && !failure ? (
         <p className="text-xs leading-5 text-muted-foreground">

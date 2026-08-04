@@ -200,6 +200,61 @@ describe('in-flight relayed writes', () => {
     expect(result.ok === false && result.error).toBe('Task is not open');
   });
 
+  // Everything below is about the boundary the payment crosses: once the paid request is
+  // dispatched, the money has moved and the write may be landing, so a failure that arrives
+  // after that point is ambiguous rather than negative. Reporting it as a plain failure would
+  // put a retry -- a second payment -- in front of the user.
+  it('treats an unreadable response body after dispatch as in flight, not failed', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() });
+    fetchMock.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => {
+        throw new Error('Unexpected end of JSON input');
+      },
+    });
+
+    const result = await payX402Post('/api/tasks/0xabc/evaluator', {}, makeDeps());
+
+    expect(result.ok).toBe(false);
+    expect(result.ok === false && result.pending).toBe(true);
+    expect(result.ok === false && result.idempotencyKey).toBeTruthy();
+  });
+
+  it('treats a connection that dies mid-submit as in flight, not failed', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() });
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const result = await payX402Post('/api/tasks/0xabc/evaluator', {}, makeDeps(), undefined, 'k');
+
+    expect(result.ok === false && result.pending).toBe(true);
+    expect(result.ok === false && result.idempotencyKey).toBe('k');
+  });
+
+  // Nothing was sent, so telling the user to wait would be telling them to wait for a write
+  // that never started.
+  it('leaves a failure before dispatch as a plain failure', async () => {
+    fetchMock.mockRejectedValueOnce(new TypeError('Failed to fetch'));
+
+    const result = await payX402Post('/api/tasks/0xabc/evaluator', {}, makeDeps());
+
+    expect(result.ok === false && result.pending).toBeFalsy();
+    expect(result.ok === false && result.error).toBe('Failed to fetch');
+  });
+
+  // A declined signature is pre-dispatch by construction: no payment, no request.
+  it('keeps a wallet cancellation a rejection rather than an in-flight write', async () => {
+    fetchMock.mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() });
+    const deps = makeDeps({
+      signTypedDataAsync: vi.fn().mockRejectedValue({ code: 4001, message: 'User rejected' }),
+    });
+
+    const result = await payX402Post('/api/tasks/0xabc/evaluator', {}, deps);
+
+    expect(result.ok === false && result.rejected).toBe(true);
+    expect(result.ok === false && result.pending).toBeFalsy();
+  });
+
   it('sends the caller-supplied idempotency key on the paid submit', async () => {
     fetchMock
       .mockResolvedValueOnce({ status: 402, json: async () => paymentChallenge() })

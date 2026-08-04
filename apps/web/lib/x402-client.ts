@@ -107,6 +107,15 @@ export async function payX402Post<T = unknown>(
   // has rather than a second one. Minted per call when absent.
   idempotencyKey: string = newIdempotencyKey()
 ): Promise<X402Result<T>> {
+  // Flipped the instant the paid request leaves the browser, and never cleared. Everything
+  // before it is preparation the backend never saw -- a failed probe, a rejected signature, a
+  // malformed challenge -- and reporting those as in flight would tell a user to wait for a
+  // write that never started. Everything after it is ambiguous by construction: the payment
+  // has settled and the write may be landing, so a thrown fetch, a socket dying mid-body, or a
+  // `submitRes.json()` that never parses says nothing about whether the write took effect.
+  // The boundary is the dispatch itself rather than the response, because that is the moment
+  // the money and the write stop being ours to take back.
+  let dispatched = false;
   try {
     onStep?.('payment');
     const probeRes = await fetch(`${deps.apiUrl}${path}`, {
@@ -204,6 +213,7 @@ export async function payX402Post<T = unknown>(
     };
 
     onStep?.('submitting');
+    dispatched = true;
     const submitRes = await fetch(`${deps.apiUrl}${path}`, {
       body: JSON.stringify(body),
       headers: {
@@ -229,14 +239,16 @@ export async function payX402Post<T = unknown>(
     const data = (await submitRes.json()) as T & { txHash?: string };
     return { ok: true, data, idempotencyKey, txHash: data.txHash };
   } catch (err) {
+    // A cancellation is never in flight, whichever side of dispatch it surfaces on: the user
+    // declined in the wallet, so nothing was paid and nothing was sent.
     if (isUserRejected(err)) {
       return { ok: false, error: 'Cancelled in wallet', idempotencyKey, rejected: true };
     }
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'X402 request failed',
-      idempotencyKey,
-    };
+    const error = err instanceof Error ? err.message : 'X402 request failed';
+    if (dispatched) {
+      return { ok: false, pending: true, idempotencyKey, error };
+    }
+    return { ok: false, error, idempotencyKey };
   }
 }
 

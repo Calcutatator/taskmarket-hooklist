@@ -118,11 +118,28 @@ export function TaskEvaluationTerms({
   // never quoted as the amount the evaluator will actually be paid.
   const feeMoves = task.mode === 'auction' || task.status === 'open';
 
+  // Every row below the opening paragraph describes what an appointed evaluator does: takes a
+  // fee, owes a verdict inside a window, and can be appealed. A task carrying only a dispute
+  // resolver has none of that, so rendering those rows would describe terms that do not apply
+  // and, worse, would tell a worker their payout is cut by a fee nobody is collecting.
+  const hasEvaluator = Boolean(task.evaluator);
+  // A zero fee means the worker keeps the whole reward, so the "payout is less" claim is only
+  // true when something is actually deducted.
+  const reducesPayout = hasEvaluator && (task.evaluatorFeeBps ?? 0) > 0;
+
   return (
     <TaskEvaluationSection className={className}>
       <p className="text-sm leading-6 text-muted-foreground">
-        An independent evaluator judges this work instead of the requester deciding alone. Their fee
-        comes out of the reward, so the payout to the worker is less than the advertised reward.
+        {hasEvaluator ? (
+          <>
+            An independent evaluator judges this work instead of the requester deciding alone.
+            {reducesPayout
+              ? ' Their fee comes out of the reward, so the payout to the worker is less than the advertised reward.'
+              : ' They charge no fee, so the full reward still goes to the worker.'}
+          </>
+        ) : (
+          'No evaluator is appointed, so the requester decides whether to accept the work. A dispute resolver is named to decide the outcome if that decision is disputed.'
+        )}
       </p>
       <div className="divide-y divide-border/52 border-y border-border/52">
         {task.evaluator ? (
@@ -134,38 +151,44 @@ export function TaskEvaluationTerms({
             profileBasePath={profileBasePath}
           />
         ) : null}
-        <Term
-          caption={
-            feeBaseUnits
-              ? `About ${formatUsdcUnits(feeBaseUnits)} of the ${formatUsdcUnits(reward)} reward${
-                  feeMoves ? ', which can still change while the task is open' : ''
-                }. The worker receives the remainder, less platform fees.`
-              : 'The full reward goes to the worker, less platform fees.'
-          }
-          label="Evaluator fee"
-          labelTooltip="Share of the reward paid to the evaluator rather than to the worker."
-          value={<span className="font-mono">{formatBps(task.evaluatorFeeBps)}</span>}
-        />
-        <Term
-          caption={
-            task.evaluatorDeadline
-              ? `Verdict due ${formatDateTime(task.evaluatorDeadline)}`
-              : 'The clock starts when work is submitted.'
-          }
-          label="Evaluation window"
-          labelTooltip="How long the evaluator has to return a verdict once work is submitted. Missing it opens the evaluator-timeout path."
-          value={<span className="font-mono">{formatDurationSeconds(task.evaluationWindow)}</span>}
-        />
-        <Term
-          caption={
-            task.appealDeadline
-              ? `Appeals close ${formatDateTime(task.appealDeadline)}`
-              : 'The clock starts when the verdict is issued.'
-          }
-          label="Appeal window"
-          labelTooltip="How long the worker has to appeal the verdict once it is issued. After it closes the verdict is final."
-          value={<span className="font-mono">{formatDurationSeconds(task.appealWindow)}</span>}
-        />
+        {hasEvaluator ? (
+          <>
+            <Term
+              caption={
+                feeBaseUnits
+                  ? `About ${formatUsdcUnits(feeBaseUnits)} of the ${formatUsdcUnits(reward)} reward${
+                      feeMoves ? ', which can still change while the task is open' : ''
+                    }. The worker receives the remainder, less platform fees.`
+                  : 'The full reward goes to the worker, less platform fees.'
+              }
+              label="Evaluator fee"
+              labelTooltip="Share of the reward paid to the evaluator rather than to the worker."
+              value={<span className="font-mono">{formatBps(task.evaluatorFeeBps)}</span>}
+            />
+            <Term
+              caption={
+                task.evaluatorDeadline
+                  ? `Verdict due ${formatDateTime(task.evaluatorDeadline)}`
+                  : 'The clock starts when work is submitted.'
+              }
+              label="Evaluation window"
+              labelTooltip="How long the evaluator has to return a verdict once work is submitted. Missing it opens the evaluator-timeout path."
+              value={
+                <span className="font-mono">{formatDurationSeconds(task.evaluationWindow)}</span>
+              }
+            />
+            <Term
+              caption={
+                task.appealDeadline
+                  ? `Appeals close ${formatDateTime(task.appealDeadline)}`
+                  : 'The clock starts when the verdict is issued.'
+              }
+              label="Appeal window"
+              labelTooltip="How long the worker has to appeal the verdict once it is issued. After it closes the verdict is final."
+              value={<span className="font-mono">{formatDurationSeconds(task.appealWindow)}</span>}
+            />
+          </>
+        ) : null}
         {task.disputeResolver ? (
           <Party
             address={task.disputeResolver}
