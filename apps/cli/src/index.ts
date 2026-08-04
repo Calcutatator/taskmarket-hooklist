@@ -18,10 +18,8 @@ import { daemonCommand } from './commands/daemon.js';
 import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
-import { isInFlightApiError } from '@taskmarket/shared';
-
-import { ApiError } from './lib/api.js';
-import { getCurrentIdempotencyKey, withIdempotencyScope } from './lib/idempotency.js';
+import { renderFailure } from './lib/output.js';
+import { withIdempotencyScope } from './lib/idempotency.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -58,33 +56,10 @@ void withIdempotencyScope(async () => {
   try {
     await program.parseAsync(process.argv);
   } catch (err) {
-    const error = err as Error;
-    const status = error instanceof ApiError ? error.status : undefined;
-    // The key travels on the ApiError raised by the transport that minted it; the fallback covers
-    // a write that failed before or after the HTTP call (a signing error, say), which still went
-    // out -- or may still go out -- under a key the operator needs to hold.
-    const idempotencyKey =
-      (error instanceof ApiError ? error.idempotencyKey : undefined) ?? getCurrentIdempotencyKey();
-    // The classification the CLI could not previously make (ADR-0058). Every failure used to
-    // render identically, so a script had no way to tell a write that is still landing from one
-    // that was rejected -- which is why the guidance had to be a blanket "never auto-retry a paid
-    // command". `pending` is the one field a script needs: true means the write may still
-    // succeed, so re-running it is a second payment rather than a retry. Poll `intents.get` with
-    // `intentId`, or with `idempotencyKey` when the response never arrived.
-    //
-    // Absent entirely when the backend sent no envelope, rather than defaulted to false: an
-    // unclassified failure is not evidence that nothing is in flight, and a script reading a
-    // manufactured `pending: false` would retry on exactly the outcome it must not.
-    const envelope = error instanceof ApiError ? error.envelope : undefined;
-    process.stderr.write(
-      JSON.stringify({
-        ok: false,
-        error: error.message,
-        ...(status !== undefined ? { status } : {}),
-        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
-        ...(envelope !== undefined ? { ...envelope, pending: isInFlightApiError(envelope) } : {}),
-      }) + '\n'
-    );
-    process.exit(1);
+    // The backstop, not the only renderer. A command that catches its own failure calls
+    // `renderFailure` directly and produces the identical envelope, which is the point: the
+    // classification ADR-0058 publishes reaches a script whether or not the error happened to
+    // travel all the way up here. See lib/output.ts.
+    renderFailure(err);
   }
 });

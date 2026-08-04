@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiGet } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { signReadAuth } from '../../lib/read-auth.js';
 
 /** Phase 3 (ADR-0030): requester-only. Lists a private task's current wallet allowlist. */
@@ -20,6 +20,6 @@ export const viewersCmd = new Command('viewers')
       });
       printResult(result as Record<string, unknown>);
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to list viewers.');
+      renderFailure(err, { fallback: 'Failed to list viewers.' });
     }
   });

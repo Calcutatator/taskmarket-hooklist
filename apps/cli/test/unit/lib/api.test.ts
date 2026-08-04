@@ -13,12 +13,59 @@ function jsonResponse(status: number, body: unknown) {
     ok: status >= 200 && status < 300,
     status,
     json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
+}
+
+/** What a proxy or gateway actually answers when it fails: not JSON, and often not even close. */
+function nonJsonResponse(status: number, body: string) {
+  return {
+    ok: false,
+    status,
+    json: async () => {
+      throw new SyntaxError(`Unexpected token < in JSON at position 0`);
+    },
+    text: async () => body,
   };
 }
 
 describe('ApiError', () => {
   beforeEach(() => {
     mockFetch.mockReset();
+  });
+
+  it('still raises an ApiError with the real status when the error body is not JSON', async () => {
+    // Reading the body with `res.json()` made the SyntaxError itself propagate, so the status,
+    // the idempotency key and the ADR-0058 envelope were all replaced by a parse error. The
+    // failures most likely to arrive as HTML are the infrastructure ones -- exactly the failures
+    // most likely to have left a paid write in flight, and so the worst ones to lose the status
+    // of. See readFailureBody in src/lib/api.ts.
+    mockFetch.mockResolvedValue(nonJsonResponse(502, '<html><body>Bad Gateway</body></html>'));
+
+    const caught = await apiPost('/api/tasks/0xabc/cancel', { taskId: '0xabc' }).then(
+      () => undefined,
+      (err: unknown) => err
+    );
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(502);
+    expect((caught as ApiError).message).toContain('Bad Gateway');
+    // No envelope existed to carry, and none is invented -- an unclassified failure must not
+    // read as evidence that nothing is in flight.
+    expect((caught as ApiError).envelope).toBeUndefined();
+    expect((caught as ApiError).idempotencyKey).toBeDefined();
+  });
+
+  it('still raises an ApiError with the real status when a GET error body is empty', async () => {
+    mockFetch.mockResolvedValue(nonJsonResponse(504, ''));
+
+    const caught = await apiGet('/api/tasks/0xabc').then(
+      () => undefined,
+      (err: unknown) => err
+    );
+
+    expect(caught).toBeInstanceOf(ApiError);
+    expect((caught as ApiError).status).toBe(504);
   });
 
   it('apiPost throws ApiError (instanceof ApiError and Error) with .status set to the real HTTP status, message unchanged from today', async () => {

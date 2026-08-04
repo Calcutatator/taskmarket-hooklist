@@ -7,6 +7,9 @@ vi.mock('../../src/lib/keystore.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 vi.mock('../../src/lib/api.js', () => ({
@@ -74,14 +77,11 @@ describe('xmtp command', () => {
 
     await xmtpCommand.parseAsync(['node', 'xmtp', 'status'], { from: 'node' });
 
-    expect(apiGet).toHaveBeenCalledWith(
-      '/api/xmtp/status?deviceId=device-1',
-      {
-        headers: {
-          'x-taskmarket-api-token': 'token-1',
-        },
-      }
-    );
+    expect(apiGet).toHaveBeenCalledWith('/api/xmtp/status?deviceId=device-1', {
+      headers: {
+        'x-taskmarket-api-token': 'token-1',
+      },
+    });
     expect(printResult).toHaveBeenCalledWith(
       expect.objectContaining({
         inboxId: 'inbox-1',

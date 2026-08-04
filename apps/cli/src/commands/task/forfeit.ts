@@ -3,7 +3,7 @@ import { buildForfeitMessage } from '@taskmarket/shared';
 import { loadKeystore } from '../../lib/keystore.js';
 import { signMessage } from '../../lib/signer.js';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const forfeitCmd = new Command('forfeit')
   .description("Reclaim a claim-mode task whose worker's claim has expired (requester only)")
@@ -22,6 +22,6 @@ export const forfeitCmd = new Command('forfeit')
 
       printResult(result);
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
+      renderFailure(err);
     }
   });

@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const refundExpiredCmd = new Command('refund-expired')
   .description(
@@ -12,7 +12,6 @@ export const refundExpiredCmd = new Command('refund-expired')
       const result = await x402Post(`/api/tasks/${taskId}/refund-expired`, { taskId });
       printResult(result as Record<string, unknown>);
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
-      process.exit(1);
+      renderFailure(err);
     }
   });

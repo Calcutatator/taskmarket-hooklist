@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
+import { withErrorContext } from '../../lib/api.js';
 
 export const bidCmd = new Command('bid')
   .description('Submit a bid on an auction task')
@@ -12,9 +13,7 @@ export const bidCmd = new Command('bid')
     try {
       priceBaseUnits = usdcToBaseUnits(opts.price);
     } catch (err) {
-      return void printError(
-        `Invalid --price: ${err instanceof Error ? err.message : String(err)}`
-      );
+      renderFailure(withErrorContext(err, 'Invalid --price'));
     }
 
     const result = (await x402Post(`/api/tasks/${taskId}/bids`, {

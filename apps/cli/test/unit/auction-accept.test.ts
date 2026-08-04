@@ -9,6 +9,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn((message: string) => {
     throw new Error(message);
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { auctionAcceptCmd } from '../../src/commands/task/auction-accept.js';
@@ -36,10 +39,9 @@ describe('task auction-accept command', () => {
   it('converts --min-price to base units', async () => {
     vi.mocked(x402Post).mockResolvedValue({ acceptedPrice: '3000000', workerAddress: '0xworker' });
 
-    await auctionAcceptCmd.parseAsync(
-      ['node', 'auction-accept', '0xtask', '--min-price', '1.5'],
-      { from: 'node' }
-    );
+    await auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask', '--min-price', '1.5'], {
+      from: 'node',
+    });
 
     expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/bids/accept', {
       taskId: '0xtask',
@@ -57,10 +59,9 @@ describe('task auction-accept command', () => {
 
   it('rejects invalid --min-price', async () => {
     await expect(
-      auctionAcceptCmd.parseAsync(
-        ['node', 'auction-accept', '0xtask', '--min-price', 'abc'],
-        { from: 'node' }
-      )
+      auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask', '--min-price', 'abc'], {
+        from: 'node',
+      })
     ).rejects.toThrow('Invalid --min-price: USDC amount must be a positive decimal');
   });
 

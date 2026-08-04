@@ -4,7 +4,7 @@
 
 Say why a write failed, in a field a script can read.
 
-A failed command's JSON envelope now carries the reason Taskmarket gives for the failure, alongside the message it always printed:
+Every command's JSON failure envelope carries the reason Taskmarket gives for the failure, alongside the message it always printed:
 
 ```json
 {
@@ -24,3 +24,5 @@ A failed command's JSON envelope now carries the reason Taskmarket gives for the
 `reason` says which kind of failure it was -- among others, `intent_in_flight` for a write still landing, `idempotency_key_reused` for an operation you have already started, `payment_rejected` for one that was never charged, and `payment_already_spent` for a payment that funded a different write.
 
 When Taskmarket sends no classification at all, `pending` is absent rather than `false`. An unclassified failure is not evidence that nothing is in flight, so treat a missing `pending` as unknown and never as safe to retry.
+
+This holds for every command without exception, including `task refund-expired`, `task reject-submission`, `task reject-all-submissions`, `task accept-submissions`, and `task resolve-dispute`. A batch command reports `pending: true` when any one of the writes it made may still be landing, and lists each write's own outcome beside it.

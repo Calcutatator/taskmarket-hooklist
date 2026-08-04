@@ -14,6 +14,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { proofCmd } from '../../src/commands/task/proof.js';
@@ -23,10 +26,9 @@ describe('task proof command', () => {
   beforeEach(() => vi.clearAllMocks());
 
   it('prints both the proof and acceptable submission IDs', async () => {
-    await proofCmd.parseAsync(
-      ['node', 'proof', '0xtask', '--data', '{}', '--type', 'manual'],
-      { from: 'node' }
-    );
+    await proofCmd.parseAsync(['node', 'proof', '0xtask', '--data', '{}', '--type', 'manual'], {
+      from: 'node',
+    });
 
     expect(printResult).toHaveBeenCalledWith({
       proofId: 'proof-1',

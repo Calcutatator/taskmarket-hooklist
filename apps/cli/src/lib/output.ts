@@ -1,3 +1,6 @@
+import { isInFlightApiError } from '@taskmarket/shared';
+
+import { ApiError } from './api.js';
 import { getCurrentIdempotencyKey } from './idempotency.js';
 
 /**
@@ -16,29 +19,86 @@ export function printResult(data: unknown): void {
 }
 
 /**
- * The CLI's failure envelope.
+ * The one function that turns a failure into the CLI's JSON envelope, for every command and for
+ * the top-level handler alike.
  *
- * `idempotencyKey` is the handle the operator is left holding when a write fails: the intent id
- * that names the write is minted by the backend and only ever reaches the caller in the response
- * a failure destroys, so the key the client chose before sending is the only identifier that
- * survives. Most commands call this with a bare message string, so the key cannot arrive as an
- * argument; it is read from the async scope the write ran in instead, since the transport is the
- * only layer that knows the key. A scope in which two writes overlapped reports nothing rather
- * than risk naming the sibling write -- see lib/idempotency.ts.
+ * It is a single function because the alternative was measured. ADR-0058 gave every API error a
+ * machine-readable `reason`, and the top-level handler in index.ts learned to publish it as
+ * `pending` -- the field a script branches on, where true means the write may still succeed and
+ * re-running it is a second payment rather than a retry. But two dozen commands never reached
+ * that handler: they caught their own errors and printed `err.message`, which threw the envelope
+ * away. Five of them made paid x402 writes, so the classification went missing on exactly the
+ * commands where guessing wrong costs money. The rule that a command "should" let the error
+ * propagate is the kind of rule this repository has already watched fail three times, so the
+ * shape is what enforces it now: there is one renderer, a command inside a `catch` calls it with
+ * the error rather than with a message, and
+ * `test/unit/config/api-failure-rendering.test.ts` fails the build on any command that does not.
  *
- * This does not make an automatic retry safe. Every failure still renders identically, so a
- * script still cannot tell an in-flight write from a rejected one, and a plain re-run mints a
- * fresh key and is therefore a second operation. What the key buys is a deliberate
- * re-presentation by a human who has decided that is the right move.
+ * What each field is for:
+ *
+ * - `status` -- the HTTP status, when the failure came from the API at all.
+ * - `idempotencyKey` -- the handle the operator is left holding. The intent id that names a write
+ *   is minted by the backend and only ever reaches the caller in the response a failure destroys,
+ *   so the key the client chose before sending is the only identifier that survives. It travels
+ *   on the `ApiError`; the fallback covers a write that failed before or after the HTTP call (a
+ *   signing error, say) which still went out, or may still go out, under a key that matters.
+ * - the envelope's own fields, spread flat, plus `pending`. Absent entirely when the backend sent
+ *   no envelope, rather than defaulted to false: an unclassified failure is not evidence that
+ *   nothing is in flight, and a script reading a manufactured `pending: false` would retry on
+ *   exactly the outcome it must not. Poll `intents.get` with `intentId`, or with
+ *   `idempotencyKey` when the response never arrived.
  */
-export function printError(message: string, options?: { idempotencyKey?: string }): never {
-  const idempotencyKey = options?.idempotencyKey ?? getCurrentIdempotencyKey();
+export function renderFailure(
+  error: unknown,
+  options?: {
+    /** Rendered when the thrown value is not an `Error`, in place of stringifying it. */
+    fallback?: string;
+    idempotencyKey?: string;
+    /** Extra fields a command needs on the envelope, e.g. the per-item outcomes of a batch. */
+    details?: Record<string, unknown>;
+  }
+): never {
+  const message = error instanceof Error ? error.message : (options?.fallback ?? String(error));
+  const apiError = error instanceof ApiError ? error : undefined;
+  const idempotencyKey =
+    options?.idempotencyKey ?? apiError?.idempotencyKey ?? getCurrentIdempotencyKey();
+  const envelope = apiError?.envelope;
+
   process.stderr.write(
     JSON.stringify({
       ok: false,
       error: message,
+      ...(apiError !== undefined ? { status: apiError.status } : {}),
       ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+      ...(envelope !== undefined ? { ...envelope, pending: isInFlightApiError(envelope) } : {}),
+      ...(options?.details ?? {}),
     }) + '\n'
   );
   process.exit(1);
+}
+
+/**
+ * Render a message the CLI composed itself, with no error behind it.
+ *
+ * This is for a rejection the command decided on its own -- a malformed `--award` spec, an amount
+ * that is not a positive number -- where there is no envelope in existence to carry and none is
+ * implied. Never call it on a value you caught: a caught error may be an `ApiError`, and printing
+ * its message drops the classification a script needs. `renderFailure(err)` is that case, and it
+ * renders a locally thrown `Error` identically to this.
+ */
+export function printError(message: string, options?: { idempotencyKey?: string }): never {
+  return renderFailure(new Error(message), options);
+}
+
+/**
+ * Report a failure that does not end the command.
+ *
+ * Used only where a best-effort side operation failed and the command legitimately carries on to
+ * succeed -- `taskmarket init`'s optional email registration is the one case. It lives here rather
+ * than at the call site so that the failure envelope is still built in exactly one file; the
+ * envelope it writes deliberately omits `pending`, because the command's own outcome is not in
+ * question and a `pending` on a line that is not the result would be read as if it were.
+ */
+export function printWarning(message: string): void {
+  process.stderr.write(JSON.stringify({ ok: false, error: message }) + '\n');
 }

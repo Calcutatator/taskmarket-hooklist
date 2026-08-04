@@ -2,6 +2,7 @@ import {
   type ApiErrorEnvelope,
   apiErrorEnvelopeOf,
   buildLegalReceiptHeaders,
+  isInFlightApiError,
 } from '@taskmarket/shared';
 
 import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
@@ -58,6 +59,65 @@ export class ApiError extends Error {
   }
 }
 
+/**
+ * Read a failed response's body without letting its shape destroy the failure it describes.
+ *
+ * `res.json()` on an error path is a trap: a body that is not JSON -- an HTML error page from a
+ * proxy, a gateway's plain-text 502, an empty 504 -- makes it throw a `SyntaxError`, and that
+ * `SyntaxError` is what propagates instead of the `ApiError` the next few lines were about to
+ * build. The status is gone, the idempotency key is gone, and the ADR-0058 envelope is gone,
+ * replaced by "Unexpected token < in JSON at position 0". That is the worst possible outcome for
+ * a paid write: the failures most likely to arrive as non-JSON are the infrastructure ones, which
+ * are exactly the failures most likely to have left a write in flight.
+ *
+ * Reading text first and parsing defensively means an unparseable body costs the envelope it
+ * never had, and nothing else. Round 1 of the x402 exchange already did this; every other path
+ * did not.
+ */
+export async function readFailureBody(res: Response): Promise<{ body: unknown; text: string }> {
+  const text = await res.text().catch(() => '');
+  try {
+    return { body: JSON.parse(text) as unknown, text };
+  } catch {
+    return { body: undefined, text };
+  }
+}
+
+/** The failure message for a non-2xx response, preserving the shape callers already parse. */
+export function failureMessage(
+  prefix: string,
+  status: number,
+  read: { body: unknown; text: string }
+): string {
+  return `${prefix} (${status}): ${read.body !== undefined ? JSON.stringify(read.body) : read.text}`;
+}
+
+/**
+ * Prefix a failure's message with what the command was doing, without losing what the failure was.
+ *
+ * A command that needs to say "the rejections landed but the cancel did not" used to build that
+ * sentence with `err.message` and hand the string to `printError`, which is precisely how the
+ * envelope went missing. Wrapping preserves `status`, the idempotency key and the ADR-0058
+ * envelope on a new `ApiError`, so the added context costs nothing a script was relying on.
+ */
+export function withErrorContext(error: unknown, context: string): Error {
+  const message = error instanceof Error ? error.message : String(error);
+  if (error instanceof ApiError) {
+    return new ApiError(
+      error.status,
+      `${context}: ${message}`,
+      error.idempotencyKey,
+      error.envelope
+    );
+  }
+  return new Error(`${context}: ${message}`);
+}
+
+/** True when a failure is one the backend classified as possibly still landing (ADR-0058). */
+export function isPendingApiError(error: unknown): boolean {
+  return error instanceof ApiError && isInFlightApiError(error.envelope);
+}
+
 export function legalReceiptHeadersForKeystore(
   keystore: Pick<Keystore, 'legalAcceptanceApiOrigin' | 'legalAcceptanceReceipt'>,
   path: string,
@@ -95,16 +155,16 @@ export async function apiGet(
       ...(options?.headers ?? {}),
     },
   });
-  const body = await res.json();
   if (!res.ok) {
+    const read = await readFailureBody(res);
     throw new ApiError(
       res.status,
-      `GET ${path} failed (${res.status}): ${JSON.stringify(body)}`,
+      failureMessage(`GET ${path} failed`, res.status, read),
       undefined,
-      apiErrorEnvelopeOf(body) ?? undefined
+      apiErrorEnvelopeOf(read.body) ?? undefined
     );
   }
-  return body;
+  return res.json();
 }
 
 export async function apiPost(
@@ -128,16 +188,16 @@ export async function apiPost(
       },
       body: JSON.stringify(body),
     });
-    const result = await res.json();
     if (!res.ok) {
+      const read = await readFailureBody(res);
       throw new ApiError(
         res.status,
-        `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+        failureMessage(`POST ${path} failed`, res.status, read),
         idempotencyKey,
-        apiErrorEnvelopeOf(result) ?? undefined
+        apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return result;
+    return res.json();
   });
 }
 
@@ -158,15 +218,15 @@ export async function apiDelete(
         ...(options?.headers ?? {}),
       },
     });
-    const result = await res.json();
     if (!res.ok) {
+      const read = await readFailureBody(res);
       throw new ApiError(
         res.status,
-        `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+        failureMessage(`DELETE ${path} failed`, res.status, read),
         idempotencyKey,
-        apiErrorEnvelopeOf(result) ?? undefined
+        apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return result;
+    return res.json();
   });
 }

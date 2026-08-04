@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiDelete } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { signReadAuth } from '../../lib/read-auth.js';
 
 /** Phase 3 (ADR-0030): requester-only. Removes a wallet from a private task's allowlist. */
@@ -22,6 +22,6 @@ export const uninviteCmd = new Command('uninvite')
       );
       printResult(result as Record<string, unknown>);
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to remove viewer.');
+      renderFailure(err, { fallback: 'Failed to remove viewer.' });
     }
   });

@@ -1,7 +1,8 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
+import { withErrorContext } from '../../lib/api.js';
 
 export const evaluateCmd = new Command('evaluate')
   .description('Submit an evaluation verdict for a task in Review state')
@@ -50,9 +51,7 @@ export const evaluateCmd = new Command('evaluate')
         try {
           microUnits = usdcToBaseUnits(amountUSDC);
         } catch (err) {
-          return void printError(
-            `Invalid amount in '${entry}': ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, `Invalid amount in '${entry}'`));
         }
         const parsedRank = Number(rankStr);
         if (!Number.isInteger(parsedRank) || parsedRank < 1) {

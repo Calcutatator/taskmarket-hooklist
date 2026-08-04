@@ -1,8 +1,9 @@
 import { Command } from 'commander';
 import { formatUsdcBaseUnits } from '@taskmarket/shared';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
+import { withErrorContext } from '../../lib/api.js';
 
 export const auctionAcceptCmd = new Command('auction-accept')
   .description('Accept current clock price on a dutch or reverse_dutch auction task')
@@ -17,9 +18,7 @@ export const auctionAcceptCmd = new Command('auction-accept')
       try {
         body.minPrice = usdcToBaseUnits(opts.minPrice, { allowZero: true });
       } catch (error) {
-        return void printError(
-          `Invalid --min-price: ${error instanceof Error ? error.message : String(error)}`
-        );
+        renderFailure(withErrorContext(error, 'Invalid --min-price'));
       }
     }
     const result = (await x402Post(`/api/tasks/${taskId}/bids/accept`, body)) as {

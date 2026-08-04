@@ -17,6 +17,9 @@ vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn((message: string) => {
     throw new Error(message);
   }),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { writeFileSync } from 'fs';

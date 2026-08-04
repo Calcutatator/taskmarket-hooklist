@@ -6,6 +6,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { bidCmd } from '../../src/commands/task/bid.js';

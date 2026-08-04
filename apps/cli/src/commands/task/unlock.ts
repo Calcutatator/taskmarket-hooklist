@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 import { saveTaskAccessGrant } from '../../lib/task-access-grants.js';
 
 /**
@@ -20,7 +20,7 @@ export const unlockCmd = new Command('unlock')
         password: opts.password,
       })) as typeof result;
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to unlock task.');
+      renderFailure(err, { fallback: 'Failed to unlock task.' });
       return;
     }
 

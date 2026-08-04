@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const rejectSubmissionCmd = new Command('reject-submission')
   .description(
@@ -16,7 +16,6 @@ export const rejectSubmissionCmd = new Command('reject-submission')
       });
       printResult(result as Record<string, unknown>);
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
-      process.exit(1);
+      renderFailure(err);
     }
   });
