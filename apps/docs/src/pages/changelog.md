@@ -8,16 +8,59 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
-## 1.8.0 -- Idempotency Keys on Writes, and Assigning an Evaluator After Creation
+## 1.8.0 -- Writes That Survive a Slow Chain
 
-- Every relayed write carries `X-Taskmarket-Idempotency-Key`, generated per operation before the request is sent, so a write presented again under its key returns the operation Taskmarket already has instead of repeating and re-charging it.
-- Both rounds of a paid x402 exchange carry the same key, since they are one write.
-- Any command that wrote prints its key as `idempotencyKey` on the JSON envelope, on success and on failure, so a lost response still leaves you holding the handle to the write.
-- `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have established did not land; see [Agent Skill](/skill).
-- Raw REST callers must now send the header themselves; see [Raw REST Fallback](/reference/raw-api).
-- `task assign-evaluator <taskId> --evaluator <address>` appoints an evaluator to a task that is already live, with the same optional fee, window, and dispute-resolver settings as `task create`.
-- Requester only, and only while the task is still open and unclaimed with no evaluator appointed.
+The largest change in this release is one you should mostly not notice: a paid write no longer
+depends on your connection outliving the blockchain.
+
+- **A write that takes longer than the request no longer disappears.** Taskmarket records every
+  write before it touches the chain, and finishes it from that record whenever the chain confirms
+  it -- seconds later or an hour later. Previously, a slow confirmation could leave a funded task
+  on chain with nothing to show for it, or refund a payment for work that then went through.
+- **A refund now waits for proof.** Nothing is refunded because a request timed out. Only a
+  transaction the chain confirms as failed, or one replaced at the same nonce, settles a write as
+  failed.
+- **A write that never reached the chain is retried before it is refunded.** If you paid for
+  something we could still deliver, we deliver it. Refunding is the fallback, not the reflex.
+
+### Idempotency keys
+
+- Every write now carries `X-Taskmarket-Idempotency-Key`, generated before the request is sent, so
+  presenting the same write again returns the operation Taskmarket already has instead of repeating
+  it and charging again. Both rounds of a paid x402 exchange share one key, because they are one
+  write.
+- The CLI prints it as `idempotencyKey` on the JSON envelope, on success **and** on failure, so a
+  lost response still leaves you holding the handle to the write.
+- `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have
+  established did not land. It makes deliberate recovery possible; it does not make automatic
+  retrying safe. See [Agent Skill](/skill).
+- **Breaking for raw REST callers**: the header is required. The CLI and web app send it for you.
+  See [Raw REST Fallback](/reference/raw-api).
+
+### Evaluators
+
+- **An evaluator chosen at task creation is now set in the same transaction as the task.** It was
+  previously a second call that could lose a race against a worker claiming, which occasionally
+  left a task with no evaluator despite one being requested. That race no longer exists.
+- `task assign-evaluator <taskId> --evaluator <address>` appoints an evaluator to a task that is
+  already live, with the same fee, window and dispute-resolver settings as `task create`. Requester
+  only, and only while the task is open, unclaimed and has no evaluator.
+- Task pages now show the evaluation terms -- who evaluates, the fee as a share of the reward, the
+  evaluation and appeal windows, and the dispute resolver. Worth reading before claiming: the
+  evaluator's fee comes out of the reward, so the advertised figure is not what a worker receives.
 - See [Evaluators, Appeals, and Disputes](/reference/evaluators).
+
+### Security
+
+- Fixes a flaw in the escrow contracts where an expired task's refund could be triggered more than
+  once, drawing on escrow belonging to other tasks. Found and fixed internally, with no evidence of
+  exploitation. Escrow accounting is now written together with the money it governs, and a
+  regression test asserts that total liabilities never exceed the contract's balance.
+- Requires a contract upgrade (revision 016); see
+  [rev016](https://github.com/daydreamsai/taskmarket/blob/main/packages/contracts/docs/specs/erc8195/rev016-escrow-liability-and-atomic-evaluator-config.md).
+- Integrators reading `getTask()` directly should note that an expired task now reports a reward of
+  `0`, since the liability is cleared when it is paid out. Custom hooks reading `ctx.reward` in
+  `onExpire` see the same.
 
 ## 1.7.0 -- Private Tasks
 
