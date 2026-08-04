@@ -81,6 +81,59 @@ describe('TaskEvaluationTerms', () => {
     expect(screen.getByText(/full reward goes to the worker/)).toBeVisible();
   });
 
+  // The disclosure is a claim about a worker's money on the page they decide whether to work
+  // from, so it must not survive the condition that made it true.
+  it('does not claim a fee reduces the payout when the evaluator charges nothing', () => {
+    render(<TaskEvaluationTerms task={taskFixture({ evaluatorFeeBps: 0 })} />);
+    expect(
+      screen.queryByText(/payout to the worker is less than the advertised reward/)
+    ).toBeNull();
+    expect(screen.getByText(/charge no fee/)).toBeVisible();
+  });
+
+  describe('with a dispute resolver but no evaluator', () => {
+    const resolverOnly = () => taskFixture({ evaluator: null, evaluatorFeeBps: 0 });
+
+    it('does not say an independent evaluator judges the work', () => {
+      render(<TaskEvaluationTerms task={resolverOnly()} />);
+      expect(screen.queryByText(/An independent evaluator judges this work/)).toBeNull();
+      expect(screen.getByText(/No evaluator is appointed/)).toBeVisible();
+    });
+
+    it('does not claim an evaluator fee comes out of the reward', () => {
+      render(<TaskEvaluationTerms task={resolverOnly()} />);
+      expect(
+        screen.queryByText(/payout to the worker is less than the advertised reward/)
+      ).toBeNull();
+      expect(screen.queryByText('Evaluator fee')).toBeNull();
+    });
+
+    // Windows only exist because an evaluator owes a verdict and it can be appealed. With no
+    // evaluator they describe deadlines nobody is under.
+    it('omits the evaluation and appeal windows', () => {
+      render(<TaskEvaluationTerms task={resolverOnly()} />);
+      expect(screen.queryByText('Evaluation window')).toBeNull();
+      expect(screen.queryByText('Appeal window')).toBeNull();
+    });
+
+    // It still has terms worth showing -- it just must not borrow the evaluator's copy.
+    it('still renders the dispute resolver', () => {
+      render(<TaskEvaluationTerms task={resolverOnly()} />);
+      expect(screen.getByText('Dispute resolver')).toBeVisible();
+      expect(screen.getByTitle(resolver)).toHaveTextContent('0x4444...4444');
+    });
+
+    // A non-zero fee stored on a task with no evaluator is stale data, not a deduction anyone
+    // will collect, so it must not turn the disclosure back on.
+    it('stays silent about a fee even when a stale bps value is set', () => {
+      render(<TaskEvaluationTerms task={taskFixture({ evaluator: null, evaluatorFeeBps: 750 })} />);
+      expect(
+        screen.queryByText(/payout to the worker is less than the advertised reward/)
+      ).toBeNull();
+      expect(screen.queryByText('7.50%')).toBeNull();
+    });
+  });
+
   it('renders both windows as durations', () => {
     render(<TaskEvaluationTerms task={taskFixture()} />);
     expect(screen.getByText('1d')).toBeVisible();

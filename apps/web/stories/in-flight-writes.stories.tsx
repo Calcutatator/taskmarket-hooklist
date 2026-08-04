@@ -78,6 +78,67 @@ export const PaidWrite: Story = {
 };
 
 /**
+ * The reference is the handle a user quotes to support, so it has to render as the string the
+ * backend holds. Uppercasing the whole line made a lowercase-hex UUID look like a different
+ * value, and a user copying it by eye would transcribe a different one. The label carries the
+ * casing; the key does not.
+ */
+export const ReferenceKeyCasing: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    // Exact text, so this is the label span rather than the paragraph that contains it.
+    const label = canvas.getByText('Reference');
+    const line = label.parentElement!;
+    // The rendered style, not the source prop: `text-transform` is what changed the string a
+    // user sees, and asserting on `textContent` alone would have passed the whole time.
+    await expect(getComputedStyle(label).textTransform).toBe('uppercase');
+    await expect(getComputedStyle(line).textTransform).toBe('none');
+    await expect(line).toHaveTextContent(KEY);
+  },
+  render: () => (
+    <InFlightWriteNotice
+      idempotencyKey={KEY}
+      subject="appointment"
+      title="Appointment submitted, confirming"
+    />
+  ),
+};
+
+/** The same reference line at mobile width, where `break-all` has to keep it inside the card. */
+export const ReferenceKeyCasingMobile: Story = {
+  globals: { viewport: { value: 'mobile' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const label = canvas.getByText('Reference');
+    await expect(getComputedStyle(label).textTransform).toBe('uppercase');
+    await expect(label.parentElement!).toHaveTextContent(KEY);
+  },
+  render: () => (
+    <InFlightWriteNotice
+      idempotencyKey={KEY}
+      subject="appointment"
+      title="Appointment submitted, confirming"
+    />
+  ),
+};
+
+/** The reference line in dark theme, where it must stay legible against the card. */
+export const ReferenceKeyCasingDark: Story = {
+  globals: { theme: 'dark' },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText('Reference').parentElement!).toHaveTextContent(KEY);
+  },
+  render: () => (
+    <InFlightWriteNotice
+      idempotencyKey={KEY}
+      subject="appointment"
+      title="Appointment submitted, confirming"
+    />
+  ),
+};
+
+/**
  * Polling has run its course. The copy gets more honest, not more hopeful, and it still offers
  * no control -- "wait longer" and "try again" are different claims and only the first is true.
  */
