@@ -313,7 +313,7 @@ merged=[]; seen=set(); \
 open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
 print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
 		exit 1; \
 	fi
@@ -372,7 +372,7 @@ lint-check:
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm lint:check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make lint-check <backend|frontend|web|docs|shared|contracts|email-worker|adr|specs|all>"; \
 		exit 1; \
 	fi
@@ -399,7 +399,7 @@ lint-fix:
 	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
 		cd apps/email-worker && pnpm lint:write; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make lint-fix <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
 		exit 1; \
 	fi
@@ -416,7 +416,7 @@ format-check:
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm run format:check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make format-check <app-or-package-name|all>"; \
 		exit 1; \
 	fi
@@ -433,7 +433,7 @@ format-fix:
 	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
 		cd packages/$(word 1,$(ARGS)) && pnpm run format:write; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make format-fix <app-or-package-name|all>"; \
 		exit 1; \
 	fi
@@ -458,7 +458,7 @@ type-check:
 	elif [ "$(word 1,$(ARGS))" = "cli" ]; then \
 		cd apps/cli && pnpm type-check; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make type-check <backend|frontend|web|shared|email-worker|cli|all>"; \
 		exit 1; \
 	fi
@@ -520,7 +520,7 @@ test:
 	elif [ "$(word 1,$(ARGS))" = "storybook" ]; then \
 		pnpm --filter @taskmarket/web storybook:test; \
 	else \
-		echo "Unknown app: $(word 1,$(ARGS))"; \
+		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make test [backend|frontend|web|docs|shared|contracts|email-worker|adr|storybook]"; \
 		exit 1; \
 	fi

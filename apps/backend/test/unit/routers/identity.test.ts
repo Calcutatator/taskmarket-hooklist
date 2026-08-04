@@ -21,7 +21,11 @@ import { identityRouter } from '../../../src/routers/identity.router';
 import { contractRegisterIdentityTx } from '../../../src/services/contract';
 import { agents } from '../../../src/db/schema';
 
-const PAYER = '0x1111111111111111111111111111111111111111';
+// Carries hex letters on purpose. An all-digit address is unchanged by a case transform, so
+// the casing tests below would have asserted nothing at all against one.
+const PAYER = '0xab5cde1111111111111111111111111111119fed';
+// Only the letters change case; the `0x` prefix stays lowercase, as every caller sends it.
+const PAYER_UPPERCASED = `0x${PAYER.slice(2).toUpperCase()}`;
 
 describe('identity router', () => {
   beforeEach(() => {
@@ -57,7 +61,7 @@ describe('identity router', () => {
     });
 
     it('returns the existing agentId without minting when already registered under any casing', async () => {
-      const ctx = createIntentCtx(PAYER.toUpperCase());
+      const ctx = createIntentCtx(PAYER_UPPERCASED);
       ctx.db.select.mockReturnValueOnce(
         makeChain([
           { address: PAYER, agentId: '7', identityRegistryAddress: REGISTRY, chainId: CHAIN_ID },
@@ -152,7 +156,7 @@ describe('identity router', () => {
       ctx.db.select.mockReturnValueOnce(makeChain([{ agentId: '5' }]));
       const caller = identityRouter.createCaller(ctx);
 
-      const result = await caller.status({ address: PAYER.toUpperCase() });
+      const result = await caller.status({ address: PAYER_UPPERCASED });
 
       expect(result).toEqual({ agentId: '5', registered: true, cacheFresh: false });
     });

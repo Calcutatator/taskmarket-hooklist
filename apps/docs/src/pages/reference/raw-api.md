@@ -199,7 +199,7 @@ On a tRPC response it is at `error.data.taskmarket`. On a raw-REST body and on a
 
 | `reason` | Status | What it means | What to do |
 | --- | --- | --- | --- |
-| `intent_in_flight` | 409 | Broadcast, no terminal outcome yet. Not a success and not a failure, and no claim about whether the payment moved. | Poll `GET /api/intents`. **Never resubmit.** |
+| `intent_in_flight` | 409 | Broadcast, no terminal outcome yet. Not a success and not a failure. The payment has settled; whether it is kept or returned is what is undecided. | Poll `GET /api/intents`. **Never resubmit.** |
 | `idempotency_key_reused` | 409 | A write under this key already exists. Nothing was charged and nothing was submitted again. | Read `intentStatus`. `recorded` or `broadcast` means still landing -- poll. `failed` is a settled failure. `completed` means the write landed. |
 | `idempotency_key_required` | 400 | No `X-Taskmarket-Idempotency-Key` header, or not a UUID. Rejected before the 402 challenge, so nothing was charged. | Send one and retry. |
 | `idempotency_key_conflict` | 409 | The key is bound to a *different* operation. | Generate a fresh key and resubmit. Do not poll -- there is nothing here that is yours. |
