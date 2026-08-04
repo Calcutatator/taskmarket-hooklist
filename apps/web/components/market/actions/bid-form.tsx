@@ -5,11 +5,13 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -29,11 +31,25 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [txHash, setTxHash] = useState<string | null>(null);
   const [now, setNow] = useState(() => Date.now());
+  const inFlight = useInFlightWrite('Bid submitted, confirming');
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Checked before every other branch, including the disconnected and expired ones: the write
+  // is already out there, and the bid deadline passing under it must not replace this state.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="bid"
+        title="Bid submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to place a bid." />;
@@ -70,7 +86,8 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
       `/api/tasks/${task.id}/bids`,
       { taskId: task.id, price: priceBaseUnits },
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep
+      setStep,
+      inFlight.idempotencyKey
     );
     if (result.ok) {
       setStep('done');
@@ -90,6 +107,9 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
       );
     } else {
       setStep('idle');
+      // Neither success nor failure, so it must not reach the error path below: that path
+      // leaves the submit button live, and pressing it again is a second payment.
+      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

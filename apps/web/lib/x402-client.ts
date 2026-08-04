@@ -8,6 +8,7 @@ import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import type { useSignTypedData, useSwitchChain } from 'wagmi';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 import { newIdempotencyKey } from '@/lib/api/idempotency';
+import { isPendingTransactionMessage, type PendingWriteResult } from '@/lib/relayed-write-outcome';
 
 export type X402Step = 'payment' | 'signing' | 'submitting';
 
@@ -32,13 +33,7 @@ export type X402Success<T> = {
  * because it exists before the request is sent and therefore survives a response that never
  * arrived (ADR-0052).
  */
-export type X402Pending = {
-  ok: false;
-  pending: true;
-  idempotencyKey: string;
-  error: string;
-  rejected?: false;
-};
+export type X402Pending = PendingWriteResult;
 
 export type X402Failure = {
   ok: false;
@@ -50,20 +45,11 @@ export type X402Failure = {
 
 export type X402Result<T> = X402Success<T> | X402Pending | X402Failure;
 
-// The backend still reports an in-flight relayed write as a 500 carrying
-// ServerTransactionPendingError's prose, with no machine-readable discriminator on the wire.
-// Matching the message is the only signal available; it is deliberately narrow, and the
-// consequence of a miss is the safe direction -- an unmatched pending error falls through as
-// an ordinary failure, which shows an error rather than inviting a second payment.
-const PENDING_ERROR_MARKERS = [
-  'remains in flight',
-  'not confirmed within the request budget',
-] as const;
-
-export function isPendingTransactionMessage(message: string): boolean {
-  const normalized = message.toLowerCase();
-  return PENDING_ERROR_MARKERS.some((marker) => normalized.includes(marker));
-}
+// Re-exported so existing callers keep their import, but the body lives in
+// `relayed-write-outcome.ts`: x402 is only one of three transports that has to recognise this
+// outcome, and there must be exactly one place to change when the backend gains a structured
+// discriminator.
+export { isPendingTransactionMessage };
 
 type Eip712Domain = {
   chainId: number | string;

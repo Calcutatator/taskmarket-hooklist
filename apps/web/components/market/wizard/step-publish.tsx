@@ -7,6 +7,7 @@ import { IconBolt, IconCoin, IconFileText } from '@tabler/icons-react';
 import { CircleAlertIcon, LockKeyholeIcon } from 'lucide-react';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { MarketLiquidityPanel } from '@/components/market/market-liquidity';
 import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
 import type { WalletAccessStatus } from '@/components/privy-account-control';
@@ -37,7 +38,10 @@ import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { isPendingTransactionMessage } from '@/lib/relayed-write-outcome';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import {
+  IDEMPOTENCY_KEY_HEADER,
   estimateWorkerDreamsBonus,
   estimateRequesterDreamsBonus,
   estimateWorkerUsdBonusValue,
@@ -212,6 +216,19 @@ export function StepPublish({
   const [error, setError] = useState<string | null>(null);
   const [fundingPrompt, setFundingPrompt] = useState<FundingPromptState | null>(null);
   const [fundingNotice, setFundingNotice] = useState<string | null>(null);
+  const inFlight = useInFlightWrite('Task submitted, confirming');
+
+  // Rendered in place of the error slot, and used to suppress the publish control entirely.
+  // The task reward is escrowed by this write, so publishing again is not a retry: it is a
+  // second escrow of the full amount.
+  const inFlightNotice = inFlight.state ? (
+    <InFlightWriteNotice
+      idempotencyKey={inFlight.state.idempotencyKey}
+      stalled={inFlight.stalled}
+      subject="task"
+      title="Task submitted, confirming"
+    />
+  ) : null;
 
   const walletReady = isConnected && Boolean(address);
   const isSubmitting = phase !== 'form';
@@ -372,13 +389,31 @@ export function StepPublish({
         headers: {
           'Content-Type': 'application/json',
           ...(await getLegalRequestHeaders()),
+          // Sent so a viewer who publishes again after an ambiguous outcome presents the write
+          // the backend already has, rather than escrowing a second full reward.
+          [IDEMPOTENCY_KEY_HEADER]: inFlight.idempotencyKey,
           'payment-signature': btoa(JSON.stringify(paymentPayload)),
         },
         method: 'POST',
       });
       if (!createRes.ok) {
         const err = await createRes.json().catch(() => ({}));
-        throw new Error(err.error ?? `Server error: ${createRes.status}`);
+        const message = err.error ?? err.message ?? `Server error: ${createRes.status}`;
+        // Caught before the throw: the catch below sets an error and returns the publish
+        // button to 'form', which is a live "Fund and publish" control. On this surface that
+        // is the most expensive mistake available -- the payment is the whole task reward,
+        // not a 0.001 USDC relay fee -- so an in-flight write must never reach it.
+        if (
+          inFlight.capture({
+            ok: false,
+            pending: isPendingTransactionMessage(message),
+            idempotencyKey: inFlight.idempotencyKey,
+            error: message,
+          })
+        ) {
+          return;
+        }
+        throw new Error(message);
       }
 
       const result = (await createRes.json()) as { taskDropId?: string | null; taskId?: string };
@@ -516,16 +551,17 @@ export function StepPublish({
             </div>
           ) : null}
 
-          {error ? (
-            <p
-              className="border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
-              role="alert"
-            >
-              {error}
-            </p>
-          ) : null}
+          {inFlightNotice ??
+            (error ? (
+              <p
+                className="border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
+                role="alert"
+              >
+                {error}
+              </p>
+            ) : null)}
 
-          {fundingPrompt ? (
+          {fundingPrompt && !inFlight.state ? (
             <FundingGuard
               address={address}
               defaultAmount={fundingPrompt.defaultAmount}
@@ -546,21 +582,25 @@ export function StepPublish({
             </p>
           ) : null}
 
-          <Button
-            className="h-11 w-full"
-            disabled={
-              !walletConfigurationAvailable ||
-              isSubmitting ||
-              walletAccessPending ||
-              (!walletReady && !ready)
-            }
-            id="task-publish-wallet-access"
-            onClick={walletReady ? handlePublish : handleConnectWallet}
-            type="button"
-          >
-            {buttonLabel}
-          </Button>
-          {walletConfigurationAvailable && !walletReady ? (
+          {/* Not rendered at all while the write is in flight. Disabling it would still leave
+              a control implying the write can be reattempted; its absence is the point. */}
+          {inFlight.state ? null : (
+            <Button
+              className="h-11 w-full"
+              disabled={
+                !walletConfigurationAvailable ||
+                isSubmitting ||
+                walletAccessPending ||
+                (!walletReady && !ready)
+              }
+              id="task-publish-wallet-access"
+              onClick={walletReady ? handlePublish : handleConnectWallet}
+              type="button"
+            >
+              {buttonLabel}
+            </Button>
+          )}
+          {walletConfigurationAvailable && !walletReady && !inFlight.state ? (
             <p className="text-xs leading-5 text-muted-foreground">
               No account was needed to build the brief. Connect only for this final step.
             </p>
@@ -851,16 +891,17 @@ export function StepPublish({
               </div>
             </div>
 
-            {error ? (
-              <p
-                className="rounded-xl border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
-                role="alert"
-              >
-                {error}
-              </p>
-            ) : null}
+            {inFlightNotice ??
+              (error ? (
+                <p
+                  className="rounded-xl border border-destructive/65 bg-destructive/10 p-3 font-mono text-sm text-destructive"
+                  role="alert"
+                >
+                  {error}
+                </p>
+              ) : null)}
 
-            {fundingPrompt ? (
+            {fundingPrompt && !inFlight.state ? (
               <FundingGuard
                 address={address}
                 defaultAmount={fundingPrompt.defaultAmount}
@@ -881,16 +922,21 @@ export function StepPublish({
               </p>
             ) : null}
 
-            <Button
-              className="h-11 w-full"
-              disabled={isSubmitting || walletAccessPending || (!walletReady && !ready)}
-              id="task-publish-wallet-access"
-              onClick={walletReady ? handlePublish : handleConnectWallet}
-              type="button"
-            >
-              {buttonLabel}
-            </Button>
-            {!walletReady ? (
+            {/* Not rendered at all while the write is in flight. Disabling it would still
+                leave a control implying the write can be reattempted; its absence is the
+                point. */}
+            {inFlight.state ? null : (
+              <Button
+                className="h-11 w-full"
+                disabled={isSubmitting || walletAccessPending || (!walletReady && !ready)}
+                id="task-publish-wallet-access"
+                onClick={walletReady ? handlePublish : handleConnectWallet}
+                type="button"
+              >
+                {buttonLabel}
+              </Button>
+            )}
+            {!walletReady && !inFlight.state ? (
               <p className="text-xs leading-5 text-muted-foreground">
                 Connect a wallet to publish this task.
               </p>

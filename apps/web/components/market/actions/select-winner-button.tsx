@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignMessage } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
-import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
+import { signAndPost } from '@/lib/wallet-sign-action';
 
 import { ConnectPrompt } from './connect-prompt';
 import type { TaskActionComponentProps } from './types';
@@ -19,11 +21,27 @@ export function SelectWinnerButton({ disabled, onSuccess, task }: TaskActionComp
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [now, setNow] = useState(() => Date.now());
+  const inFlight = useInFlightWrite('Winner selection submitted, confirming');
 
   useEffect(() => {
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, []);
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so this state must survive anything that would otherwise swap the surface.
+  // Selecting a winner is relayed but unpaid, so `paid` is false.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        paid={false}
+        stalled={inFlight.stalled}
+        subject="winner selection"
+        title="Winner selection submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to select the winning bid." />;
@@ -41,45 +59,31 @@ export function SelectWinnerButton({ disabled, onSuccess, task }: TaskActionComp
     setPending(true);
     setError(null);
 
-    const message = `taskmarket:select-winner:${task.id}`;
-    let signature: string;
-    try {
-      signature = await signMessageAsync({ message });
-    } catch (err) {
-      setPending(false);
-      if (typeof err === 'object' && err !== null && 'code' in err && err.code === 4001) return;
-      const message = err instanceof Error ? err.message : 'Signing failed';
-      setError(message);
-      toast.error(message);
-      return;
-    }
+    // Signs `taskmarket:select-winner:<taskId>` and posts `{ taskId, requesterAddress,
+    // signature }` -- exactly what `signAndPost` builds, so the hand-rolled copy that used to
+    // live here is gone and this path picks up the in-flight outcome with everything else.
+    const result = await signAndPost<{ txHash?: string }>({
+      addressField: 'requesterAddress',
+      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+      idempotencyKey: inFlight.idempotencyKey,
+      path: `/api/tasks/${task.id}/bids/select-winner`,
+      taskId: task.id,
+      verbForMessage: 'select-winner',
+    });
+    setPending(false);
 
-    try {
-      const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/bids/select-winner`, {
-        body: JSON.stringify({
-          taskId: task.id,
-          requesterAddress: address,
-          signature,
-        }),
-        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
-        method: 'POST',
-      });
-      setPending(false);
-      if (!res.ok) {
-        const errBody = (await res.json().catch(() => ({}))) as { message?: string };
-        const message = errBody.message ?? `Server error: ${res.status}`;
-        setError(message);
-        toast.error(message);
-        return;
-      }
+    if (result.ok) {
       setDone(true);
       onSuccess?.();
       toast.success('Winner selected');
-    } catch (err) {
-      setPending(false);
-      const message = err instanceof Error ? err.message : 'Request failed';
-      setError(message);
-      toast.error(message);
+      return;
+    }
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the select button live.
+    if (inFlight.capture(result)) return;
+    if (!result.rejected) {
+      setError(result.error);
+      toast.error(result.error);
     }
   }
 

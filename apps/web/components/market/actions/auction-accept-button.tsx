@@ -5,9 +5,11 @@ import { useEffect, useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -26,6 +28,7 @@ export function AuctionAcceptButton({ disabled, onSuccess, task }: TaskActionCom
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const inFlight = useInFlightWrite('Auction acceptance submitted, confirming');
 
   // Refresh the clock price every 5s by re-fetching the task - dutch/reverse_dutch
   // price changes on the wall clock, so a stale SSR snapshot would mislead.
@@ -55,6 +58,20 @@ export function AuctionAcceptButton({ disabled, onSuccess, task }: TaskActionCom
     };
   }, [task.id, isConnected]);
 
+  // Checked before every other branch, including the disconnected and expired ones: the write
+  // is already out there, and an auction deadline passing under it must not replace this
+  // state with "auction ended".
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="auction acceptance"
+        title="Auction acceptance submitted, confirming"
+      />
+    );
+  }
+
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to accept this auction price." />;
   }
@@ -76,7 +93,8 @@ export function AuctionAcceptButton({ disabled, onSuccess, task }: TaskActionCom
       `/api/tasks/${task.id}/bids/accept`,
       { taskId: task.id },
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep
+      setStep,
+      inFlight.idempotencyKey
     );
     if (result.ok) {
       setStep('done');
@@ -91,6 +109,9 @@ export function AuctionAcceptButton({ disabled, onSuccess, task }: TaskActionCom
       );
     } else {
       setStep('idle');
+      // Neither success nor failure, so it must not reach the error path below: that path
+      // leaves the button live, and pressing it again is a second payment.
+      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);
