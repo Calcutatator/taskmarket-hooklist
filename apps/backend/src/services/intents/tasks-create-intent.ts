@@ -18,8 +18,11 @@ import { logger } from '../../lib/logger';
 import { normalizeRequesterPublicKey } from '../../lib/task';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
-import { dispatchRelayedIntent } from '../relayed-intent-registry';
-import { derivedIdempotencyKey, recordRelayedIntent } from '../relayed-intents';
+import {
+  recordAndDispatchEvaluatorAssignment,
+  type EvaluatorAssignment,
+} from '../evaluator-assignment';
+import { derivedIdempotencyKey } from '../relayed-intents';
 import { AUCTION_SUBTYPE_MAP, contractCreateTask, MODE_MAP, taskIdForTx } from '../contract';
 
 type Db = typeof DbType;
@@ -71,13 +74,10 @@ export type TasksCreateInput = {
  */
 export type TasksCreateIntentPayload = {
   allowedViewerAddresses: string[];
-  evaluatorAssignment: {
-    appealWindow: number;
-    disputeResolver: string | null;
-    evaluationWindow: number;
-    evaluator: string;
-    evaluatorFeeBps: number;
-  } | null;
+  // The shared type from services/evaluator-assignment, not a structural copy of it: the
+  // endpoint and this payload must mean the same thing by "24 hours" down to the units, and a
+  // duplicated inline shape is exactly how those two drift apart (ADR-0047).
+  evaluatorAssignment: EvaluatorAssignment | null;
   inlineTaskDrop: {
     description: string | null;
     id: string;
@@ -287,34 +287,35 @@ export async function completeTasksCreate(context: {
   });
 
   // Evaluator assignment is a second on-chain call, because the contract's createTask cannot
-  // take evaluator configuration. It is an ordinary intent of its own -- recorded, then
-  // broadcast immediately (ADR-0045) -- and not linked to the creation in any way: it carries
-  // no payment, so it has nothing to refund and nothing to inherit. Ordering is all it needs
-  // from the creation, and it gets that by being started only from here, after the escrow is
-  // confirmed. Immediately, not on a poll: assignEvaluator reverts with TaskNotOpen once a
-  // worker claims the task, which happens in milliseconds.
+  // take evaluator configuration (ADR-0047). It is an ordinary root intent of its own --
+  // recorded, then broadcast immediately (ADR-0045) -- and not linked to the creation in any
+  // way: it carries no payment, so it has nothing to refund and nothing to inherit. Ordering
+  // is all it needs from the creation, and it gets that by being started only from here, after
+  // the escrow is confirmed.
   //
-  // Interim shape. A POST /api/tasks/{id}/evaluator endpoint is the intended home for this,
-  // at which point the caller records and dispatches this intent directly.
+  // POST /api/tasks/{taskId}/evaluator is the canonical home for assignment, and this is the
+  // same shared path it uses -- same payload, same encoder, same intent operation. What it is
+  // not is a redirect to that endpoint: `assignEvaluator` reverts `TaskNotOpen` the moment a
+  // worker claims the task, and worker agents claim in milliseconds, so a requester who asked
+  // for an evaluator at creation must have it dispatched from inside this completion rather
+  // than after a round trip they would usually lose (ADR-0047's own record of 4 of 4
+  // assignments lost to a deferral). The endpoint is an addition, not a replacement.
   if (payload.evaluatorAssignment) {
-    const assignIntent = await recordRelayedIntent({
+    await recordAndDispatchEvaluatorAssignment({
       db,
-      // Derived from the creation this follows, not random: completion is at-least-once, so
-      // a rerun of this handler must land on the same assignment intent rather than record a
-      // second one and assign the evaluator twice (ADR-0052).
+      // Derived from the creation this follows, not random: completion is at-least-once, so a
+      // rerun of this handler must land on the same assignment intent rather than record a
+      // second one and assign the evaluator twice (ADR-0052). It is derived from the id the
+      // receipt resolved to, not from anything the payload carried -- the payload deliberately
+      // holds no task id, and the same escrow receipt always decodes to the same id, so a
+      // rerun derives the same key.
       idempotencyKey: derivedIdempotencyKey(`${taskId}:tasks.assignEvaluator`),
-      operation: 'tasks.assignEvaluator',
-      payer: payload.payer,
       payload: {
         assignment: payload.evaluatorAssignment,
         payer: payload.payer,
         taskId,
       },
     });
-    // Never throws: the escrow is on chain and the task exists whatever happens to the
-    // assignment, so a failure here must not make the creation look incomplete. The intent row
-    // records where it stopped.
-    await dispatchRelayedIntent({ db, intent: assignIntent });
   }
 
   // Unlisted and private tasks opt out of Taskmarket's own discovery surfaces (ADR-0014,
