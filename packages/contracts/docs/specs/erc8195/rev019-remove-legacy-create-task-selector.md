@@ -25,9 +25,32 @@ upgrade script and its own precondition, makes the removal a deliberate act some
 to perform, and makes "have we actually done it yet" a question with an on-chain answer
 (`diamondVersion == 19`).
 
-The cost of leaving it is not only tidiness. `CoreFacet` was measured at 19,704 bytes against the
-24,576-byte contract size limit with the shim present. Every deprecated path left routed
-indefinitely is permanently spent headroom in the facet that has the least of it.
+### This revision does not recover bytecode
+
+The expectation going in was that deleting the shim would return facet headroom, since `CoreFacet`
+sits closer to the 24,576-byte limit than anything else in the diamond. Measured, it does not.
+All three figures below are `forge build --sizes` runtime sizes from the same tree and the same
+compiler settings:
+
+| Variant | CoreFacet runtime (B) |
+| --- | --- |
+| rev018, shim present | 20,059 |
+| shim deleted, shared `memory` body kept | 20,209 (+150) |
+| shim deleted, body folded back into the external entry point (this revision) | 20,101 (+42) |
+
+Removing the shim **costs** 42 bytes rather than saving any. The reason is that two external entry
+points sharing one private body give the optimizer a reason to keep that body out of line and call
+it twice; with a single entry point it inlines the body into the dispatcher instead, and the
+inlined form — together with decoding five calldata structs at the call site — is marginally larger
+than the shared out-of-line copy it replaces. Folding the body back into the external and returning
+its struct parameters to `calldata` recovers most of that difference (150 bytes down to 42) but
+does not erase it.
+
+This is recorded because the opposite is easy to assume and was assumed here. It does not change
+the decision: the reason to contract is that a deprecated selector left routed indefinitely becomes
+permanent, and that task creation should have exactly one entry point. It does mean bytecode
+headroom is not among this revision's benefits, and nobody should schedule it expecting relief on
+facet size.
 
 ---
 
@@ -74,19 +97,21 @@ that would serve it has to come from that revision's code.
 
 Rev018 left `0xa595d889` routed with the stated intention that a later revision would remove it.
 Nothing about the rev018 deployment enforces that. The selector keeps working, so no failure ever
-prompts anyone to revisit it, and the shim's cost — dead code in the facet closest to the size
-limit, plus a second entry point into task creation that every future change to the creation body
-has to keep in mind — is paid indefinitely and silently.
+prompts anyone to revisit it, and its real cost — a second, undocumented-in-the-interface entry
+point into task creation that every future change to the creation body has to keep in mind, and a
+signature the protocol has stopped describing but still honours — is paid indefinitely and
+silently.
 
-## Problem 2 — Removing the route alone recovers nothing
+## Problem 2 — Unrouting alone leaves the dead code deployed
 
 The naive contraction is a single `Remove` cut: stop routing `0xa595d889` and stop there. That
-achieves the API change and none of the rest. The deployed `CoreFacet` still contains the shim's
-bytecode, so no headroom is recovered, and the source still contains a second entry point into
-`_createTask` that readers and future revisions must account for.
+achieves the API change and none of the rest. The deployed `CoreFacet` still contains the shim, so
+the source and the chain disagree about whether that entry point exists, and the next person to
+`Replace` `CoreFacet` from current source changes its behaviour without meaning to.
 
-Recovering the bytecode requires deleting the overload from the source and pointing the diamond at
-a newly deployed facet, which makes this a `Replace` plus a `Remove` rather than a `Remove` alone.
+Deleting the overload from the source and pointing the diamond at a newly deployed facet makes
+this a `Replace` plus a `Remove` rather than a `Remove` alone. Note that this is a correctness and
+maintainability argument, not a size one — see the measurement above.
 
 ---
 
@@ -151,9 +176,10 @@ function createTask(
 
 Both struct parameters return to `calldata`. Rev018 had to widen them to `memory` because the shim
 constructs a `TaskConfig` from its six loose scalars and passes it in; with the shim gone, the only
-caller is the external entry point, whose arguments are already calldata. That is where a
-meaningful part of the recovered bytecode comes from — it is not only the shim's own code, but the
-memory-materialisation and copying the shared body needed in order to accept either form.
+caller is the external entry point, whose arguments are already calldata. Keeping the `memory`
+signature after deleting the shim measures 108 bytes worse than folding it back (20,209 against
+20,101), so the fold is not tidying — it is the difference between this revision costing 150 bytes
+and costing 42.
 
 ### 2. `FacetSelectors` — the legacy selector leaves the steady state
 
@@ -233,16 +259,22 @@ by remembering.
 
 ### Why not leave the selector routed permanently?
 
-It costs bytecode in `CoreFacet`, which was measured at 19,704 of 24,576 bytes with the shim
-present and is the facet with the least headroom in the diamond. It also leaves a second entry
-point into task creation that every future change to the creation body has to reason about. The
-shim's cost is small per revision; the point is that it does not decrease, and neither does the
-number of such shims if leaving them is the precedent.
+Not for bytecode — measurement says leaving it is 42 bytes *cheaper*, and that argument is
+withdrawn above. The reason is that it leaves a second entry point into task creation that every
+future change to the creation body has to reason about, and that is exactly the kind of surface
+where a later revision tightens one path and silently leaves the other open. Rev018 itself made
+this argument in the other direction: it consolidated `assignEvaluator` and the creation path onto
+one shared body precisely so rev017's guards could not be sidestepped by the newer entry point. A
+permanent shim reintroduces the shape that reasoning rejected.
+
+The cost is also not static in the way the bytecode framing suggests. One shim is 42 bytes and one
+extra code path; the precedent of never contracting is unbounded in both.
 
 ### Why not just `Remove` the selector without redeploying `CoreFacet`?
 
-Because then the shim's bytecode is still deployed and nothing is recovered — see Problem 2. The
-route would be gone and the cost would remain, which is the worst of both.
+Because then the shim is still deployed and the source no longer describes what is on chain — see
+Problem 2. The route would be gone while the code stayed, so the next `Replace` of `CoreFacet`
+from current source would change deployed behaviour as an unintended side effect.
 
 ### Why keep `LEGACY_CREATE_TASK` in `FacetSelectors` if the shim is gone?
 

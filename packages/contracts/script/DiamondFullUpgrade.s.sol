@@ -316,7 +316,7 @@ contract DiamondFullUpgrade is Script {
         address ratingFacet,
         address regFacet
     ) internal {
-        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](12);
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](13);
         // Running index rather than literals: a revision that appends a cut here and a revision
         // that appends another one merge cleanly into two `i++` lines, whereas two literal
         // `cuts[10] = ...` assignments merge into a silent overwrite of one by the other. Path B
