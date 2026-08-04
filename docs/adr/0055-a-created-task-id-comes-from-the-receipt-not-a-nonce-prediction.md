@@ -8,12 +8,12 @@
 > is not knowable until the receipt arrives and so cannot be returned by a request that ends
 > before one does.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** None recorded — drafted for review, no independent reviewer yet
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —

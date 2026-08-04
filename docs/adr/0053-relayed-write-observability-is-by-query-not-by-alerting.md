@@ -11,7 +11,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Not started
+- **Embodiment:** Implemented
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review); decision made directly by Beau in conversation
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
@@ -141,6 +141,15 @@ frequency and cost. Anticipating it is not.
   omission.
 
 **Neutral / follow-up:**
+
+- **Embodiment is `Implemented`, not `Verified`, and the gap is the point.** The sites this
+  decision depends on now carry `Implements: ADR-0053` markers, so the audit can see them and
+  drift will fire if they are deleted. What does not exist is a test that asserts the logging is
+  actually *there* -- `Verified` requires a `Verifies:` reference and there is nothing to point
+  at. Point 3 calls the structured error logging load-bearing; until a structural test asserts
+  every terminal-failure write is accompanied by an error log, that claim is enforced by review
+  alone, which is the standard this repo has repeatedly found insufficient. Writing it is the
+  natural next step and would move this to `Verified` honestly.
 
 - A periodic digest remains the cheapest way to buy back most of what is given up here, and is
   rejected only ahead of evidence. If the accepted cost bites, it is the first thing to reach for,

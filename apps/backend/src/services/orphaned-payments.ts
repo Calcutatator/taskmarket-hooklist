@@ -1,3 +1,5 @@
+// Implements: ADR-0048
+// Implements: ADR-0053
 import { randomUUID } from 'crypto';
 import { and, eq, inArray } from 'drizzle-orm';
 import { TRPCError } from '@trpc/server';

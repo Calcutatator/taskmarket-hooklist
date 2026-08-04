@@ -145,7 +145,23 @@ const envSchema = z
     REPLACEMENT_GAS_MAX_MULTIPLE: z.coerce.number().int().min(2).default(10),
     // Optional absolute per-gas ceiling applied after the multiple. Unset by default because
     // a wei value means nothing without knowing the chain.
-    REPLACEMENT_GAS_MAX_FEE_WEI: z.coerce.number().int().positive().optional(),
+    //
+    // Parsed as a decimal string into bigint, not through z.coerce.number(). ADR-0051's own
+    // table specified `int`, following the surrounding pattern, and that is wrong for this one
+    // field: a per-gas ceiling in wei is exactly the quantity that exceeds Number.MAX_SAFE_INTEGER
+    // (2^53-1, about 9.007e15 wei -- roughly 9,007 gwei). Above that, IEEE-754 silently rounds,
+    // so an operator setting a ceiling during a fee spike could get a different number than they
+    // typed with no error anywhere. Fine at Base's fee levels and wrong on a chain where it
+    // matters, which is precisely when someone reaches for this field.
+    //
+    // Rejecting anything that is not digits also rules out the forms Number would have accepted
+    // and quietly mangled -- exponent notation, hex, a decimal point, leading whitespace.
+    REPLACEMENT_GAS_MAX_FEE_WEI: z
+      .string()
+      .regex(/^\d+$/, 'REPLACEMENT_GAS_MAX_FEE_WEI must be a whole number of wei, digits only')
+      .transform((value) => BigInt(value))
+      .refine((value) => value > 0n, 'REPLACEMENT_GAS_MAX_FEE_WEI must be greater than zero')
+      .optional(),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),

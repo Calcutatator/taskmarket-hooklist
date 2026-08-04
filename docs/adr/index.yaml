@@ -246,5 +246,5 @@ adrs:
   - number: "0055"
     file: "0055-a-created-task-id-comes-from-the-receipt-not-a-nonce-prediction.md"
     title: "A created task's id comes from its receipt, not from a requester-nonce prediction"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"

@@ -28,9 +28,7 @@ function readReplacementGasPolicy(): ReplacementGasPolicy {
     escalationPct: BigInt(config.REPLACEMENT_GAS_ESCALATION_PCT),
     firstBumpPct: BigInt(config.REPLACEMENT_GAS_FIRST_BUMP_PCT),
     maxFeeWei:
-      config.REPLACEMENT_GAS_MAX_FEE_WEI === undefined
-        ? null
-        : BigInt(config.REPLACEMENT_GAS_MAX_FEE_WEI),
+      config.REPLACEMENT_GAS_MAX_FEE_WEI === undefined ? null : config.REPLACEMENT_GAS_MAX_FEE_WEI,
     maxMultiple: BigInt(config.REPLACEMENT_GAS_MAX_MULTIPLE),
   };
 }

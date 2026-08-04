@@ -215,7 +215,7 @@ and the rest:
 | `REPLACEMENT_GAS_FIRST_BUMP_PCT` | `200` | `int`, `min(110)` | Opening bid as a percentage of the live oracle. `200` preserves today's 2x behaviour exactly, so adopting this decision changes nothing about the first attempt. |
 | `REPLACEMENT_GAS_ESCALATION_PCT` | `150` | `int`, `min(125)` | Each attempt as a percentage of the previous attempt's fee. |
 | `REPLACEMENT_GAS_MAX_MULTIPLE` | `10` | `int`, `min(2)` | Ceiling, as a multiple of the original transaction's fee. |
-| `REPLACEMENT_GAS_MAX_FEE_WEI` | unset | `int`, `positive`, optional | Optional absolute per-gas ceiling, applied after the multiple. An operator's circuit breaker for a fee regime nobody anticipated; unset by default because a wei value is meaningless without knowing the chain. |
+| `REPLACEMENT_GAS_MAX_FEE_WEI` | unset | decimal string parsed to `bigint`, `> 0`, optional | Optional absolute per-gas ceiling, applied after the multiple. An operator's circuit breaker for a fee regime nobody anticipated; unset by default because a wei value is meaningless without knowing the chain. |
 
 The dangerous misconfiguration is a cap that sits below the opening bid: the first attempt is then
 clamped on the way out, the curve flattens into the status quo — the exact defect this ADR exists to
@@ -304,6 +304,19 @@ ADR.
   comment: a speed-up must stop at the deadline while a cancel at the same nonce must not.
 
 **Neutral / follow-up:**
+
+- **Correction, decided 2026-08-04: this field is a bigint, not a number.** The table above
+  originally specified `int`, following the `z.coerce.number()` pattern the surrounding config
+  uses. That is wrong for this one field, and the reason generalises: a per-gas ceiling in wei is
+  exactly the quantity that exceeds `Number.MAX_SAFE_INTEGER` (2^53-1, about 9.007e15 wei, or
+  roughly 9,007 gwei). Past that, IEEE-754 rounds silently, so an operator setting a ceiling during
+  a spike could get a different number than they typed with nothing reporting it -- fine at Base's
+  fee levels, wrong on a chain where the field is worth setting, which is precisely when someone
+  reaches for it. It is now parsed as a digits-only decimal string into `bigint`, which also
+  rejects the forms `Number` would have accepted and mangled: exponent notation, hex, decimals,
+  leading whitespace. The consistency argument that produced the original choice was the weaker
+  one; every other value in this table is a percentage or a small multiple, where a `number` is
+  correct.
 
 - **Decided, not open: the fee actually used is persisted on the outbox row.** Escalation multiplies
   the fee being replaced, not a freshly read oracle, so each attempt needs to know what the previous

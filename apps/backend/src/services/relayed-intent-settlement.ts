@@ -1,4 +1,4 @@
-// Implements: ADR-0045, ADR-0050
+// Implements: ADR-0045, ADR-0050, ADR-0053
 import type { Hex } from 'viem';
 
 import { db } from '../db/client';

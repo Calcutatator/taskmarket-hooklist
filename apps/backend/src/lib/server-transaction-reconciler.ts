@@ -1,6 +1,7 @@
 // Implements: ADR-0040
 // Implements: ADR-0045
 // Implements: ADR-0051
+// Implements: ADR-0053
 import type { Hex } from 'viem';
 import { logger } from './logger';
 import type { GasFees, ServerTransactionStore } from './server-transaction-store';
