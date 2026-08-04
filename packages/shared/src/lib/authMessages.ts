@@ -33,6 +33,19 @@ export const READ_AUTH_SIGNATURE_HEADER = 'X-Taskmarket-Caller-Signature';
 export const TASK_ACCESS_GRANT_HEADER = 'X-Taskmarket-Task-Access-Grant';
 
 /**
+ * Header carrying the client-generated idempotency key that identifies one logical relayed
+ * write. Mandatory on every relayed write, paid or free. The value is opaque to the backend --
+ * it is matched by equality, never parsed -- and the client reuses it verbatim on any retry of
+ * the same logical operation, so a repeat returns the existing intent instead of making a
+ * second chain call.
+ *
+ * The intent id cannot serve this purpose: the backend mints it and the caller only learns it
+ * from the response, so a caller whose connection drops has paid and holds nothing. A key the
+ * client generates before the request is the only identifier that survives losing the response.
+ */
+export const IDEMPOTENCY_KEY_HEADER = 'X-Taskmarket-Idempotency-Key';
+
+/**
  * `contentBindings` ties the signature to the exact artifacts being submitted (their
  * storage keys for `submitFromKeys`, or content hashes for `submit`'s raw-bytes path) so a
  * signature harvested from one submission cannot be replayed with different file bytes or

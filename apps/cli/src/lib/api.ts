@@ -1,5 +1,6 @@
 import { buildLegalReceiptHeaders } from '@taskmarket/shared';
 
+import { idempotencyHeaders, newIdempotencyKey } from './idempotency.js';
 import { loadKeystore, type Keystore } from './keystore.js';
 
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
@@ -70,7 +71,7 @@ export async function apiGet(
 export async function apiPost(
   path: string,
   body: Record<string, unknown>,
-  options?: { headers?: Record<string, string> }
+  options?: { headers?: Record<string, string>; idempotencyKey?: string }
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const res = await fetch(`${API_URL}${path}`, {
@@ -79,6 +80,7 @@ export async function apiPost(
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
+      ...idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey()),
       ...(options?.headers ?? {}),
     },
     body: JSON.stringify(body),
@@ -95,7 +97,7 @@ export async function apiPost(
 
 export async function apiDelete(
   path: string,
-  options?: { headers?: Record<string, string> }
+  options?: { headers?: Record<string, string>; idempotencyKey?: string }
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const res = await fetch(`${API_URL}${path}`, {
@@ -104,6 +106,7 @@ export async function apiDelete(
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
+      ...idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey()),
       ...(options?.headers ?? {}),
     },
   });

@@ -1,4 +1,5 @@
 import { ApiError, API_URL, legalReceiptHeadersForKeystore } from './api.js';
+import { idempotencyHeaders, newIdempotencyKey } from './idempotency.js';
 import { loadKeystore } from './keystore.js';
 import { createTransferAuthorization } from './signer.js';
 
@@ -21,16 +22,23 @@ interface PaymentRequirements {
   }[];
 }
 
-export async function x402Post(path: string, body: Record<string, unknown>): Promise<unknown> {
+export async function x402Post(
+  path: string,
+  body: Record<string, unknown>,
+  options?: { idempotencyKey?: string }
+): Promise<unknown> {
   const url = `${API_URL}${path}`;
   const keystore = await loadKeystore();
   const legalHeaders = legalReceiptHeadersForKeystore(keystore, path, 'POST');
+  // One key for the whole exchange. Discovery and the paid retry are two rounds of a single
+  // logical write, so round 2 must present the same key round 1 did.
+  const idempotency = idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey());
 
   // Round 1: discover payment requirements
   const r1 = await fetch(url, {
     method: 'POST',
     redirect: 'error',
-    headers: { 'Content-Type': 'application/json', ...legalHeaders },
+    headers: { 'Content-Type': 'application/json', ...legalHeaders, ...idempotency },
     body: JSON.stringify(body),
   });
 
@@ -74,6 +82,7 @@ export async function x402Post(path: string, body: Record<string, unknown>): Pro
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
+      ...idempotency,
       'PAYMENT-SIGNATURE': Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
     },
     body: JSON.stringify(body),

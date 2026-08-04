@@ -211,16 +211,27 @@ Implements the two-round X402 flow for payment-gated endpoints:
 **Round 2:** Client signs a `TransferWithAuthorization` EIP-712 message authorizing USDC transfer. Signs using the keystore private key. Sends the same request with `PAYMENT-SIGNATURE: <base64-payload>` header.
 
 Exported as:
-- `x402Post(path, body)` - handles both rounds; throws on failure
+- `x402Post(path, body, options?)` - handles both rounds; throws on failure
 - `x402Get(path)` - same but GET (less common)
+
+Both rounds carry the same idempotency key: discovery and the paid retry are one logical write, and a fresh key on round 2 would present the paid round to the backend as a second operation.
 
 ### api.ts
 
 Thin wrapper over `fetch`:
 
 - `apiGet(path)` - GET request to `TASKMARKET_API_URL`
-- `apiPost(path, body)` - POST request (no X402; use `x402Post` for paid endpoints)
+- `apiPost(path, body, options?)` - POST request (no X402; use `x402Post` for paid endpoints)
+- `apiDelete(path, options?)` - DELETE request
 - `API_URL` - exported constant, defaults to production URL
+
+### idempotency.ts
+
+Every relayed write carries `X-Taskmarket-Idempotency-Key`, a client-generated UUID naming one logical operation. It is mandatory on every relayed write, paid or free; a request without it is rejected with HTTP 400 before anything is charged or broadcast.
+
+The key is applied in the transport (`apiPost`, `apiDelete`, `x402Post`), not per command, so every write path inherits it without a command having to remember. Each call mints a fresh key by default, because each call is a distinct logical operation -- including the several `x402Post` calls a batch command such as `reject-all-submissions` makes, which are separate writes and must not share one. A caller that is genuinely re-issuing one operation passes `options.idempotencyKey` to reuse the original value; the backend then returns the existing intent rather than making a second chain call.
+
+The key is what a caller still holds when the response never arrives. The intent id cannot fill that role: the backend mints it and the client only learns it from a response that may be lost, whereas the key exists before the request is sent.
 
 ## Output format
 
@@ -249,13 +260,13 @@ Two helpers used by every command:
 
 A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting: the transaction is still live and will still be settled, because the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
 
-**The CLI cannot currently tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is the intended place for a machine-readable answer (ADR-0049); it is not built.
+**The CLI cannot currently tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is where the machine-readable answer lives (ADR-0049), and the idempotency key the CLI sent is a handle into it -- but the CLI still surfaces every failure identically, so having a handle does not tell a caller which failure it is holding a handle for.
 
 Three practical consequences for CLI code and for anything scripting the CLI:
 
-- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping.
+- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping. The idempotency key does not change this: a re-run of the command mints a fresh key and is therefore a new operation, and even a rerun that somehow reused the key would still be a retry taken blind, because nothing in the CLI's output said which failure it was.
 - **Poll where there is something to poll.** If the command had a task ID, re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
-- **Accept that some commands have no handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. For those there is no way to check today; wait, inspect the wallet, and do not re-run the command.
+- **Some commands have no task to poll, but they do have a handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. The idempotency key covers exactly that gap at the protocol level: the write is queryable on the payer-scoped intent-status surface by the key that was sent with it. The CLI does not print the key it generated, so a CLI operator cannot yet use that handle -- wait, inspect the wallet, and do not re-run the command. A raw REST caller, which chooses its own key, can query straight away.
 
 The same rules apply to an ambiguous client-side failure -- a dropped connection or a timeout. Re-fetch
 state first, but be precise about what a read can tell you: **seeing the effect proves the write landed;
