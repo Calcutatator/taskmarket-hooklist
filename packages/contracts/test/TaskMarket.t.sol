@@ -23,7 +23,6 @@ import { IDiamondLoupe } from "../src/interfaces/IDiamondLoupe.sol";
 import { CoreFacet } from "../src/facets/CoreFacet.sol";
 import { AdminFacet } from "../src/facets/AdminFacet.sol";
 import { Diamond } from "../src/Diamond.sol";
-import { LibDiamond } from "../src/libraries/LibDiamond.sol";
 import { FacetSelectors } from "../script/lib/FacetSelectors.sol";
 import { noEvaluatorConfig } from "./helpers/EvaluatorConfigHelper.sol";
 import { taskConfig } from "./helpers/TaskConfigHelper.sol";
@@ -3295,12 +3294,12 @@ contract TaskMarketTest is DiamondTestHelper {
     }
 
     /// @dev The contract half of expand-then-contract. A steady-state diamond must not route the
-    ///      old selector at all: not to a shim, not to a stale facet. `FunctionNotFound` from the
-    ///      diamond's fallback is the specific, diagnosable failure a caller that never migrated
+    ///      old selector at all: not to a shim, not to a stale facet. The diamond fallback's
+    ///      "function not found" is the specific, diagnosable failure a caller that never migrated
     ///      should get -- distinguishable from a revert inside CoreFacet, which is what it would
     ///      get if the shim were still there.
     function test_RevertWhen_CreateTask_LegacySelector_NoLongerRouted() public {
-        vm.expectRevert(abi.encodeWithSelector(LibDiamond.FunctionNotFound.selector, FacetSelectors.LEGACY_CREATE_TASK));
+        vm.expectRevert(bytes("Diamond: function not found"));
         _relay(requester, REWARD, _createTaskLegacyCalldata());
     }
 

@@ -5,7 +5,6 @@ import "forge-std/Test.sol";
 import { IDiamondCut } from "../src/interfaces/IDiamondCut.sol";
 import { IDiamondLoupe } from "../src/interfaces/IDiamondLoupe.sol";
 import { ITMPCore } from "../src/interfaces/ITMPCore.sol";
-import { LibDiamond } from "../src/libraries/LibDiamond.sol";
 import { AdminFacet } from "../src/facets/AdminFacet.sol";
 import { CoreFacet } from "../src/facets/CoreFacet.sol";
 import { Rev012Upgrade } from "../script/upgrades/Rev012Upgrade.s.sol";
@@ -118,21 +117,27 @@ contract Rev019UpgradeTest is Test, DiamondTestHelper {
     }
 
     /// @dev An empty loupe entry and an actually-unreachable function are not the same claim. A
-    ///      caller that never migrated must get `FunctionNotFound` from the diamond's fallback --
-    ///      the specific, diagnosable failure -- rather than reaching a facet at all.
-    function test_Rev019Upgrade_LegacySelectorRevertsFunctionNotFound() public {
+    ///      caller that never migrated must be rejected by the diamond's fallback -- the specific,
+    ///      diagnosable failure -- rather than reaching a facet at all.
+    /// @dev The expected payload is `Error("Diamond: function not found")`, the require in
+    ///      Diamond.fallback, NOT `LibDiamond.FunctionNotFound`. That custom error is raised by
+    ///      `_removeFunction` when a *cut* tries to remove a selector that is not routed; it never
+    ///      appears on the call path. Asserting the wrong one of the two still fails when the
+    ///      Remove is dropped, but for the wrong reason, and would pass against a diamond that had
+    ///      never routed the selector in the first place.
+    function test_Rev019Upgrade_LegacySelectorRevertsWhenUnrouted() public {
         address diamond = address(deployDiamond(owner, usdc, feeRecipient, feeBps));
         _atRev018WithBothCreateTaskSelectors(diamond);
         new Rev019Upgrade().run();
 
         // Asserted on the returned data rather than with vm.expectRevert, so the exact revert
-        // payload -- including the selector it names -- is checked, not just that something threw.
+        // payload is checked, not just that something threw.
         (bool ok, bytes memory err) = diamond.call(_legacyCreateTaskCalldata());
         assertFalse(ok, "legacy createTask must revert");
         assertEq(
             err,
-            abi.encodeWithSelector(LibDiamond.FunctionNotFound.selector, FacetSelectors.LEGACY_CREATE_TASK),
-            "legacy createTask must revert FunctionNotFound naming the legacy selector"
+            abi.encodeWithSignature("Error(string)", "Diamond: function not found"),
+            "legacy createTask must be rejected by the diamond fallback, not by a facet"
         );
     }
 
