@@ -30,6 +30,7 @@ import type { Route } from 'next';
 import Link from 'next/link';
 import type { ReactNode } from 'react';
 
+import { AssignEvaluatorAction } from '@/components/market/actions/assign-evaluator-action';
 import { SubmissionPayoutAction } from '@/components/market/actions/submission-payout-action';
 import {
   ArtifactMediaHero,
@@ -45,6 +46,7 @@ import { RelativeTime } from '@/components/market/motion/relative-time';
 import { LiveStatusBanner } from './tasks/live-status-banner';
 import { PublishedCelebration } from '@/components/market/tasks/published-celebration';
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
+import { TaskEvaluationTerms } from '@/components/market/task-evaluation-terms';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
@@ -97,9 +99,9 @@ import {
   TableRow,
 } from '@/components/ui/table';
 import { Textarea } from '@/components/ui/textarea';
-import type { MarketStats } from '@/lib/api/server';
+import type { MarketStats, TaskEvaluationIdentities } from '@/lib/api/server';
 import { explorerTxUrl } from '@/lib/explorer';
-import { compactAddress, formatDateTime, formatUsdcUnits } from '@/lib/format';
+import { compactAddress, formatBps, formatDateTime, formatUsdcUnits } from '@/lib/format';
 import { MODE_TOOLTIPS } from '@/lib/market/status-config';
 import {
   TASK_TAG_BADGE_VARIANT,
@@ -286,14 +288,6 @@ function labelize(value?: string | null) {
   return value ? value.replaceAll('_', ' ') : 'standard';
 }
 
-function formatBps(value?: number | null) {
-  if (!value) {
-    return 'None';
-  }
-
-  return `${(value / 100).toFixed(2)}%`;
-}
-
 export function countLabel(count: number, singular: string, plural = `${singular}s`) {
   return `${count} ${count === 1 ? singular : plural}`;
 }
@@ -316,7 +310,7 @@ function taskDeadlineLabel(task: TaskDetailResponse | TaskResponse) {
 
 // For auctions the operative figure is the live clock price (dutch) or lowest bid
 // (english), not the static reward. Fall back to reward when the live value is absent.
-function taskDisplayReward(task: TaskDetailResponse | TaskResponse) {
+export function taskDisplayReward(task: TaskDetailResponse | TaskResponse) {
   if (task.mode === 'auction') {
     if (
       (task.auctionType === 'dutch' || task.auctionType === 'reverse_dutch') &&
@@ -2795,12 +2789,16 @@ function TaskBrief({ body }: { body: string }) {
 
 export function TaskDetailPanel({
   backHref = '/dashboard/tasks',
+  evaluationIdentities,
   marketStats,
   modeData,
   profileBasePath = '/dashboard/agents',
   task,
 }: {
   backHref?: string;
+  // Resolved by the route, not here: this panel stays synchronous so it keeps rendering under
+  // a plain client render in component tests.
+  evaluationIdentities?: TaskEvaluationIdentities | null;
   marketStats?: MarketStats | null;
   modeData?: TaskModeData;
   profileBasePath?: string;
@@ -2950,6 +2948,16 @@ export function TaskDetailPanel({
           </div>
         ) : null}
         <WorkRequirementsPanel className="order-2 lg:order-1" task={task} />
+        {/* Mutually exclusive by construction: the card renders only once terms exist, the
+            action only while none do and the connected viewer can still add them. */}
+        <TaskEvaluationTerms
+          className="order-2 lg:order-1"
+          disputeResolverAgentId={evaluationIdentities?.disputeResolverAgentId}
+          evaluatorAgentId={evaluationIdentities?.evaluatorAgentId}
+          profileBasePath={profileBasePath}
+          task={task}
+        />
+        <AssignEvaluatorAction className="order-2 lg:order-1" task={task} />
         {descriptionBody || detailTags.length > 0 ? (
           <section className="order-2 grid gap-5 border-t border-border/58 pt-5 lg:order-1">
             <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">

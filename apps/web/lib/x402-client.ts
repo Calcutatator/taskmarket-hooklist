@@ -4,8 +4,10 @@
 // so any X402-paid action button can call payX402Post() instead of
 // duplicating the full 90-line dance.
 
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import type { useSignTypedData, useSwitchChain } from 'wagmi';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { newIdempotencyKey } from '@/lib/api/idempotency';
 
 export type X402Step = 'payment' | 'signing' | 'submitting';
 
@@ -19,16 +21,49 @@ export type X402Deps = {
 export type X402Success<T> = {
   ok: true;
   data: T;
+  idempotencyKey: string;
   txHash?: string;
+};
+
+/**
+ * The write was broadcast and no terminal outcome has been established (ADR-0049 point 3).
+ * It is neither a success nor a failure, and a caller must never resubmit on it: a resubmit
+ * is a second x402 payment, not a retry. The idempotency key is the handle to poll with,
+ * because it exists before the request is sent and therefore survives a response that never
+ * arrived (ADR-0052).
+ */
+export type X402Pending = {
+  ok: false;
+  pending: true;
+  idempotencyKey: string;
+  error: string;
+  rejected?: false;
 };
 
 export type X402Failure = {
   ok: false;
+  pending?: false;
   error: string;
+  idempotencyKey?: string;
   rejected?: boolean;
 };
 
-export type X402Result<T> = X402Success<T> | X402Failure;
+export type X402Result<T> = X402Success<T> | X402Pending | X402Failure;
+
+// The backend still reports an in-flight relayed write as a 500 carrying
+// ServerTransactionPendingError's prose, with no machine-readable discriminator on the wire.
+// Matching the message is the only signal available; it is deliberately narrow, and the
+// consequence of a miss is the safe direction -- an unmatched pending error falls through as
+// an ordinary failure, which shows an error rather than inviting a second payment.
+const PENDING_ERROR_MARKERS = [
+  'remains in flight',
+  'not confirmed within the request budget',
+] as const;
+
+export function isPendingTransactionMessage(message: string): boolean {
+  const normalized = message.toLowerCase();
+  return PENDING_ERROR_MARKERS.some((marker) => normalized.includes(marker));
+}
 
 type Eip712Domain = {
   chainId: number | string;
@@ -76,7 +111,11 @@ export async function payX402Post<T = unknown>(
   path: string,
   body: Record<string, unknown>,
   deps: X402Deps,
-  onStep?: (step: X402Step) => void
+  onStep?: (step: X402Step) => void,
+  // Supplied by a caller that wants one logical write to keep the same key across an
+  // ambiguous outcome, so pressing the button again presents the write the backend already
+  // has rather than a second one. Minted per call when absent.
+  idempotencyKey: string = newIdempotencyKey()
 ): Promise<X402Result<T>> {
   try {
     onStep?.('payment');
@@ -180,6 +219,7 @@ export async function payX402Post<T = unknown>(
       headers: {
         'Content-Type': 'application/json',
         ...(await getLegalRequestHeaders()),
+        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
         'payment-signature': btoa(JSON.stringify(paymentPayload)),
       },
       method: 'POST',
@@ -189,19 +229,24 @@ export async function payX402Post<T = unknown>(
         message?: string;
         error?: string;
       };
-      return {
-        ok: false,
-        error: errBody.message ?? errBody.error ?? `Server error: ${submitRes.status}`,
-      };
+      const error = errBody.message ?? errBody.error ?? `Server error: ${submitRes.status}`;
+      if (isPendingTransactionMessage(error)) {
+        return { ok: false, pending: true, idempotencyKey, error };
+      }
+      return { ok: false, error, idempotencyKey };
     }
 
     const data = (await submitRes.json()) as T & { txHash?: string };
-    return { ok: true, data, txHash: data.txHash };
+    return { ok: true, data, idempotencyKey, txHash: data.txHash };
   } catch (err) {
     if (isUserRejected(err)) {
-      return { ok: false, error: 'Cancelled in wallet', rejected: true };
+      return { ok: false, error: 'Cancelled in wallet', idempotencyKey, rejected: true };
     }
-    return { ok: false, error: err instanceof Error ? err.message : 'X402 request failed' };
+    return {
+      ok: false,
+      error: err instanceof Error ? err.message : 'X402 request failed',
+      idempotencyKey,
+    };
   }
 }
 

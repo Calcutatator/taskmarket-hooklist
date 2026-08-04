@@ -295,6 +295,47 @@ export async function fetchTaskModeData(task: TaskDetailResponse | TaskResponse)
   return { bids, claim, pitches, proofs, submissions };
 }
 
+export type TaskEvaluationIdentities = {
+  disputeResolverAgentId: string | null;
+  evaluatorAgentId: string | null;
+};
+
+// Identity is a nicety on the evaluation card, not its point -- the terms themselves are what
+// a worker needs in order to decide. So each lookup is raced against a short budget and falls
+// back to the raw address, the same way the detail routes already treat their decorative
+// market stats. A slow or missing agents service must never delay or break the terms.
+const IDENTITY_LOOKUP_TIMEOUT_MS = 1200;
+
+async function agentIdFor(address?: string | null): Promise<string | null> {
+  if (!address) {
+    return null;
+  }
+
+  return Promise.race([
+    fetchAgentStats({ address })
+      .then((stats) => stats?.agentId ?? null)
+      .catch(() => null),
+    new Promise<null>((resolve) => setTimeout(() => resolve(null), IDENTITY_LOOKUP_TIMEOUT_MS)),
+  ]);
+}
+
+/**
+ * Registered agent identities for a task's evaluator and dispute resolver, so the evaluation
+ * card can name them rather than print raw hex. Both are null for a task with no evaluation
+ * terms, and for parties who are not registered agents -- which is an ordinary case, not an
+ * error.
+ */
+export async function fetchTaskEvaluationIdentities(
+  task: TaskDetailResponse | TaskResponse
+): Promise<TaskEvaluationIdentities> {
+  const [evaluatorAgentId, disputeResolverAgentId] = await Promise.all([
+    agentIdFor(task.evaluator),
+    agentIdFor(task.disputeResolver),
+  ]);
+
+  return { disputeResolverAgentId, evaluatorAgentId };
+}
+
 export async function fetchLeaderboard(searchParams?: {
   limit?: number;
   offset?: number;

@@ -3,7 +3,13 @@ import { cache } from 'react';
 
 import { TaskDetailPanel } from '@/components/market/tasks';
 import { PrivateTaskAccessGate } from '@/components/market/private-task-access-gate';
-import { fetchMarketStats, fetchTask, fetchTaskModeData, type MarketStats } from '@/lib/api/server';
+import {
+  fetchMarketStats,
+  fetchTask,
+  fetchTaskEvaluationIdentities,
+  fetchTaskModeData,
+  type MarketStats,
+} from '@/lib/api/server';
 import { buildPageMetadata, buildTaskMetadata, decodeRouteParam } from '@/lib/seo';
 
 type TaskDetailPageProps = {
@@ -70,11 +76,16 @@ export default async function TaskDetailPage({ params }: TaskDetailPageProps) {
     );
   }
 
-  const [modeData, marketStats] = await Promise.all([fetchTaskModeData(task), loadMarketStats()]);
+  const [modeData, marketStats, evaluationIdentities] = await Promise.all([
+    fetchTaskModeData(task),
+    loadMarketStats(),
+    fetchTaskEvaluationIdentities(task),
+  ]);
 
   return (
     <div className="mx-auto w-full max-w-7xl px-4 py-10 sm:px-6 lg:px-8">
       <TaskDetailPanel
+        evaluationIdentities={evaluationIdentities}
         backHref="/tasks"
         marketStats={marketStats}
         modeData={modeData}

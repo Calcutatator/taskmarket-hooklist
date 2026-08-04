@@ -84,6 +84,38 @@ export function formatDateTime(value?: string | null) {
   return date.toLocaleString(undefined, { timeZoneName: 'short' });
 }
 
+// Basis points as a percentage, e.g. 250 -> "2.50%". Zero and absent both read as "None"
+// because every caller so far uses bps for an optional cut that may simply not apply.
+export function formatBps(value?: number | null) {
+  if (!value) {
+    return 'None';
+  }
+
+  return `${(value / 100).toFixed(2)}%`;
+}
+
+// The portion of a base-unit amount that a bps cut takes, for showing what a percentage
+// actually costs alongside the percentage itself. Returns null when either input is
+// unusable, so a caller renders nothing rather than a confident "0".
+export function bpsShareOfBaseUnits(
+  baseUnits?: string | number | null,
+  bps?: number | null
+): string | null {
+  if (!bps || bps <= 0 || baseUnits === null || baseUnits === undefined || baseUnits === '') {
+    return null;
+  }
+
+  try {
+    const total = BigInt(typeof baseUnits === 'number' ? Math.trunc(baseUnits) : baseUnits);
+    if (total <= 0n) {
+      return null;
+    }
+    return ((total * BigInt(Math.round(bps))) / 10_000n).toString();
+  } catch {
+    return null;
+  }
+}
+
 export type DeadlineUrgency = 'none' | 'expired' | 'soon' | 'normal';
 
 const HOUR_MS = 3_600_000;
@@ -126,6 +158,29 @@ export function formatTimeLeft(
   }
 
   return { label, urgency: diff < DAY_MS ? 'soon' : 'normal' };
+}
+
+// Absolute length of a configured window, in the same m/h/d/mo vocabulary as
+// formatTimeLeft. Distinct from formatTimeLeft because a window is a duration the
+// requester chose ("24h"), not a countdown against the clock -- both appear side by
+// side on the evaluation card and must not be confused for each other.
+export function formatDurationSeconds(seconds?: number | null): string {
+  if (seconds === null || seconds === undefined || !Number.isFinite(seconds) || seconds <= 0) {
+    return 'Not set';
+  }
+
+  const minutes = Math.round(seconds / 60);
+  if (minutes < 60) {
+    return `${Math.max(minutes, 1)}m`;
+  }
+
+  const hours = Math.round(seconds / 3600);
+  if (hours < 24) {
+    return `${hours}h`;
+  }
+
+  const days = Math.round(seconds / 86_400);
+  return days < 30 ? `${days}d` : `${Math.round(days / 30)}mo`;
 }
 
 // Compact "time since" for activity timestamps: "just now", "2m ago", "3h ago",
