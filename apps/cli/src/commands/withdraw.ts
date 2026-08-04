@@ -39,6 +39,7 @@ export const withdrawCommand = new Command('withdraw')
     const parsed = parseFloat(amount);
     if (isNaN(parsed) || parsed <= 0) {
       printError('Invalid amount: must be a positive number (e.g. 5 for 5 USDC)');
+      return;
     }
     const amountBaseUnits = String(Math.round(parsed * 1_000_000));
 
@@ -47,6 +48,7 @@ export const withdrawCommand = new Command('withdraw')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const from = keystore.walletAddress;
@@ -59,6 +61,7 @@ export const withdrawCommand = new Command('withdraw')
       printError(
         'No withdrawal address set. Run: taskmarket wallet set-withdrawal-address <address>'
       );
+      return;
     }
 
     const { withdrawalAddress, usdcDomain } = addressResponse;

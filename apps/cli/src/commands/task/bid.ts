@@ -14,6 +14,7 @@ export const bidCmd = new Command('bid')
       priceBaseUnits = usdcToBaseUnits(opts.price);
     } catch (err) {
       renderFailure(withErrorContext(err, 'Invalid --price'));
+      return;
     }
 
     const result = (await x402Post(`/api/tasks/${taskId}/bids`, {

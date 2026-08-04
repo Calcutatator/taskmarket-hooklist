@@ -42,11 +42,13 @@ export const downloadCmd = new Command('download')
         presignedUrl = result.presignedUrl;
       } catch (err: unknown) {
         renderFailure(err, { fallback: 'Failed to get download URL.' });
+        return;
       }
 
       const res = await fetch(presignedUrl!);
       if (!res.ok) {
         printError(`Failed to download file: ${res.status}`);
+        return;
       }
       const content = Buffer.from(await res.arrayBuffer());
 
@@ -61,6 +63,7 @@ export const downloadCmd = new Command('download')
           printError(
             'Downloaded content is not valid UTF-8 text and cannot be safely printed to the terminal. Use --output <path> to save it to a file instead.'
           );
+          return;
         }
         process.stdout.write(sanitizeForTerminal(decoded!));
       }

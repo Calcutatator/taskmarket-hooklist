@@ -240,27 +240,25 @@ describe('a plain re-run is a new operation, not a retry', () => {
 describe('the CLI envelope', () => {
   let stderr: ReturnType<typeof vi.spyOn>;
   let stdout: ReturnType<typeof vi.spyOn>;
-  let exit: ReturnType<typeof vi.spyOn>;
 
   beforeEach(() => {
     stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
     stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
-    exit = vi.spyOn(process, 'exit').mockImplementation((() => {
-      throw new Error('exit');
-    }) as never);
+    process.exitCode = undefined;
   });
 
   afterEach(() => {
     stderr.mockRestore();
     stdout.mockRestore();
-    exit.mockRestore();
+    process.exitCode = undefined;
   });
 
   it('printError surfaces the key of the write that just failed, without the command passing it', async () => {
     mockFetch.mockResolvedValue(jsonResponse(500, { error: 'boom' }));
     const caught = await withIdempotencyScope(async () => {
       const err = (await apiPost('/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
-      expect(() => printError(err.message)).toThrow('exit');
+      printError(err.message);
+      expect(process.exitCode).toBe(1);
       return err;
     });
 
@@ -274,7 +272,8 @@ describe('the CLI envelope', () => {
 
   it('printError omits the key entirely when the command attempted no write', async () => {
     await withIdempotencyScope(async () => {
-      expect(() => printError('not a write at all')).toThrow('exit');
+      printError('not a write at all');
+      expect(process.exitCode).toBe(1);
     });
 
     const written = JSON.parse((stderr.mock.calls[0][0] as string).trim()) as Record<

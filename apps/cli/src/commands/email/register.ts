@@ -13,6 +13,7 @@ export const registerCommand = new Command('register')
     )) as { available: boolean };
     if (!check.available) {
       printError(`Username "${opts.username}" is not available.`);
+      return;
     }
 
     const keystore = await loadKeystore();

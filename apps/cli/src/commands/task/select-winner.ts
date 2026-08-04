@@ -13,6 +13,7 @@ export const selectWinnerCmd = new Command('select-winner')
       })) as typeof result;
     } catch (err: unknown) {
       renderFailure(err, { fallback: 'Failed to select winner.' });
+      return;
     }
 
     printResult(result!);

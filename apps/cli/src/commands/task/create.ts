@@ -101,6 +101,7 @@ export const createCmd = new Command('create')
         rewardBaseUnits = usdcToBaseUnits(opts.reward);
       } catch (err) {
         renderFailure(withErrorContext(err, 'Invalid --reward'));
+        return;
       }
 
       const duration = Number(opts.duration);
@@ -170,6 +171,7 @@ export const createCmd = new Command('create')
           maxPriceBaseUnits = usdcToBaseUnits(opts.maxPrice);
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --max-price'));
+          return;
         }
         if (maxPriceBaseUnits !== rewardBaseUnits) {
           return void printError(
@@ -220,6 +222,7 @@ export const createCmd = new Command('create')
           body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --auction-start-price'));
+          return;
         }
       }
 
@@ -228,6 +231,7 @@ export const createCmd = new Command('create')
           body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --auction-floor-price'));
+          return;
         }
       }
 

@@ -33,6 +33,7 @@ export const rejectAllSubmissionsCmd = new Command('reject-all-submissions')
       submissions = (await apiGet(`/api/tasks/${taskId}/submissions`)) as Submission[];
     } catch (err) {
       renderFailure(err);
+      return;
     }
 
     const workers = activeSubmissionWorkers(submissions);
@@ -83,6 +84,7 @@ export const rejectAllSubmissionsCmd = new Command('reject-all-submissions')
           },
         }
       );
+      return;
     }
 
     if (!opts.cancel) {
@@ -104,6 +106,7 @@ export const rejectAllSubmissionsCmd = new Command('reject-all-submissions')
       renderFailure(
         withErrorContext(err, `All ${results.length} submission(s) rejected but cancel failed`)
       );
+      return;
     }
 
     printResult({ rejected: results.length, results, cancelTxHash: cancelRes.txHash });

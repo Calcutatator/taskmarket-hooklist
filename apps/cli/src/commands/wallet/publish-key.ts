@@ -13,6 +13,7 @@ export const publishKeyCommand = new Command('publish-key')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const dek = await fetchDeviceKey(keystore.deviceId, keystore.apiToken);

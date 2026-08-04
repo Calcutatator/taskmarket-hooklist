@@ -19,6 +19,7 @@ export const depositCommand = new Command('deposit')
       address = await getWalletAddress();
     } catch (err: unknown) {
       renderFailure(err, { fallback: 'No keystore found. Run `taskmarket init` first.' });
+      return;
     }
 
     let networkInfo: NetworkInfo;
@@ -29,6 +30,7 @@ export const depositCommand = new Command('deposit')
       networkInfo = response.result.data;
     } catch (err: unknown) {
       renderFailure(err, { fallback: 'Failed to fetch network info from backend.' });
+      return;
     }
 
     const data = {

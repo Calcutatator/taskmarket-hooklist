@@ -16,6 +16,7 @@ export const decryptCommand = new Command('decrypt')
       ciphertext = await fs.readFile(file);
     } catch {
       printError(`Cannot read file: ${file}`);
+      return;
     }
 
     // Load keystore
@@ -24,6 +25,7 @@ export const decryptCommand = new Command('decrypt')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     // Decrypt private key from keystore
@@ -35,6 +37,7 @@ export const decryptCommand = new Command('decrypt')
       plaintext = decryptWithPrivateKey(ciphertext, privateKey);
     } catch (err: unknown) {
       renderFailure(err);
+      return;
     }
 
     // Determine output path

@@ -36,6 +36,7 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const workerAddress = keystore.walletAddress;
@@ -43,6 +44,7 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
     let destination = opts.destination;
     if (destination !== undefined && !isValidAddress(destination)) {
       printError('Invalid Ethereum address: must be 0x followed by 40 hex characters');
+      return;
     }
 
     if (!destination) {
@@ -54,6 +56,7 @@ export const withdrawDreamsCommand = new Command('withdraw-dreams')
         printError(
           'No withdrawal address set. Run: taskmarket wallet set-withdrawal-address <address>'
         );
+        return;
       }
       destination = addressResponse.withdrawalAddress!;
     }

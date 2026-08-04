@@ -18,6 +18,7 @@ export const encryptCommand = new Command('encrypt')
       plaintext = await fs.readFile(file);
     } catch {
       printError(`Cannot read file: ${file}`);
+      return;
     }
 
     // Load keystore to get own keys
@@ -26,6 +27,7 @@ export const encryptCommand = new Command('encrypt')
       keystore = await loadKeystore();
     } catch {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     let recipientPubKey: string;
@@ -52,6 +54,7 @@ export const encryptCommand = new Command('encrypt')
             ? 'Recipient has not published their public key. Ask them to run: taskmarket wallet publish-key'
             : 'Failed to fetch recipient public key';
         renderFailure(withErrorContext(err, context));
+        return;
       }
       recipientPubKey = result!.result.data.publicKey;
     } else {

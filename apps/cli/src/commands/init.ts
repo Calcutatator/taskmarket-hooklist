@@ -87,6 +87,7 @@ export const initCommand = new Command('init')
       )) as { available: boolean };
       if (!check.available) {
         printError(`Email username "${opts.email}" is not available.`);
+        return;
       }
     }
 
