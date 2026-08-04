@@ -397,8 +397,9 @@ describe('tasks router', () => {
       expect(notifyTaskDropSubscribers).not.toHaveBeenCalled();
     });
 
-    // Verifies: ADR-0045
-    it('records evaluator assignment as its own intent before relaying it', async () => {
+    // Verifies: ADR-0047
+    // Verifies: ADR-0056
+    it('configures the evaluator in the create transaction, with no follow-on intent', async () => {
       const ctx = createTaskCtx(PAYER);
       const caller = tasksRouter.createCaller(ctx);
 
@@ -408,24 +409,27 @@ describe('tasks router', () => {
       });
 
       expect(result.success).toBe(true);
-      // The contract's createTask cannot take evaluator configuration, so the assignment is a
-      // second contract call. It gets a durable record of its own before it is sent, and is
-      // then sent immediately -- assignEvaluator reverts once a worker claims the task, so
-      // deferring it to a poll loses the race.
-      const assignIntent = ctx.intents.find((row) => row.operation === 'tasks.assignEvaluator');
-      expect(assignIntent).toBeDefined();
-      // The fake intent store applies every update to its most recent row, so the status
-      // assertion belongs to the create intent; the assignment's own broadcast is asserted by
-      // the relay call and the linked hash.
-      expect(contractAssignEvaluator).toHaveBeenCalledOnce();
-      expect(assignIntent!.txHash).toBe('0xassignhash');
-      // It carries no payment reference: nothing was paid for it, so a confirmed failure of it
-      // has nothing to refund.
-      expect(assignIntent!.paymentTxHash).toBeNull();
-      expect(assignIntent!.payload).toEqual(
+
+      // This assertion used to be its mirror image: it required a second durable intent for a
+      // second contract call. That call raced the first worker to claim -- the task is Open,
+      // and so claimable, the instant the escrow mines, and assignEvaluator reverts
+      // TaskNotOpen once it is claimed. createTask now takes the evaluator terms, so the
+      // second call does not exist and neither does the race.
+      expect(ctx.intents.find((row) => row.operation === 'tasks.assignEvaluator')).toBeUndefined();
+      expect(contractAssignEvaluator).not.toHaveBeenCalled();
+
+      // The terms travel with the escrow, on the create call itself.
+      const evaluatorConfig = vi.mocked(contractCreateTask).mock.calls[0]![13];
+      expect(evaluatorConfig).toEqual(
+        expect.objectContaining({ evaluator: EVALUATOR, evaluatorFeeBps: 0 })
+      );
+
+      // One intent, and it is the paid one -- the create.
+      const createIntent = ctx.intents.find((row) => row.operation === 'tasks.create');
+      expect(createIntent).toBeDefined();
+      expect(createIntent!.payload).toEqual(
         expect.objectContaining({
-          assignment: expect.objectContaining({ evaluator: EVALUATOR }),
-          taskId: result.taskId,
+          evaluatorAssignment: expect.objectContaining({ evaluator: EVALUATOR }),
         })
       );
     });

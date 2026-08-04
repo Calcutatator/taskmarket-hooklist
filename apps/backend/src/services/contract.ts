@@ -93,6 +93,9 @@ const KNOWN_ERRORS: Record<string, string> = {
   // EvaluatorFacet -- evaluate/appeal/resolveDispute/evaluatorTimeout/rate.
   '0xd4ce3f2d': 'EvaluatorAlreadyAssigned',
   '0x46500a43': 'InvalidEvaluator',
+  // Reachable from createTask as well as assignEvaluator since rev016, because the creation
+  // path applies the same evaluator validation rather than a weaker copy of it.
+  '0x663885fb': 'FeeBpsTooHigh',
   '0x83e2a1e8': 'WrongStatusForEvaluation',
   '0x7401943d': 'AppealWindowClosed',
   '0x06395591': 'AppealWindowStillOpen',
@@ -133,6 +136,12 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0xaea4a319': 'WorkerNotSelected',
   '0x5378dda1': 'WorkerRequired',
   '0xefd1521e': 'TaskNotYetExpired',
+  // A refund that has already happened, and an update that changes nothing (ADR-0054). Both are
+  // permanently true once true, so they must decode: an unmapped Diamond revert resolves to
+  // 'unknown revert', which classifyRelayFailure treats as transient and therefore retries for
+  // ever. Adding a custom error to a facet is not finished until it appears here.
+  '0xe6ac7a63': 'TaskAlreadyRefunded',
+  '0x9a3bfd2b': 'NoRewardChange',
   '0x128dbd39': 'HookCheckSelectWorkerRejected',
   // Settlement/payout invariant failures -- internal transfer failures during
   // acceptance, cancellation, dispute resolution, or expiry refund.
@@ -233,7 +242,11 @@ const ERC20_ABI = parseAbi([
   'error ERC20InvalidSpender(address spender)',
 ]);
 const MARKET_ABI = parseAbi([
-  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[])) returns (bytes32)',
+  // The trailing tuple is TaskEvaluatorConfig (evaluator, stake, feeBps, evaluationWindow,
+  // appealWindow, disputeResolver), added at rev016 so a task with an evaluator is one
+  // transaction. Adding the parameter changed the selector, and rev016 removes the old one from
+  // the diamond, so this string and the deployed contract must move together.
+  'function createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]),(address,uint256,uint16,uint32,uint32,address)) returns (bytes32)',
   'function claimTask(bytes32,uint256)',
   'function selectWorker(bytes32,address)',
   'function acceptSubmission(bytes32,address,bytes32,uint256)',
@@ -667,6 +680,9 @@ export async function taskIdForTx(txHash: `0x${string}`): Promise<`0x${string}`>
   });
 }
 
+/** The address the contract reads as "unset" for hooks, evaluators and dispute resolvers. */
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
 export async function contractCreateTask(
   requester: `0x${string}`,
   reward: bigint,
@@ -680,7 +696,23 @@ export async function contractCreateTask(
   hookContract: `0x${string}` = '0x0000000000000000000000000000000000000000',
   tags: readonly `0x${string}`[] = [],
   hookData: `0x${string}` = '0x',
-  paymentTxHash?: `0x${string}`
+  paymentTxHash?: `0x${string}`,
+  /**
+   * Evaluator terms, applied in the same transaction as the task itself.
+   *
+   * Omit for a task with no evaluator. This is not a convenience: assigning an evaluator in a
+   * following transaction races every worker agent watching for new tasks, because the task is
+   * claimable the instant this one mines and `assignEvaluator` reverts `TaskNotOpen` once a
+   * worker has claimed. Passing the terms here is the only way to configure an evaluator that
+   * cannot lose that race (ADR-0047 named this gap; rev016 closes it).
+   */
+  evaluatorConfig?: {
+    appealWindowSecs: number;
+    disputeResolver: `0x${string}`;
+    evaluationWindowSecs: number;
+    evaluator: `0x${string}`;
+    evaluatorFeeBps: number;
+  }
 ): Promise<`0x${string}`> {
   const publicClient = getPublicClient();
 
@@ -710,6 +742,19 @@ export async function contractCreateTask(
         '0x0000000000000000000000000000000000000000000000000000000000000000' as `0x${string}`,
         '',
         tags,
+      ] as const,
+      // A zero evaluator address means "no evaluator". The contract rejects a config that
+      // carries terms but no evaluator rather than dropping them silently, so the absent case
+      // must be all-zero, not merely evaluator-less.
+      [
+        (evaluatorConfig?.evaluator ?? ZERO_ADDRESS) as `0x${string}`,
+        // The backend has never staked an evaluator; the field exists because the on-chain
+        // config does, and a caller that wants a stake goes through assignEvaluator.
+        0n,
+        evaluatorConfig?.evaluatorFeeBps ?? 0,
+        evaluatorConfig?.evaluationWindowSecs ?? 0,
+        evaluatorConfig?.appealWindowSecs ?? 0,
+        (evaluatorConfig?.disputeResolver ?? ZERO_ADDRESS) as `0x${string}`,
       ] as const,
     ],
   });

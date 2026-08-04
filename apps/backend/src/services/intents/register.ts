@@ -207,6 +207,15 @@ export function registerRelayedIntentHandlers(): void {
       }),
   });
 
+  // Appointing an evaluator to an already-live task. Task creation no longer uses this: it
+  // passes the evaluator terms to createTask and gets them applied in the same transaction,
+  // which is the only way to configure an evaluator that cannot lose the race against a worker
+  // claiming (ADR-0047 named the gap; the contract closed it at rev016).
+  //
+  // The operation stays registered because this case is real and permanent -- a requester who
+  // decides on an evaluator after creating the task has no other route, and the contract's
+  // `Open` gate correctly bounds it to a task nobody has claimed yet. Its caller is
+  // POST /api/tasks/{taskId}/evaluator.
   registerRelayedIntentHandler('tasks.assignEvaluator', {
     broadcast: async ({ intent }) => {
       const payload = intent.payload as TasksAssignEvaluatorIntentPayload;

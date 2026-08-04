@@ -4,6 +4,8 @@
  *   B. REJECT verdict, no appeal, finalize → cancelled (refund + terminate,
  *      not reopened — see EvaluatorFacet.finalizeVerdict's REJECT branch)
  *   C. APPROVE verdict, worker appeals, dispute resolver settles → completed
+ *   D. Creation with an evaluator is a single transaction — the evaluator, its fee, both
+ *      windows and the dispute resolver are all live before any second call could be made
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -20,6 +22,7 @@ import {
   getAccounts,
   API_URL,
   pollTaskStatus,
+  pollUntil,
   sleep,
   nudgeChainForward,
 } from './_x402';
@@ -274,6 +277,152 @@ async function scenarioC(
   ok('final status', finalStatus);
 }
 
+/**
+ * Scenario D — an evaluator supplied at creation is configured by the create transaction.
+ *
+ * The contract's createTask takes evaluator terms directly (rev016). Before that it did not, so
+ * a task with an evaluator needed a second contract call, and that call raced the first worker
+ * to claim: the task is Open, and so claimable, the instant the escrow mines, and
+ * assignEvaluator reverts TaskNotOpen once it is claimed. ADR-0047 recorded a sandbox run in
+ * which 4 of 4 assignments became permanently unreachable that way.
+ *
+ * What this asserts is the absence of that window rather than its narrowness. The task is read
+ * back before anything else touches it, and the full configuration must already be there — not
+ * just the evaluator address, but the fee, both windows and the dispute resolver, none of which
+ * appear in the EvaluatorAssigned event and so cannot have been backfilled by the indexer.
+ * Only the create transaction could have written them.
+ *
+ * smoke-nonce asserts the database-side half of the same fact: zero tasks.assignEvaluator
+ * intents exist for a task created with an evaluator.
+ */
+async function scenarioD(
+  requester: ReturnType<typeof getAccounts>['requester'],
+  worker: ReturnType<typeof getAccounts>['worker']
+): Promise<void> {
+  const evaluationWindowHours = 0.5;
+  const appealWindowHours = 0.25;
+
+  log('1/4', 'Creating a claim task with a full evaluator configuration...');
+  const { taskId } = (await x402Post(
+    '/api/tasks',
+    {
+      description: 'Evaluator smoke test — D (atomic creation)',
+      reward: '1000',
+      duration: 300,
+      mode: 'claim',
+      tags: ['smoke-evaluator'],
+      evaluator: requester.address,
+      disputeResolver: requester.address,
+      evaluatorFeeBps: 250,
+      evaluationWindowHours,
+      appealWindowHours,
+    },
+    requester
+  )) as { taskId: string };
+  ok('taskId', taskId);
+
+  log('2/4', 'Reading the task back before anything else touches it...');
+  const created = await pollUntil(
+    () =>
+      get(`/api/tasks/${taskId}`) as Promise<{
+        appealWindow: number | null;
+        disputeResolver: string | null;
+        evaluationWindow: number | null;
+        evaluator: string | null;
+        evaluatorFeeBps: number | null;
+        status: string;
+      }>,
+    (task) => Boolean(task.evaluator),
+    { label: `the evaluator on task ${taskId}`, timeoutMs: 120_000 }
+  );
+
+  if (created.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+    throw new Error(`evaluator is ${created.evaluator}, expected ${requester.address}`);
+  }
+  if (created.disputeResolver?.toLowerCase() !== requester.address.toLowerCase()) {
+    throw new Error(`disputeResolver is ${created.disputeResolver}, expected ${requester.address}`);
+  }
+  if (created.evaluatorFeeBps !== 250) {
+    throw new Error(`evaluatorFeeBps is ${created.evaluatorFeeBps}, expected 250`);
+  }
+  if (created.evaluationWindow !== Math.round(evaluationWindowHours * 3600)) {
+    throw new Error(`evaluationWindow is ${created.evaluationWindow}, expected 1800`);
+  }
+  if (created.appealWindow !== Math.round(appealWindowHours * 3600)) {
+    throw new Error(`appealWindow is ${created.appealWindow}, expected 900`);
+  }
+  if (created.status !== 'open') {
+    throw new Error(`status is ${created.status}, expected open`);
+  }
+  ok('full evaluator configuration live on an open task', 'fee=250 eval=1800s appeal=900s');
+
+  log('3/4', 'Worker claiming and submitting...');
+  const claimSig = await worker.signMessage({ message: `taskmarket:claim:${taskId}` });
+  await post(`/api/tasks/${taskId}/claim`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: claimSig,
+  });
+  const submitPayload = 'smoke-evaluator-atomic-payload';
+  const submitSig = await worker.signMessage({
+    message: buildSubmitMessage(taskId, [contentHash(submitPayload)]),
+  });
+  await post(`/api/tasks/${taskId}/submissions`, {
+    taskId,
+    workerAddress: worker.address,
+    signature: submitSig,
+    artifacts: [
+      {
+        fileName: 'submission.txt',
+        mimeType: 'text/plain',
+        role: 'attachment',
+        file: Buffer.from(submitPayload).toString('base64'),
+      },
+    ],
+  });
+  ok('submitted', true);
+
+  // Review, not PendingApproval. submitWork routes a CLAIM task to Review only when the contract
+  // already holds an evaluator for it, so reaching Review is the on-chain proof that the create
+  // transaction -- the only relayed transaction that has ever existed for this task -- wrote the
+  // evaluator config.
+  log('4/4', 'Waiting for the evaluator-gated state...');
+  const status = await pollStatus(taskId, ['review']);
+  ok('status', status);
+
+  const afterClaim = (await get(`/api/tasks/${taskId}`)) as { evaluator: string | null };
+  if (afterClaim.evaluator?.toLowerCase() !== requester.address.toLowerCase()) {
+    throw new Error(`evaluator lost after claim: ${afterClaim.evaluator}`);
+  }
+  ok('evaluator survived the claim it used to race', afterClaim.evaluator);
+
+  // Error path: the creation route must not become the cheap way past a guard the assignment
+  // route enforces. A fee above 100% is rejected before any escrow is taken.
+  log('4/4', 'Checking an out-of-range evaluator fee is rejected...');
+  let rejected = false;
+  try {
+    await x402Post(
+      '/api/tasks',
+      {
+        description: 'Evaluator smoke test — D (invalid fee)',
+        reward: '1000',
+        duration: 300,
+        mode: 'claim',
+        tags: ['smoke-evaluator'],
+        evaluator: requester.address,
+        evaluatorFeeBps: 10001,
+      },
+      requester
+    );
+  } catch {
+    rejected = true;
+  }
+  if (!rejected) {
+    throw new Error('createTask accepted an evaluatorFeeBps above 10000');
+  }
+  ok('evaluatorFeeBps above 10000 rejected', true);
+}
+
 async function main() {
   const { requester, worker } = getAccounts();
 
@@ -303,10 +452,16 @@ async function main() {
     )
   );
 
+  results.push(
+    await runScenario('D — creation with an evaluator is a single transaction', () =>
+      scenarioD(requester, worker)
+    )
+  );
+
   console.log('\n' + '='.repeat(60));
   console.log('RESULTS');
   console.log('='.repeat(60));
-  const labels = ['A', 'B', 'C'];
+  const labels = ['A', 'B', 'C', 'D'];
   results.forEach((passed, i) => {
     console.log(`  Scenario ${labels[i]}: ${passed ? 'PASS' : 'FAIL'}`);
   });
