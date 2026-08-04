@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { loadKeystore } from '../../lib/keystore.js';
 import { apiPost } from '../../lib/api.js';
-import { printError } from '../../lib/output.js';
+import { printError, renderFailure } from '../../lib/output.js';
 import { writeFileSync } from 'fs';
 
 // Strips bytes that a terminal would interpret as control sequences before writing
@@ -41,8 +41,7 @@ export const downloadCmd = new Command('download')
         )) as { presignedUrl: string };
         presignedUrl = result.presignedUrl;
       } catch (err: unknown) {
-        const msg = err instanceof Error ? err.message : 'Failed to get download URL.';
-        printError(msg);
+        renderFailure(err, { fallback: 'Failed to get download URL.' });
       }
 
       const res = await fetch(presignedUrl!);

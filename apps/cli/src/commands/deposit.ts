@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { getWalletAddress } from '../lib/signer.js';
-import { printResult, printError } from '../lib/output.js';
+import { printResult, renderFailure } from '../lib/output.js';
 import { apiGet } from '../lib/api.js';
 
 type NetworkInfo = {
@@ -18,9 +18,7 @@ export const depositCommand = new Command('deposit')
     try {
       address = await getWalletAddress();
     } catch (err: unknown) {
-      const msg =
-        err instanceof Error ? err.message : 'No keystore found. Run `taskmarket init` first.';
-      printError(msg);
+      renderFailure(err, { fallback: 'No keystore found. Run `taskmarket init` first.' });
     }
 
     let networkInfo: NetworkInfo;
@@ -30,8 +28,7 @@ export const depositCommand = new Command('deposit')
       };
       networkInfo = response.result.data;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to fetch network info from backend.';
-      printError(msg);
+      renderFailure(err, { fallback: 'Failed to fetch network info from backend.' });
     }
 
     const data = {

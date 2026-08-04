@@ -1,7 +1,7 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { apiGet } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { apiGet, withErrorContext } from '../../lib/api.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 export const updateCmd = new Command('update')
@@ -37,9 +37,7 @@ export const updateCmd = new Command('update')
         try {
           body.reward = usdcToBaseUnits(opts.reward);
         } catch (err) {
-          return void printError(
-            `Invalid --reward: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --reward'));
         }
       }
 
@@ -89,9 +87,7 @@ export const updateCmd = new Command('update')
         try {
           body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-floor-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-floor-price'));
         }
       }
 
@@ -99,9 +95,7 @@ export const updateCmd = new Command('update')
         try {
           body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
         } catch (err) {
-          return void printError(
-            `Invalid --auction-start-price: ${err instanceof Error ? err.message : String(err)}`
-          );
+          renderFailure(withErrorContext(err, 'Invalid --auction-start-price'));
         }
       }
 

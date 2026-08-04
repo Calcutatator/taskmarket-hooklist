@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, renderFailure } from '../../lib/output.js';
 
 export const selectWinnerCmd = new Command('select-winner')
   .description('Permissionlessly finalize the lowest bidder after the auction deadline')
@@ -12,8 +12,7 @@ export const selectWinnerCmd = new Command('select-winner')
         taskId,
       })) as typeof result;
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : 'Failed to select winner.';
-      printError(msg);
+      renderFailure(err, { fallback: 'Failed to select winner.' });
     }
 
     printResult(result!);

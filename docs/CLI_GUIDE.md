@@ -298,7 +298,7 @@ Both read the key from the current idempotency scope, so a command that made no 
 
 A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting: the transaction is still live and will still be settled, because the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
 
-**The CLI can now tell you that this is what happened.** The backend answers an in-flight write with HTTP 409 and a machine-readable envelope (ADR-0058), and `index.ts` puts it on the failure envelope:
+**The CLI can now tell you that this is what happened.** The backend answers an in-flight write with HTTP 409 and a machine-readable envelope (ADR-0058), and `lib/output.ts`'s `renderFailure` puts it on the failure envelope:
 
 ```json
 {
@@ -315,6 +315,8 @@ A paid command triggers an on-chain transaction relayed by the backend, and that
 ```
 
 `pending` is the field a script branches on. `true` means no terminal outcome has been established: the write may still succeed, so re-running it is a second payment rather than a retry. `false` means the outcome is settled and the command genuinely failed. Poll `intents.get` with `intentId`, or with `idempotencyKey` if the response never arrived.
+
+**Every command renders its failures the same way, and that is enforced rather than agreed.** `renderFailure` in `lib/output.ts` is the only function that builds the `ok: false` envelope. A command that catches its own error passes the error to it; one that lets the error propagate gets the same rendering from the top-level handler in `index.ts`, which calls the same function. What a command may not do is print a message it extracted from a caught error itself -- that is how the classification goes missing, silently, on output that still looks well-formed. `printError` exists only for messages the CLI composed with no error behind them (a malformed `--award` spec, an amount that is not a number), and `test/unit/config/api-failure-rendering.test.ts` fails the build if it is ever called on a caught error or if a second file starts building the envelope.
 
 **`pending` is absent, not `false`, when the backend sent no envelope** -- an older deployment, or a failure that never reached the API at all. That is deliberate. An unclassified failure is not evidence that nothing is in flight, and a manufactured `pending: false` would make a script retry on exactly the outcome it must not. A script must treat a missing `pending` as "unknown", which is the old blanket rule, and never as "safe".
 

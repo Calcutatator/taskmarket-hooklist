@@ -1,6 +1,12 @@
 import { apiErrorEnvelopeOf } from '@taskmarket/shared';
 
-import { ApiError, API_URL, legalReceiptHeadersForKeystore } from './api.js';
+import {
+  ApiError,
+  API_URL,
+  failureMessage,
+  legalReceiptHeadersForKeystore,
+  readFailureBody,
+} from './api.js';
 import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
 import { loadKeystore } from './keystore.js';
 import { createTransferAuthorization } from './signer.js';
@@ -52,21 +58,15 @@ export async function x402Post(
       if (r1.ok) {
         return r1.json();
       }
-      const text = await r1.text().catch(() => '');
       // Round 1 can fail on a repeated or missing idempotency key, which the middleware rejects
       // ahead of the 402 challenge -- so the envelope has to be read here too, not only after
       // payment. Parsed defensively because a round-1 failure is not guaranteed to be JSON.
-      let parsed: unknown;
-      try {
-        parsed = JSON.parse(text);
-      } catch {
-        parsed = undefined;
-      }
+      const read = await readFailureBody(r1);
       throw new ApiError(
         r1.status,
-        `POST ${path} failed (${r1.status}): ${text}`,
+        `POST ${path} failed (${r1.status}): ${read.text}`,
         idempotencyKey,
-        apiErrorEnvelopeOf(parsed) ?? undefined
+        apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
 
@@ -108,17 +108,20 @@ export async function x402Post(
       body: JSON.stringify(body),
     });
 
-    const result = await r2.json();
     if (!r2.ok) {
       // Round 2 failing is the case the key exists for: the payment has settled, so the caller has
-      // already been charged for a write whose outcome the response no longer tells them.
+      // already been charged for a write whose outcome the response no longer tells them. Read
+      // defensively for the same reason round 1 does -- an infrastructure failure here answers
+      // with whatever the proxy felt like sending, and `res.json()` throwing on it would replace
+      // the whole ApiError, envelope included, with a parse error. See readFailureBody.
+      const read = await readFailureBody(r2);
       throw new ApiError(
         r2.status,
-        `POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`,
+        failureMessage(`POST ${path} failed after payment`, r2.status, read),
         idempotencyKey,
-        apiErrorEnvelopeOf(result) ?? undefined
+        apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return result;
+    return r2.json();
   });
 }

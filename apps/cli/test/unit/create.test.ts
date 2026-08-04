@@ -21,17 +21,24 @@ describe('task create command', () => {
   let mockX402Post: ReturnType<typeof vi.fn>;
   let mockPrintResult: ReturnType<typeof vi.fn>;
   let mockPrintError: ReturnType<typeof vi.fn>;
+  let mockRenderFailure: ReturnType<typeof vi.fn>;
 
   beforeEach(async () => {
     mockX402Post = vi.fn();
     mockPrintResult = vi.fn();
     mockPrintError = vi.fn();
+    // Typed `never` in production: it writes the envelope and exits. A double that returned
+    // would let the command carry on past a failure it has already reported.
+    mockRenderFailure = vi.fn(() => {
+      throw new Error('renderFailure');
+    });
 
     vi.resetModules();
     vi.doMock('../../src/lib/x402.js', () => ({ x402Post: mockX402Post }));
     vi.doMock('../../src/lib/output.js', () => ({
       printResult: mockPrintResult,
       printError: mockPrintError,
+      renderFailure: mockRenderFailure,
     }));
 
     const mod = await import('../../src/commands/task/create.js');
@@ -325,10 +332,9 @@ describe('task create command', () => {
   });
 
   it('requires --max-price for auction mode', async () => {
-    await createCmd.parseAsync(
-      [...BASE_ARGS, '--mode', 'auction', '--auction-type', 'dutch'],
-      { from: 'node' }
-    );
+    await createCmd.parseAsync([...BASE_ARGS, '--mode', 'auction', '--auction-type', 'dutch'], {
+      from: 'node',
+    });
 
     expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('--max-price is required'));
   });
@@ -356,15 +362,7 @@ describe('task create command', () => {
 
   it('requires --auction-start-price for reverse_dutch', async () => {
     await createCmd.parseAsync(
-      [
-        ...BASE_ARGS,
-        '--mode',
-        'auction',
-        '--max-price',
-        '10',
-        '--auction-type',
-        'reverse_dutch',
-      ],
+      [...BASE_ARGS, '--mode', 'auction', '--max-price', '10', '--auction-type', 'reverse_dutch'],
       { from: 'node' }
     );
 
@@ -398,12 +396,16 @@ describe('task create command', () => {
   });
 
   it('rejects invalid reward decimals before payment', async () => {
-    await createCmd.parseAsync(
-      ['node', 'create', '--description', 'test', '--reward', '1.0000001', '--duration', '1'],
-      { from: 'node' }
-    );
+    await expect(
+      createCmd.parseAsync(
+        ['node', 'create', '--description', 'test', '--reward', '1.0000001', '--duration', '1'],
+        { from: 'node' }
+      )
+    ).rejects.toThrow('renderFailure');
 
-    expect(mockPrintError).toHaveBeenCalledWith(expect.stringContaining('Invalid --reward'));
+    expect(mockRenderFailure).toHaveBeenCalledWith(
+      expect.objectContaining({ message: expect.stringContaining('Invalid --reward') })
+    );
     expect(mockX402Post).not.toHaveBeenCalled();
   });
 });

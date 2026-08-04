@@ -16,6 +16,7 @@ describe('legal acceptance receipt headers', () => {
     vi.clearAllMocks();
     mockFetch.mockResolvedValue({
       json: async () => ({ ok: true }),
+      text: async () => JSON.stringify({ ok: true }),
       ok: true,
       status: 200,
     });

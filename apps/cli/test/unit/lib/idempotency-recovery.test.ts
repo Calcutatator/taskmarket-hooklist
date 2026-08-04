@@ -84,7 +84,12 @@ const PAYMENT_REQUIREMENTS = {
 };
 
 function jsonResponse(status: number, body: unknown) {
-  return { ok: status >= 200 && status < 300, status, json: async () => body };
+  return {
+    ok: status >= 200 && status < 300,
+    status,
+    json: async () => body,
+    text: async () => JSON.stringify(body),
+  };
 }
 
 function headerFor(callIndex: number): string | undefined {
@@ -133,8 +138,13 @@ describe('the key a failed write was sent under reaches the error', () => {
       ok: false,
       status: 402,
       json: async () => PAYMENT_REQUIREMENTS,
+      text: async () => JSON.stringify(PAYMENT_REQUIREMENTS),
     });
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ deviceEncryptionKey: dek }) });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ deviceEncryptionKey: dek }),
+      text: async () => JSON.stringify({ deviceEncryptionKey: dek }),
+    });
     mockFetch.mockResolvedValueOnce(jsonResponse(500, { error: 'ServerTransactionPendingError' }));
 
     const caught = (await x402Post('/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
@@ -175,8 +185,13 @@ describe('a caller-supplied key round-trips', () => {
       ok: false,
       status: 402,
       json: async () => PAYMENT_REQUIREMENTS,
+      text: async () => JSON.stringify(PAYMENT_REQUIREMENTS),
     });
-    mockFetch.mockResolvedValueOnce({ ok: true, json: async () => ({ deviceEncryptionKey: dek }) });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ deviceEncryptionKey: dek }),
+      text: async () => JSON.stringify({ deviceEncryptionKey: dek }),
+    });
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { success: true }));
 
     await x402Post('/api/tasks', {}, { idempotencyKey: 'operator-chosen' });

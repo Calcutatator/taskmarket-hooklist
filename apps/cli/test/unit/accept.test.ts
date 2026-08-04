@@ -7,6 +7,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
   printError: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 vi.mock('../../src/lib/api.js', () => ({

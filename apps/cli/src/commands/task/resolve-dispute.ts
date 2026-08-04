@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { x402Post } from '../../lib/x402.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { usdcToBaseUnits } from '../../lib/usdc.js';
 
 /**
@@ -62,8 +62,7 @@ export const resolveDisputeCmd = new Command('resolve-dispute')
     try {
       awards = opts.award.map(parseAward);
     } catch (err) {
-      printError(err instanceof Error ? err.message : String(err));
-      return;
+      renderFailure(err);
     }
 
     const result = (await x402Post(`/api/tasks/${taskId}/resolve-dispute`, {

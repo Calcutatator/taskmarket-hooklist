@@ -6,6 +6,9 @@ vi.mock('../../src/lib/x402.js', () => ({
 
 vi.mock('../../src/lib/output.js', () => ({
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { evaluatorTimeoutCmd } from '../../src/commands/task/evaluator-timeout.js';
@@ -22,7 +25,9 @@ describe('task evaluator-timeout command', () => {
 
     await evaluatorTimeoutCmd.parseAsync(['node', 'evaluator-timeout', '0xtask'], { from: 'node' });
 
-    expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/evaluator-timeout', { taskId: '0xtask' });
+    expect(x402Post).toHaveBeenCalledWith('/api/tasks/0xtask/evaluator-timeout', {
+      taskId: '0xtask',
+    });
     expect(printResult).toHaveBeenCalledWith({ txHash: '0xtxhash' });
   });
 

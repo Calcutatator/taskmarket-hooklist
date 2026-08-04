@@ -1,6 +1,6 @@
 import { Command } from 'commander';
 import { apiPost } from '../../lib/api.js';
-import { printResult, printError } from '../../lib/output.js';
+import { printResult, printError, renderFailure } from '../../lib/output.js';
 import { signReadAuth } from '../../lib/read-auth.js';
 
 /**
@@ -27,6 +27,6 @@ export const inviteCmd = new Command('invite')
       );
       printResult(result as Record<string, unknown>);
     } catch (err: unknown) {
-      printError(err instanceof Error ? err.message : 'Failed to invite viewer.');
+      renderFailure(err, { fallback: 'Failed to invite viewer.' });
     }
   });

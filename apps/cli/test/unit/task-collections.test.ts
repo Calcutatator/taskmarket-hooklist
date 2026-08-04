@@ -7,6 +7,9 @@ vi.mock('../../src/lib/api.js', () => ({
 vi.mock('../../src/lib/output.js', () => ({
   printError: vi.fn(),
   printResult: vi.fn(),
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 // Phase 3 (ADR-0030): pitches/proofs now sign read-auth and attach any cached

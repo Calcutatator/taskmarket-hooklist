@@ -35,6 +35,9 @@ vi.mock('../../src/lib/encryption.js', () => ({ deriveCompressedPublicKey: vi.fn
 vi.mock('../../src/lib/output.js', () => ({
   printError: mocks.printError,
   printResult: mocks.printResult,
+  renderFailure: vi.fn((error: unknown) => {
+    throw error instanceof Error ? error : new Error(String(error));
+  }),
 }));
 
 import { initCommand } from '../../src/commands/init.js';
