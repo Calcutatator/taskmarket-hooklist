@@ -121,7 +121,8 @@ export const tasks = pgTable(
   })
 );
 
-// Implements: ADR-0004 (task_awards is a separate event-backed ledger table)
+// Implements: ADR-0006 (task_awards is the single source of truth; subsumes the
+// original ADR-0004 event-backed-ledger decision it superseded)
 // One row per award, replay-safe via the (chainId, blockNumber, logIndex) unique index
 // below -- see settlement-recorder.ts's onConflictDoNothing() insert.
 export const taskAwards = pgTable(

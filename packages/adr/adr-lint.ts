@@ -17,6 +17,7 @@
 // and a still-Proposed ADR's provisional supersession claim missing its
 // Pending Supersedes / Superseded-by reciprocation on the peer side.
 
+import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
@@ -26,6 +27,9 @@ import {
   formatGithubAnnotation,
   normalizeIssueFilePath,
   resolveGitDiffChangedFiles,
+  resolveTrackedSourceFiles,
+  coerceScope,
+  type LintScope,
 } from './lib.js';
 
 // Repo root is two levels up from packages/adr/.
@@ -33,6 +37,22 @@ const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
 const REPO_ROOT = join(PACKAGE_DIR, '..', '..');
 const ADR_DIR = join(PACKAGE_DIR, '..', '..', 'docs', 'adr');
 const RFC_DIR = join(PACKAGE_DIR, '..', '..', 'docs', 'rfc');
+const SCOPE_CONFIG = join(PACKAGE_DIR, 'adr-lint.config.json');
+
+// Which files the Implements gate scans: only this push's diff, or every tracked
+// source file. Precedence: ADR_LINT_SCOPE env > adr-lint.config.json > built-in
+// default ('whole-corpus'), so a missing/malformed config never narrows coverage.
+function resolveScope(): LintScope {
+  const fromEnv = coerceScope(process.env.ADR_LINT_SCOPE);
+  if (fromEnv) return fromEnv;
+  try {
+    const fromFile = coerceScope((JSON.parse(readFileSync(SCOPE_CONFIG, 'utf8')) as { scope?: string }).scope);
+    if (fromFile) return fromFile;
+  } catch {
+    // missing or malformed config -> fall through to the safe default
+  }
+  return 'whole-corpus';
+}
 
 function getChangedFiles(): string[] {
   const argvFiles = process.argv.slice(2);
@@ -59,8 +79,8 @@ function getChangedFiles(): string[] {
 // annotations, the summary line -- goes to stderr instead, so `pnpm lint:check` piped through
 // `| jq` (or read by an agent) gets clean JSON with no prose mixed in, while a human running it
 // directly in a terminal still sees everything (stdout and stderr both render there).
-function runCli(adrDir: string, changedFiles: string[]): void {
-  const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT);
+function runCli(adrDir: string, changedFiles: string[], gateFiles: string[]): void {
+  const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT, gateFiles);
   // RFCs are not structurally linted (see lintRfcDir's own doc comment) -- only index
   // freshness is checked here, the same mechanical property enforced for ADRs.
   const { issues: rfcIssues, rfcFiles } = lintRfcDir(RFC_DIR, REPO_ROOT);
@@ -95,4 +115,10 @@ function runCli(adrDir: string, changedFiles: string[]): void {
   process.exit(errorCount > 0 ? 1 : 0);
 }
 
-runCli(ADR_DIR, getChangedFiles());
+const scope = resolveScope();
+const changedFiles = getChangedFiles();
+// In whole-corpus mode the gate scans every tracked source file, independent of
+// this push's diff; in diff mode it scans only the changed files. The coverage
+// warning always keys off the actual changed files, so it is unaffected.
+const gateFiles = scope === 'whole-corpus' ? resolveTrackedSourceFiles(REPO_ROOT) : changedFiles;
+runCli(ADR_DIR, changedFiles, gateFiles);

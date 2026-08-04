@@ -171,5 +171,5 @@ to compensate after the fact.
 - Live mainnet `EpochBudget` (`0x2566c90adcce4acfd69f66591022820e92d421d2`) and `RewardVault`
   (`0x351265d55c17ced91f5604b4037171e803bc9c2b`) on-chain state, queried 2026-07-23 — see
   Context section for the specific figures and the verification caveat
-- `script/upgrades/Rev012Upgrade.s.sol` — the versioned-upgrade-step precedent for how the
+- `packages/contracts/script/upgrades/Rev012Upgrade.s.sol` — the versioned-upgrade-step precedent for how the
   Diamond side of the surrounding batch (Rev013) is applied, for reference on script structure

@@ -15,7 +15,7 @@
 // still-Proposed ones.
 
 import { readdirSync, readFileSync, existsSync } from 'node:fs';
-import { join, resolve } from 'node:path';
+import { join, resolve, sep } from 'node:path';
 import { execFileSync } from 'node:child_process';
 
 export const FILENAME_RE = /^\d{4}-[a-z0-9-]+\.md$/;
@@ -608,8 +608,8 @@ export function renderDocIndexYaml(entries: DocIndexEntry[], opts: DocIndexYamlO
 }
 
 // Matches this repo's existing "- [NNNN — Title](file.md)" bullet-list index style -- the one
-// rendered view both ADRs and RFCs use here (the sibling repo instead renders a markdown table;
-// same underlying data, different rendering convention per repo, not per doc kind).
+// rendered view both ADRs and RFCs use here (a markdown table is an equally valid rendering of
+// the same underlying data; this repo standardizes on the bullet-list style across doc kinds).
 export function renderDocIndexList(entries: DocIndexEntry[]): string {
   const sorted = [...entries].sort((a, b) => a.number.localeCompare(b.number));
   return sorted.map((e) => `- [${e.number} — ${e.title}](${e.file})`).join('\n');
@@ -701,17 +701,30 @@ export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
 export const IMPLEMENTS_ADR_RE = /Implements:\s*ADR-(\d{4})/g;
 
 /**
+ * Status-aware remediation text for a back-pointer to a non-Accepted ADR.
+ * A retired decision (Superseded/Deprecated) was accepted and then replaced, so
+ * telling the author to "accept it" is wrong -- the fix is to repoint the marker.
+ */
+export function implementsGateMessage(number: string, status: string): string {
+  if (status === 'Superseded' || status === 'Deprecated') {
+    return `implements ADR-${number} (Status: ${status}) — repoint this back-pointer to its successor / the current decision; a retired decision is not a live realization target`;
+  }
+  return `implements ADR-${number}, which is not Accepted (Status: ${status}) — a human Decider must accept it (Status: Accepted) before the implementation can merge`;
+}
+
+/**
  * Blocking: application source that claims to implement an ADR must not merge while that ADR
- * is still `Proposed`.
+ * is anything other than `Accepted`.
  *
  * This exists because the convention was stated and then not honoured. ADR-0039 said in its own
  * text that the implementation "must not merge until a human Decider accepts this ADR"; PR #410
  * merged to `main` anyway with the ADR still `Proposed` and no Decider, because nothing checked.
- * Prose in an ADR is not a gate. This is.
+ * Prose in an ADR is not a gate. This is. Realization evidence for a decision that has not been
+ * accepted -- or is no longer the accepted one (Superseded/Deprecated) -- is a contradiction.
  *
- * Scope is deliberately narrow. Adding a `Proposed` ADR on its own is fine and expected -- that
- * is how a decision gets drafted for review. What is blocked is shipping the code that carries
- * its `Implements: ADR-NNNN` marker before a human has recorded the decision.
+ * Scope is deliberately narrow on the ADR side. Adding a non-Accepted ADR on its own is fine and
+ * expected -- that is how a decision gets drafted for review. What is blocked is shipping the code
+ * that carries its `Implements: ADR-NNNN` marker before a human has recorded the decision.
  */
 export function checkProposedAdrImplementation(
   changedFiles: string[],
@@ -745,11 +758,15 @@ export function checkProposedAdrImplementation(
 
     for (const number of [...claimed].sort()) {
       const status = statusByNumber.get(number);
-      if (status !== 'Proposed') continue;
+      // Only an Accepted ADR is a valid realization target. Anything else --
+      // Draft, Proposed, Superseded, Deprecated, Withdrawn -- fails: realization
+      // evidence for a decision that has not been (or is no longer) the accepted
+      // one is a contradiction. An unknown ADR is a dangling ref, a different check.
+      if (status === undefined || status === 'Accepted') continue;
       issues.push({
         type: 'ERROR',
         file,
-        message: `implements ADR-${number}, which is still Proposed — a human Decider must accept it (Status: Accepted) before the implementation can merge`,
+        message: implementsGateMessage(number, status),
       });
     }
   }
@@ -805,11 +822,38 @@ export function checkScopeMismatch(changedFiles: string[]): Issue[] {
 // explicitly asked for a diff and got a git error should hear about it, not silently fall back to
 // "nothing changed").
 export function resolveGitDiffChangedFiles(repoRoot: string, base: string): string[] {
-  const diff = execFileSync('git', ['diff', '--name-only', `${base}...HEAD`], {
+  // -z: NUL-delimited, verbatim paths — without it git quotes non-ASCII filenames
+  // (core.quotePath) so they drop out of the diff scan; splitting on NUL also
+  // preserves any leading/trailing whitespace in a changed filename.
+  const diff = execFileSync('git', ['diff', '--name-only', '-z', `${base}...HEAD`], {
     cwd: repoRoot,
     encoding: 'utf-8',
   });
-  return diff.split('\n').filter((f) => f.trim().length > 0);
+  return diff.split('\0').filter((f) => f.length > 0);
+}
+
+// The Implements gate can look at only the files changed in this push ('diff')
+// or every tracked source file ('whole-corpus'). A committed config selects
+// which; the built-in default is 'whole-corpus' so a missing or malformed
+// config never silently narrows coverage -- the safe failure is to check more.
+export type LintScope = 'diff' | 'whole-corpus';
+
+export function coerceScope(value: string | null | undefined): LintScope | null {
+  return value === 'diff' || value === 'whole-corpus' ? value : null;
+}
+
+// Every tracked file under the coverage paths -- the file set the gate scans in
+// whole-corpus mode. `git ls-files`, so an untracked scratch file is excluded
+// the same way the rest of the linter scopes to tracked content.
+export function resolveTrackedSourceFiles(repoRoot: string): string[] {
+  // -z: NUL-delimited, verbatim paths. Without it git quotes non-ASCII filenames
+  // (core.quotePath) so they drop out of whole-corpus scanning; splitting on NUL
+  // also preserves any leading/trailing whitespace in a tracked filename.
+  const out = execFileSync('git', ['ls-files', '-z', '--', ...COVERAGE_PATHS], {
+    cwd: repoRoot,
+    encoding: 'utf-8',
+  });
+  return out.split('\0').filter((f) => f.length > 0);
 }
 
 // ---------------------------------------------------------------------------
@@ -884,6 +928,42 @@ export function extractCitedGithubNumbers(referencesSection: string): string[] {
 // content-accuracy issue to flag, matching this repo's own blocking-vs-warn calibration
 // ("governance gap with no one answerable" vs. "useful but not worth blocking a merge" --
 // docs/adr/README.md), not a governance-accountability gap the way a missing Deciders value is.
+/**
+ * True when `candidate` (resolved relative to `root`) stays inside `root`. Guards
+ * the citation-existence probe: a `## References` path like `../../../etc/x.conf`
+ * would otherwise let the existence check report on files anywhere on the host,
+ * turning the linter into a file-existence oracle driven by document content.
+ * Pure (path math only, no fs), so it's unit-tested directly.
+ */
+export function pathIsInsideRoot(root: string, candidate: string): boolean {
+  const resolved = resolve(root, candidate);
+  return resolved === root || resolved.startsWith(root + sep);
+}
+
+/**
+ * Symlink-aware variant of pathIsInsideRoot. The lexical check above stops `..`
+ * traversal, but `existsSync` *follows symlinks* — so a path that is lexically
+ * inside `root` can still be (or pass through) a symlink whose target escapes it,
+ * re-opening the file-existence oracle. Resolves both `root` and the candidate
+ * through the injected `realpath` and re-checks containment on the real paths.
+ * Returns false when the candidate does not exist (realpath throws) — so this also
+ * *is* the existence check, no separate stat needed. `realpath` is injected (not
+ * imported) so lib.ts stays fs-free and this is exercised against a real temp
+ * filesystem rather than a mock.
+ */
+export function pathIsInsideRootReal(
+  root: string,
+  candidate: string,
+  realpath: (p: string) => string,
+): boolean {
+  if (!pathIsInsideRoot(root, candidate)) return false;
+  try {
+    return pathIsInsideRoot(realpath(root), realpath(resolve(root, candidate)));
+  } catch {
+    return false;
+  }
+}
+
 export function checkFilePathCitations(
   citedPaths: string[],
   file: string,
@@ -979,7 +1059,16 @@ function filterToTracked(files: string[], parentDir: string, trackedFiles: Set<s
 // docs/adr/ or a test fixture. When `adrDir` isn't inside a git repo at
 // all (e.g. a bare tmpdir fixture), discovery falls back to the raw
 // filesystem listing unchanged.
-export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot: string = adrDir): LintResult {
+export function lintAdrDir(
+  adrDir: string,
+  changedFiles: string[] = [],
+  repoRoot: string = adrDir,
+  // Files the Implements gate scans. Distinct from changedFiles (which drives
+  // the source-changed-without-an-ADR coverage warning): in whole-corpus mode
+  // the gate looks at every tracked source file, not just this push's diff.
+  // Defaults to changedFiles so existing callers keep diff-scoped behavior.
+  gateFiles: string[] = changedFiles
+): LintResult {
   const issues: Issue[] = [];
 
   let adrFiles: string[];
@@ -1093,7 +1182,7 @@ export function lintAdrDir(adrDir: string, changedFiles: string[] = [], repoRoot
   for (const [number, status] of statusByFile) {
     if (status) resolvedStatuses.set(number, status);
   }
-  issues.push(...checkProposedAdrImplementation(changedFiles, repoRoot, resolvedStatuses));
+  issues.push(...checkProposedAdrImplementation(gateFiles, repoRoot, resolvedStatuses));
 
   return { issues, adrFiles };
 }

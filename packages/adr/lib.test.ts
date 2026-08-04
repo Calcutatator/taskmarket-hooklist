@@ -7,7 +7,7 @@
 
 import { describe, test, expect } from 'vitest';
 import fc from 'fast-check';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync } from 'node:fs';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, symlinkSync, realpathSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -73,11 +73,16 @@ import {
   lintRfcDir,
   checkCoverage,
   checkProposedAdrImplementation,
+  coerceScope,
   checkScopeMismatch,
   extractReferencesSection,
   extractCitedFilePaths,
   extractCitedGithubNumbers,
   checkFilePathCitations,
+  pathIsInsideRoot,
+  pathIsInsideRootReal,
+  resolveTrackedSourceFiles,
+  resolveGitDiffChangedFiles,
   checkGithubNumberCitations,
   resolveGitTrackedOrStagedFiles,
   isDocDirMemberFile,
@@ -1419,6 +1424,52 @@ describe('checkProposedAdrImplementation', () => {
       cleanup();
     }
   });
+
+  test('blocks any non-Accepted status, not only Proposed', () => {
+    for (const status of ['Draft', 'Superseded', 'Deprecated', 'Withdrawn']) {
+      const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\n');
+      try {
+        const issues = checkProposedAdrImplementation([SOURCE], root, new Map([['0040', status]]));
+        expect(issues).toHaveLength(1);
+        expect(issues[0].message).toContain('ADR-0040');
+      } finally {
+        cleanup();
+      }
+    }
+  });
+
+  test('a retired (Superseded/Deprecated) ADR gets a repoint message, not an accept-it message', () => {
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\n');
+    try {
+      const [issue] = checkProposedAdrImplementation([SOURCE], root, new Map([['0040', 'Superseded']]));
+      expect(issue.message).toContain('repoint');
+      expect(issue.message).not.toContain('must accept');
+    } finally {
+      cleanup();
+    }
+  });
+
+  test('skips an ADR whose status is unknown (a dangling ref is a different check)', () => {
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0777\n');
+    try {
+      expect(checkProposedAdrImplementation([SOURCE], root, new Map())).toEqual([]);
+    } finally {
+      cleanup();
+    }
+  });
+});
+
+describe('coerceScope', () => {
+  test('accepts the two valid scopes verbatim', () => {
+    expect(coerceScope('diff')).toBe('diff');
+    expect(coerceScope('whole-corpus')).toBe('whole-corpus');
+  });
+
+  test('returns null for anything else, so the caller falls through to its default', () => {
+    for (const bad of ['', 'DIFF', 'all', 'wholecorpus', undefined, null]) {
+      expect(coerceScope(bad)).toBeNull();
+    }
+  });
 });
 
 describe('checkCoverage', () => {
@@ -1561,6 +1612,101 @@ describe('extractCitedGithubNumbers', () => {
 
   test('deduplicates repeated citations', () => {
     expect(extractCitedGithubNumbers('#42 ... also #42')).toEqual(['42']);
+  });
+});
+
+describe('pathIsInsideRoot', () => {
+  const root = join(tmpdir(), 'repo-root');
+
+  test('accepts a plain in-repo relative path', () => {
+    expect(pathIsInsideRoot(root, 'docs/adr/0001-x.md')).toBe(true);
+    expect(pathIsInsideRoot(root, 'apps/backend/src/scripts/smoke-identity.ts')).toBe(true);
+  });
+
+  test('rejects a path that escapes the repo via ..', () => {
+    expect(pathIsInsideRoot(root, '../../../etc/passwd')).toBe(false);
+    expect(pathIsInsideRoot(root, '../sibling/file.ts')).toBe(false);
+  });
+
+  test('rejects an absolute path outside the repo', () => {
+    expect(pathIsInsideRoot(root, '/etc/hosts')).toBe(false);
+  });
+
+  test('rejects a sibling dir that merely shares the root name prefix', () => {
+    // `<root>-evil` startsWith `<root>` but is NOT inside `<root>/`; the sep
+    // guard is what stops this from being a false positive.
+    expect(pathIsInsideRoot(root, `../${root.split('/').pop()}-evil/x.ts`)).toBe(false);
+  });
+
+});
+
+describe('pathIsInsideRootReal (symlink-aware, real filesystem)', () => {
+  test('resolves symlinks: a path lexically inside root but symlinked out is rejected', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'adr-root-')));
+    const outside = realpathSync(mkdtempSync(join(tmpdir(), 'adr-out-')));
+    try {
+      mkdirSync(join(root, 'docs'));
+      writeFileSync(join(root, 'docs', 'real.md'), 'x');
+      writeFileSync(join(outside, 'secret.txt'), 'x');
+      symlinkSync(outside, join(root, 'escape')); // symlink inside root -> external dir
+      const rp = (p: string): string => realpathSync(p);
+
+      // a genuine in-repo file: present and contained -> true
+      expect(pathIsInsideRootReal(root, 'docs/real.md', rp)).toBe(true);
+      // a path *through* the escaping symlink: lexically inside, really outside -> false
+      expect(pathIsInsideRootReal(root, 'escape/secret.txt', rp)).toBe(false);
+      // a non-existent path: realpath throws -> false (this call also *is* the existence check)
+      expect(pathIsInsideRootReal(root, 'docs/nope.md', rp)).toBe(false);
+      // a lexical `..` escape: rejected before realpath is ever consulted
+      expect(pathIsInsideRootReal(root, '../../../etc/passwd', rp)).toBe(false);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+      rmSync(outside, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveTrackedSourceFiles (real git repo)', () => {
+  test('preserves a tracked non-ASCII filename under a coverage path', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'adr-git-')));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
+      mkdirSync(join(root, 'apps', 'backend', 'src'), { recursive: true });
+      const unicode = 'apps/backend/src/日本語.ts'; // git would quote this without -z
+      writeFileSync(join(root, unicode), 'x');
+      writeFileSync(join(root, 'apps/backend/src/plain.ts'), 'x');
+      execFileSync('git', ['add', '-A'], { cwd: root });
+
+      const tracked = resolveTrackedSourceFiles(root);
+      expect(tracked).toContain(unicode);
+      expect(tracked).toContain('apps/backend/src/plain.ts');
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
+  });
+});
+
+describe('resolveGitDiffChangedFiles (real git repo)', () => {
+  test('preserves a non-ASCII changed filename in a diff', () => {
+    const root = realpathSync(mkdtempSync(join(tmpdir(), 'adr-git-')));
+    try {
+      execFileSync('git', ['init', '-q'], { cwd: root });
+      execFileSync('git', ['config', 'user.email', 't@example.com'], { cwd: root });
+      execFileSync('git', ['config', 'user.name', 't'], { cwd: root });
+      execFileSync('git', ['commit', '-q', '--allow-empty', '-m', 'base'], { cwd: root });
+      const base = execFileSync('git', ['rev-parse', 'HEAD'], { cwd: root, encoding: 'utf-8' }).trim();
+      const unicode = 'apps/backend/src/日本語.ts'; // git would quote this without -z
+      mkdirSync(join(root, 'apps', 'backend', 'src'), { recursive: true });
+      writeFileSync(join(root, unicode), 'x');
+      execFileSync('git', ['add', '-A'], { cwd: root });
+      execFileSync('git', ['commit', '-q', '-m', 'add unicode'], { cwd: root });
+
+      expect(resolveGitDiffChangedFiles(root, base)).toContain(unicode);
+    } finally {
+      rmSync(root, { recursive: true, force: true });
+    }
   });
 });
 
