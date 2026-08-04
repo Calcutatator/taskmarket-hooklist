@@ -271,5 +271,5 @@ adrs:
   - number: "0060"
     file: "0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md"
     title: "A relayed payload is sufficient, and a broadcaster is pure"
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"

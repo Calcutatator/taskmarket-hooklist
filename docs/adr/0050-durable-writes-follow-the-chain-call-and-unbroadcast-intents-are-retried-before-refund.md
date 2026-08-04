@@ -19,7 +19,7 @@
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** Amends ADR-0048
+- **Amends / Amended-by:** Amends ADR-0048; amended by ADR-0060
 - **Pending Amends / Amended-by:** —
 
 ## Context

@@ -9,17 +9,17 @@
 > accepting that payload-side derivation and completion-handler reads remain a review
 > responsibility because no syntactic property distinguishes them.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** —
-- **Deciders:** —
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0050
+- **Amends / Amended-by:** Amends ADR-0050
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
