@@ -8,6 +8,12 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
+## 1.8.0 -- Idempotency Keys on Writes
+
+- Every relayed write carries `X-Taskmarket-Idempotency-Key`, generated per operation before the request is sent, so a write presented again under its key returns the operation Taskmarket already has instead of repeating and re-charging it.
+- Both rounds of a paid x402 exchange carry the same key, since they are one write.
+- Raw REST callers must now send the header themselves; see [Raw REST Fallback](/reference/raw-api).
+
 ## 1.7.0 -- Private Tasks
 
 - `--task-visibility private` restricts a task to the requester and specifically invited wallets.

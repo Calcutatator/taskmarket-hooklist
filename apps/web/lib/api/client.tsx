@@ -5,6 +5,7 @@ import { createTRPCClient, httpBatchLink, httpLink, splitLink } from '@trpc/clie
 import { createTRPCReact } from '@trpc/react-query';
 
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import { idempotencyHeadersForOperation } from '@/lib/api/idempotency';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 import { getCachedReadAuthHeaders } from '@/lib/read-auth';
 
@@ -32,29 +33,42 @@ export function makeTrpcClient() {
   return createTRPCClient<AppRouter>({
     links: [
       splitLink({
-        condition: (op) =>
-          op.path === 'submissions.listByTask' && op.context[READ_AUTH_CONTEXT_KEY] === true,
-        // Keep caller-scoped submission responses out of batches containing
-        // anonymous cover/gallery reads.
+        // Every write carries its own idempotency key, which only holds if one request is one
+        // operation -- so mutations go unbatched.
+        condition: (op) => op.type === 'mutation',
         true: httpLink({
-          headers: async () => ({
+          headers: async ({ op }) => ({
             ...(await legalHeaders()),
             ...getCachedReadAuthHeaders(),
+            ...idempotencyHeadersForOperation(op),
           }),
           url,
         }),
         false: splitLink({
-          condition: (op) => op.path === 'submissions.listByTask',
-          true: httpBatchLink({
-            headers: legalHeaders,
-            url,
-          }),
-          false: httpBatchLink({
+          condition: (op) =>
+            op.path === 'submissions.listByTask' && op.context[READ_AUTH_CONTEXT_KEY] === true,
+          // Keep caller-scoped submission responses out of batches containing
+          // anonymous cover/gallery reads.
+          true: httpLink({
             headers: async () => ({
               ...(await legalHeaders()),
               ...getCachedReadAuthHeaders(),
             }),
             url,
+          }),
+          false: splitLink({
+            condition: (op) => op.path === 'submissions.listByTask',
+            true: httpBatchLink({
+              headers: legalHeaders,
+              url,
+            }),
+            false: httpBatchLink({
+              headers: async () => ({
+                ...(await legalHeaders()),
+                ...getCachedReadAuthHeaders(),
+              }),
+              url,
+            }),
           }),
         }),
       }),

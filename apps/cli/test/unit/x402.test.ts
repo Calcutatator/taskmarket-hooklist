@@ -31,6 +31,8 @@ vi.mock('../../src/lib/keystore.js', async (importOriginal) => {
   };
 });
 
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
+
 import { x402Post } from '../../src/lib/x402.js';
 import { ApiError } from '../../src/lib/api.js';
 
@@ -133,7 +135,8 @@ describe('x402Post', () => {
     mockFetch.mockResolvedValueOnce({
       ok: false,
       status: 429,
-      text: async () => '{"error":"This task has reached its maximum number of submissions from this worker."}',
+      text: async () =>
+        '{"error":"This task has reached its maximum number of submissions from this worker."}',
     });
 
     const error = await x402Post('/api/tasks', {}).catch((e: unknown) => e);
@@ -213,5 +216,64 @@ describe('x402Post', () => {
     const headers = round2Call[1].headers as Record<string, string>;
     expect(headers['PAYMENT-SIGNATURE']).toBeDefined();
     expect(typeof headers['PAYMENT-SIGNATURE']).toBe('string');
+  });
+
+  // Discovery and the paid retry are one logical write. A fresh key on round 2 would present the
+  // paid round as a new operation, which is the mistake the key exists to prevent.
+  it('sends one idempotency key across both rounds of the paid exchange', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      json: async () => PAYMENT_REQUIREMENTS,
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ deviceEncryptionKey: dek }),
+    });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+
+    await x402Post('/api/tasks', {});
+
+    const round1 = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+    const round2 = mockFetch.mock.calls[2][1].headers as Record<string, string>;
+    expect(round1[IDEMPOTENCY_KEY_HEADER]).toMatch(
+      /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+    expect(round2[IDEMPOTENCY_KEY_HEADER]).toBe(round1[IDEMPOTENCY_KEY_HEADER]);
+  });
+
+  it('reuses a caller-supplied key so a retry of one operation is not a second operation', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+
+    await x402Post('/api/tasks', {}, { idempotencyKey: 'key-for-one-operation' });
+    await x402Post('/api/tasks', {}, { idempotencyKey: 'key-for-one-operation' });
+
+    const first = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+    const second = mockFetch.mock.calls[1][1].headers as Record<string, string>;
+    expect(first[IDEMPOTENCY_KEY_HEADER]).toBe('key-for-one-operation');
+    expect(second[IDEMPOTENCY_KEY_HEADER]).toBe('key-for-one-operation');
+  });
+
+  it('gives separate operations separate keys', async () => {
+    mockFetch.mockResolvedValue({
+      ok: true,
+      status: 200,
+      json: async () => ({ success: true }),
+    });
+
+    await x402Post('/api/tasks', {});
+    await x402Post('/api/tasks', {});
+
+    const first = mockFetch.mock.calls[0][1].headers as Record<string, string>;
+    const second = mockFetch.mock.calls[1][1].headers as Record<string, string>;
+    expect(second[IDEMPOTENCY_KEY_HEADER]).not.toBe(first[IDEMPOTENCY_KEY_HEADER]);
   });
 });
