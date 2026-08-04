@@ -273,6 +273,34 @@ export async function registerDevice(
 
 const MOCK_USDC_ABI = parseAbi(['function mint(address to, uint256 amount) external']);
 
+const USDC_BALANCE_ABI = parseAbi(['function balanceOf(address) view returns (uint256)']);
+
+/**
+ * USDC balance of `address`, read straight from the token.
+ *
+ * Escrow in this system is one pooled balance held by the Diamond across every task, so the
+ * only way to state "this task's money did not move" is to read the pool itself. A smoke test
+ * asserting a refund happened once cannot do it from task status alone -- status is set by the
+ * indexer, and the defect ADR-0054 fixes was a second payout leaving status exactly where it
+ * already was while the pool went down twice.
+ */
+export async function usdcBalanceOf(address: string): Promise<bigint> {
+  const rpcUrl = process.env.BASE_RPC_URL ?? 'http://127.0.0.1:8545';
+  const chainId = parseInt(process.env.CHAIN_ID ?? '84532', 10);
+  const chain: Chain = chainId === 31337 ? anvil : baseSepolia;
+  const usdc = process.env.USDC_TOKEN_ADDRESS;
+  if (!usdc) {
+    throw new Error('USDC_TOKEN_ADDRESS is required to read a USDC balance');
+  }
+  const publicClient = createPublicClient({ chain, transport: http(rpcUrl) });
+  return publicClient.readContract({
+    address: usdc as `0x${string}`,
+    abi: USDC_BALANCE_ABI,
+    functionName: 'balanceOf',
+    args: [address as `0x${string}`],
+  });
+}
+
 /**
  * Mints mock USDC directly to `recipient` -- MockUSDC.mint is permissionless (see
  * MockUSDC.sol), the same fact cloud-env-setup.sh relies on to fund the

@@ -161,6 +161,23 @@ Smoke tests live in `apps/backend/src/scripts/smoke-*.ts` and run against a live
 
 **If you're a cloud agent (Claude Code cloud, Codex cloud), run `./scripts/cloud-env-setup.sh` yourself as your first action, before doing anything else -- do not assume a vendor's own setup mechanism already brought the stack up for you.** This is a deliberate, documented boundary in at least one vendor (Codex): its "Setup script" runs in a separate bash session from the one the agent actually works in, with no way for background processes (Postgres, Anvil, the backend, the facilitator) to survive across that boundary -- it is not a bug or something to work around, it exists because setup gets full network trust and the agent phase deliberately does not. The script is idempotent (safe to run again -- it detects what's genuinely still up versus what needs (re)starting), and it is exactly as fast the second time since the one-time work (toolchain, submodules) gets skipped; only the actually-ephemeral pieces (Anvil has no persisted chain state, so contracts always redeploy fresh) redo their work. If a `make` target still fails with `ECONNREFUSED 127.0.0.1:3000` (or similar) after that, re-run the script once more and retry before concluding anything is actually broken.
 
+### Targets with extra requirements
+
+Every smoke runs under plain `make smoke <name>` against the stack `scripts/cloud-env-setup.sh`
+provisions. Two have specifics worth knowing before reading their output:
+
+- **`make smoke rate-limit`** needs no special backend environment. It reads the effective
+  submission limits from `GET /api/health` and derives its work from them, rather than assuming
+  a `HARD_SUBMISSION_CEILING` override the backend was never started with. Zones the running
+  configuration puts out of reach are skipped by name, with the remedy, and listed again in the
+  summary -- a pass with a skip listed has checked less than a pass without one. The sandbox's
+  own `SUBMISSION_FREE_ALLOWANCE=1000` leaves the paid zone (Tier 1) unreachable; to check it,
+  start the backend with an allowance below its ceiling, e.g.
+  `SUBMISSION_FREE_ALLOWANCE=2 HARD_SUBMISSION_CEILING=5`.
+- **`make smoke refund-expired`** reads the Diamond's pooled USDC balance to prove a repeat
+  refund moved no money (ADR-0054), so `CONTRACT_ADDRESS` and `USDC_TOKEN_ADDRESS` must point at
+  the deployed stack. The generated `.env` sets both.
+
 ### When to write a smoke test
 
 Write or update a smoke test whenever you:
