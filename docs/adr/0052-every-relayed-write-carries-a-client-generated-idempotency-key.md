@@ -9,17 +9,17 @@
 > always askable-about, accepting that existing raw-REST callers break and that a globally unique
 > key can be collided across callers.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
-- **Deciders:** (pending human approval)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0049
+- **Amends / Amended-by:** Amends ADR-0049
+- **Pending Amends / Amended-by:** —
 
 ## Context
 

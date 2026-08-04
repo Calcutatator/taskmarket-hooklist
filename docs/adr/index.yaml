@@ -231,7 +231,7 @@ adrs:
   - number: "0052"
     file: "0052-every-relayed-write-carries-a-client-generated-idempotency-key.md"
     title: "Every relayed write carries a mandatory, client-generated, backend-opaque idempotency key"
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"
   - number: "0053"
     file: "0053-relayed-write-observability-is-by-query-not-by-alerting.md"

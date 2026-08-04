@@ -698,7 +698,31 @@ export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
 };
 
 // Matches the `Implements: ADR-NNNN` back-pointer convention the audit already relies on.
-export const IMPLEMENTS_ADR_RE = /Implements:\s*ADR-(\d{4})/g;
+//
+// Deliberately two steps rather than one regex. A single `/Implements:\s*ADR-(\d{4})/g`
+// looks correct and is not: it requires an `Implements:` prefix before every number, so on
+// the comma-separated form the convention actually uses in this repo --
+// `// Implements: ADR-0045, ADR-0050` -- it credits ADR-0045 and silently drops the rest.
+// That is the worst possible failure for a drift detector, because it under-reports
+// realization and so passes: an ADR whose only back-pointers sit in second position computes
+// as unrealized, and deleting the code that implements it raises no drift at all. When this
+// was found, 19 files claimed ADR-0050 and only 8 were being credited.
+export const IMPLEMENTS_ADR_LINE_RE = /(?:Implements|Verifies):[ \t]*((?:ADR-\d{4}[,\s]*)+)/g;
+export const ADR_NUMBER_RE = /ADR-(\d{4})/g;
+
+/** Every ADR number claimed by an `Implements:`/`Verifies:` marker anywhere in `content`. */
+export function claimedAdrNumbers(content: string): Set<string> {
+  const claimed = new Set<string>();
+  // Fresh clones per call: these are module-level globals and `matchAll` seeds its iterator
+  // from the regex's current lastIndex, so reusing them directly can skip matches depending
+  // on what another consumer left behind.
+  const lineRe = new RegExp(IMPLEMENTS_ADR_LINE_RE.source, IMPLEMENTS_ADR_LINE_RE.flags);
+  for (const line of content.matchAll(lineRe)) {
+    const numberRe = new RegExp(ADR_NUMBER_RE.source, ADR_NUMBER_RE.flags);
+    for (const n of line[1]!.matchAll(numberRe)) claimed.add(n[1]!);
+  }
+  return claimed;
+}
 
 /**
  * Blocking: application source that claims to implement an ADR must not merge while that ADR
@@ -736,12 +760,7 @@ export function checkProposedAdrImplementation(
       continue;
     }
 
-    const claimed = new Set<string>();
-    // A fresh clone per file: IMPLEMENTS_ADR_RE is a shared module-level global, and matchAll
-    // seeds its iterator from the regex's current lastIndex, so reusing it directly can skip
-    // matches depending on what another consumer left behind.
-    const implementsRe = new RegExp(IMPLEMENTS_ADR_RE.source, IMPLEMENTS_ADR_RE.flags);
-    for (const match of content.matchAll(implementsRe)) claimed.add(match[1]);
+    const claimed = claimedAdrNumbers(content);
 
     for (const number of [...claimed].sort()) {
       const status = statusByNumber.get(number);
