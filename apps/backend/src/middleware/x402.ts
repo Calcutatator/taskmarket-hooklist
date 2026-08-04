@@ -1,7 +1,9 @@
 // Implements: ADR-0052
+// Implements: ADR-0049
 import type { Request, Response, NextFunction, RequestHandler } from 'express';
 import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 
+import { apiErrorBody } from '../lib/api-error';
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
 import {
@@ -137,11 +139,22 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       // read that did not answer cannot rule out that this key is already spoken for, and
       // proceeding would charge the caller on that assumption.
       logger.error('Idempotency precondition check failed', { error });
-      return res
-        .status(503)
-        .json({ error: 'Unable to verify idempotency key; retry this request' });
+      return res.status(503).json(
+        apiErrorBody({
+          reason: 'idempotency_check_unavailable',
+          message: 'Unable to verify idempotency key; retry this request',
+        })
+      );
     }
-    if (precondition) return res.status(precondition.status).json({ error: precondition.error });
+    // The envelope travels beside `error` rather than replacing it. This reply never passes
+    // through tRPC's `errorFormatter` -- the middleware answers `res` itself, before any
+    // procedure runs -- so it publishes the discriminator under the same `taskmarket` key by
+    // hand, and a client has one reader for a paid write refused at either layer (ADR-0058).
+    if (precondition) {
+      return res
+        .status(precondition.status)
+        .json({ error: precondition.error, taskmarket: precondition.envelope });
+    }
 
     if (!paymentSignature) {
       // getAmount can be async and DB-backed; a rejection here must not
@@ -152,7 +165,10 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         amount = await opts.getAmount(req);
       } catch (err) {
         const msg = err instanceof Error ? err.message : 'Unable to compute payment amount';
-        return res.status(500).json({ error: msg });
+        // 5xx because the price could not be resolved, which is ours to fix, but the reason is
+        // still `payment_rejected`: from the caller's side the exchange did not begin and
+        // nothing was charged, which is the only fact they can act on.
+        return res.status(500).json(apiErrorBody({ reason: 'payment_rejected', message: msg }));
       }
       const requirements = {
         x402Version: 2,
@@ -304,13 +320,19 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       await cleanupPreflight();
       const msg = err instanceof Error ? err.message : 'Payment verification failed';
       if (err instanceof X402PreflightError) {
-        return res.status(err.status).json({ error: msg });
+        return res
+          .status(err.status)
+          .json(apiErrorBody({ reason: 'payment_preflight_rejected', message: msg }));
       }
+      // The x402 fields stay exactly where they are -- this body is part of the x402 exchange
+      // and a payment client parses it. The envelope is added beside them, so a caller that only
+      // speaks x402 is unaffected and one that speaks both can classify without reading `error`.
       res.status(402).json({
         x402Version: 2,
         error: msg,
         resource: { url: resourceUrl, description, mimeType: 'application/json' },
         accepts: [],
+        taskmarket: apiErrorBody({ reason: 'payment_rejected', message: msg }).taskmarket,
       });
     }
   };

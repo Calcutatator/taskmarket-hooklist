@@ -1,6 +1,11 @@
 // Verifies: ADR-0045, ADR-0050, ADR-0052
+// Verifies: ADR-0058
 import { afterAll, beforeEach, describe, expect, it, vi } from 'vitest';
+import { isInFlightApiError } from '@taskmarket/shared';
 import { stubServerEnvironment } from '../../helpers/server-environment';
+
+import { envelopeForError } from '../../../src/lib/api-error';
+import { ServerTransactionPendingError } from '../../../src/lib/server-transaction-dispatcher';
 
 const restoreServerEnvironment = stubServerEnvironment();
 
@@ -11,6 +16,7 @@ const KEY = '11111111-2222-4333-8444-555555555555';
 type Row = {
   broadcastAttempts: number;
   id: string;
+  idempotencyKey: string;
   operation: string;
   paymentTxHash: string | null;
   status: string;
@@ -65,6 +71,7 @@ function row(overrides: Partial<Row> = {}): Row {
   return {
     broadcastAttempts: 0,
     id: 'intent-1',
+    idempotencyKey: KEY,
     operation: 'tasks.create',
     paymentTxHash: PAYMENT_HASH,
     status: 'recorded',
@@ -152,6 +159,54 @@ describe('runRelayedIntent', () => {
     // The loser is told where to look rather than made to wait for the winner: it holds the
     // intent id and its own key, and both resolve on the status surface.
     expect(String(loser.reason)).toMatch(/intents\.get/);
+  });
+
+  it('answers an in-flight send with a structured outcome rather than a rethrown pending error', async () => {
+    // The regression this whole surface exists to end. Rethrown raw, this reached the client as
+    // an HTTP 500 whose prose was the only evidence the write was still alive -- which is what
+    // the web app's four substring markers were guessing at (ADR-0049 point 3).
+    recorded.mockReturnValue(row());
+    const pending = new ServerTransactionPendingError(TX_HASH, 7);
+
+    const error = await run(vi.fn().mockRejectedValue(pending)).catch((e: unknown) => e);
+
+    expect(envelopeForError(error)).toEqual({
+      reason: 'intent_in_flight',
+      intentId: 'intent-1',
+      intentStatus: 'broadcast',
+      operation: 'tasks.create',
+      idempotencyKey: KEY,
+      txHash: TX_HASH,
+    });
+    // The hash is linked before the answer goes out, so the reconciler owns the outcome
+    // whatever the caller does next.
+    expect(persisted).toEqual([{ intentId: 'intent-1', txHash: TX_HASH }]);
+  });
+
+  it('tells a duplicate submission which intent it collided with and what state it is in', async () => {
+    // Reported structurally so a client can tell a repeat of a write still landing from a
+    // repeat of one that already failed -- the distinction the 409's sentence never made.
+    claimBudget = 0;
+    recorded.mockReturnValue(row({ status: 'broadcast', txHash: TX_HASH }));
+
+    const error = await run(vi.fn()).catch((e: unknown) => e);
+
+    expect(envelopeForError(error)).toMatchObject({
+      reason: 'idempotency_key_reused',
+      intentId: 'intent-1',
+      intentStatus: 'broadcast',
+      idempotencyKey: KEY,
+    });
+  });
+
+  it('does not report a failed intent as something to wait for', async () => {
+    claimBudget = 0;
+    recorded.mockReturnValue(row({ status: 'failed' }));
+
+    const error = await run(vi.fn()).catch((e: unknown) => e);
+
+    expect(envelopeForError(error).intentStatus).toBe('failed');
+    expect(isInFlightApiError(envelopeForError(error))).toBe(false);
   });
 
   it('rejects a relayed write with no idempotency key', async () => {

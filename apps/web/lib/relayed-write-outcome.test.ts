@@ -1,11 +1,62 @@
 import { describe, expect, it } from 'vitest';
 
-import { isPendingTransactionMessage, pendingResultOf } from './relayed-write-outcome';
+import {
+  isPendingTransactionMessage,
+  isPendingWriteResponse,
+  pendingResultOf,
+} from './relayed-write-outcome';
 
-// These strings are copied from the backend, not paraphrased. The detection is a prose match
-// (the backend rethrows ServerTransactionPendingError raw and the 409 carries its reason in a
-// message), so a reworded backend breaks the client silently. These assertions are the alarm:
-// if any of them stops matching the real text, this file is what has to change.
+// The envelope is the contract (ADR-0058). These cases are what the UI actually branches on.
+describe('isPendingWriteResponse', () => {
+  it('reads an in-flight write from the envelope, not from its message', () => {
+    // The message here says nothing recognisable. That is the point: the backend is free to
+    // reword it, and the client no longer cares.
+    expect(
+      isPendingWriteResponse(
+        { error: 'anything at all', taskmarket: { reason: 'intent_in_flight', intentId: 'i-1' } },
+        'anything at all'
+      )
+    ).toBe(true);
+  });
+
+  it('reads a repeated key naming a live write as in flight', () => {
+    // What a user pressing the button twice during a slow write receives.
+    expect(
+      isPendingWriteResponse(
+        { taskmarket: { reason: 'idempotency_key_reused', intentStatus: 'broadcast' } },
+        'x'
+      )
+    ).toBe(true);
+  });
+
+  it('reads a repeated key naming a failed write as a failure', () => {
+    // The dangerous direction, now decided by a field rather than by which status word the
+    // sentence happened to contain.
+    expect(
+      isPendingWriteResponse(
+        { taskmarket: { reason: 'idempotency_key_reused', intentStatus: 'failed' } },
+        'x'
+      )
+    ).toBe(false);
+  });
+
+  it('reads a classified failure as a failure even when its message sounds in flight', () => {
+    // The envelope wins outright. A prose fallback that could override it would put the client
+    // back to guessing on exactly the responses that are no longer a guess.
+    expect(
+      isPendingWriteResponse({ taskmarket: { reason: 'payment_rejected' } }, 'it remains in flight')
+    ).toBe(false);
+  });
+
+  it('falls back to the message when the response carries no envelope', () => {
+    // A browser session against a backend deployed before ADR-0058. Degraded, not broken.
+    expect(isPendingWriteResponse({ error: 'x' }, 'the transaction remains in flight')).toBe(true);
+    expect(isPendingWriteResponse({ error: 'x' }, 'Task is not open')).toBe(false);
+  });
+});
+
+// These strings are copied from the backend, not paraphrased. They are the pre-ADR-0058
+// fallback only -- kept for a backend that has not been redeployed yet, never extended.
 describe('isPendingTransactionMessage', () => {
   it('matches the receipt-timeout error the dispatcher raises', () => {
     expect(

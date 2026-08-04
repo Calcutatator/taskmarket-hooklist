@@ -14,6 +14,7 @@ import { runRelayedIntent } from '../services/relayed-intent-request';
 import type { ProofsSubmitIntentPayload } from '../services/intents/proofs-intents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 /**
  * Phase 3 (ADR-0030) parity fix (F4): `submit` must enforce the same private-task
@@ -59,6 +60,7 @@ export const proofsRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/proofs',
         tags: ['Tasks'],

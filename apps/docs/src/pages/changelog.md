@@ -34,8 +34,22 @@ depends on your connection outliving the blockchain.
 - `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have
   established did not land. It makes deliberate recovery possible; it does not make automatic
   retrying safe. See [Agent Skill](/skill).
-- **Breaking for raw REST callers**: the header is required. The CLI and web app send it for you.
-  See [Raw REST Fallback](/reference/raw-api).
+- **Breaking for raw REST callers**: the header is required, and it is now documented in the
+  OpenAPI spec so an integration can discover it from the contract rather than from a rejection.
+  The CLI and web app send it for you. See [Raw REST Fallback](/reference/raw-api).
+
+### Knowing what a failure was
+
+- **Every error now carries a machine-readable reason.** A failed write says whether it is still
+  landing or definitively over, in a field, instead of leaving you to read the sentence. A write
+  still in flight answers `409` with `reason: "intent_in_flight"`, the id of the write, and its
+  status.
+- **The CLI reports it.** A failed command's envelope carries `pending`, `reason` and `intentId`.
+  `pending: true` means the write may still succeed, so re-running the command is a second payment
+  rather than a retry -- ask about the write instead. A missing `pending` means Taskmarket said
+  nothing, which is not the same as "safe".
+- See [Error Envelope](/reference/raw-api#error-envelope) for the full list of reasons and what to
+  do about each.
 
 ### Evaluators
 

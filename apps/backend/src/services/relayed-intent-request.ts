@@ -1,8 +1,10 @@
 // Implements: ADR-0045, ADR-0048, ADR-0052
-import { TRPCError } from '@trpc/server';
+// Implements: ADR-0049
+import type { ApiErrorEnvelope } from '@taskmarket/shared';
 
 import type { db as DbType } from '../db/client';
 import type { RelayedIntent } from '../db/schema';
+import { apiError } from '../lib/api-error';
 import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import { registerRelayedIntentHandlers } from './intents/register';
 import { withRelayEnvelope } from './relay-envelope';
@@ -96,7 +98,8 @@ export type RelayedIntentRequestInput = {
  *   - The intent row exists before the chain call, so no transaction is ever live without a
  *     durable record of what it was for, and no payment is consumed without one either.
  *   - A pending outcome is in flight, not failed: the hash is linked so the reconciler can
- *     settle it, and the error propagates unchanged. Nothing here concludes failure.
+ *     settle it, and the caller is answered with the `intent_in_flight` envelope carrying the
+ *     intent id and status. Nothing here concludes failure.
  *   - Post-receipt work runs through completeRelayedIntent, never by calling the handler
  *     directly, so a reconciler pass observing the same receipt cannot run it twice.
  *   - There is no catch that compensates. A confirmed-failed intent is refunded by
@@ -147,8 +150,13 @@ export async function runRelayedIntent(
   });
   if (!claimed) {
     const current = (await getRelayedIntent({ db: input.db, intentId: intent.id })) ?? intent;
-    throw new TRPCError({
-      code: 'CONFLICT',
+    throw apiError({
+      reason: 'idempotency_key_reused',
+      intentId: current.id,
+      intentStatus: current.status as ApiErrorEnvelope['intentStatus'],
+      operation: current.operation,
+      idempotencyKey: current.idempotencyKey,
+      txHash: current.txHash ?? undefined,
       message:
         `${input.operation} for this idempotency key is already ${current.status} and is not ` +
         `submitted again (intent ${current.id}). Poll intents.get for its outcome.`,
@@ -166,7 +174,22 @@ export async function runRelayedIntent(
     // pending error as-is; the intent stays non-terminal until the chain says otherwise.
     if (error instanceof ServerTransactionPendingError) {
       await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
-      throw error;
+      // Translated rather than rethrown. Rethrowing raw is what made this a 500 whose prose was
+      // the only evidence the write was alive -- the state ADR-0049 point 3 exists to end. The
+      // envelope says the same thing structurally: still landing, here is the handle, and no
+      // claim either way about whether the payment moved.
+      throw apiError({
+        reason: 'intent_in_flight',
+        intentId: claimed.id,
+        // 'broadcast' is what `persistIntentBroadcast` just wrote, and it is reported from the
+        // constant rather than re-read: the row is what it is, and a second query here would
+        // only widen the window in which the reconciler could move it underneath us.
+        intentStatus: 'broadcast',
+        operation: claimed.operation,
+        idempotencyKey: claimed.idempotencyKey,
+        txHash: error.hash,
+        message: error.message,
+      });
     }
 
     // The intent stays in 'recorded' rather than being marked failed here: only confirmed
@@ -186,8 +209,13 @@ export async function runRelayedIntent(
   if (!completed) {
     // The transaction is on chain and the work happened, so there is nothing to refund. The
     // intent stays claimable for the reconciler; the caller is told the chain part succeeded.
-    throw new TRPCError({
-      code: 'INTERNAL_SERVER_ERROR',
+    throw apiError({
+      reason: 'intent_completion_deferred',
+      intentId: claimed.id,
+      intentStatus: 'broadcast',
+      operation: claimed.operation,
+      idempotencyKey: claimed.idempotencyKey,
+      txHash,
       message:
         input.describeCompletionFailure?.(claimed.id) ??
         `${input.operation} was confirmed on chain but recording it did not complete; it will be retried automatically (intent ${claimed.id}).`,

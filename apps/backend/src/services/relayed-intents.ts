@@ -1,12 +1,13 @@
 // Implements: ADR-0045, ADR-0050, ADR-0052
+// Implements: ADR-0049
 import { createHash, randomUUID } from 'crypto';
-import { TRPCError } from '@trpc/server';
 import { and, asc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
-import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
+import { type ApiErrorEnvelope, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
+import { apiError } from '../lib/api-error';
 import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
 
@@ -119,8 +120,9 @@ const IDEMPOTENCY_KEY_PATTERN =
 
 function requireIdempotencyKey(key: string | undefined, operation: string): string {
   if (key && IDEMPOTENCY_KEY_PATTERN.test(key)) return key;
-  throw new TRPCError({
-    code: 'BAD_REQUEST',
+  throw apiError({
+    reason: 'idempotency_key_required',
+    operation,
     message:
       `${operation} requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you generate ` +
       'for this operation. Send the same value when retrying the same operation, and a fresh ' +
@@ -137,15 +139,22 @@ function requireIdempotencyKey(key: string | undefined, operation: string): stri
  * leaves a settled payment with nothing to attach to -- an orphaned payment and a refund, which
  * is the double charge the key exists to prevent wearing a different hat.
  *
- * So the paid path asks this first, before any 402 challenge. It answers only "is this key
- * spoken for", never with anything about the intent behind it: it runs before the caller is
- * authenticated, and on the challenge round there is not even a payment payload to read a payer
- * from. `intents.get` is where a caller learns what actually happened, and it is payer-scoped.
+ * So the paid path asks this first, before any 402 challenge. It runs before the caller is
+ * authenticated -- on the challenge round there is not even a payment payload to read a payer
+ * from -- so it carries no payment facts: no payer, no amount, no payment transaction hash.
+ * `intents.get` is where those are read, and it is payer-scoped.
+ *
+ * What it does carry is the intent id, the operation and the status, which is exactly what the
+ * message has always said in prose. Saying it structurally is not a new disclosure; it is the
+ * same disclosure a client can act on. The status in particular is what lets a caller tell a
+ * repeated key naming a write still landing from one naming a write that has already failed --
+ * without it, `idempotency_key_reused` would be as ambiguous as the sentence it replaces
+ * (ADR-0058).
  */
 export async function checkRelayedWriteIdempotency(input: {
   db: Db;
   key: string | undefined;
-}): Promise<{ error: string; status: 400 | 409 } | null> {
+}): Promise<{ error: string; status: 400 | 409; envelope: ApiErrorEnvelope } | null> {
   if (!input.key || !IDEMPOTENCY_KEY_PATTERN.test(input.key)) {
     return {
       error:
@@ -153,6 +162,7 @@ export async function checkRelayedWriteIdempotency(input: {
         'for this operation. Send the same value when retrying it, and a fresh one for a new ' +
         'operation.',
       status: 400,
+      envelope: { reason: 'idempotency_key_required' },
     };
   }
 
@@ -162,6 +172,13 @@ export async function checkRelayedWriteIdempotency(input: {
   return {
     error: `A ${existing.operation} write for this idempotency key already exists (intent ${existing.id}). It was not charged or submitted again; read its outcome from intents.get.`,
     status: 409,
+    envelope: {
+      reason: 'idempotency_key_reused',
+      intentId: existing.id,
+      intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
+      operation: existing.operation,
+      idempotencyKey: existing.idempotencyKey,
+    },
   };
 }
 
@@ -272,8 +289,10 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
     // A repeat of the same operation by the same caller: hand back what they already
     // started. That is the whole mechanism.
     if (intentBelongsToCaller(existing, input)) return existing;
-    throw new TRPCError({
-      code: 'CONFLICT',
+    throw apiError({
+      reason: 'idempotency_key_conflict',
+      operation: input.operation,
+      idempotencyKey,
       message: `The ${IDEMPOTENCY_KEY_HEADER} you sent has already been used for a different operation. Generate a fresh one.`,
     });
   }
@@ -289,15 +308,24 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       // a settled payment against a new operation. The payment is spent either way, and the
       // earlier intent is not the write they asked for, so they are told rather than quietly
       // handed it. This is the backstop the payment index now exists for.
-      throw new TRPCError({
-        code: 'CONFLICT',
+      throw apiError({
+        reason: 'payment_already_spent',
+        intentId: settled.id,
+        intentStatus: settled.status as ApiErrorEnvelope['intentStatus'],
+        operation: settled.operation,
+        idempotencyKey: settled.idempotencyKey,
         message: `This payment has already funded ${settled.operation} (intent ${settled.id}); it cannot fund another write.`,
       });
     }
   }
 
-  throw new TRPCError({
-    code: 'CONFLICT',
+  // Neither index's row is findable any more -- the colliding intent was deleted between the
+  // insert and these reads. Which of the two constraints fired is genuinely unknown here, so the
+  // reason names the one thing that is certain: a key that cannot be used again.
+  throw apiError({
+    reason: 'idempotency_key_conflict',
+    operation: input.operation,
+    idempotencyKey,
     message: `${input.operation} could not be recorded: its idempotency key or payment is already in use.`,
   });
 }

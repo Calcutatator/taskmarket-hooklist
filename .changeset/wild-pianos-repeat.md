@@ -14,4 +14,4 @@ Any command that wrote prints the key it used on its JSON envelope as `idempoten
 TASKMARKET_IDEMPOTENCY_KEY=<key from the envelope> taskmarket identity register
 ```
 
-A failed command still reads the same as any other failure, so nothing here makes an automatic retry safe. Re-presenting a key is a decision to take after checking whether the write landed, not something to script around a failure. Re-running a command without the variable is a new operation and a second payment.
+Holding the key does not by itself make an automatic retry safe. Re-presenting a key is a decision to take after checking whether the write landed, not something to script around a failure. Re-running a command without the variable is a new operation and a second payment.

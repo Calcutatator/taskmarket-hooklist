@@ -81,6 +81,7 @@ import {
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import {
   broadcastTasksCreate,
   type TasksCreateIntentPayload,
@@ -215,6 +216,7 @@ export const tasksRouter = router({
   create: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks',
         tags: ['Tasks'],
@@ -1081,6 +1083,7 @@ export const tasksRouter = router({
   cancel: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/cancel',
         tags: ['Tasks'],
@@ -1179,6 +1182,7 @@ export const tasksRouter = router({
   assignEvaluator: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/evaluator',
         tags: ['Tasks'],
@@ -1241,6 +1245,7 @@ export const tasksRouter = router({
   refundExpired: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/refund-expired',
         tags: ['Tasks'],
@@ -1317,6 +1322,7 @@ export const tasksRouter = router({
   update: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/update',
         tags: ['Tasks'],
@@ -1640,6 +1646,7 @@ export const tasksRouter = router({
   rejectSubmission: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/reject-submission',
         tags: ['Tasks'],

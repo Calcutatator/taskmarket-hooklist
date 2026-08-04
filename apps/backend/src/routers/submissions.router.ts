@@ -43,6 +43,7 @@ import {
   type CanViewTask,
 } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 type ArtifactInsertRow = Omit<
   NewArtifact,
@@ -340,6 +341,7 @@ export const submissionsRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/submissions',
         tags: ['Tasks'],
@@ -592,6 +594,7 @@ export const submissionsRouter = router({
   submitFromKeys: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/submissions/from-keys',
         tags: ['Tasks'],

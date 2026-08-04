@@ -1,4 +1,8 @@
-import { buildLegalReceiptHeaders } from '@taskmarket/shared';
+import {
+  type ApiErrorEnvelope,
+  apiErrorEnvelopeOf,
+  buildLegalReceiptHeaders,
+} from '@taskmarket/shared';
 
 import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
 import { loadKeystore, type Keystore } from './keystore.js';
@@ -26,11 +30,31 @@ export class ApiError extends Error {
    */
   readonly idempotencyKey?: string;
 
-  constructor(status: number, message: string, idempotencyKey?: string) {
+  /**
+   * The backend's machine-readable classification of the failure (ADR-0058).
+   *
+   * Before it existed the CLI rendered every failure identically, which is why
+   * `docs/CLI_GUIDE.md` had to tell script authors never to auto-retry a paid command: there was
+   * no way to tell a write that is still landing from one that was definitively rejected, and
+   * retrying the first is a second payment. `reason` is that way.
+   *
+   * Absent when the backend answered with no envelope -- an older deployment, or a failure that
+   * never reached the API at all -- in which case a caller must fall back to the old rule and
+   * treat the outcome as unknown rather than as safe to retry.
+   */
+  readonly envelope?: ApiErrorEnvelope;
+
+  constructor(
+    status: number,
+    message: string,
+    idempotencyKey?: string,
+    envelope?: ApiErrorEnvelope
+  ) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
     this.idempotencyKey = idempotencyKey;
+    this.envelope = envelope;
   }
 }
 
@@ -73,7 +97,12 @@ export async function apiGet(
   });
   const body = await res.json();
   if (!res.ok) {
-    throw new ApiError(res.status, `GET ${path} failed (${res.status}): ${JSON.stringify(body)}`);
+    throw new ApiError(
+      res.status,
+      `GET ${path} failed (${res.status}): ${JSON.stringify(body)}`,
+      undefined,
+      apiErrorEnvelopeOf(body) ?? undefined
+    );
   }
   return body;
 }
@@ -104,7 +133,8 @@ export async function apiPost(
       throw new ApiError(
         res.status,
         `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`,
-        idempotencyKey
+        idempotencyKey,
+        apiErrorEnvelopeOf(result) ?? undefined
       );
     }
     return result;
@@ -133,7 +163,8 @@ export async function apiDelete(
       throw new ApiError(
         res.status,
         `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`,
-        idempotencyKey
+        idempotencyKey,
+        apiErrorEnvelopeOf(result) ?? undefined
       );
     }
     return result;

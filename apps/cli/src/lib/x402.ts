@@ -1,3 +1,5 @@
+import { apiErrorEnvelopeOf } from '@taskmarket/shared';
+
 import { ApiError, API_URL, legalReceiptHeadersForKeystore } from './api.js';
 import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
 import { loadKeystore } from './keystore.js';
@@ -51,7 +53,21 @@ export async function x402Post(
         return r1.json();
       }
       const text = await r1.text().catch(() => '');
-      throw new ApiError(r1.status, `POST ${path} failed (${r1.status}): ${text}`, idempotencyKey);
+      // Round 1 can fail on a repeated or missing idempotency key, which the middleware rejects
+      // ahead of the 402 challenge -- so the envelope has to be read here too, not only after
+      // payment. Parsed defensively because a round-1 failure is not guaranteed to be JSON.
+      let parsed: unknown;
+      try {
+        parsed = JSON.parse(text);
+      } catch {
+        parsed = undefined;
+      }
+      throw new ApiError(
+        r1.status,
+        `POST ${path} failed (${r1.status}): ${text}`,
+        idempotencyKey,
+        apiErrorEnvelopeOf(parsed) ?? undefined
+      );
     }
 
     const requirements = (await r1.json()) as PaymentRequirements;
@@ -99,7 +115,8 @@ export async function x402Post(
       throw new ApiError(
         r2.status,
         `POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`,
-        idempotencyKey
+        idempotencyKey,
+        apiErrorEnvelopeOf(result) ?? undefined
       );
     }
     return result;

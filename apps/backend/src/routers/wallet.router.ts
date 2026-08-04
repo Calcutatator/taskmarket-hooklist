@@ -15,6 +15,7 @@ import {
   contractGetDreamsBonusBps,
 } from '../services/contract';
 import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import {
   type WalletWithdrawDreamsIntentPayload,
   type WalletWithdrawIntentPayload,
@@ -157,6 +158,7 @@ export const walletRouter = router({
   withdraw: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/wallet/withdraw',
         tags: ['Wallet'],
@@ -278,6 +280,7 @@ export const walletRouter = router({
   withdrawDreams: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/wallet/withdraw-dreams',
         tags: ['Wallet'],

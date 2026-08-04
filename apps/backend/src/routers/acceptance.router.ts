@@ -18,6 +18,7 @@ import {
 } from '../schemas/acceptance.schemas';
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import type {
   AcceptanceAcceptIntentPayload,
   AcceptanceAcceptSubmissionsIntentPayload,
@@ -40,6 +41,7 @@ export const acceptanceRouter = router({
   accept: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/accept',
         tags: ['Tasks'],
@@ -158,6 +160,7 @@ export const acceptanceRouter = router({
   acceptSubmissions: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/accept-submissions',
         tags: ['Tasks'],
@@ -276,6 +279,7 @@ export const acceptanceRouter = router({
   rate: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/rate',
         tags: ['Tasks'],

@@ -11,7 +11,7 @@ import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import type { useSignMessage } from 'wagmi';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
 import { newIdempotencyKey } from '@/lib/api/idempotency';
-import { isPendingTransactionMessage, type PendingWriteResult } from '@/lib/relayed-write-outcome';
+import { isPendingWriteResponse, type PendingWriteResult } from '@/lib/relayed-write-outcome';
 
 export type WalletSignDeps = {
   address: `0x${string}`;
@@ -90,7 +90,7 @@ export async function signAndPost<T = unknown>(args: {
         error?: string;
       };
       const error = errBody.message ?? errBody.error ?? `Server error: ${res.status}`;
-      if (isPendingTransactionMessage(error)) {
+      if (isPendingWriteResponse(errBody, error)) {
         return { ok: false, pending: true, idempotencyKey, error };
       }
       return { ok: false, error, idempotencyKey };

@@ -19,6 +19,7 @@ import {
 import { TRPCError } from '@trpc/server';
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import type {
   BidsAuctionAcceptIntentPayload,
   BidsSubmitIntentPayload,
@@ -32,6 +33,7 @@ export const bidsRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/bids',
         tags: ['Tasks'],
@@ -363,6 +365,7 @@ export const bidsRouter = router({
   auctionAccept: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/bids/accept',
         tags: ['Tasks'],

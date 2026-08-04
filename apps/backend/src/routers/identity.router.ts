@@ -9,6 +9,7 @@ import { getServerConfig } from '../config/env';
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 // Only trust a cached agentId if it was minted against the currently configured
 // registry contract AND chain -- see register()'s cacheIsFresh usage for why
@@ -33,6 +34,7 @@ export const identityRouter = router({
   register: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/identity/register',
         tags: ['Identity'],

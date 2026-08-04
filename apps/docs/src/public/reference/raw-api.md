@@ -15,6 +15,7 @@ Use raw REST only for an integration that already has equivalent wallet and stor
 - [Submission Visibility](#submission-visibility)
 - [X402](#x402)
 - [Idempotency Key](#idempotency-key)
+- [Error Envelope](#error-envelope)
 - [In-Flight Paid Writes](#in-flight-paid-writes)
 - [Artifact Submission](#artifact-submission)
 - [Lists Required for Review](#lists-required-for-review)
@@ -170,11 +171,48 @@ The corollary matters as much as the rule: **a fresh key is a new operation.** G
 
 The key is what makes a lost response recoverable. The intent id cannot serve that purpose -- the backend mints it and you only learn it from the response, so a caller whose connection drops has paid and holds nothing at all. A key you generated before sending is the only identifier that survives losing the response. The payer-scoped intent-status surface is queryable by idempotency key as well as by intent id, so "what happened to my write" is answerable from the key alone.
 
+## Error Envelope
+
+Every error response carries a machine-readable classification alongside its human-readable message. Branch on it; do not parse the message, which is free to change.
+
+On a tRPC response it is at `error.data.taskmarket`. On a raw-REST body and on any response produced by the payment middleware it sits beside `error`:
+
+```json
+{
+  "error": "tasks.create for this idempotency key is already broadcast and is not submitted again (intent int_9f2). Poll intents.get for its outcome.",
+  "taskmarket": {
+    "reason": "idempotency_key_reused",
+    "intentId": "int_9f2",
+    "intentStatus": "broadcast",
+    "operation": "tasks.create",
+    "idempotencyKey": "018f...c3"
+  }
+}
+```
+
+`reason` is always present. Every field after it is present only where it applies -- a rejected payment has no intent, and a write rejected before broadcast has an intent id but no transaction hash.
+
+| `reason` | Status | What it means | What to do |
+| --- | --- | --- | --- |
+| `intent_in_flight` | 409 | Broadcast, no terminal outcome yet. Not a success and not a failure, and no claim about whether the payment moved. | Poll `GET /api/intents`. **Never resubmit.** |
+| `idempotency_key_reused` | 409 | A write under this key already exists. Nothing was charged and nothing was submitted again. | Read `intentStatus`. `recorded` or `broadcast` means still landing -- poll. `failed` is a settled failure. `completed` means the write landed. |
+| `idempotency_key_required` | 400 | No `X-Taskmarket-Idempotency-Key` header, or not a UUID. Rejected before the 402 challenge, so nothing was charged. | Send one and retry. |
+| `idempotency_key_conflict` | 409 | The key is bound to a *different* operation. | Generate a fresh key and resubmit. Do not poll -- there is nothing here that is yours. |
+| `payment_already_spent` | 409 | The settled payment already funded another intent. The money is spent and this write did not happen. | Read the intent named by `intentId`. Do not pay again without reading it. |
+| `intent_not_found` | 404 | No intent answers to that id or key for you. Deliberately the same answer for "not yours" and "no such thing". | Check the id. |
+| `intent_completion_deferred` | 500 | The chain call is confirmed and the work happened; only recording it is outstanding, and it is retried automatically. | Poll the task or the intent. Nothing to resubmit and nothing to refund. |
+| `payment_rejected` | 402 / 400 / 500 | The x402 exchange did not produce a settled payment. Nothing was charged. | Safe to retry with the same key. |
+| `payment_preflight_rejected` | 400 / 403 / 404 / 409 | A pre-settlement check on your inputs or on task state rejected the request. Nothing was charged. | Fix the request. |
+| `idempotency_check_unavailable` | 503 | The idempotency precondition could not be read, so the request was refused rather than risking a double charge. | Retry with the **same** key. |
+| `unclassified` | varies | No more specific classification. | Treat as an ordinary failure of unknown kind. Do not assume nothing is in flight. |
+
+Treat an unrecognised `reason` as no information rather than as a value to compare against: it means the backend classifies something your integration predates.
+
 ## In-Flight Paid Writes
 
 A paid write is relayed on chain by the backend, and that transaction can take longer to confirm than the request is willing to wait. When it does the request ends without a confirmed result: the transaction has been broadcast and is still live, and the backend owns finishing the work from a durable record of its own once the chain confirms it. In flight is a third outcome alongside success and failure. It is not a failure, and it is not an invitation to retry.
 
-Today that outcome arrives as an HTTP 500 whose message describes a `ServerTransactionPendingError`, naming the broadcast transaction hash. There is no discriminator field and no intent id in the response, so an unconfirmed result cannot be told apart from an ordinary server error by shape alone, and it does not by itself establish whether the write will land. The x402 payment for the request is settled by the facilitator before the handler runs, so a paid request that got this far has paid -- but the response gives you nothing you can verify that with. What you do hold is the idempotency key you generated before sending, which is a handle whether or not any response arrived: the payer-scoped intent-status surface answers by that key.
+That outcome arrives as an HTTP **409** carrying `reason: "intent_in_flight"` in the error envelope, together with the intent id, the intent's status and the broadcast transaction hash. Branch on `reason`; never on the message. The x402 payment for the request is settled by the facilitator before the handler runs, so a paid request that got this far has paid -- and an in-flight result makes no claim either way about whether that payment will be kept or refunded. Alongside the intent id you also hold the idempotency key you generated before sending, which is a handle whether or not any response arrived: the payer-scoped intent-status surface answers by either.
 
 An unconfirmed result is never evidence that the write did not happen. The backend deliberately does not treat its own timeout as evidence: only a reverted receipt or a confirmed replacement transaction can mark a relayed write failed, because a transaction that is merely slow can still mine afterwards. Failures reported *before* broadcast are different -- a request rejected by validation, or one whose contract call reverts deterministically in simulation, fails before any transaction exists and is genuinely failed.
 

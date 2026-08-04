@@ -16,4 +16,5 @@ export * from './task-drops.schemas';
 export * from './evaluation.schemas';
 export * from './legal.schemas';
 export * from './task-access.schemas';
+export * from './api-error.schemas';
 export * from './intent.schemas';

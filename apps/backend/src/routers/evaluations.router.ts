@@ -21,6 +21,7 @@ import { runRelayedIntent } from '../services/relayed-intent-request';
 // Shared with the rebroadcast path rather than duplicated here, so the first send and every
 // retry of it map a verdict to the same on-chain enum (ADR-0050).
 import { VERDICT_MAP } from '../services/intents/evaluations-intents';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 import type {
   EvaluationsAppealIntentPayload,
   EvaluationsEvaluateIntentPayload,
@@ -33,6 +34,7 @@ export const evaluationsRouter = router({
   evaluate: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/evaluate',
         tags: ['Evaluations'],
@@ -110,6 +112,7 @@ export const evaluationsRouter = router({
   appeal: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/appeal',
         tags: ['Evaluations'],
@@ -151,6 +154,7 @@ export const evaluationsRouter = router({
   finalizeVerdict: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/finalize-verdict',
         tags: ['Evaluations'],
@@ -194,6 +198,7 @@ export const evaluationsRouter = router({
   resolveDispute: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/resolve-dispute',
         tags: ['Evaluations'],
@@ -261,6 +266,7 @@ export const evaluationsRouter = router({
   evaluatorTimeout: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/evaluator-timeout',
         tags: ['Evaluations'],

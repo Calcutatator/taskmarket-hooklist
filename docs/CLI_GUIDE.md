@@ -298,11 +298,30 @@ Both read the key from the current idempotency scope, so a command that made no 
 
 A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting: the transaction is still live and will still be settled, because the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
 
-**The CLI still cannot tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "...", "idempotencyKey": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is where the machine-readable answer lives (ADR-0049), and the `idempotencyKey` on the envelope is the handle into it -- the operator now holds it, but holding a handle still does not say which of the three failures they are holding it for. Keep those two things apart: the key makes a deliberate recovery **possible**; it does not make an automatic retry **safe**.
+**The CLI can now tell you that this is what happened.** The backend answers an in-flight write with HTTP 409 and a machine-readable envelope (ADR-0058), and `index.ts` puts it on the failure envelope:
+
+```json
+{
+  "ok": false,
+  "error": "...",
+  "status": 409,
+  "idempotencyKey": "018f...c3",
+  "reason": "intent_in_flight",
+  "intentId": "int_9f2",
+  "intentStatus": "broadcast",
+  "operation": "tasks.create",
+  "pending": true
+}
+```
+
+`pending` is the field a script branches on. `true` means no terminal outcome has been established: the write may still succeed, so re-running it is a second payment rather than a retry. `false` means the outcome is settled and the command genuinely failed. Poll `intents.get` with `intentId`, or with `idempotencyKey` if the response never arrived.
+
+**`pending` is absent, not `false`, when the backend sent no envelope** -- an older deployment, or a failure that never reached the API at all. That is deliberate. An unclassified failure is not evidence that nothing is in flight, and a manufactured `pending: false` would make a script retry on exactly the outcome it must not. A script must treat a missing `pending` as "unknown", which is the old blanket rule, and never as "safe".
 
 Three practical consequences for CLI code and for anything scripting the CLI:
 
-- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping. Printing the key does not change this: a plain re-run mints a fresh key and is therefore a new operation, and a script that scraped the key out of the envelope and fed it back would still be retrying blind, because nothing in the CLI's output said which failure it was. Re-presenting a key is a decision for a human who has read the failure, not a loop.
+- **Never auto-retry a paid command whose failure is `pending: true` or carries no `pending` at all.** Either way the transaction may still mine, so an automatic retry is a second paid action -- paying twice and creating the same thing twice. Poll instead; that is the whole response. A plain re-run mints a fresh key and is a new operation regardless, so scraping the key back out of the envelope and feeding it to a loop is not a fix. Re-presenting a key is a decision for a human who has read the failure.
+- **A `pending: false` failure is settled, and retrying it is an ordinary decision.** The write did not happen and nothing is in flight for it. Note this is about whether anything is *still landing*, not about whether anything was charged: `reason` says which. `payment_rejected` and `payment_preflight_rejected` were never charged; `payment_already_spent` was.
 - **Poll where there is something to poll.** If the command had a task ID, re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
 - **Some commands have no task to poll, but they do have a handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. The idempotency key covers exactly that gap, and the CLI prints it: the `idempotencyKey` on the error envelope is the key that write was sent under, and the write is queryable on the payer-scoped intent-status surface by it. A CLI operator now has the same handle a raw REST caller has always had. Query it, or wait and inspect the wallet -- and if you conclude the write never landed, re-present that key with `TASKMARKET_IDEMPOTENCY_KEY` rather than re-running the command bare, which would be a second operation.
 

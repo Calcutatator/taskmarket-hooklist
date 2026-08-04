@@ -21,6 +21,7 @@ import type {
 } from '../services/intents/pitches-intents';
 import { fetchPrivateViewabilityContext, resolveTaskViewability } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 /**
  * Phase 3 (ADR-0030) parity fix (F3): `submit` must enforce the same private-task
@@ -65,6 +66,7 @@ export const pitchesRouter = router({
   submit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/pitches',
         tags: ['Tasks'],
@@ -238,6 +240,7 @@ export const pitchesRouter = router({
   select: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/pitches/select',
         tags: ['Tasks'],

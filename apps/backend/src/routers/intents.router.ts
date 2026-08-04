@@ -1,9 +1,10 @@
 // Implements: ADR-0049, ADR-0052
 // Implements: ADR-0055
-import { TRPCError } from '@trpc/server';
+import type { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { IntentStatusInputSchema, IntentStatusResponseSchema } from '@taskmarket/shared';
 
+import { apiError } from '../lib/api-error';
 import { orphanedPayments, tasks, type RelayedIntent } from '../db/schema';
 import { findIntentByIdempotencyKey, getRelayedIntent } from '../services/relayed-intents';
 import { protectedProcedure, router } from '../trpc';
@@ -22,6 +23,13 @@ import type { Context } from '../context';
  * is still not public: `evaluations.finalizeVerdict` is permissionless, so there is no owner
  * to scope it to, and rather than invent one those rows are readable by nobody through this
  * surface. Operators read them from the database, which is where they were readable before.
+ *
+ * That last paragraph is a live gap, not a settled position. It means an intent recording a
+ * permissionless write is readable by nobody at all -- not by the caller who started it -- while
+ * ADR-0058 hands that same caller an intent id and tells them to poll here rather than resubmit.
+ * ADR-0059 proposes scoping those rows to a participant of the task they name. It is `Proposed`,
+ * so nothing here changes until it is decided; the comment lives at the gap so it is findable
+ * from the code rather than only from the ADR directory.
  */
 function intentVisibleTo(intent: RelayedIntent, callerAddress: string): boolean {
   if (!intent.payer) return false;
@@ -29,7 +37,7 @@ function intentVisibleTo(intent: RelayedIntent, callerAddress: string): boolean 
 }
 
 function notFound(): TRPCError {
-  return new TRPCError({ code: 'NOT_FOUND', message: 'No such intent' });
+  return apiError({ reason: 'intent_not_found', message: 'No such intent' });
 }
 
 /**

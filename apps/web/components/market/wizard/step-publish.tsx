@@ -38,7 +38,7 @@ import { findTemplate, taskTemplates } from '@/lib/market/task-templates';
 import { parseUnits } from 'viem';
 import { cn } from '@/lib/utils';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
-import { isPendingTransactionMessage } from '@/lib/relayed-write-outcome';
+import { isPendingWriteResponse } from '@/lib/relayed-write-outcome';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import {
   IDEMPOTENCY_KEY_HEADER,
@@ -406,7 +406,7 @@ export function StepPublish({
         if (
           inFlight.capture({
             ok: false,
-            pending: isPendingTransactionMessage(message),
+            pending: isPendingWriteResponse(err, message),
             idempotencyKey: inFlight.idempotencyKey,
             error: message,
           })

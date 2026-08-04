@@ -19,6 +19,7 @@ import { verifySignedAddressOrThrow } from '../lib/agents';
 import { TRPCError } from '@trpc/server';
 import { fetchPrivateViewabilityContext } from '../lib/task-visibility';
 import type { Context } from '../context';
+import { RELAYED_WRITE_REQUEST_HEADERS } from '../lib/openapi-headers';
 
 /**
  * Phase 3 (ADR-0030) parity fix (F6): `claim` must enforce the same private-task
@@ -66,6 +67,7 @@ export const claimsRouter = router({
   claim: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/claim',
         tags: ['Tasks'],
@@ -145,6 +147,7 @@ export const claimsRouter = router({
   forfeit: publicProcedure
     .meta({
       openapi: {
+        requestHeaders: RELAYED_WRITE_REQUEST_HEADERS,
         method: 'POST',
         path: '/tasks/{taskId}/forfeit',
         tags: ['Tasks'],
