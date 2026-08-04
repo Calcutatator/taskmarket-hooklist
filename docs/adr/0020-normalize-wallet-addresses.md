@@ -126,6 +126,6 @@ upcoming release:
 - `packages/shared/src/schemas/common.schemas.ts` — `EthAddressSchema`, `normalizeAddress()`
 - `apps/backend/src/lib/agents.ts` — `lowerAddressEq()`
 - `apps/backend/src/routers/devices.router.ts` — `register` mutation
-- `.changeset/task-visibility-cli.md` — unreleased CLI changeset being updated alongside this
+- the `task-visibility-cli.md` CLI changeset (unreleased at the time, since consumed by a release) — updated alongside this
 - Issue #169 — the `hopper` → `zephyr` data migration/backfill this was discovered during
   (separate scope from this ADR)

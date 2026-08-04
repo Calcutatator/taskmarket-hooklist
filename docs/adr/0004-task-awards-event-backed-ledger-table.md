@@ -12,7 +12,7 @@
 
 - **Status:** Superseded
 - **Date:** 2026-07-16
-- **Embodiment:** Implemented
+- **Embodiment:** Inactive
 - **Last audited:** 2026-07-29
 - **Author:** Loaf
 - **Reviewers:** Loaf — self-attested; no independent reviewer recorded

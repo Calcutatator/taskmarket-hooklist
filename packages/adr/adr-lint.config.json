@@ -1,0 +1,4 @@
+{
+  "$comment": "scope selects which files the Implements-non-Accepted gate scans. 'whole-corpus' = every tracked source file under the coverage paths; 'diff' = only the files changed in this push (git diff, see ADR_LINT_BASE). Precedence: ADR_LINT_SCOPE env > this file > built-in default ('whole-corpus'). A missing or malformed value never narrows coverage.",
+  "scope": "whole-corpus"
+}

@@ -31,7 +31,7 @@ matching `task_awards` rows — see ADR-0006).
 Reviewing this PR locally against a real local dev database (Postgres wired to the actual
 deployed Base Sepolia testnet contract, with 128 real historical `completed` tasks predating
 `task_awards`) reproduced a hard failure: every boot attempt failed at `0028`'s guard. Reading
-`drizzle-orm`'s migrator (`node_modules/drizzle-orm/pg-core/dialect.js`, `PgDialect.migrate`)
+`drizzle-orm`'s migrator (the `drizzle-orm` package's `pg-core/dialect.js`, `PgDialect.migrate`)
 confirmed why — it wraps every pending migration for a given boot into one
 `session.transaction(...)` call. `0027` and `0028` are both pending together in this PR, so a
 single boot attempt tries to apply both inside one transaction; `0028`'s guard fails against
@@ -113,7 +113,7 @@ is creating new tasks right now is definitionally the active one regardless of a
 historical volume.
 
 A third piece of work, prompted by wanting to actually recover data rather than just silence
-the guard: `apps/backend/scripts/backfill-contract-address.ts` (service:
+the guard: the (since-removed) `backfill-contract-address.ts` script (service:
 `contract-address-backfill.ts`) resolves each untracked task's true `contract_address` from its
 own `escrow_tx_hash` receipt -- ground truth per task, decoding the `TaskCreated` log's emitting
 address, rather than a guess. Run against the real testnet database: 193 of 198 untracked tasks
@@ -157,11 +157,11 @@ deployment).
 - ADR-0006 (`task_awards` single source of truth — the migration this ADR splits).
 - `apps/backend/drizzle/migrations/0027_add_task_awards.sql`,
   `0028_drop_task_worker_rating.sql` (held for the follow-up PR).
-- `apps/backend/scripts/backfill-contract-address.ts`,
-  `apps/backend/src/services/contract-address-backfill.ts` (the per-task `contract_address`
-  recovery tool; `make db backfill-contract-address`).
+- `backfill-contract-address.ts` and its service `contract-address-backfill.ts` — the per-task
+  `contract_address` recovery tool (both since removed once the migration completed;
+  `make db backfill-contract-address`).
 - `apps/backend/src/services/configured-task-awards-backfill.ts`,
-  `apps/backend/scripts/backfill-task-awards.ts` (the manual backfill path).
+  `apps/backend/src/scripts/backfill-task-awards.ts` (the manual backfill path).
 - `docs/DB_GUIDE.md` (`make db backfill-task-awards` and the reconciliation-on-boot behavior).
-- `node_modules/drizzle-orm/pg-core/dialect.js` (`PgDialect.migrate` — confirms the
+- the `drizzle-orm` package's `pg-core` `dialect.js` (`PgDialect.migrate` — confirms the
   single-transaction-per-boot behavior this ADR is built around).

@@ -882,7 +882,7 @@ separate, much larger research effort, out of scope here.
 
 ## References
 
-- Spec (historical location): `docs/specs/task-visibility-and-submission-visibility.md`
+- Spec (historical location): the former `docs/specs/` spec `task-visibility-and-submission-visibility.md`
   (superseded by this RFC's migration into `docs/rfc/`)
 - Related ADRs: ADR-0006, ADR-0007, ADR-0014, ADR-0015 (Superseded by ADR-0023), ADR-0016,
   ADR-0017 (Superseded by ADR-0023), ADR-0018, ADR-0021, ADR-0023, ADR-0030, ADR-0031

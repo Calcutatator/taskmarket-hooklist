@@ -93,9 +93,9 @@ not just within one call — with no other code path changes required.
 - Whether `devices.router.ts`'s background registration should get a visible retry or
   dead-letter mechanism (so a permanently-`null` `agentId` is detectable and recoverable
   without reading backend logs) is a separate, follow-up decision, not part of this one.
-- Regression coverage: `apps/backend/scripts/smoke-identity.ts` step 6 fires five concurrent
+- Regression coverage: `apps/backend/src/scripts/smoke-identity.ts` step 6 fires five concurrent
   device registrations and asserts every one lands on a distinct, non-null `agentId`.
-  `apps/backend/scripts/smoke-concurrent-tasks.ts` covers a second, unrelated call site
+  `apps/backend/src/scripts/smoke-concurrent-tasks.ts` covers a second, unrelated call site
   (`contractFinalizeVerdict`, reached via the permissionless finalize-verdict endpoint) to
   confirm the fix generalizes beyond identity registration to any `createServerWallet()`
   consumer.
@@ -105,9 +105,9 @@ not just within one call — with no other code path changes required.
 - `apps/backend/src/lib/wallet.ts` — `createServerWallet()`, the change itself
 - `apps/backend/src/routers/devices.router.ts` — the background `contractRegisterIdentity()`
   call whose silent-failure follow-up is noted above
-- `apps/backend/scripts/smoke-identity.ts` — regression coverage for the concurrent-
+- `apps/backend/src/scripts/smoke-identity.ts` — regression coverage for the concurrent-
   registration race
-- `apps/backend/scripts/smoke-concurrent-tasks.ts` — regression coverage for a second call
+- `apps/backend/src/scripts/smoke-concurrent-tasks.ts` — regression coverage for a second call
   site (`contractFinalizeVerdict`)
 - PR #110 deep-review smoke-test pass (this bug was found incidentally, unrelated to that
   PR's task-visibility scope)

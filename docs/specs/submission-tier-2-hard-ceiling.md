@@ -610,7 +610,7 @@ works without changes — `test`'s own dispatch is generic over any `apps/<name>
   skill.md`), `apps/docs/src/pages/skill.md` (docs-site copy, update identically)
 - `scripts/cloud-env-setup.sh` (sets `SUBMISSION_FREE_ALLOWANCE=1000` for smoke/sandbox — the
   reason the smoke-suite ceiling collision was checked)
-- `.changeset/tidy-cli-private-task-hint.md` (git history — format precedent for this spec's new
+- the `tidy-cli-private-task-hint.md` changeset (in git history — format precedent for this spec's new
   changeset entry)
 - Issue #372 (closed by this spec — its scope is fully covered here and in ADR-0038, not left open
   with an updated description)

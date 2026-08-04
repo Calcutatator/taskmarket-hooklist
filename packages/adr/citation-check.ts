@@ -26,7 +26,7 @@
 //   pnpm --filter @taskmarket/adr run citation-check                    # docs/adr + docs/rfc + docs/specs
 //   pnpm --filter @taskmarket/adr run citation-check -- path/to/file.md # explicit files
 
-import { existsSync, readFileSync, readdirSync } from 'node:fs';
+import { existsSync, readFileSync, readdirSync, realpathSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { dirname, join } from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -39,6 +39,7 @@ import {
   checkGithubNumberCitations,
   formatIssueLine,
   isDocDirMemberFile,
+  pathIsInsideRootReal,
 } from './lib.js';
 
 const PACKAGE_DIR = dirname(fileURLToPath(import.meta.url));
@@ -71,10 +72,16 @@ function githubNumberExists(n: string): boolean {
   if (cached !== undefined) return cached;
   let exists: boolean;
   try {
-    execFileSync('gh', ['api', `repos/${GH_REPO}/issues/${n}`], { stdio: 'ignore' });
+    execFileSync('gh', ['api', `repos/${GH_REPO}/issues/${n}`], { stdio: ['ignore', 'ignore', 'pipe'] });
     exists = true;
-  } catch {
-    exists = false;
+  } catch (e) {
+    // `gh api` exits non-zero for ANY HTTP error, so rate-limit, network, and
+    // auth failures are indistinguishable from a real 404 at the exit-code level.
+    // Only a genuine 404 means the number doesn't exist; for anything else we
+    // can't tell, so treat the citation as resolved rather than emit a false
+    // "not found" WARN on a transient failure. The 404 signal is in stderr.
+    const stderr = (e as { stderr?: Buffer | string })?.stderr?.toString() ?? '';
+    exists = !/\b404\b|not found/i.test(stderr);
   }
   githubNumberExistenceCache.set(n, exists);
   return exists;
@@ -106,7 +113,19 @@ function main(): void {
     if (!refs) continue;
 
     const paths = extractCitedFilePaths(refs);
-    issues.push(...checkFilePathCitations(paths, relPath, (p) => existsSync(join(REPO_ROOT, p)), 'the current working tree'));
+    // Confine the existence probe to the repo: a cited path like `../../../etc/x`
+    // must never let the check stat files outside REPO_ROOT (a file-existence
+    // oracle driven by `## References` content). Symlink-aware — a path lexically
+    // inside the repo but symlinked out still resolves to false — and doubles as
+    // the existence check (realpath throws for a missing path).
+    issues.push(
+      ...checkFilePathCitations(
+        paths,
+        relPath,
+        (p) => pathIsInsideRootReal(REPO_ROOT, p, realpathSync),
+        'the current working tree',
+      ),
+    );
 
     if (checkGithubNumbers) {
       const numbers = extractCitedGithubNumbers(refs);
