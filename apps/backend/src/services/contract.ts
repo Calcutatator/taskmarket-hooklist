@@ -1,10 +1,10 @@
+// Implements: ADR-0055
 import { randomBytes } from 'crypto';
 import {
   parseAbi,
   parseAbiItem,
   decodeEventLog,
   keccak256,
-  encodeAbiParameters,
   encodeFunctionData,
   ContractFunctionRevertedError,
   BaseError,
@@ -602,31 +602,65 @@ async function relayThroughForwarder(
 }
 
 /**
- * Pre-compute the contract-generated task ID using the current requester nonce.
- * The contract generates: keccak256(abi.encode(chainId, contractAddress, requester, nonce))
- * Call this BEFORE contractCreateTask to know the ID before it's on-chain.
+ * The two shapes `TaskCreated` has had. Both are tried for the same reason the indexer keeps
+ * both (services/indexer.ts): rev014 appended non-indexed fields, which changes topic0, so a
+ * single ABI silently matches nothing on the other side of that line. `taskId` is the first
+ * indexed parameter in both, which is all this needs.
  */
-export async function precomputeTaskId(
-  requester: `0x${string}`,
-  contractAddress?: string | null
-): Promise<`0x${string}`> {
-  const config = getServerConfig();
-  const publicClient = getPublicClient();
-  const addr = (contractAddress ?? config.CONTRACT_ADDRESS) as `0x${string}`;
+const TASK_CREATED_EVENTS = [
+  parseAbiItem(
+    'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime, bool stakeRequired, uint16 stakeBps)'
+  ),
+  parseAbiItem(
+    'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
+  ),
+] as const;
 
-  const nonce = (await publicClient.readContract({
-    address: addr,
-    abi: MARKET_ABI,
-    functionName: 'requesterNonce',
-    args: [requester],
-  })) as bigint;
+/**
+ * The id the chain assigned to a task, read out of that transaction's own `TaskCreated` log.
+ *
+ * This is the replacement for predicting the id from `requesterNonce` before the call. The
+ * formula was right and the nonce was not: `createTask` increments
+ * `s.requesterNonce[requester]` as it derives the id (CoreFacet), so anything else by the same
+ * requester landing between the read and the mine shifts the real id off the prediction. Two
+ * concurrent creates from one requester both read nonce N and both predict id(N) while the
+ * chain assigns N and N+1 -- the second request then persists the *first* task's id, and its
+ * completion's upsert overwrites that task's description, reward, tags and deadlines.
+ *
+ * A prediction is a guess about state another transaction can change. The log is the chain
+ * stating what it did, and it is re-derivable from the hash alone -- so a reconciler pass
+ * completing this intent hours later reads exactly what the original request would have
+ * (ADR-0045, the same reason `acceptance.rate` re-reads its block number from the receipt).
+ *
+ * Filtered to logs from the TaskMarket contract itself, for the same reason
+ * `decodeTaskCompletedLogs` filters: a requester-controlled hook can emit a byte-identical
+ * forged log, and a forged id here would hang an entire creation off a task of the attacker's
+ * choosing.
+ */
+export async function taskIdForTx(txHash: `0x${string}`): Promise<`0x${string}`> {
+  const { logs } = await relayResultFromTxHash(txHash);
+  const contractAddress = (getServerConfig().CONTRACT_ADDRESS as string).toLowerCase();
 
-  return keccak256(
-    encodeAbiParameters(
-      [{ type: 'uint256' }, { type: 'address' }, { type: 'address' }, { type: 'uint256' }],
-      [BigInt(config.CHAIN_ID), addr, requester, nonce]
-    )
-  ) as `0x${string}`;
+  for (const log of logs) {
+    if (log.address.toLowerCase() !== contractAddress) continue;
+    for (const event of TASK_CREATED_EVENTS) {
+      try {
+        const decoded = decodeEventLog({ abi: [event], data: log.data, topics: log.topics });
+        if (decoded.eventName !== 'TaskCreated') continue;
+        return (decoded.args as unknown as { taskId: `0x${string}` }).taskId;
+      } catch {
+        // Some other event, or the other revision's shape. Both are ordinary here.
+      }
+    }
+  }
+
+  // A confirmed transaction that created no task. There is no honest id to return and no safe
+  // one to invent, so this fails and the intent is retried rather than writing a task row
+  // under a made-up id.
+  throw new TRPCError({
+    code: 'INTERNAL_SERVER_ERROR',
+    message: `No TaskCreated log found in transaction ${txHash}`,
+  });
 }
 
 export async function contractCreateTask(

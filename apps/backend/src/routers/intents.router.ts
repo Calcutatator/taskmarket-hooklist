@@ -1,9 +1,10 @@
 // Implements: ADR-0049, ADR-0052
+// Implements: ADR-0055
 import { TRPCError } from '@trpc/server';
 import { eq } from 'drizzle-orm';
 import { IntentStatusInputSchema, IntentStatusResponseSchema } from '@taskmarket/shared';
 
-import { orphanedPayments, type RelayedIntent } from '../db/schema';
+import { orphanedPayments, tasks, type RelayedIntent } from '../db/schema';
 import { findIntentByIdempotencyKey, getRelayedIntent } from '../services/relayed-intents';
 import { protectedProcedure, router } from '../trpc';
 import type { Context } from '../context';
@@ -29,6 +30,30 @@ function intentVisibleTo(intent: RelayedIntent, callerAddress: string): boolean 
 
 function notFound(): TRPCError {
   return new TRPCError({ code: 'NOT_FOUND', message: 'No such intent' });
+}
+
+/**
+ * The task a completed `tasks.create` produced, found by its escrow hash.
+ *
+ * Looked up rather than stored, because the intent payload deliberately holds no task id: the
+ * chain assigns it, and it is only knowable from the transaction that created it. The task row
+ * records that same hash in `escrow_tx_hash` -- written by whichever of the completion or the
+ * chain-event indexer inserted it, both from the one transaction -- so the hash is the join.
+ *
+ * Only for a completed intent. Before that there may be a row from the indexer with no
+ * completion behind it, and reporting an id from a write that has not finished would tell a
+ * caller their creation is done when it is not.
+ */
+async function createdTaskIdFor(ctx: Context, intent: RelayedIntent): Promise<string | null> {
+  if (intent.operation !== 'tasks.create' || intent.status !== 'completed' || !intent.txHash) {
+    return null;
+  }
+  const [row] = await ctx.db
+    .select({ id: tasks.id })
+    .from(tasks)
+    .where(eq(tasks.escrowTxHash, intent.txHash))
+    .limit(1);
+  return row?.id ?? null;
 }
 
 async function refundStateFor(ctx: Context, intent: RelayedIntent) {
@@ -86,6 +111,7 @@ export const intentsRouter = router({
         // so reporting it on any other status would tell a caller their write is dead while
         // settlement is still carrying it (ADR-0049 point 3).
         terminalReason: intent.status === 'failed' ? (intent.lastError ?? null) : null,
+        taskId: await createdTaskIdFor(ctx, intent),
         refund: await refundStateFor(ctx, intent),
       };
     }),

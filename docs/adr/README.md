@@ -264,6 +264,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0051 — Replacement gas escalates geometrically under a configured, per-deployment cap](0051-replacement-gas-escalates-geometrically-under-a-configured-cap.md)
 - [0052 — Every relayed write carries a mandatory, client-generated, backend-opaque idempotency key](0052-every-relayed-write-carries-a-client-generated-idempotency-key.md)
 - [0053 — Relayed-write observability is by query, not by alerting](0053-relayed-write-observability-is-by-query-not-by-alerting.md)
+- [0055 — A created task's id comes from its receipt, not from a requester-nonce prediction](0055-a-created-task-id-comes-from-the-receipt-not-a-nonce-prediction.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

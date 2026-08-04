@@ -9,6 +9,9 @@ vi.mock('../../../src/services/contract', () => ({
   contractProjectSettlementForTx: vi.fn().mockResolvedValue({ settlement: null, settledAt: null }),
   contractSubmitWork: vi.fn().mockResolvedValue('0xsubmitworkhash'),
   resolveRegisteredAgentId: vi.fn().mockResolvedValue(42n),
+  // Decoded from the confirmed transaction's own TaskCreated log, so it is a function of the
+  // hash and of nothing the payload could have carried (ADR-0045).
+  taskIdForTx: vi.fn().mockResolvedValue(`0x${'a'.repeat(64)}`),
 }));
 
 vi.mock('../../../src/services/settlement-recorder', () => ({
@@ -143,7 +146,6 @@ describe('relayed intent completions', () => {
     const recordedAt = new Date('2030-06-01T00:00:00.000Z');
     const createPayload = {
       allowedViewerAddresses: [],
-      escrowTxHash: '0xescrow',
       evaluatorAssignment: null,
       inlineTaskDrop: null,
       input: { bidDeadline: 48, description: 'work', duration: 24, pitchDeadline: 3600, reward: '1000000' },
@@ -151,7 +153,6 @@ describe('relayed intent completions', () => {
       payer: REQUESTER,
       resolvedTaskDropId: null,
       taskDropReservationId: null,
-      taskId: TASK_ID,
     };
 
     vi.useFakeTimers();

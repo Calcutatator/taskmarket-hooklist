@@ -1,10 +1,15 @@
 // Implements: ADR-0045
+// Implements: ADR-0055
 import { eq } from 'drizzle-orm';
 
 import { tasks } from '../../db/schema';
 import { contractAssignEvaluator } from '../contract';
 import { registerRelayedIntentHandler } from '../relayed-intent-registry';
-import { completeTasksCreate, type TasksCreateIntentPayload } from './tasks-create-intent';
+import {
+  broadcastTasksCreate,
+  completeTasksCreate,
+  type TasksCreateIntentPayload,
+} from './tasks-create-intent';
 import {
   completeAcceptanceAccept,
   completeAcceptanceRate,
@@ -114,19 +119,35 @@ export function registerRelayedIntentHandlers(): void {
   if (registered) return;
   registered = true;
 
-  registerRelayedIntentHandler('tasks.create', async ({ db, intent, txHash }) => {
-    const payload = intent.payload as TasksCreateIntentPayload;
-    await completeTasksCreate({
-      db,
-      // The escrow hash cannot be in the payload: the intent is recorded before the chain
-      // call, precisely so no transaction is ever live without a record. The confirmed hash
-      // arrives here instead, from the request that broadcast it or from the reconciler.
-      payload: { ...payload, escrowTxHash: payload.escrowTxHash || txHash },
-      // The intent row's own creation time is the task's creation time: written before the
-      // chain call, never rewritten, and identical on every completion attempt. That makes it
-      // the anchor every deadline is derived from, rather than the clock at completion time.
-      recordedAt: intent.createdAt,
-    });
+  registerRelayedIntentHandler('tasks.create', {
+    // Every other safely-replayable operation has a broadcaster; this one was the exception
+    // only because the request had already predicted a task id, and a rebroadcast landing at
+    // a different requester nonce would have named a different task. Nothing predicts an id
+    // any more -- the completion reads it from whichever transaction actually confirmed -- so
+    // a rebroadcast is now the same replay as any other. The guard against a second landing
+    // is the forwarder's consumed-receipt map; see broadcastTasksCreate.
+    broadcast: async ({ intent }) =>
+      broadcastTasksCreate({
+        payload: intent.payload as TasksCreateIntentPayload,
+        // The x402 payment this creation's escrow is funded by, replayed from the intent row
+        // rather than the payload: it is the settled payment reference the intent already
+        // carries, and contractCreateTask waits on its receipt before relaying.
+        paymentTxHash: (intent.paymentTxHash as `0x${string}` | null) ?? null,
+      }),
+    complete: async ({ db, intent, txHash }) =>
+      completeTasksCreate({
+        db,
+        payload: intent.payload as TasksCreateIntentPayload,
+        // The intent row's own creation time is the task's creation time: written before the
+        // chain call, never rewritten, and identical on every completion attempt. That makes
+        // it the anchor every deadline is derived from, rather than the clock at completion.
+        recordedAt: intent.createdAt,
+        // Neither the escrow hash nor the task id can be in the payload: the intent is
+        // recorded before the chain call, precisely so no transaction is ever live without a
+        // record. Both are read from the confirmed transaction here, by whichever of the
+        // request or the reconciler observed it.
+        txHash: txHash as `0x${string}`,
+      }),
   });
 
   registerRelayedIntentHandler('tasks.assignEvaluator', {

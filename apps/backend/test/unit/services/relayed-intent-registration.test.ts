@@ -1,4 +1,5 @@
 // Verifies: ADR-0045, ADR-0050
+// Verifies: ADR-0055
 import { describe, expect, it, vi } from 'vitest';
 import { makeChain } from '../helpers';
 
@@ -14,7 +15,11 @@ vi.mock('../../../src/services/contract', () => ({
   contractSubmitWork: vi.fn().mockResolvedValue('0xsubmitworkhash'),
   contractTransferWithAuthorization: vi.fn().mockResolvedValue('0xtransferhash'),
   contractWithdrawDreamsRewards: vi.fn().mockResolvedValue('0xdreamshash'),
+  contractCreateTask: vi.fn().mockResolvedValue('0xescrowhash'),
   resolveRegisteredAgentId: vi.fn().mockResolvedValue(42n),
+  taskIdForTx: vi.fn().mockResolvedValue(`0x${'a'.repeat(64)}`),
+  MODE_MAP: { bounty: '0x00000001', claim: '0x00000002' },
+  AUCTION_SUBTYPE_MAP: { dutch: '0x00000011' },
 }));
 
 vi.mock('../../../src/services/task-notifications', () => ({
@@ -33,7 +38,11 @@ vi.mock('../../../src/config/env', () => ({
   }),
 }));
 
-import { contractAssignEvaluator } from '../../../src/services/contract';
+import {
+  contractAssignEvaluator,
+  contractCreateTask,
+  taskIdForTx,
+} from '../../../src/services/contract';
 import { registerRelayedIntentHandlers } from '../../../src/services/intents/register';
 import {
   getRelayedIntentBroadcaster,
@@ -121,34 +130,64 @@ describe('relayed intent handler registration', () => {
     );
   });
 
-  it('completes a task creation with the confirmed hash the payload could not carry', async () => {
+  const createPayload = {
+    allowedViewerAddresses: [],
+    evaluatorAssignment: null,
+    inlineTaskDrop: null,
+    input: { description: 'Test task', duration: 7, mode: 'bounty', reward: '1000000' },
+    normalizedPayer: PAYER,
+    payer: PAYER,
+    resolvedTaskDropId: null,
+    taskDropReservationId: null,
+  };
+
+  it('completes a task creation with the id and hash the payload could not carry', async () => {
     const { db, taskInsert } = makeDb();
     const handler = getRelayedIntentHandler('tasks.create')!;
 
     await handler({
       db,
-      intent: intent({
-        payload: {
-          allowedViewerAddresses: [],
-          escrowTxHash: '',
-          evaluatorAssignment: null,
-          inlineTaskDrop: null,
-          input: { description: 'Test task', duration: 7, reward: '1000000' },
-          normalizedPayer: PAYER,
-          payer: PAYER,
-          resolvedTaskDropId: null,
-          taskDropReservationId: null,
-          taskId: TASK_ID,
-        },
-      } as Partial<RelayedIntent>),
+      intent: intent({ payload: createPayload } as Partial<RelayedIntent>),
       txHash: '0xescrowhash',
     });
 
-    // The intent is recorded before the chain call, so the escrow hash is only knowable
-    // here -- writing it from the payload would persist an empty string (ADR-0045).
+    // Both are knowable only here. The intent is recorded before the chain call, so the
+    // escrow hash does not exist yet -- and neither does the task id, which the contract
+    // derives from a requester nonce as it runs. Predicting it was what let two concurrent
+    // creates by one requester name the same task (ADR-0045).
+    expect(taskIdForTx).toHaveBeenCalledWith('0xescrowhash');
     expect(taskInsert.values).toHaveBeenCalledWith(
       expect.objectContaining({ escrowTxHash: '0xescrowhash', id: TASK_ID })
     );
+  });
+
+  /**
+   * Verifies: ADR-0050
+   *
+   * `tasks.create` was the one safely-replayable operation with no broadcaster, and the
+   * prediction is why: a rebroadcast landing at a different requester nonce would have
+   * created a task under an id nothing had recorded. With the id read from whichever
+   * transaction confirms, a replay is the same replay as any other operation's.
+   */
+  it('rebroadcasts a task creation from its payload alone', async () => {
+    const { db } = makeDb();
+    const broadcast = getRelayedIntentBroadcaster('tasks.create')!;
+
+    const txHash = await broadcast({
+      db,
+      intent: intent({
+        paymentTxHash: '0xpaymenthash',
+        payload: createPayload,
+      } as Partial<RelayedIntent>),
+    });
+
+    expect(txHash).toBe('0xescrowhash');
+    // The payer, the reward and the settled payment reference all come off the intent row,
+    // so the retry funds the same escrow from the same payment rather than a fresh one.
+    const call = vi.mocked(contractCreateTask).mock.calls[0]!;
+    expect(call[0]).toBe(PAYER);
+    expect(call[1]).toBe(1_000_000n);
+    expect(call[12]).toBe('0xpaymenthash');
   });
 
   it('broadcasts an evaluator assignment with the arguments the contract expects', async () => {
