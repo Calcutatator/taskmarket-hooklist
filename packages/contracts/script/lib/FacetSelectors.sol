@@ -98,13 +98,18 @@ library FacetSelectors {
     }
 
     function evalFacetSelectors() internal pure returns (bytes4[] memory s) {
-        s = new bytes4[](6);
+        s = new bytes4[](7);
         s[0] = EvaluatorFacet.assignEvaluator.selector;
         s[1] = EvaluatorFacet.evaluate.selector;
         s[2] = EvaluatorFacet.appeal.selector;
         s[3] = EvaluatorFacet.finalizeVerdict.selector;
         s[4] = EvaluatorFacet.resolveDispute.selector;
         s[5] = EvaluatorFacet.evaluatorTimeout.selector;
+        // rev017: routed so an off-chain caller can read the appeal-window floor rather than
+        // hardcode it and drift out of sync with the contract that enforces it. Spelled as an
+        // explicit hash because Solidity's `.selector` shorthand is only available for
+        // functions, not for the compiler-synthesised getter of a public constant.
+        s[6] = bytes4(keccak256("MIN_APPEAL_WINDOW_SECS()"));
     }
 
     function ratingFacetSelectors() internal pure returns (bytes4[] memory s) {

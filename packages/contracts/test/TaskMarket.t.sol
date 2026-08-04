@@ -2859,7 +2859,7 @@ contract TaskMarketTest is DiamondTestHelper {
     // memory. RETURN_BOMB_GAS_BUDGET covers legitimate refundExpired/submitWork logic
     // plus the hook's ~2,000,000 gas build cost, but leaves no room for the caller's own
     // ~2,000,000 gas copy-back, so unpatched code reliably runs out of gas -- while
-    // patched code (32-byte copy cap + 100,000 gas hook stipend) fits comfortably, since
+    // patched code (32-byte copy cap + 1,000,000 gas hook stipend) fits comfortably, since
     // the hook can never afford to build the bomb within its stipend in the first place.
     uint256 internal constant RETURN_BOMB_SIZE = 1_000_000;
     uint256 internal constant RETURN_BOMB_GAS_BUDGET = 3_000_000;
