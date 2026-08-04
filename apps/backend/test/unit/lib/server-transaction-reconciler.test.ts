@@ -15,6 +15,12 @@ afterAll(restoreServerEnvironment);
 
 const HASH = `0x${'ab'.repeat(32)}` as const;
 const REPLACEMENT_HASH = `0x${'cd'.repeat(32)}` as const;
+const FEES = { maxFeePerGas: 2_000_000_000n, maxPriorityFeePerGas: 1_000_000_000n };
+
+/** A replacement that succeeds, in the shape the reconciler now expects back (ADR-0051). */
+function replacementSender(hash = REPLACEMENT_HASH) {
+  return vi.fn().mockResolvedValue({ fees: FEES, hash });
+}
 const STUCK_AFTER_MS = 90_000;
 
 async function broadcastOne(
@@ -31,6 +37,13 @@ async function broadcastOne(
       simulate: vi.fn().mockResolvedValue(undefined),
     })
   ).rejects.toThrow();
+}
+
+function settlementSpies() {
+  return {
+    onConfirmed: vi.fn().mockResolvedValue(undefined),
+    onFailed: vi.fn().mockResolvedValue(undefined),
+  };
 }
 
 describe('server transaction reconciler', () => {
@@ -84,7 +97,7 @@ describe('server transaction reconciler', () => {
     const { state, store } = createMemoryServerTransactionStore(10);
     await broadcastOne(store);
 
-    const sendReplacement = vi.fn().mockResolvedValue(REPLACEMENT_HASH);
+    const sendReplacement = replacementSender();
     const reconcile = createServerTransactionReconciler({
       getReceiptStatus: vi.fn().mockResolvedValue(null),
       sendReplacement,
@@ -95,7 +108,7 @@ describe('server transaction reconciler', () => {
     // Pretend the pass runs well after the stuck threshold elapsed.
     await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
 
-    expect(sendReplacement).toHaveBeenCalledWith(10);
+    expect(sendReplacement).toHaveBeenCalledWith(expect.objectContaining({ nonce: 10 }));
     expect(state.rows[0]).toMatchObject({ status: 'broadcast', txHash: REPLACEMENT_HASH });
   });
 
@@ -117,10 +130,6 @@ describe('server transaction reconciler', () => {
 
   // Verifies: ADR-0045
   describe('relayed intent settlement', () => {
-    function settlementSpies() {
-      return { onConfirmed: vi.fn().mockResolvedValue(undefined), onFailed: vi.fn().mockResolvedValue(undefined) };
-    }
-
     it('completes the intent when the receipt confirms success', async () => {
       const { store } = createMemoryServerTransactionStore(10);
       await broadcastOne(store);
@@ -168,7 +177,7 @@ describe('server transaction reconciler', () => {
       const reconcile = createServerTransactionReconciler({
         getReceiptStatus,
         intents,
-        sendReplacement: vi.fn().mockResolvedValue(REPLACEMENT_HASH),
+        sendReplacement: replacementSender(),
         store,
         stuckAfterMs: STUCK_AFTER_MS,
       });
@@ -294,7 +303,7 @@ describe('server transaction reconciler', () => {
     expect(recycled?.nonce).toBe(10);
     expect(broadcast?.nonce).toBe(11);
 
-    const sendReplacement = vi.fn().mockResolvedValue(REPLACEMENT_HASH);
+    const sendReplacement = replacementSender();
     const reconcile = createServerTransactionReconciler({
       getReceiptStatus: vi.fn().mockResolvedValue(null),
       sendReplacement,
@@ -304,8 +313,8 @@ describe('server transaction reconciler', () => {
     await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
 
     // The blocking nonce is filled, and it is filled before the higher one is touched.
-    expect(sendReplacement).toHaveBeenCalledWith(10);
-    expect(sendReplacement.mock.calls[0]?.[0]).toBe(10);
+    expect(sendReplacement).toHaveBeenCalledWith(expect.objectContaining({ nonce: 10 }));
+    expect(sendReplacement.mock.calls[0]?.[0]?.nonce).toBe(10);
     expect(state.rows.find((row) => row.id === recycled?.id)?.status).toBe('broadcast');
   });
 
@@ -337,12 +346,97 @@ describe('server transaction reconciler', () => {
     expect(sendReplacement).not.toHaveBeenCalled();
   });
 
+  // Verifies: ADR-0051
+  it('hands the next replacement the fee the previous one actually paid', async () => {
+    const { store } = createMemoryServerTransactionStore(10);
+    const dispatch = createServerTransactionDispatcher({
+      getPendingNonce: vi.fn().mockResolvedValue(10),
+      store,
+    });
+    await expect(
+      dispatch({
+        confirm: vi.fn().mockRejectedValue(new Error('receipt timeout')),
+        fees: { maxFeePerGas: 1_000n, maxPriorityFeePerGas: 100n },
+        send: vi.fn().mockResolvedValue(HASH),
+        simulate: vi.fn().mockResolvedValue(undefined),
+      })
+    ).rejects.toThrow();
+
+    // Two replacements at escalating prices, as the escalation policy would produce.
+    const sendReplacement = vi
+      .fn()
+      .mockResolvedValueOnce({
+        fees: { maxFeePerGas: 2_000n, maxPriorityFeePerGas: 200n },
+        hash: REPLACEMENT_HASH,
+      })
+      .mockResolvedValueOnce({
+        fees: { maxFeePerGas: 3_000n, maxPriorityFeePerGas: 300n },
+        hash: `0x${'ef'.repeat(32)}` as const,
+      });
+    const reconcile = createServerTransactionReconciler({
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement,
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
+    await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 4));
+
+    // The first replacement escalates from the original; the second from the first. Without
+    // the fee being read back off the row, the second would be priced from a fresh oracle
+    // reading and, on a flat oracle, rejected as an insufficient bump.
+    expect(sendReplacement.mock.calls[0]?.[0]).toMatchObject({
+      originalFees: { maxFeePerGas: 1_000n },
+      previousFees: { maxFeePerGas: 1_000n },
+    });
+    expect(sendReplacement.mock.calls[1]?.[0]).toMatchObject({
+      // The cap's base does not move as attempts escalate.
+      originalFees: { maxFeePerGas: 1_000n },
+      previousFees: { maxFeePerGas: 2_000n },
+    });
+  });
+
+  // Verifies: ADR-0045
+  it('settles a mined replacement from the row alone, after the sending process is gone', async () => {
+    // The gap this closes: the row-to-replacement association used to live in process memory,
+    // so a deploy between broadcasting a replacement and reading its receipt left the intent
+    // behind it permanently unsettled with nothing able to recover it.
+    const { store } = createMemoryServerTransactionStore(10);
+    await broadcastOne(store);
+
+    const sending = createServerTransactionReconciler({
+      getReceiptStatus: vi.fn().mockResolvedValue(null),
+      sendReplacement: replacementSender(),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await sending(new Date(Date.now() + STUCK_AFTER_MS * 2));
+
+    // A brand new reconciler, standing in for a process that started after the replacement
+    // went out. It shares no memory with the one above -- only the durable row.
+    const intents = settlementSpies();
+    const restarted = createServerTransactionReconciler({
+      getReceiptStatus: vi.fn().mockResolvedValue('success'),
+      intents,
+      sendReplacement: vi.fn(),
+      store,
+      stuckAfterMs: STUCK_AFTER_MS,
+    });
+    await restarted(new Date(Date.now() + STUCK_AFTER_MS * 3));
+
+    // A successful receipt on a no-op self-transfer is evidence the work did *not* happen.
+    expect(intents.onFailed).toHaveBeenCalledTimes(1);
+    expect(intents.onFailed.mock.calls[0]?.[1]).toContain(REPLACEMENT_HASH);
+    expect(intents.onConfirmed).not.toHaveBeenCalled();
+  });
+
   it('fills a nonce reserved by a process that died before broadcasting', async () => {
     const { state, store } = createMemoryServerTransactionStore(10);
     await store.seed(vi.fn().mockResolvedValue(10));
     await store.allocate('crashed-before-send');
 
-    const sendReplacement = vi.fn().mockResolvedValue(REPLACEMENT_HASH);
+    const sendReplacement = replacementSender();
     const reconcile = createServerTransactionReconciler({
       getReceiptStatus: vi.fn(),
       sendReplacement,
@@ -351,7 +445,7 @@ describe('server transaction reconciler', () => {
     });
     await reconcile(new Date(Date.now() + STUCK_AFTER_MS * 2));
 
-    expect(sendReplacement).toHaveBeenCalledWith(10);
+    expect(sendReplacement).toHaveBeenCalledWith(expect.objectContaining({ nonce: 10 }));
     expect(state.rows[0]).toMatchObject({ status: 'broadcast' });
   });
 });

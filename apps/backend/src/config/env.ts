@@ -123,6 +123,29 @@ const envSchema = z
     BACKEND_URL: z.string().url().default('http://localhost:3000'),
     WEB_APP_URL: z.string().url().default('http://localhost:3001'),
     TRUST_PROXY_HOPS: z.coerce.number().int().min(0).max(10).default(1),
+    // Implements: ADR-0051 -- replacement gas escalation policy. The defaults are Base's:
+    // CHAIN_ID defaults to 8453, where a 21,000-gas self-transfer is cheap even at 10x its
+    // original fee, so an aggressive posture costs almost nothing and a stalled shared nonce
+    // costs every paid write on the platform. An Ethereum mainnet deployment should lower
+    // REPLACEMENT_GAS_MAX_MULTIPLE and probably set REPLACEMENT_GAS_MAX_FEE_WEI.
+    //
+    // There is deliberately no cross-field boot check here. The cap scales the original
+    // transaction's fee while the opening bid scales the live oracle, so the two have no
+    // shared base and a boot-time comparison would pass on every sensible configuration while
+    // implying a guarantee it never made. That check is made per transaction instead, in
+    // lib/replacement-gas.ts.
+    //
+    // Opening bid as a percentage of the live oracle. 200 reproduces the previous flat 2x.
+    REPLACEMENT_GAS_FIRST_BUMP_PCT: z.coerce.number().int().min(110).default(200),
+    // Each attempt as a percentage of the previous attempt's fee. min(125) is load-bearing:
+    // providers reject a replacement that does not raise the fee by roughly 10%, and 25%
+    // clears that with room for bigint rounding and for a stricter provider.
+    REPLACEMENT_GAS_ESCALATION_PCT: z.coerce.number().int().min(125).default(150),
+    // Ceiling, as a multiple of the original transaction's fee.
+    REPLACEMENT_GAS_MAX_MULTIPLE: z.coerce.number().int().min(2).default(10),
+    // Optional absolute per-gas ceiling applied after the multiple. Unset by default because
+    // a wei value means nothing without knowing the chain.
+    REPLACEMENT_GAS_MAX_FEE_WEI: z.coerce.number().int().positive().optional(),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),

@@ -10,6 +10,8 @@ import {
   startServerTransactionReconciler,
 } from './server-transaction-reconciler';
 import { createDrizzleServerTransactionStore } from './server-transaction-store';
+import { computeReplacementFees, type ReplacementGasPolicy } from './replacement-gas';
+import { logger } from './logger';
 import { getPublicClient, getServerWallet } from './rpc-gateway';
 import { createRelayedIntentSettlement } from '../services/relayed-intent-settlement';
 
@@ -17,9 +19,21 @@ export function createServerWallet() {
   return getServerWallet();
 }
 
-// Gas premium for a replacement transaction. Providers reject a replacement that does not
-// raise the fee meaningfully, so this must clear the usual 10% minimum bump comfortably.
-const REPLACEMENT_GAS_MULTIPLIER = 2n;
+// Implements: ADR-0051
+// The escalation policy for replacement gas, read once per replacement so an operator can
+// change it during an incident without a deploy.
+function readReplacementGasPolicy(): ReplacementGasPolicy {
+  const config = getServerConfig();
+  return {
+    escalationPct: BigInt(config.REPLACEMENT_GAS_ESCALATION_PCT),
+    firstBumpPct: BigInt(config.REPLACEMENT_GAS_FIRST_BUMP_PCT),
+    maxFeeWei:
+      config.REPLACEMENT_GAS_MAX_FEE_WEI === undefined
+        ? null
+        : BigInt(config.REPLACEMENT_GAS_MAX_FEE_WEI),
+    maxMultiple: BigInt(config.REPLACEMENT_GAS_MAX_MULTIPLE),
+  };
+}
 
 function buildRuntimeStore() {
   const wallet = getServerWallet();
@@ -79,19 +93,45 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
       if (!receipt) return null;
       return receipt.status === 'success' ? 'success' : 'reverted';
     },
-    sendReplacement: async (nonce) => {
-      const fees = await publicClient.estimateFeesPerGas();
+    sendReplacement: async ({ nonce, originalFees, previousFees }) => {
+      const oracle = await publicClient.estimateFeesPerGas();
+      const decision = computeReplacementFees({
+        oracle: {
+          maxFeePerGas: oracle.maxFeePerGas,
+          maxPriorityFeePerGas: oracle.maxPriorityFeePerGas,
+        },
+        original: originalFees,
+        policy: readReplacementGasPolicy(),
+        previous: previousFees,
+      });
+
+      if (decision.cappedBelowOpeningBid) {
+        // The cap alone is holding this attempt below what the market currently says is
+        // sufficient, which means REPLACEMENT_GAS_MAX_MULTIPLE is too low for the fee regime
+        // this deployment is now in. Logged by name rather than refused: clearing the nonce
+        // never stops, and an underpriced attempt is strictly better than none (ADR-0051).
+        logger.error('Replacement gas cap is below the current oracle-derived opening bid', {
+          maxFeePerGas: decision.fees.maxFeePerGas.toString(),
+          nonce,
+          oracleMaxFeePerGas: oracle.maxFeePerGas.toString(),
+          originalMaxFeePerGas: originalFees?.maxFeePerGas.toString() ?? null,
+        });
+      }
+
       // A zero-value self-transfer is the cheapest way to occupy a nonce. It supersedes a
       // stuck transaction at the same nonce and unblocks everything queued behind it.
-      return wallet.client.sendTransaction({
+      const hash = await wallet.client.sendTransaction({
         account: wallet.account,
         chain: wallet.client.chain,
-        maxFeePerGas: fees.maxFeePerGas * REPLACEMENT_GAS_MULTIPLIER,
-        maxPriorityFeePerGas: fees.maxPriorityFeePerGas * REPLACEMENT_GAS_MULTIPLIER,
+        maxFeePerGas: decision.fees.maxFeePerGas,
+        maxPriorityFeePerGas: decision.fees.maxPriorityFeePerGas,
         nonce,
         to: wallet.address,
         value: 0n,
       });
+      // The fee goes back to the reconciler to be persisted: it is the base the *next*
+      // escalation multiplies, and re-reading the oracle in its place is the defect fixed here.
+      return { fees: decision.fees, hash };
     },
     store: buildRuntimeStore(),
   });

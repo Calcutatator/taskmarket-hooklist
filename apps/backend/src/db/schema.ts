@@ -850,6 +850,34 @@ export const serverWalletTransactions = pgTable(
     updatedAt: timestamp('updated_at', { withTimezone: true }).defaultNow().notNull(),
     broadcastAt: timestamp('broadcast_at', { withTimezone: true }),
     confirmedAt: timestamp('confirmed_at', { withTimezone: true }),
+    // Implements: ADR-0051
+    // Gas actually used, per attempt. Escalation multiplies the fee being *replaced*, so each
+    // replacement has to know what the previous one paid -- reading the oracle again in its
+    // place is precisely the defect ADR-0051 exists to remove. The original fee is kept
+    // separately because the cap is expressed as a multiple of it, and it must not move as
+    // attempts escalate. Numeric rather than bigint: wei exceeds a 64-bit integer.
+    originalMaxFeePerGas: numeric('original_max_fee_per_gas', { precision: 78, scale: 0 }),
+    originalMaxPriorityFeePerGas: numeric('original_max_priority_fee_per_gas', {
+      precision: 78,
+      scale: 0,
+    }),
+    lastMaxFeePerGas: numeric('last_max_fee_per_gas', { precision: 78, scale: 0 }),
+    lastMaxPriorityFeePerGas: numeric('last_max_priority_fee_per_gas', {
+      precision: 78,
+      scale: 0,
+    }),
+    // Implements: ADR-0045
+    // The hash `tx_hash` superseded, set when the reconciler broadcasts a replacement. A
+    // non-null value is the durable statement that the row's current transaction is a no-op
+    // self-transfer rather than the work, so a receipt against it is evidence the work did
+    // *not* happen. Held only in process memory before, which meant a restart between
+    // broadcasting a replacement and reading its receipt lost the distinction and left the
+    // intent unsettled -- and deploys happen far more often than the window is long.
+    //
+    // A hash rather than a boolean: it composes with the fee history above as another
+    // per-attempt fact about the same row, it names the transaction that was given up on for
+    // an operator reading the table, and it is what the settlement reason already reports.
+    replacedTxHash: text('replaced_tx_hash'),
   },
   (table) => ({
     walletStatusIdx: index('idx_server_wallet_transactions_wallet_status').on(

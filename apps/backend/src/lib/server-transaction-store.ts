@@ -15,10 +15,32 @@ export type ServerTransactionStatus =
 
 export type AllocatedNonce = { id: string; nonce: number };
 
-export type PendingTransactionRow = {
+// Implements: ADR-0051
+/** The two mutable fields of a relayed write (ADR-0050 point 7). */
+export type GasFees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
+
+/**
+ * A row the reconciler may replace, carrying the gas history the next attempt escalates from.
+ *
+ * `originalFees` is null when the row was never broadcast with a recorded fee -- an abandoned
+ * reservation, or a row written before the fee columns existed. `lastFees` is null until the
+ * first broadcast. Both nulls fall back to the oracle-derived opening bid.
+ */
+export type ReplaceableRow = AllocatedNonce & {
+  lastFees: GasFees | null;
+  originalFees: GasFees | null;
+};
+
+export type PendingTransactionRow = ReplaceableRow & {
   broadcastAt: Date | null;
-  id: string;
-  nonce: number;
+  /**
+   * The hash `txHash` superseded, or null when `txHash` is still the original transaction.
+   *
+   * Durable, and that is the point: a receipt against a replacement means the work did not
+   * happen, and a process that restarted since the replacement was broadcast has no other way
+   * to know which of the two it is looking at (ADR-0045).
+   */
+  replacedTxHash: string | null;
   txHash: string | null;
 };
 
@@ -35,7 +57,7 @@ export type ServerTransactionStore = {
   /** Rows still awaiting a receipt, oldest nonce first. */
   listBroadcast(limit: number): Promise<PendingTransactionRow[]>;
   /** Rows allocated but never broadcast, older than the cutoff -- an abandoned process. */
-  listAbandonedReservations(cutoff: Date, limit: number): Promise<AllocatedNonce[]>;
+  listAbandonedReservations(cutoff: Date, limit: number): Promise<ReplaceableRow[]>;
   /**
    * Recycled rows older than the cutoff whose nonce sits below an in-flight transaction.
    *
@@ -43,22 +65,87 @@ export type ServerTransactionStore = {
    * when a higher nonce was already broadcast, because that transaction cannot mine until this
    * one is used, and on a quiet relayer no next allocation is coming.
    */
-  listBlockingRecycled(cutoff: Date, limit: number): Promise<AllocatedNonce[]>;
+  listBlockingRecycled(cutoff: Date, limit: number): Promise<ReplaceableRow[]>;
   /** Seed the allocator from the supplied chain nonce if it has never been seeded. */
   seed(readPendingNonce: () => Promise<number>): Promise<void>;
-  /** Record a replacement broadcast against an already-allocated nonce. */
-  recordReplacement(id: string, hash: string): Promise<void>;
+  /**
+   * Record a replacement broadcast against an already-allocated nonce, along with the gas it
+   * went out with -- which is what the *next* escalation multiplies (ADR-0051) -- and the hash
+   * it superseded, which is what tells a restarted process that this row's transaction is a
+   * replacement (ADR-0045).
+   */
+  recordReplacement(
+    id: string,
+    hash: string,
+    fields?: { fees?: GasFees; replacedTxHash?: string | null }
+  ): Promise<void>;
   /** Move the allocator forward when the chain has advanced past it. */
   resync(readPendingNonce: () => Promise<number>): Promise<void>;
   setStatus(
     id: string,
     status: ServerTransactionStatus,
-    fields?: { hash?: string; error?: unknown }
+    fields?: { hash?: string; error?: unknown; fees?: GasFees }
   ): Promise<void>;
 };
 
 function errorText(error: unknown): string {
   return (error instanceof Error ? error.message : String(error)).slice(0, 500);
+}
+
+function toFees(row: {
+  maxFeePerGas: string | null;
+  maxPriorityFeePerGas: string | null;
+}): GasFees | null {
+  // Both or neither: a half-recorded pair is not a price anything was sent at.
+  if (row.maxFeePerGas === null || row.maxPriorityFeePerGas === null) return null;
+  return {
+    maxFeePerGas: BigInt(row.maxFeePerGas),
+    maxPriorityFeePerGas: BigInt(row.maxPriorityFeePerGas),
+  };
+}
+
+const feeColumns = {
+  lastMaxFeePerGas: serverWalletTransactions.lastMaxFeePerGas,
+  lastMaxPriorityFeePerGas: serverWalletTransactions.lastMaxPriorityFeePerGas,
+  originalMaxFeePerGas: serverWalletTransactions.originalMaxFeePerGas,
+  originalMaxPriorityFeePerGas: serverWalletTransactions.originalMaxPriorityFeePerGas,
+};
+
+type FeeColumnValues = {
+  lastMaxFeePerGas: string | null;
+  lastMaxPriorityFeePerGas: string | null;
+  originalMaxFeePerGas: string | null;
+  originalMaxPriorityFeePerGas: string | null;
+};
+
+function splitFees(row: FeeColumnValues): Pick<ReplaceableRow, 'lastFees' | 'originalFees'> {
+  return {
+    lastFees: toFees({
+      maxFeePerGas: row.lastMaxFeePerGas,
+      maxPriorityFeePerGas: row.lastMaxPriorityFeePerGas,
+    }),
+    originalFees: toFees({
+      maxFeePerGas: row.originalMaxFeePerGas,
+      maxPriorityFeePerGas: row.originalMaxPriorityFeePerGas,
+    }),
+  };
+}
+
+/**
+ * Columns to write when a transaction goes out at `fees`. The original is written only once,
+ * via COALESCE: the cap is a multiple of what the transaction was *originally* willing to pay,
+ * so letting escalation overwrite it would let the ceiling climb with the fee it bounds.
+ */
+function feeUpdate(fees: GasFees | undefined) {
+  if (!fees) return {};
+  const maxFee = fees.maxFeePerGas.toString();
+  const priorityFee = fees.maxPriorityFeePerGas.toString();
+  return {
+    lastMaxFeePerGas: maxFee,
+    lastMaxPriorityFeePerGas: priorityFee,
+    originalMaxFeePerGas: sql`COALESCE(${serverWalletTransactions.originalMaxFeePerGas}, ${maxFee})`,
+    originalMaxPriorityFeePerGas: sql`COALESCE(${serverWalletTransactions.originalMaxPriorityFeePerGas}, ${priorityFee})`,
+  };
 }
 
 export function createDrizzleServerTransactionStore(options: {
@@ -129,8 +216,12 @@ export function createDrizzleServerTransactionStore(options: {
     },
 
     async listAbandonedReservations(cutoff, limit) {
-      return database
-        .select({ id: serverWalletTransactions.id, nonce: serverWalletTransactions.nonce })
+      const rows = await database
+        .select({
+          ...feeColumns,
+          id: serverWalletTransactions.id,
+          nonce: serverWalletTransactions.nonce,
+        })
         .from(serverWalletTransactions)
         .where(
           and(
@@ -141,12 +232,17 @@ export function createDrizzleServerTransactionStore(options: {
         )
         .orderBy(asc(serverWalletTransactions.nonce))
         .limit(limit);
+      return rows.map((row) => ({ id: row.id, nonce: row.nonce, ...splitFees(row) }));
     },
 
     async listBlockingRecycled(cutoff, limit) {
       const inFlight = alias(serverWalletTransactions, 'in_flight');
-      return database
-        .select({ id: serverWalletTransactions.id, nonce: serverWalletTransactions.nonce })
+      const rows = await database
+        .select({
+          ...feeColumns,
+          id: serverWalletTransactions.id,
+          nonce: serverWalletTransactions.nonce,
+        })
         .from(serverWalletTransactions)
         .where(
           and(
@@ -170,27 +266,42 @@ export function createDrizzleServerTransactionStore(options: {
         )
         .orderBy(asc(serverWalletTransactions.nonce))
         .limit(limit);
+      return rows.map((row) => ({ id: row.id, nonce: row.nonce, ...splitFees(row) }));
     },
 
     async listBroadcast(limit) {
-      return database
+      const rows = await database
         .select({
+          ...feeColumns,
           broadcastAt: serverWalletTransactions.broadcastAt,
           id: serverWalletTransactions.id,
           nonce: serverWalletTransactions.nonce,
+          replacedTxHash: serverWalletTransactions.replacedTxHash,
           txHash: serverWalletTransactions.txHash,
         })
         .from(serverWalletTransactions)
         .where(and(scope, eq(serverWalletTransactions.status, 'broadcast')))
         .orderBy(asc(serverWalletTransactions.nonce))
         .limit(limit);
+      return rows.map((row) => ({
+        broadcastAt: row.broadcastAt,
+        id: row.id,
+        nonce: row.nonce,
+        replacedTxHash: row.replacedTxHash,
+        txHash: row.txHash,
+        ...splitFees(row),
+      }));
     },
 
-    async recordReplacement(id, hash) {
+    async recordReplacement(id, hash, fields = {}) {
       const now = new Date();
       await database
         .update(serverWalletTransactions)
         .set({
+          ...feeUpdate(fields.fees),
+          // Written in the same statement as the hash it describes. Splitting them would open
+          // a window in which the row claims a replacement's hash without saying so.
+          ...(fields.replacedTxHash === undefined ? {} : { replacedTxHash: fields.replacedTxHash }),
           attempts: sql`${serverWalletTransactions.attempts} + 1`,
           broadcastAt: now,
           status: 'broadcast',
@@ -230,6 +341,7 @@ export function createDrizzleServerTransactionStore(options: {
       await database
         .update(serverWalletTransactions)
         .set({
+          ...feeUpdate(fields.fees),
           ...(fields.hash ? { txHash: fields.hash } : {}),
           ...(status === 'broadcast' ? { broadcastAt: now } : {}),
           ...(status === 'confirmed' ? { confirmedAt: now } : {}),

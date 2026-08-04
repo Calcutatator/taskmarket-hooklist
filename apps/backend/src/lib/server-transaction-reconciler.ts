@@ -1,8 +1,9 @@
 // Implements: ADR-0040
 // Implements: ADR-0045
+// Implements: ADR-0051
 import type { Hex } from 'viem';
 import { logger } from './logger';
-import type { ServerTransactionStore } from './server-transaction-store';
+import type { GasFees, ServerTransactionStore } from './server-transaction-store';
 
 /**
  * What the reconciler does with an intent once the chain has answered (ADR-0045).
@@ -30,6 +31,17 @@ export type RelayedIntentSettlement = {
   sweepConfirmed?: (limit: number) => Promise<void>;
 };
 
+// Implements: ADR-0051
+export type ReplacementRequest = {
+  nonce: number;
+  /** What this nonce's transaction was first broadcast with. The cap is a multiple of it. */
+  originalFees: GasFees | null;
+  /** What the most recent attempt paid. Null on the first replacement of a nonce. */
+  previousFees: GasFees | null;
+};
+
+export type ReplacementBroadcast = { fees: GasFees; hash: Hex };
+
 export type ServerTransactionReconcilerOptions = {
   /** Resolves to the receipt status, or null when the transaction is still unmined. */
   getReceiptStatus: (hash: Hex) => Promise<'success' | 'reverted' | null>;
@@ -38,8 +50,14 @@ export type ServerTransactionReconcilerOptions = {
   /**
    * Broadcast a no-op self-transfer at the given nonce with escalated gas, to clear a nonce
    * that is blocking every higher nonce behind it.
+   *
+   * The fee history travels with the request rather than being re-derived from the oracle:
+   * escalation multiplies the fee being replaced, and multiplying a fresh oracle reading
+   * instead is what produced a second replacement priced identically to the first, which the
+   * network rejects as an insufficient bump (ADR-0051). The fee actually used comes back so it
+   * can be persisted for the attempt after this one.
    */
-  sendReplacement: (nonce: number) => Promise<Hex>;
+  sendReplacement: (request: ReplacementRequest) => Promise<ReplacementBroadcast>;
   store: ServerTransactionStore;
   /** How long a transaction may sit unmined before it is replaced. */
   stuckAfterMs?: number;
@@ -65,25 +83,6 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
   const stuckAfterMs = options.stuckAfterMs ?? DEFAULT_STUCK_AFTER_MS;
   const { getReceiptStatus, intents, sendReplacement, store } = options;
 
-  /**
-   * Replacements this process broadcast, by outbox row id, until their receipt resolves.
-   *
-   * A replaced row carries the replacement's hash, so the receipt the next pass reads is the
-   * replacement's -- a no-op self-transfer whose success means the original work did *not*
-   * happen. Without this the pass would read that success as the intent succeeding. Entries are
-   * dropped as soon as the receipt settles the row, so this holds at most the nonces currently
-   * being unstuck.
-   *
-   * In memory, and that is a real limitation: a restart between broadcasting a replacement and
-   * reading its receipt loses the association, and the intent behind it is then left
-   * non-terminal rather than settled. That is the safe direction -- an unsettled intent is
-   * visible and recoverable, whereas completing one on a replacement's receipt would assert
-   * work that never happened, and settling it failed on a replacement that was itself dropped
-   * would refund work that did. Making it survive a restart needs a durable marker on the
-   * outbox row, which is a schema change beyond this fix.
-   */
-  const replacements = new Map<string, { hash: Hex; nonce: number }>();
-
   async function settleIntent(
     outcome: 'confirmed' | 'failed',
     transactionId: string,
@@ -108,20 +107,43 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     }
   }
 
-  async function replaceStuckNonce(id: string, nonce: number): Promise<void> {
+  async function replaceStuckNonce(row: {
+    id: string;
+    lastFees: GasFees | null;
+    nonce: number;
+    replacedTxHash?: string | null;
+    txHash?: string | null;
+    originalFees: GasFees | null;
+  }): Promise<void> {
+    const { id, nonce } = row;
     try {
-      const hash = await sendReplacement(nonce);
+      const { fees, hash } = await sendReplacement({
+        nonce,
+        originalFees: row.originalFees,
+        previousFees: row.lastFees,
+      });
       // Durable first: `recordReplacement` puts the row back in `broadcast` under the new hash,
       // which is what makes the next pass read the replacement's receipt rather than the
       // original's. A process that dies before this write leaves the row pointing at a
       // transaction that can no longer mine and no record that anything replaced it.
-      await store.recordReplacement(id, hash);
+      //
+      // The superseded hash is recorded with it. Once written, *any* process -- including one
+      // that started after this replacement went out -- can tell that a receipt against this
+      // row belongs to a no-op self-transfer rather than the work. The first replacement's
+      // predecessor is the original; a later one keeps pointing at that same original, since
+      // what matters downstream is that the row is no longer carrying the work, not which of
+      // several replacements last held the nonce.
+      await store.recordReplacement(id, hash, {
+        fees,
+        replacedTxHash: row.replacedTxHash ?? row.txHash ?? null,
+      });
       // Deliberately no settlement here. A *broadcast* replacement is not evidence of anything:
       // it can be dropped in turn, and the original then mines after all. Only a mined
       // replacement occupies the nonce, and only that is the second form of confirmed evidence
       // ADR-0045 admits -- so the intent is settled on the pass that reads this hash's receipt.
-      replacements.set(id, { hash, nonce });
       logger.warn('Replaced stuck server wallet transaction', {
+        maxFeePerGas: fees.maxFeePerGas.toString(),
+        maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString(),
         nonce,
         replacementHash: hash,
         transactionId: id,
@@ -144,11 +166,11 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     // missing produces a transaction that also cannot mine, so a pass that starts at the top of
     // the queue would burn gas on replacements forever without unblocking anything.
     for (const row of await store.listBlockingRecycled(stuckBefore, MAX_ROWS_PER_PASS)) {
-      await replaceStuckNonce(row.id, row.nonce);
+      await replaceStuckNonce(row);
     }
 
     for (const row of await store.listAbandonedReservations(stuckBefore, MAX_ROWS_PER_PASS)) {
-      await replaceStuckNonce(row.id, row.nonce);
+      await replaceStuckNonce(row);
     }
 
     for (const row of await store.listBroadcast(MAX_ROWS_PER_PASS)) {
@@ -171,8 +193,11 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
         // can never mine: this, and not the moment we broadcast it, is the confirmed evidence
         // ADR-0045 requires before an intent may be failed and its payment refunded. A reverted
         // replacement spends the nonce just as thoroughly, so both verdicts settle the same way.
-        const replacement = replacements.get(row.id);
-        if (replacement && replacement.hash === row.txHash) {
+        //
+        // Read from the row, not from process memory: a deploy or a restart between
+        // broadcasting the replacement and reading its receipt used to lose the association
+        // entirely, leaving the intent non-terminal with nothing able to recover it.
+        if (row.replacedTxHash) {
           await store.setStatus(row.id, status === 'success' ? 'confirmed' : 'failed', {
             hash: row.txHash,
           });
@@ -180,9 +205,8 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
             'failed',
             row.id,
             null,
-            `superseded by replacement ${replacement.hash} mined at nonce ${replacement.nonce}`
+            `superseded by replacement ${row.txHash} mined at nonce ${row.nonce}`
           );
-          replacements.delete(row.id);
           continue;
         }
       }
@@ -205,7 +229,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       }
 
       if (row.broadcastAt && row.broadcastAt < stuckBefore) {
-        await replaceStuckNonce(row.id, row.nonce);
+        await replaceStuckNonce(row);
       }
     }
 

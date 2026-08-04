@@ -1,5 +1,6 @@
 import type {
-  AllocatedNonce,
+  GasFees,
+  ReplaceableRow,
   ServerTransactionStatus,
   ServerTransactionStore,
 } from '../../src/lib/server-transaction-store';
@@ -7,12 +8,31 @@ import type {
 type Row = {
   broadcastAt: Date | null;
   id: string;
+  lastFees: GasFees | null;
   nonce: number;
+  originalFees: GasFees | null;
   recycledAt: Date;
+  replacedTxHash: string | null;
   reservedAt: Date;
   status: ServerTransactionStatus;
   txHash: string | null;
 };
+
+function replaceable(row: Row): ReplaceableRow {
+  return {
+    id: row.id,
+    lastFees: row.lastFees,
+    nonce: row.nonce,
+    originalFees: row.originalFees,
+  };
+}
+
+/** Mirrors the drizzle store's COALESCE: the original fee is written once and never moves. */
+function recordFees(row: Row, fees: GasFees | undefined) {
+  if (!fees) return;
+  row.lastFees = fees;
+  row.originalFees ??= fees;
+}
 
 /**
  * In-memory allocator with the same observable behavior as the drizzle store: recycled
@@ -45,8 +65,11 @@ export function createMemoryServerTransactionStore(seed?: number) {
       const row: Row = {
         broadcastAt: null,
         id: `tx-${++idCounter}`,
+        lastFees: null,
         nonce,
+        originalFees: null,
         recycledAt: new Date(0),
+        replacedTxHash: null,
         reservedAt: new Date(),
         status: 'reserved',
         txHash: null,
@@ -60,7 +83,7 @@ export function createMemoryServerTransactionStore(seed?: number) {
         .filter((row) => row.status === 'reserved' && row.reservedAt < cutoff)
         .sort((a, b) => a.nonce - b.nonce)
         .slice(0, limit)
-        .map<AllocatedNonce>((row) => ({ id: row.id, nonce: row.nonce })),
+        .map(replaceable),
 
     listBlockingRecycled: async (cutoff, limit) => {
       const highestBroadcast = state.rows
@@ -73,7 +96,7 @@ export function createMemoryServerTransactionStore(seed?: number) {
         )
         .sort((a, b) => a.nonce - b.nonce)
         .slice(0, limit)
-        .map<AllocatedNonce>((row) => ({ id: row.id, nonce: row.nonce }));
+        .map(replaceable);
     },
 
     listBroadcast: async (limit) =>
@@ -82,16 +105,18 @@ export function createMemoryServerTransactionStore(seed?: number) {
         .sort((a, b) => a.nonce - b.nonce)
         .slice(0, limit)
         .map((row) => ({
+          ...replaceable(row),
           broadcastAt: row.broadcastAt,
-          id: row.id,
-          nonce: row.nonce,
+          replacedTxHash: row.replacedTxHash,
           txHash: row.txHash,
         })),
 
-    recordReplacement: async (id, hash) => {
+    recordReplacement: async (id, hash, fields) => {
       const row = state.rows.find((candidate) => candidate.id === id);
       if (!row) return;
       row.broadcastAt = new Date();
+      recordFees(row, fields?.fees);
+      if (fields?.replacedTxHash !== undefined) row.replacedTxHash = fields.replacedTxHash;
       row.status = 'broadcast';
       row.txHash = hash;
     },
@@ -111,6 +136,7 @@ export function createMemoryServerTransactionStore(seed?: number) {
       const row = state.rows.find((candidate) => candidate.id === id);
       if (!row) return;
       row.status = status;
+      recordFees(row, fields?.fees);
       if (fields?.hash) row.txHash = fields.hash;
       if (status === 'recycled') row.recycledAt = new Date();
       if (status === 'broadcast' && !row.broadcastAt) row.broadcastAt = new Date();
