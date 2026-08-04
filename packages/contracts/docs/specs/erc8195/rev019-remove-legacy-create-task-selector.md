@@ -2,8 +2,9 @@
 
 ## Motivation
 
-Rev018 changed `createTask`'s parameter list to carry the evaluator terms, which changed its
-selector from `0xa595d889` to `0x95d5ec3f`. A diamond routes purely by `bytes4`, so swapping one
+Rev018 changed `createTask`'s parameter list to carry the evaluator terms and grouped its
+task-shape scalars into `ITMPCore.TaskConfig`, which changed its selector from `0xa595d889` to
+`0xa810726c`. A diamond routes purely by `bytes4`, so swapping one
 for the other in a single cut would have made every task creation revert at the fallback for the
 entire window between the facet cut and the redeploy of every off-chain caller — not degraded,
 reverting — and would have left creation down until a diamond rollback if that redeploy failed.
@@ -47,7 +48,7 @@ Verify against the chain, not against the deploy pipeline:
 1. **Confirm the diamond is at rev018.** `diamondVersion()` must return `18`. The script requires
    this, but check it before scheduling, not at broadcast time.
 2. **Confirm the legacy selector is currently routed and the new one is too.** `facetAddress()`
-   for both `0xa595d889` and `0x95d5ec3f` must be non-zero. If the legacy one is already
+   for both `0xa595d889` and `0xa810726c` must be non-zero. If the legacy one is already
    unrouted, this step has already been applied or the diamond is not in the state assumed here.
 3. **Observe real traffic, not deploy status.** Over a window long enough to cover the slowest
    periodic caller — infrequent cron-driven task creation is the case most likely to be missed by
@@ -99,27 +100,60 @@ split has no purpose, so the body folds back into `createTask` and `evaluatorCon
 
 ```solidity
 // before (rev018)
-function createTask(/* 10 params */) external returns (bytes32 taskId) {
-    return _createTask(/* ... */, evaluatorConfig);
+function createTask(
+    ITMPCore.TaskConfig calldata config,
+    ITMPCore.StakeConfig calldata stakeConfig,
+    ITMPCore.HookConfig calldata hookConfig,
+    ITMPCore.TaskContent calldata content,
+    ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
+) external returns (bytes32 taskId) {
+    return _createTask(config, stakeConfig, hookConfig, content, evaluatorConfig);
 }
 
 /// @notice Deprecated: `createTask` without evaluator terms.
-function createTask(/* 9 params */) external returns (bytes32 taskId) {
+function createTask(
+    uint256 reward, uint256 duration, bytes4 mode,
+    uint256 pitchDeadline, uint256 bidDeadline, bytes4 auctionSubtype,
+    ITMPCore.StakeConfig calldata stakeConfig,
+    ITMPCore.HookConfig calldata hookConfig,
+    ITMPCore.TaskContent calldata content
+) external returns (bytes32 taskId) {
     ITMPCore.TaskEvaluatorConfig memory noEvaluator;
-    return _createTask(/* ... */, noEvaluator);
+    return _createTask(
+        ITMPCore.TaskConfig({ reward: reward, duration: duration, mode: mode, /* ... */ }),
+        stakeConfig, hookConfig, content, noEvaluator
+    );
 }
 
-function _createTask(/* 10 params, evaluatorConfig as memory */) private returns (bytes32 taskId) {
+function _createTask(
+    ITMPCore.TaskConfig memory config,          // memory, not calldata: the shim builds one
+    ITMPCore.StakeConfig calldata stakeConfig,
+    ITMPCore.HookConfig calldata hookConfig,
+    ITMPCore.TaskContent calldata content,
+    ITMPCore.TaskEvaluatorConfig memory evaluatorConfig
+) private returns (bytes32 taskId) {
     /* the creation body */
 }
 ```
 
 ```solidity
 // after
-function createTask(/* 10 params, evaluatorConfig as calldata */) external returns (bytes32 taskId) {
+function createTask(
+    ITMPCore.TaskConfig calldata config,        // calldata again -- nothing materialises one
+    ITMPCore.StakeConfig calldata stakeConfig,
+    ITMPCore.HookConfig calldata hookConfig,
+    ITMPCore.TaskContent calldata content,
+    ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
+) external returns (bytes32 taskId) {
     /* the creation body */
 }
 ```
+
+Both struct parameters return to `calldata`. Rev018 had to widen them to `memory` because the shim
+constructs a `TaskConfig` from its six loose scalars and passes it in; with the shim gone, the only
+caller is the external entry point, whose arguments are already calldata. That is where a
+meaningful part of the recovered bytecode comes from — it is not only the shim's own code, but the
+memory-materialisation and copying the shared body needed in order to accept either form.
 
 ### 2. `FacetSelectors` — the legacy selector leaves the steady state
 
@@ -183,7 +217,7 @@ becomes a no-op that proves nothing.
 ### Why not remove the selector as part of rev018?
 
 That is the swap this whole pair exists to avoid. A diamond routes by `bytes4` alone, so a cut
-that removes `0xa595d889` while adding `0x95d5ec3f` makes every task creation revert from the
+that removes `0xa595d889` while adding `0xa810726c` makes every task creation revert from the
 moment it mines until every off-chain caller has been redeployed. That is not a degradation window
 — creation is down — and it welds two systems that deploy on different schedules into one
 indivisible operation whose failure mode is "task creation stays down until someone rolls the
@@ -234,7 +268,7 @@ the shim is gone rather than merely unreachable through one path.
   `createTask(uint256,uint256,bytes4,uint256,uint256,bytes4,(bool,uint16),(address[],bytes),(bytes32,string,bytes32[]))`.
   Calls to it revert `Error("Diamond: function not found")` from the diamond's fallback. There is
   no deprecation period beyond rev018 itself; this revision is the end of it.
-- **No change to `0x95d5ec3f`**, the evaluator-aware `createTask` added in rev018. Its signature,
+- **No change to `0xa810726c`**, the evaluator-aware `createTask` added in rev018. Its signature,
   behaviour, and semantics are untouched.
 - **No interface change.** The deprecated overload was deliberately never declared on `ITMPCore`
   or `ITMPDiamond`, so `type(ITMPCore).interfaceId` — which `DiamondLoupeFacet.supportsInterface`
