@@ -13,13 +13,6 @@ contract EvaluatorFacet {
     bytes4 private constant BOUNTY = TMP_BOUNTY;
     bytes4 private constant BENCHMARK = TMP_BENCHMARK;
 
-    /// @notice Protocol-level minimum appeal window. A shorter window (including zero)
-    ///         would close the worker's only recourse before it can ever fire. Set to one
-    ///         minute rather than something larger: the goal is eliminating the degenerate
-    ///         zero-length case, not mandating a specific dispute-window duration -- that
-    ///         remains the requester's choice, same as evaluationWindowSecs.
-    uint32 public constant MIN_APPEAL_WINDOW_SECS = 1 minutes;
-
     /// @notice Assign an evaluator to an open task.
     ///         Only the requester may call this, only while the task is Open.
     ///         If stakeAmount > 0, the contract pulls from the requester via transferFrom.
@@ -54,7 +47,7 @@ contract EvaluatorFacet {
         if (disputeResolver == requester) revert ITMPCore.DisputeResolverCannotBeRequester();
         if (evalCfg.evaluator != address(0)) revert ITMPCore.EvaluatorAlreadyAssigned();
         if (feeBps > 10000) revert ITMPCore.FeeBpsTooHigh();
-        if (appealWindowSecs < MIN_APPEAL_WINDOW_SECS) revert ITMPCore.AppealWindowTooShort();
+        if (appealWindowSecs < LibTaskMarket._minAppealWindowSecs(s)) revert ITMPCore.AppealWindowTooShort();
 
         evalCfg.evaluator = evaluator;
         evalCfg.evaluatorStake = stakeAmount;

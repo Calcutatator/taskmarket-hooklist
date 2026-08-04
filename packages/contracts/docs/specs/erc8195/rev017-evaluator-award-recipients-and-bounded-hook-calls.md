@@ -165,13 +165,50 @@ if (evaluator == requester) revert ITMPCore.EvaluatorCannotBeRequester();
 if (disputeResolver == requester) revert ITMPCore.DisputeResolverCannotBeRequester();
 if (evalCfg.evaluator != address(0)) revert ITMPCore.EvaluatorAlreadyAssigned();
 if (feeBps > 10000) revert ITMPCore.FeeBpsTooHigh();
-if (appealWindowSecs < MIN_APPEAL_WINDOW_SECS) revert ITMPCore.AppealWindowTooShort();
+if (appealWindowSecs < LibTaskMarket._minAppealWindowSecs(s)) revert ITMPCore.AppealWindowTooShort();
 ```
 
+The floor itself is stored state, not a compiled-in constant. `AppStorage` gains one appended
+field, `AdminFacet` gains an owner-guarded setter and a getter, and reads go through a shared
+accessor that substitutes the default for an unset slot:
+
 ```solidity
-// After -- new constant, routed through the Diamond so off-chain callers can read the floor
-uint32 public constant MIN_APPEAL_WINDOW_SECS = 1 minutes;
+// After -- AppStorage, appended to the end of the struct
+uint32 minAppealWindowSecs;
+
+// After -- LibTaskMarket
+uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 1 minutes;
+
+function _minAppealWindowSecs(AppStorage storage s) internal view returns (uint32) {
+    uint32 configured = s.minAppealWindowSecs;
+    return configured == 0 ? DEFAULT_MIN_APPEAL_WINDOW_SECS : configured;
+}
+
+// After -- AdminFacet
+function minAppealWindowSecs() external view returns (uint32) {
+    return LibTaskMarket._minAppealWindowSecs(LibAppStorage.appStorage());
+}
+
+function setMinAppealWindowSecs(uint32 newMinimum) external onlyOwner {
+    if (newMinimum == 0) revert ITMPCore.InvalidMinAppealWindow();
+    LibAppStorage.appStorage().minAppealWindowSecs = newMinimum;
+    emit ITMPCore.MinAppealWindowUpdated(newMinimum);
+}
 ```
+
+The lazy default is the load-bearing detail. A newly appended `AppStorage` field zero-initialises
+on every diamond upgraded into rev017, and a zero minimum is precisely the hole the guard exists
+to close -- so zero is read as "never set" and the compiled default is substituted, making the
+guard live from the moment the cut lands rather than from the first time someone remembers to
+call the setter. `setMinAppealWindowSecs` rejects zero for the same reason: it keeps "unset" and
+"deliberately zero" from becoming indistinguishable in storage.
+
+An admin-settable minimum is also an admin-defeatable one. Whoever holds the owner key can set
+the floor to one second and restore the original exploit precondition. That is the normal trade
+for a tunable protocol parameter and it is the right one here, but it is worth saying plainly
+rather than leaving a reader to infer it: this guard constrains requesters, not the protocol
+owner. `MinAppealWindowUpdated` is emitted on every change so that exercising the power is at
+least a matter of public record.
 
 ### 2. `LibTaskMarket` — bounded hook calls (#317)
 
@@ -215,6 +252,13 @@ An initial 100,000 stipend was caught by the existing `TaskTokenRewardHook` suit
 before landing on 1,000,000, which is still a hard fixed cap far below a full transaction's
 budget.
 
+The stipend is a new consensus-visible constraint on hook contracts, which would ordinarily
+require auditing every registered hook for one that needs more gas than the cap allows. It is
+safe here for a specific reason worth recording: `TaskTokenRewardHook` is the only hook deployed
+against this protocol, and it is the hook the figure was calibrated against. The same change
+against a populated hook ecosystem would need that audit first, and could not ship as a silent
+tightening.
+
 ---
 
 ## Rationale
@@ -245,7 +289,17 @@ with their adversary. A minimum window without a self-assignment guard would hav
 timing but left the outcome unchanged. This does break the previously documented
 requester-as-evaluator convention — see API Changes.
 
-### Why not set `MIN_APPEAL_WINDOW_SECS` to something substantial, like an hour or a day?
+### Why not keep the minimum as a compiled-in constant?
+
+That was the first shape, and it was wrong twice over. A `public constant` on a facet generates a
+getter and therefore a new selector, which the branch never registered in `FacetSelectors.sol` --
+so it would have sat in the ABI answering `FunctionNotFound` through the proxy, visible but
+unreachable, with nothing in CI to notice. More fundamentally, nobody yet knows the right value
+for this parameter, and a facet upgrade is far too heavy an instrument for tuning one number.
+Stored state with an owner-guarded setter costs one appended `AppStorage` slot and two selectors,
+and makes the parameter adjustable without touching bytecode.
+
+### Why not set the default minimum to something substantial, like an hour or a day?
 
 The bug is the degenerate zero-length window that closes recourse before it can ever fire, not
 the absence of a protocol opinion on how long a dispute window ought to be. That remains the
@@ -284,7 +338,9 @@ griefing) that the cap does not address. Both are kept for that reason.
 rather than sitting at a shared address. Replacing only `EvaluatorFacet` would leave the patched
 hook dispatch off `CoreFacet` — that is, it would leave the HIGH-severity `refundExpired`
 fund-freeze path fully live. `CoreFacet`, `AuctionFacet`, `AcceptanceFacet`, and `EvaluatorFacet`
-all dispatch hooks and are therefore all redeployed.
+all dispatch hooks and are therefore all redeployed -- verified by searching for the dispatch
+helpers' call sites rather than assumed. `AdminFacet` is redeployed for the separate reason that
+it gains the two new appeal-window functions.
 
 ---
 
@@ -298,11 +354,22 @@ retries indefinitely — so an unmapped new error turns a clean, permanent user-
 into an infinite retry loop. That backend change lands in a separate, non-contracts PR; this
 revision is contracts-only, but the deployment is not safe without it.
 
-**One new selector** — `MIN_APPEAL_WINDOW_SECS()` (`uint32`) is routed through the Diamond so a
-backend or CLI can read the enforced floor rather than hardcode a value that may drift from the
-contract. No existing selector's signature changed and none was removed;
-`script/upgrades/Rev017Upgrade.s.sol` therefore performs a `Replace` of the six pre-existing
-`EvaluatorFacet` selectors plus an `Add` of this one.
+**One new error on `ITMPCore`** — `InvalidMinAppealWindow()`, thrown by
+`AdminFacet.setMinAppealWindowSecs(0)`. Owner-only and not reachable by ordinary users, but it
+belongs in the backend's decode map alongside the other three for the same reason.
+
+**One new event on `ITMPCore`** — `MinAppealWindowUpdated(uint32)`, emitted on every change to
+the floor.
+
+**Two new selectors, both on `AdminFacet`** — `minAppealWindowSecs()` (`uint32`) and
+`setMinAppealWindowSecs(uint32)` (owner only). The getter returns the effective floor including
+the lazy default, so a backend or CLI can read what the contract will actually enforce rather
+than hardcode a value that drifts. No existing selector's signature changed and none was removed;
+`script/upgrades/Rev017Upgrade.s.sol` therefore performs a `Replace` of `AdminFacet`'s seventeen
+pre-existing selectors plus an `Add` of these two, and the other four facets are pure `Replace`.
+`script/DiamondFullUpgrade.s.sol`'s Path C gains a matching `Add` cut, because
+`DiamondSelectorParity.t.sol` asserts a fresh deploy and the upgrade route produce the same
+selector set — adding to one and not the other fails CI, which is that guard working as intended.
 
 **Breaking behaviour change: the requester may no longer act as their own evaluator or dispute
 resolver.** `assignEvaluator` now reverts `EvaluatorCannotBeRequester()` when
@@ -317,8 +384,8 @@ grace period and no opt-out, which is the intended shape of the fix, since a sel
 evaluator is precisely the exploit precondition.
 
 **Breaking behaviour change: `appealWindowSecs` below 60 is rejected.** `assignEvaluator` reverts
-`AppealWindowTooShort()` for any `appealWindowSecs < MIN_APPEAL_WINDOW_SECS` (60), including the
-previously accepted `0`. The three smoke scripts above used windows of roughly five seconds and
+`AppealWindowTooShort()` for any `appealWindowSecs` below the effective minimum -- 60 by default,
+or whatever the owner has since configured -- including the previously accepted `0`. The three smoke scripts above used windows of roughly five seconds and
 are updated to whole minutes. Callers constructing short windows for test or demo purposes must
 raise them.
 
@@ -340,12 +407,16 @@ integrators in `apps/docs/src/pages/developer/hooks.md`.
 
 | File | Change |
 |------|--------|
-| `packages/contracts/src/facets/EvaluatorFacet.sol` | Add `MIN_APPEAL_WINDOW_SECS`; `assignEvaluator` self-assignment and appeal-window guards; `_validateAwardRecipients` helper called from `evaluate` and `resolveDispute` (#316) |
-| `packages/contracts/src/interfaces/ITMPCore.sol` | Add errors `EvaluatorCannotBeRequester`, `DisputeResolverCannotBeRequester`, `AppealWindowTooShort` |
-| `packages/contracts/src/libraries/LibTaskMarket.sol` | Add `HOOK_MAX_RETURN_BYTES`, `HOOK_GAS_STIPEND`, `_safeHookCall`; route `_dispatchCheckHooks`, `_dispatchAfterHooks`, `_checkFundHooks` through it (#317) |
-| `packages/contracts/script/lib/FacetSelectors.sol` | `evalFacetSelectors()` gains `MIN_APPEAL_WINDOW_SECS()` |
-| `packages/contracts/script/upgrades/Rev017Upgrade.s.sol` | New upgrade step -- Replace `CoreFacet`/`AuctionFacet`/`AcceptanceFacet`/`EvaluatorFacet`, Add the new selector, bump `diamondVersion` to 17 |
-| `packages/contracts/test/Rev017Upgrade.t.sol` | New -- asserts the version bump, all four facet replacements, unbroken routing of every pre-existing selector, and the added selector |
+| `packages/contracts/src/facets/EvaluatorFacet.sol` | `assignEvaluator` self-assignment and appeal-window guards; `_validateAwardRecipients` helper called from `evaluate` and `resolveDispute` (#316) |
+| `packages/contracts/src/facets/AdminFacet.sol` | Add `minAppealWindowSecs()` getter and owner-guarded `setMinAppealWindowSecs(uint32)` setter |
+| `packages/contracts/src/libraries/LibAppStorage.sol` | Append `uint32 minAppealWindowSecs` to the end of `AppStorage` |
+| `packages/contracts/src/interfaces/ITMPCore.sol` | Add errors `EvaluatorCannotBeRequester`, `DisputeResolverCannotBeRequester`, `AppealWindowTooShort`, `InvalidMinAppealWindow`; add event `MinAppealWindowUpdated` |
+| `packages/contracts/src/interfaces/ITMPDiamond.sol` | Add the two new `AdminFacet` functions to the aggregate interface |
+| `packages/contracts/src/libraries/LibTaskMarket.sol` | Add `HOOK_MAX_RETURN_BYTES`, `HOOK_GAS_STIPEND`, `_safeHookCall`; route `_dispatchCheckHooks`, `_dispatchAfterHooks`, `_checkFundHooks` through it (#317); add `DEFAULT_MIN_APPEAL_WINDOW_SECS` and the lazy-init `_minAppealWindowSecs` accessor |
+| `packages/contracts/script/lib/FacetSelectors.sol` | `adminFacetSelectors()` gains `minAppealWindowSecs()` and `setMinAppealWindowSecs(uint32)` |
+| `packages/contracts/script/DiamondFullUpgrade.s.sol` | Path C gains an `Add` cut for the two new `AdminFacet` selectors, keeping it in parity with a fresh deploy |
+| `packages/contracts/script/upgrades/Rev017Upgrade.s.sol` | New upgrade step -- Replace `CoreFacet`/`AuctionFacet`/`AcceptanceFacet`/`EvaluatorFacet`, Replace+Add `AdminFacet`, bump `diamondVersion` to 17 |
+| `packages/contracts/test/Rev017Upgrade.t.sol` | New -- asserts the version bump, all five facet replacements, unbroken routing of every pre-existing selector, both added selectors, and that the getter answers with the default rather than a raw zero immediately after the cut |
 | `packages/contracts/test/TaskMarket.t.sol` | Regression coverage for #316 (exploit chain, award mismatch in both mode families, dispute-resolver mismatch, both self-assignment guards, appeal-window floor) and #317 (return-bomb through `_dispatchAfterHooks` and `_dispatchCheckHooks`); existing Bounty `_payAwards` tests now submit work first, since awards must go to a real submitter |
 | `packages/contracts/test/mocks/MockReturnBombHook.sol` | New -- hook returning a configurable oversized blob from selected `check*`/`on*` entry points |
 | `packages/contracts/.gas-snapshot` | Regenerated |

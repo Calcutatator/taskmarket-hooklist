@@ -4258,6 +4258,64 @@ contract TaskMarketTest is DiamondTestHelper {
     }
 
     // -------------------------------------------------------------------------
+    // Rev017: the appeal-window floor is admin-settable state, not a constant
+    // -------------------------------------------------------------------------
+
+    function test_MinAppealWindowSecs_DefaultsWhenUnset() public view {
+        // The storage slot is genuinely zero on a fresh diamond -- nothing initializes it -- so
+        // this asserts the lazy default, not a value someone wrote.
+        assertEq(market.minAppealWindowSecs(), 60);
+    }
+
+    function test_SetMinAppealWindowSecs_TightensTheGuard() public {
+        vm.prank(owner);
+        vm.expectEmit(false, false, false, true);
+        emit ITMPCore.MinAppealWindowUpdated(2 hours);
+        market.setMinAppealWindowSecs(uint32(2 hours));
+        assertEq(market.minAppealWindowSecs(), 2 hours);
+
+        // A window that was legal under the default is now rejected.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        vm.expectRevert(ITMPCore.AppealWindowTooShort.selector);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(
+                market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(3 days), uint32(1 hours), address(0))
+            )
+        );
+    }
+
+    function test_SetMinAppealWindowSecs_LoosensTheGuard() public {
+        vm.prank(owner);
+        market.setMinAppealWindowSecs(1);
+        assertEq(market.minAppealWindowSecs(), 1);
+
+        // A one-second window is below the compiled default but at the configured floor, so it
+        // is accepted -- an admin-settable minimum is also an admin-defeatable one by design.
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(3 days), 1, address(0)))
+        );
+    }
+
+    function test_RevertWhen_SetMinAppealWindowSecs_Zero() public {
+        // Zero is both the degenerate case the guard closes and the "never set" sentinel, so it
+        // must not be storable -- otherwise unset and deliberately-zero become indistinguishable.
+        vm.prank(owner);
+        vm.expectRevert(ITMPCore.InvalidMinAppealWindow.selector);
+        market.setMinAppealWindowSecs(0);
+    }
+
+    function test_RevertWhen_SetMinAppealWindowSecs_NotOwner() public {
+        vm.prank(requester);
+        vm.expectRevert();
+        market.setMinAppealWindowSecs(120);
+    }
+
+    // -------------------------------------------------------------------------
     // evaluatorTimeout: revert guards
     // -------------------------------------------------------------------------
 

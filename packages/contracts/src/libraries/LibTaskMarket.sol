@@ -29,6 +29,13 @@ library LibTaskMarket {
     // budget, so it does not weaken the DoS guard's intent.
     uint256 internal constant HOOK_GAS_STIPEND = 1_000_000;
 
+    // Rev017: default floor for assignEvaluator's appealWindowSecs, used whenever
+    // s.minAppealWindowSecs has never been set. One minute rather than something larger: the
+    // goal is eliminating the degenerate zero-length window that closes a worker's recourse
+    // before it can fire, not mandating a dispute-window duration -- that stays the requester's
+    // choice, same as evaluationWindowSecs.
+    uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 1 minutes;
+
     // -------------------------------------------------------------------------
     // Errors (not in ITMPCore since they are implementation-specific)
     // -------------------------------------------------------------------------
@@ -104,6 +111,17 @@ library LibTaskMarket {
     ///         task.hookContract is deprecated dead storage; taskHooks is authoritative.
     function _resolveHooks(bytes32 taskId, AppStorage storage s) internal view returns (address[] memory) {
         return s.taskHooks[taskId];
+    }
+
+    /// @notice The effective minimum appeal window: the admin-configured value, or the compiled
+    ///         default when it has never been set. A stored zero is treated as unset rather than
+    ///         as "no minimum", because a zero floor is exactly the hole this guard exists to
+    ///         close -- and every diamond upgraded into rev017 starts with a zero in this slot.
+    ///         AdminFacet's setter rejects zero for the same reason, so unset and
+    ///         deliberately-zero are not states that can be confused.
+    function _minAppealWindowSecs(AppStorage storage s) internal view returns (uint32) {
+        uint32 configured = s.minAppealWindowSecs;
+        return configured == 0 ? DEFAULT_MIN_APPEAL_WINDOW_SECS : configured;
     }
 
     /// @notice Bounded low-level call: forwards a fixed gas stipend to `hook` and copies at

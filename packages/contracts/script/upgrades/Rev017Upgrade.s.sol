@@ -24,12 +24,24 @@ import { FacetSelectors } from "../lib/FacetSelectors.sol";
 ///      `EvaluatorFacet` (evaluate/_payAwards). Replacing only EvaluatorFacet would leave the
 ///      HIGH-severity `refundExpired` fund-freeze path in #317 live on `CoreFacet`'s old bytecode.
 ///
-/// @dev SELECTOR CHANGE: this step is not a pure Replace. `EvaluatorFacet` gains one new
-///      selector, `MIN_APPEAL_WINDOW_SECS()`, routed so off-chain callers can read the enforced
-///      appeal-window floor instead of hardcoding it. It is therefore cut in two operations:
-///      a `Replace` of the six pre-existing evaluator selectors, then an `Add` of the new getter
-///      (a `Replace` on a selector the diamond does not yet route reverts in `LibDiamond`).
-///      No selector is removed and no existing selector's signature changed.
+/// @dev A fifth facet, `AdminFacet`, is redeployed for a different reason: rev017 makes the
+///      appeal-window floor admin-settable state (`AppStorage.minAppealWindowSecs`) rather than
+///      a compiled-in constant, which adds `minAppealWindowSecs()` and
+///      `setMinAppealWindowSecs(uint32)` to `AdminFacet`.
+///
+/// @dev SELECTOR CHANGE: this step is not a pure Replace. Two selectors are added --
+///      `minAppealWindowSecs()` and `setMinAppealWindowSecs(uint32)`, both on `AdminFacet`.
+///      `AdminFacet` is therefore cut in two operations: a `Replace` of its seventeen
+///      pre-existing selectors, then an `Add` of the two new ones (a `Replace` on a selector the
+///      diamond does not yet route reverts in `LibDiamond`). No selector is removed and no
+///      existing selector's signature changed. The other four facets are pure `Replace`.
+///
+/// @dev No storage migration is needed for the new `AppStorage.minAppealWindowSecs` field. It is
+///      appended to the end of the struct, so it occupies a previously-unused slot on every
+///      existing diamond, and it reads back as zero. Zero is treated as "unset" rather than "no
+///      minimum" (`LibTaskMarket._minAppealWindowSecs` substitutes the compiled default), so the
+///      guard is live the instant this cut lands -- it does not wait on anyone calling the
+///      setter.
 ///
 /// @dev Required env vars:
 ///      FORGE_DEV_PRIVATE_KEY          — owner key (must match Diamond owner)
@@ -55,23 +67,27 @@ contract Rev017Upgrade is Script {
 
         vm.startBroadcast(ownerKey);
 
+        address adminFacet = address(new AdminFacet());
         address coreFacet = address(new CoreFacet());
         address auctionFacet = address(new AuctionFacet());
         address acceptFacet = address(new AcceptanceFacet());
         address evalFacet = address(new EvaluatorFacet());
 
-        // evalFacetSelectors() is the post-rev017 set (seven entries, last being the new
-        // MIN_APPEAL_WINDOW_SECS getter). Split it: the first six exist on-chain already and must
-        // be Replaced, the seventh does not and must be Added.
-        bytes4[] memory allEvalSelectors = FacetSelectors.evalFacetSelectors();
-        bytes4[] memory existingEvalSelectors = new bytes4[](allEvalSelectors.length - 1);
-        for (uint256 i; i < existingEvalSelectors.length; ++i) {
-            existingEvalSelectors[i] = allEvalSelectors[i];
+        // adminFacetSelectors() is the post-rev017 set (nineteen entries, the last two being the
+        // new minAppealWindowSecs getter/setter). Split it: the first seventeen exist on-chain
+        // already and must be Replaced, the last two do not and must be Added.
+        bytes4[] memory allAdminSelectors = FacetSelectors.adminFacetSelectors();
+        uint256 addedCount = 2;
+        bytes4[] memory existingAdminSelectors = new bytes4[](allAdminSelectors.length - addedCount);
+        for (uint256 i; i < existingAdminSelectors.length; ++i) {
+            existingAdminSelectors[i] = allAdminSelectors[i];
         }
-        bytes4[] memory newEvalSelectors = new bytes4[](1);
-        newEvalSelectors[0] = allEvalSelectors[allEvalSelectors.length - 1];
+        bytes4[] memory newAdminSelectors = new bytes4[](addedCount);
+        for (uint256 i; i < addedCount; ++i) {
+            newAdminSelectors[i] = allAdminSelectors[existingAdminSelectors.length + i];
+        }
 
-        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](5);
+        IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](6);
         cuts[0] =
             IDiamondCut.FacetCut(coreFacet, IDiamondCut.FacetCutAction.Replace, FacetSelectors.coreFacetSelectors());
         cuts[1] = IDiamondCut.FacetCut(
@@ -80,8 +96,10 @@ contract Rev017Upgrade is Script {
         cuts[2] = IDiamondCut.FacetCut(
             acceptFacet, IDiamondCut.FacetCutAction.Replace, FacetSelectors.acceptFacetSelectors()
         );
-        cuts[3] = IDiamondCut.FacetCut(evalFacet, IDiamondCut.FacetCutAction.Replace, existingEvalSelectors);
-        cuts[4] = IDiamondCut.FacetCut(evalFacet, IDiamondCut.FacetCutAction.Add, newEvalSelectors);
+        cuts[3] =
+            IDiamondCut.FacetCut(evalFacet, IDiamondCut.FacetCutAction.Replace, FacetSelectors.evalFacetSelectors());
+        cuts[4] = IDiamondCut.FacetCut(adminFacet, IDiamondCut.FacetCutAction.Replace, existingAdminSelectors);
+        cuts[5] = IDiamondCut.FacetCut(adminFacet, IDiamondCut.FacetCutAction.Add, newAdminSelectors);
 
         IDiamondCut(diamond).diamondCut(cuts, address(0), "");
         AdminFacet(diamond).setDiamondVersion(TARGET_VERSION);
@@ -89,6 +107,7 @@ contract Rev017Upgrade is Script {
         vm.stopBroadcast();
 
         console.log("Rev017 upgrade complete. Diamond:", diamond);
+        console.log("AdminFacet:      ", adminFacet);
         console.log("CoreFacet:       ", coreFacet);
         console.log("AuctionFacet:    ", auctionFacet);
         console.log("AcceptanceFacet: ", acceptFacet);

@@ -23,8 +23,6 @@ import { DiamondTestHelper } from "./helpers/DiamondTestHelper.sol";
 ///      (MIN_APPEAL_WINDOW_SECS) is added and answers.
 contract Rev017UpgradeTest is Test, DiamondTestHelper {
     uint256 internal constant OWNER_KEY = 0xA11CE;
-    /// @dev Public-constant getters have no `.selector` shorthand -- see FacetSelectors.sol.
-    bytes4 internal constant MIN_APPEAL_WINDOW_SECS_SELECTOR = bytes4(keccak256("MIN_APPEAL_WINDOW_SECS()"));
     address internal owner;
     address internal usdc = address(0xACDC);
     address internal feeRecipient = address(0xFEE0);
@@ -41,14 +39,15 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
     }
 
     /// @dev A fresh test diamond is deployed from FacetSelectors.sol, the single source of truth
-    ///      for the *current* (post-rev017) steady state, so it already routes
-    ///      MIN_APPEAL_WINDOW_SECS. Rev017Upgrade Adds that selector, and LibDiamond rejects an
-    ///      Add for a selector that already routes, so the pre-rev017 on-chain state has to be
-    ///      reconstructed by removing it first. This is also what makes the Add path genuinely
+    ///      for the *current* (post-rev017) steady state, so it already routes the two new
+    ///      AdminFacet selectors. Rev017Upgrade Adds them, and LibDiamond rejects an Add for a
+    ///      selector that already routes, so the pre-rev017 on-chain state has to be
+    ///      reconstructed by removing them first. This is also what makes the Add path genuinely
     ///      exercised rather than trivially satisfied.
-    function _removeNewSelector(address diamond) internal {
-        bytes4[] memory sel = new bytes4[](1);
-        sel[0] = MIN_APPEAL_WINDOW_SECS_SELECTOR;
+    function _removeNewSelectors(address diamond) internal {
+        bytes4[] memory sel = new bytes4[](2);
+        sel[0] = AdminFacet.minAppealWindowSecs.selector;
+        sel[1] = AdminFacet.setMinAppealWindowSecs.selector;
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
         cuts[0] = IDiamondCut.FacetCut(address(0), IDiamondCut.FacetCutAction.Remove, sel);
         vm.prank(owner);
@@ -76,11 +75,12 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
         address diamond = address(deployDiamond(owner, usdc, feeRecipient, feeBps));
         _advanceToRev016(diamond);
         // Reconstruct the pre-rev017 selector set only after the intervening steps have run --
-        // rev012/rev013 Replace the whole evaluator selector set, and LibDiamond rejects a
-        // Replace of a selector the diamond does not currently route.
-        _removeNewSelector(diamond);
+        // rev012/rev013 Replace whole facet selector sets, and LibDiamond rejects a Replace of a
+        // selector the diamond does not currently route.
+        _removeNewSelectors(diamond);
         assertEq(AdminFacet(diamond).diamondVersion(), 16, "must be at rev016 before rev017");
 
+        address oldAdmin = IDiamondLoupe(diamond).facetAddress(AdminFacet.pause.selector);
         address oldCore = IDiamondLoupe(diamond).facetAddress(CoreFacet.refundExpired.selector);
         address oldAuction = IDiamondLoupe(diamond).facetAddress(AuctionFacet.submitBid.selector);
         address oldAccept = IDiamondLoupe(diamond).facetAddress(AcceptanceFacet.acceptSubmission.selector);
@@ -93,6 +93,7 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
         // All four facets that inline LibTaskMarket's patched hook dispatch must be new
         // implementations -- replacing only EvaluatorFacet would leave #317's refundExpired
         // fund-freeze path live on CoreFacet's old bytecode.
+        address newAdmin = IDiamondLoupe(diamond).facetAddress(AdminFacet.pause.selector);
         address newCore = IDiamondLoupe(diamond).facetAddress(CoreFacet.refundExpired.selector);
         address newAuction = IDiamondLoupe(diamond).facetAddress(AuctionFacet.submitBid.selector);
         address newAccept = IDiamondLoupe(diamond).facetAddress(AcceptanceFacet.acceptSubmission.selector);
@@ -101,6 +102,7 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
         assertTrue(newAuction != oldAuction, "AuctionFacet must be replaced");
         assertTrue(newAccept != oldAccept, "AcceptanceFacet must be replaced");
         assertTrue(newEval != oldEval, "EvaluatorFacet must be replaced");
+        assertTrue(newAdmin != oldAdmin, "AdminFacet must be replaced");
 
         // Every pre-existing selector of each replaced facet still routes, to the new address.
         _assertRoutes(diamond, CoreFacet.createTask.selector, newCore, "createTask");
@@ -117,9 +119,15 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
         _assertRoutes(diamond, EvaluatorFacet.resolveDispute.selector, newEval, "resolveDispute");
         _assertRoutes(diamond, EvaluatorFacet.evaluatorTimeout.selector, newEval, "evaluatorTimeout");
 
-        // The one added selector routes and returns the enforced floor.
-        _assertRoutes(diamond, MIN_APPEAL_WINDOW_SECS_SELECTOR, newEval, "MIN_APPEAL_WINDOW_SECS");
-        assertEq(EvaluatorFacet(diamond).MIN_APPEAL_WINDOW_SECS(), 60, "appeal-window floor must be readable on-chain");
+        _assertRoutes(diamond, AdminFacet.diamondVersion.selector, newAdmin, "diamondVersion");
+        _assertRoutes(diamond, AdminFacet.setDefaultHooks.selector, newAdmin, "setDefaultHooks");
+
+        // Both added selectors route, and the getter answers with the lazy default rather than
+        // the raw zero actually sitting in the freshly-appended storage slot -- the guard must be
+        // live on upgrade, not on first setter call.
+        _assertRoutes(diamond, AdminFacet.minAppealWindowSecs.selector, newAdmin, "minAppealWindowSecs");
+        _assertRoutes(diamond, AdminFacet.setMinAppealWindowSecs.selector, newAdmin, "setMinAppealWindowSecs");
+        assertEq(AdminFacet(diamond).minAppealWindowSecs(), 60, "appeal-window floor must default to 60 on upgrade");
     }
 
     function test_RevertWhen_Rev017Upgrade_NotAtRev016() public {
