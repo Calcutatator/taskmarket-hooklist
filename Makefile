@@ -407,54 +407,34 @@ lint-fix:
 format-check:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make format-check <app-or-package-name|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:check; \
-	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
-		cd apps/web && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		cd packages/shared && pnpm format:check; \
-	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm run format:check; \
-	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
-		cd apps/email-worker && pnpm format:check; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm run format:check; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm run format:check; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-check <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-check <app-or-package-name|all>"; \
 		exit 1; \
 	fi
 
 format-fix:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|all>"; \
+		echo "Usage: make format-fix <app-or-package-name|all>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "all" ]; then \
 		pnpm turbo format:write; \
-	elif [ "$(word 1,$(ARGS))" = "backend" ]; then \
-		cd apps/backend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "frontend" ]; then \
-		cd apps/frontend && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "web" ]; then \
-		cd apps/web && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "docs" ]; then \
-		cd apps/docs && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "shared" ]; then \
-		cd packages/shared && pnpm format:write; \
-	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
-		cd packages/contracts && pnpm run format:write; \
-	elif [ "$(word 1,$(ARGS))" = "email-worker" ]; then \
-		cd apps/email-worker && pnpm format:write; \
+	elif [ -d "apps/$(word 1,$(ARGS))" ]; then \
+		cd apps/$(word 1,$(ARGS)) && pnpm run format:write; \
+	elif [ -d "packages/$(word 1,$(ARGS))" ]; then \
+		cd packages/$(word 1,$(ARGS)) && pnpm run format:write; \
 	else \
 		echo "Unknown app: $(word 1,$(ARGS))"; \
-		echo "Usage: make format-fix <backend|frontend|web|docs|shared|contracts|email-worker|all>"; \
+		echo "Usage: make format-fix <app-or-package-name|all>"; \
 		exit 1; \
 	fi
 
@@ -881,9 +861,9 @@ dither-kit:
 # unaffected.
 cli:
 	@$(ENV_LOADER) && \
-	if [ "$(word 1,$(MAKECMDGOALS))" = "smoke" ] || [ "$(word 1,$(MAKECMDGOALS))" = "type-check" ] || [ "$(word 1,$(MAKECMDGOALS))" = "test" ]; then \
-		exit 0; \
-	fi; \
+	case "$(word 1,$(MAKECMDGOALS))" in \
+		smoke|type-check|test|lint-check|lint-fix|format-check|format-fix) exit 0 ;; \
+	esac; \
 	pnpm --filter @lucid-agents/taskmarket... build && \
 	if [ -n "$(ARGS)" ]; then \
 		node apps/cli/dist/index.js $(ARGS); \
