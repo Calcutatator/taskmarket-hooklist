@@ -17,7 +17,7 @@ import { normalizeRequesterPublicKey } from '../../lib/task';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
 import { dispatchRelayedIntent } from '../relayed-intent-registry';
-import { recordRelayedIntent } from '../relayed-intents';
+import { derivedIdempotencyKey, recordRelayedIntent } from '../relayed-intents';
 
 type Db = typeof DbType;
 
@@ -223,6 +223,10 @@ export async function completeTasksCreate(context: {
   if (payload.evaluatorAssignment) {
     const assignIntent = await recordRelayedIntent({
       db,
+      // Derived from the creation this follows, not random: completion is at-least-once, so
+      // a rerun of this handler must land on the same assignment intent rather than record a
+      // second one and assign the evaluator twice (ADR-0052).
+      idempotencyKey: derivedIdempotencyKey(`${payload.taskId}:tasks.assignEvaluator`),
       operation: 'tasks.assignEvaluator',
       payer: payload.payer,
       payload: {

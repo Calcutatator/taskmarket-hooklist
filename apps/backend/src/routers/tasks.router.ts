@@ -366,6 +366,7 @@ export const tasksRouter = router({
       // registry so a reconciler pass observing the same receipt cannot run it twice.
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.create',
         payer,
         paymentAmount: reward,
@@ -1158,6 +1159,7 @@ export const tasksRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.cancel',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -1234,6 +1236,7 @@ export const tasksRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.refundExpired',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -1367,6 +1370,7 @@ export const tasksRouter = router({
         // (ADR-0048), which is why the intent has to carry it.
         await runRelayedIntent({
           db: ctx.db,
+          idempotencyKey: ctx.idempotencyKey,
           operation: 'tasks.update',
           payer,
           paymentAmount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
@@ -1621,6 +1625,7 @@ export const tasksRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.rejectSubmission',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

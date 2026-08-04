@@ -9,7 +9,7 @@ import { hkdfSync, randomBytes, randomUUID } from 'crypto';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import type { IdentityRegisterIntentPayload } from '../services/intents/identity-intents';
 import { dispatchRelayedIntent } from '../services/relayed-intent-registry';
-import { recordRelayedIntent } from '../services/relayed-intents';
+import { derivedIdempotencyKey, recordRelayedIntent } from '../services/relayed-intents';
 import { lowerAddressEq, verifySignedAddressOrThrow } from '../lib/agents';
 import {
   Secp256k1PublicKeySchema,
@@ -144,6 +144,12 @@ export const devicesRouter = router({
       registerRelayedIntentHandlers();
       const registerIntent = await recordRelayedIntent({
         db: ctx.db,
+        // Not the caller's key, because the caller did not ask for a relayed write: they
+        // registered a device, and the platform sponsors an identity mint off the back of it.
+        // Derived from the wallet, so re-registering a device for a wallet whose mint is
+        // already in flight joins that mint instead of starting a second one -- which is what
+        // the bare fire-and-forget promise this replaced would have done (ADR-0052).
+        idempotencyKey: derivedIdempotencyKey(`${walletAddress}:identity.register`),
         operation: 'identity.register',
         payer: walletAddress,
         payload: {

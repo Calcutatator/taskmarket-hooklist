@@ -754,7 +754,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -800,7 +802,9 @@ describe('bids router', () => {
           .mockReturnValueOnce(makeChain([privateDutchTask])) // task lookup
           .mockReturnValueOnce(makeChain([{ viewerAddress: WORKER }])) // allowlist contains WORKER
           .mockReturnValueOnce(makeChain([])); // awards — empty
-        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+        // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -825,7 +829,9 @@ describe('bids router', () => {
           .mockReturnValueOnce(makeChain([privateReverseDutchTask])) // task lookup
           .mockReturnValueOnce(makeChain([])) // allowlist — empty
           .mockReturnValueOnce(makeChain([])); // awards — empty
-        ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+        // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
         const caller = bidsRouter.createCaller(ctx);
         const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -851,7 +857,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);
@@ -876,7 +884,9 @@ describe('bids router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(makeChain([{ id: TASK_ID }]));
+      // Seeded per table rather than "the first UPDATE": that is now the intent's broadcast
+      // claim (ADR-0052).
+      ctx.seedUpdate(tasksTable, [{ id: TASK_ID }]);
 
       const caller = bidsRouter.createCaller(ctx);
       const result = await caller.auctionAccept(ACCEPT_INPUT);

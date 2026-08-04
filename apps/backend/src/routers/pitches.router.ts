@@ -148,6 +148,7 @@ export const pitchesRouter = router({
 
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'pitches.submit',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -314,6 +315,7 @@ export const pitchesRouter = router({
 
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'pitches.select',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

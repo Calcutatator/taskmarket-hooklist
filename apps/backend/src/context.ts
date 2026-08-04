@@ -1,6 +1,7 @@
 import type { CreateExpressContextOptions } from '@trpc/server/adapters/express';
 import {
   buildReadAuthMessage,
+  IDEMPOTENCY_KEY_HEADER,
   READ_AUTH_ADDRESS_HEADER,
   READ_AUTH_SIGNATURE_HEADER,
   TASK_ACCESS_GRANT_HEADER,
@@ -55,12 +56,26 @@ export async function resolveTaskAccessGrant(
   return (await verifyTaskAccessGrant(db, token)) ?? undefined;
 }
 
+// Implements: ADR-0052
+/**
+ * The caller's idempotency key for a relayed write, taken verbatim off the header.
+ *
+ * Resolved here for the same reason `caller` is -- it belongs to the request, not to any one
+ * router -- and left `undefined` rather than rejected when absent, because whether a key is
+ * required depends on what the procedure does. A read needs none; every relayed write needs
+ * one, and `recordRelayedIntent` is the single place that says so.
+ */
+export function resolveIdempotencyKey(req: CreateExpressContextOptions['req']): string | undefined {
+  return headerValue(req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()]);
+}
+
 export async function createContext({ req, res }: CreateExpressContextOptions) {
   return {
     db,
     req,
     res,
     caller: await resolveCaller(req),
+    idempotencyKey: resolveIdempotencyKey(req),
     taskAccessGrant: await resolveTaskAccessGrant(req),
   };
 }

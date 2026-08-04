@@ -893,6 +893,11 @@ export const relayedIntents = pgTable(
     payer: text('payer'),
     paymentTxHash: text('payment_tx_hash'),
     paymentAmount: numeric('payment_amount', { precision: 78, scale: 0 }),
+    // The client's own key for this logical operation (ADR-0052), mandatory on every relayed
+    // write. Client-originated because the intent id cannot be the recovery handle: it is
+    // minted here and reaches the caller only in the response. Opaque to the backend --
+    // stored verbatim, matched by equality, never parsed.
+    idempotencyKey: text('idempotency_key').notNull(),
     // Everything the completion handler needs, already validated by the router's input schema.
     payload: jsonb('payload').notNull(),
     // Set once a nonce is allocated. Null while the intent is still 'recorded'.
@@ -916,9 +921,15 @@ export const relayedIntents = pgTable(
     statusIdx: index('idx_relayed_intents_status').on(table.status),
     txIdx: index('idx_relayed_intents_server_wallet_tx').on(table.serverWalletTransactionId),
     payerIdx: index('idx_relayed_intents_payer').on(table.payer),
-    // One intent per settled payment: a retried request that reuses the same x402 payment
-    // must not create a second intent and a second chain call for one payment.
+    // One settled payment funds at most one intent. A backstop rather than the idempotency
+    // mechanism (ADR-0052): the key below handles the well-behaved retry, and this catches a
+    // client that generates a fresh key while reusing a payment it has already spent.
     paymentUnique: uniqueIndex('idx_relayed_intents_payment_tx').on(table.paymentTxHash),
+    // Globally unique, not (payer, key): evaluations.finalizeVerdict is permissionless and
+    // has no payer, and a NULL payer in a composite unique constraint silently stops guarding.
+    idempotencyKeyUnique: uniqueIndex('idx_relayed_intents_idempotency_key').on(
+      table.idempotencyKey
+    ),
     statusCheck: check(
       'relayed_intents_status_check',
       sql`${table.status} IN ('recorded', 'broadcast', 'completed', 'failed')`

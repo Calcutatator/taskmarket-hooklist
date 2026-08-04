@@ -121,6 +121,7 @@ export const claimsRouter = router({
       // has never heard of.
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'claims.claim',
         payer: input.workerAddress,
         payload: {
@@ -200,6 +201,7 @@ export const claimsRouter = router({
       // claimed, unclaimable by anyone (ADR-0045).
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'claims.forfeit',
         payer: input.requesterAddress,
         payload: {

@@ -1,8 +1,11 @@
-// Implements: ADR-0045, ADR-0050
-import { randomUUID } from 'crypto';
-import { and, asc, eq, gte, inArray, isNull, lt, ne, sql } from 'drizzle-orm';
+// Implements: ADR-0045, ADR-0050, ADR-0052
+import { createHash, randomUUID } from 'crypto';
+import { TRPCError } from '@trpc/server';
+import { and, asc, eq, gte, inArray, isNull, lt, ne, or, sql } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
+import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
+
 import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '../db/schema';
 import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
@@ -62,6 +65,12 @@ export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'fail
 
 export type RecordIntentInput = {
   db: Db;
+  /**
+   * The caller's own key for this logical operation (ADR-0052). Typed as possibly absent so
+   * that every call site is forced to plumb it through, and rejected at runtime when it is:
+   * a relayed write without one is a 400, with no fallback and no per-operation exception.
+   */
+  idempotencyKey: string | undefined;
   operation: RelayedIntentOperation;
   payer?: string;
   paymentTxHash?: string;
@@ -70,27 +79,137 @@ export type RecordIntentInput = {
 };
 
 /**
+ * RFC-4122 shape, and nothing beyond shape.
+ *
+ * Checking the form is not the same as deriving meaning from the value -- nothing is parsed
+ * out of it, and it is stored and matched exactly as sent. The check earns its place because
+ * the column is globally unique: a caller sending `1` would be staking a claim on a name any
+ * other caller might also pick, and the collision would surface as a rejected write rather
+ * than as anything the caller could debug. A UUID makes accidental collision negligible.
+ */
+const IDEMPOTENCY_KEY_PATTERN =
+  /^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$/;
+
+function requireIdempotencyKey(key: string | undefined, operation: string): string {
+  if (key && IDEMPOTENCY_KEY_PATTERN.test(key)) return key;
+  throw new TRPCError({
+    code: 'BAD_REQUEST',
+    message:
+      `${operation} requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you generate ` +
+      'for this operation. Send the same value when retrying the same operation, and a fresh ' +
+      'one for a new operation.',
+  });
+}
+
+/**
+ * The idempotency check that has to happen before a payment is settled.
+ *
+ * `recordRelayedIntent` runs inside the handler, which is far too late on a paid path: x402
+ * settles in middleware, so by the time the handler sees a repeated key the caller has already
+ * signed and paid for a second authorization. Deduplicating the chain call at that point still
+ * leaves a settled payment with nothing to attach to -- an orphaned payment and a refund, which
+ * is the double charge the key exists to prevent wearing a different hat.
+ *
+ * So the paid path asks this first, before any 402 challenge. It answers only "is this key
+ * spoken for", never with anything about the intent behind it: it runs before the caller is
+ * authenticated, and on the challenge round there is not even a payment payload to read a payer
+ * from. `intents.get` is where a caller learns what actually happened, and it is payer-scoped.
+ */
+export async function checkRelayedWriteIdempotency(input: {
+  db: Db;
+  key: string | undefined;
+}): Promise<{ error: string; status: 400 | 409 } | null> {
+  if (!input.key || !IDEMPOTENCY_KEY_PATTERN.test(input.key)) {
+    return {
+      error:
+        `This request requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you generate ` +
+        'for this operation. Send the same value when retrying it, and a fresh one for a new ' +
+        'operation.',
+      status: 400,
+    };
+  }
+
+  const existing = await findIntentByIdempotencyKey(input.db, input.key);
+  if (!existing) return null;
+
+  return {
+    error: `A ${existing.operation} write for this idempotency key already exists (intent ${existing.id}). It was not charged or submitted again; read its outcome from intents.get.`,
+    status: 409,
+  };
+}
+
+/**
+ * An idempotency key for an intent nobody asked for directly.
+ *
+ * Most intents come from a request and carry the caller's own key. A few are recorded by a
+ * completion handler as follow-on work -- an evaluator assignment after a task creation, a
+ * deliverable anchor after a proof -- and those have no caller to get a key from.
+ *
+ * They must not get a random one. Completion is at-least-once by design (ADR-0045): a handler
+ * that dies partway through is rerun from the start, and a fresh key on each rerun would
+ * record a second follow-on intent and make a second chain call for work already in flight.
+ * Deriving the key from the parent intent instead makes the rerun collapse onto the same
+ * follow-on, which is what "idempotent handler" was supposed to mean all along.
+ *
+ * Formatted as a UUID because that is what the column is validated against; the digest is
+ * only a way to spread a scope string over that shape, and nothing reads it back out.
+ */
+export function derivedIdempotencyKey(scope: string): string {
+  const digest = createHash('sha256').update(`taskmarket:intent:${scope}`).digest('hex');
+  return [
+    digest.slice(0, 8),
+    digest.slice(8, 12),
+    digest.slice(12, 16),
+    digest.slice(16, 20),
+    digest.slice(20, 32),
+  ].join('-');
+}
+
+export async function findIntentByIdempotencyKey(
+  db: Db,
+  key: string
+): Promise<RelayedIntent | null> {
+  const [row] = await db
+    .select()
+    .from(relayedIntents)
+    .where(eq(relayedIntents.idempotencyKey, key))
+    .limit(1);
+  return row ?? null;
+}
+
+/**
+ * Whether a stored intent may be handed back to this caller as their own.
+ *
+ * The key is globally unique (see the schema for why it is not scoped to the payer), so two
+ * callers can in principle name the same intent. Returning one caller's paid intent to
+ * another would leak a payer address, an amount and a payment hash, so a key that resolves to
+ * someone else's intent is refused rather than reused. The operation is checked for the same
+ * reason in reverse: reusing a key across two different operations means the caller has lost
+ * track of which write they are retrying, and answering with the wrong one is worse than
+ * refusing.
+ */
+function intentBelongsToCaller(intent: RelayedIntent, input: RecordIntentInput): boolean {
+  if (intent.operation !== input.operation) return false;
+  const stored = intent.payer?.toLowerCase() ?? null;
+  const asking = input.payer?.toLowerCase() ?? null;
+  return stored === asking;
+}
+
+/**
  * Persist an intent before anything irreversible happens.
  *
  * Ordering is the point: the row exists before the payment is consumed and before the chain
  * call is made, so there is no window where money has moved or a transaction is live with no
  * durable record of what it was for.
  *
- * The payment hash is uniquely indexed, so a retried request reusing the same settled x402
- * payment reuses its existing intent instead of creating a second one and a second chain
- * call. That makes the record itself the idempotency key for a paid operation.
+ * Idempotency is keyed on the caller's own key, not on anything minted here (ADR-0052). A
+ * retried request carrying the same key gets the same intent back rather than a second one
+ * and a second chain call. The payment hash keeps its unique index, but as a backstop with a
+ * narrower job: one settled payment funds at most one intent, which catches a client that
+ * generates a fresh key while reusing a payment it has already spent.
  */
 export async function recordRelayedIntent(input: RecordIntentInput): Promise<RelayedIntent> {
-  const id = randomUUID();
-
-  if (input.paymentTxHash) {
-    const existing = await input.db
-      .select()
-      .from(relayedIntents)
-      .where(eq(relayedIntents.paymentTxHash, input.paymentTxHash))
-      .limit(1);
-    if (existing[0]) return existing[0];
-  }
+  const idempotencyKey = requireIdempotencyKey(input.idempotencyKey, input.operation);
 
   // Fixed here, once, and replayed verbatim by every broadcast attempt. This is the intent's
   // deadline: a rebroadcast that regenerated it would buy itself another full window on every
@@ -100,7 +219,8 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   const [row] = await input.db
     .insert(relayedIntents)
     .values({
-      id,
+      id: randomUUID(),
+      idempotencyKey,
       operation: input.operation,
       payer: input.payer ?? null,
       paymentAmount: input.paymentAmount ? input.paymentAmount.toString() : null,
@@ -115,15 +235,44 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
 
   if (row) return row;
 
-  // Lost the insert race against a concurrent retry of the same payment; take theirs.
-  const [existing] = await input.db
-    .select()
-    .from(relayedIntents)
-    .where(eq(relayedIntents.paymentTxHash, input.paymentTxHash!))
-    .limit(1);
-  if (!existing)
-    throw new Error(`Could not record or find intent for operation ${input.operation}`);
-  return existing;
+  // The insert is the lookup. Reading first and inserting second would be both slower on the
+  // common path and wrong on the uncommon one -- two concurrent first-time requests with the
+  // same key would both read nothing and both try to insert -- so the unique index decides
+  // and this branch interprets its verdict. Which index it was tells us which mistake the
+  // caller made, so it is worth asking rather than answering with one generic conflict.
+  const existing = await findIntentByIdempotencyKey(input.db, idempotencyKey);
+  if (existing) {
+    // A repeat of the same operation by the same caller: hand back what they already
+    // started. That is the whole mechanism.
+    if (intentBelongsToCaller(existing, input)) return existing;
+    throw new TRPCError({
+      code: 'CONFLICT',
+      message: `The ${IDEMPOTENCY_KEY_HEADER} you sent has already been used for a different operation. Generate a fresh one.`,
+    });
+  }
+
+  if (input.paymentTxHash) {
+    const [settled] = await input.db
+      .select()
+      .from(relayedIntents)
+      .where(eq(relayedIntents.paymentTxHash, input.paymentTxHash))
+      .limit(1);
+    if (settled) {
+      // Same payment, fresh key: a retry that failed to reuse its key, or a client replaying
+      // a settled payment against a new operation. The payment is spent either way, and the
+      // earlier intent is not the write they asked for, so they are told rather than quietly
+      // handed it. This is the backstop the payment index now exists for.
+      throw new TRPCError({
+        code: 'CONFLICT',
+        message: `This payment has already funded ${settled.operation} (intent ${settled.id}); it cannot fund another write.`,
+      });
+    }
+  }
+
+  throw new TRPCError({
+    code: 'CONFLICT',
+    message: `${input.operation} could not be recorded: its idempotency key or payment is already in use.`,
+  });
 }
 
 /**
@@ -145,8 +294,34 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
  * clear of that, which is the point -- a cap low enough to end retrying before the deadline
  * would quietly make this constant the real bound again, and tuning it would then be tuning
  * something the payer never agreed to.
+ *
+ * That argument used to be the *only* thing making the deadline govern, which made it a
+ * property of arithmetic rather than of the code: lower this number, or raise the grace, and
+ * the cap silently became the governing bound, refunding an intent whose receipt was still
+ * valid. `relayDeadlinePassed` below is the structural form of the rule, so the deadline now
+ * governs because exhaustion consults it, not because this constant is generously set.
  */
 export const MAX_BROADCAST_ATTEMPTS = 20;
+
+/**
+ * Has the deadline the caller authorised already passed?
+ *
+ * The governing bound on retry (ADR-0050 point 5, made structural by ADR-0052).
+ * `TaskMarketForwarder.relay` reverts `ReceiptExpired` once chain time is past
+ * `validBefore`, and the payload is replayed verbatim, so past that point no attempt can
+ * succeed however many attempts remain. Consulting the persisted value directly is what
+ * keeps the cap from becoming the real bound the moment somebody tunes it.
+ *
+ * A row written before the envelope columns existed carries no deadline and is governed by
+ * the cap alone -- the only case where that is still true.
+ */
+function relayDeadlinePassed(nowSeconds: number) {
+  return sql`${relayedIntents.relayValidBefore} IS NOT NULL AND ${relayedIntents.relayValidBefore} < ${nowSeconds}`;
+}
+
+function nowSecondsOf(now?: Date): number {
+  return Math.floor((now?.getTime() ?? Date.now()) / 1000);
+}
 
 /**
  * Claim an intent for broadcast.
@@ -190,6 +365,11 @@ export async function claimIntentForBroadcast(input: {
       and(
         eq(relayedIntents.id, input.intentId),
         eq(relayedIntents.status, 'recorded'),
+        // Belt and braces against a caller that reached here with an intent already carrying
+        // a hash: a claim is permission to spend a nonce, and a transaction already exists
+        // for this work. Every current caller filters on this already; stating it in the
+        // predicate makes the claim itself safe rather than safe by virtue of its callers.
+        isNull(relayedIntents.txHash),
         eq(relayedIntents.broadcastAttempts, input.expectedAttempts)
       )
     )
@@ -210,6 +390,7 @@ export async function listUnbroadcastIntents(input: {
   db: Db;
   cutoff: Date;
   limit: number;
+  now?: Date;
 }): Promise<RelayedIntent[]> {
   return input.db
     .select()
@@ -220,6 +401,10 @@ export async function listUnbroadcastIntents(input: {
         isNull(relayedIntents.serverWalletTransactionId),
         isNull(relayedIntents.txHash),
         lt(relayedIntents.broadcastAttempts, MAX_BROADCAST_ATTEMPTS),
+        // An expired receipt cannot land, so there is nothing worth attempting. The deadline
+        // is checked here and not only at the cap so that shortening the cap changes how much
+        // we retry, never whether a still-valid receipt is abandoned.
+        sql`NOT (${relayDeadlinePassed(nowSecondsOf(input.now))})`,
         lt(relayedIntents.updatedAt, input.cutoff)
       )
     )
@@ -486,17 +671,22 @@ export async function listConfirmedUnsettledIntents(input: {
 }
 
 /**
- * Intents stuck in 'recorded' that are out of rebroadcast attempts.
+ * Intents stuck in 'recorded' whose retry is over.
  *
  * Refund is the fallback, not the reflex. An intent that never reached the chain is first
  * retried -- giving the payer the thing they paid for beats giving them their money back --
- * and only once `MAX_BROADCAST_ATTEMPTS` is spent does it become a write-off. Nothing is live
- * on chain in either case, so a payment here is genuinely refundable.
+ * and only once retry is exhausted does it become a write-off. Nothing is live on chain in
+ * either case, so a payment here is genuinely refundable.
+ *
+ * Exhaustion has two forms, and the governing one is the deadline: a receipt the forwarder
+ * will now reject cannot be made to land by any number of further attempts. The attempt cap
+ * is the belt-and-braces half, bounding resource use rather than correctness (ADR-0050).
  */
 export async function listAbandonedIntents(input: {
   db: Db;
   cutoff: Date;
   limit: number;
+  now?: Date;
 }): Promise<RelayedIntent[]> {
   return input.db
     .select()
@@ -504,7 +694,10 @@ export async function listAbandonedIntents(input: {
     .where(
       and(
         eq(relayedIntents.status, 'recorded'),
-        gte(relayedIntents.broadcastAttempts, MAX_BROADCAST_ATTEMPTS),
+        or(
+          gte(relayedIntents.broadcastAttempts, MAX_BROADCAST_ATTEMPTS),
+          relayDeadlinePassed(nowSecondsOf(input.now))
+        ),
         lt(relayedIntents.updatedAt, input.cutoff)
       )
     )

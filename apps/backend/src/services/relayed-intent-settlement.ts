@@ -57,10 +57,19 @@ export async function settleAbandonedIntents(limit: number): Promise<void> {
   for (const intent of await listAbandonedIntents({ cutoff, db, limit })) {
     if (intent.serverWalletTransactionId || intent.txHash) continue;
 
+    // Which bound ended it is worth saying, because the two mean different things to whoever
+    // reads it back: an expired receipt is the payer's own deadline arriving, and resubmitting
+    // with a fresh signature will work. A spent attempt budget is ours, and resubmitting may
+    // hit whatever was failing.
+    const deadline = intent.relayValidBefore ? BigInt(intent.relayValidBefore) : null;
+    const expired = deadline !== null && deadline < BigInt(Math.floor(Date.now() / 1000));
+
     await markIntentFailed({
       db,
       intentId: intent.id,
-      reason: 'Intent was never broadcast; no transaction was ever sent for it',
+      reason: expired
+        ? 'Intent was never broadcast and its relay receipt has expired; resubmit with a fresh signature'
+        : 'Intent was never broadcast; no transaction was ever sent for it',
     });
 
     // Safe here for the same reason the refund below is: `listAbandonedIntents` requires a

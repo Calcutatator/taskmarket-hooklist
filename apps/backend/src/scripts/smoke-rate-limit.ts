@@ -20,32 +20,83 @@
  * production ceiling of 100 (apps/backend/src/config/payments.ts). The override is read by
  * the BACKEND process itself (apps/backend/src/config/env.ts's
  * getHardSubmissionCeilingOverride), so it must be set in the backend's own environment --
- * not this script's -- before the backend under test starts. FREE_SUBMISSION_ALLOWANCE (5)
- * stays at its real, unoverridden production default -- it's already cheap enough to
- * exercise as-is.
+ * not this script's -- before the backend under test starts.
+ *
+ * **The limits are read from the backend, not assumed.** This script used to keep its own
+ * copies -- the ceiling from its own environment, the free allowance hardcoded at 5 -- and
+ * had no way to notice when the backend under test was enforcing something else. Under the
+ * standard `make smoke rate-limit` invocation it always was: cloud-env-setup.sh sets neither
+ * override on the backend, so the ceiling was 100 while the script asserted 7, and the run
+ * failed at a boundary assertion that said nothing about why. Setting the variable for the
+ * script alone would have made it worse, not better -- it would have moved the disagreement
+ * without resolving it. So the effective values come from GET /api/health, and the script's
+ * job is to check they are usable and say so loudly when they are not.
  *
  * Usage (start/restart the backend under test with a small ceiling override first):
  *   HARD_SUBMISSION_CEILING=7 pnpm --filter @taskmarket/backend dev
  *
  *   # in another shell, against that backend:
- *   HARD_SUBMISSION_CEILING=7 REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
+ *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
  *     npx tsx --env-file=../../.env src/scripts/smoke-rate-limit.ts
- *
- * This script's own HARD_SUBMISSION_CEILING is read only to know what ceiling to expect
- * and assert against -- it does not itself change the backend's behavior. If unset, it
- * defaults to 7, matching the value the "Usage" example above sets on the backend.
  */
 import { createHash } from 'crypto';
 import { buildSubmitMessage } from '@taskmarket/shared';
 import { log, ok, post, x402Post, getAccounts, API_URL, type Account } from './_x402';
 
-// Must match whatever HARD_SUBMISSION_CEILING the backend under test was actually started
-// with -- see the header comment above. Small on purpose: this script's whole point is to
-// reach the ceiling in a handful of requests, not the real production value of 100.
-const HARD_CEILING = Number(process.env.HARD_SUBMISSION_CEILING ?? 7);
-// FREE_SUBMISSION_ALLOWANCE's real, unoverridden production default (apps/backend/src/
-// config/payments.ts) -- cheap enough (5) that this script doesn't need its own override.
-const FREE_ALLOWANCE = 5;
+/**
+ * The most submissions this script is willing to make to reach a ceiling.
+ *
+ * Above this the run is not slow, it is impractical: at the production ceiling of 100 it
+ * would be ~94 real paid X402 round-trips. Raise it deliberately if you want to pay for
+ * that.
+ */
+const MAX_PRACTICAL_CEILING = Number(process.env.SMOKE_RATE_LIMIT_MAX_CEILING ?? 20);
+
+type BackendLimits = { freeSubmissionAllowance: number; hardSubmissionCeiling: number };
+
+/**
+ * Stop the run without claiming a pass.
+ *
+ * A skipped smoke test that exits 0 is indistinguishable from one that verified something,
+ * which smoke-nonce.ts argues is the worse of the two failures -- and this skip covers the
+ * entire script, not one step of it. So it exits non-zero and says exactly what to change.
+ */
+function skip(reason: string, remedy: string): never {
+  console.error(`\n=== Rate-limit smoke test SKIPPED (this is not a pass) ===`);
+  console.error(`reason: ${reason}`);
+  console.error(`fix:    ${remedy}`);
+  process.exit(2);
+}
+
+/**
+ * Ask the backend what it is actually enforcing.
+ *
+ * The whole point of reading rather than assuming: the script and the backend disagreeing
+ * about a limit is a misconfiguration, and it should be reported as one rather than
+ * discovered as a failed assertion three minutes into the run.
+ */
+async function readBackendLimits(): Promise<BackendLimits> {
+  const response = await fetch(`${API_URL}/api/health`);
+  if (!response.ok) {
+    skip(
+      `GET ${API_URL}/api/health returned ${response.status}`,
+      'start the backend under test, then re-run'
+    );
+  }
+  const body = (await response.json()) as { limits?: Partial<BackendLimits> };
+  const limits = body.limits;
+  if (
+    !limits ||
+    typeof limits.freeSubmissionAllowance !== 'number' ||
+    typeof limits.hardSubmissionCeiling !== 'number'
+  ) {
+    skip(
+      'the backend under test does not report its submission limits on /api/health',
+      'it predates the limits field; redeploy it from this branch'
+    );
+  }
+  return limits as BackendLimits;
+}
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -131,21 +182,28 @@ async function createBountyTask(requester: Account, description: string): Promis
 
 async function main() {
   const { requester, worker } = getAccounts();
+  const limits = await readBackendLimits();
+  const FREE_ALLOWANCE = limits.freeSubmissionAllowance;
+  const HARD_CEILING = limits.hardSubmissionCeiling;
 
   console.log('=== Taskmarket Smoke Test — Rate Limit (RFC-0006 Tier 1 + Tier 2) ===');
   console.log('requester:      ', requester.address);
   console.log('worker:         ', worker.address);
   console.log('api:            ', API_URL);
-  console.log('free allowance: ', FREE_ALLOWANCE, '(real production default, unoverridden)');
-  console.log(
-    'hard ceiling:   ',
-    HARD_CEILING,
-    '(expects the backend under test to have been started with a matching HARD_SUBMISSION_CEILING override)'
-  );
+  console.log('free allowance: ', FREE_ALLOWANCE, '(as reported by the backend under test)');
+  console.log('hard ceiling:   ', HARD_CEILING, '(as reported by the backend under test)');
 
   if (HARD_CEILING <= FREE_ALLOWANCE) {
-    throw new Error(
-      `HARD_SUBMISSION_CEILING (${HARD_CEILING}) must be greater than FREE_SUBMISSION_ALLOWANCE (${FREE_ALLOWANCE}) for this script's three zones to be distinct`
+    skip(
+      `the backend enforces a ceiling (${HARD_CEILING}) at or below its free allowance (${FREE_ALLOWANCE}), so this script's three zones are not distinct`,
+      'restart the backend with HARD_SUBMISSION_CEILING greater than SUBMISSION_FREE_ALLOWANCE'
+    );
+  }
+
+  if (HARD_CEILING > MAX_PRACTICAL_CEILING) {
+    skip(
+      `the backend enforces a ceiling of ${HARD_CEILING}, which would take ${HARD_CEILING - FREE_ALLOWANCE} real paid X402 round-trips to reach`,
+      `restart the backend with HARD_SUBMISSION_CEILING=7 (or raise SMOKE_RATE_LIMIT_MAX_CEILING above ${HARD_CEILING} to pay for the full run)`
     );
   }
 

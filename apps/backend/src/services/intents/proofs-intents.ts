@@ -3,7 +3,7 @@ import type { db as DbType } from '../../db/client';
 import { proofs, submissions } from '../../db/schema';
 import { contractSubmitWork } from '../contract';
 import { dispatchRelayedIntent } from '../relayed-intent-registry';
-import { recordRelayedIntent } from '../relayed-intents';
+import { derivedIdempotencyKey, recordRelayedIntent } from '../relayed-intents';
 
 type Db = typeof DbType;
 
@@ -64,6 +64,10 @@ export async function completeProofsSubmit(context: {
 
   const anchorIntent = await recordRelayedIntent({
     db,
+    // Derived from the proof this follows, not random: completion is at-least-once, so a
+    // rerun must land on the same anchor intent rather than anchor the deliverable twice
+    // (ADR-0052).
+    idempotencyKey: derivedIdempotencyKey(`${payload.proofId}:proofs.anchorDeliverable`),
     operation: 'proofs.anchorDeliverable',
     payer: payload.workerAddress,
     payload: {

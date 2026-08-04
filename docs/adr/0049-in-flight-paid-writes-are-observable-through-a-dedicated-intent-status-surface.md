@@ -11,7 +11,7 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Not started
+- **Embodiment:** Verified
 - **Last audited:** 2026-08-03
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
@@ -19,7 +19,7 @@
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** Amends ADR-0045
-- **Pending Amends / Amended-by:** —
+- **Pending Amends / Amended-by:** Amended by ADR-0052
 
 ## Context
 

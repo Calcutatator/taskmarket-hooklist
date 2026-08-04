@@ -1,11 +1,15 @@
 /**
  * Shared helpers for smoke test scripts.
  */
-import { randomBytes } from 'crypto';
+import { randomBytes, randomUUID } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { createPublicClient, createWalletClient, http, parseAbi, toHex, type Chain } from 'viem';
 import { anvil, baseSepolia } from 'viem/chains';
-import { buildDeviceRegisterMessage, buildReadAuthMessage } from '@taskmarket/shared';
+import {
+  buildDeviceRegisterMessage,
+  buildReadAuthMessage,
+  IDEMPOTENCY_KEY_HEADER,
+} from '@taskmarket/shared';
 
 export type Account = ReturnType<typeof privateKeyToAccount>;
 
@@ -128,11 +132,33 @@ export async function pollTaskStatus<T extends { status: string }>(
   );
 }
 
+/**
+ * A fresh idempotency key for one logical operation (ADR-0052).
+ *
+ * Every relayed write requires one, so the smoke helpers mint one per call. A smoke script
+ * genuinely retrying the same operation must hold onto its key and pass it explicitly --
+ * a new key means a new operation, which is exactly what these one-shot calls want.
+ */
+export function newIdempotencyKey(): string {
+  return randomUUID();
+}
+
+function writeHeaders(idempotencyKey?: string): Record<string, string> {
+  return {
+    'Content-Type': 'application/json',
+    [IDEMPOTENCY_KEY_HEADER]: idempotencyKey ?? newIdempotencyKey(),
+  };
+}
+
 /** POST without X402. */
-export async function post(path: string, body: Record<string, unknown>): Promise<unknown> {
+export async function post(
+  path: string,
+  body: Record<string, unknown>,
+  options?: { idempotencyKey?: string }
+): Promise<unknown> {
   const r = await fetch(`${API_URL}${path}`, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: writeHeaders(options?.idempotencyKey),
     body: JSON.stringify(body),
   });
   const result = await r.json();
@@ -144,14 +170,19 @@ export async function post(path: string, body: Record<string, unknown>): Promise
 export async function x402Post(
   path: string,
   body: Record<string, unknown>,
-  account: Account
+  account: Account,
+  options?: { idempotencyKey?: string }
 ): Promise<unknown> {
   const url = `${API_URL}${path}`;
+
+  // One key for both rounds: the 402 challenge and the paid retry are one logical
+  // operation, and only the second one records an intent.
+  const idempotencyKey = options?.idempotencyKey ?? newIdempotencyKey();
 
   // Round 1: get payment requirements
   const r1 = await fetch(url, {
     method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
+    headers: writeHeaders(idempotencyKey),
     body: JSON.stringify(body),
   });
 
@@ -216,7 +247,7 @@ export async function x402Post(
   const r2 = await fetch(url, {
     method: 'POST',
     headers: {
-      'Content-Type': 'application/json',
+      ...writeHeaders(idempotencyKey),
       'PAYMENT-SIGNATURE': Buffer.from(JSON.stringify(paymentPayload)).toString('base64'),
     },
     body: JSON.stringify(body),

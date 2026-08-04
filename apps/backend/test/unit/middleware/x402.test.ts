@@ -22,6 +22,16 @@ vi.mock('../../../src/lib/logger', () => ({
   logger: { error: vi.fn() },
 }));
 
+vi.mock('../../../src/db/client', () => ({ db: {} }));
+
+// The idempotency precondition is a database read, so the double is the verdict, not the
+// query. What matters for these tests is *when* it is consulted, which the ordering
+// assertions below check directly.
+const idempotencyVerdict = vi.fn<[], { error: string; status: number } | null>(() => null);
+vi.mock('../../../src/services/relayed-intents', () => ({
+  checkRelayedWriteIdempotency: vi.fn(async () => idempotencyVerdict()),
+}));
+
 import { X402PreflightError, x402Middleware } from '../../../src/middleware/x402';
 
 function paymentHeader(amount = '1000') {
@@ -52,7 +62,10 @@ function paymentHeader(amount = '1000') {
 function request(header = paymentHeader()) {
   return {
     body: {},
-    headers: { 'payment-signature': header },
+    headers: {
+      'payment-signature': header,
+      'x-taskmarket-idempotency-key': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    },
     protocol: 'https',
     get: () => 'api.example',
     originalUrl: '/api/tasks/0xtask/cancel',
@@ -205,5 +218,42 @@ describe('x402 middleware settlement safety', () => {
 
     expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(402);
     expect(next).not.toHaveBeenCalled();
+  });
+
+  // Verifies: ADR-0052
+  describe('idempotency is checked before anything is charged', () => {
+    it('refuses a repeated key without settling a second payment', async () => {
+      idempotencyVerdict.mockReturnValueOnce({
+        error: 'A tasks.create write for this idempotency key already exists (intent i-1).',
+        status: 409,
+      });
+      const res = response();
+      const next = vi.fn();
+
+      await x402Middleware({ getAmount: () => '1000' })(request(), res, next);
+
+      // The whole point of the ordering. Settlement happens in this middleware, so a check
+      // that ran in the handler would already have taken the caller's money: no second chain
+      // call, but a second settled payment with nothing to attach to, which is an orphaned
+      // payment and a refund. Nothing may be charged before the key is consulted.
+      expect(globalThis.fetch).not.toHaveBeenCalled();
+      expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(409);
+      expect(next).not.toHaveBeenCalled();
+    });
+
+    it('refuses a request with no key before issuing a payment challenge', async () => {
+      idempotencyVerdict.mockReturnValueOnce({ error: 'missing key', status: 400 });
+      const res = response();
+      const next = vi.fn();
+
+      // No payment header: this is the challenge round, where a caller has paid nothing yet.
+      const challengeRound = { ...(request() as object), headers: {} } as never;
+      await x402Middleware({ getAmount: () => '1000' })(challengeRound, res, next);
+
+      // Challenging a keyless caller means they pay and then get a 400 from
+      // recordRelayedIntent for a payment that bought nothing.
+      expect((res as { status: ReturnType<typeof vi.fn> }).status).toHaveBeenCalledWith(400);
+      expect((res as { status: ReturnType<typeof vi.fn> }).status).not.toHaveBeenCalledWith(402);
+    });
   });
 });

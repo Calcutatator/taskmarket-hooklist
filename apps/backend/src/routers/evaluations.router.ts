@@ -71,6 +71,7 @@ export const evaluationsRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.evaluate',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -134,6 +135,7 @@ export const evaluationsRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.appeal',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -175,6 +177,7 @@ export const evaluationsRouter = router({
       // request is still around to write it (ADR-0045). Free, so nothing here is refundable.
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.finalizeVerdict',
         payload: {
           rejected: task.verdictType === 'REJECT',
@@ -222,6 +225,7 @@ export const evaluationsRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.resolveDispute',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -276,6 +280,7 @@ export const evaluationsRouter = router({
 
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'evaluations.evaluatorTimeout',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

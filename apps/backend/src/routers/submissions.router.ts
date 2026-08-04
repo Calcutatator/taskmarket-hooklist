@@ -488,6 +488,7 @@ export const submissionsRouter = router({
       // stay in the same transaction as the insert it guards.
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'submissions.submit',
         payer: input.workerAddress,
         payload: {
@@ -754,6 +755,7 @@ export const submissionsRouter = router({
       // intent kind, one completion handler (ADR-0045).
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'submissions.submit',
         payer: input.workerAddress,
         payload: {

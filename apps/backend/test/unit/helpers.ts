@@ -1,3 +1,4 @@
+import { randomUUID } from 'crypto';
 import { vi } from 'vitest';
 
 import { relayedIntents } from '../../src/db/schema';
@@ -64,6 +65,9 @@ export function createMockCtx(
     req: {} as any,
     res: { locals: { payer: payer ?? undefined }, setHeader: vi.fn(), vary: vi.fn() } as any,
     caller,
+    // A distinct key per context, because every relayed write requires one (ADR-0052) and
+    // two tests sharing a key would collide the way two real callers would.
+    idempotencyKey: randomUUID(),
     taskAccessGrant,
   };
 }

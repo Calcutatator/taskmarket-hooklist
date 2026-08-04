@@ -137,6 +137,7 @@ export const proofsRouter = router({
       // completion handler -- the shape task creation already uses for evaluator assignment.
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'proofs.submit',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

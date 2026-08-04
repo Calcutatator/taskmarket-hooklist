@@ -80,6 +80,7 @@ export const identityRouter = router({
       // the one copy of that work that also runs when a reconciler finishes the intent.
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'identity.register',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

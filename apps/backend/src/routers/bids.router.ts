@@ -148,6 +148,7 @@ export const bidsRouter = router({
 
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'bids.submit',
         payer: workerAddress,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
@@ -455,6 +456,7 @@ export const bidsRouter = router({
 
       await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'bids.auctionAccept',
         payer: workerAddress,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,

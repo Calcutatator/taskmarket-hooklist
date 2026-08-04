@@ -12,6 +12,12 @@ CREATE TABLE IF NOT EXISTS "relayed_intents" (
 	"payer" text,
 	"payment_tx_hash" text,
 	"payment_amount" numeric(78, 0),
+	-- The client's own key for this logical operation (ADR-0052). Mandatory on every
+	-- relayed write, paid or free, and generated before the request is sent -- which is the
+	-- whole point: the intent id is minted here and reaches the caller only in the response,
+	-- so a caller whose connection dropped has no handle to retry or ask with. Stored
+	-- verbatim and matched by equality; nothing is parsed out of it.
+	"idempotency_key" text NOT NULL,
 	"payload" jsonb NOT NULL,
 	"server_wallet_transaction_id" text,
 	"tx_hash" text,
@@ -44,6 +50,13 @@ CREATE INDEX IF NOT EXISTS "idx_relayed_intents_server_wallet_tx" ON "relayed_in
 --> statement-breakpoint
 CREATE INDEX IF NOT EXISTS "idx_relayed_intents_payer" ON "relayed_intents" ("payer");
 --> statement-breakpoint
--- One intent per settled payment: a retried request reusing the same x402 payment must not
--- create a second intent and a second chain call for one payment.
+-- One settled payment funds at most one intent. This is a backstop, not the idempotency
+-- mechanism (ADR-0052): the mandatory idempotency key handles a well-behaved retry, and
+-- this catches a buggy client that generates a fresh key while reusing a settled payment.
 CREATE UNIQUE INDEX IF NOT EXISTS "idx_relayed_intents_payment_tx" ON "relayed_intents" ("payment_tx_hash");
+--> statement-breakpoint
+-- Globally unique rather than scoped to (payer, key): evaluations.finalizeVerdict is
+-- permissionless and carries no payer, and a NULL payer in a composite unique constraint
+-- stops guarding without saying so. A key that collides across payers is rejected rather
+-- than resolved to the other payer's intent -- see recordRelayedIntent.
+CREATE UNIQUE INDEX IF NOT EXISTS "idx_relayed_intents_idempotency_key" ON "relayed_intents" ("idempotency_key");

@@ -266,7 +266,9 @@ describe('evaluations router', () => {
           }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      // Not mockReturnValueOnce: the first UPDATE of a relayed write is now the intent's
+      // broadcast claim (ADR-0052), so hijacking "the first one" would starve the claim and
+      // hand this chain to it. The helper routes by table, which is what this wants anyway.
 
       await evaluationsRouter.createCaller(ctx).finalizeVerdict({ taskId: TASK_ID });
 
@@ -349,7 +351,9 @@ describe('evaluations router', () => {
           makeTask({ status: 'disputed', disputeResolver: REQUESTER, claimedBy: EVALUATOR }),
         ])
       );
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      // Not mockReturnValueOnce: the first UPDATE of a relayed write is now the intent's
+      // broadcast claim (ADR-0052), so hijacking "the first one" would starve the claim and
+      // hand this chain to it. The helper routes by table, which is what this wants anyway.
 
       const result = await evaluationsRouter.createCaller(ctx).resolveDispute({
         taskId: TASK_ID,
@@ -402,7 +406,9 @@ describe('evaluations router', () => {
       ctx.db.select.mockReturnValueOnce(
         makeChain([makeTask({ evaluatorDeadline: expiredDeadline })])
       );
-      ctx.db.update.mockReturnValueOnce(updateChain);
+      // Not mockReturnValueOnce: the first UPDATE of a relayed write is now the intent's
+      // broadcast claim (ADR-0052), so hijacking "the first one" would starve the claim and
+      // hand this chain to it. The helper routes by table, which is what this wants anyway.
 
       const result = await evaluationsRouter.createCaller(ctx).evaluatorTimeout({
         taskId: TASK_ID,

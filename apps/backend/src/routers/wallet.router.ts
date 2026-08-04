@@ -224,6 +224,7 @@ export const walletRouter = router({
       // between a retry and a support ticket.
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'wallet.withdraw',
         payer: input.from,
         payload: {
@@ -350,6 +351,7 @@ export const walletRouter = router({
       // failed or once the retry budget is spent (ADR-0050).
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
+        idempotencyKey: ctx.idempotencyKey,
         operation: 'wallet.withdrawDreams',
         payer: input.workerAddress,
         payload: {

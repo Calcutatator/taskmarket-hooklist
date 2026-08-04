@@ -1,4 +1,4 @@
-// Implements: ADR-0045, ADR-0048
+// Implements: ADR-0045, ADR-0048, ADR-0052
 import { TRPCError } from '@trpc/server';
 
 import type { db as DbType } from '../db/client';
@@ -8,6 +8,8 @@ import { registerRelayedIntentHandlers } from './intents/register';
 import { withRelayEnvelope } from './relay-envelope';
 import { completeRelayedIntent } from './relayed-intent-registry';
 import {
+  claimIntentForBroadcast,
+  getRelayedIntent,
   persistIntentBroadcast,
   recordRelayedIntent,
   relayEnvelopeForIntent,
@@ -18,6 +20,15 @@ type Db = typeof DbType;
 
 export type RelayedIntentRequestInput = {
   db: Db;
+  /**
+   * The caller's own key for this logical operation, from `ctx.idempotencyKey` (ADR-0052).
+   *
+   * Required in the type and validated at runtime, so a router cannot forget to plumb it and
+   * a caller cannot omit it. Deliberately not defaulted to anything: a key the backend
+   * invented would be a fresh value on every retry, which is the absence of idempotency
+   * dressed as its presence.
+   */
+  idempotencyKey: string | undefined;
   operation: RelayedIntentOperation;
   /**
    * Who the relay acted for. Recorded for provenance on every path, paid or not; it is the
@@ -96,6 +107,7 @@ export async function runRelayedIntent(
 
   const intent = await recordRelayedIntent({
     db: input.db,
+    idempotencyKey: input.idempotencyKey,
     operation: input.operation,
     payer: input.payer,
     paymentAmount: input.paymentAmount,
@@ -103,21 +115,39 @@ export async function runRelayedIntent(
     payload: input.payload,
   });
 
-  // The row that came back may not be new. `recordRelayedIntent` is keyed on the payment hash,
-  // so a retried request carrying an x402 payment that has already been settled once gets the
-  // *original* intent back -- which may already have a transaction on chain or be finished. The
-  // reuse is what makes the payment idempotent, and sending regardless would undo it: one
-  // payment, two chain calls (ADR-0045). So what the caller gets depends on where that intent
-  // already is, and only a genuinely fresh one is sent.
+  // The row that came back may not be new. `recordRelayedIntent` is keyed on the caller's
+  // idempotency key, so a retry of the same operation gets the *original* intent back --
+  // which may already have a transaction on chain or be finished. That reuse is the point,
+  // and sending regardless would undo it: one operation, two chain calls (ADR-0045).
   if (intent.status === 'completed' && intent.txHash) {
     return { intent, txHash: intent.txHash as `0x${string}` };
   }
-  if (intent.status !== 'recorded' || intent.txHash) {
-    // In flight, or terminally failed. Either way the payment has been spent on an attempt that
-    // exists, and the outcome belongs to the reconciler and to settlement, not to a second send.
+
+  // Reading the status is not enough, and this is the defect the claim closes. Two concurrent
+  // requests carrying the same key both resolve to one `recorded` intent, both find it
+  // unsent, and both call `send()`. A unique index stops a second *row*; nothing stops a
+  // second *transaction* against one row. So the right to send is taken the same way
+  // `claimIntentForCompletion` takes the right to complete: one conditional UPDATE, which
+  // exactly one caller's predicate matches.
+  //
+  // The loser is told the operation is in flight rather than made to wait for the winner's
+  // result. Waiting would mean holding a connection for an outcome that may take the whole
+  // receipt window to arrive, to deliver an answer the caller can already get -- they hold
+  // the intent id and the key, and ADR-0049's status surface answers on both. A duplicate
+  // submission's correct answer is "this is already happening, here is the handle", not a
+  // second copy of the work or a blocked socket.
+  const claimed = await claimIntentForBroadcast({
+    db: input.db,
+    expectedAttempts: intent.broadcastAttempts,
+    intentId: intent.id,
+  });
+  if (!claimed) {
+    const current = (await getRelayedIntent({ db: input.db, intentId: intent.id })) ?? intent;
     throw new TRPCError({
       code: 'CONFLICT',
-      message: `${input.operation} for this payment is already ${intent.status} and cannot be submitted again (intent ${intent.id}).`,
+      message:
+        `${input.operation} for this idempotency key is already ${current.status} and is not ` +
+        `submitted again (intent ${current.id}). Poll intents.get for its outcome.`,
     });
   }
 
@@ -126,12 +156,12 @@ export async function runRelayedIntent(
     // Bound so the first attempt uses the same envelope every later rebroadcast will use.
     // Without this the original send would carry one deadline and every retry another, and
     // the stored one would only ever apply to attempts this process did not make.
-    txHash = await withRelayEnvelope(relayEnvelopeForIntent(intent), () => input.send());
+    txHash = await withRelayEnvelope(relayEnvelopeForIntent(claimed), () => input.send());
   } catch (error) {
     // Live, not failed. Link it so the reconciler owns the outcome and let the caller see the
     // pending error as-is; the intent stays non-terminal until the chain says otherwise.
     if (error instanceof ServerTransactionPendingError) {
-      await persistIntentBroadcast({ db: input.db, intentId: intent.id, txHash: error.hash });
+      await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash: error.hash });
       throw error;
     }
 
@@ -146,19 +176,19 @@ export async function runRelayedIntent(
   // The send returned a hash, so the transaction is live. Recording it is what keeps the
   // rebroadcast sweep from reading this intent as one that never reached the chain and sending
   // it a second time, so it happens before anything else that could fail and it never throws.
-  await persistIntentBroadcast({ db: input.db, intentId: intent.id, txHash });
+  await persistIntentBroadcast({ db: input.db, intentId: claimed.id, txHash });
 
-  const completed = await completeRelayedIntent({ db: input.db, intent, txHash });
+  const completed = await completeRelayedIntent({ db: input.db, intent: claimed, txHash });
   if (!completed) {
     // The transaction is on chain and the work happened, so there is nothing to refund. The
     // intent stays claimable for the reconciler; the caller is told the chain part succeeded.
     throw new TRPCError({
       code: 'INTERNAL_SERVER_ERROR',
       message:
-        input.describeCompletionFailure?.(intent.id) ??
-        `${input.operation} was confirmed on chain but recording it did not complete; it will be retried automatically (intent ${intent.id}).`,
+        input.describeCompletionFailure?.(claimed.id) ??
+        `${input.operation} was confirmed on chain but recording it did not complete; it will be retried automatically (intent ${claimed.id}).`,
     });
   }
 
-  return { intent, txHash };
+  return { intent: claimed, txHash };
 }
