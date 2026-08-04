@@ -76,6 +76,13 @@ vi.mock('@/lib/use-read-auth-signature', () => ({
     readAuthSignatureSpy(address);
     return readAuthReadyState.value;
   },
+  // Every paid action's `useInFlightWrite` asks for one, so the whole module must be stubbed.
+  useReadAuthSignatureState: () => ({
+    error: null,
+    ready: false,
+    requestSignature: () => {},
+    status: 'idle',
+  }),
 }));
 
 vi.mock('sonner', () => ({

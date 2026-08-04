@@ -30,6 +30,7 @@ export function RefundExpiredButton({ disabled, onSuccess, task }: TaskActionCom
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="escrow recovery"

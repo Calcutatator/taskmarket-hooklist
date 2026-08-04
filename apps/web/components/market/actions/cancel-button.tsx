@@ -30,6 +30,7 @@ export function CancelButton({ disabled, onSuccess, task }: TaskActionComponentP
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="cancellation"

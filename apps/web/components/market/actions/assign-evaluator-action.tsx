@@ -12,6 +12,7 @@ import { Button } from '@/components/ui/button';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
+import type { FailedWriteOutcome } from '@/lib/api/intent-status';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
@@ -59,16 +60,19 @@ const ADDRESS_PATTERN = /^0x[a-fA-F0-9]{40}$/;
  */
 export function EvaluatorAppointmentInFlight({
   className,
+  failure,
   idempotencyKey,
   stalled,
 }: {
   className?: string;
+  failure?: FailedWriteOutcome | null;
   idempotencyKey: string;
   stalled?: boolean;
 }) {
   return (
     <TaskEvaluationSection className={className}>
       <InFlightWriteNotice
+        failure={failure}
         idempotencyKey={idempotencyKey}
         stalled={stalled}
         subject="appointment"
@@ -113,6 +117,7 @@ export function AssignEvaluatorAction({
     return (
       <EvaluatorAppointmentInFlight
         className={className}
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
       />

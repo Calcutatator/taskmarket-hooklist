@@ -37,6 +37,7 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="rating"
