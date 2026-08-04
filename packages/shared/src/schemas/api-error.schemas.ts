@@ -40,6 +40,15 @@ export const API_ERROR_REASONS = [
    */
   'idempotency_key_conflict',
   /**
+   * The key names the *same* operation by the *same* caller, but with different arguments. One
+   * level finer than `idempotency_key_conflict`, and a distinct reason because the caller's
+   * mistake is distinct: they reused a key while changing what they were asking for, so the
+   * write they just described never happened and the one the key already names is not it
+   * (ADR-0061). Re-send the original arguments to retry the original write, or generate a fresh
+   * key for the new one.
+   */
+  'idempotency_key_payload_mismatch',
+  /**
    * The settled payment behind this request has already funded another intent. A retry that
    * failed to reuse its key, or a replayed payment. The money is spent and this write did not
    * happen; the caller reads the intent that did consume it from `intents.get`.

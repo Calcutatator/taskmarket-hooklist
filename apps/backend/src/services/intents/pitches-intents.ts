@@ -123,6 +123,20 @@ export async function completePitchesSelect(context: {
 }): Promise<void> {
   const { db, payload } = context;
 
+  // The two proposal writes below are deliberately NOT guarded the way the task update is,
+  // and the asymmetry is the point rather than an oversight.
+  //
+  // Nothing else ever writes a proposal's status: the indexer's PitchSubmitted handler only
+  // patches `pitchHash`/`submitTxHash`, so this function is the sole path from 'pending' to
+  // 'selected'/'rejected'. The natural predicate for a guard here would be the task's own
+  // status, and that is exactly what makes it wrong: a legitimate first completion racing an
+  // indexer that has already moved the task past 'worker_selected' (the worker submitted
+  // straight away, TaskSubmitted landed first) would be skipped, and the pitches would sit at
+  // 'pending' for ever with no later pass to fix them.
+  //
+  // Re-stamping on a stale retry costs nothing in return. Both values are fixed, and the pitch
+  // set is frozen once selection happens -- `submitPitch` requires the task to be Open on
+  // chain -- so a late rerun assigns each row the value it already holds.
   await db.update(proposals).set({ status: 'selected' }).where(eq(proposals.id, payload.pitchId));
 
   await db

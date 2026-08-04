@@ -231,12 +231,69 @@ export async function findIntentByIdempotencyKey(
  * reason in reverse: reusing a key across two different operations means the caller has lost
  * track of which write they are retrying, and answering with the wrong one is worse than
  * refusing.
+ *
+ * The arguments are not checked here -- see `payloadsMatch` for why that is a separate,
+ * separately-reported question rather than one more clause in this predicate.
  */
 function intentBelongsToCaller(intent: RelayedIntent, input: RecordIntentInput): boolean {
   if (intent.operation !== input.operation) return false;
   const stored = intent.payer?.toLowerCase() ?? null;
   const asking = (input.payment?.payer ?? input.payer)?.toLowerCase() ?? null;
   return stored === asking;
+}
+
+/**
+ * A payload reduced to one string that two payloads can be compared on (ADR-0061).
+ *
+ * The comparison this feeds decides whether a repeated key is a retry or a different write,
+ * so a false *inequality* here is the expensive direction: it would refuse a legitimate retry
+ * and break the recovery path `TASKMARKET_IDEMPOTENCY_KEY` exists to provide. Everything below
+ * is chosen to make the incoming payload compare equal to its own stored form.
+ *
+ * The stored side has already been through `jsonb`, so the rule is simply to put both sides
+ * through the same trip the storage takes:
+ *
+ * - **Key order is erased**, by sorting recursively. `jsonb` does not preserve insertion order,
+ *   so two spellings of the same object must not be told apart by it.
+ * - **A key present with `undefined` is the same as an absent key.** `JSON.stringify` drops
+ *   such entries, so `jsonb` cannot hold the distinction -- keeping it would mean an
+ *   `{ a: 1, b: undefined }` payload could never equal its own stored `{ a: 1 }`. In an array
+ *   the same value becomes `null`, again matching what the storage does with it.
+ * - **A `bigint` becomes its decimal string.** `JSON.stringify` throws on one, so no intent was
+ *   ever stored holding one; normalising rather than throwing keeps a caller that passes a
+ *   `bigint` where a numeric string is stored comparing equal instead of erroring at compare
+ *   time.
+ * - `Date` and anything else carrying `toJSON` is serialised the way the storage would.
+ *
+ * Number precision is the one thing not fully round-trip-safe: `jsonb` keeps an integer wider
+ * than 2^53 exactly and `JSON.parse` does not. That is why `bigint` becomes a string rather
+ * than a number -- the only realistic way such a value reaches a payload.
+ */
+export function canonicalizeIntentPayload(value: unknown): string {
+  // The literal round trip first, so the incoming side is reduced to exactly the value shape
+  // the stored side comes back as, and only then sorted.
+  const serialised = JSON.stringify(value, (_key, entry: unknown) =>
+    typeof entry === 'bigint' ? entry.toString() : entry
+  );
+  // `undefined` at the top level does not serialise at all. Payloads are always objects, so
+  // this is a guard rather than a case, but it must not throw in `JSON.parse`.
+  return stableStringify(serialised === undefined ? null : JSON.parse(serialised));
+}
+
+function stableStringify(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableStringify).join(',')}]`;
+  if (value !== null && typeof value === 'object') {
+    const entries = Object.entries(value as Record<string, unknown>).sort(([a], [b]) =>
+      a < b ? -1 : a > b ? 1 : 0
+    );
+    return `{${entries.map(([key, entry]) => `${JSON.stringify(key)}:${stableStringify(entry)}`).join(',')}}`;
+  }
+  return JSON.stringify(value) ?? 'null';
+}
+
+/** Whether a repeated key is naming the same write, arguments included (ADR-0061). */
+function payloadsMatch(intent: RelayedIntent, input: RecordIntentInput): boolean {
+  return canonicalizeIntentPayload(intent.payload) === canonicalizeIntentPayload(input.payload);
 }
 
 /**
@@ -286,9 +343,25 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   // caller made, so it is worth asking rather than answering with one generic conflict.
   const existing = await findIntentByIdempotencyKey(input.db, idempotencyKey);
   if (existing) {
-    // A repeat of the same operation by the same caller: hand back what they already
-    // started. That is the whole mechanism.
-    if (intentBelongsToCaller(existing, input)) return existing;
+    if (intentBelongsToCaller(existing, input)) {
+      // A repeat of the same operation by the same caller with the same arguments: hand back
+      // what they already started. That is the whole mechanism.
+      if (payloadsMatch(existing, input)) return existing;
+      // Same operation, same caller, different arguments -- reachable without a broken client.
+      // `TASKMARKET_IDEMPOTENCY_KEY` is the documented recovery path, so an operator takes a
+      // key off a failed envelope and re-runs; re-running with a corrected reward or a
+      // different task used to hand back the first write and report it as this one's success.
+      // The write they just described would never have happened and nothing would have said
+      // so, which is worse than any error (ADR-0061).
+      throw apiError({
+        reason: 'idempotency_key_payload_mismatch',
+        operation: input.operation,
+        idempotencyKey,
+        intentId: existing.id,
+        intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
+        message: `The ${IDEMPOTENCY_KEY_HEADER} you sent already names a ${existing.operation} write with different arguments (intent ${existing.id}); the arguments you just sent were not applied. To retry that write, re-send the arguments it was created with. To make a different write, generate a fresh key.`,
+      });
+    }
     throw apiError({
       reason: 'idempotency_key_conflict',
       operation: input.operation,

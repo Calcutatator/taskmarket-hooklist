@@ -273,3 +273,8 @@ adrs:
     title: "A relayed payload is sufficient, and a broadcaster is pure"
     status: Accepted
     date: "2026-08-04"
+  - number: "0061"
+    file: "0061-a-reused-idempotency-key-with-different-arguments-is-refused.md"
+    title: A reused idempotency key with different arguments is refused
+    status: Proposed
+    date: "2026-08-04"
