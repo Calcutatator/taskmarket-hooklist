@@ -257,7 +257,15 @@ Three practical consequences for CLI code and for anything scripting the CLI:
 - **Poll where there is something to poll.** If the command had a task ID, re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
 - **Accept that some commands have no handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. For those there is no way to check today; wait, inspect the wallet, and do not re-run the command.
 
-The same rules apply to an ambiguous client-side failure -- a dropped connection or a timeout. Re-fetch state and confirm the write did not land before doing anything that would pay again.
+The same rules apply to an ambiguous client-side failure -- a dropped connection or a timeout. Re-fetch
+state first, but be precise about what a read can tell you: **seeing the effect proves the write landed;
+not seeing it proves nothing at all.** A missing task row, a missing submission, or an unchanged wallet
+balance is equally consistent with a transaction that is still pending and will be completed by the
+reconciler minutes later. Absence is not a failure signal, and this is the same rule the backend imposes
+on itself (ADR-0045).
+
+So an explicit failure signal -- a reverted receipt for that transaction, or a replacement confirmed at
+the same nonce -- is what justifies another paid action. Without one, do not retry; surface it to a human.
 
 ## Environment variables
 
