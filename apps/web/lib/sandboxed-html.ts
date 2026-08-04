@@ -4,6 +4,7 @@ type HtmlArtifactIdentity = Pick<ArtifactResponse, 'fileName' | 'mimeType'>;
 type SizedHtmlArtifact = HtmlArtifactIdentity & Pick<ArtifactResponse, 'sizeBytes'>;
 
 export const MAX_INTERACTIVE_HTML_BYTES = 5 * 1024 * 1024;
+export const INTERACTIVE_HTML_ESCAPE_MESSAGE = 'taskmarket:interactive-html-escape';
 
 const INTERACTIVE_HTML_CSP = [
   "default-src 'none'",
@@ -37,5 +38,16 @@ export function buildSandboxedHtmlDocument(rawHtml: string): string {
   policy.setAttribute('http-equiv', 'Content-Security-Policy');
   policy.setAttribute('content', INTERACTIVE_HTML_CSP);
   parsed.head.prepend(policy);
+
+  // Keyboard events do not cross an iframe boundary. Relay only Escape so the
+  // parent viewer can restore its bounded surface even after the user has focused
+  // an interactive control inside the sandbox. The parent validates the sending
+  // Window and deliberately limits this spoofable, data-free signal to a reversible
+  // layout change; it can never close the viewer or expand iframe permissions.
+  const escapeBridge = parsed.createElement('script');
+  escapeBridge.dataset.taskmarketBridge = 'escape';
+  escapeBridge.textContent = `window.addEventListener('keydown',function(event){if(event.key==='Escape'){window.parent.postMessage('${INTERACTIVE_HTML_ESCAPE_MESSAGE}','*');}},true);`;
+  parsed.body.append(escapeBridge);
+
   return `<!doctype html>\n${parsed.documentElement.outerHTML}`;
 }

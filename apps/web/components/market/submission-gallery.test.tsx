@@ -10,7 +10,7 @@ import {
   submissionMediaEntries,
   type SubmissionMediaEntry,
 } from './submission-gallery';
-import { MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
+import { INTERACTIVE_HTML_ESCAPE_MESSAGE, MAX_INTERACTIVE_HTML_BYTES } from '@/lib/sandboxed-html';
 
 // vaul drives its bottom-sheet drag gesture off Pointer Events + CSS transform APIs
 // that jsdom does not implement, so mounting a real vaul Drawer throws. Mirrors the
@@ -661,6 +661,98 @@ describe('SubmissionGalleryDialog', () => {
     expect(within(dialog).getByText('Rejected submission history')).toBeVisible();
   });
 
+  it('expands the desktop gallery to the app viewport and restores its bounded layout', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+
+    render(directGallery({ entries: [galleryEntry(imageA, firstSubmission)] }));
+
+    const dialog = await screen.findByRole('dialog');
+    const frame = within(dialog).getByTestId('gallery-frame');
+    expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+    expect(dialog).toHaveClass('max-h-[92vh]', 'max-w-6xl', 'overflow-auto');
+    expect(frame).toHaveClass('h-[62vh]');
+
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+
+    expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+    expect(dialog).toHaveClass(
+      '!left-0',
+      '!top-0',
+      'h-app-viewport',
+      '!w-screen',
+      '!max-h-none',
+      '!max-w-none',
+      'grid-rows-[auto_minmax(0,1fr)_auto]',
+      'overflow-hidden',
+      'rounded-none',
+      'border-0'
+    );
+    expect(frame).toHaveClass('h-full');
+    expect(frame).not.toHaveClass('h-[62vh]');
+    expect(within(dialog).getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+
+    await user.click(within(dialog).getByRole('button', { name: 'Exit full screen' }));
+
+    expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+    expect(frame).toHaveClass('h-[62vh]');
+    expect(frame).not.toHaveClass('h-full');
+    expect(within(dialog).getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+  });
+
+  it('uses Escape to restore the bounded gallery before allowing the dialog to close', async () => {
+    setupMatchMedia(1280);
+    const onOpenChange = vi.fn();
+    const user = userEvent.setup();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+
+    render(
+      directGallery({
+        entries: [galleryEntry(imageA, firstSubmission)],
+        onOpenChange,
+      })
+    );
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+
+    await user.keyboard('{Escape}');
+
+    expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+    expect(onOpenChange).not.toHaveBeenCalled();
+
+    await user.keyboard('{Escape}');
+
+    expect(onOpenChange).toHaveBeenCalledOnce();
+    expect(onOpenChange).toHaveBeenCalledWith(false);
+  });
+
+  it('resets full-viewport state when a controlled gallery closes', async () => {
+    setupMatchMedia(1280);
+    const user = userEvent.setup();
+    const firstSubmission = submission('sub-1', '0x3333333333333333333333333333333333333333', [
+      imageA,
+    ]);
+    const entry = galleryEntry(imageA, firstSubmission);
+    const { rerender } = render(directGallery({ entries: [entry] }));
+
+    const dialog = await screen.findByRole('dialog');
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+    expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+
+    rerender(directGallery({ entries: [entry], open: false }));
+    expect(screen.queryByRole('dialog')).not.toBeInTheDocument();
+
+    rerender(directGallery({ entries: [entry] }));
+    expect(await screen.findByRole('dialog')).toHaveAttribute('data-full-viewport', 'false');
+    expect(screen.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+  });
+
   it('names chevron navigation for artifacts', async () => {
     setupMatchMedia(1280);
     const user = userEvent.setup();
@@ -998,6 +1090,9 @@ describe('SubmissionGalleryDialog', () => {
 
     const dialog = await screen.findByRole('dialog');
     const frame = await within(dialog).findByTitle('Interactive preview of game.html');
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+
+    expect(dialog).toHaveAttribute('data-full-viewport', 'true');
     expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
     expect(frame).toHaveAttribute('allow', '');
     expect(frame).toHaveAttribute('referrerpolicy', 'no-referrer');
@@ -1008,6 +1103,55 @@ describe('SubmissionGalleryDialog', () => {
       within(dialog).getByText(/untrusted interactive html.*do not enter passwords/i)
     ).toBeInTheDocument();
     expect(dialog.querySelector('video')).not.toBeInTheDocument();
+
+    fetchMock.mockRestore();
+  });
+
+  it('accepts the fullscreen Escape bridge only from the current HTML slide', async () => {
+    const fetchMock = vi.spyOn(globalThis, 'fetch').mockResolvedValue({
+      ok: true,
+      text: async () => '<html><body><button>Interactive control</button></body></html>',
+    } as Response);
+    const neighborHtml = artifact({
+      ...gameHtml,
+      fileName: 'neighbor.html',
+      id: 'artifact-html-neighbor',
+      previewUrl: 'https://files.example.com/neighbor.html',
+      submissionId: 'sub-html-neighbor',
+    });
+    const user = userEvent.setup();
+
+    renderPanel([
+      submission('sub-html', '0x7777777777777777777777777777777777777777', [gameHtml]),
+      submission('sub-html-neighbor', '0x8888888888888888888888888888888888888888', [neighborHtml]),
+    ]);
+
+    await user.click(screen.getByRole('button', { name: /gallery/i }));
+    const dialog = await screen.findByRole('dialog');
+    await within(dialog).findAllByTitle(/Interactive preview of/i);
+    await user.click(within(dialog).getByRole('button', { name: 'Enter full screen' }));
+
+    const currentFrame = dialog.querySelector(
+      '[data-gallery-current="true"] iframe'
+    ) as HTMLIFrameElement;
+    const neighborFrame = dialog.querySelector('[aria-hidden="true"] iframe') as HTMLIFrameElement;
+    fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: INTERACTIVE_HTML_ESCAPE_MESSAGE,
+        source: neighborFrame.contentWindow,
+      })
+    );
+    expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+
+    fireEvent(
+      window,
+      new MessageEvent('message', {
+        data: INTERACTIVE_HTML_ESCAPE_MESSAGE,
+        source: currentFrame.contentWindow,
+      })
+    );
+    expect(dialog).toHaveAttribute('data-full-viewport', 'false');
 
     fetchMock.mockRestore();
   });
@@ -1328,6 +1472,8 @@ describe('SubmissionGalleryDialog mobile surface', () => {
     expect(await screen.findByRole('dialog')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="drawer-content"]')).toBeInTheDocument();
     expect(document.querySelector('[data-slot="dialog-content"]')).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Enter full screen' })).not.toBeInTheDocument();
+    expect(screen.queryByRole('button', { name: 'Exit full screen' })).not.toBeInTheDocument();
   });
 
   it('shows the actionable video fallback after bounded recovery is exhausted', async () => {
