@@ -1,10 +1,18 @@
 // Implements: ADR-0040
 import type { Hex } from 'viem';
-import type { ServerTransactionStore } from './server-transaction-store';
+import type { GasFees, ServerTransactionStore } from './server-transaction-store';
 
 export type ServerTransactionRequest<Receipt> = {
   /** Human-readable operation label recorded on the outbox row for operators. */
   context?: string;
+  /**
+   * The gas this transaction is being broadcast with, recorded on the outbox row.
+   *
+   * Optional only because a caller that omits it still gets a correct transaction -- but the
+   * reconciler then has no original fee to cap escalation against and falls back to the oracle,
+   * so production callers should pass it (ADR-0051).
+   */
+  fees?: GasFees;
   simulate: () => Promise<unknown>;
   send: (nonce: number) => Promise<Hex>;
   confirm: (hash: Hex) => Promise<Receipt>;
@@ -101,7 +109,9 @@ export function createServerTransactionDispatcher(options: ServerTransactionDisp
       throw error;
     }
 
-    await store.setStatus(id, 'broadcast', { hash });
+    // The fee is recorded with the hash: it is the original this nonce's replacements escalate
+    // from and the base of the cap they clamp to (ADR-0051).
+    await store.setStatus(id, 'broadcast', { fees: request.fees, hash });
 
     let receipt: Receipt;
     try {

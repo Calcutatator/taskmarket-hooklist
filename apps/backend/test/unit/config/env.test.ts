@@ -266,3 +266,41 @@ describe('getServerConfig task award backfill env parsing', () => {
     expect(exit).toHaveBeenCalledWith(1);
   });
 });
+
+// Verifies: ADR-0051
+describe('getServerConfig replacement gas policy', () => {
+  const originalEnv = { ...process.env };
+
+  beforeEach(() => {
+    process.env = { ...originalEnv, ...REQUIRED_ENV };
+  });
+
+  afterEach(() => {
+    process.env = { ...originalEnv };
+    vi.restoreAllMocks();
+  });
+
+  it('defaults to the Base-tuned curve, with the opening bid preserving the previous 2x', () => {
+    const config = getServerConfig();
+
+    expect(config.REPLACEMENT_GAS_FIRST_BUMP_PCT).toBe(200);
+    expect(config.REPLACEMENT_GAS_ESCALATION_PCT).toBe(150);
+    expect(config.REPLACEMENT_GAS_MAX_MULTIPLE).toBe(10);
+    expect(config.REPLACEMENT_GAS_MAX_FEE_WEI).toBeUndefined();
+  });
+
+  it('refuses an escalation percentage the network would reject as no bump at all', () => {
+    // Providers enforce a minimum bump of around 10%, so anything near it is the status quo's
+    // bug expressed as a configuration value. The schema refuses it rather than trusting the
+    // operator to know.
+    process.env.REPLACEMENT_GAS_ESCALATION_PCT = '105';
+
+    expect(() => getServerConfig()).toThrow();
+  });
+
+  it('refuses a cap that leaves no room above the original fee', () => {
+    process.env.REPLACEMENT_GAS_MAX_MULTIPLE = '1';
+
+    expect(() => getServerConfig()).toThrow();
+  });
+});

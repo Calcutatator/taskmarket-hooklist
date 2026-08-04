@@ -302,6 +302,13 @@
       "when": 1785733306000,
       "tag": "0042_add_relayed_intents",
       "breakpoints": true
+    },
+    {
+      "idx": 43,
+      "version": "7",
+      "when": 1785804896000,
+      "tag": "0043_add_server_wallet_transaction_gas",
+      "breakpoints": true
     }
   ]
 }

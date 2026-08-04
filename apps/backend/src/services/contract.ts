@@ -493,6 +493,8 @@ async function relayThroughForwarderResult(
         ] as const,
       };
       const { receipt } = await dispatchServerWalletTransaction({
+        // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+        fees: gas,
         simulate: () => publicClient.simulateContract({ ...approveArgs, account: account.address }),
         send: (nonce) => client.writeContract({ ...approveArgs, ...gas, nonce }),
         confirm: (hash) =>
@@ -533,6 +535,8 @@ async function relayThroughForwarderResult(
     let receipt: Awaited<ReturnType<typeof publicClient.waitForTransactionReceipt>>;
     try {
       const result = await dispatchServerWalletTransaction({
+        // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+        fees: gas,
         simulate: () =>
           runWithRpcApplicationAttempt(attempt + 1, () =>
             publicClient.simulateContract({ ...callArgs, account: account.address })
@@ -1053,6 +1057,8 @@ export async function contractTransferWithAuthorization(
     args: [from, to, value, validAfter, validBefore, nonce, v, r, s] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (transactionNonce) =>
       client.writeContract({ ...callArgs, ...gas, nonce: transactionNonce }),
@@ -1090,6 +1096,8 @@ export async function contractRefundOrphanedPayment(
     args: [payer, amount] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
@@ -1210,6 +1218,8 @@ export async function contractRegisterIdentityTx(): Promise<`0x${string}`> {
     args: [] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
@@ -1310,6 +1320,8 @@ export async function contractWithdrawDreamsRewards(
     args: [worker, destination] as const,
   };
   const { hash, receipt } = await dispatchServerWalletTransaction({
+    // Recorded on the outbox row so a replacement escalates from this fee (ADR-0051).
+    fees: gas,
     simulate: () => publicClient.simulateContract({ ...callArgs, account: account.address }),
     send: (nonce) => client.writeContract({ ...callArgs, ...gas, nonce }),
     confirm: (transactionHash) =>
