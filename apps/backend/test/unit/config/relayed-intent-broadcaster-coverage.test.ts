@@ -1,4 +1,5 @@
 // Verifies: ADR-0050
+// Verifies: ADR-0054
 import { readFileSync } from 'node:fs';
 import { join } from 'node:path';
 import ts from 'typescript';
@@ -46,36 +47,35 @@ const { getRelayedIntentBroadcaster } = await import(
 registerRelayedIntentHandlers();
 
 /**
- * Operations that deliberately have no broadcaster, each with the reason it cannot have one.
+ * Every relayed operation must be reconstructible from its persisted payload alone.
  *
- * This list is the point of the test. An operation without a broadcaster spends its retry
- * budget immediately and falls to the refund path, which is worse for the payer than doing the
- * work -- so the absence has to be a decision somebody made and wrote down, not a gap somebody
- * left. Adding an entry here should feel like it needs an argument, because it does; the
- * argument itself lives next to the registration in `services/intents/register.ts`.
+ * ADR-0050 retries an intent that provably never reached the chain rather than refunding it,
+ * and that is only possible for an operation with a broadcaster -- a way to turn the jsonb
+ * payload back into the same transaction, in a process that never served the original request.
+ * Without one, `dispatchRelayedIntent` spends the intent's retry budget outright and drops it to
+ * the refund path: the payer gets their money back instead of the thing they paid for, which is
+ * the exact asymmetry ADR-0050 exists to remove.
  *
- * This list was written when every entry was excluded because a *second landing* would move
- * money the chain would not stop. ADR-0054 has since closed both remaining hazards on chain,
- * so what is left here is unfinished wiring rather than a standing prohibition -- and the
- * entries say so. Keep that distinction explicit: an exclusion that stops recording *why* is
- * how a temporary gap becomes permanent.
+ * So this is a flat requirement with no exemption available. An operation added to the
+ * `RelayedIntentOperation` union without a broadcaster fails the build, and there is nowhere to
+ * record an excuse -- deliberately, because a list of excuses is where a temporary gap becomes
+ * permanent. There used to be one, holding `tasks.update` and `tasks.refundExpired`; both were
+ * on it because a second landing would have moved money the chain would not stop, and ADR-0054
+ * closed both hazards on chain (`NoRewardChange`, `TaskAlreadyRefunded`) rather than by
+ * argument.
+ *
+ * That is the precedent to follow. If a future operation genuinely cannot be replayed safely,
+ * the answer is to fix whatever makes it unsafe -- usually a missing guard on chain, sometimes a
+ * payload carrying something state-derived it should not -- not to reintroduce a list.
  */
-const NO_BROADCASTER: Record<string, string> = {
-  'tasks.update':
-    'Not yet wired, rather than unsafe. ADR-0054 made CoreFacet.updateTask revert NoRewardChange instead of silently applying a no-op reward change, so the forwarder-side delta transfer a replay would trigger is now unwound by the revert rather than kept. Giving this a broadcaster is unblocked follow-up work that has not been done.',
-  'tasks.refundExpired':
-    'Not yet wired, rather than unsafe. ADR-0054 made CoreFacet.refundExpired reject an already-Expired task and zero the liability it settles, so a second landing now reverts TaskAlreadyRefunded instead of draining pooled escrow. Giving this a broadcaster is unblocked follow-up work that has not been done.',
-};
-
 const EXPLANATION = [
-  'Every relayed operation must either register a broadcaster or appear in this test\'s',
-  'NO_BROADCASTER list with the reason it cannot have one. Without a broadcaster,',
-  'dispatchRelayedIntent cannot turn the persisted payload back into a transaction, so it spends',
-  'the intent\'s retry budget outright and drops it to the refund path -- the payer gets their',
-  'money back instead of the thing they paid for, which is the exact asymmetry ADR-0050 exists',
-  'to remove. If the new operation can safely be replayed, register a broadcast alongside its',
-  'complete. If it cannot, add it here and state why next to its registration. See',
-  'docs/adr/0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md.',
+  'Every relayed operation must register a broadcaster. Without one, dispatchRelayedIntent',
+  "cannot turn the persisted payload back into a transaction, so it spends the intent's retry",
+  'budget outright and drops it to the refund path -- the payer gets their money back instead of',
+  'the thing they paid for, which is the exact asymmetry ADR-0050 exists to remove. There is no',
+  'exemption list. If this operation cannot be safely replayed, fix what makes it unsafe (as',
+  'ADR-0054 did for tasks.update and tasks.refundExpired) rather than shipping it unreplayable.',
+  'See docs/adr/0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md.',
 ].join(' ');
 
 /**
@@ -107,49 +107,32 @@ describe('broadcaster coverage across every relayed operation', () => {
   const operations = declaredOperations(readFileSync(OPERATIONS_PATH, 'utf8'), OPERATIONS_PATH);
 
   it('finds the operation union it is meant to be checking', () => {
-    // Guards the guard. A parse that silently returned nothing would make every assertion
-    // below vacuously true, which is the failure mode a structural test most needs to avoid.
+    // Guards the guard, and matters more now that the requirement below has no exemption path to
+    // fail on: a parse that silently returned nothing would make the whole test vacuously true,
+    // which is the failure mode a structural test most needs to avoid.
     expect(operations.length).toBeGreaterThan(20);
     expect(operations).toContain('tasks.create');
   });
 
-  it('gives every operation either a broadcaster or a written reason for having none', () => {
-    const missing = operations
-      .filter((operation) => !getRelayedIntentBroadcaster(operation))
-      .filter((operation) => !(operation in NO_BROADCASTER))
-      .sort();
+  it('registers a broadcaster for every operation', () => {
+    const missing = operations.filter((operation) => !getRelayedIntentBroadcaster(operation)).sort();
 
     expect(missing, EXPLANATION).toEqual([]);
   });
 
-  it('keeps the exclusion list free of operations that do have a broadcaster', () => {
-    // The other direction, and the one that rots quietly: an exclusion left behind after the
-    // operation gained a broadcaster reads as a live decision that no longer holds.
-    const stale = Object.keys(NO_BROADCASTER)
-      .filter((operation) => Boolean(getRelayedIntentBroadcaster(operation)))
-      .sort();
-
-    expect(stale).toEqual([]);
-  });
-
-  it('keeps the exclusion list free of operations that no longer exist', () => {
-    const unknown = Object.keys(NO_BROADCASTER)
-      .filter((operation) => !operations.includes(operation))
-      .sort();
-
-    expect(unknown).toEqual([]);
-  });
-
-  it('requires each exclusion to carry a real reason, not a placeholder', () => {
-    for (const [operation, reason] of Object.entries(NO_BROADCASTER)) {
-      expect(reason.length, `${operation} needs a reason worth reading`).toBeGreaterThan(80);
-    }
+  it('covers the two operations ADR-0054 unblocked', () => {
+    // Named rather than left to the sweep above, because these are the ones that were excluded
+    // on a money argument. If either loses its broadcaster, the reason should be re-argued
+    // against ADR-0054, not absorbed silently into a general count.
+    expect(getRelayedIntentBroadcaster('tasks.update')).toBeTypeOf('function');
+    expect(getRelayedIntentBroadcaster('tasks.refundExpired')).toBeTypeOf('function');
   });
 
   it('reads string literals out of the union and nothing else', () => {
-    expect(
-      declaredOperations(`export type RelayedIntentOperation = 'a.b' | 'c.d';`)
-    ).toEqual(['a.b', 'c.d']);
+    expect(declaredOperations(`export type RelayedIntentOperation = 'a.b' | 'c.d';`)).toEqual([
+      'a.b',
+      'c.d',
+    ]);
     // A different union must not be mistaken for this one.
     expect(declaredOperations(`export type RelayedIntentStatus = 'recorded' | 'failed';`)).toEqual(
       []

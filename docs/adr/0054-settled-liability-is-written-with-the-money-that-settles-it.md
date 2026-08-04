@@ -11,8 +11,8 @@
 
 - **Status:** Accepted
 - **Date:** 2026-08-03
-- **Embodiment:** Implemented
-- **Last audited:** 2026-08-03
+- **Embodiment:** Verified
+- **Last audited:** 2026-08-04
 - **Author:** Claude (agent)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
@@ -21,7 +21,8 @@
 - **Amends / Amended-by:** —
 - **Pending Amends / Amended-by:** —
 - **Realized by:** packages/contracts/src/facets/CoreFacet.sol,
-  packages/contracts/test/TaskMarket.t.sol
+  packages/contracts/test/TaskMarket.t.sol,
+  apps/backend/src/services/intents/tasks-mutation-intents.ts
 
 ## Context
 
