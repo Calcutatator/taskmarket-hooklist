@@ -1,6 +1,6 @@
 'use client';
 
-import { formatDreams } from '@taskmarket/shared';
+import { formatDreams, IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 import { CircleCheckIcon } from 'lucide-react';
 import { useCallback, useRef, useState } from 'react';
 import { toast } from 'sonner';
@@ -8,6 +8,7 @@ import { useAccount, useSignMessage, useSignTypedData, useSwitchChain } from 'wa
 import { keccak256 } from 'viem';
 
 import { DreamsRewardDisclosure } from '@/components/market/dreams-reward-disclosure';
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { Label } from '@/components/ui/label';
 import {
@@ -20,6 +21,8 @@ import {
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { formatUsdcUnits } from '@/lib/format';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
+import { isPendingTransactionMessage } from '@/lib/relayed-write-outcome';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -140,6 +143,7 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
   const [error, setError] = useState<string | null>(null);
   const [done, setDone] = useState(false);
   const [dragging, setDragging] = useState(false);
+  const inFlight = useInFlightWrite('Submission submitted, confirming');
 
   const addFiles = useCallback((files: FileList | File[]) => {
     setError(null);
@@ -168,6 +172,20 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
       return [...current, ...accepted];
     });
   }, []);
+
+  // Checked before every other branch, including the disconnected one: the files are uploaded
+  // and the write is already out there, so this state must survive anything that would
+  // otherwise swap the surface back to a staging form.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="submission"
+        title="Submission submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to submit artifacts." />;
@@ -257,7 +275,11 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
       // challenged with a 402, not before.
       const res = await fetch(`${apiUrl}/api/tasks/${task.id}/submissions/from-keys`, {
         method: 'POST',
-        headers: { 'Content-Type': 'application/json', ...(await getLegalRequestHeaders()) },
+        headers: {
+          'Content-Type': 'application/json',
+          ...(await getLegalRequestHeaders()),
+          [IDEMPOTENCY_KEY_HEADER]: inFlight.idempotencyKey,
+        },
         body: JSON.stringify({
           taskId: task.id,
           workerAddress: address,
@@ -270,18 +292,38 @@ export function SubmitArtifactsForm({ disabled, onSuccess, task }: TaskActionCom
         const paid = await payX402Post(
           `/api/tasks/${task.id}/submissions/from-keys`,
           { taskId: task.id, workerAddress: address, artifacts: artifactInputs, signature },
-          { address: address!, apiUrl, signTypedDataAsync, switchChainAsync }
+          { address: address!, apiUrl, signTypedDataAsync, switchChainAsync },
+          undefined,
+          inFlight.idempotencyKey
         );
         if (!paid.ok) {
           if (paid.rejected) {
             setPending(false);
             return;
           }
+          // Caught before the throw below: everything thrown here lands in the catch, which
+          // sets an error and leaves the submit button live. An in-flight write must never
+          // reach it -- past the free allowance this submission is paid, so pressing submit
+          // again is a second payment.
+          if (inFlight.capture(paid)) return;
           throw new Error(paid.error);
         }
       } else if (!res.ok) {
         const body = (await res.json().catch(() => ({}))) as { error?: string };
-        throw new Error(body.error ?? `Submission failed (${res.status})`);
+        const message = body.error ?? `Submission failed (${res.status})`;
+        // The unpaid path relays too, so it has the same in-flight outcome, read through the
+        // same shared predicate rather than a second copy of the guess.
+        if (
+          inFlight.capture({
+            ok: false,
+            pending: isPendingTransactionMessage(message),
+            idempotencyKey: inFlight.idempotencyKey,
+            error: message,
+          })
+        ) {
+          return;
+        }
+        throw new Error(message);
       }
 
       setDone(true);

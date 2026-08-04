@@ -16,8 +16,10 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -36,6 +38,20 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
   const [error, setError] = useState<string | null>(null);
   const [fieldErrors, setFieldErrors] = useState<Record<string, string>>({});
   const [txHash, setTxHash] = useState<string | null>(null);
+  const inFlight = useInFlightWrite('Proof submitted, confirming');
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so this state must survive anything that would otherwise swap the surface.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="proof"
+        title="Proof submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect a worker wallet to submit benchmark proof." />;
@@ -72,7 +88,8 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
       `/api/tasks/${task.id}/proofs`,
       body,
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep
+      setStep,
+      inFlight.idempotencyKey
     );
     if (result.ok) {
       setStep('done');
@@ -87,6 +104,9 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
       );
     } else {
       setStep('idle');
+      // Neither success nor failure, so it must not reach the error path below: that path
+      // leaves the submit button live, and pressing it again is a second payment.
+      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

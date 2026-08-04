@@ -5,9 +5,11 @@ import { useState } from 'react';
 import { toast } from 'sonner';
 import { useAccount, useSignTypedData, useSwitchChain } from 'wagmi';
 
+import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { Button } from '@/components/ui/button';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { explorerTxUrl } from '@/lib/explorer';
+import { useInFlightWrite } from '@/lib/use-in-flight-write';
 import { payX402Post, type X402Step } from '@/lib/x402-client';
 
 import { ConfirmDialog } from './confirm-dialog';
@@ -21,6 +23,20 @@ export function RefundExpiredButton({ disabled, onSuccess, task }: TaskActionCom
   const [step, setStep] = useState<X402Step | 'done' | 'idle'>('idle');
   const [error, setError] = useState<string | null>(null);
   const [txHash, setTxHash] = useState<string | null>(null);
+  const inFlight = useInFlightWrite('Escrow recovery submitted, confirming');
+
+  // Checked before every other branch, including the disconnected one: the write is already
+  // out there, so this state must survive anything that would otherwise swap the surface.
+  if (inFlight.state) {
+    return (
+      <InFlightWriteNotice
+        idempotencyKey={inFlight.state.idempotencyKey}
+        stalled={inFlight.stalled}
+        subject="escrow recovery"
+        title="Escrow recovery submitted, confirming"
+      />
+    );
+  }
 
   if (!isConnected || !address) {
     return <ConnectPrompt label="Connect the requester wallet to recover escrowed funds." />;
@@ -34,7 +50,8 @@ export function RefundExpiredButton({ disabled, onSuccess, task }: TaskActionCom
       `/api/tasks/${task.id}/refund-expired`,
       { taskId: task.id },
       { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep
+      setStep,
+      inFlight.idempotencyKey
     );
     if (result.ok) {
       setStep('done');
@@ -49,6 +66,9 @@ export function RefundExpiredButton({ disabled, onSuccess, task }: TaskActionCom
       );
     } else {
       setStep('idle');
+      // Neither success nor failure, so it must not reach the error path below: that path
+      // leaves the recover button live, and pressing it again is a second payment.
+      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);
