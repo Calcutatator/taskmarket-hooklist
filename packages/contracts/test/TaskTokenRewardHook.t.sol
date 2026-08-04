@@ -11,7 +11,6 @@ import { DiamondTestHelper } from "./helpers/DiamondTestHelper.sol";
 import { ITMPDiamond } from "../src/interfaces/ITMPDiamond.sol";
 import "./mocks/MockPGTRForwarder.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
-import { noEvaluatorConfig } from "./helpers/EvaluatorConfigHelper.sol";
 // ─────────────────────────────────────────────────────────────────────────────
 // Test suite
 // ─────────────────────────────────────────────────────────────────────────────
@@ -119,8 +118,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     bytes4(0),
                     ITMPCore.StakeConfig({ required: false, bps: 0 }),
                     ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                    noEvaluatorConfig()
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );
@@ -142,8 +140,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     bytes4(0),
                     ITMPCore.StakeConfig({ required: false, bps: 0 }),
                     ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                    noEvaluatorConfig()
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );
@@ -165,8 +162,7 @@ contract TaskTokenRewardHookTest is DiamondTestHelper {
                     bytes4(0),
                     ITMPCore.StakeConfig({ required: false, bps: 0 }),
                     ITMPCore.HookConfig({ contracts: _hookArr(address(hook)), data: "" }),
-                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                    noEvaluatorConfig()
+                    ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
                 )
             )
         );

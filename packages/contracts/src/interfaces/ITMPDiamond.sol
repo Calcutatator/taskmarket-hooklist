@@ -33,8 +33,7 @@ interface ITMPDiamond {
         bytes4 auctionSubtype,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
-        ITMPCore.TaskContent calldata content,
-        ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
+        ITMPCore.TaskContent calldata content
     ) external returns (bytes32);
 
     function claimTask(bytes32 taskId, uint256 stakeAmount) external;

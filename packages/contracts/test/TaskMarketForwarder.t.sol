@@ -9,7 +9,6 @@ import "../src/interfaces/ITMPCore.sol";
 import { MockUSDC } from "../src/mocks/MockUSDC.sol";
 import "./helpers/DiamondTestHelper.sol";
 import "../src/interfaces/ITMPDiamond.sol";
-import { noEvaluatorConfig } from "./helpers/EvaluatorConfigHelper.sol";
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -85,8 +84,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         _relay(requester, REWARD, data, _nonce(0));
@@ -175,8 +173,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         bytes4 expectedSelector = market.createTask.selector;
@@ -203,8 +200,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         bytes32 nonce = _nonce(99);
@@ -231,8 +227,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         bytes32 nonce = _nonce(100);
@@ -264,8 +259,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         uint256 expiredBefore = block.timestamp - 1;
@@ -287,8 +281,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         // validBefore == block.timestamp (inclusive, <= check)
@@ -324,8 +317,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.prank(server);
@@ -353,8 +345,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         _relay(requester, REWARD, createData, _nonce(0));
@@ -385,8 +376,7 @@ contract TaskMarketForwarderTest is DiamondTestHelper {
                 bytes4(0),
                 ITMPCore.StakeConfig({ required: false, bps: 0 }),
                 ITMPCore.HookConfig({ contracts: new address[](0), data: hex"" }),
-                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) }),
-                noEvaluatorConfig()
+                ITMPCore.TaskContent({ contentHash: bytes32(0), contentURI: "", tags: new bytes32[](0) })
             )
         );
         vm.prank(attacker);
