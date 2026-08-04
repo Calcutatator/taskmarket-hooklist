@@ -243,7 +243,19 @@ TASKMARKET_IDEMPOTENCY_KEY=<key from the failed envelope> taskmarket identity re
 
 An environment variable rather than a flag, because the key is not an argument of any one command: a flag would have to be declared on every write command in the tree and would still be absent from the next one someone adds, whereas the variable reaches whatever the operator re-runs. It is **consumed once per process** -- the first write takes it, and any later write in the same command mints a fresh key -- so a variable left set in a shell cannot silently collapse the several writes of a batch command into one operation's identity.
 
-**The key is surfaced, not threaded.** Commands call `printError(err.message)` with a bare string, so there is no parameter to pass a key through. It travels two ways instead: structurally on `ApiError.idempotencyKey`, for the top-level catch in `index.ts` and for anything using the transport as a library, and through `getLastIdempotencyKey()` in `idempotency.ts`, which the output helpers read so a command that renders its own error still emits the key. One CLI process runs one command, so "the last key minted" is the key of the write that just failed.
+**The key is surfaced, not threaded.** Commands call `printError(err.message)` with a bare string, so there is no parameter to pass a key through. It travels two ways instead:
+
+- **`ApiError.idempotencyKey`** -- the primary route. The transport that minted the key attaches it to the error it raises, so the association is carried by the error itself. This serves the top-level catch in `index.ts` and anything using the transport as a library.
+- **`getCurrentIdempotencyKey()`** -- an ambient fallback scoped to the write's async context, for the many call sites that only have a message string. `withIdempotencyScope` (`lib/idempotency.ts`) binds one scope per operation using `AsyncLocalStorage`, the same pattern `withRelayEnvelope` uses in the backend (`apps/backend/src/services/relay-envelope.ts`) to bind a per-operation value through a call tree without threading a parameter through every function in it. The transport marks its key current for exactly as long as its request is in flight.
+
+**Bind a scope per concurrent unit of work, not per process.** `index.ts` binds one around command dispatch, which covers the whole of a one-shot command. Anything that forks binds one per branch, because two branches writing at once are two operations and only the branch that failed knows which key was its own. Two places do this today:
+
+- `commands/daemon.ts` is long-lived and runs `xmtpLoop`, `heartbeatLoop` and `taskPollLoop` concurrently for the life of the process, two of which write (`xmtp.heartbeat`, `emails/mark-read`). A process-wide "last key minted" would be meaningless here.
+- `commands/task/submit.ts` uploads its files with `Promise.all`, and each per-file upload-URL request is its own write.
+
+Reads do not mint keys, so the parallel `apiGet` calls in `commands/stats.ts` and `commands/inbox.ts` need no scope.
+
+**If two writes overlap inside one scope, the scope reports no ambient key at all.** `withIdempotentWrite` latches the scope ambiguous on overlap rather than letting the later write's key win. This is the safety net for a fork point nobody wrapped, including one added long after this was written: forgetting a scope degrades the report to *no* key, never to *another write's* key. That distinction is the whole point -- a key is the handle an operator re-presents, so a key naming the wrong write matches a different intent, returns its result, and leaves the operation they wanted undone while telling them it succeeded. The `ApiError` route is unaffected by ambiguity, which is why it is the primary one.
 
 ## Output format
 
@@ -275,6 +287,8 @@ Two helpers used by every command:
 
 - `printResult(data)` — prints `{ ok: true, data }` to stdout, plus `idempotencyKey` if this command wrote
 - `printError(message)` — prints `{ ok: false, error }` to stderr, plus `idempotencyKey` if this command wrote, and calls `process.exit(1)`
+
+Both read the key from the current idempotency scope, so a command that made no write, or one whose scope saw two writes overlap, prints no `idempotencyKey` rather than a misleading one.
 
 `printResult` reports the key on success as well as failure because reconciliation is not only a failure activity: an operator matching a wallet movement or a support question back to a command run months later needs the key that names the operation, and the only place to get it is the run that made it.
 

@@ -2,6 +2,7 @@ import { Command } from 'commander';
 import { loadKeystore } from '../lib/keystore.js';
 import { apiGet, apiPost } from '../lib/api.js';
 import { printResult } from '../lib/output.js';
+import { withIdempotencyScope } from '../lib/idempotency.js';
 import { createXmtpClient, listenForEnvelopes } from '../lib/xmtp-client.js';
 import type { XmtpClientSession } from '../lib/xmtp-client.js';
 import type { AgentMessageEnvelope } from '@taskmarket/shared';
@@ -456,15 +457,25 @@ export const daemonCommand = new Command('daemon')
             }
           };
 
+          // Same reasoning one level down: emailPollLoop writes (mark-read) alongside three
+          // sibling loops, so it needs a scope of its own rather than sharing taskPollLoop's.
           await Promise.allSettled([
-            inboxPollLoop(),
-            newTaskPollLoop(),
-            auctionPollLoop(),
-            emailPollLoop(),
+            withIdempotencyScope(inboxPollLoop),
+            withIdempotencyScope(newTaskPollLoop),
+            withIdempotencyScope(auctionPollLoop),
+            withIdempotencyScope(emailPollLoop),
           ]);
         };
 
-        await Promise.allSettled([xmtpLoop(), heartbeatLoop(), taskPollLoop()]);
+        // The daemon is long-lived and these loops write concurrently for its whole life, so
+        // there is no such thing as "the write this process just made". Each loop gets its own
+        // idempotency scope, making the key a failing loop reports its own write's key rather
+        // than whichever sibling loop happened to write most recently.
+        await Promise.allSettled([
+          withIdempotencyScope(xmtpLoop),
+          withIdempotencyScope(heartbeatLoop),
+          withIdempotencyScope(taskPollLoop),
+        ]);
       } finally {
         process.off('SIGINT', stop);
         process.off('SIGTERM', stop);

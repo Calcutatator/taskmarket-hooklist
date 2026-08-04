@@ -1,6 +1,6 @@
 import { buildLegalReceiptHeaders } from '@taskmarket/shared';
 
-import { idempotencyHeaders, resolveIdempotencyKey } from './idempotency.js';
+import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
 import { loadKeystore, type Keystore } from './keystore.js';
 
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
@@ -85,26 +85,30 @@ export async function apiPost(
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
-  const res = await fetch(`${API_URL}${path}`, {
-    method: 'POST',
-    redirect: 'error',
-    headers: {
-      'Content-Type': 'application/json',
-      ...legalHeaders,
-      ...idempotencyHeaders(idempotencyKey),
-      ...(options?.headers ?? {}),
-    },
-    body: JSON.stringify(body),
+  // The key is the scope's current one for exactly as long as this write is in flight, so a
+  // failure rendered while it is open reports this write's key and not a sibling's.
+  return withIdempotentWrite(idempotencyKey, async () => {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: 'POST',
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        ...legalHeaders,
+        ...idempotencyHeaders(idempotencyKey),
+        ...(options?.headers ?? {}),
+      },
+      body: JSON.stringify(body),
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new ApiError(
+        res.status,
+        `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+        idempotencyKey
+      );
+    }
+    return result;
   });
-  const result = await res.json();
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`,
-      idempotencyKey
-    );
-  }
-  return result;
 }
 
 export async function apiDelete(
@@ -113,23 +117,25 @@ export async function apiDelete(
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
-  const res = await fetch(`${API_URL}${path}`, {
-    method: 'DELETE',
-    redirect: 'error',
-    headers: {
-      'Content-Type': 'application/json',
-      ...legalHeaders,
-      ...idempotencyHeaders(idempotencyKey),
-      ...(options?.headers ?? {}),
-    },
+  return withIdempotentWrite(idempotencyKey, async () => {
+    const res = await fetch(`${API_URL}${path}`, {
+      method: 'DELETE',
+      redirect: 'error',
+      headers: {
+        'Content-Type': 'application/json',
+        ...legalHeaders,
+        ...idempotencyHeaders(idempotencyKey),
+        ...(options?.headers ?? {}),
+      },
+    });
+    const result = await res.json();
+    if (!res.ok) {
+      throw new ApiError(
+        res.status,
+        `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+        idempotencyKey
+      );
+    }
+    return result;
   });
-  const result = await res.json();
-  if (!res.ok) {
-    throw new ApiError(
-      res.status,
-      `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`,
-      idempotencyKey
-    );
-  }
-  return result;
 }
