@@ -1,6 +1,6 @@
 import { buildLegalReceiptHeaders } from '@taskmarket/shared';
 
-import { idempotencyHeaders, newIdempotencyKey } from './idempotency.js';
+import { idempotencyHeaders, resolveIdempotencyKey } from './idempotency.js';
 import { loadKeystore, type Keystore } from './keystore.js';
 
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
@@ -17,10 +17,20 @@ export const API_ORIGIN = new URL(API_URL).origin;
 export class ApiError extends Error {
   readonly status: number;
 
-  constructor(status: number, message: string) {
+  /**
+   * The idempotency key the failed write was sent under, when the request was a write. This is
+   * the only identifier the caller can still hold after a failure -- the intent id is minted by
+   * the backend and reaches the caller only in the response the failure destroyed -- so it
+   * travels on the error rather than being recoverable from the response. See
+   * apps/cli/src/index.ts and lib/output.ts, which surface it on the CLI's JSON envelope.
+   */
+  readonly idempotencyKey?: string;
+
+  constructor(status: number, message: string, idempotencyKey?: string) {
     super(message);
     this.name = 'ApiError';
     this.status = status;
+    this.idempotencyKey = idempotencyKey;
   }
 }
 
@@ -74,13 +84,14 @@ export async function apiPost(
   options?: { headers?: Record<string, string>; idempotencyKey?: string }
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
+  const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
   const res = await fetch(`${API_URL}${path}`, {
     method: 'POST',
     redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
-      ...idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey()),
+      ...idempotencyHeaders(idempotencyKey),
       ...(options?.headers ?? {}),
     },
     body: JSON.stringify(body),
@@ -89,7 +100,8 @@ export async function apiPost(
   if (!res.ok) {
     throw new ApiError(
       res.status,
-      `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`
+      `POST ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+      idempotencyKey
     );
   }
   return result;
@@ -100,13 +112,14 @@ export async function apiDelete(
   options?: { headers?: Record<string, string>; idempotencyKey?: string }
 ): Promise<unknown> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
+  const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
   const res = await fetch(`${API_URL}${path}`, {
     method: 'DELETE',
     redirect: 'error',
     headers: {
       'Content-Type': 'application/json',
       ...legalHeaders,
-      ...idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey()),
+      ...idempotencyHeaders(idempotencyKey),
       ...(options?.headers ?? {}),
     },
   });
@@ -114,7 +127,8 @@ export async function apiDelete(
   if (!res.ok) {
     throw new ApiError(
       res.status,
-      `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`
+      `DELETE ${path} failed (${res.status}): ${JSON.stringify(result)}`,
+      idempotencyKey
     );
   }
   return result;

@@ -1,5 +1,5 @@
 import { ApiError, API_URL, legalReceiptHeadersForKeystore } from './api.js';
-import { idempotencyHeaders, newIdempotencyKey } from './idempotency.js';
+import { idempotencyHeaders, resolveIdempotencyKey } from './idempotency.js';
 import { loadKeystore } from './keystore.js';
 import { createTransferAuthorization } from './signer.js';
 
@@ -32,7 +32,8 @@ export async function x402Post(
   const legalHeaders = legalReceiptHeadersForKeystore(keystore, path, 'POST');
   // One key for the whole exchange. Discovery and the paid retry are two rounds of a single
   // logical write, so round 2 must present the same key round 1 did.
-  const idempotency = idempotencyHeaders(options?.idempotencyKey ?? newIdempotencyKey());
+  const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
+  const idempotency = idempotencyHeaders(idempotencyKey);
 
   // Round 1: discover payment requirements
   const r1 = await fetch(url, {
@@ -47,7 +48,7 @@ export async function x402Post(
       return r1.json();
     }
     const text = await r1.text().catch(() => '');
-    throw new ApiError(r1.status, `POST ${path} failed (${r1.status}): ${text}`);
+    throw new ApiError(r1.status, `POST ${path} failed (${r1.status}): ${text}`, idempotencyKey);
   }
 
   const requirements = (await r1.json()) as PaymentRequirements;
@@ -90,9 +91,12 @@ export async function x402Post(
 
   const result = await r2.json();
   if (!r2.ok) {
+    // Round 2 failing is the case the key exists for: the payment has settled, so the caller has
+    // already been charged for a write whose outcome the response no longer tells them.
     throw new ApiError(
       r2.status,
-      `POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`
+      `POST ${path} failed after payment (${r2.status}): ${JSON.stringify(result)}`,
+      idempotencyKey
     );
   }
   return result;

@@ -233,6 +233,18 @@ The key is applied in the transport (`apiPost`, `apiDelete`, `x402Post`), not pe
 
 The key is what a caller still holds when the response never arrives. The intent id cannot fill that role: the backend mints it and the client only learns it from a response that may be lost, whereas the key exists before the request is sent.
 
+`resolveIdempotencyKey(explicit?)` decides the key for one write and records it as the process's most recent. Precedence is the explicit argument, then `TASKMARKET_IDEMPOTENCY_KEY` from the environment, then a fresh UUID.
+
+**Re-presenting an operation from the command line.** An operator who holds the key a failed write was sent under can re-present that exact operation by setting `TASKMARKET_IDEMPOTENCY_KEY` for a single invocation:
+
+```bash
+TASKMARKET_IDEMPOTENCY_KEY=<key from the failed envelope> taskmarket identity register
+```
+
+An environment variable rather than a flag, because the key is not an argument of any one command: a flag would have to be declared on every write command in the tree and would still be absent from the next one someone adds, whereas the variable reaches whatever the operator re-runs. It is **consumed once per process** -- the first write takes it, and any later write in the same command mints a fresh key -- so a variable left set in a shell cannot silently collapse the several writes of a batch command into one operation's identity.
+
+**The key is surfaced, not threaded.** Commands call `printError(err.message)` with a bare string, so there is no parameter to pass a key through. It travels two ways instead: structurally on `ApiError.idempotencyKey`, for the top-level catch in `index.ts` and for anything using the transport as a library, and through `getLastIdempotencyKey()` in `idempotency.ts`, which the output helpers read so a command that renders its own error still emits the key. One CLI process runs one command, so "the last key minted" is the key of the write that just failed.
+
 ## Output format
 
 Every command writes a JSON envelope to stdout:
@@ -249,24 +261,34 @@ Errors go to stderr:
 
 Exit code is **0** on success and **1** on failure.
 
+A command that attempted a relayed write adds `idempotencyKey` to whichever envelope it emits, and a failing HTTP write also adds `status`:
+
+```json
+{ "ok": false, "error": "...", "status": 500, "idempotencyKey": "..." }
+```
+
+Both fields sit at the envelope level, beside `data` rather than inside it, so the backend payload an agent parses is unchanged. Read-only commands mint no key and emit exactly the envelope they always did.
+
 ### `lib/output.ts`
 
 Two helpers used by every command:
 
-- `printResult(data)` — prints `{ ok: true, data }` to stdout
-- `printError(message)` — prints `{ ok: false, error }` to stderr and calls `process.exit(1)`
+- `printResult(data)` — prints `{ ok: true, data }` to stdout, plus `idempotencyKey` if this command wrote
+- `printError(message)` — prints `{ ok: false, error }` to stderr, plus `idempotencyKey` if this command wrote, and calls `process.exit(1)`
+
+`printResult` reports the key on success as well as failure because reconciliation is not only a failure activity: an operator matching a wallet movement or a support question back to a command run months later needs the key that names the operation, and the only place to get it is the run that made it.
 
 ## In-flight paid writes
 
 A paid command triggers an on-chain transaction relayed by the backend, and that transaction can outlive the HTTP request. When confirmation takes longer than the request's budget, the backend stops waiting: the transaction is still live and will still be settled, because the backend records every relayed write as a durable intent and finishes it from a background reconciler pass, whether that is a second later or an hour later (ADR-0045).
 
-**The CLI cannot currently tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is where the machine-readable answer lives (ADR-0049), and the idempotency key the CLI sent is a handle into it -- but the CLI still surfaces every failure identically, so having a handle does not tell a caller which failure it is holding a handle for.
+**The CLI still cannot tell you that this is what happened.** The backend returns a generic HTTP 500 carrying a `ServerTransactionPendingError` message, with no discriminator and no intent id, and `printError` in `lib/output.ts` renders every failure identically: `{ "ok": false, "error": "...", "idempotencyKey": "..." }` on stderr with exit code 1. Nothing in that output distinguishes an in-flight write from a validation rejection or a deterministic revert. A payer-scoped intent-status surface is where the machine-readable answer lives (ADR-0049), and the `idempotencyKey` on the envelope is the handle into it -- the operator now holds it, but holding a handle still does not say which of the three failures they are holding it for. Keep those two things apart: the key makes a deliberate recovery **possible**; it does not make an automatic retry **safe**.
 
 Three practical consequences for CLI code and for anything scripting the CLI:
 
-- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping. The idempotency key does not change this: a re-run of the command mints a fresh key and is therefore a new operation, and even a rerun that somehow reused the key would still be a retry taken blind, because nothing in the CLI's output said which failure it was.
+- **Never auto-retry a failed paid command.** Because a failure is indistinguishable from an in-flight write, an automatic retry is a second paid action on a transaction that may still mine -- risking paying twice and creating the same thing twice. Scripts must surface the failure to a human rather than looping. Printing the key does not change this: a plain re-run mints a fresh key and is therefore a new operation, and a script that scraped the key out of the envelope and fed it back would still be retrying blind, because nothing in the CLI's output said which failure it was. Re-presenting a key is a decision for a human who has read the failure, not a loop.
 - **Poll where there is something to poll.** If the command had a task ID, re-read the task (`taskmarket task get <taskId>`) until the effect appears. An API action whose on-chain effect spans several transactions completes progressively, so an early read can show part of it applied (ADR-0045).
-- **Some commands have no task to poll, but they do have a handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. The idempotency key covers exactly that gap at the protocol level: the write is queryable on the payer-scoped intent-status surface by the key that was sent with it. The CLI does not print the key it generated, so a CLI operator cannot yet use that handle -- wait, inspect the wallet, and do not re-run the command. A raw REST caller, which chooses its own key, can query straight away.
+- **Some commands have no task to poll, but they do have a handle.** `taskmarket identity register` has no task, and a failed task creation is what would have produced the ID. The idempotency key covers exactly that gap, and the CLI prints it: the `idempotencyKey` on the error envelope is the key that write was sent under, and the write is queryable on the payer-scoped intent-status surface by it. A CLI operator now has the same handle a raw REST caller has always had. Query it, or wait and inspect the wallet -- and if you conclude the write never landed, re-present that key with `TASKMARKET_IDEMPOTENCY_KEY` rather than re-running the command bare, which would be a second operation.
 
 The same rules apply to an ambiguous client-side failure -- a dropped connection or a timeout. Re-fetch
 state first, but be precise about what a read can tell you: **seeing the effect proves the write landed;

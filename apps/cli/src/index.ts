@@ -19,6 +19,7 @@ import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
 import { ApiError } from './lib/api.js';
+import { getLastIdempotencyKey } from './lib/idempotency.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -47,9 +48,18 @@ program.addCommand(legalCommand);
 
 program.parseAsync(process.argv).catch((err: Error) => {
   const status = err instanceof ApiError ? err.status : undefined;
+  // The key travels on the ApiError raised by the transport that minted it; the fallback covers
+  // a write that failed before or after the HTTP call (a signing error, say), which still went
+  // out -- or may still go out -- under a key the operator needs to hold.
+  const idempotencyKey =
+    (err instanceof ApiError ? err.idempotencyKey : undefined) ?? getLastIdempotencyKey();
   process.stderr.write(
-    JSON.stringify({ ok: false, error: err.message, ...(status !== undefined ? { status } : {}) }) +
-      '\n'
+    JSON.stringify({
+      ok: false,
+      error: err.message,
+      ...(status !== undefined ? { status } : {}),
+      ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+    }) + '\n'
   );
   process.exit(1);
 });
