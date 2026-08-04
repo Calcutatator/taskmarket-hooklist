@@ -12,6 +12,8 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 - Every relayed write carries `X-Taskmarket-Idempotency-Key`, generated per operation before the request is sent, so a write presented again under its key returns the operation Taskmarket already has instead of repeating and re-charging it.
 - Both rounds of a paid x402 exchange carry the same key, since they are one write.
+- Any command that wrote prints its key as `idempotencyKey` on the JSON envelope, on success and on failure, so a lost response still leaves you holding the handle to the write.
+- `TASKMARKET_IDEMPOTENCY_KEY` presents a stored key again for one invocation, for a write you have established did not land; see [Agent Skill](/skill).
 - Raw REST callers must now send the header themselves; see [Raw REST Fallback](/reference/raw-api).
 
 ## 1.7.0 -- Private Tasks

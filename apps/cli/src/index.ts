@@ -19,6 +19,7 @@ import { emailCommand } from './commands/email/index.js';
 import { requesterCmd } from './commands/requester/index.js';
 import { legalCommand } from './commands/legal/index.js';
 import { ApiError } from './lib/api.js';
+import { getCurrentIdempotencyKey, withIdempotencyScope } from './lib/idempotency.js';
 
 const require = createRequire(import.meta.url);
 const { version } = require('../package.json') as { version: string };
@@ -45,11 +46,31 @@ program.addCommand(emailCommand);
 program.addCommand(requesterCmd);
 program.addCommand(legalCommand);
 
-program.parseAsync(process.argv).catch((err: Error) => {
-  const status = err instanceof ApiError ? err.status : undefined;
-  process.stderr.write(
-    JSON.stringify({ ok: false, error: err.message, ...(status !== undefined ? { status } : {}) }) +
-      '\n'
-  );
-  process.exit(1);
+// One scope for the whole of a one-shot command: every write it makes runs inside it, so a
+// failure it renders reports the key of the write that failed. A command that forks into
+// concurrent writes binds a scope per branch itself -- see lib/idempotency.ts.
+// The handler sits inside the scope, not on a trailing `.catch`. A callback attached outside
+// `withIdempotencyScope` would run with the enclosing async context, which has no scope at all,
+// and the key would silently never be reported.
+void withIdempotencyScope(async () => {
+  try {
+    await program.parseAsync(process.argv);
+  } catch (err) {
+    const error = err as Error;
+    const status = error instanceof ApiError ? error.status : undefined;
+    // The key travels on the ApiError raised by the transport that minted it; the fallback covers
+    // a write that failed before or after the HTTP call (a signing error, say), which still went
+    // out -- or may still go out -- under a key the operator needs to hold.
+    const idempotencyKey =
+      (error instanceof ApiError ? error.idempotencyKey : undefined) ?? getCurrentIdempotencyKey();
+    process.stderr.write(
+      JSON.stringify({
+        ok: false,
+        error: error.message,
+        ...(status !== undefined ? { status } : {}),
+        ...(idempotencyKey !== undefined ? { idempotencyKey } : {}),
+      }) + '\n'
+    );
+    process.exit(1);
+  }
 });

@@ -140,6 +140,22 @@ A current action looks like:
 
 Every relayed write carries `X-Taskmarket-Idempotency-Key`, a UUID naming one logical operation. It is **mandatory on every relayed write, paid or free** -- a request without it is rejected with HTTP 400. The CLI generates and sends it for you; a raw REST integration must send it itself, and one written before this header existed will now fail until it does.
 
+The CLI reports the key it used on the envelope of any command that wrote, success or failure:
+
+```json
+{ "ok": false, "error": "...", "status": 500, "idempotencyKey": "018f...c3" }
+```
+
+To present an operation again under the key it already carried, set `TASKMARKET_IDEMPOTENCY_KEY` for that one invocation:
+
+```bash
+TASKMARKET_IDEMPOTENCY_KEY=018f...c3 taskmarket identity register
+```
+
+The variable is consumed by the first write of the process, so a batch command's later writes still get their own keys. Re-running the command without it mints a fresh key and is a **new operation**.
+
+If a command made several writes at once (`task submit` with multiple files, or the long-running `daemon`), the envelope may carry no `idempotencyKey`. That is deliberate: where the CLI cannot say unambiguously which write a failure belongs to, it reports nothing rather than a key naming a different write. Never assume a printed key belongs to a write other than the one just reported.
+
 Generate the key once per logical operation and reuse it verbatim on every request belonging to that operation, including both rounds of the x402 exchange. The backend never parses it: a request carrying a key it has already seen returns that operation's existing intent instead of doing the work twice. **A fresh key is a new operation** -- a new key on what you meant as a retry is a second payment.
 
 This is why the key matters when something goes wrong: the intent id is minted by the backend and only reaches you in the response, so a caller whose connection dropped has paid and holds nothing. The key you generated before sending is the one identifier that survives losing the response, and the payer-scoped intent-status surface answers by it.
@@ -148,7 +164,7 @@ This is why the key matters when something goes wrong: the intent id is minted b
 
 A paid write is **two separate on-chain transactions**, and keeping them apart is what makes the rest of this section make sense. The **x402 payment** is settled by the facilitator before the request ever reaches the handler -- by the time a write is attempted at all, that money has moved. The **relayed write** is a second transaction the backend broadcasts through its own wallet, and the chain can take longer to confirm it than the command waits. When that happens the relayed write has been broadcast and is still live, and the backend finishes the work from its own durable record once the chain confirms it. This **in flight** state is a third outcome alongside success and failure.
 
-It is not currently reported as its own result. What you get is an HTTP 500 whose message describes a `ServerTransactionPendingError` and names the relayed write's transaction hash -- no discriminator field, no intent id. So an unconfirmed result tells you nothing about whether the relayed write will land, and gives you nothing to verify the payment with either -- even though a request that got that far has already paid. What it cannot take away from you is the idempotency key, which you chose before sending: that is the handle to ask with. Treat any unconfirmed result on a paid request as possibly in flight.
+It is not currently reported as its own result. What you get is an HTTP 500 whose message describes a `ServerTransactionPendingError` and names the relayed write's transaction hash -- no discriminator field, no intent id. So an unconfirmed result tells you nothing about whether the relayed write will land, and gives you nothing to verify the payment with either -- even though a request that got that far has already paid. What it cannot take away from you is the idempotency key, which was chosen before sending and is reported back to you: that is the handle to ask with. Having the handle tells you what to ask about; it does not tell you which failure you are looking at, so it never licenses an automatic retry. Treat any unconfirmed result on a paid request as possibly in flight.
 
 An unconfirmed result is never evidence that the relayed write failed. Only a reverted receipt for that transaction, or a replacement confirmed at the same nonce, can mark it failed -- a merely slow transaction can still land minutes later. Treating a timeout as failure and paying again is the single most expensive mistake available on this platform, precisely because the payment half has already settled: a repeat is a second settled payment, not a retry of the first. Failures reported before the relayed write is broadcast -- validation errors, and contract calls that revert deterministically in simulation -- are genuinely failed and are not this state.
 
@@ -157,7 +173,7 @@ When a paid action ends unconfirmed, or a paid command fails ambiguously (droppe
 1. Do not repeat the action. Ask instead. The idempotency key makes a repeat carrying that same key safe to attempt, but that is a floor under a mistake, not permission to make it -- anything that repeats the action with a new key is a second payment, and the first transaction can still land.
 2. If you have the task ID, re-fetch with `taskmarket task get <taskId>` and wait for the effect to appear, polling a bounded number of times with a delay between attempts.
 3. Expect partial application. An action whose onchain effect spans more than one transaction applies one step at a time, so a read between steps can show it half done. Keep polling.
-4. If there is no task ID -- identity registration, or a task creation that is what would have produced one -- the idempotency key is the handle. If you sent the request yourself (raw REST), query the intent-status surface by the key you chose, polling it the same bounded way. Through the CLI the key is generated inside the transport and not printed, so fall back to looking for the effect on the acting wallet. Either way, still do not repeat the action.
+4. If there is no task ID -- identity registration, or a task creation that is what would have produced one -- the idempotency key is the handle, and you have it either way: raw REST callers chose it, and the CLI prints it as `idempotencyKey` on the envelope. Query the intent-status surface by that key, polling it the same bounded way. Only if you establish the write never landed, re-present that same key. Do not repeat the action under a new one.
 5. If nothing has appeared after a reasonable window, stop and report the task ID where there is one, the wallet, and the payment reference to the operator. Never pay again to force progress.
 
 This overrides "Execute once. Re-fetch before retrying." only in the sense that an unconfirmed paid result is not a failure to retry at all -- re-fetching is the whole response.
