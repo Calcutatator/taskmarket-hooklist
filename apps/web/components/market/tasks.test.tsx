@@ -8,13 +8,7 @@ import type {
   TaskResponse,
 } from '@taskmarket/shared';
 import { getAgentName } from '@taskmarket/shared';
-import {
-  CreateTaskPanel,
-  TaskDetailPanel,
-  TaskFilterRail,
-  TaskListPageContent,
-  TaskTable,
-} from './tasks';
+import { CreateTaskPanel, TaskDetailPanel, TaskListPageContent, TaskTable } from './tasks';
 import { getAcceptWorkerAddress } from './actions/accept-button';
 import { compactAddress } from '@/lib/format';
 import { taskFullTitle, taskTitle } from '@/lib/market/task-title';
@@ -533,7 +527,9 @@ describe('Task marketplace components', () => {
     expect(detailLink).toHaveAccessibleName(/auction.*open.*2 bids.*reward.*due.*view task/i);
   });
 
-  it('exposes sort controls that preserve the active filters', () => {
+  it('exposes a sort dropdown that preserves the active filters', async () => {
+    const user = userEvent.setup();
+
     render(
       <TaskListPageContent
         activeFilters={[]}
@@ -548,17 +544,18 @@ describe('Task marketplace components', () => {
       />
     );
 
-    // The mobile filter drawer holds its own copy of the sort control (see "folds
-    // sort and view into the mobile filter drawer"), so scope to the desktop toolbar.
-    expect(
-      within(screen.getByTestId('task-toolbar')).getByRole('link', { name: /reward: high/i })
-    ).toHaveAttribute(
+    const toolbar = screen.getByTestId('task-toolbar');
+    const sortTrigger = within(toolbar).getByRole('button', { name: /sort: newest/i });
+    await user.click(sortTrigger);
+    expect(screen.getByRole('menuitem', { name: /reward: high/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks?mode=auction&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
   });
 
-  it('renders cursor pagination that preserves filters and supports back links', () => {
+  it('renders cursor pagination that preserves filters and supports back links', async () => {
+    const user = userEvent.setup();
+
     render(
       <TaskListPageContent
         activeFilters={[]}
@@ -592,9 +589,11 @@ describe('Task marketplace components', () => {
       'href',
       '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&view=gallery&cursor=2026-06-09T09%3A00%3A00.000Z&cursorStack=2026-06-11T09%3A00%3A00.000Z%2C2026-06-10T09%3A00%3A00.000Z'
     );
-    expect(
-      within(screen.getByTestId('task-toolbar')).getByRole('link', { name: /reward: high/i })
-    ).toHaveAttribute(
+    const sortTrigger = within(screen.getByTestId('task-toolbar')).getByRole('button', {
+      name: /sort: newest/i,
+    });
+    await user.click(sortTrigger);
+    expect(screen.getByRole('menuitem', { name: /reward: high/i })).toHaveAttribute(
       'href',
       '/dashboard/tasks?mode=auction&status=open&taskDropId=launch-drop&sort=reward_desc&view=gallery'
     );
@@ -652,7 +651,7 @@ describe('Task marketplace components', () => {
     });
   });
 
-  it('gates the desktop sort/view toolbar row to lg and up, out of the mobile chrome budget', () => {
+  it('keeps the desktop browse controls together inside the results frame', () => {
     render(
       <TaskListPageContent
         activeFilters={[]}
@@ -665,15 +664,17 @@ describe('Task marketplace components', () => {
       />
     );
 
-    // The desktop row remains gated while the separate mobile toolbar covers the
-    // same frequent actions below `lg`.
+    const frame = screen.getByTestId('task-results-frame');
     const toolbar = screen.getByTestId('task-toolbar');
-    expect(toolbar).not.toHaveClass('flex');
-    expect(toolbar).toHaveClass('hidden');
-    expect(toolbar).toHaveClass('lg:flex');
-
-    // Regression guard: still reachable at lg (desktop).
-    expect(within(toolbar).getByRole('link', { name: /reward: high/i })).toBeInTheDocument();
+    expect(frame).toContainElement(toolbar);
+    expect(within(toolbar).getByText('Filters')).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /mode: all modes/i })).toBeInTheDocument();
+    expect(
+      within(toolbar).getByRole('button', { name: /status: all statuses/i })
+    ).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /actor: any/i })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('button', { name: /sort: newest/i })).toBeInTheDocument();
+    expect(within(toolbar).getByRole('link', { name: /table view/i })).toBeInTheDocument();
     expect(within(toolbar).getByRole('link', { name: /gallery view/i })).toBeInTheDocument();
   });
 
@@ -782,7 +783,11 @@ describe('Task marketplace components', () => {
     expect(advancedSummary).toHaveFocus();
     await user.click(advancedSummary as HTMLElement);
     expect(advanced).toHaveAttribute('open');
-    expect(within(drawer).getByRole('link', { name: /all modes/i })).toHaveClass('min-h-11');
+    const modeFilter = within(drawer).getByRole('button', { name: /mode: all modes/i });
+    expect(modeFilter).toHaveClass('min-h-11');
+    await user.click(modeFilter);
+    expect(screen.getByRole('menuitem', { name: /all modes/i })).toHaveClass('min-h-11');
+    await user.keyboard('{Escape}');
     expect(within(drawer).getByRole('link', { name: /clear filters/i })).toHaveClass('min-h-11');
     expect(within(drawer).getByRole('button', { name: /show 1\+ results/i })).toHaveAttribute(
       'form',
@@ -812,38 +817,63 @@ describe('Task marketplace components', () => {
     expect(within(drawer).getByLabelText(/tags/i)).toHaveValue('react');
   });
 
-  it('keeps filter links serializable and exposes a clear action', () => {
+  it('joins desktop filters, sort, view, and results in one full-width frame', async () => {
+    const user = userEvent.setup();
+
     render(
-      <TaskFilterRail
-        deadlineHours="72"
-        maxReward="20"
-        minReward="2"
-        selectedMode="auction"
-        selectedStatus="open"
-        tags="react"
-        taskDropId="launch-drop"
+      <TaskListPageContent
+        activeFilters={[
+          { label: 'Mode', value: 'auction' },
+          { label: 'Tags', value: 'react' },
+        ]}
+        basePath="/tasks"
+        filterParams={{
+          selectedMode: 'auction',
+          selectedSort: 'newest',
+          selectedStatus: 'ALL',
+          tags: 'react',
+        }}
+        listHref="/tasks"
+        tasks={[task]}
       />
     );
-    expect(screen.getByRole('link', { name: /all modes/i })).toHaveAttribute(
+
+    const frame = screen.getByTestId('task-results-frame');
+    const desktopToolbar = within(frame).getByTestId('task-toolbar');
+    expect(screen.queryByRole('complementary', { name: /task filters/i })).not.toBeInTheDocument();
+    expect(frame).toContainElement(desktopToolbar);
+    expect(frame).toContainElement(within(frame).getByRole('table'));
+
+    const modeTrigger = within(desktopToolbar).getByRole('button', { name: /mode: auction/i });
+    await user.click(modeTrigger);
+    const selectedMode = screen.getByRole('menuitem', { name: /^auction$/i });
+    expect(selectedMode).toHaveAttribute('aria-current', 'page');
+    expect(selectedMode).toHaveAttribute('href', '/tasks?mode=auction&tags=react');
+    await user.keyboard('{Escape}');
+
+    const sortTrigger = within(desktopToolbar).getByRole('button', { name: /sort: newest/i });
+    await user.click(sortTrigger);
+    expect(screen.getByRole('menuitem', { name: /reward: high/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?status=open&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72'
+      '/tasks?mode=auction&tags=react&sort=reward_desc'
     );
-    expect(screen.getByRole('link', { name: /all statuses/i })).toHaveAttribute(
+    await user.keyboard('{Escape}');
+    expect(within(desktopToolbar).getByRole('link', { name: /gallery view/i })).toHaveAttribute(
       'href',
-      '/dashboard/tasks?mode=auction&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72'
+      '/tasks?mode=auction&tags=react&view=gallery'
     );
-    expect(screen.getByRole('link', { name: /^human$/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks?mode=auction&status=open&tags=react&taskDropId=launch-drop&minReward=2&maxReward=20&deadlineHours=72&actor=human'
-    );
-    expect(screen.getByLabelText(/tags/i)).toHaveValue('react');
-    expect(screen.getByLabelText(/task drop id/i)).toHaveValue('launch-drop');
-    expect(screen.getByLabelText(/min reward/i)).toHaveValue(2);
-    expect(screen.getByLabelText(/max reward/i)).toHaveValue(20);
-    expect(screen.getByRole('link', { name: /clear filters/i })).toHaveAttribute(
-      'href',
-      '/dashboard/tasks'
-    );
+
+    const advanced = within(frame).getByTestId('task-advanced-filters');
+    const advancedSummary = within(advanced).getByText('Advanced filters').closest('summary');
+    expect(advanced).toHaveAttribute('open');
+    expect(within(advanced).getByLabelText(/tags/i)).toHaveValue('react');
+
+    advancedSummary?.focus();
+    expect(advancedSummary).toHaveFocus();
+    await user.click(advancedSummary as HTMLElement);
+    expect(advanced).not.toHaveAttribute('open');
+    await user.click(advancedSummary as HTMLElement);
+    expect(advanced).toHaveAttribute('open');
   });
 
   it('blocks create task submission until wallet actions are connected', () => {

@@ -38,7 +38,9 @@ export function TaskViewToggle({
       role={mobile ? 'group' : undefined}
     >
       {mobile ? null : (
-        <span className="mr-1 font-mono text-xs uppercase text-muted-foreground">View</span>
+        <span className="mr-1 hidden font-mono text-xs uppercase text-muted-foreground xl:inline">
+          View
+        </span>
       )}
       <Button asChild className={controlClassName} size="chip" variant="chip">
         <Link
@@ -54,7 +56,11 @@ export function TaskViewToggle({
           }
         >
           <Rows3 className="size-3" />
-          {mobile ? <span className="sr-only">List</span> : 'Table'}
+          {mobile ? (
+            <span className="sr-only">List</span>
+          ) : (
+            <span className="hidden xl:inline">Table</span>
+          )}
         </Link>
       </Button>
       <Button asChild className={controlClassName} size="chip" variant="chip">
@@ -71,7 +77,11 @@ export function TaskViewToggle({
           }
         >
           <LayoutGrid className="size-3" />
-          {mobile ? <span className="sr-only">Gallery</span> : 'Gallery'}
+          {mobile ? (
+            <span className="sr-only">Gallery</span>
+          ) : (
+            <span className="hidden xl:inline">Gallery</span>
+          )}
         </Link>
       </Button>
     </div>
@@ -83,22 +93,26 @@ export function TaskViewToggle({
 // component) can stay server-rendered and simply mount this island.
 export function TaskListBoard({
   basePath = '/dashboard/tasks',
+  contained = false,
   createHref,
   currentFilters = {},
   detailBasePath = '/dashboard/tasks',
   errorMessage,
   hasActiveFilters,
+  isLoading = false,
   listHref,
   tasks,
   toolbarStart,
   view,
 }: {
   basePath?: string;
+  contained?: boolean;
   createHref?: string;
   currentFilters?: TaskSearchParams;
   detailBasePath?: string;
   errorMessage?: string;
   hasActiveFilters?: boolean;
+  isLoading?: boolean;
   listHref?: string;
   tasks: TaskResponse[];
   toolbarStart?: ReactNode;
@@ -116,8 +130,8 @@ export function TaskListBoard({
   const showToggle = !errorMessage && tasks.length > 0;
 
   return (
-    <div className="grid gap-3">
-      {toolbarStart || showToggle ? (
+    <div className={contained ? 'min-w-0' : 'grid gap-3'}>
+      {!contained && (toolbarStart || showToggle) ? (
         <div
           className="hidden flex-wrap items-center justify-between gap-3 lg:flex"
           data-testid="task-toolbar"
@@ -133,10 +147,12 @@ export function TaskListBoard({
         </div>
       ) : null}
       <TaskTable
+        contained={contained}
         createHref={createHref}
         detailBasePath={detailBasePath}
         errorMessage={errorMessage}
         hasActiveFilters={hasActiveFilters}
+        isLoading={isLoading}
         listHref={listHref}
         tasks={tasks}
         view={resolvedView}

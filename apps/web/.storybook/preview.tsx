@@ -98,6 +98,10 @@ const preview: Preview = {
       options: {
         mobile: { name: 'Mobile', styles: { height: '844px', width: '390px' } },
         tablet: { name: 'Tablet', styles: { height: '1024px', width: '768px' } },
+        compactDesktop: {
+          name: 'Compact desktop',
+          styles: { height: '768px', width: '1024px' },
+        },
         desktop: { name: 'Desktop', styles: { height: '900px', width: '1440px' } },
       },
     },

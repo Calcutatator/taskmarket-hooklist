@@ -264,6 +264,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0051 — Replacement gas escalates geometrically under a configured, per-deployment cap](0051-replacement-gas-escalates-geometrically-under-a-configured-cap.md)
 - [0052 — Every relayed write carries a mandatory, client-generated, backend-opaque idempotency key](0052-every-relayed-write-carries-a-client-generated-idempotency-key.md)
 - [0053 — Relayed-write observability is by query, not by alerting](0053-relayed-write-observability-is-by-query-not-by-alerting.md)
+- [0054 — Settled liability is written with the money that settles it](0054-settled-liability-is-written-with-the-money-that-settles-it.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
