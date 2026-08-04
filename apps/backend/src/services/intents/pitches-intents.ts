@@ -1,5 +1,5 @@
 // Implements: ADR-0045, ADR-0050
-import { and, eq, ne } from 'drizzle-orm';
+import { and, eq, inArray, ne } from 'drizzle-orm';
 
 import type { db as DbType } from '../../db/client';
 import { proposals, tasks } from '../../db/schema';
@@ -99,10 +99,23 @@ export function broadcastPitchesSelect(context: {
 }
 
 /**
+ * The statuses `selectWorker()` is callable from (CoreFacet.selectWorker requires Open), plus its
+ * own result.
+ */
+const SELECTABLE_STATUSES = ['open', 'worker_selected'] as const;
+
+/**
  * Mark the selected pitch, reject the rest, and move the task to worker_selected.
  *
  * Every write is an assignment to a fixed value, so re-running the completion produces the
  * same rows -- no counters, no conditional transitions.
+ *
+ * The task update is nonetheless guarded on status, like `completeEvaluationsEvaluate`:
+ * 'worker_selected' is mid-lifecycle, near the start of it, so a reconciler retry landing hours
+ * later would drag a task that has since been submitted to, accepted, cancelled or expired all
+ * the way back to "a worker has just been picked". The allowed set is what the chain permits the
+ * call from ('open') plus 'worker_selected' itself, so an indexer that processed
+ * TaskWorkerSelected first does not cost us `claimedBy`.
  */
 export async function completePitchesSelect(context: {
   db: Db;
@@ -120,5 +133,5 @@ export async function completePitchesSelect(context: {
   await db
     .update(tasks)
     .set({ claimedBy: payload.workerAddress, status: 'worker_selected' })
-    .where(eq(tasks.id, payload.taskId));
+    .where(and(eq(tasks.id, payload.taskId), inArray(tasks.status, SELECTABLE_STATUSES)));
 }
