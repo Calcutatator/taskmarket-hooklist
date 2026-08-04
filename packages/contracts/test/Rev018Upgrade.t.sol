@@ -62,7 +62,7 @@ contract Rev018UpgradeTest is Test, DiamondTestHelper {
 
         // Reconstruct pre-rev018 routing: only the legacy createTask selector exists.
         bytes4[] memory newSel = new bytes4[](1);
-        newSel[0] = FacetSelectors.CREATE_TASK;
+        newSel[0] = CoreFacet.createTask.selector;
         IDiamondCut.FacetCut[] memory cuts = new IDiamondCut.FacetCut[](1);
         cuts[0] = IDiamondCut.FacetCut(address(0), IDiamondCut.FacetCutAction.Remove, newSel);
         vm.prank(owner);
@@ -75,7 +75,7 @@ contract Rev018UpgradeTest is Test, DiamondTestHelper {
 
         assertEq(AdminFacet(diamond).diamondVersion(), 17, "must be at rev017 before rev018");
         assertEq(
-            IDiamondLoupe(diamond).facetAddress(FacetSelectors.CREATE_TASK),
+            IDiamondLoupe(diamond).facetAddress(CoreFacet.createTask.selector),
             address(0),
             "new selector must be absent pre-upgrade"
         );
@@ -87,7 +87,7 @@ contract Rev018UpgradeTest is Test, DiamondTestHelper {
 
         assertEq(AdminFacet(diamond).diamondVersion(), 18, "diamondVersion must be 18 after rev018 upgrade");
 
-        address newCoreFacet = IDiamondLoupe(diamond).facetAddress(FacetSelectors.CREATE_TASK);
+        address newCoreFacet = IDiamondLoupe(diamond).facetAddress(CoreFacet.createTask.selector);
         assertNotEq(newCoreFacet, address(0), "evaluator-aware createTask must route");
         assertNotEq(newCoreFacet, oldCoreFacet, "CoreFacet must be replaced");
 
@@ -162,7 +162,7 @@ contract Rev018UpgradeTest is Test, DiamondTestHelper {
 
     function _createTaskCalldata() private pure returns (bytes memory) {
         return abi.encodeWithSelector(
-            FacetSelectors.CREATE_TASK,
+            CoreFacet.createTask.selector,
             ITMPCore.TaskConfig({
                 reward: 1,
                 duration: 1 days,
