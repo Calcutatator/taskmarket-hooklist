@@ -196,5 +196,5 @@ adrs:
   - number: "0054"
     file: "0054-settled-liability-is-written-with-the-money-that-settles-it.md"
     title: Settled liability is written with the money that settles it
-    status: Proposed
+    status: Accepted
     date: "2026-08-03"

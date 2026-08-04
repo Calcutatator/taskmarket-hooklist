@@ -9,13 +9,13 @@
 > on any single status check being correct, accepting a new revert path on a previously silent
 > no-op and the loss of the historical reward value from on-chain reads of a settled task.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-03
 - **Embodiment:** Implemented
 - **Last audited:** 2026-08-03
 - **Author:** Claude (agent)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
-- **Deciders:** (pending — requires human approval before Status may become Accepted)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
 - **Amends / Amended-by:** —
