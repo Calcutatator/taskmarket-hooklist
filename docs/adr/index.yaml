@@ -261,10 +261,10 @@ adrs:
   - number: "0058"
     file: "0058-every-api-error-carries-a-machine-readable-reason.md"
     title: "Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500"
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"
   - number: "0059"
     file: "0059-an-intent-with-no-payer-is-readable-by-a-participant-of-its-task.md"
     title: An intent with no payer is readable by a participant of the task it concerns
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"

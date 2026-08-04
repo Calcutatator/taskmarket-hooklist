@@ -9,17 +9,17 @@
 > accepting that in-flight remains an error rather than becoming a 200 and that raw-REST callers
 > see a status change on one path.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude Code (drafted for review)
-- **Reviewers:** None recorded — drafted for review, no independent reviewer yet
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending amends ADR-0049
+- **Amends / Amended-by:** Amends ADR-0049
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
