@@ -266,6 +266,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0053 — Relayed-write observability is by query, not by alerting](0053-relayed-write-observability-is-by-query-not-by-alerting.md)
 - [0054 — Settled liability is written with the money that settles it](0054-settled-liability-is-written-with-the-money-that-settles-it.md)
 - [0055 — A created task's id comes from its receipt, not from a requester-nonce prediction](0055-a-created-task-id-comes-from-the-receipt-not-a-nonce-prediction.md)
+- [0056 — createTask takes the evaluator configuration, and creation stops needing a second call](0056-create-task-takes-the-evaluator-configuration.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting

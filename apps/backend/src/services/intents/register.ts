@@ -158,9 +158,19 @@ export function registerRelayedIntentHandlers(): void {
       }),
   });
 
-  // Implements: ADR-0047 -- a root intent of its own, recorded either by
-  // POST /api/tasks/{taskId}/evaluator or by a confirmed creation that carried evaluator
-  // fields. Both build the same payload and hand it to the same encoder, so an assignment the
+  // Implements: ADR-0047 -- a root intent of its own, whose caller is now only
+  // POST /api/tasks/{taskId}/evaluator.
+  //
+  // Task creation no longer uses this. It passes the evaluator terms to createTask and has
+  // them applied in the same transaction, which is the only configuration that cannot lose
+  // the race against a worker claiming -- ADR-0047 named the contract API gap, and rev016
+  // closed it. What this replaces was a second call dispatched from the creation completion,
+  // racing a claim it usually but not always beat.
+  //
+  // The operation stays registered because appointing an evaluator to an already-live task is
+  // real and permanent: a requester who decides on one after creating has no other route, and
+  // the contract's Open gate correctly bounds it to a task nobody has claimed. Broadcast and
+  // completion go through the shared evaluator-assignment service, so an assignment the
   // crash-fallback worker picks up from jsonb hours later is the identical contract call.
   registerRelayedIntentHandler('tasks.assignEvaluator', {
     broadcast: async ({ intent }) =>

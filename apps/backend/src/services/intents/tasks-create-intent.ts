@@ -18,11 +18,6 @@ import { logger } from '../../lib/logger';
 import { normalizeRequesterPublicKey } from '../../lib/task';
 import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
-import {
-  recordAndDispatchEvaluatorAssignment,
-  type EvaluatorAssignment,
-} from '../evaluator-assignment';
-import { derivedIdempotencyKey } from '../relayed-intents';
 import { AUCTION_SUBTYPE_MAP, contractCreateTask, MODE_MAP, taskIdForTx } from '../contract';
 
 type Db = typeof DbType;
@@ -74,10 +69,13 @@ export type TasksCreateInput = {
  */
 export type TasksCreateIntentPayload = {
   allowedViewerAddresses: string[];
-  // The shared type from services/evaluator-assignment, not a structural copy of it: the
-  // endpoint and this payload must mean the same thing by "24 hours" down to the units, and a
-  // duplicated inline shape is exactly how those two drift apart (ADR-0047).
-  evaluatorAssignment: EvaluatorAssignment | null;
+  evaluatorAssignment: {
+    appealWindow: number;
+    disputeResolver: string | null;
+    evaluationWindow: number;
+    evaluator: string;
+    evaluatorFeeBps: number;
+  } | null;
   inlineTaskDrop: {
     description: string | null;
     id: string;
@@ -137,7 +135,22 @@ export async function broadcastTasksCreate(context: {
     (input.hookContract ?? ZERO_ADDRESS) as `0x${string}`,
     (input.tags ?? []).map((tag) => keccak256(toHex(tag)) as `0x${string}`),
     (input.hookData ?? '0x') as `0x${string}`,
-    context.paymentTxHash ?? undefined
+    context.paymentTxHash ?? undefined,
+    // The evaluator, if there is one, is configured by this same transaction. It used to be a
+    // second relayed call issued once this one confirmed, which raced the first worker to claim
+    // and lost often enough to matter (ADR-0047). A rebroadcast replays this builder verbatim,
+    // so the evaluator terms travel with the escrow on every attempt rather than depending on a
+    // follow-on record that may or may not exist.
+    context.payload.evaluatorAssignment
+      ? {
+          appealWindowSecs: context.payload.evaluatorAssignment.appealWindow,
+          disputeResolver: (context.payload.evaluatorAssignment.disputeResolver ??
+            ZERO_ADDRESS) as `0x${string}`,
+          evaluationWindowSecs: context.payload.evaluatorAssignment.evaluationWindow,
+          evaluator: context.payload.evaluatorAssignment.evaluator as `0x${string}`,
+          evaluatorFeeBps: context.payload.evaluatorAssignment.evaluatorFeeBps,
+        }
+      : undefined
   );
 }
 
@@ -189,6 +202,23 @@ export async function completeTasksCreate(context: {
     .where(lowerAddressEq(payload.payer))
     .limit(1);
 
+  // The evaluator columns are written here because the creation transaction is what configures
+  // them now. They are not derivable from the EvaluatorAssigned event alone -- the event carries
+  // only the evaluator and the stake, not the fee, the windows or the dispute resolver -- so the
+  // indexer cannot backfill them and this path is their sole source of truth. Left absent
+  // entirely when there is no evaluator, rather than written as nulls: a later
+  // POST /api/tasks/{id}/evaluator may legitimately have set them between the indexer's insert
+  // and this one, and a re-run of this completion must not erase that.
+  const evaluatorColumns = payload.evaluatorAssignment
+    ? {
+        appealWindow: payload.evaluatorAssignment.appealWindow,
+        disputeResolver: payload.evaluatorAssignment.disputeResolver,
+        evaluationWindow: payload.evaluatorAssignment.evaluationWindow,
+        evaluator: payload.evaluatorAssignment.evaluator,
+        evaluatorFeeBps: payload.evaluatorAssignment.evaluatorFeeBps,
+      }
+    : {};
+
   await db.transaction(async (tx) => {
     if (payload.inlineTaskDrop) {
       await tx.insert(taskDrops).values(payload.inlineTaskDrop).onConflictDoNothing();
@@ -236,13 +266,14 @@ export async function completeTasksCreate(context: {
         tags: input.tags ?? [],
         taskDropId: payload.resolvedTaskDropId,
         taskVisibility,
+        ...evaluatorColumns,
       })
       // The chain-event indexer (services/indexer.ts's processTaskCreatedEvent) also inserts a
       // row for this id on the on-chain TaskCreated event, with only on-chain-derivable fields
       // populated, and can win the race against this insert. onConflictDoUpdate patches in the
       // off-chain-only fields this path is the sole source of truth for -- excluding
-      // status/claimedBy/claimedAt (owned by claim/settlement events), hookContract/evaluator*
-      // (reconciled by their own event handlers), and the fields the indexer already derives
+      // status/claimedBy/claimedAt (owned by claim/settlement events), hookContract (reconciled
+      // by its own event handler), and the fields the indexer already derives
       // correctly from the same event. This is also what makes re-running the completion safe.
       .onConflictDoUpdate({
         target: tasks.id,
@@ -263,6 +294,7 @@ export async function completeTasksCreate(context: {
           tags: input.tags ?? [],
           taskDropId: payload.resolvedTaskDropId,
           taskVisibility,
+          ...evaluatorColumns,
         },
       });
 
@@ -285,38 +317,6 @@ export async function completeTasksCreate(context: {
         .onConflictDoNothing();
     }
   });
-
-  // Evaluator assignment is a second on-chain call, because the contract's createTask cannot
-  // take evaluator configuration (ADR-0047). It is an ordinary root intent of its own --
-  // recorded, then broadcast immediately (ADR-0045) -- and not linked to the creation in any
-  // way: it carries no payment, so it has nothing to refund and nothing to inherit. Ordering
-  // is all it needs from the creation, and it gets that by being started only from here, after
-  // the escrow is confirmed.
-  //
-  // POST /api/tasks/{taskId}/evaluator is the canonical home for assignment, and this is the
-  // same shared path it uses -- same payload, same encoder, same intent operation. What it is
-  // not is a redirect to that endpoint: `assignEvaluator` reverts `TaskNotOpen` the moment a
-  // worker claims the task, and worker agents claim in milliseconds, so a requester who asked
-  // for an evaluator at creation must have it dispatched from inside this completion rather
-  // than after a round trip they would usually lose (ADR-0047's own record of 4 of 4
-  // assignments lost to a deferral). The endpoint is an addition, not a replacement.
-  if (payload.evaluatorAssignment) {
-    await recordAndDispatchEvaluatorAssignment({
-      db,
-      // Derived from the creation this follows, not random: completion is at-least-once, so a
-      // rerun of this handler must land on the same assignment intent rather than record a
-      // second one and assign the evaluator twice (ADR-0052). It is derived from the id the
-      // receipt resolved to, not from anything the payload carried -- the payload deliberately
-      // holds no task id, and the same escrow receipt always decodes to the same id, so a
-      // rerun derives the same key.
-      idempotencyKey: derivedIdempotencyKey(`${taskId}:tasks.assignEvaluator`),
-      payload: {
-        assignment: payload.evaluatorAssignment,
-        payer: payload.payer,
-        taskId,
-      },
-    });
-  }
 
   // Unlisted and private tasks opt out of Taskmarket's own discovery surfaces (ADR-0014,
   // ADR-0030) -- that includes outbound notifications, since actively pinging worker agents

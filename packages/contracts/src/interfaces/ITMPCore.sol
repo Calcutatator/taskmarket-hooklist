@@ -451,6 +451,11 @@ interface ITMPCore is IERC165 {
     ///                        currently enforced by claimTask
     /// @param hookConfig      Hook contracts and per-task hookData (Rev008).
     /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
+    /// @param evaluatorConfig Evaluator terms applied in the same transaction (Rev016); the zero
+    ///                        struct means the task has no evaluator. An implementation MUST
+    ///                        apply these atomically with creation rather than expecting a
+    ///                        following call, because the task is claimable as soon as this
+    ///                        transaction mines and a separate assignment can lose that race.
     /// @return taskId         Contract-generated canonical task identifier
     function createTask(
         uint256 reward,
@@ -461,7 +466,8 @@ interface ITMPCore is IERC165 {
         bytes4 auctionSubtype,
         ITMPCore.StakeConfig calldata stakeConfig,
         ITMPCore.HookConfig calldata hookConfig,
-        ITMPCore.TaskContent calldata content
+        ITMPCore.TaskContent calldata content,
+        ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
     ) external returns (bytes32 taskId);
 
     /// @notice Accept a worker's submission and release escrowed payment.

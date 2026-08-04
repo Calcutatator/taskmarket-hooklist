@@ -653,49 +653,31 @@ async function main() {
     log('6/9', 'Skipping durable intent checks (no DATABASE_URL)');
   }
 
-  // 7. The evaluator assignment. These tasks carry an evaluator, and assigning one is a second
-  // contract call, because the contract's createTask cannot take evaluator configuration. It
-  // cannot be broadcast bare from inside the create's completion handler: a transaction sent
-  // from there would have no durable record of its own, so nothing could settle it. It gets an
-  // intent of its own instead -- recorded once the create is confirmed, then broadcast and
-  // completed by the dispatch itself, with no request anywhere in the sequence. The dispatcher
-  // awaits the receipt, so by the time the broadcast returns the transaction is confirmed and
-  // the completion runs there; the reconciler's sweep is the backstop, not the normal route.
+  // 7. The evaluator. These tasks carry one, and it is configured by the create transaction
+  // itself -- createTask takes the evaluator terms directly, so there is no second contract
+  // call and therefore no second intent. This assertion used to be its mirror image: it
+  // required a separate tasks.assignEvaluator intent to exist and complete. That intent was a
+  // workaround for a contract API gap (ADR-0047), and it raced the first worker to claim,
+  // because the task is claimable the instant the escrow mines and assignEvaluator reverts
+  // TaskNotOpen once it is claimed. The gap is closed, so the correct assertion is the
+  // opposite one: no such intent exists at all, and the evaluator is on the task anyway.
   if (sql) {
-    log('7/9', 'Following the evaluator assignment...');
-    const assignIntent = await pollIntent(
-      sql,
-      taskIds[0]!,
-      'tasks.assignEvaluator',
-      () => true,
-      `a tasks.assignEvaluator intent for ${taskIds[0]} to be recorded`,
-      60_000
-    );
-    // It carries no payment: nothing was paid for it, so a confirmed failure of it has nothing
-    // to refund, and one payment can never be refunded twice.
-    if (assignIntent.payment_tx_hash !== null || assignIntent.payment_amount !== null) {
-      throw new Error(`Intent ${assignIntent.id} carries a payment reference; it should not`);
+    log('7/9', 'Checking the evaluator needed no follow-on intent...');
+    const assignIntents = await readIntents(sql, taskIds[0]!, 'tasks.assignEvaluator');
+    if (assignIntents.length !== 0) {
+      throw new Error(
+        `Task ${taskIds[0]} has ${assignIntents.length} tasks.assignEvaluator intent(s); ` +
+          'creation must configure the evaluator in the create transaction, with no follow-on'
+      );
     }
-    ok('evaluator assignment recorded as its own intent with no payment', assignIntent.id);
-
-    const settledAssign = await pollIntent(
-      sql,
-      taskIds[0]!,
-      'tasks.assignEvaluator',
-      (row) => row.status === 'completed',
-      `the tasks.assignEvaluator intent for ${taskIds[0]} to complete`
-    );
-    ok(
-      'evaluator assignment broadcast and completed with no request in play',
-      settledAssign.tx_hash
-    );
+    ok('no follow-on evaluator-assignment intent was recorded', 'atomic with the create');
   } else {
     log('7/9', 'Skipping evaluator-assignment intent checks (no DATABASE_URL)');
   }
 
-  // The evaluator reaches the task only through that intent's completion handler, so this is
-  // the end-to-end form of the same claim: the intent did the work, not just moved rows.
-  // It runs with or without a database, which is what the API-only mode is worth.
+  // The end-to-end form of the same claim: the evaluator is on the task, and the only relayed
+  // transaction that ever existed for it is the create. Runs with or without a database, which
+  // is what the API-only mode is worth.
   const evaluated = await pollUntil(
     () => get(`/api/tasks/${taskIds[0]}`) as Promise<{ evaluator: string | null }>,
     (task) => Boolean(task.evaluator),
@@ -706,7 +688,7 @@ async function main() {
       `Task ${taskIds[0]} evaluator is ${evaluated.evaluator}, expected ${requester.address}`
     );
   }
-  ok('evaluator recorded on the task by its own intent', evaluated.evaluator);
+  ok('evaluator recorded on the task by the create transaction alone', evaluated.evaluator);
 
   // 8. Deliberate fault injection: strand a nonce and prove the reconciler heals it without
   // an operator restart. This is the property the incident actually exposed, and the only way
