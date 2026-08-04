@@ -29,6 +29,7 @@ export function ClaimButton({ disabled, onSuccess, task }: TaskActionComponentPr
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         paid={false}
         stalled={inFlight.stalled}

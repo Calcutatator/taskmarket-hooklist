@@ -44,6 +44,7 @@ export function UpdateForm({ disabled, onSuccess, task }: TaskActionComponentPro
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="update"

@@ -44,10 +44,17 @@ async function expectNoRetryControl(canvasElement: HTMLElement) {
 async function expectNeitherSuccessNorFailure(canvasElement: HTMLElement) {
   const canvas = within(canvasElement);
   await expect(canvas.getByText(/not a success and not a failure/)).toBeVisible();
-  await expect(
-    canvas.getByText(/nothing is settled either way until the chain says so/)
-  ).toBeVisible();
+  await expect(canvas.getByText(/nothing is settled either way until it lands/)).toBeVisible();
   await expect(canvas.getByText(new RegExp(KEY, 'i'))).toBeVisible();
+}
+
+// The copy describes the state, never the machinery under it. A user waiting on a submission
+// does not care where it is confirming, and naming the mechanism would put implementation into
+// a sentence whose whole job is to say what is true right now.
+async function expectNoMechanismInCopy(canvasElement: HTMLElement) {
+  const canvas = within(canvasElement);
+  await expect(canvas.queryByText(/on.chain/i)).toBeNull();
+  await expect(canvas.queryByText(/blockchain/i)).toBeNull();
 }
 
 export const PaidWrite: Story = {
@@ -58,6 +65,7 @@ export const PaidWrite: Story = {
       canvas.getByText(/a second submission is a second payment, not a retry/)
     ).toBeVisible();
     await expectNeitherSuccessNorFailure(canvasElement);
+    await expectNoMechanismInCopy(canvasElement);
     await expectNoRetryControl(canvasElement);
   },
   render: () => (
@@ -233,6 +241,249 @@ export const EverySurface: Story = {
           paid={paid}
           subject={subject}
           title={title}
+        />
+      ))}
+    </div>
+  ),
+};
+
+// ---------------------------------------------------------------------------
+// Settled failures, read from the intent (ADR-0049's `intents.get`).
+//
+// These are what the waiting states above turn into once the write is known to have failed.
+// Before the intent read existed the page could only keep saying "not yet" until it gave up,
+// so every story below is a state a user previously could not be shown at all.
+// ---------------------------------------------------------------------------
+
+/** The shared assertions for any failed state: it is definite, and it still offers nothing. */
+async function expectSettledFailure(canvasElement: HTMLElement, subject: string) {
+  const canvas = within(canvasElement);
+  await expect(canvas.getByText(`The ${subject} did not go through`)).toBeVisible();
+  await expect(canvas.getByText(/definitively failed/)).toBeVisible();
+  // The waiting copy must be gone rather than sitting alongside the verdict.
+  await expect(canvas.queryByText(/not a success and not a failure/)).toBeNull();
+  await expectNoMechanismInCopy(canvasElement);
+  await expectNoRetryControl(canvasElement);
+}
+
+/** Money back. The only state that closes the interaction with nothing left to do. */
+export const FailedRefunded: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/Your payment has been returned/)).toBeVisible();
+    await expect(canvas.getByText(/Reason: escrow deposit reverted/)).toBeVisible();
+    await expectSettledFailure(canvasElement, 'task');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason: 'escrow deposit reverted',
+        refund: { status: 'refunded', txHash: '0xabc' },
+      }}
+      idempotencyKey={KEY}
+      subject="task"
+      title="Task submitted, confirming"
+    />
+  ),
+};
+
+/** Money on its way back. Says wait, and says explicitly that waiting is all that is needed. */
+export const FailedRefundInProgress: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/on its way back/)).toBeVisible();
+    await expect(canvas.getByText(/Nothing further is needed from you/)).toBeVisible();
+    await expectSettledFailure(canvasElement, 'rating');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{ reason: 'rating window closed', refund: { status: 'refunding', txHash: null } }}
+      idempotencyKey={KEY}
+      subject="rating"
+      title="Rating submitted, confirming"
+    />
+  ),
+};
+
+/**
+ * The refund itself failed. The single state where a user must escalate rather than wait, and
+ * the one that disappears if the refund states are flattened into "not refunded".
+ */
+export const FailedRefundStuck: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/could not be returned automatically/)).toBeVisible();
+    await expect(canvas.getByText(/will not resolve on its own/)).toBeVisible();
+    await expect(canvas.getByText(/Quote the reference below to support/)).toBeVisible();
+    await expect(canvas.queryByText(/Nothing further is needed/)).toBeNull();
+    await expectSettledFailure(canvasElement, 'pitch');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason: 'relay exhausted its attempts',
+        refund: { status: 'failed', txHash: null },
+      }}
+      idempotencyKey={KEY}
+      subject="pitch"
+      title="Pitch submitted, confirming"
+    />
+  ),
+};
+
+/**
+ * Paid, failed, and no refund decided yet. Silence here would read as "no refund is coming",
+ * which is a claim the intent has not made.
+ */
+export const FailedRefundUndecided: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(
+      canvas.getByText(/No decision about your payment has been recorded yet/)
+    ).toBeVisible();
+    await expectSettledFailure(canvasElement, 'submission');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{ reason: null, refund: null }}
+      idempotencyKey={KEY}
+      subject="submission"
+      title="Submission submitted, confirming"
+    />
+  ),
+};
+
+/**
+ * A free relayed write that failed. Nothing was taken, so nothing is said about money -- "not
+ * returned" would describe a payment that never happened.
+ */
+export const FailedUnpaidWrite: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.queryByText(/payment/i)).toBeNull();
+    await expect(canvas.queryByText(/returned/i)).toBeNull();
+    await expectSettledFailure(canvasElement, 'claim');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{ reason: 'task was already claimed', refund: null }}
+      idempotencyKey={KEY}
+      paid={false}
+      subject="claim"
+      title="Claim submitted, confirming"
+    />
+  ),
+};
+
+export const FailedRefundStuckDark: Story = {
+  globals: { theme: 'dark' },
+  play: async ({ canvasElement }) => {
+    await expectSettledFailure(canvasElement, 'pitch');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason: 'relay exhausted its attempts',
+        refund: { status: 'failed', txHash: null },
+      }}
+      idempotencyKey={KEY}
+      subject="pitch"
+      title="Pitch submitted, confirming"
+    />
+  ),
+};
+
+export const FailedRefundStuckLight: Story = {
+  globals: { theme: 'light' },
+  play: async ({ canvasElement }) => {
+    await expectSettledFailure(canvasElement, 'pitch');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason: 'relay exhausted its attempts',
+        refund: { status: 'failed', txHash: null },
+      }}
+      idempotencyKey={KEY}
+      subject="pitch"
+      title="Pitch submitted, confirming"
+    />
+  ),
+};
+
+/**
+ * A long terminal reason on a phone. The reason comes from the backend verbatim, so it has no
+ * length the component controls -- `break-words` is what keeps it from overflowing sideways.
+ */
+export const FailedLongReasonMobile: Story = {
+  globals: { viewport: { value: 'mobile' } },
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getByText(/Reason: execution reverted/)).toBeVisible();
+    await expectSettledFailure(canvasElement, 'task');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason:
+          'execution reverted: TaskNotOpen(0x9f1c0f6e3a414c0d9d3a0f1c9f1c0f6e3a414c0d9d3a0f1c9f1c0f6e3a414c0d)',
+        refund: { status: 'refunded', txHash: '0xabc' },
+      }}
+      idempotencyKey={KEY}
+      subject="task"
+      title="Task submitted, confirming"
+    />
+  ),
+};
+
+export const FailedRefundStuckDarkMobile: Story = {
+  globals: { theme: 'dark', viewport: { value: 'mobile' } },
+  play: async ({ canvasElement }) => {
+    await expectSettledFailure(canvasElement, 'pitch');
+  },
+  render: () => (
+    <InFlightWriteNotice
+      failure={{
+        reason: 'relay exhausted its attempts',
+        refund: { status: 'failed', txHash: null },
+      }}
+      idempotencyKey={KEY}
+      subject="pitch"
+      title="Pitch submitted, confirming"
+    />
+  ),
+};
+
+/**
+ * Every refund answer side by side. The comparison is the point: each one tells the user
+ * something different to do, and none of them is a control to press.
+ */
+export const EveryRefundState: Story = {
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    await expect(canvas.getAllByText(/did not go through/)).toHaveLength(5);
+    await expect(canvas.getAllByText(/Quote the reference below to support/)).toHaveLength(2);
+    await expectNoRetryControl(canvasElement);
+  },
+  render: () => (
+    <div className="grid max-w-2xl gap-3">
+      {(
+        [
+          ['refunded', { status: 'refunded', txHash: '0xabc' }, true],
+          ['refunding', { status: 'refunding', txHash: null }, true],
+          ['pending', { status: 'pending', txHash: null }, true],
+          ['failed', { status: 'failed', txHash: null }, true],
+          // Paid, with no refund decided yet -- the open question, not the free write.
+          ['undecided', null, true],
+        ] as const
+      ).map(([label, refund, paid]) => (
+        <InFlightWriteNotice
+          failure={{ reason: `refund state: ${label}`, refund }}
+          idempotencyKey={KEY}
+          key={label}
+          paid={paid}
+          subject="submission"
+          title="Submission submitted, confirming"
         />
       ))}
     </div>

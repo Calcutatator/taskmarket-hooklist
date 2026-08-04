@@ -223,6 +223,7 @@ export function StepPublish({
   // second escrow of the full amount.
   const inFlightNotice = inFlight.state ? (
     <InFlightWriteNotice
+      failure={inFlight.failure}
       idempotencyKey={inFlight.state.idempotencyKey}
       stalled={inFlight.stalled}
       subject="task"

@@ -43,6 +43,7 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="bid"

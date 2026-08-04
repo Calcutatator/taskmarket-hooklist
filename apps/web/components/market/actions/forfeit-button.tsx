@@ -31,6 +31,7 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         paid={false}
         stalled={inFlight.stalled}

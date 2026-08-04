@@ -35,6 +35,7 @@ export function PitchForm({ disabled, onSuccess, task }: TaskActionComponentProp
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="pitch"
@@ -130,7 +131,7 @@ export function PitchForm({ disabled, onSuccess, task }: TaskActionComponentProp
       : step === 'signing'
         ? 'Sign payment...'
         : step === 'submitting'
-          ? 'Anchoring on-chain...'
+          ? 'Anchoring...'
           : 'Submit pitch';
 
   return (

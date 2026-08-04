@@ -21,6 +21,10 @@ const { payX402Post, refresh, toastError, toastInfo, toastSuccess, walletState }
 );
 
 vi.mock('wagmi', () => ({
+  // Every paid action calls `useInFlightWrite`, which asks for a read-auth signature once a
+  // write goes in flight so it can read the intent. Stubbed here because this file replaces
+  // the whole wagmi module.
+  useSignMessage: () => ({ signMessageAsync: vi.fn(async () => '0xsignature') }),
   useAccount: () => ({ address: walletState.address, isConnected: walletState.isConnected }),
   useSignTypedData: () => ({ signTypedDataAsync: vi.fn() }),
   useSwitchChain: () => ({ switchChainAsync: vi.fn() }),

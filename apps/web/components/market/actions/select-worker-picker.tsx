@@ -73,6 +73,7 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         paid={false}
         stalled={inFlight.stalled}

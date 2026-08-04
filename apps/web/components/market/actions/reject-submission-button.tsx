@@ -63,6 +63,7 @@ export function RejectSubmissionButton({
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="rejection"

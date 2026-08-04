@@ -48,6 +48,7 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
   if (inFlight.state) {
     return (
       <InFlightWriteNotice
+        failure={inFlight.failure}
         idempotencyKey={inFlight.state.idempotencyKey}
         stalled={inFlight.stalled}
         subject="payout release"
