@@ -54,16 +54,17 @@ registerRelayedIntentHandlers();
  * left. Adding an entry here should feel like it needs an argument, because it does; the
  * argument itself lives next to the registration in `services/intents/register.ts`.
  *
- * Every one of these is excluded because a *second landing* would move money the chain would
- * not stop, not merely because wiring it up would be awkward.
+ * This list was written when every entry was excluded because a *second landing* would move
+ * money the chain would not stop. ADR-0054 has since closed both remaining hazards on chain,
+ * so what is left here is unfinished wiring rather than a standing prohibition -- and the
+ * entries say so. Keep that distinction explicit: an exclusion that stops recording *why* is
+ * how a temporary gap becomes permanent.
  */
 const NO_BROADCASTER: Record<string, string> = {
-  'tasks.create':
-    "The payload's taskId is precomputed from the requester's on-chain nonce before the call, while CoreFacet.createTask derives the real id from requesterNonce[requester]++ at execution time. Any other createTask by the same requester in between makes the recorded id belong to a different task, and completeTasksCreate upserts on it. Also relays paymentAmount = reward, so a duplicate double-funds escrow.",
   'tasks.update':
-    'contractUpdateTask relays with newReward - currentReward, which the forwarder moves out of the server wallet on every relay, while CoreFacet.updateTask applies the change only when newReward != task.reward. A replay pays the increase again and no-ops the change that justified it.',
+    'Not yet wired, rather than unsafe. ADR-0054 made CoreFacet.updateTask revert NoRewardChange instead of silently applying a no-op reward change, so the forwarder-side delta transfer a replay would trigger is now unwound by the revert rather than kept. Giving this a broadcaster is unblocked follow-up work that has not been done.',
   'tasks.refundExpired':
-    'CoreFacet.refundExpired rejects Accepted and Cancelled but not Expired -- the status it sets itself -- and never zeroes task.reward, so a second landing refunds the full reward again out of the pooled escrow every task shares.',
+    'Not yet wired, rather than unsafe. ADR-0054 made CoreFacet.refundExpired reject an already-Expired task and zero the liability it settles, so a second landing now reverts TaskAlreadyRefunded instead of draining pooled escrow. Giving this a broadcaster is unblocked follow-up work that has not been done.',
 };
 
 const EXPLANATION = [
