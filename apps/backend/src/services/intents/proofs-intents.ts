@@ -1,7 +1,9 @@
-// Implements: ADR-0045
+// Implements: ADR-0045, ADR-0050
+import { keccak256, toBytes } from 'viem';
+
 import type { db as DbType } from '../../db/client';
 import { proofs, submissions } from '../../db/schema';
-import { contractSubmitWork } from '../contract';
+import { contractSubmitProof, contractSubmitWork } from '../contract';
 import { dispatchRelayedIntent } from '../relayed-intent-registry';
 import { recordRelayedIntent } from '../relayed-intents';
 
@@ -29,6 +31,34 @@ export type ProofsAnchorDeliverableIntentPayload = {
   taskId: string;
   workerAddress: string;
 };
+
+/**
+ * Re-anchor the worker's benchmark proof.
+ *
+ * The two arguments not held literally on the payload are pure functions of what is: the
+ * proof-type selector is `keccak256` of the recorded type string, and the metric value is the
+ * recorded decimal parsed back to a uint256. Neither consults the clock, the database or the
+ * chain, so both produce the same bytes on every attempt -- which is the property ADR-0050
+ * point 7 is actually after, rather than a ban on arithmetic.
+ *
+ * Like `submitBid` and `submitPitch`, `submitProof` appends to an array with no on-chain
+ * dedupe, so the guard is the never-broadcast precondition. A duplicate would be inert -- the
+ * same hash twice, no transfers -- and the `proofs` insert is conflict-do-nothing on the id the
+ * request minted.
+ */
+export function broadcastProofsSubmit(context: {
+  payload: ProofsSubmitIntentPayload;
+}): Promise<`0x${string}`> {
+  const { payload } = context;
+  return contractSubmitProof(
+    payload.taskId as `0x${string}`,
+    payload.workerAddress as `0x${string}`,
+    payload.proofHash as `0x${string}`,
+    keccak256(toBytes(payload.proofType)),
+    payload.metricValue ? BigInt(payload.metricValue) : 0n,
+    payload.contractAddress
+  );
+}
 
 /**
  * Record the proof a confirmed submitProof anchored, then start the deliverable commitment.

@@ -153,6 +153,7 @@ export const bidsRouter = router({
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
         payload: {
           bidId,
+          contractAddress: task.contractAddress,
           price: input.price,
           taskId: input.taskId,
           workerAddress,
@@ -458,9 +459,12 @@ export const bidsRouter = router({
         operation: 'bids.auctionAccept',
         payer: workerAddress,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        // The clock price is recorded as quoted, and a rebroadcast replays it rather than
+        // re-reading the clock -- what the worker accepted is what lands (ADR-0050 point 7).
         payload: {
           acceptedAt: now.toISOString(),
           bidId: randomUUID(),
+          contractAddress: task.contractAddress,
           price: clockPrice.toString(),
           taskId: input.taskId,
           workerAddress,

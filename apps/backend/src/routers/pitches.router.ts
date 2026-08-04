@@ -152,6 +152,7 @@ export const pitchesRouter = router({
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
         payload: {
+          contractAddress: task.contractAddress,
           estimatedDuration: input.estimatedDuration || null,
           pitchHash,
           pitchId,
@@ -317,8 +318,13 @@ export const pitchesRouter = router({
         operation: 'pitches.select',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        // `requester` is recorded separately from `payer` on purpose: this route accepts
+        // payment from anyone and authorises the selection by the requester's signature, so
+        // the two addresses genuinely differ and a rebroadcast must relay as the requester.
         payload: {
+          contractAddress: task.contractAddress,
           pitchId: input.pitchId,
+          requester: task.requester,
           taskId: input.taskId,
           workerAddress: input.workerAddress,
         } satisfies PitchesSelectIntentPayload,

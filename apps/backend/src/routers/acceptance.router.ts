@@ -19,6 +19,7 @@ import {
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import type {
   AcceptanceAcceptIntentPayload,
+  AcceptanceAcceptSubmissionsIntentPayload,
   AcceptanceRateIntentPayload,
 } from '../services/intents/acceptance-intents';
 
@@ -125,8 +126,16 @@ export const acceptanceRouter = router({
         operation: 'acceptance.accept',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        // The deliverable hash is recorded, not left to be re-resolved later: the query above
+        // picks the newest unrejected submission, and on a bounty that is a different worker's
+        // work by the time a rebroadcast runs. What the requester accepted is a fact about
+        // this request, so it belongs on the row (ADR-0050).
         payload: {
+          contractAddress: task.contractAddress,
+          deliverableHash: deliverable,
           isSelfAward,
+          requester: payer,
+          requesterAgentId: requesterAgentRow[0]?.agentId ?? null,
           taskId: input.taskId,
           worker: input.worker,
         } satisfies AcceptanceAcceptIntentPayload,
@@ -238,7 +247,14 @@ export const acceptanceRouter = router({
         operation: 'acceptance.acceptSubmissions',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-        payload: { taskId: input.taskId, winners: input.winners },
+        payload: {
+          contractAddress: task.contractAddress,
+          deliverables,
+          requester: payer,
+          requesterAgentId: requesterAgentRow[0]?.agentId ?? null,
+          taskId: input.taskId,
+          winners: input.winners,
+        } satisfies AcceptanceAcceptSubmissionsIntentPayload,
         send: () =>
           contractAcceptSubmissions(
             input.taskId as `0x${string}`,
@@ -365,8 +381,11 @@ export const acceptanceRouter = router({
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
         payload: {
+          contractAddress: task.contractAddress,
+          feedbackHash,
           feedbackId,
           feedbackText: input.feedbackText ?? null,
+          feedbackURI,
           fileContent,
           rating: input.rating,
           requesterAddress: payer.toLowerCase(),
