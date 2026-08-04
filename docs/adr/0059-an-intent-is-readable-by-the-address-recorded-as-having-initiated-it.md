@@ -29,7 +29,7 @@ It was accepted, then corrected minutes later in the same conversation by the sa
 before any code was written. It is recorded below in Considered options as a rejected
 alternative, with the reason, rather than being preserved as a superseded document: a
 supersession chain for a decision that never shipped obscures the history it is meant to keep.
-`Status` is back to `Proposed` and `Deciders` is pending; nothing here has been decided yet.
+The rewrite went back to `Proposed`, and was then accepted on its own terms.
 
 ## Context
 
