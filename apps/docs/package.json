@@ -15,6 +15,11 @@
     "format:write": "remark src/pages/ --output",
     "check-og": "node scripts/check-og-tags.mjs"
   },
+  "remarkConfig": {
+    "plugins": [
+      "@taskmarket/remark-config"
+    ]
+  },
   "dependencies": {
     "vocs": "^1.4.1"
   },
