@@ -43,6 +43,7 @@ apps/cli/
 │   │       ├── bid.ts            # taskmarket task bid
 │   │       ├── proof.ts          # taskmarket task proof
 │   │       ├── select-worker.ts  # taskmarket task select-worker
+│       ├── assign-evaluator.ts # taskmarket task assign-evaluator
 │   │       ├── submissions.ts    # taskmarket task submissions
 │   │       ├── select-winner.ts  # taskmarket task select-winner
 │   │       ├── auction-accept.ts # taskmarket task auction-accept
@@ -87,6 +88,7 @@ apps/cli/
 | `taskmarket task accept <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task rate <taskId>` | 0.001 USDC | Yes |
 | `taskmarket task cancel <taskId>` | 0.001 USDC | Yes (X402) |
+| `taskmarket task assign-evaluator <taskId> --evaluator <addr> [--evaluator-fee-bps <bps>] [--evaluation-window <hours>] [--appeal-window <hours>] [--dispute-resolver <addr>]` | 0.001 USDC | Yes (X402) |
 | `taskmarket task update <taskId> [--reward <usdc>] [--extend-expiry <seconds>]` | 0.001 USDC + positive reward delta | Yes (X402) |
 | `taskmarket task claim <taskId>` | Free | Yes (signs) |
 | `taskmarket task pitch <taskId>` | 0.001 USDC | Yes |

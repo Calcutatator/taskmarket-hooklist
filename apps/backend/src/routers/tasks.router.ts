@@ -2,6 +2,7 @@ import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
 import {
+  AssignEvaluatorInputSchema,
   TaskCreateSchema,
   TaskListInputSchema,
   TaskListResponseSchema,
@@ -76,6 +77,13 @@ import {
   TaskDropReservationError,
 } from '../services/task-drop-reservations';
 import { computeUpdatePaymentAmount } from '../services/task-payments';
+import {
+  assertEvaluatorAssignable,
+  buildEvaluatorAssignment,
+  EvaluatorAssignmentError,
+  sendEvaluatorAssignment,
+  type TasksAssignEvaluatorIntentPayload,
+} from '../services/evaluator-assignment';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
 import type { TasksCreateIntentPayload } from '../services/intents/tasks-create-intent';
@@ -97,6 +105,14 @@ registerRelayedIntentHandlers();
 // requester-reject path existed yet, refundExpired wasn't callable the way it is now).
 // Hide them from discovery so agents stop finding tasks they can never win.
 const REV007_LISTING_CUTOFF = new Date('2026-06-30T22:15:06.000Z');
+
+// Implements: ADR-0047. The service raises HTTP statuses because its other caller is the X402
+// preflight, which speaks HTTP; this maps them back for the tRPC boundary.
+const EVALUATOR_ASSIGNMENT_ERROR_CODES = {
+  400: 'BAD_REQUEST',
+  403: 'FORBIDDEN',
+  404: 'NOT_FOUND',
+} as const;
 
 const IN_REVIEW_TASK_STATUSES = ['review', 'appealing', 'disputed'] as const;
 const SUBMISSION_WINDOW_TASK_STATUSES = ['open', 'claimed', 'worker_selected'] as const;
@@ -339,20 +355,10 @@ export const tasksRouter = router({
           ? Array.from(new Set((input.allowedViewers ?? []).map((a) => a.toLowerCase())))
           : [];
 
-      const evaluatorAssignment: {
-        evaluator: string;
-        evaluatorFeeBps: number;
-        evaluationWindow: number;
-        appealWindow: number;
-        disputeResolver: string | null;
-      } | null = input.evaluator
-        ? {
-            evaluator: input.evaluator,
-            evaluatorFeeBps: input.evaluatorFeeBps ?? 0,
-            evaluationWindow: Math.round((input.evaluationWindowHours ?? 24) * 3600),
-            appealWindow: Math.round((input.appealWindowHours ?? 24) * 3600),
-            disputeResolver: input.disputeResolver ?? null,
-          }
+      // Built by the same helper POST /tasks/{taskId}/evaluator uses, so the two ways to
+      // configure an evaluator cannot drift on defaults or on the hours-to-seconds conversion.
+      const evaluatorAssignment = input.evaluator
+        ? buildEvaluatorAssignment({ ...input, evaluator: input.evaluator })
         : null;
 
       // Recorded before the chain call, so the escrow can never be live with no durable
@@ -1169,6 +1175,67 @@ export const tasksRouter = router({
             task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n,
             task.contractAddress
           ),
+      });
+
+      return { txHash };
+    }),
+
+  // Implements: ADR-0047 -- evaluator assignment is its own root intent, and this is its home.
+  //
+  // Authorized by the X402 payer, like every other requester-only on-chain mutation here
+  // (cancel, update, reject-submission). That is not just consistency: the payer address is
+  // the address we relay the forwarded call as, so the contract's own `NotRequester` check
+  // runs against the very address that authenticated. A signed-message scheme would prove the
+  // requester's identity in the body while the relay sender came from somewhere else, giving
+  // two things that must be kept in agreement instead of one thing that cannot disagree.
+  assignEvaluator: publicProcedure
+    .meta({
+      openapi: {
+        method: 'POST',
+        path: '/tasks/{taskId}/evaluator',
+        tags: ['Tasks'],
+        summary: 'Assign an evaluator to an open, unclaimed task (X402 required, requester only)',
+      },
+    })
+    .input(AssignEvaluatorInputSchema)
+    .output(z.object({ txHash: z.string() }))
+    .mutation(async ({ input, ctx }) => {
+      const payer: string = ctx.res.locals.payer;
+      if (!payer) {
+        throw new TRPCError({ code: 'UNAUTHORIZED', message: 'Payment required: missing payer' });
+      }
+
+      try {
+        await assertEvaluatorAssignable({
+          db: ctx.db,
+          disputeResolver: input.disputeResolver,
+          evaluator: input.evaluator,
+          payer,
+          taskId: input.taskId,
+        });
+      } catch (error) {
+        if (error instanceof EvaluatorAssignmentError) {
+          throw new TRPCError({
+            code: EVALUATOR_ASSIGNMENT_ERROR_CODES[error.status],
+            message: error.message,
+          });
+        }
+        throw error;
+      }
+
+      const assignment = buildEvaluatorAssignment(input);
+
+      const { txHash } = await runRelayedIntent({
+        db: ctx.db,
+        operation: 'tasks.assignEvaluator',
+        payer,
+        paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        payload: {
+          assignment,
+          payer,
+          taskId: input.taskId,
+        } satisfies TasksAssignEvaluatorIntentPayload,
+        send: () => sendEvaluatorAssignment({ assignment, payer, taskId: input.taskId }),
       });
 
       return { txHash };

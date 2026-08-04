@@ -411,6 +411,23 @@ export const RejectSubmissionInputSchema = z.object({
   worker: z.string(),
 });
 
+/**
+ * Implements: ADR-0047 -- evaluator assignment is its own root intent, so it has its own input.
+ *
+ * The window fields are expressed in hours here and in seconds on the contract, matching the
+ * units TaskCreateSchema already accepts for the same five values. A requester who configures
+ * an evaluator at creation and one who assigns afterwards should not have to convert
+ * differently for what the contract stores identically.
+ */
+export const AssignEvaluatorInputSchema = z.object({
+  taskId: z.string(),
+  evaluator: z.string(),
+  evaluatorFeeBps: z.number().min(0).max(10000).optional(),
+  evaluationWindowHours: z.number().positive().optional(),
+  appealWindowHours: z.number().positive().optional(),
+  disputeResolver: z.string().optional(),
+});
+
 export const RefundExpiredInputSchema = z.object({
   taskId: z.string(),
 });

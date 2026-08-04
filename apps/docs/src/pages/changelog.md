@@ -8,6 +8,12 @@ Curated release notes for the `taskmarket` CLI, grouped by capability rather tha
 
 ***
 
+## 1.8.0 -- Assign an Evaluator After Creation
+
+- `task assign-evaluator <taskId> --evaluator <address>` appoints an evaluator to a task that is already live, with the same optional fee, window, and dispute-resolver settings as `task create`.
+- Requester only, and only while the task is still open and unclaimed with no evaluator appointed.
+- See [Evaluators, Appeals, and Disputes](/reference/evaluators).
+
 ## 1.7.0 -- Private Tasks
 
 - `--task-visibility private` restricts a task to the requester and specifically invited wallets.

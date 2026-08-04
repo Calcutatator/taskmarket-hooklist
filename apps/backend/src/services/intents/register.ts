@@ -1,8 +1,9 @@
 // Implements: ADR-0045
-import { eq } from 'drizzle-orm';
-
-import { tasks } from '../../db/schema';
-import { contractAssignEvaluator } from '../contract';
+import {
+  completeEvaluatorAssignment,
+  sendEvaluatorAssignment,
+  type TasksAssignEvaluatorIntentPayload,
+} from '../evaluator-assignment';
 import { registerRelayedIntentHandler } from '../relayed-intent-registry';
 import { completeTasksCreate, type TasksCreateIntentPayload } from './tasks-create-intent';
 import {
@@ -81,25 +82,6 @@ import {
   type TasksUpdateIntentPayload,
 } from './tasks-mutation-intents';
 
-const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
-
-/**
- * The intent a task creation that carries an evaluator starts once its escrow is confirmed.
- * Assigning an evaluator is a second contract call -- the contract's createTask cannot take
- * evaluator configuration -- so it gets a durable record of its own before it is sent.
- */
-export type TasksAssignEvaluatorIntentPayload = {
-  assignment: {
-    appealWindow: number;
-    disputeResolver: string | null;
-    evaluationWindow: number;
-    evaluator: string;
-    evaluatorFeeBps: number;
-  };
-  payer: string;
-  taskId: string;
-};
-
 let registered = false;
 
 /**
@@ -129,25 +111,18 @@ export function registerRelayedIntentHandlers(): void {
     });
   });
 
+  // Implements: ADR-0047 -- a root intent of its own, recorded either by
+  // POST /api/tasks/{taskId}/evaluator or by a confirmed creation that carried evaluator
+  // fields. Both build the same payload and hand it to the same encoder, so an assignment the
+  // crash-fallback worker picks up from jsonb hours later is the identical contract call.
   registerRelayedIntentHandler('tasks.assignEvaluator', {
-    broadcast: async ({ intent }) => {
-      const payload = intent.payload as TasksAssignEvaluatorIntentPayload;
-      const { assignment } = payload;
-      return contractAssignEvaluator(
-        payload.taskId as `0x${string}`,
-        payload.payer as `0x${string}`,
-        assignment.evaluator as `0x${string}`,
-        0n,
-        assignment.evaluatorFeeBps,
-        assignment.evaluationWindow,
-        assignment.appealWindow,
-        (assignment.disputeResolver ?? ZERO_ADDRESS) as `0x${string}`
-      );
-    },
-    complete: async ({ db, intent }) => {
-      const payload = intent.payload as TasksAssignEvaluatorIntentPayload;
-      await db.update(tasks).set(payload.assignment).where(eq(tasks.id, payload.taskId));
-    },
+    broadcast: async ({ intent }) =>
+      sendEvaluatorAssignment(intent.payload as TasksAssignEvaluatorIntentPayload),
+    complete: async ({ db, intent }) =>
+      completeEvaluatorAssignment({
+        db,
+        payload: intent.payload as TasksAssignEvaluatorIntentPayload,
+      }),
   });
 
   registerRelayedIntentHandler('tasks.update', async ({ db, intent }) =>
