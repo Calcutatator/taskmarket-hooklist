@@ -3076,8 +3076,7 @@ contract TaskMarketTest is DiamondTestHelper {
         uint32 _appealWindow,
         address _disputeResolver
     ) internal returns (bytes memory) {
-        return (
-            _relay(
+        return (_relay(
                 _req,
                 REWARD,
                 abi.encodeCall(
@@ -3102,8 +3101,7 @@ contract TaskMarketTest is DiamondTestHelper {
                         })
                     )
                 )
-            )
-        );
+            ));
     }
 
     function test_CreateTask_WithEvaluator_StoresConfigInOneTransaction() public {
