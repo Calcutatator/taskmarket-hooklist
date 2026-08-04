@@ -270,6 +270,7 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0057 — A settled payment is one indivisible reference, published by the middleware that settled it](0057-a-settled-payment-is-one-indivisible-reference-published-by-the-middleware.md)
 - [0058 — Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500](0058-every-api-error-carries-a-machine-readable-reason.md)
 - [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
+- [0060 — A relayed payload is sufficient, and a broadcaster is pure](0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
