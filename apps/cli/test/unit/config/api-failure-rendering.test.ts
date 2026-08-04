@@ -20,7 +20,7 @@ const RENDERER = 'lib/output.ts';
 
 const PRINT_ERROR_IN_CATCH_EXPLANATION = [
   '`printError` takes a message the caller composed itself and has no error to read an envelope',
-  'from, so calling it on a caught value discards the backend`s classification (ADR-0058) --',
+  "from, so calling it on a caught value discards the backend's classification (ADR-0058) --",
   'the `reason`, the intent id, and the `pending` flag a script needs to tell a write that is',
   'still landing from one that was rejected. Inside a `catch`, call `renderFailure(err)` instead:',
   'it renders an `ApiError` with its envelope and a locally thrown `Error` exactly as',
@@ -28,7 +28,7 @@ const PRINT_ERROR_IN_CATCH_EXPLANATION = [
 ].join(' ');
 
 const SINGLE_RENDERER_EXPLANATION = [
-  'Only lib/output.ts may build the CLI`s `ok: false` failure envelope. A second renderer is how',
+  "Only lib/output.ts may build the CLI's `ok: false` failure envelope. A second renderer is how",
   'the field set drifts: whichever one nobody remembers to update stops emitting `pending`, and a',
   'script reading it cannot tell that the answer is missing rather than false.',
 ].join(' ');
