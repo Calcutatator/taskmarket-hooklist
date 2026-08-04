@@ -17,6 +17,9 @@ import {
   contractEvaluatorTimeout,
 } from '../services/contract';
 import { runRelayedIntent } from '../services/relayed-intent-request';
+// Shared with the rebroadcast path rather than duplicated here, so the first send and every
+// retry of it map a verdict to the same on-chain enum (ADR-0050).
+import { VERDICT_MAP } from '../services/intents/evaluations-intents';
 import type {
   EvaluationsAppealIntentPayload,
   EvaluationsEvaluateIntentPayload,
@@ -24,8 +27,6 @@ import type {
   EvaluationsFinalizeVerdictIntentPayload,
   EvaluationsResolveDisputeIntentPayload,
 } from '../services/intents/evaluations-intents';
-
-const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
 
 export const evaluationsRouter = router({
   evaluate: publicProcedure
@@ -229,9 +230,18 @@ export const evaluationsRouter = router({
         operation: 'evaluations.resolveDispute',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
+        // The whole decision, not just the part the completion happens to read. A payload that
+        // records only a projection of the call cannot be turned back into the call, which is
+        // what a rebroadcast needs (ADR-0050).
         payload: {
+          awards: input.awards.map((a) => ({
+            amount: a.amount,
+            rank: a.rank,
+            worker: a.worker,
+          })),
           firstAwardWorker: input.awards[0].worker,
           taskId: input.taskId,
+          verdict: input.verdict,
         } satisfies EvaluationsResolveDisputeIntentPayload,
         send: async () =>
           (

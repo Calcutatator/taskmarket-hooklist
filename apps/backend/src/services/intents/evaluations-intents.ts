@@ -1,4 +1,4 @@
-// Implements: ADR-0045
+// Implements: ADR-0045, ADR-0050
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { getServerConfig } from '../../config/env';
@@ -6,18 +6,44 @@ import type { db as DbType } from '../../db/client';
 import { tasks } from '../../db/schema';
 import {
   blockTimestampForTx,
+  contractAppeal,
+  contractEvaluate,
+  contractEvaluatorTimeout,
   contractFinalizeVerdictTx,
   contractProjectSettlementForTx,
+  contractResolveDispute,
 } from '../contract';
 import { recordTaskSettlement } from '../settlement-recorder';
 
 type Db = typeof DbType;
 
+/**
+ * The verdict vocabulary, shared by the request path and every rebroadcast of it.
+ *
+ * Deliberately one table rather than a copy per caller. A rebroadcast has to produce the same
+ * call the original send did (ADR-0050 point 7), and two copies of a mapping are two things
+ * that can drift apart without anything noticing.
+ */
+export const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
+
 /** The statuses `evaluate()` is callable from (evaluations.router.ts), plus its own result. */
 const EVALUATABLE_STATUSES = ['open', 'pending_approval', 'review', 'appealing'] as const;
 
+/** One award, with its uint256 amount in the string form a jsonb payload can carry. */
+export type EvaluationAwardPayload = { amount: string; rank: number; worker: string };
+
+function awardArgs(
+  awards: EvaluationAwardPayload[]
+): { amount: bigint; rank: number; worker: `0x${string}` }[] {
+  return awards.map((award) => ({
+    amount: BigInt(award.amount),
+    rank: award.rank,
+    worker: award.worker as `0x${string}`,
+  }));
+}
+
 export type EvaluationsEvaluateIntentPayload = {
-  awards: { amount: string; rank: number; worker: string }[];
+  awards: EvaluationAwardPayload[];
   confidence: number;
   evidenceHash: string;
   mode: string;
@@ -25,6 +51,36 @@ export type EvaluationsEvaluateIntentPayload = {
   taskId: string;
   verdict: string;
 };
+
+/**
+ * Re-send the evaluator's verdict from the persisted payload.
+ *
+ * Every argument is a value the evaluator fixed at submission -- verdict, score, confidence,
+ * evidence hash, award split -- so nothing is recomputed and nothing can mean something
+ * different later. The evaluator's own address is the intent row's `payer`, recorded at the
+ * same moment and for the same reason.
+ *
+ * A second landing is refused by the chain rather than tolerated: `evaluate` requires Review
+ * (or Open/PendingApproval in the contest modes) and leaves the task Appealing, so a replay
+ * reverts `WrongStatusForEvaluation`. That is deterministic, which `classifyRelayFailure`
+ * terminates rather than retries.
+ */
+export async function broadcastEvaluationsEvaluate(context: {
+  evaluator: string;
+  payload: EvaluationsEvaluateIntentPayload;
+}): Promise<`0x${string}`> {
+  const { payload } = context;
+  const result = await contractEvaluate(
+    payload.taskId as `0x${string}`,
+    context.evaluator as `0x${string}`,
+    VERDICT_MAP[payload.verdict] ?? 0,
+    payload.score,
+    payload.confidence,
+    payload.evidenceHash as `0x${string}`,
+    awardArgs(payload.awards)
+  );
+  return result.txHash;
+}
 
 /**
  * Move the task into its appeal window and record the verdict.
@@ -84,6 +140,23 @@ export async function completeEvaluationsEvaluate(context: {
 }
 
 export type EvaluationsAppealIntentPayload = { taskId: string };
+
+/**
+ * Re-send the worker's appeal.
+ *
+ * `appeal` takes nothing but the task id, and the appellant is the intent's `payer` -- the
+ * router has already established that address is the task's worker, and that finding is what
+ * the intent row preserves.
+ *
+ * A second landing reverts `NotInAppealingState`: appeal requires Appealing and leaves the
+ * task Disputed, so the transition is one-shot on chain.
+ */
+export function broadcastEvaluationsAppeal(context: {
+  payload: EvaluationsAppealIntentPayload;
+  worker: string;
+}): Promise<`0x${string}`> {
+  return contractAppeal(context.payload.taskId as `0x${string}`, context.worker as `0x${string}`);
+}
 
 /** A confirmed appeal moves the task to disputed. Nothing else follows from it. */
 export async function completeEvaluationsAppeal(context: {
@@ -172,9 +245,43 @@ export async function completeEvaluationsFinalizeVerdict(context: {
 }
 
 export type EvaluationsResolveDisputeIntentPayload = {
+  /**
+   * The full award split and verdict the resolver decided on.
+   *
+   * The completion only ever needed `firstAwardWorker`, so that was all the payload carried
+   * and the rest lived on the request's stack. That made the intent unreplayable: the payload
+   * could not be turned back into the call it stood for. Recording the decision itself rather
+   * than a projection of it is what ADR-0050 point 7 asks for -- the payload has to be the
+   * call, not a summary of what the call implied.
+   */
+  awards: EvaluationAwardPayload[];
   firstAwardWorker: string;
   taskId: string;
+  verdict: string;
 };
+
+/**
+ * Re-send the dispute resolution from the resolver's recorded decision.
+ *
+ * The resolver's address is the intent's `payer`; the router has already checked it against
+ * the task's `disputeResolver`.
+ *
+ * A second landing reverts `NotInDisputedState`: resolveDispute requires Disputed and settles
+ * the task out of it, so the payout cannot happen twice.
+ */
+export async function broadcastEvaluationsResolveDispute(context: {
+  payload: EvaluationsResolveDisputeIntentPayload;
+  resolver: string;
+}): Promise<`0x${string}`> {
+  const { payload } = context;
+  const result = await contractResolveDispute(
+    payload.taskId as `0x${string}`,
+    context.resolver as `0x${string}`,
+    VERDICT_MAP[payload.verdict] ?? 0,
+    awardArgs(payload.awards)
+  );
+  return result.txHash;
+}
 
 /**
  * Record the settlement a confirmed dispute resolution produced.
@@ -213,6 +320,25 @@ export async function completeEvaluationsResolveDispute(context: {
 }
 
 export type EvaluationsEvaluatorTimeoutIntentPayload = { taskId: string };
+
+/**
+ * Re-send the requester's evaluator timeout.
+ *
+ * Takes only the task id, with the requester supplied as the intent's `payer`.
+ *
+ * A second landing reverts `NotInReviewState`: the call requires Review and leaves the task
+ * PendingApproval, and it forfeits the evaluator's stake exactly once because the same
+ * transition zeroes it.
+ */
+export function broadcastEvaluationsEvaluatorTimeout(context: {
+  payload: EvaluationsEvaluatorTimeoutIntentPayload;
+  requester: string;
+}): Promise<`0x${string}`> {
+  return contractEvaluatorTimeout(
+    context.payload.taskId as `0x${string}`,
+    context.requester as `0x${string}`
+  );
+}
 
 /** A confirmed evaluator timeout clears the evaluator and returns the task for approval. */
 export async function completeEvaluationsEvaluatorTimeout(context: {

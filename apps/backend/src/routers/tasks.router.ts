@@ -1163,7 +1163,15 @@ export const tasksRouter = router({
         operation: 'tasks.cancel',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-        payload: { taskId: input.taskId } satisfies TasksCancelIntentPayload,
+        // Carries the whole call, not just what the completion reads: a rebroadcast has only
+        // this row to work from, and re-reading the task at broadcast time would be reading a
+        // world that has moved on (ADR-0050).
+        payload: {
+          contractAddress: task.contractAddress,
+          requester: payer,
+          requesterAgentId: task.requesterAgentId ?? null,
+          taskId: input.taskId,
+        } satisfies TasksCancelIntentPayload,
         send: () =>
           contractCancelTask(
             input.taskId as `0x${string}`,
@@ -1630,6 +1638,7 @@ export const tasksRouter = router({
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
         payload: {
+          requester: payer,
           taskId: input.taskId,
           worker: input.worker,
         } satisfies TasksRejectSubmissionIntentPayload,
