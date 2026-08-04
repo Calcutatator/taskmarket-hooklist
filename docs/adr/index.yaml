@@ -266,5 +266,5 @@ adrs:
   - number: "0059"
     file: "0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md"
     title: An intent is readable by the address recorded as having initiated it
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"

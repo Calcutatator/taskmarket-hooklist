@@ -10,17 +10,17 @@
 > initiator is readable by nobody and that a caller who identifies themselves on a
 > permissionless endpoint gets an answer their anonymous neighbour does not.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** (none recorded)
-- **Deciders:** (pending)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Pending Amends ADR-0049
+- **Amends / Amended-by:** Amends ADR-0049
+- **Pending Amends / Amended-by:** —
 
 **This document was rewritten after review of an earlier accepted draft that was never
 implemented.** That draft — same number, titled "An intent with no payer is readable by a
