@@ -24,17 +24,30 @@ const SRC_ROOT = join(process.cwd(), 'src');
  * A file added to this path that nobody adds to this list is unguarded. That is the same
  * limitation the neighbouring guards carry, and it is why the list is a directory prefix wherever
  * one exists rather than a hand-kept enumeration of files.
+ *
+ * The obvious generalisation -- derive this from "every router that calls `runRelayedIntent`" --
+ * was tried and rejected. Ten routers relay intents, and nine of them carry over 200 unclassified
+ * `TRPCError` throws between them, nearly all on validation and authorisation paths ADR-0058
+ * explicitly does not require to be classified ("an unclassified `BAD_REQUEST` on a validation
+ * path costs a caller a retry, not a payment"). A derived list fails on all of them from the
+ * moment it is written, and a guard that is red for reasons nobody intends is a guard somebody
+ * deletes. The list stays explicit, and a router joins it once its relayed-write failures are
+ * classified.
  */
 const GUARDED_FILES = [
   'services/relayed-intent-request.ts',
   'services/relayed-intents.ts',
   'middleware/x402.ts',
   'routers/intents.router.ts',
+  'routers/identity.router.ts',
 ];
 const GUARDED_DIRECTORIES = ['services/intents'];
 
 const BARE_THROW_EXPLANATION = [
-  'A relayed-write path may not construct a bare `TRPCError`. ADR-0049 point 3 requires a caller',
+  'A relayed-write path may not construct a bare `TRPCError`, and a relayed-write router may not',
+  'construct a bare `Error` either -- an unclassified `Error` reaches the caller as a 500 whose',
+  'prose is the whole of the answer, with no reason, no intent id and no way to tell a write',
+  'still landing from one that definitively failed. ADR-0049 point 3 requires a caller',
   'to tell "in flight" from "failed" by a field, never by string-matching a message, and a',
   '`TRPCError` carries only a coarse code and prose -- `BAD_REQUEST` alone covers over a hundred',
   'conditions in this backend. Throw `apiError({ reason, message, ... })` from',
@@ -56,8 +69,21 @@ function guardedFiles(): string[] {
   return [...GUARDED_FILES, ...fromDirectories].sort();
 }
 
-/** Every `new TRPCError({ ... })` construction in a source, by line. */
-export function bareTrpcErrorSites(source: string, filename = 'source.ts'): number[] {
+/**
+ * Every construction of a banned error class in a source, by line.
+ *
+ * `TRPCError` is banned everywhere on a guarded path. `Error` is banned only in a router,
+ * because that is the layer whose throw becomes the client's response verbatim: `middleware/
+ * x402.ts` raises plain `Error`s inside a `try` that answers with `apiErrorBody`, and
+ * `services/intents/submissions-intents.ts` raises one as a completion-path invariant that no
+ * request is waiting on. Banning `Error` there would flag correct code, so it is not banned
+ * there.
+ */
+export function bareErrorSites(
+  source: string,
+  filename = 'source.ts',
+  banned: readonly string[] = ['TRPCError']
+): number[] {
   const sourceFile = ts.createSourceFile(filename, source, ts.ScriptTarget.Latest, true);
   const lines: number[] = [];
 
@@ -65,7 +91,7 @@ export function bareTrpcErrorSites(source: string, filename = 'source.ts'): numb
     if (
       ts.isNewExpression(node) &&
       ts.isIdentifier(node.expression) &&
-      node.expression.text === 'TRPCError'
+      banned.includes(node.expression.text)
     ) {
       lines.push(sourceFile.getLineAndCharacterOfPosition(node.getStart(sourceFile)).line + 1);
     }
@@ -74,6 +100,11 @@ export function bareTrpcErrorSites(source: string, filename = 'source.ts'): numb
 
   visit(sourceFile);
   return lines;
+}
+
+/** What a given guarded file may not construct. A router may not construct a plain `Error` either. */
+function bannedIn(relativePath: string): readonly string[] {
+  return relativePath.startsWith('routers/') ? ['TRPCError', 'Error'] : ['TRPCError'];
 }
 
 /**
@@ -172,11 +203,13 @@ export function relayedProcedureHeaderDeclarations(
 }
 
 describe('how a relayed-write path reports failure', () => {
-  it('constructs no bare TRPCError anywhere a paid write can fail', () => {
+  it('constructs no bare TRPCError or Error anywhere a paid write can fail', () => {
     const bare = guardedFiles()
       .flatMap((relativePath) => {
         const source = readFileSync(join(SRC_ROOT, relativePath), 'utf8');
-        return bareTrpcErrorSites(source, relativePath).map((line) => `${relativePath}:${line}`);
+        return bareErrorSites(source, relativePath, bannedIn(relativePath)).map(
+          (line) => `${relativePath}:${line}`
+        );
       })
       .sort();
 
@@ -242,8 +275,17 @@ describe('how a relayed-write path reports failure', () => {
     // guard nobody has seen fail is a guard nobody knows works.
     const bare = `throw new TRPCError({ code: 'CONFLICT', message: 'x' });`;
     const classified = `throw apiError({ reason: 'intent_in_flight', message: 'x' });`;
-    expect(bareTrpcErrorSites(bare)).toEqual([1]);
-    expect(bareTrpcErrorSites(classified)).toEqual([]);
+    expect(bareErrorSites(bare)).toEqual([1]);
+    expect(bareErrorSites(classified)).toEqual([]);
+
+    // The bare `Error` a router must not throw: caught in a router, ignored elsewhere.
+    const bareError = `throw new Error('Payment required: missing payer');`;
+    expect(
+      bareErrorSites(bareError, 'routers/identity.router.ts', bannedIn('routers/x.ts'))
+    ).toEqual([1]);
+    expect(bareErrorSites(bareError, 'middleware/x402.ts', bannedIn('middleware/x402.ts'))).toEqual(
+      []
+    );
 
     const rethrown = `
       try { a(); } catch (error) {
@@ -270,7 +312,7 @@ describe('how a relayed-write path reports failure', () => {
           .mutation(async () => { await runRelayedIntent({ operation: 'x' }); }),
       });`;
     const withHeaders = withoutHeaders.replace(
-      "openapi: { method",
+      'openapi: { method',
       'openapi: { requestHeaders: RELAYED_WRITE_REQUEST_HEADERS, method'
     );
     const unrelated = `

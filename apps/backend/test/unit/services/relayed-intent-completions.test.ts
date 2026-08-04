@@ -82,14 +82,17 @@ function makeDb(
     delete: vi.fn(() => makeChain()),
     // Resolves to a row because an insert that is read back -- recordRelayedIntent's, when a
     // completion starts a follow-on intent of its own -- needs one.
-    insert: vi.fn((table: unknown) => chain(inserts, table, seed.insert?.get(table) ?? [{ id: 'inserted' }])),
+    insert: vi.fn((table: unknown) =>
+      chain(inserts, table, seed.insert?.get(table) ?? [{ id: 'inserted' }])
+    ),
     select: vi.fn(() => makeChain(seed.select ?? [])),
     update: vi.fn((table: unknown) => chain(updates, table, seed.update?.get(table) ?? [])),
   };
   db.transaction = vi.fn(async (callback: (tx: any) => Promise<unknown>) => callback(db));
   return {
     db,
-    insertChain: (table: unknown) => chain(inserts, table, seed.insert?.get(table) ?? [{ id: 'inserted' }]),
+    insertChain: (table: unknown) =>
+      chain(inserts, table, seed.insert?.get(table) ?? [{ id: 'inserted' }]),
     updateChain: (table: unknown) => chain(updates, table, seed.update?.get(table) ?? []),
   };
 }
@@ -112,6 +115,29 @@ function sqlText(node: any): string {
 
 function whereText(chain: ReturnType<typeof makeChain>): string {
   return chain.where.mock.calls.map((call: unknown[]) => sqlText(call[0])).join(' | ');
+}
+
+/**
+ * The task statuses a guarded completion's predicate will actually match a row on.
+ *
+ * The three properties that matter -- a first completion applies, a late retry against a task
+ * that has moved on does not, and a second completion against the status the handler itself
+ * produces is still idempotent -- are all statements about this set, so it is read out of the
+ * predicate rather than asserted as a substring of it. Substrings cannot tell "not in this set"
+ * from "absent from the query", which is the difference between a guard and no guard.
+ */
+function allowedStatuses(chain: ReturnType<typeof makeChain>): string[] {
+  const statuses = new Set<string>();
+  const walk = (node: any): void => {
+    if (node == null) return;
+    if (Array.isArray(node)) return node.forEach(walk);
+    if (node.queryChunks) return node.queryChunks.forEach(walk);
+    if (typeof node.value === 'string') statuses.add(node.value);
+  };
+  chain.where.mock.calls.forEach((call: unknown[]) => walk(call[0]));
+  // The task id is a bound value in the same predicate; it is not a status.
+  statuses.delete(TASK_ID);
+  return [...statuses];
 }
 
 function intent(operation: string, payload: unknown, createdAt = new Date()): RelayedIntent {
@@ -148,7 +174,13 @@ describe('relayed intent completions', () => {
       allowedViewerAddresses: [],
       evaluatorAssignment: null,
       inlineTaskDrop: null,
-      input: { bidDeadline: 48, description: 'work', duration: 24, pitchDeadline: 3600, reward: '1000000' },
+      input: {
+        bidDeadline: 48,
+        description: 'work',
+        duration: 24,
+        pitchDeadline: 3600,
+        reward: '1000000',
+      },
       normalizedPayer: REQUESTER.toLowerCase(),
       payer: REQUESTER,
       resolvedTaskDropId: null,
@@ -259,7 +291,9 @@ describe('relayed intent completions', () => {
   it('records a rating with the block number read back from the receipt', async () => {
     // The intent payload is written before the transaction exists, so the block number can
     // only come from the confirmed receipt -- including on a reconciler pass hours later.
-    const { db, insertChain, updateChain } = makeDb({ update: new Map([[taskAwards, [{ id: 1 }]]]) });
+    const { db, insertChain, updateChain } = makeDb({
+      update: new Map([[taskAwards, [{ id: 1 }]]]),
+    });
 
     await complete(
       'acceptance.rate',
@@ -315,7 +349,10 @@ describe('relayed intent completions', () => {
     const seen: unknown[] = [];
     const { db, updateChain } = makeDb({ update: new Map([[taskAwards, [{ id: 1 }]]]) });
     db.transaction.mockImplementation(async (callback: (tx: unknown) => Promise<unknown>) => {
-      const inner = { ...db, update: vi.fn((table: unknown) => (seen.push(table), updateChain(table))) };
+      const inner = {
+        ...db,
+        update: vi.fn((table: unknown) => (seen.push(table), updateChain(table))),
+      };
       return callback(inner);
     });
 
@@ -364,7 +401,9 @@ describe('relayed intent completions', () => {
   });
 
   it('claims the task for the worker whose auction accept confirmed', async () => {
-    const { db, updateChain, insertChain } = makeDb({ update: new Map([[tasks, [{ id: TASK_ID }]]]) });
+    const { db, updateChain, insertChain } = makeDb({
+      update: new Map([[tasks, [{ id: TASK_ID }]]]),
+    });
     await complete(
       'bids.auctionAccept',
       {
@@ -414,6 +453,28 @@ describe('relayed intent completions', () => {
       claimedBy: WORKER,
       status: 'worker_selected',
     });
+  });
+
+  // Verifies: ADR-0007
+  it('will not move a task that has since been worked on back to worker_selected', async () => {
+    // 'worker_selected' sits near the start of the lifecycle, so an unguarded late retry has
+    // the longest way to drag a task backwards -- past submission, acceptance and settlement.
+    const { db, updateChain } = makeDb();
+    await complete(
+      'pitches.select',
+      { pitchId: 'pitch-1', taskId: TASK_ID, workerAddress: WORKER },
+      db
+    );
+
+    const allowed = allowedStatuses(updateChain(tasks));
+    // What CoreFacet.selectWorker permits the call from...
+    expect(allowed).toContain('open');
+    // ...plus its own result, so an indexer that processed TaskWorkerSelected first does not
+    // cost us `claimedBy`.
+    expect(allowed).toContain('worker_selected');
+    expect(allowed).not.toContain('pending_approval');
+    expect(allowed).not.toContain('completed');
+    expect(allowed).not.toContain('cancelled');
   });
 
   it('starts the deliverable commitment as its own intent once the proof confirms', async () => {
@@ -544,13 +605,30 @@ describe('relayed intent completions', () => {
     expect(updateChain(tasks).set).toHaveBeenCalledWith({ status: 'disputed' });
   });
 
+  // Verifies: ADR-0007
+  it('will not drag a task the resolver has already settled back to disputed', async () => {
+    // 'disputed' is mid-lifecycle, not terminal: resolveDispute settles the task out of it. A
+    // reconciler retry landing after that would undo a completed settlement in the database
+    // while the chain says otherwise -- the ADR-0007 regression.
+    const { db, updateChain } = makeDb();
+    await complete('evaluations.appeal', { taskId: TASK_ID }, db);
+
+    const allowed = allowedStatuses(updateChain(tasks));
+    // What EvaluatorFacet.appeal permits the call from, so the legitimate first completion
+    // applies...
+    expect(allowed).toContain('appealing');
+    // ...plus its own result, so a second completion after the indexer wrote the status is
+    // idempotent rather than skipped.
+    expect(allowed).toContain('disputed');
+    // ...and nothing the task can have moved on to since.
+    expect(allowed).not.toContain('completed');
+    expect(allowed).not.toContain('cancelled');
+    expect(allowed).not.toContain('expired');
+  });
+
   it('completes a zero-award dispute resolution when the receipt carries no settlement', async () => {
     const { db, updateChain } = makeDb();
-    await complete(
-      'evaluations.resolveDispute',
-      { firstAwardWorker: WORKER, taskId: TASK_ID },
-      db
-    );
+    await complete('evaluations.resolveDispute', { firstAwardWorker: WORKER, taskId: TASK_ID }, db);
     expect(recordTaskSettlement).not.toHaveBeenCalled();
     expect(updateChain(tasks).set).toHaveBeenCalledWith({
       claimedBy: WORKER,
@@ -564,6 +642,24 @@ describe('relayed intent completions', () => {
     expect(updateChain(tasks).set).toHaveBeenCalledWith(
       expect.objectContaining({ evaluator: null, status: 'pending_approval' })
     );
+  });
+
+  // Verifies: ADR-0007
+  it('will not return a task the requester has already accepted to pending_approval', async () => {
+    // 'pending_approval' is mid-lifecycle: acceptance, rejection, cancellation and expiry all
+    // move past it, so an unguarded late retry reopens a settled task for approval.
+    const { db, updateChain } = makeDb();
+    await complete('evaluations.evaluatorTimeout', { taskId: TASK_ID }, db);
+
+    const allowed = allowedStatuses(updateChain(tasks));
+    // What EvaluatorFacet.evaluatorTimeout permits the call from...
+    expect(allowed).toContain('review');
+    // ...plus its own result, so the indexer's EvaluatorTimedOut handler winning the race does
+    // not cost us the fields it cannot derive.
+    expect(allowed).toContain('pending_approval');
+    expect(allowed).not.toContain('completed');
+    expect(allowed).not.toContain('cancelled');
+    expect(allowed).not.toContain('expired');
   });
 
   it('binds the minted agentId, decoded from the mint transaction, to the paying wallet', async () => {

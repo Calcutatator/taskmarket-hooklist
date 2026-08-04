@@ -29,6 +29,18 @@ export const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, part
 /** The statuses `evaluate()` is callable from (evaluations.router.ts), plus its own result. */
 const EVALUATABLE_STATUSES = ['open', 'pending_approval', 'review', 'appealing'] as const;
 
+/**
+ * The statuses `appeal()` is callable from (EvaluatorFacet.appeal requires Appealing), plus its
+ * own result.
+ */
+const APPEALABLE_STATUSES = ['appealing', 'disputed'] as const;
+
+/**
+ * The statuses `evaluatorTimeout()` is callable from (EvaluatorFacet.evaluatorTimeout requires
+ * Review), plus its own result.
+ */
+const EVALUATOR_TIMEOUT_STATUSES = ['review', 'pending_approval'] as const;
+
 /** One award, with its uint256 amount in the string form a jsonb payload can carry. */
 export type EvaluationAwardPayload = { amount: string; rank: number; worker: string };
 
@@ -158,7 +170,16 @@ export function broadcastEvaluationsAppeal(context: {
   return contractAppeal(context.payload.taskId as `0x${string}`, context.worker as `0x${string}`);
 }
 
-/** A confirmed appeal moves the task to disputed. Nothing else follows from it. */
+/**
+ * A confirmed appeal moves the task to disputed. Nothing else follows from it.
+ *
+ * Guarded for the same reason `completeEvaluationsEvaluate` is: 'disputed' is mid-lifecycle, not
+ * terminal -- resolveDispute settles the task out of it -- so a reconciler retry landing hours
+ * after the resolver already settled would drag a completed task back to disputed. The allowed
+ * set is what the chain permits the call from ('appealing', per EvaluatorFacet.appeal) plus
+ * 'disputed' itself, so an indexer that wrote the status first does not turn a legitimate second
+ * completion into a skipped one.
+ */
 export async function completeEvaluationsAppeal(context: {
   db: Db;
   payload: EvaluationsAppealIntentPayload;
@@ -166,7 +187,7 @@ export async function completeEvaluationsAppeal(context: {
   await context.db
     .update(tasks)
     .set({ status: 'disputed' })
-    .where(eq(tasks.id, context.payload.taskId));
+    .where(and(eq(tasks.id, context.payload.taskId), inArray(tasks.status, APPEALABLE_STATUSES)));
 }
 
 export type EvaluationsFinalizeVerdictIntentPayload = {
@@ -340,7 +361,16 @@ export function broadcastEvaluationsEvaluatorTimeout(context: {
   );
 }
 
-/** A confirmed evaluator timeout clears the evaluator and returns the task for approval. */
+/**
+ * A confirmed evaluator timeout clears the evaluator and returns the task for approval.
+ *
+ * 'pending_approval' is mid-lifecycle -- the requester still has to accept, and acceptance,
+ * rejection, cancellation and expiry all move past it -- so this is guarded like
+ * `completeEvaluationsEvaluate` rather than left open like the terminal writes below. The allowed
+ * set is what the chain permits the call from ('review', per EvaluatorFacet.evaluatorTimeout)
+ * plus 'pending_approval' itself, because the indexer's EvaluatorTimedOut handler can win the
+ * race and this completion still owns the fields it cannot derive (evaluator, deadline, stake).
+ */
 export async function completeEvaluationsEvaluatorTimeout(context: {
   db: Db;
   payload: EvaluationsEvaluatorTimeoutIntentPayload;
@@ -353,5 +383,7 @@ export async function completeEvaluationsEvaluatorTimeout(context: {
       evaluatorStake: '0',
       status: 'pending_approval',
     })
-    .where(eq(tasks.id, context.payload.taskId));
+    .where(
+      and(eq(tasks.id, context.payload.taskId), inArray(tasks.status, EVALUATOR_TIMEOUT_STATUSES))
+    );
 }
