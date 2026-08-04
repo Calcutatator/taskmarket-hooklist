@@ -15,7 +15,9 @@ vi.mock('../../../src/services/contract', () => ({
   contractGetDreamsBonusBps: vi.fn().mockResolvedValue(0),
   contractRefundExpired: vi.fn().mockResolvedValue('0xrefundhash'),
   contractRefundOrphanedPayment: vi.fn().mockResolvedValue('0xrefundorphanhash'),
-  precomputeTaskId: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
+  // The id comes from the confirmed transaction's own TaskCreated log, so it is keyed on the
+  // hash rather than fixed: nothing before the receipt knows it (ADR-0045).
+  taskIdForTx: vi.fn().mockResolvedValue('0x' + 'a'.repeat(64)),
   MODE_MAP: {
     bounty: '0x00000001',
     claim: '0x00000002',
@@ -247,8 +249,10 @@ describe('tasks router', () => {
 
       expect(ctx.db.transaction).toHaveBeenCalledTimes(2);
       expect(dropChain.for).toHaveBeenCalledWith('update');
+      // Its own identifier, not the task's: the reservation has to exist before the chain
+      // call, and no task id exists until that call confirms.
       expect(reservationInsert.values).toHaveBeenCalledWith({
-        reservationId: '0x' + 'a'.repeat(64),
+        reservationId: expect.stringMatching(/^res_/),
         taskDropId: DROP_ID,
       });
       expect(ctx.db.delete).toHaveBeenCalledOnce();

@@ -1,3 +1,4 @@
+// Implements: ADR-0055
 import { randomUUID } from 'crypto';
 import { TRPCError } from '@trpc/server';
 import { router, publicProcedure } from '../trpc';
@@ -42,7 +43,6 @@ import {
   getTableColumns,
 } from 'drizzle-orm';
 import {
-  contractCreateTask,
   contractCancelTask,
   contractRefundExpired,
   contractUpdateTask,
@@ -51,11 +51,8 @@ import {
   contractGetDreamsPerUsdc,
   contractGetDreamsWorkerSplitBps,
   contractGetDreamsBonusBps,
-  MODE_MAP,
-  AUCTION_SUBTYPE_MAP,
-  precomputeTaskId,
+  taskIdForTx,
 } from '../services/contract';
-import { keccak256, toHex } from 'viem';
 import { getServerConfig } from '../config/env';
 import { computeClockPrice, computePriceTimestamp } from '../lib/auction';
 import { lowerAddressEq } from '../lib/agents';
@@ -78,7 +75,10 @@ import {
 import { computeUpdatePaymentAmount } from '../services/task-payments';
 import { runRelayedIntent } from '../services/relayed-intent-request';
 import { registerRelayedIntentHandlers } from '../services/intents/register';
-import type { TasksCreateIntentPayload } from '../services/intents/tasks-create-intent';
+import {
+  broadcastTasksCreate,
+  type TasksCreateIntentPayload,
+} from '../services/intents/tasks-create-intent';
 import type {
   TasksCancelIntentPayload,
   TasksRefundExpiredIntentPayload,
@@ -207,7 +207,24 @@ export const tasksRouter = router({
     })
     .input(TaskCreateSchema)
     .output(
-      z.object({ success: z.boolean(), taskId: z.string(), taskDropId: z.string().nullable() })
+      z.object({
+        success: z.boolean(),
+        /**
+         * The id the chain assigned, decoded from the confirmed transaction's own
+         * TaskCreated log. Present on every response this endpoint returns, because every
+         * response it returns is one whose escrow has confirmed.
+         *
+         * A request whose receipt does not arrive in time returns nothing at all: it raises
+         * the in-flight error every relayed write raises, and the id genuinely is not known
+         * yet -- the transaction may still be replaced at the same nonce. That caller's
+         * durable handle is the idempotency key they supplied (ADR-0052); `intents.get`
+         * answers on it, and reports the task id once the intent completes (ADR-0049).
+         */
+        taskId: z.string(),
+        /** The intent this creation is recorded as, for `intents.get` (ADR-0049). */
+        intentId: z.string(),
+        taskDropId: z.string().nullable(),
+      })
     )
     .mutation(async ({ input, ctx }) => {
       const payer: string = ctx.res.locals.payer;
@@ -262,28 +279,7 @@ export const tasksRouter = router({
         }
       }
 
-      const config = getServerConfig();
       const reward = BigInt(input.reward);
-      const durationSecs = BigInt(Math.round(input.duration * 3600));
-      const mode = MODE_MAP[input.mode ?? 'bounty'] ?? MODE_MAP['bounty']!;
-
-      const pitchDeadlineSecs =
-        input.mode === 'pitch'
-          ? input.pitchDeadline
-            ? BigInt(input.pitchDeadline)
-            : durationSecs
-          : BigInt(0);
-
-      const bidDeadlineSecs =
-        input.mode === 'auction'
-          ? input.bidDeadline
-            ? BigInt(input.bidDeadline * 3600)
-            : durationSecs
-          : BigInt(0);
-
-      // Pre-compute the contract-generated task ID by reading requesterNonce from chain.
-      // The contract generates: keccak256(abi.encode(chainId, address(this), requester, nonce))
-      const taskId = await precomputeTaskId(payer as `0x${string}`, config.CONTRACT_ADDRESS);
 
       let taskDropReservationId: string | null = null;
       const existingTaskDropId = input.taskDropId;
@@ -300,7 +296,10 @@ export const tasksRouter = router({
           }
           taskDropReservationId = preflightReservation.id;
         } else {
-          taskDropReservationId = taskId;
+          // Its own identifier, not the task's. The task has no id until its transaction
+          // confirms, and a reservation has to exist before that -- it is what stops a
+          // concurrent creation consuming the same drop slot.
+          taskDropReservationId = `res_${randomUUID()}`;
           try {
             await reserveTaskDropForCreation({
               db: ctx.db,
@@ -316,20 +315,6 @@ export const tasksRouter = router({
           }
         }
       }
-
-      const auctionSubtype =
-        input.mode === 'auction' && input.auctionType
-          ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
-          : ('0x00000000' as `0x${string}`);
-
-      // Hash tags to bytes32 for on-chain storage.
-      const hashedTags = (input.tags ?? []).map(
-        (tag: string) => keccak256(toHex(tag)) as `0x${string}`
-      );
-
-      const hookContractAddr = (input.hookContract ??
-        '0x0000000000000000000000000000000000000000') as `0x${string}`;
-      const hookDataBytes = (input.hookData ?? '0x') as `0x${string}`;
 
       const paymentTxHash = ctx.res.locals.paymentTxHash as `0x${string}` | undefined;
 
@@ -355,36 +340,36 @@ export const tasksRouter = router({
           }
         : null;
 
+      const payload = {
+        allowedViewerAddresses,
+        evaluatorAssignment,
+        inlineTaskDrop,
+        input: input as unknown as Record<string, unknown>,
+        normalizedPayer,
+        payer,
+        resolvedTaskDropId,
+        taskDropReservationId,
+      } satisfies TasksCreateIntentPayload;
+
       // Recorded before the chain call, so the escrow can never be live with no durable
-      // record of what it was for (ADR-0045). The payload deliberately carries no escrow
-      // hash: there is none yet, and inventing a placeholder would leave the persisted copy
-      // -- the only thing a reconciler pass reads back hours later -- half true. The
-      // confirmed hash reaches the completion handler as its own argument instead.
+      // record of what it was for (ADR-0045). The payload deliberately carries neither the
+      // escrow hash nor a task id: neither exists yet, and inventing either would leave the
+      // persisted copy -- the only thing a reconciler pass reads back hours later -- half
+      // true. Both are read off the confirmed transaction by the completion instead.
       //
       // The post-receipt work -- task row, drop, viewers, evaluator follow-on and
       // notifications -- belongs to the intent, not to this request, and runs through the
       // registry so a reconciler pass observing the same receipt cannot run it twice.
-      await runRelayedIntent({
+      const { intent, txHash } = await runRelayedIntent({
         db: ctx.db,
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.create',
         payer,
         paymentAmount: reward,
         paymentTxHash,
-        payload: {
-          allowedViewerAddresses,
-          escrowTxHash: '',
-          evaluatorAssignment,
-          inlineTaskDrop,
-          input: input as unknown as Record<string, unknown>,
-          normalizedPayer,
-          payer,
-          resolvedTaskDropId,
-          taskDropReservationId,
-          taskId,
-        } satisfies TasksCreateIntentPayload,
+        payload,
         describeCompletionFailure: (intentId) =>
-          `Task ${taskId} was created on chain but recording it did not complete; it will be retried automatically (intent ${intentId}).`,
+          `The task was created on chain but recording it did not complete; it will be retried automatically (intent ${intentId}).`,
         // Non-monetary cleanup only: the reservation is released because nothing reached the
         // chain, not because the payment is being written off. Whether it is orphaned is
         // settlement's decision alone (ADR-0048). A pending outcome never reaches here -- the
@@ -404,25 +389,17 @@ export const tasksRouter = router({
             );
           }
         },
-        send: () =>
-          contractCreateTask(
-            payer as `0x${string}`,
-            reward,
-            durationSecs,
-            mode,
-            pitchDeadlineSecs,
-            bidDeadlineSecs,
-            auctionSubtype,
-            input.stakeRequired ?? false,
-            input.stakeBps ?? 0,
-            hookContractAddr,
-            hashedTags,
-            hookDataBytes,
-            paymentTxHash
-          ),
+        // The same builder the rebroadcast sweep uses, from the same payload, so the call a
+        // retry makes cannot drift from the call this request made.
+        send: () => broadcastTasksCreate({ payload, paymentTxHash: paymentTxHash ?? null }),
       });
 
-      return { success: true, taskId, taskDropId: resolvedTaskDropId };
+      // Returning here means the escrow confirmed and the completion ran, so the transaction
+      // has a TaskCreated log and this is a second read of the same fact the completion used
+      // -- not a second guess at it.
+      const taskId = await taskIdForTx(txHash);
+
+      return { success: true, taskId, intentId: intent.id, taskDropId: resolvedTaskDropId };
     }),
 
   list: publicProcedure

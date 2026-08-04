@@ -1,4 +1,5 @@
 // Verifies: ADR-0049, ADR-0052
+// Verifies: ADR-0055
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 import { createMockCtx, makeChain } from '../helpers';
@@ -28,12 +29,21 @@ function intentRow(overrides: Record<string, unknown> = {}) {
   };
 }
 
-/** Routes each SELECT to the table it names, so the intent and refund reads stay distinct. */
-function ctxFor(intent: Record<string, unknown> | null, refund?: Record<string, unknown>) {
+/**
+ * Routes each SELECT to the table it names, so the intent, task and refund reads stay
+ * distinct. Only the intent read is untyped; the other two are told apart by the columns
+ * they ask for.
+ */
+function ctxFor(
+  intent: Record<string, unknown> | null,
+  refund?: Record<string, unknown>,
+  task?: Record<string, unknown>
+) {
   const ctx = createMockCtx(undefined, { address: PAYER });
-  ctx.db.select = vi.fn((columns?: unknown) => {
-    const isRefundRead = columns !== undefined;
-    return makeChain(isRefundRead ? (refund ? [refund] : []) : intent ? [intent] : []);
+  ctx.db.select = vi.fn((columns?: Record<string, unknown>) => {
+    if (columns === undefined) return makeChain(intent ? [intent] : []);
+    if ('refundStatus' in columns) return makeChain(refund ? [refund] : []);
+    return makeChain(task ? [task] : []);
   });
   return ctx;
 }
@@ -87,6 +97,50 @@ describe('intents.get', () => {
     // own wallet or by inferring it from a task that never appeared.
     expect(result.refund).toEqual({ status: 'refunded', txHash: `0x${'cd'.repeat(32)}` });
     expect(result.terminalReason).toBe('reverted');
+  });
+
+  /**
+   * Verifies: ADR-0045, ADR-0049
+   *
+   * A creation that goes in flight cannot be told its task id -- the contract has not derived
+   * one yet, and predicting it is exactly what let two concurrent creates by one requester
+   * name the same task. So the id has to be learnable afterwards, and the idempotency key the
+   * caller generated themselves is the handle they still hold when the response never
+   * arrived (ADR-0052).
+   */
+  describe('the task id a creation eventually got', () => {
+    const TASK_ID = `0x${'ab'.repeat(32)}`;
+
+    it('reports it once the creation has completed', async () => {
+      const ctx = ctxFor(intentRow({ status: 'completed' }), undefined, { id: TASK_ID });
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ idempotencyKey: KEY });
+
+      expect(result.taskId).toBe(TASK_ID);
+    });
+
+    it('reports nothing while the creation is still in flight', async () => {
+      // The chain-event indexer may already have inserted a row for this transaction. Reading
+      // it back here would tell a caller their creation is done while its completion -- the
+      // description, the reward, the allowed viewers -- has not run.
+      const ctx = ctxFor(intentRow({ status: 'broadcast' }), undefined, { id: TASK_ID });
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ intentId: 'intent-1' });
+
+      expect(result.taskId).toBeNull();
+    });
+
+    it('reports nothing for an operation that creates no task', async () => {
+      const ctx = ctxFor(
+        intentRow({ operation: 'submissions.submit', status: 'completed' }),
+        undefined,
+        { id: TASK_ID }
+      );
+
+      const result = await intentsRouter.createCaller(ctx as never).get({ intentId: 'intent-1' });
+
+      expect(result.taskId).toBeNull();
+    });
   });
 
   it('requires exactly one of intentId and idempotencyKey', async () => {

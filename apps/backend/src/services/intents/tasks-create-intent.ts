@@ -1,5 +1,7 @@
 // Implements: ADR-0045
+// Implements: ADR-0055
 import { eq } from 'drizzle-orm';
+import { keccak256, toHex } from 'viem';
 
 import type { db as DbType } from '../../db/client';
 import {
@@ -18,18 +20,57 @@ import { notifyTaskDropSubscribers } from '../task-drops-email';
 import { notifyNewTask } from '../task-notifications';
 import { dispatchRelayedIntent } from '../relayed-intent-registry';
 import { derivedIdempotencyKey, recordRelayedIntent } from '../relayed-intents';
+import { AUCTION_SUBTYPE_MAP, contractCreateTask, MODE_MAP, taskIdForTx } from '../contract';
 
 type Db = typeof DbType;
+
+const ZERO_ADDRESS = '0x0000000000000000000000000000000000000000' as const;
+
+/**
+ * The validated request body, as it is read back out of the intent's jsonb payload.
+ *
+ * Named rather than inlined at each cast because two places now read it: the completion, and
+ * the broadcaster that rebuilds the contract call from the payload alone. A field the two
+ * disagreed about would mean a rebroadcast creating a subtly different task from the one the
+ * requester paid for.
+ */
+export type TasksCreateInput = {
+  accessPassword?: string;
+  allowedViewers?: string[];
+  auctionFloorPrice?: string | null;
+  auctionStartPrice?: string | null;
+  auctionType?: string | null;
+  bidDeadline?: number | null;
+  description: string;
+  duration: number;
+  hookContract?: string | null;
+  hookData?: string | null;
+  maxPrice?: string | null;
+  metricDescription?: string | null;
+  metricTarget?: string | null;
+  mode?: string;
+  pitchDeadline?: number | null;
+  reward: string;
+  stakeBps?: number;
+  stakeRequired?: boolean;
+  submissionVisibility?: string;
+  tags?: string[];
+  taskVisibility?: string;
+};
 
 /**
  * Everything the completion needs, captured at request time.
  *
  * Deliberately plain and serializable: this is persisted as jsonb and may be read back by a
  * reconciler pass in a different process, hours later, with no request context to fall back on.
+ *
+ * It identifies the *operation*, never its result. Neither the task id nor the escrow hash is
+ * here, and for the same reason: both are facts about a transaction that does not exist when
+ * this row is written. They arrive at the completion as arguments, from whichever of the
+ * request or the reconciler observed the receipt.
  */
 export type TasksCreateIntentPayload = {
   allowedViewerAddresses: string[];
-  escrowTxHash: string;
   evaluatorAssignment: {
     appealWindow: number;
     disputeResolver: string | null;
@@ -48,8 +89,57 @@ export type TasksCreateIntentPayload = {
   payer: string;
   resolvedTaskDropId: string | null;
   taskDropReservationId: string | null;
-  taskId: string;
 };
+
+/**
+ * Broadcast a task creation from nothing but its persisted payload.
+ *
+ * The single place the contract call is built, used by the request that records the intent
+ * and by the rebroadcast sweep that picks up one nobody sent (ADR-0050). One builder rather
+ * than two is the point: a rebroadcast must be the *same* call, since a call that differed in
+ * any argument would be a different task from the one the requester paid for.
+ *
+ * A second landing cannot create a second task. The forwarder's `relay` consumes a receipt
+ * hash over (chainId, pgtrSender, paymentAmount, receiptNonce, validBefore, taskMarket,
+ * selector) and reverts `ReceiptAlreadyConsumed` on a repeat -- and every one of those is
+ * immutable across attempts, because a rebroadcast replays the intent's stored envelope
+ * verbatim (ADR-0050 point 7). So if the original transaction did land, the retry reverts on
+ * chain rather than escrowing a second reward.
+ */
+export async function broadcastTasksCreate(context: {
+  payload: TasksCreateIntentPayload;
+  paymentTxHash: `0x${string}` | null;
+}): Promise<`0x${string}`> {
+  const input = context.payload.input as TasksCreateInput;
+  const durationSecs = BigInt(Math.round(input.duration * 3600));
+  const mode = MODE_MAP[input.mode ?? 'bounty'] ?? MODE_MAP['bounty']!;
+
+  return contractCreateTask(
+    context.payload.payer as `0x${string}`,
+    BigInt(input.reward),
+    durationSecs,
+    mode,
+    input.mode === 'pitch'
+      ? input.pitchDeadline
+        ? BigInt(input.pitchDeadline)
+        : durationSecs
+      : 0n,
+    input.mode === 'auction'
+      ? input.bidDeadline
+        ? BigInt(input.bidDeadline * 3600)
+        : durationSecs
+      : 0n,
+    input.mode === 'auction' && input.auctionType
+      ? (AUCTION_SUBTYPE_MAP[input.auctionType] ?? ('0x00000000' as `0x${string}`))
+      : ('0x00000000' as `0x${string}`),
+    input.stakeRequired ?? false,
+    input.stakeBps ?? 0,
+    (input.hookContract ?? ZERO_ADDRESS) as `0x${string}`,
+    (input.tags ?? []).map((tag) => keccak256(toHex(tag)) as `0x${string}`),
+    (input.hookData ?? '0x') as `0x${string}`,
+    context.paymentTxHash ?? undefined
+  );
+}
 
 /**
  * The work that follows a confirmed task-creation escrow.
@@ -59,39 +149,25 @@ export type TasksCreateIntentPayload = {
  * viewers and notifications as a timely one -- the silent gap ADR-0045 exists to close.
  *
  * Idempotent throughout: the task insert already tolerates the chain-event indexer winning the
- * race, and every other write is either conditional or naturally repeatable.
+ * race, and every other write is either conditional or naturally repeatable. Resolving the id
+ * from the receipt is idempotent in the same sense -- the same hash always decodes to the same
+ * id, so a rerun writes the same row rather than a second one.
  */
 export async function completeTasksCreate(context: {
   db: Db;
   payload: TasksCreateIntentPayload;
   recordedAt: Date;
+  txHash: `0x${string}`;
 }): Promise<void> {
   const { db, payload, recordedAt } = context;
-  const input = payload.input as {
-    accessPassword?: string;
-    allowedViewers?: string[];
-    auctionFloorPrice?: string | null;
-    auctionStartPrice?: string | null;
-    auctionType?: string | null;
-    bidDeadline?: number | null;
-    description: string;
-    duration: number;
-    hookContract?: string | null;
-    maxPrice?: string | null;
-    metricDescription?: string | null;
-    metricTarget?: string | null;
-    mode?: string;
-    pitchDeadline?: number | null;
-    reward: string;
-    stakeBps?: number;
-    stakeRequired?: boolean;
-    submissionVisibility?: string;
-    tags?: string[];
-    taskVisibility?: string;
-  };
+  const input = payload.input as TasksCreateInput;
 
   const config = getServerConfig();
-  const { taskId } = payload;
+  // The chain's id, not a prediction of it. The payload cannot carry a task id: it is written
+  // before the transaction exists, and the contract does not derive the id until it runs, from
+  // a requester nonce any concurrent creation can move underneath a prediction. See
+  // taskIdForTx for what that cost before this changed.
+  const taskId = await taskIdForTx(context.txHash);
   // Every deadline is derived from the intent's own record time, never from the wall clock at
   // completion time. The requester signed and paid for a task with a particular duration
   // starting when they asked for it; a completion that runs an hour late off a reconciler pass
@@ -138,7 +214,7 @@ export async function completeTasksCreate(context: {
         chainId: config.CHAIN_ID,
         contractAddress: config.CONTRACT_ADDRESS,
         description: input.description,
-        escrowTxHash: payload.escrowTxHash,
+        escrowTxHash: context.txHash,
         expiryTime,
         hookContract: input.hookContract ?? null,
         id: taskId,
@@ -226,7 +302,7 @@ export async function completeTasksCreate(context: {
       // Derived from the creation this follows, not random: completion is at-least-once, so
       // a rerun of this handler must land on the same assignment intent rather than record a
       // second one and assign the evaluator twice (ADR-0052).
-      idempotencyKey: derivedIdempotencyKey(`${payload.taskId}:tasks.assignEvaluator`),
+      idempotencyKey: derivedIdempotencyKey(`${taskId}:tasks.assignEvaluator`),
       operation: 'tasks.assignEvaluator',
       payer: payload.payer,
       payload: {

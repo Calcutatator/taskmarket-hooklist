@@ -141,10 +141,13 @@ async function readOutbox(sql: postgres.Sql, wallet: string): Promise<OutboxRow[
 }
 
 /**
- * Intents are located by the taskId inside their persisted payload, because the create
- * endpoint's response deliberately carries no intent identifier -- callers are handed a task,
- * not a piece of the mechanism. The payload is the completion handler's only input, so keying
- * off it also confirms the handler would have everything it needs in a fresh process.
+ * Intents are located from the task, not the other way round.
+ *
+ * A `tasks.create` payload carries no task id and cannot: it is written before the chain call,
+ * and the contract does not derive the id until it runs. The escrow hash is the join instead --
+ * the intent records the transaction it broadcast, and the task row records the same hash in
+ * `escrow_tx_hash`. Every other operation still names its task in the payload, since by then
+ * the task exists.
  */
 async function readIntents(
   sql: postgres.Sql,
@@ -156,7 +159,11 @@ async function readIntents(
            server_wallet_transaction_id, tx_hash,
            last_error, created_at, completed_at
     from relayed_intents
-    where operation = ${operation} and payload->>'taskId' = ${taskId}
+    where operation = ${operation}
+      and (
+        payload->>'taskId' = ${taskId}
+        or tx_hash = (select escrow_tx_hash from tasks where id = ${taskId})
+      )
     order by created_at asc
   `;
 }
@@ -506,9 +513,51 @@ async function main() {
 
   // 4. Recovery: the next transaction must work without a restart.
   log('4/9', 'Setting up tasks and confirming the relayer still works after the failure...');
-  const taskIds: string[] = [];
-  for (let i = 0; i < CONCURRENCY; i++) {
-    taskIds.push(await setupFinalizableTask(requester, worker, String(i)));
+
+  // Two creates by the same requester, in flight at once, before anything else.
+  //
+  // This step used to be an awaited loop, and that is exactly why it never caught the defect
+  // it was best placed to catch. The task id was predicted from `requesterNonce` before the
+  // call, and the contract increments that nonce as it derives the id -- so two creates whose
+  // nonce reads interleave both predicted the same id, and the second one's completion
+  // overwrote the first task's description, reward, tags and deadlines. Awaiting each create
+  // to completion made the interleave impossible and the prediction always right.
+  //
+  // Nothing in the system serializes this: ADR-0040's dispatcher states plainly that
+  // concurrent transactions may be in flight at different nonces, and no per-requester lock
+  // exists on this path. So an agent creating two tasks at once is an ordinary thing to do.
+  const concurrentPair = await Promise.all([
+    setupPaidTask(requester, 'concurrent-a'),
+    setupPaidTask(requester, 'concurrent-b'),
+  ]);
+  if (new Set(concurrentPair).size !== concurrentPair.length) {
+    throw new Error(
+      `Two concurrent creates by one requester returned the same task id (${concurrentPair[0]}) -- the id is being predicted rather than read from the TaskCreated log`
+    );
+  }
+  const pairDescriptions = await Promise.all(
+    concurrentPair.map(
+      async (taskId) => ((await get(`/api/tasks/${taskId}`)) as { description: string }).description
+    )
+  );
+  // Distinct ids alone are not enough. The corruption shows up in the rows: with one id shared
+  // between two intents, the later completion's upsert leaves a single task carrying the other
+  // request's description, so both reads come back describing the same work.
+  if (new Set(pairDescriptions).size !== pairDescriptions.length) {
+    throw new Error(
+      `Two concurrent creates produced tasks with the same description (${pairDescriptions[0]}) -- one creation overwrote the other`
+    );
+  }
+  ok('concurrent creates by one requester produced two distinct tasks', concurrentPair);
+
+  // The same concurrency, now over the full create/claim/submit/evaluate path each task needs.
+  const taskIds = await Promise.all(
+    Array.from({ length: CONCURRENCY }, (_, i) =>
+      setupFinalizableTask(requester, worker, String(i))
+    )
+  );
+  if (new Set(taskIds).size !== taskIds.length) {
+    throw new Error(`Concurrent task setups returned duplicate ids: ${taskIds.join(', ')}`);
   }
   ok('relayer still working after failed preflight', `${taskIds.length} tasks created`);
 
@@ -746,18 +795,25 @@ async function main() {
     `;
     ok('stranded nonce recorded', strandedNonce);
 
-    // Put the paid intent back into the state a request that returned early leaves behind, and
-    // attach it to the blocked transaction: in flight, no completion done, and stuck behind a
-    // hole in the nonce sequence. A marker tag is written into the payload first because the
-    // chain-event indexer also inserts a row for this task id from the on-chain TaskCreated
-    // event -- without something only the completion handler can produce, a reappearing task
-    // row would not say which path wrote it.
+    // Put the paid intent back into the state a request that returned early leaves behind: in
+    // flight, no completion done, with a receipt sitting on chain that nobody is waiting for.
+    // A marker tag is written into the payload first because the chain-event indexer also
+    // inserts a row for this task from the on-chain TaskCreated event -- without something
+    // only the completion handler can produce, a reappearing task row would not say which
+    // path wrote it.
+    //
+    // It keeps its own escrow hash and is deliberately detached from the blocked transaction
+    // above. Pointing it at that hash instead would be a fiction the rest of the system is
+    // entitled to reject: the completion reads the task id out of the transaction's own
+    // TaskCreated log, and a self-transfer at a blocked nonce has no such log and created no
+    // task. It would also trip the registry's guard that a receipt must belong to the intent's
+    // own transaction. The two properties this step asserts are independent anyway -- the
+    // reconciler clearing a stranded nonce, and a late receipt still producing the work -- and
+    // tying them together only obscured which one had failed.
     const marker = `smoke-nonce-reconciled-${Date.now()}`;
     await sql`
       update relayed_intents
       set payload = jsonb_set(payload, '{input,tags}', ${sql.json(['smoke-nonce', marker])}::jsonb),
-          server_wallet_transaction_id = ${blockedTransactionId},
-          tx_hash = ${blockedHash},
           status = 'broadcast',
           completed_at = null,
           last_error = null,
@@ -766,8 +822,8 @@ async function main() {
     `;
     await sql`delete from tasks where id = ${strandedTaskId}`;
     ok('paid intent left in flight with its work undone', {
+      escrowTxHash: paidIntent.tx_hash,
       intentId: paidIntent.id,
-      nonce: blockedNonce,
     });
 
     // The reconciler polls every 15s; give it several passes plus mining time.
