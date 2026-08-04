@@ -49,7 +49,51 @@ contract CoreFacet {
     ///                        currently enforced by claimTask
     /// @param hookConfig      Hook contracts + hookData packed into one calldata pointer (Rev008).
     /// @param content         Content hash, URI, and tags (packed to reduce stack depth).
-    // solhint-disable-next-line code-complexity
+    /// @param evaluatorConfig Evaluator terms, applied in this same transaction. Pass the zero
+    ///                        struct for a task with no evaluator. Configuring an evaluator here
+    ///                        rather than via a following `assignEvaluator` call is the only way
+    ///                        to do it without a race: the task is Open, and so claimable, the
+    ///                        instant this transaction mines, and `assignEvaluator` reverts
+    ///                        `TaskNotOpen` once a worker has claimed.
+    function createTask(
+        uint256 reward,
+        uint256 duration,
+        bytes4 mode,
+        uint256 pitchDeadline,
+        uint256 bidDeadline,
+        bytes4 auctionSubtype,
+        ITMPCore.StakeConfig calldata stakeConfig,
+        ITMPCore.HookConfig calldata hookConfig,
+        ITMPCore.TaskContent calldata content,
+        ITMPCore.TaskEvaluatorConfig calldata evaluatorConfig
+    ) external returns (bytes32 taskId) {
+        return _createTask(
+            reward,
+            duration,
+            mode,
+            pitchDeadline,
+            bidDeadline,
+            auctionSubtype,
+            stakeConfig,
+            hookConfig,
+            content,
+            evaluatorConfig
+        );
+    }
+
+    /// @notice Deprecated: `createTask` without evaluator terms. Behaves exactly as before --
+    ///         it creates a task with no evaluator, which a caller can still appoint afterwards
+    ///         with `assignEvaluator` (accepting that call's race against the first claim).
+    /// @dev Kept routed alongside the evaluator-aware overload on purpose (rev018). The diamond
+    ///      routes purely by selector, so removing this one in the same cut that adds the new one
+    ///      would make every task creation revert for the whole window between the facet cut and
+    ///      the off-chain callers being redeployed -- and would strand creation entirely if that
+    ///      redeploy failed, recoverable only by a diamond rollback. Expanding first and
+    ///      contracting later (rev019 removes this shim) makes both halves independently
+    ///      reversible. This overload is deliberately absent from `ITMPCore`/`ITMPDiamond`: it is
+    ///      a migration shim, not part of the protocol interface, and adding it there would
+    ///      change `type(ITMPCore).interfaceId`, which `DiamondLoupeFacet.supportsInterface`
+    ///      reports.
     function createTask(
         uint256 reward,
         uint256 duration,
@@ -61,6 +105,36 @@ contract CoreFacet {
         ITMPCore.HookConfig calldata hookConfig,
         ITMPCore.TaskContent calldata content
     ) external returns (bytes32 taskId) {
+        // A zero-valued struct is exactly "no evaluator", which is what this signature has always
+        // meant. It shares the whole body below, so the shim cannot drift from the real path.
+        ITMPCore.TaskEvaluatorConfig memory noEvaluator;
+        return _createTask(
+            reward,
+            duration,
+            mode,
+            pitchDeadline,
+            bidDeadline,
+            auctionSubtype,
+            stakeConfig,
+            hookConfig,
+            content,
+            noEvaluator
+        );
+    }
+
+    // solhint-disable-next-line code-complexity
+    function _createTask(
+        uint256 reward,
+        uint256 duration,
+        bytes4 mode,
+        uint256 pitchDeadline,
+        uint256 bidDeadline,
+        bytes4 auctionSubtype,
+        ITMPCore.StakeConfig calldata stakeConfig,
+        ITMPCore.HookConfig calldata hookConfig,
+        ITMPCore.TaskContent calldata content,
+        ITMPCore.TaskEvaluatorConfig memory evaluatorConfig
+    ) private returns (bytes32 taskId) {
         AppStorage storage s = LibAppStorage.appStorage();
         LibTaskMarket._requireForwarder(s);
         LibTaskMarket._requireNotPaused(s);
@@ -112,6 +186,10 @@ contract CoreFacet {
         if (content.tags.length > 0) {
             s.taskTags[taskId] = content.tags;
         }
+
+        // Applied before the hooks so a checkFund hook observes a fully configured task rather
+        // than one that only becomes evaluator-gated a moment later.
+        _applyCreationEvaluatorConfig(taskId, requester, evaluatorConfig, s);
 
         _buildAndCheckHooks(taskId, hookConfig, s);
 
@@ -528,6 +606,32 @@ contract CoreFacet {
             _refundExpiredNormal(taskId, task, s, requesterAgentId);
         }
         LibTaskMarket._nonReentrantAfter(s);
+    }
+
+    /// @dev Creation-side wrapper around the shared evaluator-config body. Kept in its own frame
+    ///      so the struct copy and stake-pull locals do not add to createTask's already-deep
+    ///      stack. A zero `evaluator` means the task has no evaluator, which is the common case.
+    function _applyCreationEvaluatorConfig(
+        bytes32 taskId,
+        address requester,
+        ITMPCore.TaskEvaluatorConfig memory evaluatorConfig,
+        AppStorage storage s
+    ) private {
+        if (evaluatorConfig.evaluator != address(0)) {
+            LibTaskMarket._applyEvaluatorConfig(taskId, requester, evaluatorConfig, s);
+            return;
+        }
+        // Evaluator terms with no evaluator to apply them to would be silently dropped, leaving
+        // the requester believing the task is evaluator-gated when it is not -- and believing it
+        // for the whole life of the task, since nothing ever reports the discarded fields.
+        // A malformed request is worth a revert here; a misconfigured escrow is not recoverable.
+        if (
+            evaluatorConfig.evaluatorStake != 0 || evaluatorConfig.evaluatorFeeBps != 0
+                || evaluatorConfig.evaluationWindow != 0 || evaluatorConfig.appealWindow != 0
+                || evaluatorConfig.disputeResolver != address(0)
+        ) {
+            revert ITMPCore.InvalidEvaluator();
+        }
     }
 
     function _buildAndCheckHooks(bytes32 taskId, ITMPCore.HookConfig calldata hookConfig, AppStorage storage s)
