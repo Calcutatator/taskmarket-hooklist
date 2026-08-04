@@ -177,7 +177,7 @@ accessor that substitutes the default for an unset slot:
 uint32 minAppealWindowSecs;
 
 // After -- LibTaskMarket
-uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 1 minutes;
+uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 5 minutes;
 
 function _minAppealWindowSecs(AppStorage storage s) internal view returns (uint32) {
     uint32 configured = s.minAppealWindowSecs;
@@ -303,10 +303,20 @@ and makes the parameter adjustable without touching bytecode.
 
 The bug is the degenerate zero-length window that closes recourse before it can ever fire, not
 the absence of a protocol opinion on how long a dispute window ought to be. That remains the
-requester's choice, exactly as `evaluationWindowSecs` does. One minute is the smallest value that
-eliminates the degenerate case while leaving legitimate short-window flows — including this
-repo's own timing-sensitive smoke tests — viable. A one-hour floor was drafted first and
-rejected on those grounds.
+requester's choice, exactly as `evaluationWindowSecs` does. An hour or a day would be a genuine
+policy about dispute duration imposed on every requester, which this revision has no basis to
+make.
+
+Five minutes is the smallest value that closes the degenerate case *in practice* rather than
+merely on paper. The relevant worker is an agent polling on a bounded schedule, not one watching
+the chain continuously, so the floor has to exceed a realistic poll interval by enough to leave
+room to act — and a one-minute floor, which was drafted first, does not. It was rejected for
+that reason, not for being too permissive in the abstract.
+
+This repo's own timing-sensitive smoke tests were the argument for the lower value, and they are
+the wrong thing to optimise: a test-only need should not set a production security parameter.
+Because the floor is admin-settable, those tests can lower it for their own runs and restore it
+afterwards, which is what they now do.
 
 ### Why not use `try`/`catch` or an interface call instead of assembly?
 
@@ -383,11 +393,22 @@ integration that self-assigns will start reverting the moment this is deployed �
 grace period and no opt-out, which is the intended shape of the fix, since a self-assigned
 evaluator is precisely the exploit precondition.
 
-**Breaking behaviour change: `appealWindowSecs` below 60 is rejected.** `assignEvaluator` reverts
-`AppealWindowTooShort()` for any `appealWindowSecs` below the effective minimum -- 60 by default,
-or whatever the owner has since configured -- including the previously accepted `0`. The three smoke scripts above used windows of roughly five seconds and
-are updated to whole minutes. Callers constructing short windows for test or demo purposes must
-raise them.
+**Breaking behaviour change: `appealWindowSecs` below the floor is rejected.** `assignEvaluator`
+reverts `AppealWindowTooShort()` for any `appealWindowSecs` below the effective minimum --
+**300 seconds (five minutes) at launch**, or whatever the owner has since configured -- including
+the previously accepted `0`. That is the number operators will see, and it is deliberately larger
+than the smallest value that closes the degenerate case: a worker who discovers an adverse verdict
+by polling on a bounded schedule needs long enough to notice it and act, and a minute is barely
+distinguishable from zero for such a worker.
+
+Callers constructing short windows for test or demo purposes must raise them, or lower the floor
+for their own run. Four smoke scripts spend their runtime waiting an appeal window out; rather
+than let a test-only need dictate the production value, `smoke-evaluator.ts`,
+`smoke-concurrent-tasks.ts` and `smoke-nonce.ts` call `setMinAppealWindowSecs` themselves at the
+start of a run and restore it in a `finally`, asserting the value actually went back.
+(`smoke-evaluator-timeout.ts` already used an hour and needs no override.) That restore path
+needs the diamond owner's key, so those three now skip loudly and exit non-zero when it is
+absent, rather than appearing to pass -- see AGENTS.md.
 
 **Breaking behaviour change: award recipients are validated.** `evaluate()` and
 `resolveDispute()` now revert `WorkerMismatch()` (Claim/Pitch/Auction) or `SubmissionNotFound()`

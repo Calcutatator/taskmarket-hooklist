@@ -8,9 +8,18 @@
  * EvaluatorFacet.assignEvaluator rejects evaluator == requester and
  * disputeResolver == requester (self-assignment guard), so this test signs
  * evaluate()/resolve-dispute() with a distinct EVALUATOR_PRIVATE_KEY account
- * used as both evaluator and dispute resolver. It also enforces a minimum
- * one-minute appeal window (MIN_APPEAL_WINDOW_SECS), so windows here are
- * sized in whole minutes rather than a few seconds.
+ * used as both evaluator and dispute resolver.
+ *
+ * MUTATES PROTOCOL CONFIGURATION. Two of the three scenarios spend their
+ * runtime waiting out the appeal window, and rev017 enforces a protocol-wide
+ * floor on it (300s by default). Rather than make every run wait five minutes
+ * twice over, this test lowers the floor for the duration of the run and
+ * restores it in a `finally` -- including when a scenario throws. That needs
+ * the diamond owner's key (UPGRADE_OWNER_KEY or FORGE_DEV_PRIVATE_KEY); without
+ * it the run skips loudly rather than pretending to have verified anything.
+ * On a disposable Anvil chain this is free; on a shared testnet, a run killed
+ * hard enough to skip the `finally` leaves the floor lowered until someone
+ * puts it back.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... EVALUATOR_PRIVATE_KEY=0x... \
@@ -30,7 +39,22 @@ import {
   pollTaskStatus,
   sleep,
   nudgeChainForward,
+  requireShortAppealWindow,
 } from './_x402';
+
+const toHours = (secs: number): number => secs / 3600;
+
+// Scenarios A and B wait their appeal window out, so it should be as short as the protocol
+// floor allows. Both values below are re-derived in main() from the floor actually in force,
+// so the SMOKE_APPEAL_WINDOW_SLOW path (real floor, no lowering) works unchanged.
+const WANTED_SHORT_WINDOW_SECS = 5;
+let shortWindowSecs = WANTED_SHORT_WINDOW_SECS;
+
+// Scenario C is the opposite case: it appeals *inside* its window, after a ~7s wait for the
+// evaluation window to expire, so its window has to outlast that wait no matter how low the
+// floor goes. Sized well clear of the wait plus indexer poll time rather than at the floor.
+const APPEAL_INSIDE_WINDOW_SECS = 90;
+let disputeWindowSecs = APPEAL_INSIDE_WINDOW_SECS;
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
@@ -154,7 +178,7 @@ async function scenarioA(
     worker,
     label: 'A',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
+    appealWindowHours: toHours(shortWindowSecs),
   });
 
   log('5/8', '[A] Evaluator submitting APPROVE verdict...');
@@ -173,8 +197,8 @@ async function scenarioA(
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
 
-  log('6/8', '[A] Waiting 65s for appeal window to expire...');
-  await sleep(65000);
+  log('6/8', `[A] Waiting ${shortWindowSecs + 5}s for appeal window to expire...`);
+  await sleep((shortWindowSecs + 5) * 1000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
   await nudgeChainForward();
 
@@ -199,7 +223,7 @@ async function scenarioB(
     worker,
     label: 'B',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
+    appealWindowHours: toHours(shortWindowSecs),
   });
 
   log('5/8', '[B] Evaluator submitting REJECT verdict...');
@@ -218,8 +242,8 @@ async function scenarioB(
   const afterEval = await pollStatus(taskId, ['appealing']);
   ok('status after evaluate', afterEval);
 
-  log('6/8', '[B] Waiting 65s for appeal window to expire...');
-  await sleep(65000);
+  log('6/8', `[B] Waiting ${shortWindowSecs + 5}s for appeal window to expire...`);
+  await sleep((shortWindowSecs + 5) * 1000);
   // Syncs Anvil's frozen block.timestamp forward -- see nudgeChainForward in _x402.ts.
   await nudgeChainForward();
 
@@ -244,7 +268,7 @@ async function scenarioC(
     worker,
     label: 'C',
     evaluationWindowHours: 0.00139, // ~5 seconds
-    appealWindowHours: 0.02, // ~72 seconds — above the 60s floor, long enough for worker to appeal
+    appealWindowHours: toHours(disputeWindowSecs),
   });
 
   log('5/9', '[C] Evaluator submitting APPROVE verdict...');
@@ -303,26 +327,36 @@ async function main() {
   console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
+  // Skips loudly if the floor cannot be lowered -- see requireShortAppealWindow.
+  const appealWindow = await requireShortAppealWindow(WANTED_SHORT_WINDOW_SECS);
+  shortWindowSecs = appealWindow.effectiveSecs;
+  disputeWindowSecs = Math.max(APPEAL_INSIDE_WINDOW_SECS, appealWindow.effectiveSecs);
+
   const results: boolean[] = [];
+  try {
+    results.push(
+      await runScenario('A — APPROVE verdict, no appeal, finalize → completed', () =>
+        scenarioA(requester, worker)
+      )
+    );
 
-  results.push(
-    await runScenario('A — APPROVE verdict, no appeal, finalize → completed', () =>
-      scenarioA(requester, worker)
-    )
-  );
+    results.push(
+      await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
+        scenarioB(requester, worker)
+      )
+    );
 
-  results.push(
-    await runScenario('B — REJECT verdict, no appeal, finalize → cancelled', () =>
-      scenarioB(requester, worker)
-    )
-  );
-
-  results.push(
-    await runScenario(
-      'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
-      () => scenarioC(requester, worker)
-    )
-  );
+    results.push(
+      await runScenario(
+        'C — APPROVE verdict, worker appeals, dispute resolver settles → completed',
+        () => scenarioC(requester, worker)
+      )
+    );
+  } finally {
+    // Restore in `finally`, not after the scenarios: a throw partway through must still put the
+    // floor back, or the next run silently inherits a weakened guard.
+    await appealWindow.restore();
+  }
 
   console.log('\n' + '='.repeat(60));
   console.log('RESULTS');

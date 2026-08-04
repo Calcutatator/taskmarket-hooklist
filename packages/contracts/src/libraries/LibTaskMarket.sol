@@ -30,11 +30,14 @@ library LibTaskMarket {
     uint256 internal constant HOOK_GAS_STIPEND = 1_000_000;
 
     // Rev017: default floor for assignEvaluator's appealWindowSecs, used whenever
-    // s.minAppealWindowSecs has never been set. One minute rather than something larger: the
-    // goal is eliminating the degenerate zero-length window that closes a worker's recourse
-    // before it can fire, not mandating a dispute-window duration -- that stays the requester's
-    // choice, same as evaluationWindowSecs.
-    uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 1 minutes;
+    // s.minAppealWindowSecs has never been set. Five minutes is sized for a worker that
+    // discovers an adverse verdict by polling on a bounded schedule rather than by watching
+    // the chain continuously: a minute is barely distinguishable from zero for such a worker,
+    // which would leave the degenerate case this guard exists to close only nominally closed.
+    // It is not an opinion on how long a dispute window ought to be -- that stays the
+    // requester's choice, same as evaluationWindowSecs -- and it is admin-settable precisely
+    // so it can be corrected in either direction without a facet upgrade.
+    uint32 internal constant DEFAULT_MIN_APPEAL_WINDOW_SECS = 5 minutes;
 
     // -------------------------------------------------------------------------
     // Errors (not in ITMPCore since they are implementation-specific)

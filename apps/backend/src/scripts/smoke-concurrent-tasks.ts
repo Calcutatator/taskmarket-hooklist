@@ -25,8 +25,16 @@
  *
  * EvaluatorFacet.assignEvaluator rejects evaluator == requester (self-assignment
  * guard), so this test signs evaluate() with a distinct EVALUATOR_PRIVATE_KEY
- * account. It never disputes, so no dispute resolver is assigned. It also enforces
- * a minimum one-minute appeal window (MIN_APPEAL_WINDOW_SECS).
+ * account. It never disputes, so no dispute resolver is assigned.
+ *
+ * MUTATES PROTOCOL CONFIGURATION. This test waits out an appeal window before it
+ * can finalize, and rev017 enforces a protocol-wide floor on that window (300s by
+ * default). It therefore lowers the floor for the duration of the run and restores
+ * it in a `finally`, including when the run throws. That needs the diamond owner's
+ * key (UPGRADE_OWNER_KEY or FORGE_DEV_PRIVATE_KEY); without it the run skips loudly
+ * rather than pretending to have verified anything. Free on a disposable Anvil
+ * chain; on a shared testnet, a run killed hard enough to skip the `finally` leaves
+ * the floor lowered until someone puts it back.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... EVALUATOR_PRIVATE_KEY=0x... \
@@ -35,13 +43,29 @@
 import { createHash } from 'crypto';
 import { privateKeyToAccount } from 'viem/accounts';
 import { buildSubmitMessage } from '@taskmarket/shared';
-import { log, ok, get, post, x402Post, getAccounts, pollTaskStatus, sleep, API_URL } from './_x402';
+import {
+  log,
+  ok,
+  get,
+  post,
+  x402Post,
+  getAccounts,
+  pollTaskStatus,
+  sleep,
+  API_URL,
+  requireShortAppealWindow,
+} from './_x402';
 
 function contentHash(payload: string): string {
   return createHash('sha256').update(Buffer.from(payload)).digest('hex');
 }
 
 const CONCURRENCY = 3;
+
+// Re-derived in main() from the floor actually in force, so the SMOKE_APPEAL_WINDOW_SLOW path
+// (real floor, no lowering) works unchanged.
+const WANTED_APPEAL_WINDOW_SECS = 5;
+let appealWindowSecs = WANTED_APPEAL_WINDOW_SECS;
 
 const evaluatorKey = process.env.EVALUATOR_PRIVATE_KEY as `0x${string}` | undefined;
 if (!evaluatorKey) {
@@ -70,7 +94,7 @@ async function setupAppealingTask(
       tags: ['smoke-concurrent-tasks'],
       evaluator: evaluator.address,
       evaluationWindowHours: 0.00139, // ~5 seconds
-      appealWindowHours: 0.0167, // ~60 seconds — MIN_APPEAL_WINDOW_SECS floor
+      appealWindowHours: appealWindowSecs / 3600,
     },
     requester
   )) as { taskId: string };
@@ -122,43 +146,53 @@ async function main() {
   console.log('evaluator:', evaluator.address);
   console.log('api:      ', API_URL);
 
-  log('1/3', `Setting up ${CONCURRENCY} tasks (sequentially) into the appealing state...`);
-  const taskIds: string[] = [];
-  for (let i = 0; i < CONCURRENCY; i++) {
-    const taskId = await setupAppealingTask(requester, worker, String(i));
-    taskIds.push(taskId);
-  }
-  ok('tasks in appealing state', taskIds);
+  // Skips loudly if the floor cannot be lowered -- see requireShortAppealWindow.
+  const appealWindow = await requireShortAppealWindow(WANTED_APPEAL_WINDOW_SECS);
+  appealWindowSecs = appealWindow.effectiveSecs;
 
-  log('2/3', 'Waiting 65s for all appeal windows to expire...');
-  await sleep(65000);
-
-  log('3/3', `Calling finalize-verdict for all ${CONCURRENCY} tasks concurrently...`);
-  const results = await Promise.all(
-    taskIds.map((taskId) => post(`/api/tasks/${taskId}/finalize-verdict`, { taskId }))
-  );
-  const txHashes = results.map((r) => (r as { txHash: string }).txHash);
-
-  const missing = txHashes.filter((tx) => !tx);
-  if (missing.length > 0) {
-    throw new Error(`${missing.length}/${CONCURRENCY} finalize-verdict calls returned no txHash`);
-  }
-
-  const unique = new Set(txHashes);
-  if (unique.size !== txHashes.length) {
-    throw new Error(
-      `Expected ${txHashes.length} distinct txHashes, got duplicates: ${txHashes.join(', ')}`
-    );
-  }
-  ok('all finalize-verdict txHashes distinct', txHashes);
-
-  for (const taskId of taskIds) {
-    const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
-    if (task.status !== 'completed') {
-      throw new Error(`Task ${taskId} expected status completed, got ${task.status}`);
+  try {
+    log('1/3', `Setting up ${CONCURRENCY} tasks (sequentially) into the appealing state...`);
+    const taskIds: string[] = [];
+    for (let i = 0; i < CONCURRENCY; i++) {
+      const taskId = await setupAppealingTask(requester, worker, String(i));
+      taskIds.push(taskId);
     }
+    ok('tasks in appealing state', taskIds);
+
+    log('2/3', `Waiting ${appealWindowSecs + 5}s for all appeal windows to expire...`);
+    await sleep((appealWindowSecs + 5) * 1000);
+
+    log('3/3', `Calling finalize-verdict for all ${CONCURRENCY} tasks concurrently...`);
+    const results = await Promise.all(
+      taskIds.map((taskId) => post(`/api/tasks/${taskId}/finalize-verdict`, { taskId }))
+    );
+    const txHashes = results.map((r) => (r as { txHash: string }).txHash);
+
+    const missing = txHashes.filter((tx) => !tx);
+    if (missing.length > 0) {
+      throw new Error(`${missing.length}/${CONCURRENCY} finalize-verdict calls returned no txHash`);
+    }
+
+    const unique = new Set(txHashes);
+    if (unique.size !== txHashes.length) {
+      throw new Error(
+        `Expected ${txHashes.length} distinct txHashes, got duplicates: ${txHashes.join(', ')}`
+      );
+    }
+    ok('all finalize-verdict txHashes distinct', txHashes);
+
+    for (const taskId of taskIds) {
+      const task = (await get(`/api/tasks/${taskId}`)) as { status: string };
+      if (task.status !== 'completed') {
+        throw new Error(`Task ${taskId} expected status completed, got ${task.status}`);
+      }
+    }
+    ok('every task reached completed', true);
+  } finally {
+    // Restore in `finally`, not on the happy path: a throw partway through must still put the
+    // floor back, or the next run silently inherits a weakened guard.
+    await appealWindow.restore();
   }
-  ok('every task reached completed', true);
 
   console.log('\n=== Concurrent finalize-verdict smoke test passed ===');
 }

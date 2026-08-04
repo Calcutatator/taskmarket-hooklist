@@ -4264,7 +4264,7 @@ contract TaskMarketTest is DiamondTestHelper {
     function test_MinAppealWindowSecs_DefaultsWhenUnset() public view {
         // The storage slot is genuinely zero on a fresh diamond -- nothing initializes it -- so
         // this asserts the lazy default, not a value someone wrote.
-        assertEq(market.minAppealWindowSecs(), 60);
+        assertEq(market.minAppealWindowSecs(), 300);
     }
 
     function test_SetMinAppealWindowSecs_TightensTheGuard() public {

@@ -127,7 +127,7 @@ contract Rev017UpgradeTest is Test, DiamondTestHelper {
         // live on upgrade, not on first setter call.
         _assertRoutes(diamond, AdminFacet.minAppealWindowSecs.selector, newAdmin, "minAppealWindowSecs");
         _assertRoutes(diamond, AdminFacet.setMinAppealWindowSecs.selector, newAdmin, "setMinAppealWindowSecs");
-        assertEq(AdminFacet(diamond).minAppealWindowSecs(), 60, "appeal-window floor must default to 60 on upgrade");
+        assertEq(AdminFacet(diamond).minAppealWindowSecs(), 300, "appeal-window floor must default to 300 on upgrade");
     }
 
     function test_RevertWhen_Rev017Upgrade_NotAtRev016() public {
