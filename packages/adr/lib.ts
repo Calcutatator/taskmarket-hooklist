@@ -697,32 +697,8 @@ export const ADR_INDEX_FRESHNESS_OPTIONS: DocIndexFreshnessOptions = {
   yamlOptions: ADR_INDEX_YAML_OPTIONS,
 };
 
-// Matches the `Implements: ADR-NNNN` back-pointer convention the audit already relies on.
-//
-// Deliberately two steps rather than one regex. A single `/Implements:\s*ADR-(\d{4})/g`
-// looks correct and is not: it requires an `Implements:` prefix before every number, so on
-// the comma-separated form the convention actually uses in this repo --
-// `// Implements: ADR-0045, ADR-0050` -- it credits ADR-0045 and silently drops the rest.
-// That is the worst possible failure for a drift detector, because it under-reports
-// realization and so passes: an ADR whose only back-pointers sit in second position computes
-// as unrealized, and deleting the code that implements it raises no drift at all. When this
-// was found, 19 files claimed ADR-0050 and only 8 were being credited.
-export const IMPLEMENTS_ADR_LINE_RE = /(?:Implements|Verifies):[ \t]*((?:ADR-\d{4}[,\s]*)+)/g;
-export const ADR_NUMBER_RE = /ADR-(\d{4})/g;
-
-/** Every ADR number claimed by an `Implements:`/`Verifies:` marker anywhere in `content`. */
-export function claimedAdrNumbers(content: string): Set<string> {
-  const claimed = new Set<string>();
-  // Fresh clones per call: these are module-level globals and `matchAll` seeds its iterator
-  // from the regex's current lastIndex, so reusing them directly can skip matches depending
-  // on what another consumer left behind.
-  const lineRe = new RegExp(IMPLEMENTS_ADR_LINE_RE.source, IMPLEMENTS_ADR_LINE_RE.flags);
-  for (const line of content.matchAll(lineRe)) {
-    const numberRe = new RegExp(ADR_NUMBER_RE.source, ADR_NUMBER_RE.flags);
-    for (const n of line[1]!.matchAll(numberRe)) claimed.add(n[1]!);
-  }
-  return claimed;
-}
+// The `Implements:` back-pointer parser (findImplementsRefs) is defined below, next to
+// the audit's back-pointer scanning, so the gate and the audit share one parser.
 
 /**
  * Status-aware remediation text for a back-pointer to a non-Accepted ADR.
@@ -773,7 +749,7 @@ export function checkProposedAdrImplementation(
       continue;
     }
 
-    const claimed = claimedAdrNumbers(content);
+    const claimed = new Set<string>(findImplementsRefs(content));
 
     for (const number of [...claimed].sort()) {
       const status = statusByNumber.get(number);
@@ -1280,14 +1256,48 @@ export type EmbodimentState = 'Not started' | 'Specified' | 'Implemented' | 'Ver
 // both match since only the bold-marker + label + colon are anchored.
 export const SPEC_IMPLEMENTS_ADRS_RE = /\*\*Implements ADRs:?\*\*:?\s*[:|]?\s*([^\n|]+)/i;
 
-// Matches a code/test file's back-pointer comment, e.g. "// Implements: ADR-0042".
-export const CODE_IMPLEMENTS_RE = /\bImplements:\s*ADR-(\d{4})/g;
-export const CODE_VERIFIES_RE = /\bVerifies:\s*ADR-(\d{4})/g;
+// A back-pointer marker may list more than one ADR on a single line. We anchor on the
+// marker once, then pull every ADR-NNNN from the rest of that line, so each listed ADR
+// is credited. Examples (self-ignored by the scan so these illustrative markers aren't
+// counted as real evidence):
+//   Implements: ADR-0045, ADR-0050                  adr-scan:ignore-line
+//   Implements: ADR-0045 (Task Awards), ADR-0050    adr-scan:ignore-line
+// A bare ADR-NNNN inside a free-text annotation also counts as a back-pointer; keep
+// annotations free of bare ADR-NNNN values when they must not create one.
+const IMPLEMENTS_LINE_RE = /\bImplements:([^\n]*)/g;
+const VERIFIES_LINE_RE = /\bVerifies:([^\n]*)/g;
+// Word boundaries so only a complete four-digit ADR reference matches — ADR-00450 is
+// not read as ADR-0045.
+const ADR_REF_RE = /\bADR-(\d{4})\b/g;
+
+function findMarkerRefs(lineRe: RegExp, content: string): string[] {
+  const nums: string[] = [];
+  const lr = new RegExp(lineRe.source, 'g');
+  let line: RegExpExecArray | null;
+  while ((line = lr.exec(content)) !== null) {
+    const rr = new RegExp(ADR_REF_RE.source, 'g');
+    let ref: RegExpExecArray | null;
+    while ((ref = rr.exec(line[1])) !== null) nums.push(ref[1]);
+  }
+  return nums;
+}
+
+// Every ADR back-pointed by an "Implements:" marker, scanning each marker line's full
+// tail (see the note above). Order-preserving; duplicates kept (callers dedupe).
+export function findImplementsRefs(content: string): string[] {
+  return findMarkerRefs(IMPLEMENTS_LINE_RE, content);
+}
+
+// Every ADR back-pointed by a "Verifies:" marker (test back-pointers). Same whole-line
+// tail scan as findImplementsRefs.
+export function findVerifiesRefs(content: string): string[] {
+  return findMarkerRefs(VERIFIES_LINE_RE, content);
+}
 
 // A pure grep/regex scan can't tell "real evidence" apart from "a string that merely looks
-// like evidence" (a docstring example, a test fixture for the regex itself, sample text in a
-// README). This repo's own tooling hits that exact case: packages/adr's test fixtures for
-// CODE_IMPLEMENTS_RE/CODE_VERIFIES_RE necessarily contain literal "Implements: ADR-NNNN"
+// like evidence" (a docstring example, a test fixture for the parser itself, sample text in a
+// README). This repo's own tooling hits that exact case: packages/adr's test fixtures for the
+// back-pointer parser necessarily contain literal "Implements: ADR-NNNN"
 // text, and adr-audit.ts's whole-repo scan would otherwise count them as real. The fix is an
 // explicit out-of-band signal, not a scan-root exclusion (which would just as wrongly hide
 // genuine back-pointers elsewhere in the same file) or string-obfuscating the fixture (fragile,
@@ -1297,8 +1307,8 @@ export const ADR_SCAN_IGNORE_MARKER = 'adr-scan:ignore-line';
 
 // Blanks any line containing ADR_SCAN_IGNORE_MARKER before back-pointer scanning. Applied to
 // real file content read from disk (adr-audit.ts), never to an in-memory string passed
-// directly to a function under test — a test asserting what CODE_IMPLEMENTS_RE/
-// findCommentAdrRefs extracts from a string still gets the real, unblanked string; the marker
+// directly to a function under test — a test asserting what the back-pointer parser
+// extracts from a string still gets the real, unblanked string; the marker
 // only tells the *outer* whole-repo scan to skip that physical source line.
 export function stripIgnoredLines(content: string): string {
   return content
@@ -1486,13 +1496,7 @@ export function matchesAnyGlob(relPath: string, globs: string[]): boolean {
 // count as real embodiment evidence even though it's still worth flagging as a convention
 // violation — these are two different questions, not the same check reused.
 export function findCommentAdrRefs(content: string): string[] {
-  const nums = new Set<string>();
-  CODE_IMPLEMENTS_RE.lastIndex = 0;
-  let m: RegExpExecArray | null;
-  while ((m = CODE_IMPLEMENTS_RE.exec(content)) !== null) nums.add(m[1]);
-  CODE_VERIFIES_RE.lastIndex = 0;
-  while ((m = CODE_VERIFIES_RE.exec(content)) !== null) nums.add(m[1]);
-  return [...nums];
+  return [...new Set([...findImplementsRefs(content), ...findVerifiesRefs(content)])];
 }
 
 export interface AdrAuditEntry {

@@ -73,6 +73,8 @@ import {
   lintRfcDir,
   checkCoverage,
   checkProposedAdrImplementation,
+  findImplementsRefs,
+  findVerifiesRefs,
   coerceScope,
   checkScopeMismatch,
   extractReferencesSection,
@@ -1337,6 +1339,23 @@ describe('checkProposedAdrImplementation', () => {
 
   const SOURCE = `${COVERAGE_PATHS[1]}lib/thing.ts`;
 
+  test('blocks a non-Accepted ADR listed second on a comma back-pointer line', () => {
+    // ADR-0006 is Accepted and ADR-0040 is Proposed; the gate must report ADR-0040
+    // even though it is listed second on the marker line.
+    const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0006, ADR-0040\nexport const a = 1;');
+    try {
+      const issues = checkProposedAdrImplementation(
+        [SOURCE],
+        root,
+        new Map([['0006', 'Accepted'], ['0040', 'Proposed']])
+      );
+      expect(issues).toHaveLength(1);
+      expect(issues[0].message).toContain('ADR-0040');
+    } finally {
+      cleanup();
+    }
+  });
+
   test('blocks source implementing a Proposed ADR', () => {
     const { cleanup, root } = withSourceFile(SOURCE, '// Implements: ADR-0040\nexport const a = 1;');
     try {
@@ -2401,6 +2420,33 @@ describe('globToRegExp / matchesAnyGlob', () => {
     // should not falsely match a pattern meant only for a literal dot.
     expect(globToRegExp('a.b').test('aXb')).toBe(false);
     expect(globToRegExp('a.b').test('a.b')).toBe(true);
+  });
+});
+
+describe('findImplementsRefs / findVerifiesRefs (multi-ADR marker lines)', () => {
+  test('credits a single ADR', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045')).toEqual(['0045']); // adr-scan:ignore-line
+  });
+  test('credits every ADR in a comma list, not just the first', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045, ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
+  });
+  test('credits an annotated comma list', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045 (Task Awards), ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
+  });
+  test('preserves reference order and keeps duplicates', () => {
+    expect(findImplementsRefs('// Implements: ADR-0050, ADR-0045, ADR-0050')).toEqual(['0050', '0045', '0050']); // adr-scan:ignore-line
+  });
+  test('matches only a complete four-digit reference, not a longer run of digits', () => {
+    expect(findImplementsRefs('// Implements: ADR-00450')).toEqual([]); // adr-scan:ignore-line
+  });
+  test('ignores a bare ADR ref with no marker on the line', () => {
+    expect(findImplementsRefs('// see ADR-0050 for context')).toEqual([]);
+  });
+  test('scopes a marker to its own line — the list never absorbs the next line', () => {
+    expect(findImplementsRefs('// Implements: ADR-0045\n// ADR-0050 note')).toEqual(['0045']); // adr-scan:ignore-line
+  });
+  test('Verifies: behaves the same', () => {
+    expect(findVerifiesRefs('// Verifies: ADR-0045, ADR-0050')).toEqual(['0045', '0050']); // adr-scan:ignore-line
   });
 });
 
