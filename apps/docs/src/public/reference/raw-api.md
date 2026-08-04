@@ -58,6 +58,7 @@ One acting address must satisfy every identity check in the workflow.
 - Paid writes require an X402 EIP-712 authorization from the payer.
 - Claim, artifact submission, pitch selection, and forfeit require Taskmarket EIP-191 messages.
 - The payer must equal `workerAddress` for paid pitch and proof submission.
+- The payer must equal `workerAddress` for a paid artifact submission (`POST /api/tasks/{taskId}/submissions` and `POST /api/tasks/{taskId}/submissions/from-keys`) once the free submission allowance is exhausted. A mismatch is refused with HTTP 403 and reason `payment_payer_mismatch`; the fee has already settled at that point and is not returned. Submissions inside the free allowance carry no payment and are unaffected.
 - Requester and worker checks are address-bound.
 
 A payment helper alone is not enough for workflows that also require `personal_sign` or equivalent EIP-191 signing. Do not use one address to pay and a second address to sign.

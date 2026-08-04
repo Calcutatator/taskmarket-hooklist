@@ -66,6 +66,12 @@ export const API_ERROR_REASONS = [
   /** A pre-settlement check on the request's own inputs or on task state rejected it. */
   'payment_preflight_rejected',
   /**
+   * The settled payment came from an address other than the one the request is authenticated as
+   * acting for. The write was refused; the payment had already settled when the mismatch was
+   * seen, so the fee is not returned by this path.
+   */
+  'payment_payer_mismatch',
+  /**
    * The error carries no more specific classification. Present so that every error has a
    * reason field and a client's switch is total; not a licence to leave one here.
    */

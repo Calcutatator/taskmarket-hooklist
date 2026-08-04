@@ -32,6 +32,8 @@ import { TRPCError } from '@trpc/server';
 import { contractSubmitWork } from '../services/contract';
 import { settledPaymentReference } from '../middleware/x402';
 import { runRelayedIntent } from '../services/relayed-intent-request';
+import type { IntentPaymentReference } from '../services/relayed-intents';
+import { apiError } from '../lib/api-error';
 import type { SubmissionsSubmitIntentPayload } from '../services/intents/submissions-intents';
 import { buildArtifactManifestHash } from '../lib/canonical-hashes';
 import { sha256Hex } from '../lib/hash';
@@ -310,6 +312,53 @@ async function assertCanSubmitToTask(
   });
 }
 
+/**
+ * Requires a paid submission's fee to have been paid by the worker who authored it.
+ *
+ * **This is not authentication, and must not be read as such.** Both submission endpoints
+ * authenticate with `verifySignedAddressOrThrow` over `buildSubmitMessage`, bound to the exact
+ * bytes or keys being submitted (issue #323); the x402 charge is RFC-0006 anti-spam pricing past
+ * the free allowance. A fee, not a credential. That is the opposite of `pitches.select` and
+ * `proofs.submit`, whose `signature` field is vestigial and whose settled payer *is* their
+ * identity -- remove their equality check and anyone can act as anyone. Removing this one would
+ * not do that, so the reason to have it has to stand on its own.
+ *
+ * It does. A submission funded by a third party is not a product feature and never was: the CLI
+ * signs the submission and the payment with one key, and the web app uses the connected wallet
+ * for both. The divergence is reachable only by hand-crafting a raw API call in order to create
+ * it. Left open, the address recorded as having initiated the intent -- ADR-0059's initiator,
+ * which is the settled payer on a paid route (ADR-0057) -- can be someone other than the author
+ * of the work, so the read granted by `intents.get` lands on a party who did not do the writing.
+ * That is an unintended state with nothing on the other side of the ledger, and it is closed for
+ * that reason alone.
+ *
+ * The free path is untouched, and is checked first: past nothing but the allowance gate most
+ * submissions carry no payment at all, and `settledPaymentReference` returns `undefined` for
+ * every one of them.
+ *
+ * Ordering: `pitches.router.ts` warns that its payer check must run after identity is resolved,
+ * or the FORBIDDEN-versus-payment-error difference becomes a private-task membership oracle.
+ * That concern does not reach here, because there the payer check *is* the identity resolution.
+ * Here identity is already resolved by the signature, and this compares the payer against an
+ * address the caller has proven they control -- it reveals only whether two addresses the caller
+ * chose are equal, and branches on no task state at all. It therefore runs immediately after the
+ * signature check and before any private-task lookup, which is also the placement that spends no
+ * queries on a request that cannot proceed.
+ *
+ * The fee is already settled by the time this runs -- the x402 middleware settles before tRPC --
+ * so a rejection here forfeits it, exactly as the equivalent rejection in `pitches.submit` and
+ * `proofs.submit` does. Nothing refunds it, because only intent settlement decides that
+ * (ADR-0048) and no intent is recorded for a request refused here.
+ */
+function assertPaidByWorker(payment: IntentPaymentReference | undefined, workerAddress: string) {
+  if (!payment) return;
+  if (payment.payer.toLowerCase() === workerAddress.toLowerCase()) return;
+  throw apiError({
+    reason: 'payment_payer_mismatch',
+    message: 'The submission fee must be paid by the worker submitting the work',
+  });
+}
+
 function toArtifactResponse(
   row: Artifact,
   workerAddress: string,
@@ -410,6 +459,10 @@ export const submissionsRouter = router({
           }),
       });
 
+      // Undefined on the free path (RFC-0006's allowance), which is most submissions.
+      const payment = settledPaymentReference(ctx.res);
+      assertPaidByWorker(payment, input.workerAddress);
+
       // Only compared once the caller has cryptographically proven ownership of
       // workerAddress above -- comparing task.claimedBy against an unauthenticated
       // input.workerAddress would let an attacker submit an arbitrary candidate
@@ -498,7 +551,7 @@ export const submissionsRouter = router({
         // bypass x402 entirely and have nothing to refund, and the ones after it are charged
         // the flat action fee. Before this the paid ones recorded no payment reference at
         // all, so a submission that never reached the chain could not be refunded either.
-        payment: settledPaymentReference(ctx.res),
+        payment,
         payload: {
           artifacts: artifactRows,
           contractAddress: task.contractAddress,
@@ -661,6 +714,10 @@ export const submissionsRouter = router({
           }),
       });
 
+      // Undefined on the free path (RFC-0006's allowance), which is most submissions.
+      const payment = settledPaymentReference(ctx.res);
+      assertPaidByWorker(payment, input.workerAddress);
+
       // Only compared once the caller has cryptographically proven ownership of
       // workerAddress above -- comparing task.claimedBy against an unauthenticated
       // input.workerAddress would let an attacker submit an arbitrary candidate
@@ -771,7 +828,7 @@ export const submissionsRouter = router({
         // bypass x402 entirely and have nothing to refund, and the ones after it are charged
         // the flat action fee. Before this the paid ones recorded no payment reference at
         // all, so a submission that never reached the chain could not be refunded either.
-        payment: settledPaymentReference(ctx.res),
+        payment,
         payload: {
           artifacts: artifactRows,
           contractAddress: task.contractAddress,
