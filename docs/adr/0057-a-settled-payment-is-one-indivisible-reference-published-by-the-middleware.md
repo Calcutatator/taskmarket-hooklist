@@ -10,7 +10,7 @@
 > handlers now depend on middleware-published `res.locals` for a fact they used to be able to
 > derive themselves.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
@@ -19,7 +19,7 @@
 - **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
+- **Amends / Amended-by:** Amends ADR-0048
 - **Pending Amends / Amended-by:** Pending Amends ADR-0048
 
 ## Context
