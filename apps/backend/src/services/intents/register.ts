@@ -91,7 +91,9 @@ import {
 } from './proofs-intents';
 import {
   broadcastTasksCancel,
+  broadcastTasksRefundExpired,
   broadcastTasksRejectSubmission,
+  broadcastTasksUpdate,
   completeTasksCancel,
   completeTasksRefundExpired,
   completeTasksRejectSubmission,
@@ -135,46 +137,10 @@ export function registerRelayedIntentHandlers(): void {
   if (registered) return;
   registered = true;
 
-  // ---------------------------------------------------------------------------------------
-  // Operations with NO broadcaster, and why.
-  //
-  // ADR-0050 rebroadcasts an intent that provably never reached the chain rather than
-  // refunding it, which needs a broadcaster: a way to turn the persisted jsonb payload back
-  // into the same transaction, in a process that never served the original request. An
-  // operation without one has its retry budget spent immediately by `dispatchRelayedIntent`
-  // and drops to the refund path, which is the *old* behaviour and a strictly worse outcome
-  // for the payer -- so the two exclusions below are deliberate, not oversights, and each is
-  // excluded because replaying it verbatim would be wrong rather than merely unimplemented.
-  //
-  //   tasks.update      `contractUpdateTask` relays with `newReward - currentReward`, which the
-  //                     forwarder moves out of the server wallet on every relay, while
-  //                     `CoreFacet.updateTask` applies the reward change only when
-  //                     `newReward != task.reward`. A replay therefore pays the increase again
-  //                     and no-ops the change that justified it. The duplicate transfer is in
-  //                     the forwarder, so no amount of payload can prevent it.
-  //
-  //   tasks.refundExpired
-  //                     `CoreFacet.refundExpired` rejects Accepted and Cancelled but not
-  //                     Expired -- the status it sets itself -- and never zeroes `task.reward`.
-  //                     A second landing refunds the full reward again out of the pooled escrow
-  //                     balance shared by every task. The only guard today is the router's own
-  //                     database status check, which a rebroadcast does not run. Of everything
-  //                     here this is the one operation whose replay the chain declines to stop,
-  //                     so it is the one that must not be replayed.
-  //
-  //
-  // ADR-0054 (the escrow-liability fix) closed the chain-side hazard behind both of the
-  // exclusions that remain: refundExpired now rejects an already-refunded task and zeroes
-  // the liability it settles, and updateTask reverts rather than silently re-charging a
-  // no-op reward change. A replay of either is therefore refused by the contract instead of
-  // paying out twice, which is exactly the guard every registration below states. Giving
-  // these two broadcasters is now unblocked and is deliberate follow-up work, not a
-  // standing exclusion -- when it lands, this block goes away and the coverage test in
-  // relayed-intent-broadcaster-coverage.test.ts stops having anything to exempt.
-  //
-  // Everything else registers a broadcaster below, and each states the on-chain guard that
-  // makes a second landing safe alongside it.
-  // ---------------------------------------------------------------------------------------
+  // Every operation below registers a broadcaster, and each states the on-chain guard that
+  // makes a second landing safe alongside it. There is no exemption list: an operation that
+  // cannot be rebroadcast has its retry budget spent immediately by `dispatchRelayedIntent`
+  // and drops to the refund path, which is the outcome ADR-0050 exists to remove.
 
   registerRelayedIntentHandler('tasks.create', {
     // Every other safely-replayable operation has a broadcaster; this one was the exception
@@ -228,9 +194,19 @@ export function registerRelayedIntentHandlers(): void {
     },
   });
 
-  registerRelayedIntentHandler('tasks.update', async ({ db, intent }) =>
-    completeTasksUpdate({ db, payload: intent.payload as TasksUpdateIntentPayload })
-  );
+  // Guard: a replay that names a reward reverts NoRewardChange -- ADR-0054 made updateTask
+  // revert rather than silently no-op when a named reward equals the current one, which is what
+  // unwinds the delta the forwarder pulled before the Diamond ran. A replay that names no reward
+  // relays paymentAmount 0 and re-assigns the same recorded deadlines, so it moves nothing.
+  registerRelayedIntentHandler('tasks.update', {
+    broadcast: async ({ intent }) =>
+      broadcastTasksUpdate({
+        payer: intent.payer as string,
+        payload: intent.payload as TasksUpdateIntentPayload,
+      }),
+    complete: async ({ db, intent }) =>
+      completeTasksUpdate({ db, payload: intent.payload as TasksUpdateIntentPayload }),
+  });
 
   // Guard: cancelTask requires status Open and sets Cancelled, so its escrow refund is behind
   // a one-shot transition and a replay reverts TaskNotOpen.
@@ -241,12 +217,22 @@ export function registerRelayedIntentHandlers(): void {
       completeTasksCancel({ db, payload: intent.payload as TasksCancelIntentPayload }),
   });
 
-  registerRelayedIntentHandler('tasks.refundExpired', async ({ db, intent }) =>
-    completeTasksRefundExpired({
-      db,
-      payload: intent.payload as TasksRefundExpiredIntentPayload,
-    })
-  );
+  // Guard: a second landing reverts TaskAlreadyRefunded -- ADR-0054 made refundExpired treat the
+  // Expired status it sets itself as terminal, and zero `task.reward` before transferring, so
+  // the pooled escrow every task shares cannot be paid out twice for one expiry. Permissionless
+  // (ADR-0026) and single-shot are orthogonal; it was only ever the second one that was missing.
+  registerRelayedIntentHandler('tasks.refundExpired', {
+    broadcast: async ({ intent }) =>
+      broadcastTasksRefundExpired({
+        payer: intent.payer as string,
+        payload: intent.payload as TasksRefundExpiredIntentPayload,
+      }),
+    complete: async ({ db, intent }) =>
+      completeTasksRefundExpired({
+        db,
+        payload: intent.payload as TasksRefundExpiredIntentPayload,
+      }),
+  });
 
   // Guard: taskRejectedWorkers[taskId][worker] is a one-shot flag, so a replay reverts
   // SubmissionAlreadyRejected and the active-submission count cannot be decremented twice.

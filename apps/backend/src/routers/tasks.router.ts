@@ -44,8 +44,6 @@ import {
 } from 'drizzle-orm';
 import {
   contractCancelTask,
-  contractRefundExpired,
-  contractUpdateTask,
   contractRejectSubmission,
   contractGetTaskHooks,
   contractGetDreamsPerUsdc,
@@ -79,11 +77,13 @@ import {
   broadcastTasksCreate,
   type TasksCreateIntentPayload,
 } from '../services/intents/tasks-create-intent';
-import type {
-  TasksCancelIntentPayload,
-  TasksRefundExpiredIntentPayload,
-  TasksRejectSubmissionIntentPayload,
-  TasksUpdateIntentPayload,
+import {
+  broadcastTasksRefundExpired,
+  broadcastTasksUpdate,
+  type TasksCancelIntentPayload,
+  type TasksRefundExpiredIntentPayload,
+  type TasksRejectSubmissionIntentPayload,
+  type TasksUpdateIntentPayload,
 } from '../services/intents/tasks-mutation-intents';
 
 // Registration is idempotent, and the completion handlers must exist before the first request
@@ -1219,19 +1219,23 @@ export const tasksRouter = router({
         }
       }
 
+      // Built once and used for both the payload and the send, so the transaction this request
+      // makes is definitionally the one a rebroadcast reconstructs from the row (ADR-0050).
+      const refundPayload = {
+        requesterAgentId: task.requesterAgentId,
+        taskId: input.taskId,
+      } satisfies TasksRefundExpiredIntentPayload;
+
       const { txHash } = await runRelayedIntent({
         db: ctx.db,
         idempotencyKey: ctx.idempotencyKey,
         operation: 'tasks.refundExpired',
         payer,
         paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-        payload: { taskId: input.taskId } satisfies TasksRefundExpiredIntentPayload,
-        send: () =>
-          contractRefundExpired(
-            input.taskId as `0x${string}`,
-            payer as `0x${string}`,
-            task.requesterAgentId ? BigInt(task.requesterAgentId) : 0n
-          ),
+        payload: refundPayload,
+        // The same call the broadcaster reconstructs from the payload alone, so the request's
+        // attempt and any rebroadcast are the same transaction (ADR-0050).
+        send: () => broadcastTasksRefundExpired({ payer, payload: refundPayload }),
       });
 
       return { txHash };
@@ -1347,6 +1351,22 @@ export const tasksRouter = router({
       }
 
       if (hasOnChainChange) {
+        // Every argument the relay needs, resolved here and recorded, so a rebroadcast sends
+        // this exact call rather than re-deriving it from a task row the first attempt may
+        // already have moved (ADR-0050). currentReward is the field that makes this necessary:
+        // it sizes the delta the forwarder pulls, and it is the same pre-update value
+        // computeUpdatePaymentAmount is given below.
+        const updatePayload = {
+          contractAddress: task.contractAddress,
+          currentReward: task.reward,
+          dbUpdate,
+          newBidDeadline: newBidDeadline.toString(),
+          newExpiryTime: newExpiryTime.toString(),
+          newPitchDeadline: newPitchDeadline.toString(),
+          newReward: newReward.toString(),
+          taskId: input.taskId,
+        } satisfies TasksUpdateIntentPayload;
+
         // computeUpdatePaymentAmount must be given the SAME (currentReward, requestedReward)
         // pair the X402 middleware used to size this payment (services/task-payments.ts's
         // getUpdatePaymentAmount) -- task.reward here is still the pre-update value read
@@ -1360,18 +1380,8 @@ export const tasksRouter = router({
           payer,
           paymentAmount: BigInt(computeUpdatePaymentAmount(task.reward, input.reward)),
           paymentTxHash: ctx.res.locals.paymentTxHash as `0x${string}` | undefined,
-          payload: { dbUpdate, taskId: input.taskId } satisfies TasksUpdateIntentPayload,
-          send: () =>
-            contractUpdateTask(
-              input.taskId as `0x${string}`,
-              payer as `0x${string}`,
-              newReward,
-              newExpiryTime,
-              newBidDeadline,
-              newPitchDeadline,
-              BigInt(task.reward),
-              task.contractAddress
-            ),
+          payload: updatePayload,
+          send: () => broadcastTasksUpdate({ payer, payload: updatePayload }),
         });
       } else if (Object.keys(dbUpdate).length > 0) {
         // Nothing on chain to wait on: an off-chain-only edit has no transaction, so there is

@@ -134,6 +134,16 @@ const KNOWN_ERRORS: Record<string, string> = {
   '0x5378dda1': 'WorkerRequired',
   '0xefd1521e': 'TaskNotYetExpired',
   '0x128dbd39': 'HookCheckSelectWorkerRejected',
+  // ADR-0054's two replay guards. These are the reverts a *rebroadcast* of tasks.refundExpired
+  // or tasks.update lands on once the first attempt has already applied, so they are what makes
+  // giving those two operations a broadcaster safe -- and they only work as guards if they are
+  // decodable. An undecoded revert reaches classifyRelayFailure as "unknown revert", which it
+  // deliberately reads as transient, so the worker would hand the intent straight back and
+  // re-send a call that can only ever revert again -- ADR-0047's unbounded loop, re-entered
+  // through a missing map entry. Decoded, the same revert is deterministic and terminal on the
+  // first attempt.
+  '0xe6ac7a63': 'TaskAlreadyRefunded',
+  '0x9a3bfd2b': 'NoRewardChange',
   // Settlement/payout invariant failures -- internal transfer failures during
   // acceptance, cancellation, dispute resolution, or expiry refund.
   '0x56886241': 'WorkerPaymentFailed',

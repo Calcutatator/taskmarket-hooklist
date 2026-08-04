@@ -20,7 +20,9 @@ vi.mock('../../../src/services/contract', () => ({
   contractEvaluatorTimeout: vi.fn().mockResolvedValue('0xtimeout'),
   contractFinalizeVerdictTx: vi.fn().mockResolvedValue('0xfinalize'),
   contractRateTask: vi.fn().mockResolvedValue({ blockNumber: 1, hash: '0xrate' }),
+  contractRefundExpired: vi.fn().mockResolvedValue('0xrefundexpired'),
   contractRejectSubmission: vi.fn().mockResolvedValue('0xreject'),
+  contractUpdateTask: vi.fn().mockResolvedValue('0xupdate'),
   contractResolveDispute: vi
     .fn()
     .mockResolvedValue({ settledAt: null, settlement: null, txHash: '0xresolve' }),
@@ -121,6 +123,36 @@ const CASES: {
     fn: 'contractRejectSubmission',
     args: [TASK_ID, WORKER, REQUESTER],
     hash: '0xreject',
+  },
+  {
+    // Verifies: ADR-0054
+    // The caller is the intent's own payer rather than a payload field: refundExpired is
+    // permissionless (ADR-0026), so the sender is provenance, and one recorded copy of it beats
+    // two that can disagree.
+    operation: 'tasks.refundExpired',
+    payload: { requesterAgentId: '7', taskId: TASK_ID },
+    fn: 'contractRefundExpired',
+    args: [TASK_ID, REQUESTER, 7n],
+    hash: '0xrefundexpired',
+  },
+  {
+    // Verifies: ADR-0054
+    // currentReward is recorded, not re-read: it sizes the delta the forwarder pulls, and the
+    // task row it came from is exactly what a confirmed first attempt moves.
+    operation: 'tasks.update',
+    payload: {
+      contractAddress: MARKET,
+      currentReward: '1000000',
+      dbUpdate: { reward: '2500000' },
+      newBidDeadline: '0',
+      newExpiryTime: '1900000000',
+      newPitchDeadline: '0',
+      newReward: '2500000',
+      taskId: TASK_ID,
+    },
+    fn: 'contractUpdateTask',
+    args: [TASK_ID, REQUESTER, 2_500_000n, 1_900_000_000n, 0n, 0n, 1_000_000n, MARKET],
+    hash: '0xupdate',
   },
   {
     operation: 'acceptance.accept',
