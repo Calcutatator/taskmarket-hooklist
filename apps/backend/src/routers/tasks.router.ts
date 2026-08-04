@@ -1488,13 +1488,24 @@ export const tasksRouter = router({
         });
       }
 
-      const newReward = input.reward ? BigInt(input.reward) : 0n;
+      // 0 is the contract's documented "leave this field unchanged" sentinel, and a restated
+      // reward must reach it in that shape. CoreFacet.updateTask reverts NoRewardChange() when a
+      // named reward equals the current one -- deliberately, because the forwarder pulls the
+      // delta before the Diamond executes and the Diamond cannot return it, so a silent no-op
+      // would keep the money. But a caller restating the current reward alongside a genuine
+      // change ("extend the expiry, reward stays as it is") is asking for nothing about the
+      // reward, not for a no-op change to it. Passing their literal value through would revert
+      // the whole update and lose the change they did want.
+      const requestedReward = input.reward ? BigInt(input.reward) : 0n;
+      const newReward = requestedReward === BigInt(task.reward) ? 0n : requestedReward;
       const newExpiryTime = input.expiryTime ? BigInt(input.expiryTime) : 0n;
       const newBidDeadline = input.bidDeadline ? BigInt(input.bidDeadline) : 0n;
       const newPitchDeadline = input.pitchDeadline ? BigInt(input.pitchDeadline) : 0n;
 
+      // newReward is already 0n when the caller restated the current value, so the second
+      // half of the old condition is now unreachable; kept as a single non-zero test.
       const hasOnChainChange =
-        (newReward !== 0n && newReward !== BigInt(task.reward)) ||
+        newReward !== 0n ||
         newExpiryTime !== 0n ||
         newBidDeadline !== 0n ||
         newPitchDeadline !== 0n;
