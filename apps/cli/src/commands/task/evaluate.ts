@@ -52,6 +52,7 @@ export const evaluateCmd = new Command('evaluate')
           microUnits = usdcToBaseUnits(amountUSDC);
         } catch (err) {
           renderFailure(withErrorContext(err, `Invalid amount in '${entry}'`));
+          return;
         }
         const parsedRank = Number(rankStr);
         if (!Number.isInteger(parsedRank) || parsedRank < 1) {

@@ -12,6 +12,7 @@ export const rateCmd = new Command('rate')
     const rating = parseInt(opts.rating, 10);
     if (rating < 0 || rating > 100) {
       printError('Rating must be between 0 and 100');
+      return;
     }
 
     const result = (await x402Post(`/api/tasks/${taskId}/rate`, {

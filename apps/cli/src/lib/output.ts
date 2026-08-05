@@ -57,7 +57,7 @@ export function renderFailure(
     /** Extra fields a command needs on the envelope, e.g. the per-item outcomes of a batch. */
     details?: Record<string, unknown>;
   }
-): never {
+): void {
   const message = error instanceof Error ? error.message : (options?.fallback ?? String(error));
   const apiError = error instanceof ApiError ? error : undefined;
   const idempotencyKey =
@@ -74,7 +74,17 @@ export function renderFailure(
       ...(options?.details ?? {}),
     }) + '\n'
   );
-  process.exit(1);
+  // `process.exitCode`, not `process.exit`. When stderr is a pipe -- which is exactly how an agent
+  // consumes this CLI, `2>&1 | jq` -- Node writes to it asynchronously, and `process.exit` tears
+  // the process down without waiting for that write to drain, so the envelope can be truncated or
+  // lost entirely. The field most worth not losing is `pending`, the one telling a script whether
+  // re-running is a retry or a second payment. Setting the code instead lets the process exit on
+  // its own once the write has flushed, with the same status.
+  //
+  // The cost is that this function returns rather than being `never`, so every caller that renders
+  // a terminal failure inside a `catch` must `return` immediately after it -- otherwise control
+  // falls through to code that reads a value the failed call never assigned.
+  process.exitCode = 1;
 }
 
 /**
@@ -85,8 +95,10 @@ export function renderFailure(
  * implied. Never call it on a value you caught: a caught error may be an `ApiError`, and printing
  * its message drops the classification a script needs. `renderFailure(err)` is that case, and it
  * renders a locally thrown `Error` identically to this.
+ *
+ * It returns for the same reason `renderFailure` does, and callers owe it the same `return`.
  */
-export function printError(message: string, options?: { idempotencyKey?: string }): never {
+export function printError(message: string, options?: { idempotencyKey?: string }): void {
   return renderFailure(new Error(message), options);
 }
 

@@ -118,6 +118,7 @@ export const submitCmd = new Command('submit')
     try {
       if (!opts.file || opts.file.length === 0) {
         printError('--file is required');
+        return;
       }
 
       const keystore = await loadKeystore();
@@ -136,7 +137,7 @@ export const submitCmd = new Command('submit')
             const data = await fsPromises.readFile(filePath);
 
             if (data.length === 0) {
-              printError(`File is empty: ${basename(filePath)}`);
+              throw new Error(`File is empty: ${basename(filePath)}`);
             }
 
             const { uploadUrl, artifactKey } = (await apiPost(

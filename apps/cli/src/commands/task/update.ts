@@ -38,6 +38,7 @@ export const updateCmd = new Command('update')
           body.reward = usdcToBaseUnits(opts.reward);
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --reward'));
+          return;
         }
       }
 
@@ -47,10 +48,12 @@ export const updateCmd = new Command('update')
           printError(
             `--extend-expiry must be a positive integer (seconds), got: ${opts.extendExpiry}`
           );
+          return;
         }
         const task = (await apiGet(`/api/tasks/${taskId}`)) as Record<string, unknown> | null;
         if (!task) {
           printError(`Task not found: ${taskId}`);
+          return;
         }
         const currentExpiry = Math.floor(new Date(task.expiryTime as string).getTime() / 1000);
         const newExpiry = currentExpiry + delta;
@@ -61,6 +64,7 @@ export const updateCmd = new Command('update')
             `--extend-expiry would set expiry in the past. Task expired ${expiredAgo}s ago; ` +
               `pass at least ${expiredAgo + 1} seconds to extend beyond now.`
           );
+          return;
         }
         body.expiryTime = newExpiry;
       }
@@ -69,6 +73,7 @@ export const updateCmd = new Command('update')
         const ts = Math.floor(new Date(opts.bidDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--bid-deadline must be in the future');
+          return;
         } else {
           body.bidDeadline = ts;
         }
@@ -78,6 +83,7 @@ export const updateCmd = new Command('update')
         const ts = Math.floor(new Date(opts.pitchDeadline).getTime() / 1000);
         if (ts <= Math.floor(Date.now() / 1000)) {
           printError('--pitch-deadline must be in the future');
+          return;
         } else {
           body.pitchDeadline = ts;
         }
@@ -88,6 +94,7 @@ export const updateCmd = new Command('update')
           body.auctionFloorPrice = usdcToBaseUnits(opts.auctionFloorPrice, { allowZero: true });
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --auction-floor-price'));
+          return;
         }
       }
 
@@ -96,6 +103,7 @@ export const updateCmd = new Command('update')
           body.auctionStartPrice = usdcToBaseUnits(opts.auctionStartPrice, { allowZero: true });
         } catch (err) {
           renderFailure(withErrorContext(err, 'Invalid --auction-start-price'));
+          return;
         }
       }
 

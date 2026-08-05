@@ -63,6 +63,7 @@ export const resolveDisputeCmd = new Command('resolve-dispute')
       awards = opts.award.map(parseAward);
     } catch (err) {
       renderFailure(err);
+      return;
     }
 
     const result = (await x402Post(`/api/tasks/${taskId}/resolve-dispute`, {

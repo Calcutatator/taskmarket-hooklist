@@ -28,6 +28,5 @@ export const mySubmissionsCmd = new Command('my-submissions')
       printResult(result as Record<string, unknown>);
     } catch (err) {
       renderFailure(err);
-      process.exit(1);
     }
   });

@@ -19,6 +19,7 @@ export const auctionAcceptCmd = new Command('auction-accept')
         body.minPrice = usdcToBaseUnits(opts.minPrice, { allowZero: true });
       } catch (error) {
         renderFailure(withErrorContext(error, 'Invalid --min-price'));
+        return;
       }
     }
     const result = (await x402Post(`/api/tasks/${taskId}/bids/accept`, body)) as {

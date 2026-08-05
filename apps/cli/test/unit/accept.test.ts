@@ -55,7 +55,6 @@ describe('task accept command', () => {
   });
 
   it('exits without calling x402Post when accept is not in pendingActions', async () => {
-    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     vi.mocked(apiGet).mockResolvedValue({
       expiryTime: new Date(Date.now() + 72 * 60 * 60 * 1000).toISOString(),
       pendingActions: [],
@@ -67,12 +66,9 @@ describe('task accept command', () => {
 
     expect(x402Post).not.toHaveBeenCalled();
     expect(printError).toHaveBeenCalled();
-    expect(mockExit).toHaveBeenCalledWith(1);
-    mockExit.mockRestore();
   });
 
   it('reports expired when task has no submissions and is past expiry', async () => {
-    const mockExit = vi.spyOn(process, 'exit').mockImplementation(() => undefined as never);
     vi.mocked(apiGet).mockResolvedValue({
       expiryTime: new Date(Date.now() - 60 * 60 * 1000).toISOString(),
       pendingActions: [{ action: 'refund_expired', role: 'requester' }],
@@ -84,6 +80,5 @@ describe('task accept command', () => {
 
     expect(x402Post).not.toHaveBeenCalled();
     expect(printError).toHaveBeenCalledWith(expect.stringContaining('expired'));
-    mockExit.mockRestore();
   });
 });

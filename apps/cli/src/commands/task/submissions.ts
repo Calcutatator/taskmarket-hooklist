@@ -19,6 +19,7 @@ export const submissionsCmd = new Command('submissions')
       subs = await apiGet(`/api/tasks/${taskId}/submissions`, { headers: auth?.headers ?? {} });
     } catch (err: unknown) {
       renderFailure(err, { fallback: 'Failed to fetch submissions.' });
+      return;
     }
     printResult(subs!);
   });

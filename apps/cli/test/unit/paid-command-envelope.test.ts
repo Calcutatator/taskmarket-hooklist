@@ -5,9 +5,10 @@
 // the thing a script actually reads off stderr: `reason` and `pending`, on exactly the commands
 // where getting it wrong means paying for the same write twice.
 //
-// `process.exit` is made to throw so that the flow stops where it stops in production --
-// `renderFailure` is typed `never`, and a double that returned would let a command run on past a
-// failure it has already reported.
+// `renderFailure` returns rather than exiting, so the process can flush the envelope to a pipe
+// before it dies. That makes "the command stopped where it reported" a property worth asserting
+// rather than one the runtime enforces: each case below checks that nothing ran past the failure
+// (exactly one envelope on stderr, no follow-on call) and that the exit status is still 1.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import { isInFlightApiError } from '@taskmarket/shared';
 
@@ -28,8 +29,6 @@ vi.mock('../../src/lib/api.js', async () => {
 
 const TASK = '0x1111111111111111111111111111111111111111111111111111111111111111';
 const WORKER = '0x2222222222222222222222222222222222222222';
-
-class ExitCalled extends Error {}
 
 /** An in-flight failure exactly as the transport builds it from a backend 409. */
 function inFlightError(): ApiError {
@@ -58,13 +57,12 @@ beforeEach(() => {
     stderr.push(String(chunk));
     return true;
   });
-  vi.spyOn(process, 'exit').mockImplementation(() => {
-    throw new ExitCalled();
-  });
+  process.exitCode = undefined;
 });
 
 afterEach(() => {
   vi.restoreAllMocks();
+  process.exitCode = undefined;
 });
 
 /** The single JSON envelope the command wrote to stderr. */
@@ -77,7 +75,10 @@ async function run(
   command: { parseAsync: (argv: string[], opts: object) => Promise<unknown> },
   argv: string[]
 ) {
-  await expect(command.parseAsync(['node', ...argv], { from: 'node' })).rejects.toThrow(ExitCalled);
+  await command.parseAsync(['node', ...argv], { from: 'node' });
+  // The status the shell sees. It is set rather than exited on so that a piped stderr has time to
+  // drain, which is the whole reason a failing command now returns at all.
+  expect(process.exitCode).toBe(1);
 }
 
 describe('a paid command surfaces the failure classification a script branches on', () => {

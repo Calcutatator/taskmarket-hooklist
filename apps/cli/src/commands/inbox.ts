@@ -37,6 +37,7 @@ export const inboxCommand = new Command('inbox')
     const auth = await signReadAuth();
     if (!auth) {
       printError('No keystore found. Run `taskmarket init` first.');
+      return;
     }
 
     const address = auth.walletAddress;
