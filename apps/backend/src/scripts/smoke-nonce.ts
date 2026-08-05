@@ -36,8 +36,9 @@
  *
  * EvaluatorFacet.assignEvaluator rejects evaluator == requester and disputeResolver ==
  * requester (self-assignment guard, rev017), so the tasks here are created with a distinct
- * EVALUATOR_PRIVATE_KEY account. Nothing in this test signs as the evaluator -- the evaluator
- * exists only so finalizeVerdict becomes callable -- so any freshly generated key works.
+ * EVALUATOR_PRIVATE_KEY account, and this test signs evaluate() as that evaluator (the
+ * assigned evaluator is the only account evaluate() accepts). Any freshly generated key
+ * works: the backend relays and pays gas, so the evaluator only signs off-chain.
  *
  * Usage:
  *   REQUESTER_PRIVATE_KEY=0x... WORKER_PRIVATE_KEY=0x... \
@@ -190,7 +191,7 @@ async function setupFinalizableTask(
   await x402Post(
     `/api/tasks/${taskId}/evaluate`,
     { taskId, verdict: 'approve', score: 900, confidence: 950 },
-    requester
+    nonceEvaluator
   );
   await pollTaskStatus<{ status: string }>(taskId, ['appealing'], { timeoutMs: 45_000 });
 

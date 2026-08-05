@@ -32,6 +32,11 @@ import { DiamondTestHelper } from "./helpers/DiamondTestHelper.sol";
 ///         stamping a revision it is not running.
 contract DiamondSelectorParityTest is Test, DiamondTestHelper {
     uint256 internal constant OWNER_KEY = 0xA11CE;
+    /// @dev The step scripts resolve their diamond address by chain id, and rev016 onward reject
+    ///      an unrecognised chain outright rather than falling back to the testnet address. The
+    ///      sequence therefore has to be walked on a chain the scripts actually name, the same
+    ///      way Rev016Upgrade.t.sol does it.
+    uint256 internal constant BASE_SEPOLIA_CHAIN_ID = 84532;
     address internal constant USDC = address(0xACDC);
     address internal constant FEE_RECIPIENT = address(0xFEE0);
     uint16 internal constant FEE_BPS = 500;
@@ -118,6 +123,7 @@ contract DiamondSelectorParityTest is Test, DiamondTestHelper {
     ///      exercised against the reconstructed pre-rev014 routing rather than skipped by nudging
     ///      the version counter past it.
     function _runFullSequence(address diamond) internal {
+        vm.chainId(BASE_SEPOLIA_CHAIN_ID);
         vm.setEnv("FORGE_DEV_PRIVATE_KEY", vm.toString(OWNER_KEY));
         vm.setEnv("FORGE_DIAMOND_ADDRESS_TESTNET", vm.toString(diamond));
         vm.setEnv("FORGE_DIAMOND_ADDRESS_MAINNET", vm.toString(diamond));

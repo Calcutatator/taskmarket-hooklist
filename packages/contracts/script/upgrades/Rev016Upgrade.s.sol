@@ -35,14 +35,26 @@ import { FacetSelectors } from "../lib/FacetSelectors.sol";
 ///      make upgrade testnet rev016
 ///      make upgrade mainnet rev016
 contract Rev016Upgrade is Script {
+    uint256 private constant MAINNET_CHAIN_ID = 8453;
+    uint256 private constant BASE_SEPOLIA_CHAIN_ID = 84532;
     uint256 private constant EXPECTED_PRE_VERSION = 15;
     uint256 private constant TARGET_VERSION = 16;
 
     function run() external {
         uint256 ownerKey = vm.envUint("FORGE_DEV_PRIVATE_KEY");
-        address diamond = block.chainid == 8453
-            ? vm.envAddress("FORGE_DIAMOND_ADDRESS_MAINNET")
-            : vm.envAddress("FORGE_DIAMOND_ADDRESS_TESTNET");
+        // Name both chains explicitly instead of treating "not mainnet" as testnet. This is a
+        // security upgrade to a live diamond, and an unrecognised chain id under a fallback
+        // resolves to the testnet address and broadcasts a cut at whatever happens to live there
+        // -- a wrong-contract write that the version precondition below would only catch by luck.
+        // An unknown chain has no correct answer here, so it gets no answer.
+        address diamond;
+        if (block.chainid == MAINNET_CHAIN_ID) {
+            diamond = vm.envAddress("FORGE_DIAMOND_ADDRESS_MAINNET");
+        } else if (block.chainid == BASE_SEPOLIA_CHAIN_ID) {
+            diamond = vm.envAddress("FORGE_DIAMOND_ADDRESS_TESTNET");
+        } else {
+            revert("Rev016Upgrade: unsupported chain id");
+        }
 
         uint256 currentVersion = AdminFacet(diamond).diamondVersion();
         require(currentVersion == EXPECTED_PRE_VERSION, "Rev016Upgrade: diamond is not at rev015");
