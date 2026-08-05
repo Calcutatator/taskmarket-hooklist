@@ -119,8 +119,13 @@ a transport detail.
 **3. In flight stays an error and answers 409.** Not 5xx — nothing malfunctioned, and 5xx is what
 a generic retrying client retries, which here means paying twice. Not 200 — a client that ignores
 the field would read it as success, which is the failure this exists to prevent. `reason` is
-`intent_in_flight`, and it carries the intent id, `intentStatus: 'broadcast'` and the transaction
-hash. It remains, exactly as ADR-0049 states, no claim either way about whether the payment moved.
+`intent_in_flight`, and it carries the intent id and the intent's status. That status is
+`intentStatus: 'broadcast'` on the path that raises it today — a send that returned pending, with a
+hash to report. It is not restricted to `broadcast`: a request that ends before a nonce is ever
+allocated leaves a `recorded` intent, which is equally in flight, and a client must read both as
+such. The transaction hash therefore rides along only where one exists; it is optional on the
+envelope rather than implied by the reason. It remains, exactly as ADR-0049 states, no claim either
+way about whether the payment moved.
 
 **4. A repeated idempotency key stays a 409, and now says which intent and what state it is in.**
 `reason` is `idempotency_key_reused`. `isInFlightApiError` in shared treats it as in flight only

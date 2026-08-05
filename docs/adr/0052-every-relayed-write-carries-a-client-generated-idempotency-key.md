@@ -78,11 +78,17 @@ is the ordinary behaviour of most HTTP clients.
 
 ## Decision
 
-**1. Every relayed write carries an `X-Taskmarket-Idempotency-Key` header, and it is mandatory.** A
-UUID the client generates per logical operation: the same value on every retry of that operation, a
-fresh value for a new one. Missing or malformed is a 400. No fallback to the payment hash, no
-per-operation exception, no "paid paths only" — an optional guarantee cannot be relied on, and a
-guarantee that holds for some operations has to be looked up rather than known.
+**1. Every relayed write that originates in a request carries an `X-Taskmarket-Idempotency-Key`
+header, and it is mandatory.** A UUID the client generates per logical operation: the same value on
+every retry of that operation, a fresh value for a new one. Missing or malformed is a 400. No
+fallback to the payment hash, no per-operation exception, no "paid paths only" — an optional
+guarantee cannot be relied on, and a guarantee that holds for some operations has to be looked up
+rather than known.
+
+The qualifier is about *who the client is*, not about which operations are covered. A relayed write
+with no caller to take a key from — one a completion handler records as follow-on work — still
+carries a key, and point 8 says where that key comes from. Every relayed write has one; only
+request-originated ones take it from a header.
 
 The key is validated for UUID *shape* and nothing else. That is a check on form, not a reading of
 content: nothing is parsed out of the value, and it is stored and compared exactly as sent. It earns

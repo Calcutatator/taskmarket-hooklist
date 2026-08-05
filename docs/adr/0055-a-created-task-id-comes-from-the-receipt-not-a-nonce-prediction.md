@@ -147,6 +147,13 @@ colliding on one id.
 - Whether `POST /api/tasks` should return a structured in-flight result rather than an error, as
   ADR-0049 point 3 requires of every paid write, is unchanged and still outstanding. This
   decision does not settle it; it only stops that path returning a value it does not know.
+- **2026-08-04 correction (see ADR-0058).** The question left open directly above is now
+  answered. An in-flight paid write stays a non-2xx response: it is coded `409` and carries an
+  `ApiErrorEnvelope` with a machine-readable reason, rather than becoming a `200` with a
+  structured in-flight body. ADR-0058 records why a success status was rejected for a request
+  that has not produced the thing it was asked for. The structured in-flight *result* ADR-0049
+  point 3 wants is therefore delivered inside the error envelope, not in place of it — so
+  nothing above needs to change, but the item is no longer outstanding.
 
 ## References
 
@@ -154,6 +161,7 @@ colliding on one id.
 - [ADR-0049 — In-flight paid writes are observable through a dedicated intent status surface](0049-in-flight-paid-writes-are-observable-through-a-dedicated-intent-status-surface.md)
 - [ADR-0050 — Durable writes follow the chain call, and unbroadcast intents are retried before refund](0050-durable-writes-follow-the-chain-call-and-unbroadcast-intents-are-retried-before-refund.md)
 - [ADR-0052 — Every relayed write carries a client-generated idempotency key](0052-every-relayed-write-carries-a-client-generated-idempotency-key.md)
+- [ADR-0058 — Every API error carries a machine-readable reason, and in-flight is a 409 rather than a 500](0058-every-api-error-carries-a-machine-readable-reason.md)
 - `packages/contracts/src/facets/CoreFacet.sol` — derives the id from `s.requesterNonce[requester]++`
 - `packages/contracts/src/TaskMarketForwarder.sol` — `consumedReceipts`, the guard a second landing hits
 - `apps/backend/src/services/contract.ts` — `taskIdForTx`

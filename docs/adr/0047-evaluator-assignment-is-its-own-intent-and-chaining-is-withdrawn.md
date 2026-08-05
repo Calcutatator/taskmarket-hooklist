@@ -185,6 +185,15 @@ claimed — and that constraint is correct and stays.
   two incidents' worth of manual compensation. That is the case that would genuinely justify
   chaining if it is ever rebuilt, and it needs its own ADR. Committing to the machinery ahead of
   the need is the exact mistake this ADR is correcting.
+- **2026-08-04 correction (see ADR-0048).** The follow-up named directly above has since been
+  taken up, and it answered the opposite of what this ADR expected. ADR-0048 found that the x402
+  payment is not a transaction this system dispatches at all — it is settled by the facilitator
+  and merely *observed*, so there is no second intent record for a chain to link, and no root to
+  hang one from. What ADR-0048 decided instead is that a payment's fate is read off the
+  settlement of the single intent that carries it, with `orphaned_payments` retained rather than
+  collapsed. So the case this paragraph identified as the one that would genuinely justify
+  chaining turns out not to justify it, and chaining stays withdrawn. The paragraph is left
+  standing because it records the reasoning that prompted the question.
 - Whether a failed assignment should attempt any compensating action remains out of scope, as
   ADR-0046 left it.
 - The grace window before the crash-fallback worker touches an untouched record is an operational

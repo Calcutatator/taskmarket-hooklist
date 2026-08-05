@@ -118,9 +118,12 @@ invariant.
   escrow is no longer reachable through another task's refund.
 - A duplicated relay of the same reward increase moves no money at all — the revert unwinds the
   forwarder's transfer with the rest of the transaction.
-- The aggregate-liability invariant that issue #198 asked for now exists as a test and is asserted
-  at every step of a lifecycle that spans funding, a funded increase, a duplicate increase, an
-  acceptance payout, an expiry refund, and a rejected repeat refund.
+- The aggregate-liability invariant that issue #198 asked for now exists as a test, asserted at
+  every step of a lifecycle that spans funding, a funded increase, a duplicate increase, an
+  acceptance payout, an expiry refund, and a rejected repeat refund. It holds over the paths this
+  ADR changed — the two refund paths and `updateTask` — not over the contract as a whole: the
+  payout paths named under Neutral / follow-up below still leave `task.reward` standing on a
+  settled task, so a sum over `task.reward` still overstates outstanding liability there.
 
 **Negative / trade-offs:**
 
