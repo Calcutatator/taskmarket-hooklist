@@ -621,9 +621,9 @@ contract:
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
 	elif [ "$(word 1,$(ARGS))" = "test" ]; then \
-		cd packages/contracts && forge test --summary; \
+		cd packages/contracts && forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
-		cd packages/contracts && FOUNDRY_PROFILE=ci forge test --summary; \
+		cd packages/contracts && FOUNDRY_PROFILE=ci forge test -j 1 --summary; \
 	elif [ "$(word 1,$(ARGS))" = "pause" ]; then \
 		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
 			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
