@@ -32,7 +32,12 @@ import {
   type SettlementChainState,
   type SettlementCompletionLog,
 } from './settlement-projector';
-import { TASK_COMPLETED_EVENT, TASK_RATED_EVENT } from './settlement-contract';
+import {
+  EPOCH_BUDGET_EVENT_ITEMS,
+  MAIN_CONTRACT_EVENTS,
+  REWARD_HOOK_EVENT_ITEMS,
+  REWARD_VAULT_EVENT_ITEMS,
+} from './indexer-abi-events';
 import { runCheckpointedRange } from './indexer-checkpoint';
 import { contractGetSettlementChainState } from './contract';
 import { projectSettlementRating } from './settlement-rating';
@@ -60,118 +65,19 @@ const serverAddress = normalizeAddress(createServerWallet().address);
 const DREAMS_HOOK_ADDRESS = config.DREAMS_HOOK_ADDRESS as `0x${string}` | undefined;
 const DREAMS_HOOK_SEED_BLOCK = config.DREAMS_HOOK_SEED_BLOCK;
 
-const TASK_CREATED_EVENT = parseAbiItem(
-  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime, bool stakeRequired, uint16 stakeBps)'
-);
-// Pre-rev014 signature (no stakeRequired/stakeBps) -- rev014 (ADR-0029) appended two
-// non-indexed fields to TaskCreated, which changes topic0. The Diamond's address is
-// unchanged across the upgrade, so a single address has emitted both signatures over its
-// lifetime. Both must stay registered in the getLogs `events` filter below so a full
-// reseed/disaster-recovery replay from CONTRACT_DEPLOY_BLOCK (see pollIndexerOnce's
-// getLastBlock default) doesn't silently skip every pre-upgrade TaskCreated -- viem
-// decodes each log against whichever ABI item matches its topic0, and both dispatch to
-// the same 'TaskCreated' case in dispatchMainEvent by event name.
-const TASK_CREATED_EVENT_PRE_REV014 = parseAbiItem(
-  'event TaskCreated(bytes32 indexed taskId, address indexed requester, uint256 reward, bytes4 indexed mode, uint256 expiryTime)'
-);
-const TASK_CLAIMED_EVENT = parseAbiItem(
-  'event TaskClaimed(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
-);
-const TASK_WORKER_SELECTED_EVENT = parseAbiItem(
-  'event TaskWorkerSelected(bytes32 indexed taskId, address indexed worker)'
-);
-const TASK_SUBMITTED_EVENT = parseAbiItem(
-  'event TaskSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 deliverable)'
-);
-const BID_SUBMITTED_EVENT = parseAbiItem(
-  'event BidSubmitted(bytes32 indexed taskId, address indexed worker, uint256 price)'
-);
-const TASK_EXPIRED_EVENT = parseAbiItem(
-  'event TaskExpired(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
-);
-const STAKE_FORFEITED_EVENT = parseAbiItem(
-  'event StakeForfeited(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
-);
-const STAKE_RETURNED_EVENT = parseAbiItem(
-  'event StakeReturned(bytes32 indexed taskId, address indexed worker, uint256 stakeAmount)'
-);
-const TASK_REOPENED_EVENT = parseAbiItem('event TaskReopened(bytes32 indexed taskId)');
-const TASK_CANCELLED_EVENT = parseAbiItem(
-  'event TaskCancelled(bytes32 indexed taskId, address indexed requester, uint256 refundAmount)'
-);
-const TASK_UPDATED_EVENT = parseAbiItem(
-  'event TaskUpdated(bytes32 indexed taskId, uint256 newReward, uint256 newExpiryTime)'
-);
-const PITCH_SUBMITTED_EVENT = parseAbiItem(
-  'event PitchSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 pitchHash)'
-);
-const PROOF_SUBMITTED_EVENT = parseAbiItem(
-  'event ProofSubmitted(bytes32 indexed taskId, address indexed worker, bytes32 proofHash, bytes32 proofType, uint256 metricValue)'
-);
-const AUCTION_ACCEPTED_EVENT = parseAbiItem(
-  'event AuctionAccepted(bytes32 indexed taskId, address indexed worker, uint256 acceptedPrice)'
-);
-const FEES_UPDATED_EVENT = parseAbiItem('event FeesUpdated(uint16 newFeeBps)');
-const FEE_RECIPIENT_UPDATED_EVENT = parseAbiItem('event FeeRecipientUpdated(address newRecipient)');
-const FORWARDER_UPDATED_EVENT = parseAbiItem(
-  'event ForwarderUpdated(address indexed forwarder, bool trusted)'
-);
-const REPUTATION_REGISTRY_UPDATED_EVENT = parseAbiItem(
-  'event ReputationRegistryUpdated(address indexed newRegistry)'
-);
+// RewardVault and EpochBudget are deployed alongside the reward hook at their own
+// addresses, so each needs its own poll. Both are optional -- a deployment without
+// them simply has no stream, exactly as with DREAMS_HOOK_ADDRESS.
+const REWARD_VAULT_ADDRESS = config.REWARD_VAULT_ADDRESS as `0x${string}` | undefined;
+const REWARD_VAULT_SEED_BLOCK = config.REWARD_VAULT_SEED_BLOCK;
+const EPOCH_BUDGET_ADDRESS = config.EPOCH_BUDGET_ADDRESS as `0x${string}` | undefined;
+const EPOCH_BUDGET_SEED_BLOCK = config.EPOCH_BUDGET_SEED_BLOCK;
 
-const REWARD_CONFIGURED_EVENT = parseAbiItem(
-  'event RewardConfigured(bytes32 indexed taskId, uint256 rewardUsd)'
-);
-const REWARD_RESERVED_EVENT = parseAbiItem(
-  'event RewardReserved(bytes32 indexed taskId, address indexed worker, uint256 startPrice, uint256 reservedAmount)'
-);
-const REWARD_PAID_EVENT = parseAbiItem(
-  'event RewardPaid(bytes32 indexed taskId, address indexed worker, uint256 rewardUsd, uint256 usdBonusValue, uint256 price, uint256 tokenAmount)'
-);
-const REWARD_RESERVE_RELEASED_EVENT = parseAbiItem(
-  'event RewardReserveReleased(bytes32 indexed taskId, uint256 releasedAmount)'
-);
-const REWARDS_WITHDRAWN_EVENT = parseAbiItem(
-  'event RewardsWithdrawn(address indexed wallet, address indexed destination, uint256 amount)'
-);
-const PRICE_UPDATED_EVENT = parseAbiItem('event PriceUpdated(uint256 dreamsPerUsdc)');
-const BONUS_BPS_UPDATED_EVENT = parseAbiItem('event BonusBpsUpdated(uint16 bonusBps)');
-
+// The ERC-8004 identity registry is a third-party contract with no artifact in this
+// repo, so this one signature stays a literal. Every Taskmarket-owned event comes
+// from the generated ABI via ./indexer-abi-events.
 const METADATA_SET_EVENT = parseAbiItem(
   'event MetadataSet(uint256 indexed agentId, string indexed indexedMetadataKey, string metadataKey, bytes metadataValue)'
-);
-const HOOK_REGISTERED_EVENT = parseAbiItem(
-  'event HookRegistered(bytes32 indexed taskId, address hookContract)'
-);
-const EVALUATOR_ASSIGNED_EVENT = parseAbiItem(
-  'event EvaluatorAssigned(bytes32 indexed taskId, address indexed evaluator, uint256 stakeAmount)'
-);
-const TASK_EVALUATED_EVENT = parseAbiItem(
-  'event TaskEvaluated(bytes32 indexed taskId, address indexed evaluator, uint8 verdictType, uint16 score)'
-);
-const TASK_APPEALED_EVENT = parseAbiItem(
-  'event TaskAppealed(bytes32 indexed taskId, address indexed appellant)'
-);
-const TASK_DISPUTED_EVENT = parseAbiItem(
-  'event TaskDisputed(bytes32 indexed taskId, address indexed disputeResolver)'
-);
-const EVALUATOR_TIMED_OUT_EVENT = parseAbiItem(
-  'event EvaluatorTimedOut(bytes32 indexed taskId, address indexed evaluator, uint256 forfeitedStake)'
-);
-const SUBMISSION_REJECTED_EVENT = parseAbiItem(
-  'event SubmissionRejected(bytes32 indexed taskId, address indexed worker)'
-);
-const SELF_AWARD_EVENT = parseAbiItem(
-  'event SelfAward(bytes32 indexed taskId, address indexed requester, address indexed worker)'
-);
-const REQUESTER_REPUTATION_EVENT = parseAbiItem(
-  'event RequesterReputation(bytes32 indexed taskId, address indexed requester, bytes32 event_, uint256 reward, uint32 submissionCount, bool selfAward)'
-);
-const PAUSED_EVENT = parseAbiItem('event Paused(address account)');
-const UNPAUSED_EVENT = parseAbiItem('event Unpaused(address account)');
-const OWNERSHIP_TRANSFER_STARTED_EVENT = parseAbiItem(
-  'event OwnershipTransferStarted(address indexed previousOwner, address indexed newOwner)'
 );
 
 // Mode is emitted as bytes4(keccak256("TMP.mode.<name>")) — see ITMPMode.sol.
@@ -272,7 +178,7 @@ export async function processTaskCreatedEvent(
       // Recovered directly from the TaskCreated event (rev014, ADR-0029) -- unlike
       // Task.stakeAmount (only set later by the worker's claimTask call), the requester's
       // stakeRequired/stakeBps choice is now emitted on-chain at creation time. Pre-rev014
-      // logs (TASK_CREATED_EVENT_PRE_REV014) have neither field in `args`; default both
+      // logs (HISTORICAL_MAIN_EVENTS.TaskCreated) have neither field in `args`; default both
       // rather than inserting undefined, since those tasks predate stake config existing.
       stakeRequired: stakeRequired ? 1 : 0,
       stakeBps: (stakeBps as number | undefined) ?? 0,
@@ -699,6 +605,23 @@ export async function processAuctionAcceptedEvent(
 }
 
 /**
+ * BigInts have no JSON representation, so they are stringified before the jsonb
+ * insert. Recurses through arrays and structs -- DiamondCut's FacetCut[] argument is
+ * nested, and a top-level-only conversion would throw on any future event carrying a
+ * bigint inside a tuple.
+ */
+function serialiseArg(value: unknown): unknown {
+  if (typeof value === 'bigint') return value.toString();
+  if (Array.isArray(value)) return value.map(serialiseArg);
+  if (value !== null && typeof value === 'object') {
+    return Object.fromEntries(
+      Object.entries(value as Record<string, unknown>).map(([k, v]) => [k, serialiseArg(v)])
+    );
+  }
+  return value;
+}
+
+/**
  * Generic handler for the four admin/config events. Writes the raw event args
  * to the protocol_events audit log so we have a queryable history of every
  * protocol-level change with full provenance. BigInts are serialised as
@@ -709,7 +632,7 @@ async function processProtocolEvent(log: EventLog): Promise<void> {
 
   const serialisedArgs: Record<string, unknown> = {};
   for (const [k, v] of Object.entries(log.args)) {
-    serialisedArgs[k] = typeof v === 'bigint' ? v.toString() : v;
+    serialisedArgs[k] = serialiseArg(v);
   }
 
   await db
@@ -911,6 +834,11 @@ function processAdminAuditEvent(log: EventLog): void {
         `[audit] Ownership transfer started: previousOwner=${log.args.previousOwner} newOwner=${log.args.newOwner}`
       );
       break;
+    case 'OwnershipTransferred':
+      console.log(
+        `[audit] Ownership transferred: previousOwner=${log.args.previousOwner} newOwner=${log.args.newOwner}`
+      );
+      break;
   }
 }
 
@@ -965,6 +893,24 @@ async function dispatchMainEvent(log: EventLog): Promise<boolean> {
     case 'FeeRecipientUpdated':
     case 'ForwarderUpdated':
     case 'ReputationRegistryUpdated':
+    case 'MinAppealWindowUpdated':
+    case 'DefaultHooksSet':
+    case 'DiamondCut':
+      await processProtocolEvent(log);
+      break;
+    // Both record an on-chain call that failed without reverting the surrounding
+    // transaction, so nothing else in the system can observe them. They are written
+    // to the protocol audit log and surfaced at warn level rather than projected --
+    // there is no per-task state to update, only an operational signal that a hook
+    // or the reputation registry is misbehaving.
+    case 'HookCallFailed':
+      console.warn(`[indexer] HookCallFailed: hook=${log.args.hook} tx=${log.transactionHash}`);
+      await processProtocolEvent(log);
+      break;
+    case 'ReputationFeedbackFailed':
+      console.warn(
+        `[indexer] ReputationFeedbackFailed: task=${log.args.taskId} agentId=${log.args.agentId} tx=${log.transactionHash}`
+      );
       await processProtocolEvent(log);
       break;
     case 'HookRegistered':
@@ -997,6 +943,7 @@ async function dispatchMainEvent(log: EventLog): Promise<boolean> {
     case 'Paused':
     case 'Unpaused':
     case 'OwnershipTransferStarted':
+    case 'OwnershipTransferred':
       processAdminAuditEvent(log);
       break;
     default:
@@ -1014,41 +961,7 @@ async function processEvents(fromBlock: bigint, toBlock: bigint): Promise<void> 
     address: contractAddress,
     fromBlock,
     toBlock,
-    events: [
-      TASK_CREATED_EVENT,
-      TASK_CREATED_EVENT_PRE_REV014,
-      TASK_CLAIMED_EVENT,
-      TASK_WORKER_SELECTED_EVENT,
-      TASK_COMPLETED_EVENT,
-      TASK_RATED_EVENT,
-      TASK_SUBMITTED_EVENT,
-      BID_SUBMITTED_EVENT,
-      TASK_EXPIRED_EVENT,
-      STAKE_FORFEITED_EVENT,
-      STAKE_RETURNED_EVENT,
-      TASK_REOPENED_EVENT,
-      TASK_CANCELLED_EVENT,
-      TASK_UPDATED_EVENT,
-      PITCH_SUBMITTED_EVENT,
-      PROOF_SUBMITTED_EVENT,
-      AUCTION_ACCEPTED_EVENT,
-      FEES_UPDATED_EVENT,
-      FEE_RECIPIENT_UPDATED_EVENT,
-      FORWARDER_UPDATED_EVENT,
-      REPUTATION_REGISTRY_UPDATED_EVENT,
-      HOOK_REGISTERED_EVENT,
-      EVALUATOR_ASSIGNED_EVENT,
-      TASK_EVALUATED_EVENT,
-      TASK_APPEALED_EVENT,
-      TASK_DISPUTED_EVENT,
-      EVALUATOR_TIMED_OUT_EVENT,
-      SUBMISSION_REJECTED_EVENT,
-      SELF_AWARD_EVENT,
-      REQUESTER_REPUTATION_EVENT,
-      PAUSED_EVENT,
-      UNPAUSED_EVENT,
-      OWNERSHIP_TRANSFER_STARTED_EVENT,
-    ] as any,
+    events: MAIN_CONTRACT_EVENTS as any,
   })) as unknown as EventLog[];
 
   const completionLogs = toSettlementCompletionLogs(logs);
@@ -1181,15 +1094,7 @@ async function processRewardHookEvents(fromBlock: bigint, toBlock: bigint): Prom
     address: DREAMS_HOOK_ADDRESS,
     fromBlock,
     toBlock,
-    events: [
-      REWARD_CONFIGURED_EVENT,
-      REWARD_RESERVED_EVENT,
-      REWARD_PAID_EVENT,
-      REWARD_RESERVE_RELEASED_EVENT,
-      REWARDS_WITHDRAWN_EVENT,
-      PRICE_UPDATED_EVENT,
-      BONUS_BPS_UPDATED_EVENT,
-    ] as any,
+    events: REWARD_HOOK_EVENT_ITEMS as any,
   })) as unknown as EventLog[];
 
   for (const log of logs) {
@@ -1201,6 +1106,64 @@ async function processRewardHookEvents(fromBlock: bigint, toBlock: bigint): Prom
       console.error(`Error processing reward hook event ${log.eventName}:`, error);
     }
   }
+}
+
+/**
+ * RewardVault and EpochBudget events. Both are routed through the same generic
+ * protocol_events audit log as the reward hook's -- no new tables, no schema change,
+ * and every arg is preserved verbatim in the jsonb column.
+ *
+ * Event names are qualified with the emitting contract before they are stored.
+ * RewardVault and EpochBudget BOTH declare an event called `Released` with different
+ * parameters (a task-scoped release versus a requester/worker budget release); they
+ * are distinguished by emitting address, not by name, so storing the bare name would
+ * conflate two unrelated events in protocol_events.event_name.
+ */
+async function processQualifiedHookEvents(
+  address: `0x${string}`,
+  contractName: string,
+  events: readonly unknown[],
+  fromBlock: bigint,
+  toBlock: bigint
+): Promise<void> {
+  const logs = (await publicClient.getLogs({
+    address,
+    fromBlock,
+    toBlock,
+    events: events as any,
+  })) as unknown as EventLog[];
+
+  for (const log of logs) {
+    try {
+      if (await isAlreadyProcessed(log)) continue;
+      await processProtocolEvent({ ...log, eventName: `${contractName}.${log.eventName}` });
+      await markProcessed(log);
+    } catch (error) {
+      console.error(`Error processing ${contractName} event ${log.eventName}:`, error);
+    }
+  }
+}
+
+async function processRewardVaultEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
+  if (!REWARD_VAULT_ADDRESS) return;
+  await processQualifiedHookEvents(
+    REWARD_VAULT_ADDRESS,
+    'RewardVault',
+    REWARD_VAULT_EVENT_ITEMS,
+    fromBlock,
+    toBlock
+  );
+}
+
+async function processEpochBudgetEvents(fromBlock: bigint, toBlock: bigint): Promise<void> {
+  if (!EPOCH_BUDGET_ADDRESS) return;
+  await processQualifiedHookEvents(
+    EPOCH_BUDGET_ADDRESS,
+    'EpochBudget',
+    EPOCH_BUDGET_EVENT_ITEMS,
+    fromBlock,
+    toBlock
+  );
 }
 
 async function processInChunks(
@@ -1241,6 +1204,22 @@ async function pollIndexerOnce(): Promise<void> {
     if (latestBlock > rewardHookLastBlock) {
       await processInChunks(rewardHookLastBlock + 1n, latestBlock, processRewardHookEvents);
       await setLastBlock('dreams_hook', latestBlock);
+    }
+  }
+
+  if (REWARD_VAULT_ADDRESS) {
+    const vaultLastBlock = await getLastBlock('reward_vault', REWARD_VAULT_SEED_BLOCK);
+    if (latestBlock > vaultLastBlock) {
+      await processInChunks(vaultLastBlock + 1n, latestBlock, processRewardVaultEvents);
+      await setLastBlock('reward_vault', latestBlock);
+    }
+  }
+
+  if (EPOCH_BUDGET_ADDRESS) {
+    const budgetLastBlock = await getLastBlock('epoch_budget', EPOCH_BUDGET_SEED_BLOCK);
+    if (latestBlock > budgetLastBlock) {
+      await processInChunks(budgetLastBlock + 1n, latestBlock, processEpochBudgetEvents);
+      await setLastBlock('epoch_budget', latestBlock);
     }
   }
 }

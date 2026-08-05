@@ -14,7 +14,7 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make storybook            - Start the component library on port 6006"
@@ -36,7 +36,7 @@ help:
 	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
+	@echo "  make contract <cmd>       - Contract tools (audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
 	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
@@ -263,7 +263,7 @@ swap-reward-hook:
 
 release:
 	@SQL_COUNT=$$(ls apps/backend/drizzle/migrations/*.sql 2>/dev/null | wc -l | tr -d ' '); \
-	JOURNAL_COUNT=$$(python3 -c "import json; d=json.load(open('apps/backend/drizzle/migrations/meta/_journal.json')); print(len(d['entries']))" 2>/dev/null); \
+	JOURNAL_COUNT=$$(node -e 'console.log(JSON.parse(require("fs").readFileSync("apps/backend/drizzle/migrations/meta/_journal.json","utf8")).entries.length)' 2>/dev/null); \
 	if [ "$$SQL_COUNT" != "$$JOURNAL_COUNT" ]; then \
 		echo "ERROR: migration journal out of sync ($$SQL_COUNT .sql files, $$JOURNAL_COUNT journal entries). Add the missing entry to apps/backend/drizzle/migrations/meta/_journal.json before releasing."; \
 		exit 1; \
@@ -305,13 +305,7 @@ build:
 		pnpm --filter @taskmarket/shared build; \
 	elif [ "$(word 1,$(ARGS))" = "contracts" ]; then \
 		forge build --root packages/contracts && \
-		cd packages/contracts && python3 -c "\
-import json, os; \
-facets = ['DiamondCutFacet.sol/DiamondCutFacet.json','DiamondLoupeFacet.sol/DiamondLoupeFacet.json','AdminFacet.sol/AdminFacet.json','CoreFacet.sol/CoreFacet.json','AuctionFacet.sol/AuctionFacet.json','AcceptanceFacet.sol/AcceptanceFacet.json','EvaluatorFacet.sol/EvaluatorFacet.json','RatingFacet.sol/RatingFacet.json','RegistryFacet.sol/RegistryFacet.json']; \
-merged=[]; seen=set(); \
-[merged.append(e) or seen.add(json.dumps(e,sort_keys=True)) for f in facets for e in json.load(open(os.path.join('out',f)))['abi'] if json.dumps(e,sort_keys=True) not in seen]; \
-open('abi/TaskMarket.json','w').write(json.dumps(merged,indent=2)+'\n'); \
-print(f'ABI: {len(merged)} entries -> abi/TaskMarket.json')"; \
+		cd packages/contracts && pnpm generate-abi; \
 	else \
 		echo "Unknown app or package: $(word 1,$(ARGS))"; \
 		echo "Usage: make build <backend|frontend|web|docs|shared|contracts|storybook|all>"; \
@@ -578,7 +572,7 @@ docs-og-check:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
 		mkdir -p packages/contracts/reports && \
@@ -597,6 +591,15 @@ contract:
 		cd packages/contracts && forge snapshot -j 1; \
 	elif [ "$(word 1,$(ARGS))" = "snapshot-check" ]; then \
 		cd packages/contracts && forge snapshot --check --tolerance 1 -j 1; \
+	elif [ "$(word 1,$(ARGS))" = "abi-check" ]; then \
+		forge build --root packages/contracts && \
+		cd packages/contracts && pnpm generate-abi && \
+		if [ -n "$$(git status --porcelain -- abi/)" ]; then \
+			git --no-pager diff -- abi/; \
+			echo "Error: packages/contracts/abi/ is out of date with the contract sources."; \
+			echo "Run 'make build contracts' and commit packages/contracts/abi/."; \
+			exit 1; \
+		fi; \
 	elif [ "$(word 1,$(ARGS))" = "doc" ]; then \
 		cd packages/contracts && forge doc --out docs/natspec && \
 		echo "Docs written to packages/contracts/docs/natspec"; \
@@ -624,7 +627,7 @@ contract:
 			--rpc-url $$EVM_RPC_URL; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|abi-check|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
 		exit 1; \
 	fi
 
