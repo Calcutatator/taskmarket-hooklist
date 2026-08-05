@@ -10,6 +10,7 @@ import { relayedIntents, serverWalletTransactions, type RelayedIntent } from '..
 import { apiError } from '../lib/api-error';
 import { logger } from '../lib/logger';
 import { newRelayEnvelope, type RelayEnvelope } from './relay-envelope';
+import { recordUnattachedPayment } from './orphaned-payments';
 
 type Db = typeof DbType;
 
@@ -361,6 +362,36 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
 
   if (row) return row;
 
+  /**
+   * From here on this request's payment (if it had one) is not going to fund an intent.
+   *
+   * This function is the only place a payment is ever attached to an intent, and every branch
+   * below either hands back a *different* intent -- one funded by a different payment -- or
+   * refuses outright. So a payment carried into any of them bought nothing and never will.
+   *
+   * It is reachable without a broken client, because the pre-settlement idempotency check in
+   * middleware/x402.ts is a read: two concurrent requests carrying one key both find it free
+   * and both have their authorization settled before either arrives here. The winner's intent
+   * is returned to both; the loser's money had already moved.
+   *
+   * Recording, not refunding. Whether a payment is orphaned -- and so whether to send it back
+   * -- is a decision ADR-0048 reserves for intent settlement, which is the only place holding
+   * confirmed on-chain evidence. What this closes is the case where the payment left no trace
+   * of any kind: the row makes it visible to ops and recoverable by hand, and 'pending' is a
+   * status no sweep claims, so it moves no money on its own.
+   */
+  async function recordPaymentThatFundsNothing(reason: string): Promise<void> {
+    if (!input.payment) return;
+    await recordUnattachedPayment({
+      db: input.db,
+      payer: input.payment.payer as `0x${string}`,
+      amount: input.payment.amount,
+      paymentTxHash: input.payment.txHash,
+      context: input.operation,
+      failureReason: reason,
+    });
+  }
+
   // The insert is the lookup. Reading first and inserting second would be both slower on the
   // common path and wrong on the uncommon one -- two concurrent first-time requests with the
   // same key would both read nothing and both try to insert -- so the unique index decides
@@ -371,13 +402,28 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
     if (intentBelongsToCaller(existing, input)) {
       // A repeat of the same operation by the same caller with the same arguments: hand back
       // what they already started. That is the whole mechanism.
-      if (payloadsMatch(existing, input)) return existing;
+      if (payloadsMatch(existing, input)) {
+        // The one branch that answers successfully while still leaving a payment unattached,
+        // and therefore the one where the loss was completely silent. A retry that re-sent the
+        // same payment is not this case -- the payment index would have matched too and this
+        // lookup would be that same row -- so the hashes differing is what says a second
+        // authorization was settled for a write that is already under way.
+        if (input.payment && existing.paymentTxHash !== input.payment.txHash) {
+          await recordPaymentThatFundsNothing(
+            `A second payment settled for idempotency key ${idempotencyKey}, which already names intent ${existing.id}; this payment funded no write.`
+          );
+        }
+        return existing;
+      }
       // Same operation, same caller, different arguments -- reachable without a broken client.
       // `TASKMARKET_IDEMPOTENCY_KEY` is the documented recovery path, so an operator takes a
       // key off a failed envelope and re-runs; re-running with a corrected reward or a
       // different task used to hand back the first write and report it as this one's success.
       // The write they just described would never have happened and nothing would have said
       // so, which is worse than any error (ADR-0061).
+      await recordPaymentThatFundsNothing(
+        `Idempotency key ${idempotencyKey} was re-sent with different arguments for ${input.operation}; the payment settled for those arguments funded no write.`
+      );
       throw apiError({
         reason: 'idempotency_key_payload_mismatch',
         operation: input.operation,
@@ -387,6 +433,9 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
         message: `The ${IDEMPOTENCY_KEY_HEADER} you sent already names a ${existing.operation} write with different arguments (intent ${existing.id}); the arguments you just sent were not applied. To retry that write, re-send the arguments it was created with. To make a different write, generate a fresh key.`,
       });
     }
+    await recordPaymentThatFundsNothing(
+      `Idempotency key ${idempotencyKey} already names intent ${existing.id}, which belongs to a different caller or operation; the payment settled for this request funded no write.`
+    );
     throw apiError({
       reason: 'idempotency_key_conflict',
       operation: input.operation,
@@ -420,6 +469,9 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   // Neither index's row is findable any more -- the colliding intent was deleted between the
   // insert and these reads. Which of the two constraints fired is genuinely unknown here, so the
   // reason names the one thing that is certain: a key that cannot be used again.
+  await recordPaymentThatFundsNothing(
+    `${input.operation} could not be recorded under idempotency key ${idempotencyKey} and the colliding intent is no longer findable; the payment settled for this request funded no write.`
+  );
   throw apiError({
     reason: 'idempotency_key_conflict',
     operation: input.operation,
@@ -609,8 +661,14 @@ export async function markIntentBroadcast(input: {
  * not equally important: the outbox id decides *who* settles the intent, while the hash decides
  * whether the intent still looks like one that never reached the chain. `listUnbroadcastIntents`
  * rebroadcasts on exactly that question, so losing the hash because a `select` failed would
- * spend a second nonce on a transaction that is already live. A missing outbox id is recovered
- * by `listConfirmedUnsettledIntents`; a missing hash is recovered by nothing.
+ * spend a second nonce on a transaction that is already live. A missing hash is recovered by
+ * nothing.
+ *
+ * A missing outbox id is recovered by `listConfirmedUnsettledIntents`, which reaches the outbox
+ * row by hash for that reason. That claim used to be made here while the sweep joined on the id
+ * -- so it held only when the id was present, which is the one case it was written for the
+ * absence of. An intent stranded that way was invisible to every path there is, permanently.
+ * If that sweep is ever narrowed back to the id, this sentence stops being true.
  */
 export async function linkIntentToBroadcast(input: {
   db: Db;
@@ -804,17 +862,23 @@ export async function listConfirmedUnsettledIntents(input: {
   const rows = await input.db
     .select({ intent: relayedIntents })
     .from(relayedIntents)
-    .innerJoin(
-      serverWalletTransactions,
-      eq(serverWalletTransactions.id, relayedIntents.serverWalletTransactionId)
-    )
+    // Joined on the hash, not on the outbox id. The id is the better key but it is the one that
+    // can go missing: `linkIntentToBroadcast` writes the hash even when the lookup that would
+    // have supplied the id fails, and an intent with a hash and no id was previously invisible
+    // to everything -- to `onConfirmed`, which is keyed on the id; to this sweep, when it joined
+    // on the id; and to the abandoned sweep, which skips anything carrying a hash. The chain
+    // call had succeeded and the row was never written.
+    //
+    // The hash identifies the outbox row on its own, and the predicate below already required
+    // the two hashes to agree, so nothing is loosened by reaching through it instead.
+    .innerJoin(serverWalletTransactions, eq(serverWalletTransactions.txHash, relayedIntents.txHash))
     .where(
       and(
         eq(serverWalletTransactions.status, 'confirmed'),
         // The outbox row must still carry this intent's own transaction. A differing hash means
         // the reconciler replaced a stuck nonce, so what confirmed is a no-op self-transfer and
-        // not this work -- sweeping it would complete an intent whose call never landed.
-        eq(serverWalletTransactions.txHash, relayedIntents.txHash),
+        // not this work -- sweeping it would complete an intent whose call never landed. That is
+        // now the join condition itself.
         inArray(relayedIntents.status, ['recorded', 'broadcast'])
       )
     )

@@ -12,6 +12,7 @@ import {
 } from 'viem';
 import { TRPCError } from '@trpc/server';
 import { createServerWallet, dispatchServerWalletTransaction } from '../lib/wallet';
+import { ServerTransactionPendingError } from '../lib/server-transaction-dispatcher';
 import { getPublicClient, runWithRpcApplicationAttempt } from '../lib/rpc-gateway';
 import { getServerConfig } from '../config/env';
 import { SETTLEMENT_READ_ABI, TASK_COMPLETED_EVENT } from './settlement-contract';
@@ -582,6 +583,15 @@ async function relayThroughForwarderResult(
       hash = result.hash;
       receipt = result.receipt;
     } catch (err) {
+      // A pending transaction is not a failed one. This loop retries RPC read-after-write lag,
+      // where nothing was broadcast and another simulation costs only time. A receipt timeout is
+      // the opposite: `send` returned, the hash exists, the transaction is in the mempool and the
+      // outbox row is 'broadcast'. Retrying it spends a second nonce on work already live, and
+      // swallowing it denies the hash to the only two callers written to persist it
+      // (relayed-intent-request.ts, relayed-intent-registry.ts) -- so the intent stays 'recorded'
+      // with a NULL hash, every sweep reads that as never-sent, and the payment is refunded for
+      // work that lands on chain anyway (ADR-0045, ADR-0048).
+      if (err instanceof ServerTransactionPendingError) throw err;
       lastError = err;
       continue;
     }

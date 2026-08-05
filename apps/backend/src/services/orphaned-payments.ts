@@ -17,6 +17,20 @@ import { ServerTransactionPendingError } from '../lib/server-transaction-dispatc
 type Db = typeof DbType;
 
 /**
+ * What became of a refund attempt.
+ *
+ * `pending` is the third answer the two booleans could not express. A refund transfer whose
+ * receipt did not arrive within the request budget is neither refunded nor failed: it is live,
+ * it has a hash, and it will be mined or replaced by the reconciler like any other server-wallet
+ * transaction. Callers that render this to a payer must not tell them the refund did not happen.
+ */
+type RefundOutcome = {
+  pending: boolean;
+  refunded: boolean;
+  refundTxHash: `0x${string}` | null;
+};
+
+/**
  * Attempts the actual refund transfer for an already-recorded row and updates its
  * status. Shared by the initial post-failure attempt and the standalone retry path
  * (scripts/retry-orphaned-refunds.ts) -- the two need identical success/failure
@@ -37,7 +51,7 @@ type Db = typeof DbType;
 async function attemptRefund(
   db: Db,
   row: { id: string; payer: string; amount: string; paymentTxHash: string }
-): Promise<{ refunded: boolean; refundTxHash: `0x${string}` | null }> {
+): Promise<RefundOutcome> {
   const claimed = await db
     .update(orphanedPayments)
     .set({ refundStatus: 'refunding' })
@@ -55,7 +69,7 @@ async function attemptRefund(
     console.error(
       `Skipped refund for orphaned payment ${row.id} (payer ${row.payer}, tx ${row.paymentTxHash}): row was not in a claimable state, likely a concurrent retry`
     );
-    return { refunded: false, refundTxHash: null };
+    return { pending: false, refunded: false, refundTxHash: null };
   }
 
   try {
@@ -67,8 +81,29 @@ async function attemptRefund(
       .update(orphanedPayments)
       .set({ refundStatus: 'refunded', refundTxHash, resolvedAt: new Date() })
       .where(eq(orphanedPayments.id, row.id));
-    return { refunded: true, refundTxHash };
+    return { pending: false, refunded: true, refundTxHash };
   } catch (error) {
+    // A pending transaction is not a failed one -- the same rule handlePostPaymentFailure
+    // states below, applied to the refund transfer itself. The transfer was broadcast and has
+    // a hash; only its receipt was slow. Writing 'failed' here would hand the row straight
+    // back to retryFailedOrphanedRefunds, which selects exactly that status, and the retry
+    // would send a second plain ERC-20 transfer for the same payment -- two refunds, one
+    // payment, and no on-chain idempotency to catch it.
+    //
+    // The row stays in 'refunding', which it already holds: no status the sweep or the claim
+    // predicate looks at, no migration, and the hash is recorded so ops can see which transfer
+    // it is waiting on. `resolvedAt` is deliberately left null -- nothing is resolved yet.
+    if (error instanceof ServerTransactionPendingError) {
+      console.error(
+        `Refund for orphaned payment ${row.id} (payer ${row.payer}, tx ${row.paymentTxHash}) is in flight as ${error.hash}; left 'refunding' for the reconciler`
+      );
+      await db
+        .update(orphanedPayments)
+        .set({ refundStatus: 'refunding', refundTxHash: error.hash })
+        .where(eq(orphanedPayments.id, row.id));
+      return { pending: true, refunded: false, refundTxHash: error.hash };
+    }
+
     const message = error instanceof Error ? error.message : String(error);
     console.error(
       `Refund failed for orphaned payment ${row.id} (payer ${row.payer}, tx ${row.paymentTxHash}): ${message}`
@@ -77,7 +112,56 @@ async function attemptRefund(
       .update(orphanedPayments)
       .set({ refundStatus: 'failed', resolvedAt: new Date() })
       .where(eq(orphanedPayments.id, row.id));
-    return { refunded: false, refundTxHash: null };
+    return { pending: false, refunded: false, refundTxHash: null };
+  }
+}
+
+/**
+ * Write a settled payment into the ledger without deciding anything about it.
+ *
+ * This is deliberately not `recordAndRefundOrphanedPayment`. Deciding a payment is orphaned
+ * means deciding to refund it, and ADR-0048 puts that judgement in intent settlement alone --
+ * which is why the three functions that make it are policed by
+ * test/unit/config/orphaned-payment-decision-usage.test.ts. Recording is a different act: it
+ * makes a payment that funded nothing visible and recoverable, and leaves what to do about it
+ * to an operator or to a later settlement pass.
+ *
+ * The case it exists for: `recordRelayedIntent` finds the caller's idempotency key already
+ * spoken for by an earlier intent, so the payment settled by *this* request funds nothing and
+ * never will -- nothing downstream will ever attach it. Before this, that payment left no trace
+ * at all: no intent, no ledger row, no log. Two concurrent requests carrying one key both clear
+ * the middleware's pre-settlement check and both settle, and the loser's money simply vanished.
+ *
+ * The row lands as 'pending', which no sweep claims (`retryFailedOrphanedRefunds` selects
+ * 'failed'), so recording never causes a transfer on its own. Never throws: the caller is
+ * already reporting a failure and this must not replace it.
+ */
+export async function recordUnattachedPayment(input: {
+  db: Db;
+  payer: `0x${string}`;
+  amount: bigint;
+  paymentTxHash: `0x${string}`;
+  context: string;
+  failureReason: string;
+}): Promise<void> {
+  try {
+    await input.db.insert(orphanedPayments).values({
+      id: `orphan_${randomUUID()}`,
+      payer: input.payer.toLowerCase(),
+      amount: input.amount.toString(),
+      paymentTxHash: input.paymentTxHash,
+      context: input.context,
+      failureReason: input.failureReason,
+      refundStatus: 'pending',
+    });
+  } catch (error) {
+    // Most likely the unique index on paymentTxHash: this payment is already in the ledger,
+    // which is the outcome this function wanted anyway.
+    console.error(
+      `Failed to record unattached payment for tx ${input.paymentTxHash}: ${
+        error instanceof Error ? error.message : String(error)
+      }`
+    );
   }
 }
 
@@ -101,7 +185,7 @@ export async function recordAndRefundOrphanedPayment(input: {
   paymentTxHash: `0x${string}`;
   context: string;
   failureReason: string;
-}): Promise<{ refunded: boolean; refundTxHash: `0x${string}` | null }> {
+}): Promise<RefundOutcome> {
   const id = `orphan_${randomUUID()}`;
   const normalizedPayer = input.payer.toLowerCase();
 
@@ -124,7 +208,7 @@ export async function recordAndRefundOrphanedPayment(input: {
         error instanceof Error ? error.message : String(error)
       }`
     );
-    return { refunded: false, refundTxHash: null };
+    return { pending: false, refunded: false, refundTxHash: null };
   }
 
   return attemptRefund(input.db, {
@@ -201,7 +285,7 @@ export async function handlePostPaymentFailure(input: {
     throw input.error;
   }
 
-  const { refunded, refundTxHash } = await recordAndRefundOrphanedPayment({
+  const { pending, refunded, refundTxHash } = await recordAndRefundOrphanedPayment({
     db: input.db,
     payer: input.payer,
     amount: input.amount,
@@ -210,9 +294,17 @@ export async function handlePostPaymentFailure(input: {
     failureReason: failureMessage,
   });
 
-  const refundNote = refunded
-    ? `Your payment was automatically refunded (refund tx: ${refundTxHash}).`
-    : 'Automatic refund could not be completed and has been flagged for manual review -- contact support with this attempt time and your wallet address.';
+  // Three outcomes, not two: a refund still in flight has been sent and must not be described
+  // as one that did not happen.
+  let refundNote: string;
+  if (refunded) {
+    refundNote = `Your payment was automatically refunded (refund tx: ${refundTxHash}).`;
+  } else if (pending) {
+    refundNote = `Your refund was sent and is awaiting confirmation (refund tx: ${refundTxHash}).`;
+  } else {
+    refundNote =
+      'Automatic refund could not be completed and has been flagged for manual review -- contact support with this attempt time and your wallet address.';
+  }
 
   throw new TRPCError({
     code: input.error instanceof TRPCError ? input.error.code : 'INTERNAL_SERVER_ERROR',
