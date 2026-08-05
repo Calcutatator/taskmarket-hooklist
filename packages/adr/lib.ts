@@ -844,6 +844,16 @@ export function coerceScope(value: string | null | undefined): LintScope | null 
   return value === 'diff' || value === 'whole-corpus' ? value : null;
 }
 
+// Resolve allow_author_self_review from its two sources with the CLI's precedence:
+// an env value (when set) wins, else the config-file value when boolean, else the
+// default false. Pure — the CLI reads the file/env and passes the raw values in, so
+// the precedence itself is unit-testable without touching the filesystem.
+export function coerceAllowAuthorSelfReview(fileValue: unknown, envValue: string | null | undefined): boolean {
+  if (envValue !== undefined && envValue !== null) return /^(1|true|yes|on)$/i.test(envValue.trim());
+  if (typeof fileValue === 'boolean') return fileValue;
+  return false;
+}
+
 // Every tracked file under the coverage paths -- the file set the gate scans in
 // whole-corpus mode. `git ls-files`, so an untracked scratch file is excluded
 // the same way the rest of the linter scopes to tracked content.

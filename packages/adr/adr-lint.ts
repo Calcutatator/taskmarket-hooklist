@@ -29,6 +29,7 @@ import {
   resolveGitDiffChangedFiles,
   resolveTrackedSourceFiles,
   coerceScope,
+  coerceAllowAuthorSelfReview,
   type LintScope,
 } from './lib.js';
 
@@ -58,15 +59,13 @@ function resolveScope(): LintScope {
 // self-ack-smell nudge is suppressed. Precedence: ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW
 // env > adr-lint.config.json > built-in default (false).
 function resolveAllowAuthorSelfReview(): boolean {
-  const env = process.env.ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW;
-  if (env !== undefined) return /^(1|true|yes|on)$/i.test(env.trim());
+  let fileValue: unknown;
   try {
-    const v = (JSON.parse(readFileSync(SCOPE_CONFIG, 'utf8')) as { allow_author_self_review?: unknown }).allow_author_self_review;
-    if (typeof v === 'boolean') return v;
+    fileValue = (JSON.parse(readFileSync(SCOPE_CONFIG, 'utf8')) as { allow_author_self_review?: unknown }).allow_author_self_review;
   } catch {
-    // missing or malformed config -> fall through to the default
+    // missing or malformed config -> the pure resolver falls back to the default
   }
-  return false;
+  return coerceAllowAuthorSelfReview(fileValue, process.env.ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW);
 }
 const ALLOW_AUTHOR_SELF_REVIEW = resolveAllowAuthorSelfReview();
 
