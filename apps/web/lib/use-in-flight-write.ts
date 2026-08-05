@@ -14,6 +14,15 @@
 // What every one of them does share is the component-side obligation: mint a stable key before
 // the write, hold the in-flight state, poll, and render something other than the form. That is
 // what this owns, so an action opts in with three lines instead of reimplementing ADR-0049.
+//
+// The hook takes the *submission*, not just the key. `submit(run)` mints the key, hands it to
+// `run`, and sees every outcome, which is what lets it decide when a key has been spent. The
+// earlier shape -- expose `idempotencyKey`, trust each caller to report back through `capture`
+// -- put the rule in sixteen components and ten of them got it wrong: after a plain failure the
+// form stayed rendered and the next submission, with a different reward or a different worker,
+// went out under the failed one's key. Nothing enforced the reporting, so the surfaces that
+// forgot looked exactly like the surfaces that did not. Handing over the callback removes the
+// question: a component never sees a key and so cannot send under a stale one.
 
 import { useRouter } from 'next/navigation';
 import { useEffect, useRef, useState } from 'react';
@@ -37,15 +46,29 @@ export type InFlightWriteState = {
 
 export type { FailedWriteOutcome } from '@/lib/api/intent-status';
 
+/**
+ * The shape every transport's result is read through. `payX402Post` and `signAndPost` already
+ * return it; a hand-rolled fetch builds it from the response body, using
+ * `isPendingWriteResponse` for `pending` rather than a second copy of that judgement.
+ */
+export type InFlightWriteResult = {
+  ok: boolean;
+  pending?: boolean;
+  idempotencyKey?: string;
+  error?: string;
+  /** The user declined in their wallet, so nothing was signed, paid, or sent. */
+  rejected?: boolean;
+};
+
+/**
+ * `handled: true` means the write came back in flight and this hook has taken it over: the
+ * caller must return immediately without touching its own error state, because an in-flight
+ * outcome is not a failure and the surface now renders the notice instead. Otherwise the
+ * transport's own result is handed back for the caller to succeed or fail on as usual.
+ */
+export type SubmitOutcome<R> = { handled: true } | { handled: false; result: R };
+
 export type UseInFlightWrite = {
-  /**
-   * Stable for the lifetime of the mounted component, minted before any write is attempted.
-   * Pass it to the transport so one logical write keeps one key: a viewer who presses the
-   * button again presents the write the backend already has rather than buying a second one
-   * (ADR-0052). It exists before the request is sent, so it survives a response that never
-   * arrived -- which is why it, and not a transaction hash, is the handle.
-   */
-  idempotencyKey: string;
   /** Non-null once a write has come back in flight. Render the notice instead of the form. */
   state: InFlightWriteState | null;
   /** True once polling has run its course without the effect appearing. */
@@ -56,18 +79,16 @@ export type UseInFlightWrite = {
    */
   failure: FailedWriteOutcome | null;
   /**
-   * Returns true when the result was in flight and has been taken over by this hook, in which
-   * case the caller must return immediately without touching its error state. Returning a
-   * boolean rather than exposing the branch is deliberate: it makes "handled" the caller's
-   * early exit, so an in-flight outcome cannot fall through into an error path that offers a
-   * retry.
+   * Runs one logical write under a key this hook owns.
+   *
+   * `run` receives the key and must pass it to whichever transport it uses -- and must not
+   * hold onto it, since the hook may retire it the moment `run` resolves. A throw from `run`
+   * is re-thrown untouched and deliberately retires nothing: see the rotation note in the
+   * implementation.
    */
-  capture: (result: {
-    ok: boolean;
-    pending?: boolean;
-    idempotencyKey?: string;
-    error?: string;
-  }) => boolean;
+  submit: <R extends InFlightWriteResult>(
+    run: (idempotencyKey: string) => Promise<R>
+  ) => Promise<SubmitOutcome<R>>;
 };
 
 /**
@@ -168,18 +189,51 @@ export function useInFlightWrite(toastMessage: string): UseInFlightWrite {
     };
   }, [state]);
 
-  function capture(result: {
-    ok: boolean;
-    pending?: boolean;
-    idempotencyKey?: string;
-    error?: string;
-  }): boolean {
-    const pending = pendingResultOf(result);
-    if (!pending) return false;
-    setState({ idempotencyKey: pending.idempotencyKey });
-    toast.info(toastMessage);
-    return true;
+  async function submit<R extends InFlightWriteResult>(
+    run: (idempotencyKey: string) => Promise<R>
+  ): Promise<SubmitOutcome<R>> {
+    const idempotencyKey = idempotencyKeyRef.current!;
+    // Not wrapped in try/catch on purpose. A throw out of `run` is an outcome nobody
+    // characterised -- a hand-rolled fetch that never returned, a bug mid-flow -- and the only
+    // safe reading of "no answer" is the ambiguous one. So it propagates to the caller's own
+    // error handling and the key stays put: if the write did land, the retry presents the same
+    // key and the backend refuses it before charging anything (ADR-0052 point 5).
+    const result = await run(idempotencyKey);
+
+    // The hook supplies the key a transport omitted, so a `pending` outcome can never be
+    // demoted to a terminal one -- and therefore never rotated -- for want of a field.
+    const pending = pendingResultOf({
+      ...result,
+      idempotencyKey: result.idempotencyKey ?? idempotencyKey,
+    });
+    if (pending) {
+      setState({ idempotencyKey: pending.idempotencyKey });
+      toast.info(toastMessage);
+      return { handled: true };
+    }
+
+    // Retire the key on every settled outcome, success or failure. The next submission is a
+    // new operation -- possibly with a different reward, a different worker, or a different
+    // artifact set -- and presenting the previous operation's key for it is how one key comes
+    // to name two different writes.
+    //
+    // THIS IS ONLY SAFE BECAUSE EVERY AMBIGUOUS FAILURE IS REPORTED AS `pending`. `payX402Post`
+    // and `signAndPost` each flip a `dispatched` flag the instant the request leaves the
+    // browser and report everything after it -- a thrown fetch, a socket dying mid-body, a
+    // `json()` that never parses -- as in flight rather than as a failure. A plain failure that
+    // reaches here is therefore either pre-dispatch (nothing was sent, so the key is unspent)
+    // or an explicit non-pending verdict from the server (the write is settled, so the key is
+    // spent). If anyone ever narrows those pending branches back to "the server said so",
+    // rotation turns a network blip into a second payment and this line has to go with it.
+    //
+    // A wallet rejection is the exception and keeps the key: it is pre-dispatch by construction
+    // -- nothing signed, nothing paid, nothing sent -- so pressing the button again is a retry
+    // of the same operation, which is the reuse ADR-0052 exists to allow.
+    if (!result.rejected) {
+      idempotencyKeyRef.current = newIdempotencyKey();
+    }
+    return { handled: false, result };
   }
 
-  return { idempotencyKey: idempotencyKeyRef.current, state, stalled, failure, capture };
+  return { state, stalled, failure, submit };
 }

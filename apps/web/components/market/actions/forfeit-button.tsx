@@ -48,15 +48,21 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
   async function handleForfeit() {
     setPending(true);
     setError(null);
-    const result = await signAndPost<{ txHash: string }>({
-      addressField: 'requesterAddress',
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      idempotencyKey: inFlight.idempotencyKey,
-      path: `/api/tasks/${task.id}/forfeit`,
-      taskId: task.id,
-      verbForMessage: 'forfeit',
-    });
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      signAndPost<{ txHash: string }>({
+        addressField: 'requesterAddress',
+        deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+        idempotencyKey,
+        path: `/api/tasks/${task.id}/forfeit`,
+        taskId: task.id,
+        verbForMessage: 'forfeit',
+      })
+    );
     setPending(false);
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the forfeit button live.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setDone(true);
       const resolvedTxHash = result.data.txHash ?? result.txHash ?? null;
@@ -71,9 +77,6 @@ export function ForfeitButton({ disabled, onSuccess, task }: TaskActionComponent
       );
       return;
     }
-    // Neither success nor failure, so it must not reach the error path below, which leaves
-    // the forfeit button live.
-    if (inFlight.capture(result)) return;
     if (!result.rejected) {
       setError(result.error);
       toast.error(result.error);

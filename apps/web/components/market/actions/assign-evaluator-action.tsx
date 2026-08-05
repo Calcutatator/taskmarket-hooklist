@@ -203,32 +203,34 @@ export function AssignEvaluatorAction({
     }
     setFieldErrors({});
 
-    const result = await payX402Post<{ txHash?: string }>(
-      `/api/tasks/${task.id}/evaluator`,
-      {
-        taskId: task.id,
-        evaluator: evaluatorAddress,
-        evaluatorFeeBps: fee.bps,
-        evaluationWindowHours: evaluationHours,
-        appealWindowHours: appealHours,
-        ...(resolverAddress.length > 0 ? { disputeResolver: resolverAddress } : {}),
-      },
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ txHash?: string }>(
+        `/api/tasks/${task.id}/evaluator`,
+        {
+          taskId: task.id,
+          evaluator: evaluatorAddress,
+          evaluatorFeeBps: fee.bps,
+          evaluationWindowHours: evaluationHours,
+          appealWindowHours: appealHours,
+          ...(resolverAddress.length > 0 ? { disputeResolver: resolverAddress } : {}),
+        },
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
 
     setStep('idle');
 
+    // Neither success nor failure. Claim exactly that, and never fall through to the error
+    // path, which is where a retry would be offered.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       toast.success('Evaluator appointed');
       router.refresh();
       return;
     }
-
-    // Neither success nor failure. Claim exactly that, and never fall through to the error
-    // path, which is where a retry would be offered.
-    if (inFlight.capture(result)) return;
 
     if (!result.rejected) {
       setError(result.error);

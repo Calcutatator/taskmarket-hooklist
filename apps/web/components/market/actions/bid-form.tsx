@@ -83,13 +83,19 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
 
     const priceBaseUnits = Math.floor(priceNum * 1_000_000).toString();
 
-    const result = await payX402Post<{ txHash?: string; bidId?: string }>(
-      `/api/tasks/${task.id}/bids`,
-      { taskId: task.id, price: priceBaseUnits },
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ txHash?: string; bidId?: string }>(
+        `/api/tasks/${task.id}/bids`,
+        { taskId: task.id, price: priceBaseUnits },
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // Neither success nor failure, so it must not reach the error path below: that path
+    // leaves the submit button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
@@ -108,9 +114,6 @@ export function BidForm({ disabled, onSuccess, task }: TaskActionComponentProps)
       );
     } else {
       setStep('idle');
-      // Neither success nor failure, so it must not reach the error path below: that path
-      // leaves the submit button live, and pressing it again is a second payment.
-      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

@@ -73,13 +73,19 @@ export function PitchForm({ disabled, onSuccess, task }: TaskActionComponentProp
       body.estimatedDuration = Math.floor(hrs * 3600);
     }
 
-    const result = await payX402Post<{ pitchId: string; txHash?: string }>(
-      `/api/tasks/${task.id}/pitches`,
-      body,
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ pitchId: string; txHash?: string }>(
+        `/api/tasks/${task.id}/pitches`,
+        body,
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // Neither success nor failure, so it must not reach the error path below: that path
+    // leaves the submit button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
@@ -93,9 +99,6 @@ export function PitchForm({ disabled, onSuccess, task }: TaskActionComponentProp
       );
     } else {
       setStep('idle');
-      // Neither success nor failure, so it must not reach the error path below: that path
-      // leaves the submit button live, and pressing it again is a second payment.
-      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);
