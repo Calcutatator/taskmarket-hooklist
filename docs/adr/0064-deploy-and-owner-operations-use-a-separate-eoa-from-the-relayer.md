@@ -116,6 +116,12 @@ execution, and no step of it has been executed.
   its DREAMS reserve, so its custody must be at least as good as the relayer's is today.
 - The migration cannot be safely abandoned midway: the hook transfers are irreversible and
   `SwapRewardHook.s.sol` assumes a single owner key across vault, budget and `setDefaultHooks`.
+- **The migration itself requires a planned outage.** Every ownership transfer is signed by the
+  relayer key, so until the split exists the migration is an instance of the exact hazard it is
+  meant to remove. The backend is therefore stopped for the duration, which makes a nonce
+  collision impossible rather than merely recoverable, at the cost of a window in which every
+  relayed write fails. A one-time cost, and the reason the runbook stops the backend rather than
+  relying on the ADR-0063 reconciler to settle the wreckage afterwards.
 - Owner operations gain a step — the deployer key has to be brought out to run them.
 
 **Neutral / follow-up:**
