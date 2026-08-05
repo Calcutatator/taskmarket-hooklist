@@ -1,4 +1,5 @@
 // Implements: ADR-0040
+// Implements: ADR-0066
 import { and, asc, eq, exists, gt, lt, sql } from 'drizzle-orm';
 import { alias } from 'drizzle-orm/pg-core';
 import type { db } from '../db/client';
@@ -27,6 +28,16 @@ export type GasFees = { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint };
  * first broadcast. Both nulls fall back to the oracle-derived opening bid.
  */
 export type ReplaceableRow = AllocatedNonce & {
+  /**
+   * The hash of the clearing self-transfer already sent for this nonce, or null.
+   *
+   * Non-null means escalation reached the cap and the nonce has been freed once already, so
+   * there is nothing left to replace: the row waits for that transfer's receipt like any other
+   * broadcast. Durable rather than in-process, because "exactly one" has to hold across a
+   * restart -- a fresh process with no memory of it would send another above-cap transfer on
+   * every pass (ADR-0066).
+   */
+  clearingTxHash: string | null;
   lastFees: GasFees | null;
   originalFees: GasFees | null;
 };
@@ -77,7 +88,7 @@ export type ServerTransactionStore = {
   recordReplacement(
     id: string,
     hash: string,
-    fields?: { fees?: GasFees; replacedTxHash?: string | null }
+    fields?: { clearing?: boolean; fees?: GasFees; replacedTxHash?: string | null }
   ): Promise<void>;
   /** Move the allocator forward when the chain has advanced past it. */
   resync(readPendingNonce: () => Promise<number>): Promise<void>;
@@ -103,6 +114,10 @@ function toFees(row: {
     maxPriorityFeePerGas: BigInt(row.maxPriorityFeePerGas),
   };
 }
+
+const replaceableColumns = {
+  clearingTxHash: serverWalletTransactions.clearingTxHash,
+};
 
 const feeColumns = {
   lastMaxFeePerGas: serverWalletTransactions.lastMaxFeePerGas,
@@ -219,6 +234,7 @@ export function createDrizzleServerTransactionStore(options: {
       const rows = await database
         .select({
           ...feeColumns,
+          ...replaceableColumns,
           id: serverWalletTransactions.id,
           nonce: serverWalletTransactions.nonce,
         })
@@ -232,7 +248,12 @@ export function createDrizzleServerTransactionStore(options: {
         )
         .orderBy(asc(serverWalletTransactions.nonce))
         .limit(limit);
-      return rows.map((row) => ({ id: row.id, nonce: row.nonce, ...splitFees(row) }));
+      return rows.map((row) => ({
+        clearingTxHash: row.clearingTxHash,
+        id: row.id,
+        nonce: row.nonce,
+        ...splitFees(row),
+      }));
     },
 
     async listBlockingRecycled(cutoff, limit) {
@@ -240,6 +261,7 @@ export function createDrizzleServerTransactionStore(options: {
       const rows = await database
         .select({
           ...feeColumns,
+          ...replaceableColumns,
           id: serverWalletTransactions.id,
           nonce: serverWalletTransactions.nonce,
         })
@@ -266,13 +288,19 @@ export function createDrizzleServerTransactionStore(options: {
         )
         .orderBy(asc(serverWalletTransactions.nonce))
         .limit(limit);
-      return rows.map((row) => ({ id: row.id, nonce: row.nonce, ...splitFees(row) }));
+      return rows.map((row) => ({
+        clearingTxHash: row.clearingTxHash,
+        id: row.id,
+        nonce: row.nonce,
+        ...splitFees(row),
+      }));
     },
 
     async listBroadcast(limit) {
       const rows = await database
         .select({
           ...feeColumns,
+          ...replaceableColumns,
           broadcastAt: serverWalletTransactions.broadcastAt,
           id: serverWalletTransactions.id,
           nonce: serverWalletTransactions.nonce,
@@ -285,6 +313,7 @@ export function createDrizzleServerTransactionStore(options: {
         .limit(limit);
       return rows.map((row) => ({
         broadcastAt: row.broadcastAt,
+        clearingTxHash: row.clearingTxHash,
         id: row.id,
         nonce: row.nonce,
         replacedTxHash: row.replacedTxHash,
@@ -299,6 +328,10 @@ export function createDrizzleServerTransactionStore(options: {
         .update(serverWalletTransactions)
         .set({
           ...feeUpdate(fields.fees),
+          // Written in the same statement as the hash it names, for the same reason as
+          // `replacedTxHash`: a row that claims a clearing transfer's hash without saying so,
+          // even briefly, is a row a concurrent pass would replace all over again (ADR-0066).
+          ...(fields.clearing ? { clearingTxHash: hash } : {}),
           // Written in the same statement as the hash it describes. Splitting them would open
           // a window in which the row claims a replacement's hash without saying so.
           ...(fields.replacedTxHash === undefined ? {} : { replacedTxHash: fields.replacedTxHash }),

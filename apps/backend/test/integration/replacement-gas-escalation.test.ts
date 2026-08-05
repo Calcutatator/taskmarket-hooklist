@@ -1,4 +1,5 @@
 // Verifies: ADR-0051
+// Verifies: ADR-0066
 //
 // Escalation is only correct if attempt n is priced from what attempt n-1 actually paid. The
 // pure arithmetic already has unit coverage (test/unit/lib/replacement-gas.test.ts); what has
@@ -94,6 +95,7 @@ function buildReconciler() {
       });
       pricedAttempts.push(decision.fees);
       return {
+        clearing: decision.clearing,
         fees: decision.fees,
         hash: `0x${randomUUID().replaceAll('-', '')}` as `0x${string}`,
       };
@@ -184,24 +186,49 @@ describeWithDatabase('replacement gas escalation across reconciler passes', () =
     expect(afterSecond.attempts).toBe(2);
   });
 
-  it('holds at the cap instead of climbing past it, and stays there', async () => {
+  // Verifies: ADR-0066
+  it('stops at the cap, then clears the nonce with a single transfer above it', async () => {
     const id = `replacement-gas-capped-${randomUUID()}`;
     await seedStuckTransaction(id, 11);
-    const { reconcileOnce } = buildReconciler();
+    const { pricedAttempts, reconcileOnce } = buildReconciler();
 
     // maxMultiple is 10 and the ladder from OPENING_BID (2x) climbs by 50% a pass, so the cap
-    // binds within a handful of passes. Clamping is not the same as stopping: ADR-0051 point 2
-    // is explicit that clearing a nonce never gives up, so the passes keep going at the cap.
+    // binds within a handful of passes. ADR-0066: escalation then stops -- a replacement priced
+    // at the fee it replaces is refused by every node -- and one zero-value self-transfer above
+    // the cap clears the nonce instead. Later passes send nothing at all.
     const ceiling = ORIGINAL_FEES.maxFeePerGas * POLICY.maxMultiple;
-    let previousFee = 0n;
+    const feesPerPass: bigint[] = [];
     for (let pass = 0; pass < 8; pass++) {
       await makeStuckAgain(id);
       await reconcileOnce();
-      const fee = BigInt((await readRow(id)).lastMaxFeePerGas!);
-      expect(fee).toBeLessThanOrEqual(ceiling);
-      expect(fee).toBeGreaterThanOrEqual(previousFee);
-      previousFee = fee;
+      feesPerPass.push(BigInt((await readRow(id)).lastMaxFeePerGas!));
     }
-    expect(previousFee).toBe(ceiling);
+
+    const clearingPass = feesPerPass.findIndex((fee) => fee > ceiling);
+    expect(clearingPass).toBeGreaterThan(0);
+
+    // Escalation stops at the cap: nothing the curve itself produced exceeded it, and the pass
+    // before the clearing transfer sat exactly on it.
+    for (const fee of feesPerPass.slice(0, clearingPass)) {
+      expect(fee).toBeLessThanOrEqual(ceiling);
+    }
+    expect(feesPerPass[clearingPass - 1]).toBe(ceiling);
+
+    // The clearing transfer is priced above the cap by at least the provider's minimum bump --
+    // a strictly greater fee under that bump would be refused just as a repeat price is.
+    expect(feesPerPass[clearingPass]!).toBeGreaterThanOrEqual((ceiling * 110n) / 100n);
+
+    // Exactly one clearing transfer, not one per pass: the fee never moves again, and no
+    // further replacement is priced at all after it.
+    for (const fee of feesPerPass.slice(clearingPass)) {
+      expect(fee).toBe(feesPerPass[clearingPass]);
+    }
+    expect(pricedAttempts).toHaveLength(clearingPass + 1);
+
+    // And the outbox distinguishes it from the work it replaced, for an operator reading the
+    // table rather than the logs.
+    const row = await readRow(id);
+    expect(row.clearingTxHash).toBe(row.txHash);
+    expect(row.replacedTxHash).toBe(`0x${'1'.repeat(64)}`);
   });
 });

@@ -1,4 +1,5 @@
 // Verifies: ADR-0051
+// Verifies: ADR-0066
 import { describe, expect, it } from 'vitest';
 import {
   computeReplacementFees,
@@ -85,28 +86,47 @@ describe('replacement gas escalation', () => {
     expect(rungs.at(-1)!).toBeGreaterThan(rungs.at(-2)!);
   });
 
-  it('keeps increasing past the ceiling rather than repeating the fee it replaces', () => {
-    // The defect: with `previous` already at the ceiling, every later pass escalated above it,
-    // clamped back, and landed on exactly `previous` -- which a provider rejects as an
-    // insufficient bump. The reconciler then replaced forever while putting nothing on the
-    // network, the same stuck-nonce loop ADR-0051 exists to end, reached through the ceiling
-    // instead of through a flat oracle. Monotonicity wins over the cap.
-    const rungs = ladder(8);
+  it('stops escalating at the ceiling instead of climbing past it', () => {
+    // ADR-0066: the escalation ladder is bounded by the cap. Every rung is strictly greater
+    // than the one below it while the curve is still climbing, and the last rung the curve
+    // itself produces is the ceiling -- never a value above it.
+    //
+    // Eight attempts, not five: the ceiling binds on the fifth, so a shorter run never reaches
+    // the attempts that used to climb past it. Escalation is followed only up to the point it
+    // asks to stop, which is what the reconciler does with the same signal.
+    const ceiling = ORIGINAL.maxFeePerGas * POLICY.maxMultiple;
+    const rungs: bigint[] = [];
+    let previous: { maxFeePerGas: bigint; maxPriorityFeePerGas: bigint } | null = null;
+    for (let attempt = 0; attempt < 8; attempt++) {
+      const decision = computeReplacementFees({
+        oracle: ORACLE,
+        original: ORIGINAL,
+        policy: POLICY,
+        previous,
+      });
+      if (decision.clearing) break;
+      previous = decision.fees;
+      rungs.push(decision.fees.maxFeePerGas);
+    }
 
     for (let i = 1; i < rungs.length; i++) {
       expect(rungs[i]!, `rung ${i}`).toBeGreaterThan(rungs[i - 1]!);
       // And by more than any provider's minimum bump, not merely by one wei -- a strictly
       // greater fee that is still under the bump rule lands nothing either.
       expect(rungs[i]!, `rung ${i}`).toBeGreaterThan((rungs[i - 1]! * 110n) / 100n);
+      expect(rungs[i]!, `rung ${i}`).toBeLessThanOrEqual(ceiling);
     }
-    expect(rungs.at(-1)!).toBeGreaterThan(ORIGINAL.maxFeePerGas * POLICY.maxMultiple);
+    expect(rungs.at(-1)!).toBe(ceiling);
+    // The curve genuinely halted rather than merely running out of attempts.
+    expect(rungs.length).toBeLessThan(8);
   });
 
-  it('reports the breach so the operator can raise the ceiling', () => {
-    // The cap being overridden is exactly the signal `cappedBelowOpeningBid` already aims at:
-    // this deployment's REPLACEMENT_GAS_MAX_MULTIPLE is too low for its fee regime. Reported
-    // as its own field because it says the opposite thing about the ceiling -- obeyed there,
-    // disregarded here -- and an operator cannot tell those apart from one merged flag.
+  it('asks for a clearing transfer once the ceiling can no longer raise the fee', () => {
+    // ADR-0066: at the ceiling the clamp would price the replacement at exactly the fee it
+    // replaces, which every node refuses as an insufficient bump. Escalation therefore stops,
+    // and the nonce is cleared instead by one zero-value self-transfer priced above the cap by
+    // the provider's minimum bump. `cappedBelowPreviousFee` keeps its meaning -- the ceiling
+    // can no longer raise the fee -- and changes its consumer from "exceed" to "stop and clear".
     const ceiling = ORIGINAL.maxFeePerGas * POLICY.maxMultiple;
 
     const held = computeReplacementFees({
@@ -117,10 +137,13 @@ describe('replacement gas escalation', () => {
     });
 
     expect(held.cappedBelowPreviousFee).toBe(true);
-    expect(held.fees.maxFeePerGas).toBeGreaterThan(ceiling);
+    expect(held.clearing).toBe(true);
+    // Above the cap, but only by the margin the minimum bump requires -- not by the full
+    // escalation, which would be an unbounded climb wearing a different name.
+    expect(held.fees.maxFeePerGas).toBeGreaterThanOrEqual((ceiling * 110n) / 100n);
+    expect(held.fees.maxFeePerGas).toBeLessThan((ceiling * POLICY.escalationPct) / 100n);
 
     // Not raised while the ceiling is doing its ordinary job.
-    expect(ladder(3).length).toBe(3);
     const underCeiling = computeReplacementFees({
       oracle: ORACLE,
       original: ORIGINAL,
@@ -128,10 +151,11 @@ describe('replacement gas escalation', () => {
       previous: fees(2_000_000n, 200_000n),
     });
     expect(underCeiling.cappedBelowPreviousFee).toBe(false);
+    expect(underCeiling.clearing).toBe(false);
   });
 
-  it('escapes an absolute wei ceiling the same way it escapes the multiple', () => {
-    // The same hole, reached through REPLACEMENT_GAS_MAX_FEE_WEI: a `previous` already at the
+  it('clears an absolute wei ceiling the same way it clears the multiple', () => {
+    // The same edge, reached through REPLACEMENT_GAS_MAX_FEE_WEI: a `previous` already at the
     // absolute ceiling would otherwise be replaced by itself, forever.
     const decision = computeReplacementFees({
       oracle: ORACLE,
@@ -140,8 +164,8 @@ describe('replacement gas escalation', () => {
       previous: fees(1_500_000n, 150_000n),
     });
 
-    expect(decision.fees.maxFeePerGas).toBeGreaterThan(1_500_000n);
-    expect(decision.cappedBelowPreviousFee).toBe(true);
+    expect(decision.fees.maxFeePerGas).toBeGreaterThanOrEqual((1_500_000n * 110n) / 100n);
+    expect(decision.clearing).toBe(true);
   });
 
   it('keeps sending at the cap when the cap sits below the opening bid, and says so', () => {

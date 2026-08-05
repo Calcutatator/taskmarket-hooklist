@@ -879,6 +879,15 @@ export const serverWalletTransactions = pgTable(
     // per-attempt fact about the same row, it names the transaction that was given up on for
     // an operator reading the table, and it is what the settlement reason already reports.
     replacedTxHash: text('replaced_tx_hash'),
+    // Implements: ADR-0066
+    // The hash of the clearing self-transfer, set when escalation reaches the cap and the
+    // reconciler frees the nonce rather than bidding higher. Two jobs, both durable. It is what
+    // makes "exactly one clearing transfer per stuck nonce" survive a restart -- a later pass
+    // reading a non-null value sends nothing and waits for this transfer's receipt, instead of
+    // emitting another transaction above the cap. And it is what distinguishes that transfer
+    // from the work in the outbox itself: `replaced_tx_hash` is set by every replacement and so
+    // cannot say which one was the deliberate, above-cap cancel.
+    clearingTxHash: text('clearing_tx_hash'),
   },
   (table) => ({
     walletStatusIdx: index('idx_server_wallet_transactions_wallet_status').on(

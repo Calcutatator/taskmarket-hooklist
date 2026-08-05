@@ -7,6 +7,7 @@ import type {
 
 type Row = {
   broadcastAt: Date | null;
+  clearingTxHash: string | null;
   id: string;
   lastFees: GasFees | null;
   nonce: number;
@@ -20,6 +21,7 @@ type Row = {
 
 function replaceable(row: Row): ReplaceableRow {
   return {
+    clearingTxHash: row.clearingTxHash,
     id: row.id,
     lastFees: row.lastFees,
     nonce: row.nonce,
@@ -64,6 +66,7 @@ export function createMemoryServerTransactionStore(seed?: number) {
       state.nextNonce = nonce + 1;
       const row: Row = {
         broadcastAt: null,
+        clearingTxHash: null,
         id: `tx-${++idCounter}`,
         lastFees: null,
         nonce,
@@ -116,6 +119,7 @@ export function createMemoryServerTransactionStore(seed?: number) {
       if (!row) return;
       row.broadcastAt = new Date();
       recordFees(row, fields?.fees);
+      if (fields?.clearing) row.clearingTxHash = hash;
       if (fields?.replacedTxHash !== undefined) row.replacedTxHash = fields.replacedTxHash;
       row.status = 'broadcast';
       row.txHash = hash;

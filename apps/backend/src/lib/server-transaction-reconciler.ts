@@ -2,6 +2,7 @@
 // Implements: ADR-0045
 // Implements: ADR-0051
 // Implements: ADR-0053
+// Implements: ADR-0066
 import type { Hex } from 'viem';
 import { logger } from './logger';
 import type { GasFees, ServerTransactionStore } from './server-transaction-store';
@@ -41,7 +42,17 @@ export type ReplacementRequest = {
   previousFees: GasFees | null;
 };
 
-export type ReplacementBroadcast = { fees: GasFees; hash: Hex };
+export type ReplacementBroadcast = {
+  /**
+   * True when what went out was the clearing self-transfer rather than a further escalation
+   * (ADR-0066): escalation had reached the cap, so this transaction is priced above it and is
+   * the last one this nonce gets. Decided where the fee is priced, since only the pricing
+   * policy knows the curve has ended.
+   */
+  clearing?: boolean;
+  fees: GasFees;
+  hash: Hex;
+};
 
 export type ServerTransactionReconcilerOptions = {
   /** Resolves to the receipt status, or null when the transaction is still unmined. */
@@ -109,6 +120,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
   }
 
   async function replaceStuckNonce(row: {
+    clearingTxHash?: string | null;
     id: string;
     lastFees: GasFees | null;
     nonce: number;
@@ -117,8 +129,21 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
     originalFees: GasFees | null;
   }): Promise<void> {
     const { id, nonce } = row;
+    // One clearing transfer per stuck nonce, not one per pass (ADR-0066). Escalation has
+    // already stopped at the cap and the nonce has already been freed by a transaction priced
+    // above it; sending another would spend above the operator's ceiling on every pass, which
+    // is the unbounded climb this decision replaced. The row is now waiting for that
+    // transfer's receipt, and settles as failed through the ordinary mined-replacement rule.
+    if (row.clearingTxHash) {
+      logger.warn('Skipping replacement: this nonce has already been cleared', {
+        clearingHash: row.clearingTxHash,
+        nonce,
+        transactionId: id,
+      });
+      return;
+    }
     try {
-      const { fees, hash } = await sendReplacement({
+      const { clearing, fees, hash } = await sendReplacement({
         nonce,
         originalFees: row.originalFees,
         previousFees: row.lastFees,
@@ -135,6 +160,7 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       // what matters downstream is that the row is no longer carrying the work, not which of
       // several replacements last held the nonce.
       await store.recordReplacement(id, hash, {
+        clearing,
         fees,
         replacedTxHash: row.replacedTxHash ?? row.txHash ?? null,
       });
@@ -143,6 +169,10 @@ export function createServerTransactionReconciler(options: ServerTransactionReco
       // replacement occupies the nonce, and only that is the second form of confirmed evidence
       // ADR-0045 admits -- so the intent is settled on the pass that reads this hash's receipt.
       logger.warn('Replaced stuck server wallet transaction', {
+        // Named in the log line as well as the outbox row: a clearing transfer is above the
+        // configured cap and is the last thing this nonce gets, which log analysis reading
+        // replacement volume must not count as ordinary escalation (ADR-0066).
+        clearing: clearing === true,
         maxFeePerGas: fees.maxFeePerGas.toString(),
         maxPriorityFeePerGas: fees.maxPriorityFeePerGas.toString(),
         nonce,
