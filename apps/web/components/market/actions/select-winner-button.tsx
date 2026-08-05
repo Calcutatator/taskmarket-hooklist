@@ -63,25 +63,28 @@ export function SelectWinnerButton({ disabled, onSuccess, task }: TaskActionComp
     // Signs `taskmarket:select-winner:<taskId>` and posts `{ taskId, requesterAddress,
     // signature }` -- exactly what `signAndPost` builds, so the hand-rolled copy that used to
     // live here is gone and this path picks up the in-flight outcome with everything else.
-    const result = await signAndPost<{ txHash?: string }>({
-      addressField: 'requesterAddress',
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      idempotencyKey: inFlight.idempotencyKey,
-      path: `/api/tasks/${task.id}/bids/select-winner`,
-      taskId: task.id,
-      verbForMessage: 'select-winner',
-    });
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      signAndPost<{ txHash?: string }>({
+        addressField: 'requesterAddress',
+        deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+        idempotencyKey,
+        path: `/api/tasks/${task.id}/bids/select-winner`,
+        taskId: task.id,
+        verbForMessage: 'select-winner',
+      })
+    );
     setPending(false);
 
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the select button live.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setDone(true);
       onSuccess?.();
       toast.success('Winner selected');
       return;
     }
-    // Neither success nor failure, so it must not reach the error path below, which leaves
-    // the select button live.
-    if (inFlight.capture(result)) return;
     if (!result.rejected) {
       setError(result.error);
       toast.error(result.error);

@@ -70,20 +70,95 @@ describe('useInFlightWrite', () => {
 
   async function goInFlight() {
     const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
-    act(() => {
-      expect(hook.result.current.capture(IN_FLIGHT)).toBe(true);
+    await act(async () => {
+      expect(await hook.result.current.submit(async () => IN_FLIGHT)).toEqual({ handled: true });
     });
     return hook;
+  }
+
+  /** Runs one submission and reports the key the hook handed the transport. */
+  async function keyUsedBy(
+    hook: ReturnType<typeof renderHook<ReturnType<typeof useInFlightWrite>, unknown>>,
+    result: Record<string, unknown>
+  ): Promise<string> {
+    let seen = '';
+    await act(async () => {
+      await hook.result.current.submit(async (idempotencyKey) => {
+        seen = idempotencyKey;
+        return result as never;
+      });
+    });
+    return seen;
   }
 
   it('asks for a read-auth signature only once a write is actually in flight', async () => {
     const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
     expect(requestSignature).not.toHaveBeenCalled();
 
-    act(() => {
-      hook.result.current.capture(IN_FLIGHT);
+    await act(async () => {
+      await hook.result.current.submit(async () => IN_FLIGHT);
     });
     expect(requestSignature).toHaveBeenCalled();
+  });
+
+  // The defect this shape exists to make unrepresentable. A plain failure leaves the form
+  // rendered, so the next submission is an ordinary thing for a user to do -- and on ten of the
+  // sixteen surfaces it carries materially different arguments (a different reward, a different
+  // worker, a different artifact set). Presenting the failed operation's key for it would name
+  // two different writes with one key.
+  it('retires the key after a settled failure, so a corrected retry is a new operation', async () => {
+    const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
+
+    const first = await keyUsedBy(hook, { ok: false, error: 'Reward below the minimum' });
+    const second = await keyUsedBy(hook, { ok: false, error: 'Reward below the minimum' });
+
+    expect(first).not.toBe('');
+    expect(second).not.toBe(first);
+  });
+
+  it('retires the key after a success', async () => {
+    const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
+
+    const first = await keyUsedBy(hook, { ok: true });
+    const second = await keyUsedBy(hook, { ok: true });
+
+    expect(second).not.toBe(first);
+  });
+
+  // The other half of the rule, and the one ADR-0052 is about: while the outcome is unknown the
+  // key is the handle to the write that may already have landed, so it must not move. The
+  // fixed-payload buttons depend on this -- a wallet rejection sends nothing, so pressing the
+  // button again is a retry of the same operation rather than a second one.
+  it('keeps the key across an in-flight outcome and a wallet rejection', async () => {
+    const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
+
+    const first = await keyUsedBy(hook, {
+      ok: false,
+      rejected: true,
+      error: 'Cancelled in wallet',
+    });
+    const second = await keyUsedBy(hook, { ok: false, pending: true, error: 'in flight' });
+
+    expect(second).toBe(first);
+    expect(hook.result.current.state?.idempotencyKey).toBe(first);
+  });
+
+  // No result at all is the ambiguous case, not the terminal one: the write may well have
+  // landed. Retiring the key here would hand the retry a fresh one and buy the write twice.
+  it('keeps the key when the submission throws', async () => {
+    const hook = renderHook(() => useInFlightWrite('Submitted, confirming'));
+
+    let first = '';
+    await act(async () => {
+      await expect(
+        hook.result.current.submit(async (idempotencyKey) => {
+          first = idempotencyKey;
+          throw new Error('Failed to fetch');
+        })
+      ).rejects.toThrow('Failed to fetch');
+    });
+
+    expect(await keyUsedBy(hook, { ok: true })).toBe(first);
   });
 
   it('reports a failed intent with its reason and refund state', async () => {

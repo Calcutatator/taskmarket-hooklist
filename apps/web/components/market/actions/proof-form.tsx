@@ -85,13 +85,19 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
     };
     if (metricValue.trim().length > 0) body.metricValue = metricValue.trim();
 
-    const result = await payX402Post<{ proofId: string; submissionId: string; txHash?: string }>(
-      `/api/tasks/${task.id}/proofs`,
-      body,
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ proofId: string; submissionId: string; txHash?: string }>(
+        `/api/tasks/${task.id}/proofs`,
+        body,
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // Neither success nor failure, so it must not reach the error path below: that path
+    // leaves the submit button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
@@ -105,9 +111,6 @@ export function ProofForm({ disabled, onSuccess, task }: TaskActionComponentProp
       );
     } else {
       setStep('idle');
-      // Neither success nor failure, so it must not reach the error path below: that path
-      // leaves the submit button live, and pressing it again is a second payment.
-      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

@@ -385,45 +385,54 @@ export function StepPublish({
       };
 
       setPhase('submitting');
-      const createRes = await fetch(`${apiUrl}/api/tasks`, {
-        body: JSON.stringify(body),
-        headers: {
-          'Content-Type': 'application/json',
-          ...(await getLegalRequestHeaders()),
-          // Sent so a viewer who publishes again after an ambiguous outcome presents the write
-          // the backend already has, rather than escrowing a second full reward.
-          [IDEMPOTENCY_KEY_HEADER]: inFlight.idempotencyKey,
-          'payment-signature': btoa(JSON.stringify(paymentPayload)),
-        },
-        method: 'POST',
-      });
-      if (!createRes.ok) {
+      // This surface does not swap itself out for the notice -- it renders both, suppressing
+      // each submit path on `inFlight.state`. That makes the key discipline load-bearing here
+      // rather than incidental: the brief stays editable, so a failed publish followed by
+      // "Edit brief", a new reward or a new mode, and a second publish is an ordinary thing to
+      // do. Handing the key to `submit` rather than reading it off the hook is what stops that
+      // second, materially different task going out under the first one's key.
+      const outcome = await inFlight.submit(async (idempotencyKey) => {
+        const createRes = await fetch(`${apiUrl}/api/tasks`, {
+          body: JSON.stringify(body),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getLegalRequestHeaders()),
+            'payment-signature': btoa(JSON.stringify(paymentPayload)),
+            [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+          },
+          method: 'POST',
+        });
+        if (createRes.ok) {
+          return {
+            ok: true as const,
+            data: (await createRes.json()) as { taskDropId?: string | null; taskId?: string },
+          };
+        }
         const err = await createRes.json().catch(() => ({}));
         const message = err.error ?? err.message ?? `Server error: ${createRes.status}`;
-        // Caught before the throw: the catch below sets an error and returns the publish
-        // button to 'form', which is a live "Fund and publish" control. On this surface that
-        // is the most expensive mistake available -- the payment is the whole task reward,
-        // not a 0.001 USDC relay fee -- so an in-flight write must never reach it.
-        if (
-          inFlight.capture({
-            ok: false,
-            pending: isPendingWriteResponse(err, message),
-            idempotencyKey: inFlight.idempotencyKey,
-            error: message,
-          })
-        ) {
-          return;
-        }
-        throw new Error(message);
+        return {
+          ok: false as const,
+          pending: isPendingWriteResponse(err, message),
+          error: message,
+        };
+      });
+
+      // Checked before the throw: the catch below sets an error and returns the publish button
+      // to 'form', which is a live "Fund and publish" control. On this surface that is the most
+      // expensive mistake available -- the payment is the whole task reward, not a 0.001 USDC
+      // relay fee -- so an in-flight write must never reach it.
+      if (outcome.handled) return;
+      if (!outcome.result.ok) {
+        throw new Error(outcome.result.error);
       }
 
-      const result = (await createRes.json()) as { taskDropId?: string | null; taskId?: string };
+      const created = outcome.result.data;
       runOptionalEffect(() => onFunnelEvent?.({ name: 'task_published' }));
       runOptionalEffect(onPublished);
       router.push(
-        result.taskId
-          ? `/dashboard/tasks/${result.taskId}?published=1${
-              result.taskDropId ? `&taskDropId=${encodeURIComponent(result.taskDropId)}` : ''
+        created.taskId
+          ? `/dashboard/tasks/${created.taskId}?published=1${
+              created.taskDropId ? `&taskDropId=${encodeURIComponent(created.taskDropId)}` : ''
             }`
           : '/dashboard/tasks'
       );

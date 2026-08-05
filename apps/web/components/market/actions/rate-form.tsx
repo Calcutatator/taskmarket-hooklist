@@ -74,13 +74,19 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
     };
     if (feedback.trim().length > 0) body.feedbackText = feedback.trim();
 
-    const result = await payX402Post<{ txHash?: string; feedbackId?: string }>(
-      `/api/tasks/${task.id}/rate`,
-      body,
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ txHash?: string; feedbackId?: string }>(
+        `/api/tasks/${task.id}/rate`,
+        body,
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // Neither success nor failure, so it must not reach the error path below: that path
+    // leaves the submit button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
@@ -94,9 +100,6 @@ export function RateForm({ action, disabled, onSuccess, task }: TaskActionCompon
       );
     } else {
       setStep('idle');
-      // Neither success nor failure, so it must not reach the error path below: that path
-      // leaves the submit button live, and pressing it again is a second payment.
-      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

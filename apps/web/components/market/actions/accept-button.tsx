@@ -73,13 +73,19 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
       return;
     }
     setError(null);
-    const result = await payX402Post<{ txHash?: string }>(
-      `/api/tasks/${task.id}/accept`,
-      { taskId: task.id, worker },
-      { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
-      setStep,
-      inFlight.idempotencyKey
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      payX402Post<{ txHash?: string }>(
+        `/api/tasks/${task.id}/accept`,
+        { taskId: task.id, worker },
+        { address: address!, apiUrl: getBrowserApiBaseUrl(), signTypedDataAsync, switchChainAsync },
+        setStep,
+        idempotencyKey
+      )
     );
+    // In flight is neither success nor failure, so it must not reach the error path below:
+    // that path leaves the button live, and pressing it again is a second payment.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setStep('done');
       setTxHash(result.txHash ?? null);
@@ -93,9 +99,6 @@ export function AcceptButton({ action, disabled, onSuccess, task }: TaskActionCo
       );
     } else {
       setStep('idle');
-      // In flight is neither success nor failure, so it must not reach the error path below:
-      // that path leaves the button live, and pressing it again is a second payment.
-      if (inFlight.capture(result)) return;
       if (!result.rejected) {
         setError(result.error);
         toast.error(result.error);

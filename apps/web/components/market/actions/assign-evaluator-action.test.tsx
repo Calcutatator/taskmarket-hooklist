@@ -260,8 +260,26 @@ describe('AssignEvaluatorAction', () => {
     expect(screen.queryByText('Cancelled in wallet')).toBeNull();
   });
 
-  it('reuses the same idempotency key across two submissions from one form', async () => {
+  // A settled failure leaves this form rendered with its fields editable, so the second
+  // submission is a second operation and may name a different evaluator, fee, or window. It
+  // must not present the failed one's key: one key naming two writes is how a correction gets
+  // answered with the outcome of the thing it was correcting.
+  it('sends a fresh idempotency key after a settled failure', async () => {
     payX402Post.mockResolvedValue({ ok: false, error: 'Temporary glitch' });
+    render(<AssignEvaluatorAction task={taskFixture()} />);
+    await submitAppointment();
+    await waitFor(() => expect(payX402Post).toHaveBeenCalledTimes(1));
+    await submitAppointment();
+    await waitFor(() => expect(payX402Post).toHaveBeenCalledTimes(2));
+
+    expect(payX402Post.mock.calls[0]![4]).not.toBe(payX402Post.mock.calls[1]![4]);
+  });
+
+  // The reuse ADR-0052 is about, and the only one still reachable from a rendered form: a
+  // wallet rejection signs nothing and sends nothing, so pressing the button again is a retry
+  // of the same operation rather than a new one.
+  it('reuses the idempotency key after the user cancels in their wallet', async () => {
+    payX402Post.mockResolvedValue({ ok: false, error: 'Cancelled in wallet', rejected: true });
     render(<AssignEvaluatorAction task={taskFixture()} />);
     await submitAppointment();
     await waitFor(() => expect(payX402Post).toHaveBeenCalledTimes(1));

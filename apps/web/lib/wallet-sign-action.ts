@@ -74,14 +74,26 @@ export async function signAndPost<T = unknown>(args: {
     ...(args.extraBody ?? {}),
   };
 
+  // Flipped the instant the request leaves the browser, and never cleared. Same boundary, and
+  // the same reason, as `payX402Post`: everything before it is preparation the backend never
+  // saw, and everything after it is ambiguous by construction -- a thrown fetch, a socket dying
+  // mid-body, or a `res.json()` that never parses says nothing about whether the write took
+  // effect. `useInFlightWrite` retires the idempotency key on a plain failure, so an ambiguous
+  // outcome reported as terminal here would hand the next attempt a fresh key and relay the
+  // write a second time.
+  let dispatched = false;
   try {
+    // Built before the flag is set: assembling the headers is still preparation, and a throw
+    // from it must stay a plain failure rather than claim a write is landing.
+    const headers = {
+      'Content-Type': 'application/json',
+      ...(await getLegalRequestHeaders()),
+      [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+    };
+    dispatched = true;
     const res = await fetch(`${args.deps.apiUrl}${args.path}`, {
       body: JSON.stringify(body),
-      headers: {
-        'Content-Type': 'application/json',
-        ...(await getLegalRequestHeaders()),
-        [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
-      },
+      headers,
       method: 'POST',
     });
     if (!res.ok) {
@@ -98,10 +110,10 @@ export async function signAndPost<T = unknown>(args: {
     const data = (await res.json()) as T & { txHash?: string };
     return { ok: true, data, idempotencyKey, txHash: data.txHash };
   } catch (err) {
-    return {
-      ok: false,
-      error: err instanceof Error ? err.message : 'Request failed',
-      idempotencyKey,
-    };
+    const error = err instanceof Error ? err.message : 'Request failed';
+    if (dispatched) {
+      return { ok: false, pending: true, idempotencyKey, error };
+    }
+    return { ok: false, error, idempotencyKey };
   }
 }

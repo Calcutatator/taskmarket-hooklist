@@ -46,23 +46,26 @@ export function ClaimButton({ disabled, onSuccess, task }: TaskActionComponentPr
   async function handleClaim() {
     setPending(true);
     setError(null);
-    const result = await signAndPost<{ claimId: string }>({
-      deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
-      idempotencyKey: inFlight.idempotencyKey,
-      path: `/api/tasks/${task.id}/claim`,
-      taskId: task.id,
-      verbForMessage: 'claim',
-    });
+    const outcome = await inFlight.submit((idempotencyKey) =>
+      signAndPost<{ claimId: string }>({
+        deps: { address: address!, apiUrl: getBrowserApiBaseUrl(), signMessageAsync },
+        idempotencyKey,
+        path: `/api/tasks/${task.id}/claim`,
+        taskId: task.id,
+        verbForMessage: 'claim',
+      })
+    );
     setPending(false);
+    // Neither success nor failure, so it must not reach the error path below, which leaves
+    // the claim button live.
+    if (outcome.handled) return;
+    const result = outcome.result;
     if (result.ok) {
       setDone(true);
       onSuccess?.();
       toast.success('Claimed');
       return;
     }
-    // Neither success nor failure, so it must not reach the error path below, which leaves
-    // the claim button live.
-    if (inFlight.capture(result)) return;
     if (!result.rejected) {
       setError(result.error);
       toast.error(result.error);

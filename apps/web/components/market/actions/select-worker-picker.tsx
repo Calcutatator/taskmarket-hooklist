@@ -18,7 +18,7 @@ import {
 import { InFlightWriteNotice } from '@/components/market/in-flight-write-notice';
 import { getBrowserApiBaseUrl } from '@/lib/api/config';
 import { getLegalRequestHeaders } from '@/lib/legal-receipt';
-import { isPendingTransactionMessage } from '@/lib/relayed-write-outcome';
+import { isPendingWriteResponse } from '@/lib/relayed-write-outcome';
 import { useInFlightWrite } from '@/lib/use-in-flight-write';
 
 import { ConnectPrompt } from './connect-prompt';
@@ -122,38 +122,40 @@ export function SelectWorkerPicker({ disabled, onSuccess, task }: TaskActionComp
     }
 
     try {
-      const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches/select`, {
-        body: JSON.stringify({
-          taskId: task.id,
-          pitchId: selected.id,
-          workerAddress: selected.workerAddress,
-          signature,
-        }),
-        headers: {
-          'Content-Type': 'application/json',
-          ...(await getLegalRequestHeaders()),
-          [IDEMPOTENCY_KEY_HEADER]: inFlight.idempotencyKey,
-        },
-        method: 'POST',
-      });
-      setPending(false);
-      if (!res.ok) {
+      // This endpoint signs a pitch-scoped message rather than the `taskmarket:<verb>:<id>`
+      // form `signAndPost` builds, so it keeps its own fetch -- but it runs through the same
+      // `submit`, which owns the key, and reads the in-flight outcome through the same shared
+      // predicate rather than a second copy of the guess. The key never leaves this callback,
+      // so a second selection naming a different worker cannot go out under the first one's.
+      const outcome = await inFlight.submit(async (idempotencyKey) => {
+        const res = await fetch(`${getBrowserApiBaseUrl()}/api/tasks/${task.id}/pitches/select`, {
+          body: JSON.stringify({
+            taskId: task.id,
+            pitchId: selected.id,
+            workerAddress: selected.workerAddress,
+            signature,
+          }),
+          headers: {
+            'Content-Type': 'application/json',
+            ...(await getLegalRequestHeaders()),
+            [IDEMPOTENCY_KEY_HEADER]: idempotencyKey,
+          },
+          method: 'POST',
+        });
+        if (res.ok) return { ok: true as const };
         const errBody = (await res.json().catch(() => ({}))) as { message?: string };
         const message = errBody.message ?? `Server error: ${res.status}`;
-        // This endpoint signs a pitch-scoped message rather than the `taskmarket:<verb>:<id>`
-        // form `signAndPost` builds, so it keeps its own fetch -- but it reads the in-flight
-        // outcome through the same shared predicate, not a second copy of the guess. In flight
-        // is neither success nor failure, so it must not reach the error path below.
-        if (
-          inFlight.capture({
-            ok: false,
-            pending: isPendingTransactionMessage(message),
-            idempotencyKey: inFlight.idempotencyKey,
-            error: message,
-          })
-        ) {
-          return;
-        }
+        return {
+          ok: false as const,
+          pending: isPendingWriteResponse(errBody, message),
+          error: message,
+        };
+      });
+      setPending(false);
+      // In flight is neither success nor failure, so it must not reach the error path below.
+      if (outcome.handled) return;
+      if (!outcome.result.ok) {
+        const message = outcome.result.error!;
         setError(message);
         toast.error(message);
         return;
