@@ -166,7 +166,9 @@ X-Taskmarket-Idempotency-Key: <UUID>
 
 It is **mandatory on every relayed write, paid or free**. A request without it is rejected with HTTP 400 before anything is charged or broadcast. **This is a breaking change for raw REST callers.** An integration written before this header existed stops working until it sends one; there is no default, no grace period, and no exempt endpoint.
 
-Generate the key once per logical operation, before sending anything, and send that same value on every request belonging to that operation -- including both rounds of the X402 exchange, since discovery and the paid retry are one write, not two. The backend never parses the value: it is an opaque token compared by equality. A request carrying a key the backend has already seen returns that operation's existing intent instead of making a second chain call.
+Generate the key once per logical operation, before sending anything, and send that same value on every request belonging to that operation -- including both rounds of the X402 exchange, since discovery and the paid retry are one write, not two. The backend never parses the value: it is an opaque token compared by equality.
+
+On a paid route the key is claimed when the request arrives, before the 402 challenge is issued. A request carrying a key the backend has already seen is therefore refused *before it is asked to pay*, rather than being charged and deduplicated afterwards, and that holds for two requests sent at the same time as much as for one sent after the other. A retry -- concurrent or sequential -- cannot produce a second payment for the same key. The refusal is `idempotency_key_reused`; read its `intentStatus` for what the existing write is doing.
 
 The corollary matters as much as the rule: **a fresh key is a new operation.** Generating a new key when you meant to retry the previous one is, on a paid write, a second payment for a second intent.
 
@@ -196,7 +198,7 @@ On a tRPC response it is at `error.data.taskmarket`. On a raw-REST body and on a
 | `reason` | Status | What it means | What to do |
 | --- | --- | --- | --- |
 | `intent_in_flight` | 409 | Broadcast, no terminal outcome yet. Not a success and not a failure. The payment has settled; whether it is kept or returned is what is undecided. | Poll `GET /api/intents`. **Never resubmit.** |
-| `idempotency_key_reused` | 409 | A write under this key already exists. Nothing was charged and nothing was submitted again. | Read `intentStatus`. `reserved`, `recorded` or `broadcast` means still landing -- poll. `failed` is a settled failure. `completed` means the write landed. |
+| `idempotency_key_reused` | 409 | A write under this key already exists. Nothing was charged and nothing was submitted again. | Read `intentStatus`. `reserved` means another request holds the key and has not finished paying for it -- poll, and do not start again with a fresh key. `recorded` or `broadcast` means still landing -- poll. `failed` is a settled failure. `completed` means the write landed. |
 | `idempotency_key_required` | 400 | No `X-Taskmarket-Idempotency-Key` header, or not a UUID. Rejected before the 402 challenge, so nothing was charged. | Send one and retry. |
 | `idempotency_key_conflict` | 409 | The key is bound to a *different* operation. | Generate a fresh key and resubmit. Do not poll -- there is nothing here that is yours. |
 | `idempotency_key_payload_mismatch` | 409 | The key names the *same* operation, but you sent different arguments. The arguments you just sent were **not** applied and nothing was charged. | To retry the original write, re-send the arguments it was created with. To make a genuinely new write, generate a fresh key. |
