@@ -237,4 +237,53 @@ describe('replacement gas escalation', () => {
 
     expect(decision.fees.maxPriorityFeePerGas).toBeLessThanOrEqual(decision.fees.maxFeePerGas);
   });
+
+  it('never lets that clamp price the priority fee at or below its predecessor', () => {
+    // The clamp above is applied after each field's own monotonicity guarantee, so on its face
+    // it could hand back a priority fee no higher than the one it replaces -- which every node
+    // refuses as an insufficient bump, the exact failure escalation exists to avoid.
+    //
+    // It cannot, and the reason is an invariant rather than an accident of the numbers: every
+    // step of `escalateField` is monotone in its inputs, so an input triple whose priority fee
+    // never exceeds its max fee produces an output with the same property, and a clamp that
+    // never binds cannot lower anything. Real inputs always have that property -- a broadcast
+    // records the fees this function returned, or viem's own estimate, and neither puts the
+    // priority fee above the max fee.
+    //
+    // Swept rather than argued, over the shapes that actually bind: the multiple ceiling, the
+    // absolute ceiling, and the clearing pass past both.
+    const scale = 100_000n;
+    for (const oracleMax of [1n, 5n, 12n]) {
+      for (const oraclePriority of [1n, 3n, 5n]) {
+        if (oraclePriority > oracleMax) continue;
+        for (const previousMax of [1n, 4n, 10n]) {
+          for (const previousPriority of [1n, 2n, 10n]) {
+            if (previousPriority > previousMax) continue;
+            for (const maxMultiple of [1n, 2n, 10n]) {
+              for (const maxFeeWei of [null, 2n, 8n]) {
+                const decision = computeReplacementFees({
+                  oracle: fees(oracleMax * scale, oraclePriority * scale),
+                  original: fees(previousMax * scale, previousPriority * scale),
+                  policy: {
+                    ...POLICY,
+                    maxFeeWei: maxFeeWei === null ? null : maxFeeWei * scale,
+                    maxMultiple,
+                  },
+                  previous: fees(previousMax * scale, previousPriority * scale),
+                });
+
+                expect(
+                  decision.fees.maxPriorityFeePerGas,
+                  `priority ${previousPriority}/${previousMax} under cap ${String(maxFeeWei)}x${maxMultiple}`
+                ).toBeGreaterThan(previousPriority * scale);
+                expect(decision.fees.maxPriorityFeePerGas).toBeLessThanOrEqual(
+                  decision.fees.maxFeePerGas
+                );
+              }
+            }
+          }
+        }
+      }
+    }
+  });
 });

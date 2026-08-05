@@ -293,3 +293,8 @@ adrs:
     title: "An intent is reserved when the request arrives, before the payment challenge"
     status: Accepted
     date: "2026-08-05"
+  - number: "0068"
+    file: "0068-the-key-is-claimed-before-settlement-not-before-the-challenge.md"
+    title: "The idempotency key is claimed before settlement, not before the challenge"
+    status: Accepted
+    date: "2026-08-05"

@@ -25,12 +25,19 @@ vi.mock('../../../src/lib/logger', () => ({
 vi.mock('../../../src/db/client', () => ({ db: {} }));
 
 // The reservation is a database write, so the double is its verdict, not the statement. What
-// matters for these tests is *when* it is consulted -- before the challenge -- which the
-// ordering assertions below check directly. The race it arbitrates cannot be reproduced against
-// a double at all, and is tested against a real database in
-// test/integration/x402-reservation-concurrency.test.ts (ADR-0067).
+// matters for these tests is *when* it is consulted -- on the round that carries the payment,
+// before anything is settled -- which the ordering assertions below check directly. The race it
+// arbitrates cannot be reproduced against a double at all, and is tested against a real database
+// in test/integration/x402-reservation-concurrency.test.ts (ADR-0067, ADR-0068).
+const KEY_PATTERN = /^[0-9a-fA-F]{8}(-[0-9a-fA-F]{4}){3}-[0-9a-fA-F]{12}$/;
 const idempotencyVerdict = vi.fn<[], { error: string; status: number } | null>(() => null);
 vi.mock('../../../src/services/relayed-intents', () => ({
+  // Shape only, mirroring the real validator: it is a pure function over the header, so the
+  // double may as well answer the same way the middleware's callers will see in production.
+  idempotencyKeyRefusal: (key: string | undefined) =>
+    key && KEY_PATTERN.test(key)
+      ? undefined
+      : { error: 'missing key', status: 400, envelope: { reason: 'idempotency_key_required' } },
   recordIntentPaymentAuthorization: vi.fn(async () => undefined),
   releaseUnpaidReservation: vi.fn(async () => undefined),
   reserveRelayedWrite: vi.fn(async () => {
@@ -140,7 +147,10 @@ describe('x402 middleware settlement safety', () => {
       getAmount: () => Promise.reject(new Error('database unavailable')),
     });
     const req = request();
-    (req as { headers: Record<string, string> }).headers = {};
+    // The challenge round: a well-formed key, and no payment header.
+    (req as { headers: Record<string, string> }).headers = {
+      'x-taskmarket-idempotency-key': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee',
+    };
 
     await expect(middleware(req, res, next)).resolves.not.toThrow();
 
@@ -227,8 +237,26 @@ describe('x402 middleware settlement safety', () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  // Verifies: ADR-0052
+  // Verifies: ADR-0052, ADR-0068
   describe('idempotency is checked before anything is charged', () => {
+    it('claims the key on the paying round, not on the challenge round', async () => {
+      const { reserveRelayedWrite } = await import('../../../src/services/relayed-intents');
+      const challengeRound = {
+        ...(request() as object),
+        headers: { 'x-taskmarket-idempotency-key': 'aaaaaaaa-bbbb-4ccc-8ddd-eeeeeeeeeeee' },
+      } as never;
+
+      const challengeNext = vi.fn();
+      await x402Middleware({ getAmount: () => '1000' })(challengeRound, response(), challengeNext);
+      // Nothing can be charged on a round with no payment, so there is nothing for a claim to
+      // protect -- and claiming here is what refused the paying round that follows.
+      expect(reserveRelayedWrite).not.toHaveBeenCalled();
+
+      const payingNext = vi.fn();
+      await x402Middleware({ getAmount: () => '1000' })(request(), response(), payingNext);
+      expect(reserveRelayedWrite).toHaveBeenCalledOnce();
+    });
+
     it('refuses a repeated key without settling a second payment', async () => {
       idempotencyVerdict.mockReturnValueOnce({
         error: 'A tasks.create write for this idempotency key already exists (intent i-1).',
@@ -249,7 +277,6 @@ describe('x402 middleware settlement safety', () => {
     });
 
     it('refuses a request with no key before issuing a payment challenge', async () => {
-      idempotencyVerdict.mockReturnValueOnce({ error: 'missing key', status: 400 });
       const res = response();
       const next = vi.fn();
 

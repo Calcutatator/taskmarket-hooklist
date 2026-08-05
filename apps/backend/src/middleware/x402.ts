@@ -7,6 +7,7 @@ import { apiErrorBody } from '../lib/api-error';
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
 import {
+  idempotencyKeyRefusal,
   type IntentPaymentReference,
   recordIntentPaymentAuthorization,
   releaseUnpaidReservation,
@@ -108,75 +109,53 @@ export function x402Middleware(opts: X402Options): RequestHandler {
 
     // Implements: ADR-0052
     //
-    // Ahead of everything, including the 402 challenge. This ordering is the decision, not an
-    // optimisation, and it is load-bearing in a way that is easy to refactor away:
+    // Validated ahead of everything, including the 402 challenge, and validation is all this
+    // is: the key is not claimed here (ADR-0068 -- the claim waits for the round that carries
+    // the payment, further down).
     //
-    // Settlement happens in this middleware, before any handler runs. So a retry carrying the
-    // original idempotency key would be challenged, sign a *fresh* authorization, have it
-    // settled by the facilitator, and only then reach a handler that says "you already have an
-    // intent". No second chain call -- and a second settled payment, with nothing to attach to,
-    // which becomes an orphaned payment needing a refund. That is the double charge the key
-    // exists to prevent, moved one layer up rather than removed. A key checked after settlement
-    // is not an idempotency key; it is a deduplicator for chain calls only.
-    //
-    // The same argument applies to a *missing* key, which is why it is rejected here too: let
-    // it through and the caller pays, then gets a 400 from `recordRelayedIntent` for a payment
-    // that bought nothing.
-    //
-    // The conflict deliberately carries no payment facts. This runs before any caller is
-    // authenticated -- on the challenge round there is not even a payment payload to read a
-    // payer from -- so it can say that the key is spoken for and nothing else. The caller reads
-    // the outcome from `intents.get`, which is payer-scoped and can safely say more (ADR-0049).
-    const idempotencyKey = req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()];
-    let reservation: Awaited<ReturnType<typeof reserveRelayedWrite>>;
-    try {
-      reservation = await reserveRelayedWrite({
-        db,
-        description: opts.description,
-        key: Array.isArray(idempotencyKey) ? idempotencyKey[0] : idempotencyKey,
-        route: req.originalUrl,
-      });
-    } catch (error) {
-      // Express 4 does not forward a rejected middleware promise, so an unhandled throw here
-      // leaves the request hanging until the client gives up -- and this is now a database
-      // write on the hot path of every paid endpoint. Failing closed is also the only safe
-      // direction: a claim that did not complete cannot rule out that this key is already
-      // spoken for, and proceeding would charge the caller on that assumption.
-      logger.error('Idempotency reservation failed', { error });
-      return res.status(503).json(
-        apiErrorBody({
-          reason: 'idempotency_check_unavailable',
-          message: 'Unable to claim idempotency key; retry this request',
-        })
-      );
-    }
+    // Rejecting a missing or malformed key before the challenge is the part that has to happen
+    // here. Let one through and the caller is quoted a price, signs it, is settled by the
+    // facilitator in this middleware, and only then gets a 400 from `recordRelayedIntent` for a
+    // payment that bought nothing -- and with no well-formed key there is nothing to make the
+    // retry safe either.
+    const rawIdempotencyKey = req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()];
+    const idempotencyKey = Array.isArray(rawIdempotencyKey)
+      ? rawIdempotencyKey[0]
+      : rawIdempotencyKey;
     // The envelope travels beside `error` rather than replacing it. This reply never passes
     // through tRPC's `errorFormatter` -- the middleware answers `res` itself, before any
     // procedure runs -- so it publishes the discriminator under the same `taskmarket` key by
     // hand, and a client has one reader for a paid write refused at either layer (ADR-0058).
-    if (reservation.refusal) {
-      return res
-        .status(reservation.refusal.status)
-        .json({ error: reservation.refusal.error, taskmarket: reservation.refusal.envelope });
-    }
-    const reservedIntentId = reservation.intent.id;
-    // Published so the handler's `recordRelayedIntent` and anything auditing the request can
-    // name the reservation this request holds.
-    res.locals.reservedIntentId = reservedIntentId;
+    const respondWithRefusal = (refusal: {
+      error: string;
+      status: number;
+      envelope: unknown;
+    }): Response =>
+      res.status(refusal.status).json({ error: refusal.error, taskmarket: refusal.envelope });
 
-    // Give the key back on any path that refuses the caller before they have paid. Conditional
-    // on no authorization having been recorded, which `releaseUnpaidReservation` enforces: once
-    // the settle call has been made, a thrown error does not establish that nothing settled,
-    // and such a row belongs to the sweep (ADR-0067).
+    const keyRefusal = idempotencyKeyRefusal(idempotencyKey);
+    if (keyRefusal) return respondWithRefusal(keyRefusal);
+
+    let reservedIntentId: string | undefined;
+
+    // Give the key back on any path that refuses the caller after it was claimed but before
+    // anything settled. Conditional on no authorization having been recorded, which
+    // `releaseUnpaidReservation` enforces: once the settle call has been made, a thrown error
+    // does not establish that nothing settled, and such a row belongs to the sweep (ADR-0067).
+    // The claim now sits immediately before settlement, so the window this covers is narrow --
+    // a failure to write the authorization down -- but it is not empty, and leaving such a row
+    // to its ten-minute TTL would refuse an honest retry for that long.
     const releaseReservation = async (): Promise<void> => {
+      if (!reservedIntentId) return;
+      const intentId = reservedIntentId;
       try {
-        await releaseUnpaidReservation({ db, intentId: reservedIntentId });
+        await releaseUnpaidReservation({ db, intentId });
       } catch (error) {
         // Nothing is lost by failing here -- the reservation expires on its own -- so this must
         // not turn a refusal the caller can act on into a 500.
         logger.error('Releasing an unpaid reservation failed; it will expire on its TTL', {
           error,
-          intentId: reservedIntentId,
+          intentId,
         });
       }
     };
@@ -189,7 +168,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       try {
         amount = await opts.getAmount(req);
       } catch (err) {
-        await releaseReservation();
+        // Nothing to release: this round has claimed nothing (ADR-0068).
         const msg = err instanceof Error ? err.message : 'Unable to compute payment amount';
         // 5xx because the price could not be resolved, which is ours to fix, but the reason is
         // still `payment_rejected`: from the caller's side the exchange did not begin and
@@ -287,6 +266,45 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       if (config.X402_FACILITATOR_TOKEN) {
         facilitatorHeaders['Authorization'] = `Bearer ${config.X402_FACILITATOR_TOKEN}`;
       }
+
+      // Implements: ADR-0068 -- the claim, on the round that carries the payment.
+      //
+      // Everything above this line can refuse the caller without charging them, and everything
+      // below it is the irreversible step. So this is where exactly-once charging is decided:
+      // the database arbitrates the key, atomically, and the loser is refused before it can
+      // reach `/settle`. Two concurrent payment-bearing rounds therefore produce one
+      // settlement, which is what ADR-0067 was written for -- while the exchange's own second
+      // round, which is the only other request that legitimately carries this key, finds
+      // nothing to collide with because the challenge round claimed nothing.
+      let reservation: Awaited<ReturnType<typeof reserveRelayedWrite>>;
+      try {
+        reservation = await reserveRelayedWrite({
+          db,
+          description: opts.description,
+          key: idempotencyKey,
+          route: req.originalUrl,
+        });
+      } catch (error) {
+        // Failing closed is the only safe direction: a claim that did not complete cannot rule
+        // out that this key is already spoken for, and settling on that assumption is what
+        // charges a caller twice.
+        logger.error('Idempotency reservation failed', { error });
+        await cleanupPreflight();
+        return res.status(503).json(
+          apiErrorBody({
+            reason: 'idempotency_check_unavailable',
+            message: 'Unable to claim idempotency key; retry this request',
+          })
+        );
+      }
+      if (reservation.refusal) {
+        await cleanupPreflight();
+        return respondWithRefusal(reservation.refusal);
+      }
+      reservedIntentId = reservation.intent.id;
+      // Published so the handler's `recordRelayedIntent` and anything auditing the request can
+      // name the reservation this request holds.
+      res.locals.reservedIntentId = reservedIntentId;
 
       // Implements: ADR-0067 -- write-ahead, before the irreversible step.
       //

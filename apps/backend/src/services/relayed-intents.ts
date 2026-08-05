@@ -89,10 +89,12 @@ export const RESERVED_OPERATION = 'x402.reservation';
  * minutes. Ten gives that room twice over while keeping the window in which an abandoned
  * challenge holds someone's key short.
  *
- * This is not housekeeping. The reservation is written before any caller is authenticated, so
- * without an expiry an unauthenticated client could claim keys indefinitely and the table would
- * grow without bound (ADR-0067). The steady-state row count is whatever the ingress rate limit
- * allows over this window, which is the number to reason about when tuning either.
+ * Since the claim moved onto the paying round (ADR-0068) this is housekeeping rather than a
+ * defence: a reservation is only written by a request that already carries a signed
+ * authorization, and it is either filled or released within that same request. What remains for
+ * the TTL is the case the write-ahead authorization record was built for -- a process that died
+ * between claiming the key and hearing back from the facilitator -- where the row must outlive
+ * the request long enough for the sweep to ask the token contract whether the nonce was consumed.
  */
 export const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
@@ -174,30 +176,58 @@ export type RelayedWriteRefusal = {
 };
 
 /**
- * Claim the idempotency key, before any payment challenge (ADR-0067).
+ * Refuse a request whose idempotency key could never have been idempotent (ADR-0052).
+ *
+ * Shape only, and separate from the claim below because the two happen at different moments.
+ * A missing or malformed key is rejected before the payment challenge -- charging a caller who
+ * cannot retry safely is the outcome the key exists to prevent -- while the claim waits for the
+ * round that carries the payment (ADR-0068). Validating is not claiming: this reads nothing and
+ * writes nothing.
+ */
+export function idempotencyKeyRefusal(key: string | undefined): RelayedWriteRefusal | undefined {
+  if (key && IDEMPOTENCY_KEY_PATTERN.test(key)) return undefined;
+  return {
+    error:
+      `This request requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you ` +
+      'generate for this operation. Send the same value when retrying it, and a fresh one ' +
+      'for a new operation.',
+    status: 400,
+    envelope: { reason: 'idempotency_key_required' },
+  };
+}
+
+/**
+ * Claim the idempotency key on the round that carries the payment, immediately before
+ * settlement (ADR-0067, as amended by ADR-0068).
  *
  * This used to be a read, and the read is what the defect was. `recordRelayedIntent` runs
  * inside the handler, far too late on a paid path: x402 settles in middleware, so by the time
  * the handler sees a repeated key the caller has already signed and paid for a second
- * authorization. Checking first, before the 402, fixed the sequential retry -- but a check is
- * a read, and the write it guards happens after settlement, so between the two there is a
- * window. Two concurrent requests with one key both read nothing, both are challenged, and both
- * settle. The second is then correctly refused, after its money has moved.
+ * authorization. Checking first fixed the sequential retry -- but a check is a read, and the
+ * write it guards happens after settlement, so between the two there is a window. Two
+ * concurrent requests with one key both read nothing, both settle. The second is then correctly
+ * refused, after its money has moved.
  *
  * So the check becomes a claim: creating the intent is what reserves the key. The database
  * arbitrates, by the same insert-then-interpret-the-conflict move `recordRelayedIntent` already
  * uses -- not an application-level lock, which could not span two processes and would in any
  * case have to be held across the facilitator round trip. The loser of the race is refused
- * here, before it is challenged, so it is never charged.
+ * before it is settled, so it is never charged.
+ *
+ * ADR-0067 placed that claim before the 402 challenge, which was stronger than the argument for
+ * it: x402's second round carries the same key as its first, so the exchange's own paying round
+ * collided with its own reservation and was refused for the length of the TTL. The claim
+ * therefore belongs on the round that can actually be charged -- settlement happens on exactly
+ * one round, and that round claims before it settles.
  *
  * The row created is a real intent in a new state: `reserved`, `payment_required = true`, with
  * no payment reference and no operation yet (see `RESERVED_OPERATION`). It is not broadcastable
  * in that state and it expires if nothing fills it.
  *
- * The refusal deliberately carries no payment facts. This runs before any caller is
- * authenticated -- on the challenge round there is not even a payment payload to read a payer
- * from -- so it can say the key is spoken for and nothing else. The caller reads the outcome
- * from `intents.get`, which is payer-scoped and can safely say more (ADR-0049, ADR-0058).
+ * The refusal deliberately carries no payment facts, because it is read by a caller who is not
+ * yet authenticated as anybody: it says the key is spoken for and nothing else. The caller reads
+ * the outcome from `intents.get`, which is payer-scoped and can safely say more (ADR-0049,
+ * ADR-0058).
  */
 export async function reserveRelayedWrite(input: {
   db: Db;
@@ -209,18 +239,11 @@ export async function reserveRelayedWrite(input: {
   | { refusal: RelayedWriteRefusal; intent?: undefined }
   | { refusal?: undefined; intent: RelayedIntent }
 > {
-  if (!input.key || !IDEMPOTENCY_KEY_PATTERN.test(input.key)) {
-    return {
-      refusal: {
-        error:
-          `This request requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you ` +
-          'generate for this operation. Send the same value when retrying it, and a fresh one ' +
-          'for a new operation.',
-        status: 400,
-        envelope: { reason: 'idempotency_key_required' },
-      },
-    };
-  }
+  const invalidKey = idempotencyKeyRefusal(input.key);
+  if (invalidKey) return { refusal: invalidKey };
+  // `idempotencyKeyRefusal` returning nothing is what establishes this, and it is the only way
+  // to reach here; the narrowing is not expressible on its return type.
+  const key = input.key as string;
 
   const now = input.now ?? new Date();
   const expiresAt = new Date(now.getTime() + RESERVATION_TTL_MS);
@@ -232,7 +255,7 @@ export async function reserveRelayedWrite(input: {
     .insert(relayedIntents)
     .values({
       id: randomUUID(),
-      idempotencyKey: input.key,
+      idempotencyKey: key,
       operation: RESERVED_OPERATION,
       paymentRequired: true,
       payload: {
@@ -274,7 +297,7 @@ export async function reserveRelayedWrite(input: {
     })
     .where(
       and(
-        eq(relayedIntents.idempotencyKey, input.key),
+        eq(relayedIntents.idempotencyKey, key),
         eq(relayedIntents.status, 'reserved'),
         isNull(relayedIntents.paymentAuthNonce),
         lt(relayedIntents.reservedExpiresAt, now)
@@ -283,7 +306,7 @@ export async function reserveRelayedWrite(input: {
     .returning();
   if (takenOver) return { intent: takenOver };
 
-  const existing = await findIntentByIdempotencyKey(input.db, input.key);
+  const existing = await findIntentByIdempotencyKey(input.db, key);
   if (!existing) {
     // The colliding row went away between the insert and this read. Refusing is still the safe
     // answer: retrying with the same key will now succeed, and charging on the assumption that
@@ -304,7 +327,7 @@ export async function reserveRelayedWrite(input: {
       refusal: {
         error: 'This idempotency key could not be claimed; retry this request with the same key.',
         status: 503,
-        envelope: { reason: 'idempotency_check_unavailable', idempotencyKey: input.key },
+        envelope: { reason: 'idempotency_check_unavailable', idempotencyKey: key },
       },
     };
   }

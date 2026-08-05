@@ -106,13 +106,13 @@ async function resolveExpiredReservation(intent: RelayedIntent): Promise<void> {
 /**
  * Retire reservations nobody filled.
  *
- * The TTL is load-bearing rather than housekeeping. The reservation is written before any
- * caller is authenticated -- the pre-402 path has no payment payload and therefore no payer --
- * so an unauthenticated client can create rows here, and without this sweep the table would
- * grow for as long as it kept sending fresh UUIDs. What bounds the damage is the pair: ingress
- * rate limiting caps the rate, and the TTL caps how long each row survives, so the steady-state
- * row count is the product of the two rather than unbounded. Neither half works alone, and
- * loosening either one loosens this.
+ * Since the claim moved onto the round that carries the payment (ADR-0068), a reservation is
+ * only ever written by a request holding a signed authorization, and that request either fills
+ * it or releases it. So what reaches this sweep is the narrow case the write-ahead
+ * authorization record exists for: a process that died between claiming the key and hearing
+ * back from the facilitator. Those rows must still not be deleted on age alone -- the money may
+ * have moved -- which is why expiry asks the token contract about the recorded (payer, nonce)
+ * pair rather than inferring from the absence of a payment reference.
  */
 export async function expireStaleReservations(limit: number): Promise<void> {
   for (const intent of await listExpiredReservations({ db, limit })) {

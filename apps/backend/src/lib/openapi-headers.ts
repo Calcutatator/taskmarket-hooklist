@@ -5,7 +5,7 @@ import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 /**
  * The request headers a relayed write requires, declared so the OpenAPI spec says so.
  *
- * ADR-0052 made `Idempotency-Key` mandatory on every relayed write and enforced it before the 402
+ * ADR-0052 made `Idempotency-Key` mandatory on every relayed write and enforced its presence before the 402
  * challenge -- a request without one is a 400 and is never charged. The spec did not mention the
  * header at all, so a raw-REST caller reading the machine-readable contract saw no such
  * requirement, sent no such header, got a 400, and had nothing in the document telling them why.

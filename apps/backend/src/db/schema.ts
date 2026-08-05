@@ -945,9 +945,9 @@ export const relayedIntents = pgTable(
     // when the intent is created, and not a report on whether money has arrived (ADR-0067).
     //
     // This column exists because the absence of a payment reference used to carry exactly one
-    // meaning ("a free relayed write") and now carries two. Since an intent is created as a
-    // reservation before the 402 challenge, an intent with no `payment_tx_hash` is either a
-    // free write, correct and terminal, or a paid write whose payment has not landed yet.
+    // meaning ("a free relayed write") and now carries two. Since a paid intent is created as
+    // a reservation just before its payment settles, an intent with no `payment_tx_hash` is
+    // either a free write, correct and terminal, or a paid write whose payment has not landed.
     // Those are opposite conclusions for every sweep that looks at them: the first is nothing
     // owed, the second is a payer who may be out of pocket. Read this column, never the
     // absence of the two below, to tell them apart.
@@ -970,8 +970,9 @@ export const relayedIntents = pgTable(
     paymentAuthPayer: text('payment_auth_payer'),
     paymentAuthAmount: numeric('payment_auth_amount', { precision: 78, scale: 0 }),
     // When a reservation stops being one. Set on creation, cleared the moment the intent is
-    // filled in by its handler. Load-bearing rather than housekeeping: the pre-402 path is
-    // reachable unauthenticated, so without an expiry a caller could claim keys indefinitely.
+    // filled in by its handler. It bounds the one case a request cannot clean up after itself:
+    // a process that died between claiming the key and hearing back from the facilitator
+    // (ADR-0068).
     reservedExpiresAt: timestamp('reserved_expires_at', { withTimezone: true }),
     // The client's own key for this logical operation (ADR-0052), mandatory on every relayed
     // write. Client-originated because the intent id cannot be the recovery handle: it is

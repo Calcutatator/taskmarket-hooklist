@@ -156,41 +156,66 @@ describeWithDatabase('x402 reservation claims the idempotency key before the cha
   });
 
   /**
-   * The same race one step earlier: two requests that have not yet been challenged.
+   * The exchange's own second round (ADR-0068).
    *
-   * A client that asks for the 402 first (the ordinary x402 handshake) must also lose the race
-   * before it is told the price, not after it has paid it. Nothing settles on this path, so the
-   * evidence is that exactly one of them is quoted at all.
+   * x402 is two rounds. The client asks for a price, is quoted one, signs it, and comes back
+   * with the *same* idempotency key, because it is the same logical write. Under the
+   * pre-challenge claim this second round found a live reservation under its own key, could
+   * not tell itself from a competitor, and was refused `409 idempotency_key_reused` for the
+   * length of the ten-minute TTL -- so every paid write was refused on the round that pays for
+   * it.
    */
-  it('refuses the second request before challenging it', async () => {
+  it('lets a challenged request come back and pay with the same key', async () => {
     const key = randomUUID();
+    const payer = '0x3333333333333333333333333333333333333333';
 
+    const challenge = await request(app).post('/paid').set(IDEMPOTENCY_KEY_HEADER, key).send({});
+    expect(challenge.status).toBe(402);
+
+    const paid = await request(app)
+      .post('/paid')
+      .set(IDEMPOTENCY_KEY_HEADER, key)
+      .set('payment-signature', paymentHeader(payer))
+      .send({});
+
+    expect(paid.status).toBe(200);
+    expect(settleCalls).toHaveLength(1);
+  });
+
+  /**
+   * The challenge round writes nothing (ADR-0068).
+   *
+   * Nothing can be charged on a round that carries no payment, so there is nothing for a claim
+   * to protect there -- and claiming anyway is what broke the second round above. It also means
+   * an unauthenticated caller cannot create rows by asking for prices.
+   */
+  it('records nothing for an unanswered challenge', async () => {
+    const key = randomUUID();
     const responses = await Promise.all([
       request(app).post('/paid').set(IDEMPOTENCY_KEY_HEADER, key).send({}),
       request(app).post('/paid').set(IDEMPOTENCY_KEY_HEADER, key).send({}),
     ]);
 
     expect(settleCalls).toHaveLength(0);
-    expect(responses.map((response) => response.status).sort()).toEqual([402, 409]);
+    // Both are quoted: a price is not a charge, and neither round claimed anything.
+    expect(responses.map((response) => response.status)).toEqual([402, 402]);
+    expect(await database.select().from(relayedIntents)).toHaveLength(0);
   });
 
   /**
-   * The reservation exists as a row before any money is asked for, and it is not broadcastable.
-   *
-   * `status = 'reserved'` is the structural half of that guarantee -- every query that hands an
-   * intent to the chain requires `recorded` -- and this is the assertion that the pre-402 path
-   * actually reaches that state rather than merely intending to.
+   * A key that could never have been idempotent is still refused before the challenge
+   * (ADR-0052, unchanged by ADR-0068). Validation is not a claim.
    */
-  it('records a reserved, payment-required intent for an unanswered challenge', async () => {
-    const key = randomUUID();
-    await request(app).post('/paid').set(IDEMPOTENCY_KEY_HEADER, key).send({});
+  it('refuses a missing or malformed key before issuing a challenge, charging nothing', async () => {
+    const missing = await request(app).post('/paid').send({});
+    const malformed = await request(app).post('/paid').set(IDEMPOTENCY_KEY_HEADER, 'nope').send({});
 
-    const [row] = await database.select().from(relayedIntents);
-    expect(row.idempotencyKey).toBe(key);
-    expect(row.status).toBe('reserved');
-    expect(row.paymentRequired).toBe(true);
-    expect(row.paymentTxHash).toBeNull();
-    expect(row.reservedExpiresAt).not.toBeNull();
+    for (const response of [missing, malformed]) {
+      expect(response.status).toBe(400);
+      expect(response.body?.taskmarket?.reason).toBe('idempotency_key_required');
+    }
+    expect(settleCalls).toHaveLength(0);
+    expect(await database.select().from(relayedIntents)).toHaveLength(0);
   });
 
   /**
