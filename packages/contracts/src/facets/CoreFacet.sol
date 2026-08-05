@@ -87,7 +87,17 @@ contract CoreFacet {
     ) external returns (bytes32 taskId) {
         // A zero-valued struct is exactly "no evaluator", which is what this signature has always
         // meant. It shares the whole body below, so the shim cannot drift from the real path.
-        ITMPCore.TaskEvaluatorConfig memory noEvaluator;
+        // Every field is named and zeroed explicitly rather than left to Solidity's
+        // zero-initialisation, so that adding a field to TaskEvaluatorConfig fails to compile
+        // here and forces whoever adds it to say what the shim should pass.
+        ITMPCore.TaskEvaluatorConfig memory noEvaluator = ITMPCore.TaskEvaluatorConfig({
+            evaluator: address(0),
+            evaluatorStake: 0,
+            evaluatorFeeBps: 0,
+            evaluationWindow: 0,
+            appealWindow: 0,
+            disputeResolver: address(0)
+        });
         return _createTask(
             ITMPCore.TaskConfig({
                 reward: reward,
