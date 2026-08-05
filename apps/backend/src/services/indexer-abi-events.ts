@@ -23,9 +23,50 @@ import {
  * Together they must account for every event in the generated ABI --
  * test/unit/config/indexer-abi-drift.test.ts fails the build otherwise, so a newly
  * added contract event forces an explicit decision instead of being dropped.
+ *
+ * Those lists are also checked at compile time. The generated ABIs are `as const`
+ * literals, so every event name and parameter type survives into the type system, and
+ * the name unions below are derived from them. An event renamed or removed in the
+ * contracts stops being assignable and `tsc` rejects this file -- the drift test never
+ * has to run, and neither does the indexer. That is the typed-bindings half of
+ * ADR-0065. The drift test remains for the half types cannot answer here: whether an
+ * event exists that nothing handles at all, which no exhaustiveness check can decide
+ * while the indexer deliberately watches a subset.
  */
 
 type AbiLike = readonly unknown[];
+
+/**
+ * The event names an `as const` ABI declares, as a union of string literals. A JSON
+ * import cannot produce this -- there `name` is `string`, and every constraint below
+ * would degenerate into a tautology that accepts anything.
+ */
+type EventNamesOf<abi extends AbiLike> = Extract<
+  abi[number],
+  { readonly type: 'event'; readonly name: string }
+>['name'];
+
+/** The parameter names a specific generated event declares. */
+type EventArgNamesOf<abi extends AbiLike, name extends EventNamesOf<abi>> = Extract<
+  abi[number],
+  { readonly type: 'event'; readonly name: name; readonly inputs: readonly { name: string }[] }
+>['inputs'][number]['name'];
+
+export type TaskMarketEventName = EventNamesOf<typeof TaskMarketABI>;
+export type RewardHookEventName = EventNamesOf<typeof TaskTokenRewardHookABI>;
+export type RewardVaultEventName = EventNamesOf<typeof RewardVaultABI>;
+export type EpochBudgetEventName = EventNamesOf<typeof EpochBudgetABI>;
+
+/**
+ * Parameter names of a Diamond event, for consumers that destructure a decoded log.
+ * `MainEventArgName<'TaskCompleted'>` changes the moment that event's parameters
+ * change on-chain, so a consumer that pins its expectations against it fails to
+ * compile rather than silently reading `undefined`.
+ */
+export type MainEventArgName<name extends TaskMarketEventName> = EventArgNamesOf<
+  typeof TaskMarketABI,
+  name
+>;
 
 function eventsByName(abi: AbiLike, label: string): Map<string, AbiEvent> {
   const map = new Map<string, AbiEvent>();
@@ -39,10 +80,10 @@ function eventsByName(abi: AbiLike, label: string): Map<string, AbiEvent> {
   return map;
 }
 
-const TASK_MARKET_EVENTS = eventsByName(TaskMarketABI as AbiLike, 'TaskMarket');
-const REWARD_HOOK_EVENTS = eventsByName(TaskTokenRewardHookABI as AbiLike, 'TaskTokenRewardHook');
-const REWARD_VAULT_EVENTS = eventsByName(RewardVaultABI as AbiLike, 'RewardVault');
-const EPOCH_BUDGET_EVENTS = eventsByName(EpochBudgetABI as AbiLike, 'EpochBudget');
+const TASK_MARKET_EVENTS = eventsByName(TaskMarketABI, 'TaskMarket');
+const REWARD_HOOK_EVENTS = eventsByName(TaskTokenRewardHookABI, 'TaskTokenRewardHook');
+const REWARD_VAULT_EVENTS = eventsByName(RewardVaultABI, 'RewardVault');
+const EPOCH_BUDGET_EVENTS = eventsByName(EpochBudgetABI, 'EpochBudget');
 
 function resolve(
   source: Map<string, AbiEvent>,
@@ -101,14 +142,14 @@ export const MAIN_INDEXED_EVENT_NAMES = [
   'Unpaused',
   'OwnershipTransferStarted',
   'OwnershipTransferred',
-] as const;
+] as const satisfies readonly TaskMarketEventName[];
 
 /**
  * Diamond events that exist on-chain but are deliberately not indexed. Anything
  * added to the contracts and not added to MAIN_INDEXED_EVENT_NAMES must be listed
  * here with a reason, or the drift test fails.
  */
-export const MAIN_UNINDEXED_EVENTS: Record<string, string> = {
+export const MAIN_UNINDEXED_EVENTS: Partial<Record<TaskMarketEventName, string>> = {
   // OpenZeppelin Initializable's marker, emitted once per facet initialisation
   // during deploy/upgrade. Carries no protocol meaning beyond what DiamondCut
   // already records.
@@ -160,9 +201,9 @@ export const REWARD_HOOK_INDEXED_EVENT_NAMES = [
   'RewardsWithdrawn',
   'PriceUpdated',
   'BonusBpsUpdated',
-] as const;
+] as const satisfies readonly RewardHookEventName[];
 
-export const REWARD_HOOK_UNINDEXED_EVENTS: Record<string, string> = {
+export const REWARD_HOOK_UNINDEXED_EVENTS: Partial<Record<RewardHookEventName, string>> = {
   // Hook ownership is an operator concern tracked on the Diamond, whose own
   // OwnershipTransferred/OwnershipTransferStarted pair is indexed.
   OwnershipTransferred: 'hook ownership changes are operational, not protocol state',
@@ -183,9 +224,9 @@ export const REWARD_VAULT_INDEXED_EVENT_NAMES = [
   'Withdrawn',
   'EmergencyWithdrawn',
   'HookSet',
-] as const;
+] as const satisfies readonly RewardVaultEventName[];
 
-export const REWARD_VAULT_UNINDEXED_EVENTS: Record<string, string> = {
+export const REWARD_VAULT_UNINDEXED_EVENTS: Partial<Record<RewardVaultEventName, string>> = {
   OwnershipTransferred: 'vault ownership changes are operational, not protocol state',
 };
 
@@ -202,9 +243,9 @@ export const EPOCH_BUDGET_INDEXED_EVENT_NAMES = [
   'Released',
   'EpochRolled',
   'HookSet',
-] as const;
+] as const satisfies readonly EpochBudgetEventName[];
 
-export const EPOCH_BUDGET_UNINDEXED_EVENTS: Record<string, string> = {
+export const EPOCH_BUDGET_UNINDEXED_EVENTS: Partial<Record<EpochBudgetEventName, string>> = {
   OwnershipTransferred: 'budget ownership changes are operational, not protocol state',
 };
 

@@ -14,7 +14,7 @@ help:
 	@echo "  make install              - Same as init"
 	@echo "  make deploy <env>         - Deploy contracts (testnet|mainnet|preview)"
 	@echo "  make release              - Tag and push a production release (deploys backend + frontend)"
-	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates abi/TaskMarket.json"
+	@echo "  make build <app|all>      - Build specific app or all (backend|frontend|web|docs|shared|contracts|storybook|all); 'contracts' also regenerates packages/contracts/abi/ (JSON + typed bindings)"
 	@echo "  make dev [storybook]      - Start all dev servers, optionally with Storybook"
 	@echo "  make start <service>      - Start specific service (db|backend|frontend|web|mock-api|mock-web|docs|anvil|storybook)"
 	@echo "  make storybook            - Start the component library on port 6006"
