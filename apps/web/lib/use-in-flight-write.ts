@@ -126,6 +126,8 @@ export function useInFlightWrite(toastMessage: string): UseInFlightWrite {
   routerRef.current = router;
   // Terminal, so the effect must not resume polling if it is ever re-created.
   const failureRef = useRef<FailedWriteOutcome | null>(null);
+  /** True while a submission is running, so a second one cannot go out under the same key. */
+  const inFlightRef = useRef(false);
   failureRef.current = failure;
 
   useEffect(() => {
@@ -190,6 +192,28 @@ export function useInFlightWrite(toastMessage: string): UseInFlightWrite {
   }, [state]);
 
   async function submit<R extends InFlightWriteResult>(
+    run: (idempotencyKey: string) => Promise<R>
+  ): Promise<SubmitOutcome<R>> {
+    // One submission at a time per hook instance, because a second one would go out under the
+    // *same* key -- the key rotates on an outcome, and an in-flight submission has not had one.
+    // A double-clicked button is the ordinary way this happens.
+    //
+    // The backend refuses the duplicate rather than charging it (ADR-0068 claims the key on the
+    // round that carries payment, before settlement), so this is not what stops a double charge.
+    // What it stops is the client causing one to be refused: the loser has already signed a
+    // payment authorization by then, which is wasted work and surfaces to the user as a failure
+    // for a write that is in fact proceeding. Correctness is the server's job; not provoking it
+    // is ours.
+    if (inFlightRef.current) return { handled: true };
+    inFlightRef.current = true;
+    try {
+      return await runSubmission(run);
+    } finally {
+      inFlightRef.current = false;
+    }
+  }
+
+  async function runSubmission<R extends InFlightWriteResult>(
     run: (idempotencyKey: string) => Promise<R>
   ): Promise<SubmitOutcome<R>> {
     const idempotencyKey = idempotencyKeyRef.current!;
