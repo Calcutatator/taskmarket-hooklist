@@ -128,6 +128,26 @@ export async function runRelayedIntent(
     payload: input.payload,
   });
 
+  // A reservation must never reach the chain (ADR-0067). The window between reserving a key and
+  // attaching its payment is a window in which an intent exists for work nobody has paid for,
+  // and this is the guard standing between that and free execution of a paid operation.
+  //
+  // Structurally it cannot happen: `recordRelayedIntent` leaves `reserved` for `recorded` in
+  // the same statement that attaches the payment, and `claimIntentForBroadcast` matches only
+  // `recorded` rows, so a reservation has nothing to claim. This says so anyway, in the one
+  // place that turns an intent into a transaction, because "it cannot happen" is a property of
+  // two other functions and this is where it would cost money.
+  if (intent.status === 'reserved') {
+    throw apiError({
+      reason: 'idempotency_key_reused',
+      intentId: intent.id,
+      intentStatus: 'reserved',
+      operation: input.operation,
+      idempotencyKey: intent.idempotencyKey,
+      message: `${input.operation} has not been paid for and cannot be submitted (intent ${intent.id}).`,
+    });
+  }
+
   // The row that came back may not be new. `recordRelayedIntent` is keyed on the caller's
   // idempotency key, so a retry of the same operation gets the *original* intent back --
   // which may already have a transaction on chain or be finished. That reuse is the point,

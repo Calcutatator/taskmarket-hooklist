@@ -24,12 +24,19 @@ vi.mock('../../../src/lib/logger', () => ({
 
 vi.mock('../../../src/db/client', () => ({ db: {} }));
 
-// The idempotency precondition is a database read, so the double is the verdict, not the
-// query. What matters for these tests is *when* it is consulted, which the ordering
-// assertions below check directly.
+// The reservation is a database write, so the double is its verdict, not the statement. What
+// matters for these tests is *when* it is consulted -- before the challenge -- which the
+// ordering assertions below check directly. The race it arbitrates cannot be reproduced against
+// a double at all, and is tested against a real database in
+// test/integration/x402-reservation-concurrency.test.ts (ADR-0067).
 const idempotencyVerdict = vi.fn<[], { error: string; status: number } | null>(() => null);
 vi.mock('../../../src/services/relayed-intents', () => ({
-  checkRelayedWriteIdempotency: vi.fn(async () => idempotencyVerdict()),
+  recordIntentPaymentAuthorization: vi.fn(async () => undefined),
+  releaseUnpaidReservation: vi.fn(async () => undefined),
+  reserveRelayedWrite: vi.fn(async () => {
+    const refusal = idempotencyVerdict();
+    return refusal ? { refusal } : { intent: { id: 'intent-reserved' } };
+  }),
 }));
 
 import { X402PreflightError, x402Middleware } from '../../../src/middleware/x402';

@@ -3,6 +3,7 @@ import { db } from '../db/client';
 import { logger } from '../lib/logger';
 import { dispatchRelayedIntent } from './relayed-intent-registry';
 import { settleAbandonedIntents } from './relayed-intent-settlement';
+import { expireStaleReservations } from './reservation-sweep';
 import { listUnbroadcastIntents } from './relayed-intents';
 
 export const DEFAULT_INTENT_WORKER_INTERVAL_MS = 10_000;
@@ -77,6 +78,13 @@ export function createRelayedIntentWorker(options?: {
     // finally refundable. Settlement makes that call, not this worker -- the worker only says
     // when to look (ADR-0048).
     await settleAbandonedIntents(MAX_INTENTS_PER_PASS);
+
+    // Reservations that were claimed and never filled (ADR-0067). Runs on the same pass because
+    // it is the same kind of work -- retiring an intent nothing is going to finish -- but it is
+    // a separate sweep because the evidence it needs is different: an abandoned intent is
+    // decided from its own retry budget, while a reservation cannot be retired until the token
+    // contract has said no payment landed against it.
+    await expireStaleReservations(MAX_INTENTS_PER_PASS);
   };
 }
 

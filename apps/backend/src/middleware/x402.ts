@@ -7,8 +7,10 @@ import { apiErrorBody } from '../lib/api-error';
 import { getServerConfig } from '../config/env';
 import { db } from '../db/client';
 import {
-  checkRelayedWriteIdempotency,
   type IntentPaymentReference,
+  recordIntentPaymentAuthorization,
+  releaseUnpaidReservation,
+  reserveRelayedWrite,
 } from '../services/relayed-intents';
 import { logger } from '../lib/logger';
 import { createServerWallet } from '../lib/wallet';
@@ -126,23 +128,25 @@ export function x402Middleware(opts: X402Options): RequestHandler {
     // payer from -- so it can say that the key is spoken for and nothing else. The caller reads
     // the outcome from `intents.get`, which is payer-scoped and can safely say more (ADR-0049).
     const idempotencyKey = req.headers[IDEMPOTENCY_KEY_HEADER.toLowerCase()];
-    let precondition: Awaited<ReturnType<typeof checkRelayedWriteIdempotency>>;
+    let reservation: Awaited<ReturnType<typeof reserveRelayedWrite>>;
     try {
-      precondition = await checkRelayedWriteIdempotency({
+      reservation = await reserveRelayedWrite({
         db,
+        description: opts.description,
         key: Array.isArray(idempotencyKey) ? idempotencyKey[0] : idempotencyKey,
+        route: req.originalUrl,
       });
     } catch (error) {
       // Express 4 does not forward a rejected middleware promise, so an unhandled throw here
-      // leaves the request hanging until the client gives up -- and this is a database read on
-      // the hot path of every paid endpoint. Failing closed is also the only safe direction: a
-      // read that did not answer cannot rule out that this key is already spoken for, and
-      // proceeding would charge the caller on that assumption.
-      logger.error('Idempotency precondition check failed', { error });
+      // leaves the request hanging until the client gives up -- and this is now a database
+      // write on the hot path of every paid endpoint. Failing closed is also the only safe
+      // direction: a claim that did not complete cannot rule out that this key is already
+      // spoken for, and proceeding would charge the caller on that assumption.
+      logger.error('Idempotency reservation failed', { error });
       return res.status(503).json(
         apiErrorBody({
           reason: 'idempotency_check_unavailable',
-          message: 'Unable to verify idempotency key; retry this request',
+          message: 'Unable to claim idempotency key; retry this request',
         })
       );
     }
@@ -150,11 +154,32 @@ export function x402Middleware(opts: X402Options): RequestHandler {
     // through tRPC's `errorFormatter` -- the middleware answers `res` itself, before any
     // procedure runs -- so it publishes the discriminator under the same `taskmarket` key by
     // hand, and a client has one reader for a paid write refused at either layer (ADR-0058).
-    if (precondition) {
+    if (reservation.refusal) {
       return res
-        .status(precondition.status)
-        .json({ error: precondition.error, taskmarket: precondition.envelope });
+        .status(reservation.refusal.status)
+        .json({ error: reservation.refusal.error, taskmarket: reservation.refusal.envelope });
     }
+    const reservedIntentId = reservation.intent.id;
+    // Published so the handler's `recordRelayedIntent` and anything auditing the request can
+    // name the reservation this request holds.
+    res.locals.reservedIntentId = reservedIntentId;
+
+    // Give the key back on any path that refuses the caller before they have paid. Conditional
+    // on no authorization having been recorded, which `releaseUnpaidReservation` enforces: once
+    // the settle call has been made, a thrown error does not establish that nothing settled,
+    // and such a row belongs to the sweep (ADR-0067).
+    const releaseReservation = async (): Promise<void> => {
+      try {
+        await releaseUnpaidReservation({ db, intentId: reservedIntentId });
+      } catch (error) {
+        // Nothing is lost by failing here -- the reservation expires on its own -- so this must
+        // not turn a refusal the caller can act on into a 500.
+        logger.error('Releasing an unpaid reservation failed; it will expire on its TTL', {
+          error,
+          intentId: reservedIntentId,
+        });
+      }
+    };
 
     if (!paymentSignature) {
       // getAmount can be async and DB-backed; a rejection here must not
@@ -164,6 +189,7 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       try {
         amount = await opts.getAmount(req);
       } catch (err) {
+        await releaseReservation();
         const msg = err instanceof Error ? err.message : 'Unable to compute payment amount';
         // 5xx because the price could not be resolved, which is ours to fix, but the reason is
         // still `payment_rejected`: from the caller's side the exchange did not begin and
@@ -262,6 +288,26 @@ export function x402Middleware(opts: X402Options): RequestHandler {
         facilitatorHeaders['Authorization'] = `Bearer ${config.X402_FACILITATOR_TOKEN}`;
       }
 
+      // Implements: ADR-0067 -- write-ahead, before the irreversible step.
+      //
+      // This is the same move ADR-0045 made for chain calls, one layer further out: record what
+      // is about to happen before asking for it, so a process that dies mid-settlement leaves a
+      // reservation naming the exact authorization rather than a row indistinguishable from an
+      // abandoned challenge. The binding between this payment and this reservation exists right
+      // here and nowhere else -- x402's payment requirements carry no nonce field, so the
+      // facilitator never sees ours and a settled payment cannot name its own reservation. What
+      // is durable is what we write down before we ask.
+      //
+      // It is a record of an attempt, never evidence money moved: the facilitator may reject
+      // this authorization, and it may never be settled at all.
+      await recordIntentPaymentAuthorization({
+        db,
+        amount: expectedAmount,
+        intentId: reservedIntentId,
+        nonce: String(authorization?.nonce ?? ''),
+        payer,
+      });
+
       const settleRes = await fetchWithTimeout(
         `${config.X402_FACILITATOR_URL}/settle`,
         {
@@ -318,6 +364,11 @@ export function x402Middleware(opts: X402Options): RequestHandler {
       next();
     } catch (err) {
       await cleanupPreflight();
+      // Best effort, and precisely bounded: this only takes the key back when no authorization
+      // was ever recorded against it. A failure after the settle call was made leaves the row
+      // for the sweep, which can ask the token contract whether the nonce was consumed --
+      // a question this catch block has no way to answer (ADR-0067).
+      await releaseReservation();
       const msg = err instanceof Error ? err.message : 'Payment verification failed';
       if (err instanceof X402PreflightError) {
         return res

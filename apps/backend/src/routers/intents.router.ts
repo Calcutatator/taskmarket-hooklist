@@ -119,7 +119,10 @@ export const intentsRouter = router({
         intentId: intent.id,
         idempotencyKey: intent.idempotencyKey,
         operation: intent.operation,
-        status: intent.status as 'recorded' | 'broadcast' | 'completed' | 'failed',
+        // 'reserved' included since ADR-0067: a key can name an intent whose payment has not
+        // landed. A cast that omitted it would not fail here -- it would fail in the output
+        // schema, as a 500, for a caller doing exactly what the 409 told them to do.
+        status: intent.status as 'reserved' | 'recorded' | 'broadcast' | 'completed' | 'failed',
         txHash: intent.txHash ?? null,
         // `lastError` is also written on a non-terminal completion failure, where it is a
         // progress note rather than a verdict. Only a `failed` intent has a terminal reason,

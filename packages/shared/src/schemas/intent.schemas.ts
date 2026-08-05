@@ -28,7 +28,12 @@ export const IntentStatusResponseSchema = z.object({
   idempotencyKey: z.string(),
   /** The operation kind, e.g. `tasks.create`. */
   operation: z.string(),
-  status: z.enum(['recorded', 'broadcast', 'completed', 'failed']),
+  /**
+   * `reserved` is the pre-payment state (ADR-0067): the key is claimed and the caller has been
+   * challenged, but no payment has landed and nothing has been sent to the chain. It is
+   * non-terminal, it is never broadcastable, and it expires if it is never filled.
+   */
+  status: z.enum(['reserved', 'recorded', 'broadcast', 'completed', 'failed']),
   /**
    * Known once something has been broadcast, and explicitly not the handle: the reconciler
    * may land a replacement at the same nonce, which is a different hash for the same intent.

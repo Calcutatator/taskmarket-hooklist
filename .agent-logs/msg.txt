@@ -1,0 +1,35 @@
+feat(backend): reserve a relayed intent before the payment challenge
+
+Implements ADR-0067.
+
+The idempotency check ran before the 402 challenge but only read, while the
+intent that would claim the key was written after settlement. Two concurrent
+requests carrying the same key both read nothing, both were challenged, and
+both settled a payment; the second was then correctly refused, after its money
+had moved.
+
+Creating the intent is now what claims the key, and it happens before any
+challenge. The database arbitrates the race by the same insert-then-interpret-
+the-conflict move recordRelayedIntent already used, so the loser is refused
+before it is asked to pay.
+
+An intent gains payment_required, so the absence of a payment reference stops
+carrying two opposite meanings: a free relayed write owes nothing, while a
+payment-required intent with no reference is a reservation awaiting settlement.
+Both settlement sweeps and the registry's terminal-state decision now read that
+column rather than inferring from absence.
+
+A reservation is structurally non-broadcastable: status 'reserved' is excluded
+from every query that hands an intent to the chain, its placeholder operation
+cannot resolve to a completion handler, and runRelayedIntent refuses one
+outright.
+
+The middleware records the EIP-3009 authorization it is about to settle before
+it posts to the facilitator, never after. A process that dies mid-settlement
+then leaves a reservation naming the exact authorization, so the expiry sweep
+asks the token contract about that specific nonce instead of inferring from
+absence. Such a record is readable only as an attempt; nothing refunds,
+credits or broadcasts on it.
+
+Reservations expire on a TTL and are swept, and are never expired without first
+establishing that no payment landed against them.

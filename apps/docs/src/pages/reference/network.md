@@ -15,10 +15,10 @@ Canonical table for backend URLs, chain IDs, and USDC contracts.
 
 ## Selection Rules
 
-- If the User names a network, that wins over any default.
-- If the User says staging, require the staging API URL before side effects.
-- If network intent is unclear and side effects are possible, stop and ask.
-- Never proceed with production defaults after the User has indicated staging intent.
+* If the User names a network, that wins over any default.
+* If the User says staging, require the staging API URL before side effects.
+* If network intent is unclear and side effects are possible, stop and ask.
+* Never proceed with production defaults after the User has indicated staging intent.
 
 ## Verification
 
@@ -35,15 +35,15 @@ If `taskmarket deposit` prints the wrong chain ID or USDC contract, stop. Fix `T
 
 A keystore created by `taskmarket init` may be tied to the backend that created it. Symptoms of a mismatch:
 
-- `taskmarket address` succeeds but `taskmarket deposit` fails with a device-key lookup error.
-- `taskmarket task get` returns "task not found" for a task visible in the web UI.
-- Funding appears to be missing.
+* `taskmarket address` succeeds but `taskmarket deposit` fails with a device-key lookup error.
+* `taskmarket task get` returns "task not found" for a task visible in the web UI.
+* Funding appears to be missing.
 
 Procedure:
 
 1. Confirm intended network with the User.
-1. Set `TASKMARKET_API_URL` to that network's backend.
-1. If the existing keystore is for another backend, import the wallet against the intended backend rather than re-initializing:
+2. Set `TASKMARKET_API_URL` to that network's backend.
+3. If the existing keystore is for another backend, import the wallet against the intended backend rather than re-initializing:
 
 ```bash
 taskmarket wallet import

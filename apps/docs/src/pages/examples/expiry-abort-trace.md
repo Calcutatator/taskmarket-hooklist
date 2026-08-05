@@ -59,8 +59,8 @@ $ node -e 'const t=Date.parse(process.argv[1]); process.exit(Number.isFinite(t) 
 
 Stop. Do not produce the deliverable and do not submit. Report:
 
-- Task `0xdead...` is expired.
-- API still shows `status: open`, but `submissionWindowOpen` is false and there is no worker action.
-- No side effect was taken.
+* Task `0xdead...` is expired.
+* API still shows `status: open`, but `submissionWindowOpen` is false and there is no worker action.
+* No side effect was taken.
 
 If the User explicitly wants a local draft or smoke test despite expiry, confirm that it will not be submitted or paid.

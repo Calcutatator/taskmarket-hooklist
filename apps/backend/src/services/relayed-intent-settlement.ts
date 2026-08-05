@@ -79,7 +79,23 @@ export async function settleAbandonedIntents(limit: number): Promise<void> {
 
     // `payer` alone does not mean paid: every intent records one for provenance, free or not.
     // A payment hash or an amount is what says money moved for this intent.
-    if (!intent.paymentTxHash && !intent.paymentAmount) continue;
+    //
+    // `payment_required` is consulted first because the absence of those two no longer has one
+    // meaning (ADR-0067). A free relayed write has nothing to refund and is correct here; an
+    // intent whose route *did* require payment and still has no reference is not correct at
+    // all -- it is a reservation that reached `recorded` without its payment being attached,
+    // which the fill makes impossible in one statement and which is therefore a defect if it
+    // ever appears. Skipping it silently as though it were free is exactly how a pending
+    // payment goes unreconciled, so it is reported.
+    if (!intent.paymentTxHash && !intent.paymentAmount) {
+      if (intent.paymentRequired) {
+        logger.error('Abandoned intent required payment but carries no payment reference', {
+          intentId: intent.id,
+          operation: intent.operation,
+        });
+      }
+      continue;
+    }
 
     // A row carrying part of a payment reference is a bug, not a state to move past. It was
     // reachable while the reference lived in three independently optional fields: a paid path
@@ -171,12 +187,23 @@ export function createRelayedIntentSettlement(): RelayedIntentSettlement {
       // waiting to be returned. Refunding on its behalf would have to guess whose payment it
       // meant, and the only available guess -- some earlier operation's -- is a double spend,
       // since that operation's own transaction succeeded and bought what it bought.
+      //
+      // As in the abandoned sweep above, `payment_required` decides which of the two meanings
+      // an absent reference has (ADR-0067). A free write owes nothing; a payment-required
+      // intent with no reference is a defect, and reporting the two identically is how a
+      // pending payment would be written off as a free write.
       if (!intent.paymentTxHash && !intent.paymentAmount) {
-        logger.error('Relayed intent failed on chain; nothing to refund, it carried no payment', {
-          intentId: intent.id,
-          operation: intent.operation,
-          reason,
-        });
+        logger.error(
+          intent.paymentRequired
+            ? 'Relayed intent failed on chain and required payment, but carries no payment reference'
+            : 'Relayed intent failed on chain; nothing to refund, it carried no payment',
+          {
+            intentId: intent.id,
+            operation: intent.operation,
+            paymentRequired: intent.paymentRequired,
+            reason,
+          }
+        );
         return;
       }
 
