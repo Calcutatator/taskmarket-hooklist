@@ -36,7 +36,8 @@ help:
 	@echo "  make lint-check adr       - Check docs/adr/ ADRs follow numbering/status rules"
 	@echo "  make lint-check specs     - Check docs/specs/ follow the Spec-lite structural template"
 	@echo "  make test adr             - Run the adr package's own unit test suite (also covers spec-lint)"
-	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership)"
+	@echo "  make contract <cmd>       - Contract tools (audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci)"
+	@echo "  make contract <owner-cmd> <testnet|mainnet> - Owner actions (pause|unpause|accept-ownership)"
 	@echo "  make ci-quality-js        - Run the non-contract CI quality shard"
 	@echo "  make ui-ci                - Run the full Storybook and production web UI gate"
 	@echo "  make ui-ci-e2e            - Build and run the CI E2E shard (UI_CI_PROJECT optional)"
@@ -155,6 +156,7 @@ deploy-reward-hook:
 	@$(ENV_LOADER) && \
 	if [ "$(word 1,$(ARGS))" = "testnet" ]; then \
 		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY=$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET} \
 		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET} \
 		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_TESTNET} \
 		FORGE_BONUS_BPS=$${FORGE_BONUS_BPS:-$$FORGE_BONUS_BPS_TESTNET} \
@@ -172,6 +174,7 @@ deploy-reward-hook:
 			--verify; \
 	elif [ "$(word 1,$(ARGS))" = "mainnet" ]; then \
 		cd packages/contracts && \
+		FORGE_DEV_PRIVATE_KEY=$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET} \
 		FORGE_DIAMOND_ADDRESS=$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_MAINNET} \
 		FORGE_PROTOCOL_TOKEN=$${FORGE_PROTOCOL_TOKEN:-$$FORGE_PROTOCOL_TOKEN_MAINNET} \
 		FORGE_DREAMS_PER_USDC=$${FORGE_DREAMS_PER_USDC:-$$FORGE_DREAMS_PER_USDC_MAINNET} \
@@ -598,7 +601,8 @@ docs-og-check:
 contract:
 	@$(ENV_LOADER) && \
 	if [ -z "$(word 1,$(ARGS))" ]; then \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci>"; \
+		echo "       make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	elif [ "$(word 1,$(ARGS))" = "audit" ]; then \
 		mkdir -p packages/contracts/reports && \
@@ -624,27 +628,41 @@ contract:
 		cd packages/contracts && forge test --summary; \
 	elif [ "$(word 1,$(ARGS))" = "test-ci" ]; then \
 		cd packages/contracts && FOUNDRY_PROFILE=ci forge test --summary; \
-	elif [ "$(word 1,$(ARGS))" = "pause" ]; then \
-		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
-			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
-		cast send $$CONTRACT_ADDRESS "pause()" \
-			--private-key $$FORGE_DEV_PRIVATE_KEY \
-			--rpc-url $$EVM_RPC_URL; \
-	elif [ "$(word 1,$(ARGS))" = "unpause" ]; then \
-		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
-			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
-		cast send $$CONTRACT_ADDRESS "unpause()" \
-			--private-key $$FORGE_DEV_PRIVATE_KEY \
-			--rpc-url $$EVM_RPC_URL; \
-	elif [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
-		{ [ -n "$$CONTRACT_ADDRESS" ] && [ -n "$$FORGE_DEV_PRIVATE_KEY" ] && [ -n "$$EVM_RPC_URL" ]; } || \
-			{ echo "Error: CONTRACT_ADDRESS, FORGE_DEV_PRIVATE_KEY, and EVM_RPC_URL must be set"; exit 1; }; \
-		cast send $$CONTRACT_ADDRESS "acceptOwnership()" \
-			--private-key $$FORGE_DEV_PRIVATE_KEY \
-			--rpc-url $$EVM_RPC_URL; \
+	elif [ "$(word 1,$(ARGS))" = "pause" ] || [ "$(word 1,$(ARGS))" = "unpause" ] || \
+	     [ "$(word 1,$(ARGS))" = "accept-ownership" ]; then \
+		case "$(word 1,$(ARGS))" in \
+			pause) OWNER_SIG="pause()";; \
+			unpause) OWNER_SIG="unpause()";; \
+			accept-ownership) OWNER_SIG="acceptOwnership()";; \
+		esac; \
+		case "$(word 2,$(ARGS))" in \
+			testnet) \
+				OWNER_RPC=base_sepolia; \
+				OWNER_ADDRESS_VAR=FORGE_DIAMOND_ADDRESS_TESTNET; \
+				OWNER_KEY_VAR=FORGE_DEV_PRIVATE_KEY_TESTNET; \
+				OWNER_ADDRESS="$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_TESTNET}"; \
+				OWNER_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_TESTNET}";; \
+			mainnet) \
+				OWNER_RPC=base; \
+				OWNER_ADDRESS_VAR=FORGE_DIAMOND_ADDRESS_MAINNET; \
+				OWNER_KEY_VAR=FORGE_DEV_PRIVATE_KEY_MAINNET; \
+				OWNER_ADDRESS="$${FORGE_DIAMOND_ADDRESS:-$$FORGE_DIAMOND_ADDRESS_MAINNET}"; \
+				OWNER_KEY="$${FORGE_DEV_PRIVATE_KEY:-$$FORGE_DEV_PRIVATE_KEY_MAINNET}";; \
+			*) \
+				echo "Usage: make contract $(word 1,$(ARGS)) <testnet|mainnet>"; \
+				exit 1;; \
+		esac; \
+		[ -n "$$OWNER_ADDRESS" ] || \
+			{ echo "Error: $$OWNER_ADDRESS_VAR (or FORGE_DIAMOND_ADDRESS) must be set"; exit 1; }; \
+		[ -n "$$OWNER_KEY" ] || \
+			{ echo "Error: $$OWNER_KEY_VAR (or FORGE_DEV_PRIVATE_KEY) must be set"; exit 1; }; \
+		echo "Sending $$OWNER_SIG to $$OWNER_ADDRESS on $(word 2,$(ARGS))"; \
+		cd packages/contracts && cast send "$$OWNER_ADDRESS" "$$OWNER_SIG" \
+			--private-key "$$OWNER_KEY" \
+			--rpc-url $$OWNER_RPC; \
 	else \
 		echo "Unknown command: $(word 1,$(ARGS))"; \
-		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci|pause|unpause|accept-ownership>"; \
+		echo "Usage: make contract <audit|coverage|coverage-check|snapshot|snapshot-check|doc|test|test-ci> | make contract <pause|unpause|accept-ownership> <testnet|mainnet>"; \
 		exit 1; \
 	fi
 

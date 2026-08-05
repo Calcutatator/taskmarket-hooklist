@@ -70,6 +70,8 @@ export function startServerWalletReconciler(): NodeJS.Timeout {
   const publicClient = getPublicClient();
 
   const reconcileOnce = createServerTransactionReconciler({
+    getLatestNonceCount: () =>
+      publicClient.getTransactionCount({ address: wallet.address, blockTag: 'latest' }),
     getReceiptStatus: async (hash) => {
       const receipt = await publicClient.getTransactionReceipt({ hash }).catch(() => null);
       if (!receipt) return null;
