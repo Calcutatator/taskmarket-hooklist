@@ -272,6 +272,9 @@ push/CI run if this list (or `index.yaml` itself) has drifted from the real ADR 
 - [0059 — An intent is readable by the address recorded as having initiated it](0059-an-intent-is-readable-by-the-address-recorded-as-having-initiated-it.md)
 - [0060 — A relayed payload is sufficient, and a broadcaster is pure](0060-a-relayed-payload-is-sufficient-and-a-broadcaster-is-pure.md)
 - [0061 — A reused idempotency key with different arguments is refused](0061-a-reused-idempotency-key-with-different-arguments-is-refused.md)
+- [0065 — The backend decodes chain events from the generated ABI, and CI keeps that artifact current](0065-the-backend-decodes-chain-events-from-the-generated-abi.md)
+- [0066 — Replacement stops at the cap, and a single self-transfer clears the nonce](0066-replacement-stops-at-the-cap-and-one-self-transfer-clears-the-nonce.md)
+- [0067 — An intent is reserved when the request arrives, before the payment challenge](0067-an-intent-is-reserved-before-the-payment-challenge.md)
 <!-- ADR-INDEX:END -->
 
 ## Linting
