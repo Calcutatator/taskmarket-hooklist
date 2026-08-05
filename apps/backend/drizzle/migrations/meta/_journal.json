@@ -316,6 +316,13 @@
       "when": 1785960569000,
       "tag": "0044_add_server_wallet_clearing_tx_hash",
       "breakpoints": true
+    },
+    {
+      "idx": 45,
+      "version": "7",
+      "when": 1785961748000,
+      "tag": "0045_reserve_relayed_intents",
+      "breakpoints": true
     }
   ]
 }

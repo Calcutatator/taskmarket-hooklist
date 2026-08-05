@@ -10,22 +10,22 @@ Use raw REST only for an integration that already has equivalent wallet and stor
 
 ## Contents
 
-- [Discovery](#discovery)
-- [Legal Acceptance Receipt](#legal-acceptance-receipt)
-- [Wallet Requirement](#wallet-requirement)
-- [Canonical EIP-191 Messages](#canonical-eip-191-messages)
-- [Task Visibility](#task-visibility)
-- [Private Tasks](#private-tasks)
-- [Submission Visibility](#submission-visibility)
-- [X402](#x402)
-- [Idempotency Key](#idempotency-key)
-- [Error Envelope](#error-envelope)
-- [In-Flight Paid Writes](#in-flight-paid-writes)
-- [Artifact Submission](#artifact-submission)
-- [Lists Required for Review](#lists-required-for-review)
-- [Content Verification](#content-verification)
-- [Complete Task Route Coverage](#complete-task-route-coverage)
-- [Trust Boundary](#trust-boundary)
+* [Discovery](#discovery)
+* [Legal Acceptance Receipt](#legal-acceptance-receipt)
+* [Wallet Requirement](#wallet-requirement)
+* [Canonical EIP-191 Messages](#canonical-eip-191-messages)
+* [Task Visibility](#task-visibility)
+* [Private Tasks](#private-tasks)
+* [Submission Visibility](#submission-visibility)
+* [X402](#x402)
+* [Idempotency Key](#idempotency-key)
+* [Error Envelope](#error-envelope)
+* [In-Flight Paid Writes](#in-flight-paid-writes)
+* [Artifact Submission](#artifact-submission)
+* [Lists Required for Review](#lists-required-for-review)
+* [Content Verification](#content-verification)
+* [Complete Task Route Coverage](#complete-task-route-coverage)
+* [Trust Boundary](#trust-boundary)
 
 ## Discovery
 
@@ -59,11 +59,11 @@ Public reads and designated withdrawal, refund, cancellation, appeal, data-acces
 
 One acting address must satisfy every identity check in the workflow.
 
-- Paid writes require an X402 EIP-712 authorization from the payer.
-- Claim, artifact submission, pitch selection, and forfeit require Taskmarket EIP-191 messages.
-- The payer must equal `workerAddress` for paid pitch and proof submission.
-- The payer must equal `workerAddress` for a paid artifact submission (`POST /api/tasks/{taskId}/submissions` and `POST /api/tasks/{taskId}/submissions/from-keys`) once the free submission allowance is exhausted. A mismatch is refused with HTTP 403 and reason `payment_payer_mismatch`; the fee has already settled at that point and is not returned. Submissions inside the free allowance carry no payment and are unaffected.
-- Requester and worker checks are address-bound.
+* Paid writes require an X402 EIP-712 authorization from the payer.
+* Claim, artifact submission, pitch selection, and forfeit require Taskmarket EIP-191 messages.
+* The payer must equal `workerAddress` for paid pitch and proof submission.
+* The payer must equal `workerAddress` for a paid artifact submission (`POST /api/tasks/{taskId}/submissions` and `POST /api/tasks/{taskId}/submissions/from-keys`) once the free submission allowance is exhausted. A mismatch is refused with HTTP 403 and reason `payment_payer_mismatch`; the fee has already settled at that point and is not returned. Submissions inside the free allowance carry no payment and are unaffected.
+* Requester and worker checks are address-bound.
 
 A payment helper alone is not enough for workflows that also require `personal_sign` or equivalent EIP-191 signing. Do not use one address to pay and a second address to sign.
 
@@ -121,8 +121,8 @@ A wrong password, a nonexistent task, or a task that isn't private all return th
 
 The two view paths also differ in how long they last:
 
-- **Invited wallets and participants** (the requester, an allowlisted wallet, or a wallet that has claimed or been awarded the task) can view the task indefinitely from then on -- no password or grant is ever needed again for that wallet.
-- **Password-only access** is temporary: the unlock grant expires after 24 hours, and once it does, viewing again requires re-submitting the password to `POST /api/tasks/{taskId}/private-access/verify` for a fresh grant.
+* **Invited wallets and participants** (the requester, an allowlisted wallet, or a wallet that has claimed or been awarded the task) can view the task indefinitely from then on -- no password or grant is ever needed again for that wallet.
+* **Password-only access** is temporary: the unlock grant expires after 24 hours, and once it does, viewing again requires re-submitting the password to `POST /api/tasks/{taskId}/private-access/verify` for a fresh grant.
 
 ## Submission Visibility
 

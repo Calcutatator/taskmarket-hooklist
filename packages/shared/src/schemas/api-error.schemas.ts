@@ -103,7 +103,7 @@ export const ApiErrorEnvelopeSchema = z.object({
   /** The durable handle to the write, where one was recorded. Key on this, not on `txHash`. */
   intentId: z.string().optional(),
   /** The intent's status at the moment this answer was produced. */
-  intentStatus: z.enum(['recorded', 'broadcast', 'completed', 'failed']).optional(),
+  intentStatus: z.enum(['reserved', 'recorded', 'broadcast', 'completed', 'failed']).optional(),
   /** The operation the intent stands for, e.g. `tasks.create`. */
   operation: z.string().optional(),
   /** The caller's own key for the operation, echoed so a dropped response is still traceable. */
@@ -154,7 +154,14 @@ const IN_FLIGHT_REASONS: ReadonlySet<ApiErrorReason> = new Set([
 export function isInFlightApiError(envelope: ApiErrorEnvelope | null | undefined): boolean {
   if (!envelope || !IN_FLIGHT_REASONS.has(envelope.reason)) return false;
   if (envelope.reason !== 'idempotency_key_reused') return true;
-  return envelope.intentStatus === 'recorded' || envelope.intentStatus === 'broadcast';
+  // `reserved` is in flight in the most literal sense: another request holds this key and is
+  // partway through paying for it (ADR-0067). Answering "terminal" would tell the caller to
+  // start again with a fresh key, which is a second charge for the same operation.
+  return (
+    envelope.intentStatus === 'reserved' ||
+    envelope.intentStatus === 'recorded' ||
+    envelope.intentStatus === 'broadcast'
+  );
 }
 
 /**

@@ -14,6 +14,13 @@ vi.mock('../../../src/services/relayed-intent-settlement', () => ({
   settleAbandonedIntents: vi.fn().mockResolvedValue(undefined),
 }));
 
+// The worker also expires stale reservations on each pass (ADR-0067). Stubbed for the same
+// reason settlement is: these tests are about which intents the worker hands to the dispatcher,
+// and a sweep that needs a real database would only add a failure unrelated to that question.
+vi.mock('../../../src/services/reservation-sweep', () => ({
+  expireStaleReservations: vi.fn().mockResolvedValue(undefined),
+}));
+
 vi.mock('../../../src/services/relayed-intents', async (importOriginal) => ({
   ...(await importOriginal<typeof import('../../../src/services/relayed-intents')>()),
   listUnbroadcastIntents: vi.fn().mockResolvedValue([]),

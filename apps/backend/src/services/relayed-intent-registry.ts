@@ -287,7 +287,11 @@ export async function dispatchRelayedIntent(input: {
       // Retrying is pointless either way -- the inputs and the on-chain state that produced
       // this revert will not change by waiting -- but who writes the terminal state depends
       // on whether money is involved.
-      if (claimed.paymentTxHash) {
+      // `paymentRequired` as well as the hash: the two agree on every row the fill produces
+      // (they are written in one statement), and consulting both means a row where they ever
+      // disagreed would still be routed to settlement rather than marked failed here, which is
+      // the safe direction for anything with money behind it (ADR-0067).
+      if (claimed.paymentRequired || claimed.paymentTxHash) {
         // A paid intent must reach `failed` through settlement, because that is the only
         // place allowed to decide a payment is orphaned (ADR-0048). Marking it failed here
         // would strand the payer: settlement's abandoned sweep only ever looks at `recorded`,

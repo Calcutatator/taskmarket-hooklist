@@ -941,8 +941,38 @@ export const relayedIntents = pgTable(
     // The two facts are the same address on every path, because whoever pays is whoever started
     // the write. Visibility on `intents.get` is scoped to it (ADR-0059).
     payer: text('payer'),
+    // Whether this write is one somebody has to pay for -- a property of the *route*, fixed
+    // when the intent is created, and not a report on whether money has arrived (ADR-0067).
+    //
+    // This column exists because the absence of a payment reference used to carry exactly one
+    // meaning ("a free relayed write") and now carries two. Since an intent is created as a
+    // reservation before the 402 challenge, an intent with no `payment_tx_hash` is either a
+    // free write, correct and terminal, or a paid write whose payment has not landed yet.
+    // Those are opposite conclusions for every sweep that looks at them: the first is nothing
+    // owed, the second is a payer who may be out of pocket. Read this column, never the
+    // absence of the two below, to tell them apart.
+    paymentRequired: boolean('payment_required').notNull().default(false),
+    // The settled payment (ADR-0057). Present only once the facilitator has confirmed the
+    // transfer, attached as one unit with `payment_amount` and `payer`. Presence here -- with
+    // `payment_required` above -- is what makes an intent refundable.
     paymentTxHash: text('payment_tx_hash'),
     paymentAmount: numeric('payment_amount', { precision: 78, scale: 0 }),
+    // The EIP-3009 authorization this reservation was about to have settled, written *before*
+    // the facilitator is asked to settle it (ADR-0067).
+    //
+    // Not a payment. It records an attempt, and it must never be read as evidence that money
+    // moved: a facilitator can reject an authorization, and a client can sign one and walk
+    // away. What it buys is that expiring a reservation stops being an inference from absence.
+    // The sweep asks the token contract a precise question about this exact (payer, nonce)
+    // pair -- EIP-3009 `authorizationState` -- instead of searching for a payment by amount and
+    // payer and hoping. Nothing may refund, credit or broadcast on the strength of these three.
+    paymentAuthNonce: text('payment_auth_nonce'),
+    paymentAuthPayer: text('payment_auth_payer'),
+    paymentAuthAmount: numeric('payment_auth_amount', { precision: 78, scale: 0 }),
+    // When a reservation stops being one. Set on creation, cleared the moment the intent is
+    // filled in by its handler. Load-bearing rather than housekeeping: the pre-402 path is
+    // reachable unauthenticated, so without an expiry a caller could claim keys indefinitely.
+    reservedExpiresAt: timestamp('reserved_expires_at', { withTimezone: true }),
     // The client's own key for this logical operation (ADR-0052), mandatory on every relayed
     // write. Client-originated because the intent id cannot be the recovery handle: it is
     // minted here and reaches the caller only in the response. Opaque to the backend --
@@ -980,9 +1010,16 @@ export const relayedIntents = pgTable(
     idempotencyKeyUnique: uniqueIndex('idx_relayed_intents_idempotency_key').on(
       table.idempotencyKey
     ),
+    // Reservations are found by expiry, and only ever the expired ones, so the sweep must not
+    // read the whole table to find them.
+    reservedExpiryIdx: index('idx_relayed_intents_reserved_expires_at').on(table.reservedExpiresAt),
+    // 'reserved' is the pre-payment state (ADR-0067), and its exclusion from every query that
+    // hands an intent to the chain is what makes a reservation structurally non-broadcastable:
+    // `claimIntentForBroadcast`, `listUnbroadcastIntents` and `listAbandonedIntents` all
+    // require 'recorded'. A reservation becomes 'recorded' only when its handler fills it in.
     statusCheck: check(
       'relayed_intents_status_check',
-      sql`${table.status} IN ('recorded', 'broadcast', 'completed', 'failed')`
+      sql`${table.status} IN ('reserved', 'recorded', 'broadcast', 'completed', 'failed')`
     ),
   })
 );

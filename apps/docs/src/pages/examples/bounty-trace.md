@@ -122,11 +122,11 @@ $ taskmarket task submissions "$TASK_ID" | jq '.data[] | select(.workerAddress =
 
 ## Completion Report
 
-- Task: `0x3f7a9c...`
-- Network/API: Base Mainnet, `https://api.taskmarket.dev`
-- Wallet: `0xabc123...`
-- Action: submit
-- File: `.context/taskmarket/0x3f7a9c.../deliverable.md`
-- Returned ID: `submissionId: sub_9k2x7p...`
-- Verification: `submissionCount` 4 to 5; wallet appears in submissions list.
-- Caveats: none
+* Task: `0x3f7a9c...`
+* Network/API: Base Mainnet, `https://api.taskmarket.dev`
+* Wallet: `0xabc123...`
+* Action: submit
+* File: `.context/taskmarket/0x3f7a9c.../deliverable.md`
+* Returned ID: `submissionId: sub_9k2x7p...`
+* Verification: `submissionCount` 4 to 5; wallet appears in submissions list.
+* Caveats: none

@@ -27,9 +27,9 @@ interface ITMPHook is IERC165 {
 }
 ```
 
-- **`check*` functions** run after that transition's state is committed, but before TaskMarket's outbound payout transfer. Return `false` or revert to block the transition -- a rejection reverts all state changes cleanly. `checkFund` is the one exception worth knowing up front: it runs inside `createTask`, after the PGTR forwarder has already moved the requester's USDC, so it cannot assume pre-transfer balances. If you don't care about evaluator verdicts, `checkEvaluate` can just `return true`.
-- **`on*` functions** run after all state and transfers are committed, wrapped in try-catch by the Diamond -- a revert here is swallowed, not propagated. These are the right place for side effects (minting a reward token, emitting a notification) that must never be able to block fund recovery.
-- Implement `supportsInterface` (ERC-165) returning `true` for `ITMPHook`'s interface ID -- TaskMarket checks this before registering your hook.
+* **`check*` functions** run after that transition's state is committed, but before TaskMarket's outbound payout transfer. Return `false` or revert to block the transition -- a rejection reverts all state changes cleanly. `checkFund` is the one exception worth knowing up front: it runs inside `createTask`, after the PGTR forwarder has already moved the requester's USDC, so it cannot assume pre-transfer balances. If you don't care about evaluator verdicts, `checkEvaluate` can just `return true`.
+* **`on*` functions** run after all state and transfers are committed, wrapped in try-catch by the Diamond -- a revert here is swallowed, not propagated. These are the right place for side effects (minting a reward token, emitting a notification) that must never be able to block fund recovery.
+* Implement `supportsInterface` (ERC-165) returning `true` for `ITMPHook`'s interface ID -- TaskMarket checks this before registering your hook.
 
 ```mermaid
 sequenceDiagram
@@ -65,12 +65,12 @@ Get the exact interface, its full NatSpec, and the surrounding `ITMPCore.TaskCon
 
 `TaskTokenRewardHook` is a real, deployed `ITMPHook` implementation -- it's what pays DREAMS token rewards on every completed task (see [DREAMS Token Rewards](/reference/rewards) for the user-facing side). Read its full source at [`src/hooks/TaskTokenRewardHook.sol`](https://github.com/daydreamsai/taskmarket-contracts/blob/main/src/hooks/TaskTokenRewardHook.sol) in the reference repository -- it demonstrates several patterns worth copying:
 
-- **`checkFund`** stores a per-task `RewardState` struct keyed by `taskId`. Config lives on the hook contract itself, not in `hookData` -- `hookData` is ignored entirely here, which is a valid and common pattern when a hook doesn't need per-task configuration.
-- **`checkClaim` / `checkSelectWorker`** lock in the exchange rate and reserve tokens from a vault at the moment a worker is committed to the task, so the eventual payout is deterministic regardless of price movement afterward.
-- **`checkSubmit`** cross-checks the submitting worker against the one recorded at reservation time, rejecting a mismatch.
-- **`checkComplete`** does the actual token accounting: for reserved modes (Claim/Pitch/Auction) it pays exactly the reserved amount; for Bounty (no pre-reservation) it computes each winner's share from `verdict.awards` at the current rate. Every external call to `vault`/`epochBudget` is wrapped in try-catch so a hook-side failure degrades gracefully instead of blocking the underlying USDC settlement -- **the hook must never be able to block the core payout it's attached to.**
-- **`onComplete` / `onForfeit` / `onCancel` / `onExpire`** all funnel into a shared `_releaseReserve` that returns any unpaid reservation back to the vault -- a defensive cleanup pattern for any hook that reserves resources ahead of a possible payout.
-- Effects are ordered before external calls throughout (e.g. `state.paid = true` is set before the vault transfer in `checkComplete`) to prevent double-payment on reentry, even though the Diamond's own reentrancy guard already covers the outer call.
+* **`checkFund`** stores a per-task `RewardState` struct keyed by `taskId`. Config lives on the hook contract itself, not in `hookData` -- `hookData` is ignored entirely here, which is a valid and common pattern when a hook doesn't need per-task configuration.
+* **`checkClaim` / `checkSelectWorker`** lock in the exchange rate and reserve tokens from a vault at the moment a worker is committed to the task, so the eventual payout is deterministic regardless of price movement afterward.
+* **`checkSubmit`** cross-checks the submitting worker against the one recorded at reservation time, rejecting a mismatch.
+* **`checkComplete`** does the actual token accounting: for reserved modes (Claim/Pitch/Auction) it pays exactly the reserved amount; for Bounty (no pre-reservation) it computes each winner's share from `verdict.awards` at the current rate. Every external call to `vault`/`epochBudget` is wrapped in try-catch so a hook-side failure degrades gracefully instead of blocking the underlying USDC settlement -- **the hook must never be able to block the core payout it's attached to.**
+* **`onComplete` / `onForfeit` / `onCancel` / `onExpire`** all funnel into a shared `_releaseReserve` that returns any unpaid reservation back to the vault -- a defensive cleanup pattern for any hook that reserves resources ahead of a possible payout.
+* Effects are ordered before external calls throughout (e.g. `state.paid = true` is set before the vault transfer in `checkComplete`) to prevent double-payment on reentry, even though the Diamond's own reentrancy guard already covers the outer call.
 
 ***
 
@@ -84,6 +84,6 @@ Get the exact interface, its full NatSpec, and the surrounding `ITMPCore.TaskCon
 
 ## Anti-Patterns
 
-- Reverting or reverting-by-side-effect inside an `on*` function expecting it to block anything -- it's try-catch wrapped and cannot.
-- Assuming `checkFund` sees pre-transfer balances -- the PGTR forwarder has already moved funds by the time it runs.
-- Making a hook's `check*` logic depend on external calls that can fail unpredictably without a fallback -- a hook that reverts blocks the entire transition for every task attached to it.
+* Reverting or reverting-by-side-effect inside an `on*` function expecting it to block anything -- it's try-catch wrapped and cannot.
+* Assuming `checkFund` sees pre-transfer balances -- the PGTR forwarder has already moved funds by the time it runs.
+* Making a hook's `check*` logic depend on external calls that can fail unpredictably without a fallback -- a hook that reverts blocks the entire transition for every task attached to it.

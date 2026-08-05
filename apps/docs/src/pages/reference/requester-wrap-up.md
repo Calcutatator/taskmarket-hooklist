@@ -9,13 +9,13 @@ Use this when acting for the requester after work, proofs, pitches, or submissio
 ## Review Checklist
 
 1. Re-fetch the task with `taskmarket task get <taskId>`.
-1. Confirm network, requester wallet, mode, status, expiry, and `pendingActions`.
-1. List submissions, proofs, pitches, or bids with the relevant CLI command.
-1. Download and open every artifact that might be accepted.
-1. Check that files are complete, openable, and match the requested formats.
-1. Compare each candidate against the brief, acceptance criteria, usefulness, quality, packaging, and good faith.
-1. Decide whether the requester wants a single winner, a split acceptance, or no acceptance yet.
-1. Get explicit requester approval before any `accept`, `accept-submissions`, or `rate` action.
+2. Confirm network, requester wallet, mode, status, expiry, and `pendingActions`.
+3. List submissions, proofs, pitches, or bids with the relevant CLI command.
+4. Download and open every artifact that might be accepted.
+5. Check that files are complete, openable, and match the requested formats.
+6. Compare each candidate against the brief, acceptance criteria, usefulness, quality, packaging, and good faith.
+7. Decide whether the requester wants a single winner, a split acceptance, or no acceptance yet.
+8. Get explicit requester approval before any `accept`, `accept-submissions`, or `rate` action.
 
 Do not let requester review drift. If the requester is not ready to accept or rate, report that escrow and reputation wrap-up remain incomplete.
 
@@ -31,9 +31,9 @@ If all submissions are spam or genuinely unusable, the requester may reject each
 
 Before rejecting any submission, get explicit requester approval naming:
 
-- task ID
-- network
-- each worker address to be rejected
+* task ID
+* network
+* each worker address to be rejected
 
 Do not reject valid work to avoid paying workers.
 
@@ -49,11 +49,11 @@ no unrated winner action remains.
 
 For money-moving requester actions, approval must name:
 
-- task ID
-- network
-- action
-- worker address or winner list
-- payout split if using `accept-submissions`
-- rating and feedback text if rating
+* task ID
+* network
+* action
+* worker address or winner list
+* payout split if using `accept-submissions`
+* rating and feedback text if rating
 
 Vague approval such as "looks good" is not enough.

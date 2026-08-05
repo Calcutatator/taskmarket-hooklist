@@ -71,5 +71,14 @@ export function createIsolatedMigratedDatabase(
     isAvailable: databaseUrl !== undefined,
     start,
     stop,
+    /**
+     * The isolated database's own connection string.
+     *
+     * Exposed for tests that cannot simply be handed the `database` object above:
+     * `src/db/client.ts` builds its singleton from `process.env.DATABASE_URL` at import time,
+     * so anything exercising a module that imports it -- the x402 middleware, notably -- has to
+     * point that variable at this database and import the module afterwards.
+     */
+    url: isolatedDatabaseUrl.toString(),
   };
 }

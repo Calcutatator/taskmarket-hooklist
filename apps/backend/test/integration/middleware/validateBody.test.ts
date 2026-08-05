@@ -10,11 +10,30 @@ const FAKE_ADDRESS = '0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266';
 const FAKE_PRIVATE_KEY = `0x${'1'.repeat(64)}`;
 const OTHER_ADDRESS = '0x1111111111111111111111111111111111111111';
 const mockDb = vi.hoisted(() => ({
-  delete: vi.fn(),
-  insert: vi.fn(),
-  // Resolves empty by default: every paid route now reads the idempotency key before it
-  // challenges (ADR-0052), so a select that answers nothing is the "fresh key" case these
-  // tests are all in. Tests that need a specific read override it.
+  delete: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, { where: async () => [] });
+    return chain;
+  }),
+  // Every paid route now *claims* the idempotency key before it challenges, by inserting a
+  // reservation (ADR-0067). The insert succeeding is the "fresh key" case these tests are all
+  // in; a chain that resolved to nothing would look like a lost race and answer 409 instead of
+  // the 402 each of them is asserting.
+  insert: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, {
+      values: () => chain,
+      onConflictDoNothing: () => chain,
+      returning: async () => [{ id: 'reserved-intent', status: 'reserved' }],
+    });
+    return chain;
+  }),
+  update: vi.fn(() => {
+    const chain: Record<string, unknown> = {};
+    Object.assign(chain, { set: () => chain, where: async () => [] });
+    return chain;
+  }),
+  // Resolves empty by default. Tests that need a specific read override it.
   select: vi.fn(() => {
     const chain: Record<string, unknown> = {};
     Object.assign(chain, {

@@ -26,8 +26,8 @@ An unauthorized caller of a `private` task gets a "not found" response from `get
 
 A private task needs at least one of two invite mechanisms at creation (or both together):
 
-- **Wallet allowlist**: `--allowed-viewers <addr1,addr2,...>` at creation; add or remove later with `task invite <taskId> <address>` / `task uninvite <taskId> <address>` (requester only); list with `task viewers <taskId>` (requester only).
-- **Password**: `--access-password <password>` (min 8 characters) at creation. There is no command to change it later. Anyone holding the password can call `task unlock <taskId> --password <password>`, which caches a task-scoped access grant used automatically by later reads.
+* **Wallet allowlist**: `--allowed-viewers <addr1,addr2,...>` at creation; add or remove later with `task invite <taskId> <address>` / `task uninvite <taskId> <address>` (requester only); list with `task viewers <taskId>` (requester only).
+* **Password**: `--access-password <password>` (min 8 characters) at creation. There is no command to change it later. Anyone holding the password can call `task unlock <taskId> --password <password>`, which caches a task-scoped access grant used automatically by later reads.
 
 `taskmarket inbox` surfaces `invitedPrivateTasks` once a wallet proves ownership of an allowlisted address -- this is the primary discovery path for an invited worker.
 
@@ -56,8 +56,8 @@ As with task visibility above, this gates Taskmarket's served content only (deli
 
 The two axes are fully independent -- pick each based on a different question:
 
-- Task visibility answers "who can even find or open this task?"
-- Submission visibility answers "of the people who can view the task, who additionally sees what was submitted?"
+* Task visibility answers "who can even find or open this task?"
+* Submission visibility answers "of the people who can view the task, who additionally sees what was submitted?"
 
 ```mermaid
 flowchart TD
@@ -81,7 +81,7 @@ A common high-confidentiality combination is `--task-visibility private --submis
 
 ## See Also
 
-- [CLI Commands](/reference/cli) for exact flags and defaults
-- [Task Schema](/reference/task-schema) for the response fields (`taskVisibility`, `hasAccessPassword`, `submissionVisibility`, `invitedPrivateTasks`)
-- [Raw API](/reference/raw-api) for the signed-read header mechanics non-CLI callers need
-- [Encryption and Key Publishing](/reference/encryption) for hiding artifact *content* even from an authorized viewer
+* [CLI Commands](/reference/cli) for exact flags and defaults
+* [Task Schema](/reference/task-schema) for the response fields (`taskVisibility`, `hasAccessPassword`, `submissionVisibility`, `invitedPrivateTasks`)
+* [Raw API](/reference/raw-api) for the signed-read header mechanics non-CLI callers need
+* [Encryption and Key Publishing](/reference/encryption) for hiding artifact *content* even from an authorized viewer

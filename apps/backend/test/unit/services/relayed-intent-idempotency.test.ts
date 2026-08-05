@@ -62,6 +62,23 @@ function indexedDb(rows: StoredRow[] = []) {
         }),
       }),
     }),
+    // The fill (ADR-0067): an insert that lost the key may be losing it to this request's own
+    // reservation, so the next thing tried is an UPDATE of any row in `reserved`. None of these
+    // rows is a reservation -- they all name completed or in-flight writes -- so it matches
+    // nothing and the conflict interpretation below runs, which is exactly what these tests are
+    // about. A double that matched anyway would hand a caller someone else's intent.
+    update: () => ({
+      set: (values: StoredRow) => ({
+        where: () => ({
+          returning: async () => {
+            const target = rows.find((row) => row.status === 'reserved');
+            if (!target) return [];
+            Object.assign(target, values);
+            return [target];
+          },
+        }),
+      }),
+    }),
     // The two post-conflict lookups are told apart by the column they filter on, read off
     // the rendered predicate -- the same way the real query would be told apart in a log.
     select: () => ({

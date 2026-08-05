@@ -63,7 +63,38 @@ export type RelayedIntentOperation =
   | 'wallet.withdrawDreams'
   | 'identity.register';
 
-export type RelayedIntentStatus = 'recorded' | 'broadcast' | 'completed' | 'failed';
+export type RelayedIntentStatus = 'reserved' | 'recorded' | 'broadcast' | 'completed' | 'failed';
+
+/**
+ * The operation a reservation carries until its handler says what it really is.
+ *
+ * Deliberately outside `RelayedIntentOperation`, and that is the guard rather than a cosmetic
+ * choice: the completion registry is keyed on that union, so a value outside it can never
+ * resolve to a handler. A reservation therefore cannot be completed by any code path even if
+ * something contrives to hand it to one, which is a second lock on top of `status = 'reserved'`
+ * being excluded from every broadcast query (ADR-0067).
+ *
+ * The middleware genuinely does not know the operation. It is mounted per route and could be
+ * told, but the value it was told would then have to agree with the one the router later
+ * records, and a disagreement would refuse an honest caller. The handler is the authority, so
+ * the reservation waits for it rather than guessing.
+ */
+export const RESERVED_OPERATION = 'x402.reservation';
+
+/**
+ * How long a claimed-but-unpaid key stays claimed.
+ *
+ * Bounded by what the payment exchange itself allows: the 402 challenge advertises
+ * `maxTimeoutSeconds: 300`, so a client that is going to pay has done so well inside five
+ * minutes. Ten gives that room twice over while keeping the window in which an abandoned
+ * challenge holds someone's key short.
+ *
+ * This is not housekeeping. The reservation is written before any caller is authenticated, so
+ * without an expiry an unauthenticated client could claim keys indefinitely and the table would
+ * grow without bound (ADR-0067). The steady-state row count is whatever the ingress rate limit
+ * allows over this window, which is the number to reason about when tuning either.
+ */
+export const RESERVATION_TTL_MS = 10 * 60 * 1000;
 
 /**
  * A settled x402 payment an intent is answerable for.
@@ -131,56 +162,259 @@ function requireIdempotencyKey(key: string | undefined, operation: string): stri
   });
 }
 
+export type RelayedWriteRefusal = {
+  error: string;
+  status: 400 | 409;
+  envelope: ApiErrorEnvelope;
+};
+
 /**
- * The idempotency check that has to happen before a payment is settled.
+ * Claim the idempotency key, before any payment challenge (ADR-0067).
  *
- * `recordRelayedIntent` runs inside the handler, which is far too late on a paid path: x402
- * settles in middleware, so by the time the handler sees a repeated key the caller has already
- * signed and paid for a second authorization. Deduplicating the chain call at that point still
- * leaves a settled payment with nothing to attach to -- an orphaned payment and a refund, which
- * is the double charge the key exists to prevent wearing a different hat.
+ * This used to be a read, and the read is what the defect was. `recordRelayedIntent` runs
+ * inside the handler, far too late on a paid path: x402 settles in middleware, so by the time
+ * the handler sees a repeated key the caller has already signed and paid for a second
+ * authorization. Checking first, before the 402, fixed the sequential retry -- but a check is
+ * a read, and the write it guards happens after settlement, so between the two there is a
+ * window. Two concurrent requests with one key both read nothing, both are challenged, and both
+ * settle. The second is then correctly refused, after its money has moved.
  *
- * So the paid path asks this first, before any 402 challenge. It runs before the caller is
+ * So the check becomes a claim: creating the intent is what reserves the key. The database
+ * arbitrates, by the same insert-then-interpret-the-conflict move `recordRelayedIntent` already
+ * uses -- not an application-level lock, which could not span two processes and would in any
+ * case have to be held across the facilitator round trip. The loser of the race is refused
+ * here, before it is challenged, so it is never charged.
+ *
+ * The row created is a real intent in a new state: `reserved`, `payment_required = true`, with
+ * no payment reference and no operation yet (see `RESERVED_OPERATION`). It is not broadcastable
+ * in that state and it expires if nothing fills it.
+ *
+ * The refusal deliberately carries no payment facts. This runs before any caller is
  * authenticated -- on the challenge round there is not even a payment payload to read a payer
- * from -- so it carries no payment facts: no payer, no amount, no payment transaction hash.
- * `intents.get` is where those are read, and it is payer-scoped.
- *
- * What it does carry is the intent id, the operation and the status, which is exactly what the
- * message has always said in prose. Saying it structurally is not a new disclosure; it is the
- * same disclosure a client can act on. The status in particular is what lets a caller tell a
- * repeated key naming a write still landing from one naming a write that has already failed --
- * without it, `idempotency_key_reused` would be as ambiguous as the sentence it replaces
- * (ADR-0058).
+ * from -- so it can say the key is spoken for and nothing else. The caller reads the outcome
+ * from `intents.get`, which is payer-scoped and can safely say more (ADR-0049, ADR-0058).
  */
-export async function checkRelayedWriteIdempotency(input: {
+export async function reserveRelayedWrite(input: {
   db: Db;
+  description?: string;
   key: string | undefined;
-}): Promise<{ error: string; status: 400 | 409; envelope: ApiErrorEnvelope } | null> {
+  now?: Date;
+  route?: string;
+}): Promise<
+  | { refusal: RelayedWriteRefusal; intent?: undefined }
+  | { refusal?: undefined; intent: RelayedIntent }
+> {
   if (!input.key || !IDEMPOTENCY_KEY_PATTERN.test(input.key)) {
     return {
-      error:
-        `This request requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you generate ` +
-        'for this operation. Send the same value when retrying it, and a fresh one for a new ' +
-        'operation.',
-      status: 400,
-      envelope: { reason: 'idempotency_key_required' },
+      refusal: {
+        error:
+          `This request requires an ${IDEMPOTENCY_KEY_HEADER} header carrying a UUID you ` +
+          'generate for this operation. Send the same value when retrying it, and a fresh one ' +
+          'for a new operation.',
+        status: 400,
+        envelope: { reason: 'idempotency_key_required' },
+      },
     };
   }
 
+  const now = input.now ?? new Date();
+  const expiresAt = new Date(now.getTime() + RESERVATION_TTL_MS);
+  // The envelope is minted here and kept when the handler fills the row, so the deadline the
+  // caller is ultimately held to starts at the reservation rather than being reset by it.
+  const envelope = newRelayEnvelope();
+
+  const [reserved] = await input.db
+    .insert(relayedIntents)
+    .values({
+      id: randomUUID(),
+      idempotencyKey: input.key,
+      operation: RESERVED_OPERATION,
+      paymentRequired: true,
+      payload: {
+        reservation: true,
+        route: input.route ?? null,
+        description: input.description ?? null,
+      },
+      relayReceiptNonce: envelope.receiptNonce,
+      relayValidBefore: envelope.validBefore.toString(),
+      reservedExpiresAt: expiresAt,
+      status: 'reserved',
+    })
+    .onConflictDoNothing()
+    .returning();
+
+  if (reserved) return { intent: reserved };
+
+  // The insert lost, so something already holds this key. One case is not a real conflict: a
+  // reservation that expired without ever being filled, whose owner is gone. Taking it over is
+  // safe *only* when no authorization was ever recorded against it -- a row that names an
+  // authorization may correspond to money that moved, and deciding that is the sweep's job,
+  // which can ask the token contract rather than guess (ADR-0067).
+  const [takenOver] = await input.db
+    .update(relayedIntents)
+    .set({
+      // A fresh identity, because this is a different request's reservation now. The abandoned
+      // owner's intent id was never usable for anything -- a reservation has no outcome to
+      // read -- so nothing is stranded by retiring it.
+      id: randomUUID(),
+      payload: {
+        reservation: true,
+        route: input.route ?? null,
+        description: input.description ?? null,
+      },
+      relayReceiptNonce: envelope.receiptNonce,
+      relayValidBefore: envelope.validBefore.toString(),
+      reservedExpiresAt: expiresAt,
+      updatedAt: now,
+    })
+    .where(
+      and(
+        eq(relayedIntents.idempotencyKey, input.key),
+        eq(relayedIntents.status, 'reserved'),
+        isNull(relayedIntents.paymentAuthNonce),
+        lt(relayedIntents.reservedExpiresAt, now)
+      )
+    )
+    .returning();
+  if (takenOver) return { intent: takenOver };
+
   const existing = await findIntentByIdempotencyKey(input.db, input.key);
-  if (!existing) return null;
+  if (!existing) {
+    // The colliding row went away between the insert and this read. Refusing is still the safe
+    // answer: retrying with the same key will now succeed, and charging on the assumption that
+    // it is free is the one outcome that cannot be taken back.
+    return {
+      refusal: {
+        error: 'This idempotency key could not be claimed; retry this request with the same key.',
+        status: 409,
+        envelope: { reason: 'idempotency_key_reused', idempotencyKey: input.key },
+      },
+    };
+  }
 
   return {
-    error: `A ${existing.operation} write for this idempotency key already exists (intent ${existing.id}). It was not charged or submitted again; read its outcome from intents.get.`,
-    status: 409,
-    envelope: {
-      reason: 'idempotency_key_reused',
-      intentId: existing.id,
-      intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
-      operation: existing.operation,
-      idempotencyKey: existing.idempotencyKey,
+    refusal: {
+      error:
+        existing.status === 'reserved'
+          ? `Another request is already using this idempotency key (intent ${existing.id}) and has not finished paying for it. It was not charged again; read its outcome from intents.get.`
+          : `A ${existing.operation} write for this idempotency key already exists (intent ${existing.id}). It was not charged or submitted again; read its outcome from intents.get.`,
+      status: 409,
+      envelope: {
+        reason: 'idempotency_key_reused',
+        intentId: existing.id,
+        intentStatus: existing.status as ApiErrorEnvelope['intentStatus'],
+        operation: existing.operation,
+        idempotencyKey: existing.idempotencyKey,
+      },
     },
   };
+}
+
+/**
+ * Write down the authorization we are about to ask the facilitator to settle (ADR-0067).
+ *
+ * Before the settle call, never after it returns. The case this exists for is the process
+ * dying in between: what is left behind is then a reservation that names the exact EIP-3009
+ * authorization, so the sweep can ask whether *that nonce* was consumed instead of inferring
+ * from the absence of a payment reference. Recording afterwards would be a log line, not a
+ * mechanism -- it is precisely the crash that skips it.
+ *
+ * These columns are a record of an attempt. They are never evidence money moved: the
+ * facilitator may reject the authorization, and a client may sign one and abandon the request.
+ * Nothing refunds, credits or broadcasts on the strength of them.
+ */
+export async function recordIntentPaymentAuthorization(input: {
+  db: Db;
+  amount: string;
+  intentId: string;
+  nonce: string;
+  payer: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({
+      paymentAuthAmount: input.amount,
+      paymentAuthNonce: input.nonce,
+      paymentAuthPayer: input.payer,
+      updatedAt: new Date(),
+    })
+    .where(eq(relayedIntents.id, input.intentId));
+}
+
+/**
+ * Hand a reservation back when the request it was made for is refused before it pays.
+ *
+ * A preflight rejection, an expired authorization, a payload that does not match the
+ * requirements: in all of these the exchange never began, so holding the key until its TTL runs
+ * out would punish a caller for an error we told them about. Releasing it immediately lets them
+ * correct and retry with the same key, which is the behaviour the key promises.
+ *
+ * Conditional on no authorization having been recorded, and that condition is the whole safety
+ * argument. Once the settle call has been made, "it threw" does not establish that nothing
+ * settled -- a timeout is indistinguishable from a slow success -- so such a row must be left
+ * for the sweep, which can ask the token contract a question this code cannot.
+ */
+export async function releaseUnpaidReservation(input: { db: Db; intentId: string }): Promise<void> {
+  await input.db
+    .delete(relayedIntents)
+    .where(
+      and(
+        eq(relayedIntents.id, input.intentId),
+        eq(relayedIntents.status, 'reserved'),
+        isNull(relayedIntents.paymentAuthNonce)
+      )
+    );
+}
+
+/**
+ * Reservations whose TTL has run out.
+ *
+ * Returned rather than expired here, because expiry is not a decision this query is allowed to
+ * make on its own: a reservation is never expired without first establishing that no payment
+ * landed against it, and that check needs the chain (ADR-0067). See `expireStaleReservations`.
+ */
+export async function listExpiredReservations(input: {
+  db: Db;
+  limit: number;
+  now?: Date;
+}): Promise<RelayedIntent[]> {
+  return input.db
+    .select()
+    .from(relayedIntents)
+    .where(
+      and(
+        eq(relayedIntents.status, 'reserved'),
+        lt(relayedIntents.reservedExpiresAt, input.now ?? new Date())
+      )
+    )
+    .orderBy(asc(relayedIntents.createdAt))
+    .limit(input.limit);
+}
+
+/** Drop a reservation established to have no payment behind it. */
+export async function deleteReservation(input: { db: Db; intentId: string }): Promise<void> {
+  await input.db
+    .delete(relayedIntents)
+    .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'reserved')));
+}
+
+/**
+ * Keep a reservation alive past its TTL, with the reason it could not be expired.
+ *
+ * For the one case the sweep must not resolve by itself: an authorization that the token
+ * contract says was consumed, so money moved, but for which no payment reference was ever
+ * attached. Deleting the row would discard the only durable record of what that payment was
+ * for, which is the outcome ADR-0067 names as the reason time alone is not evidence.
+ */
+export async function holdReservationForReview(input: {
+  db: Db;
+  intentId: string;
+  reason: string;
+}): Promise<void> {
+  await input.db
+    .update(relayedIntents)
+    .set({ lastError: input.reason.slice(0, 500), updatedAt: new Date() })
+    .where(and(eq(relayedIntents.id, input.intentId), eq(relayedIntents.status, 'reserved')));
 }
 
 /**
@@ -306,7 +540,7 @@ function stableStringify(value: unknown): string {
  * Whether a repeated key is naming the same write, arguments included (ADR-0061).
  *
  * Worth knowing before reading a payload as though every operation reached here: most do not.
- * On a paid route `checkRelayedWriteIdempotency` refuses a repeated key inside x402Middleware,
+ * On a paid route `reserveRelayedWrite` refuses a repeated key inside x402Middleware,
  * before the handler runs, so this comparison only ever sees a **free** write --
  * `claims.claim`, `claims.forfeit`, `submissions.submit`, `evaluations.finalizeVerdict`, the
  * two `wallet.withdraw*` operations -- or an intent recorded directly by a service.
@@ -335,6 +569,27 @@ function payloadsMatch(intent: RelayedIntent, input: RecordIntentInput): boolean
  * narrower job: one settled payment funds at most one intent, which catches a client that
  * generates a fresh key while reusing a payment it has already spent.
  */
+/**
+ * Run the fill, treating a unique-constraint loss as "no row filled" rather than an error.
+ *
+ * Only a constraint violation is swallowed. Anything else -- a dropped connection, a syntax
+ * error -- still throws, because the caller's fallback path answers a question about
+ * *conflicts*, and answering it for a failure that established no conflict would report a
+ * spent payment that nothing has evidence of.
+ */
+async function fillOrNothing(
+  db: Db,
+  run: (db: Db) => Promise<RelayedIntent[]>
+): Promise<RelayedIntent[]> {
+  try {
+    return await run(db);
+  } catch (error) {
+    const code = (error as { code?: string }).code;
+    if (code === '23505') return [];
+    throw error;
+  }
+}
+
 export async function recordRelayedIntent(input: RecordIntentInput): Promise<RelayedIntent> {
   const idempotencyKey = requireIdempotencyKey(input.idempotencyKey, input.operation);
 
@@ -350,6 +605,12 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       idempotencyKey,
       operation: input.operation,
       payer: input.payment?.payer ?? input.payer ?? null,
+      // A fresh insert reaching here is a free relayed write. Every paid route reserves its key
+      // in x402Middleware first, so it arrives at the branch below with a row already waiting;
+      // the only way to insert a new row carrying a payment is a path that settled without
+      // reserving, which is a bug worth recording faithfully rather than papering over
+      // (ADR-0067).
+      paymentRequired: input.payment !== undefined,
       paymentAmount: input.payment?.amount.toString() ?? null,
       paymentTxHash: input.payment?.txHash ?? null,
       payload: input.payload,
@@ -369,10 +630,17 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
    * below either hands back a *different* intent -- one funded by a different payment -- or
    * refuses outright. So a payment carried into any of them bought nothing and never will.
    *
-   * It is reachable without a broken client, because the pre-settlement idempotency check in
-   * middleware/x402.ts is a read: two concurrent requests carrying one key both find it free
-   * and both have their authorization settled before either arrives here. The winner's intent
-   * is returned to both; the loser's money had already moved.
+   * This used to be reachable by an ordinary concurrent retry: the pre-settlement idempotency
+   * check was a *read*, so two requests carrying one key both found it free and both had their
+   * authorization settled before either arrived here. ADR-0067 closed that -- the check is now
+   * a claim, and the loser is refused in the middleware before it is ever challenged, so no
+   * second payment settles.
+   *
+   * It is kept as a backstop rather than deleted, because the branches below still name real
+   * client mistakes (a fresh key reusing an already-spent payment, a key bound to a different
+   * caller) and a payment carried into one of them is still money with nothing pointing at it.
+   * If this ever fires now, it means something upstream of the reservation failed, and the row
+   * is the only trace that would exist -- which is exactly when you want it.
    *
    * Recording, not refunding. Whether a payment is orphaned -- and so whether to send it back
    * -- is a decision ADR-0048 reserves for intent settlement, which is the only place holding
@@ -391,6 +659,43 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
       failureReason: reason,
     });
   }
+  // The key may be held by this request's own reservation (ADR-0067). Filling it is what turns
+  // a reservation into an intent: the operation, the payload and the settled payment arrive
+  // together, and the row leaves `reserved` for `recorded` in the same statement -- so it
+  // becomes broadcastable at exactly the moment it becomes paid, never before.
+  //
+  // No ownership check is needed, and there is nowhere to get one from: whoever holds the key
+  // reserved it, because any other request presenting it was refused in the middleware before
+  // reaching a handler. The `status = 'reserved'` predicate is what makes that true under
+  // concurrency -- a second filler finds the row already `recorded` and matches nothing.
+  //
+  // The fill can still lose to the payment index: a client that generated a fresh key while
+  // reusing a payment it has already spent gets a fresh reservation and then collides on
+  // `payment_tx_hash`. That is not a reason to fail obscurely -- the checks below already name
+  // it exactly -- so the conflict falls through to them rather than escaping as a raw
+  // constraint error.
+  const [filled] = await fillOrNothing(input.db, async (database) =>
+    database
+      .update(relayedIntents)
+      .set({
+        operation: input.operation,
+        payer: input.payment?.payer ?? input.payer ?? null,
+        paymentAmount: input.payment?.amount.toString() ?? null,
+        paymentTxHash: input.payment?.txHash ?? null,
+        payload: input.payload,
+        reservedExpiresAt: null,
+        status: 'recorded',
+        updatedAt: new Date(),
+      })
+      .where(
+        and(
+          eq(relayedIntents.idempotencyKey, idempotencyKey),
+          eq(relayedIntents.status, 'reserved')
+        )
+      )
+      .returning()
+  );
+  if (filled) return filled;
 
   // The insert is the lookup. Reading first and inserting second would be both slower on the
   // common path and wrong on the uncommon one -- two concurrent first-time requests with the
@@ -399,6 +704,37 @@ export async function recordRelayedIntent(input: RecordIntentInput): Promise<Rel
   // caller made, so it is worth asking rather than answering with one generic conflict.
   const existing = await findIntentByIdempotencyKey(input.db, idempotencyKey);
   if (existing) {
+    if (existing.status === 'reserved') {
+      // The fill matched the row and was rejected, which leaves exactly one explanation: the
+      // payment index. `intentBelongsToCaller` below would compare `RESERVED_OPERATION` against
+      // the real operation and report a key conflict, which is both wrong and unactionable, so
+      // the spent-payment case is named here where it is still knowable.
+      if (input.payment) {
+        const [settled] = await input.db
+          .select()
+          .from(relayedIntents)
+          .where(eq(relayedIntents.paymentTxHash, input.payment.txHash))
+          .limit(1);
+        if (settled) {
+          throw apiError({
+            reason: 'payment_already_spent',
+            intentId: settled.id,
+            intentStatus: settled.status as ApiErrorEnvelope['intentStatus'],
+            operation: settled.operation,
+            idempotencyKey: settled.idempotencyKey,
+            message: `This payment has already funded ${settled.operation} (intent ${settled.id}); it cannot fund another write.`,
+          });
+        }
+      }
+      throw apiError({
+        reason: 'idempotency_key_conflict',
+        operation: input.operation,
+        idempotencyKey,
+        intentId: existing.id,
+        intentStatus: 'reserved',
+        message: `The ${IDEMPOTENCY_KEY_HEADER} you sent names a reservation that could not be completed (intent ${existing.id}). Generate a fresh one and retry.`,
+      });
+    }
     if (intentBelongsToCaller(existing, input)) {
       // A repeat of the same operation by the same caller with the same arguments: hand back
       // what they already started. That is the whole mechanism.
