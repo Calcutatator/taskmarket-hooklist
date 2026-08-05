@@ -8,13 +8,13 @@
 > task is live and a race that stops existing rather than being narrowed, accepting a selector
 > change that breaks any unmigrated caller and one more parameter on the `ITMPCore` spec surface.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude (agent)
-- **Reviewers:** (none recorded — awaiting review)
-- **Deciders:** (none recorded — an agent may not self-approve)
+- **Reviewers:** Beau — self-attested; no independent reviewer recorded
+- **Deciders:** Beau
 - **Realized by:** packages/contracts/src/facets/CoreFacet.sol,
   packages/contracts/src/libraries/LibTaskMarket.sol,
   packages/contracts/script/upgrades/Rev018Upgrade.s.sol,

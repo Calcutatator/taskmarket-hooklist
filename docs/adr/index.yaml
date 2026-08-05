@@ -251,7 +251,7 @@ adrs:
   - number: "0056"
     file: "0056-create-task-takes-the-evaluator-configuration.md"
     title: "createTask takes the evaluator configuration, and creation stops needing a second call"
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"
   - number: "0057"
     file: "0057-a-settled-payment-is-one-indivisible-reference-published-by-the-middleware.md"
@@ -276,5 +276,5 @@ adrs:
   - number: "0061"
     file: "0061-a-reused-idempotency-key-with-different-arguments-is-refused.md"
     title: A reused idempotency key with different arguments is refused
-    status: Proposed
+    status: Accepted
     date: "2026-08-04"

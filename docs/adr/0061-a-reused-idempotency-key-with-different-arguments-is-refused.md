@@ -8,17 +8,17 @@
 > comparison is now on the recovery path and that a payload which cannot be reproduced byte-for-byte
 > across attempts must be made reproducible before it can be compared.
 
-- **Status:** Proposed
+- **Status:** Accepted
 - **Date:** 2026-08-04
 - **Embodiment:** Verified
 - **Last audited:** 2026-08-04
 - **Author:** Claude Code (drafted for review)
 - **Reviewers:** Beau — self-attested; no independent reviewer recorded
-- **Deciders:** (none recorded)
+- **Deciders:** Beau
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
-- **Amends / Amended-by:** —
-- **Pending Amends / Amended-by:** Amends ADR-0052
+- **Amends / Amended-by:** Amends ADR-0052
+- **Pending Amends / Amended-by:** —
 
 ## Context
 
