@@ -1,6 +1,7 @@
 // Verifies: ADR-0052, ADR-0061
 import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, describe, expect, it } from 'vitest';
+import { z } from 'zod';
 import { stubServerEnvironment } from '../../helpers/server-environment';
 
 const restoreServerEnvironment = stubServerEnvironment();
@@ -226,6 +227,30 @@ describe('recordRelayedIntent idempotency', () => {
     // It has to satisfy the same validation a client key does, or it could never be stored.
     expect(derivedIdempotencyKey('task-1:x')).toMatch(
       /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
+    );
+  });
+
+  it('produces a key that is actually a UUID, not merely UUID-shaped', () => {
+    // Our own pattern above is loose enough that raw digest nibbles passed it, but the version
+    // and variant nibbles were whatever the hash happened to give -- so `z.string().uuid()`,
+    // which any validator on this value could reasonably be written with, rejected it fifteen
+    // times in sixteen. Checked over many scopes because a single sample passes by luck.
+    for (let index = 0; index < 200; index++) {
+      const key = derivedIdempotencyKey(`task-${index}:tasks.assignEvaluator`);
+      expect(z.string().uuid().safeParse(key).success, key).toBe(true);
+    }
+  });
+
+  it('keeps the same key across a rerun even with the version and variant bits set', () => {
+    // Determinism is the whole point (ADR-0052 point 8): a completion handler rerun has to
+    // collapse onto the same follow-on intent rather than record a second one and make a
+    // second chain call. Stamping fixed bits at fixed positions preserves that exactly, and
+    // this pins it against the substitution being made scope-dependent later.
+    expect(derivedIdempotencyKey('proof-9:proofs.anchorDeliverable')).toBe(
+      derivedIdempotencyKey('proof-9:proofs.anchorDeliverable')
+    );
+    expect(derivedIdempotencyKey('proof-9:proofs.anchorDeliverable')).not.toBe(
+      derivedIdempotencyKey('proof-10:proofs.anchorDeliverable')
     );
   });
 });

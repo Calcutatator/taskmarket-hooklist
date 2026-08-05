@@ -156,12 +156,22 @@ const envSchema = z
     //
     // Rejecting anything that is not digits also rules out the forms Number would have accepted
     // and quietly mangled -- exponent notation, hex, a decimal point, leading whitespace.
-    REPLACEMENT_GAS_MAX_FEE_WEI: z
-      .string()
-      .regex(/^\d+$/, 'REPLACEMENT_GAS_MAX_FEE_WEI must be a whole number of wei, digits only')
-      .transform((value) => BigInt(value))
-      .refine((value) => value > 0n, 'REPLACEMENT_GAS_MAX_FEE_WEI must be greater than zero')
-      .optional(),
+    //
+    // Empty and whitespace-only are normalised to absent before any of that runs. `.optional()`
+    // only covers a variable that is not in the environment at all, but leaving a key blank in
+    // a `.env` file is the ordinary way an operator says "unset", and it arrives as `''` -- so
+    // without this the digits-only rule rejects it and the process exits at boot over a field
+    // nobody meant to configure. Only the empty case is forgiven: every non-empty value still
+    // has to be digits, which is what keeps the correction above load-bearing.
+    REPLACEMENT_GAS_MAX_FEE_WEI: z.preprocess(
+      (value) => (typeof value === 'string' && value.trim() === '' ? undefined : value),
+      z
+        .string()
+        .regex(/^\d+$/, 'REPLACEMENT_GAS_MAX_FEE_WEI must be a whole number of wei, digits only')
+        .transform((value) => BigInt(value))
+        .refine((value) => value > 0n, 'REPLACEMENT_GAS_MAX_FEE_WEI must be greater than zero')
+        .optional()
+    ),
     ERC8004_IDENTITY_REGISTRY: z.string().default('0x8004A169FB4a3325136EB29fA0ceB6D2e539a432'),
     ERC8004_REPUTATION_REGISTRY: z.string().default('0x8004BAa17C55a88189AE136b182e5fdA19dE9b63'),
     ERC8004_SEED_BLOCK: z.coerce.number().default(0),

@@ -75,14 +75,73 @@ describe('replacement gas escalation', () => {
     expect(decision.fees.maxPriorityFeePerGas).toBeGreaterThan(1n);
   });
 
-  it('clamps at the multiple of the original fee and holds there', () => {
+  it('clamps at the multiple of the original fee on the pass that reaches it', () => {
+    const ceiling = ORIGINAL.maxFeePerGas * POLICY.maxMultiple;
+    const rungs = ladder(5);
+
+    // 6_750_000 escalates to 10_125_000, which the ceiling pulls back to 10_000_000. That
+    // clamp is real work and is still a genuine increase over the fee it replaces.
+    expect(rungs.at(-1)).toBe(ceiling);
+    expect(rungs.at(-1)!).toBeGreaterThan(rungs.at(-2)!);
+  });
+
+  it('keeps increasing past the ceiling rather than repeating the fee it replaces', () => {
+    // The defect: with `previous` already at the ceiling, every later pass escalated above it,
+    // clamped back, and landed on exactly `previous` -- which a provider rejects as an
+    // insufficient bump. The reconciler then replaced forever while putting nothing on the
+    // network, the same stuck-nonce loop ADR-0051 exists to end, reached through the ceiling
+    // instead of through a flat oracle. Monotonicity wins over the cap.
     const rungs = ladder(8);
+
+    for (let i = 1; i < rungs.length; i++) {
+      expect(rungs[i]!, `rung ${i}`).toBeGreaterThan(rungs[i - 1]!);
+      // And by more than any provider's minimum bump, not merely by one wei -- a strictly
+      // greater fee that is still under the bump rule lands nothing either.
+      expect(rungs[i]!, `rung ${i}`).toBeGreaterThan((rungs[i - 1]! * 110n) / 100n);
+    }
+    expect(rungs.at(-1)!).toBeGreaterThan(ORIGINAL.maxFeePerGas * POLICY.maxMultiple);
+  });
+
+  it('reports the breach so the operator can raise the ceiling', () => {
+    // The cap being overridden is exactly the signal `cappedBelowOpeningBid` already aims at:
+    // this deployment's REPLACEMENT_GAS_MAX_MULTIPLE is too low for its fee regime. Reported
+    // as its own field because it says the opposite thing about the ceiling -- obeyed there,
+    // disregarded here -- and an operator cannot tell those apart from one merged flag.
     const ceiling = ORIGINAL.maxFeePerGas * POLICY.maxMultiple;
 
-    expect(Math.max(...rungs.map(Number))).toBe(Number(ceiling));
-    // Holding at the cap, not creeping past it one wei per pass via the +1 floor.
-    expect(rungs.at(-1)).toBe(ceiling);
-    expect(rungs.at(-2)).toBe(ceiling);
+    const held = computeReplacementFees({
+      oracle: ORACLE,
+      original: ORIGINAL,
+      policy: POLICY,
+      previous: fees(ceiling, ceiling / 10n),
+    });
+
+    expect(held.cappedBelowPreviousFee).toBe(true);
+    expect(held.fees.maxFeePerGas).toBeGreaterThan(ceiling);
+
+    // Not raised while the ceiling is doing its ordinary job.
+    expect(ladder(3).length).toBe(3);
+    const underCeiling = computeReplacementFees({
+      oracle: ORACLE,
+      original: ORIGINAL,
+      policy: POLICY,
+      previous: fees(2_000_000n, 200_000n),
+    });
+    expect(underCeiling.cappedBelowPreviousFee).toBe(false);
+  });
+
+  it('escapes an absolute wei ceiling the same way it escapes the multiple', () => {
+    // The same hole, reached through REPLACEMENT_GAS_MAX_FEE_WEI: a `previous` already at the
+    // absolute ceiling would otherwise be replaced by itself, forever.
+    const decision = computeReplacementFees({
+      oracle: ORACLE,
+      original: ORIGINAL,
+      policy: { ...POLICY, maxFeeWei: 1_500_000n },
+      previous: fees(1_500_000n, 150_000n),
+    });
+
+    expect(decision.fees.maxFeePerGas).toBeGreaterThan(1_500_000n);
+    expect(decision.cappedBelowPreviousFee).toBe(true);
   });
 
   it('keeps sending at the cap when the cap sits below the opening bid, and says so', () => {

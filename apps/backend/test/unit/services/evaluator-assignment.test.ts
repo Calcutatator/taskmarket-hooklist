@@ -1,4 +1,5 @@
 // Implements: ADR-0047
+import { PgDialect } from 'drizzle-orm/pg-core';
 import { afterAll, describe, expect, it, vi } from 'vitest';
 import { makeChain } from '../helpers';
 import { stubServerEnvironment } from '../../helpers/server-environment';
@@ -7,8 +8,12 @@ const restoreServerEnvironment = stubServerEnvironment();
 
 // Imported after the environment stub: the module graph reaches services/contract.ts, which
 // resolves server config at import time and exits the process when it is missing.
-const { assertEvaluatorAssignable, buildEvaluatorAssignment, EvaluatorAssignmentError } =
-  await import('../../../src/services/evaluator-assignment');
+const {
+  assertEvaluatorAssignable,
+  buildEvaluatorAssignment,
+  completeEvaluatorAssignment,
+  EvaluatorAssignmentError,
+} = await import('../../../src/services/evaluator-assignment');
 
 afterAll(restoreServerEnvironment);
 
@@ -107,5 +112,48 @@ describe('assertEvaluatorAssignable', () => {
 
   it('refuses an unknown task', async () => {
     expect(await statusOf(assign({}, []))).toBe(404);
+  });
+});
+
+describe('completeEvaluatorAssignment', () => {
+  it('writes only to a task still open', async () => {
+    // Repeating fixed values is only harmless while nothing else has deliberately unset them,
+    // and something has: completeEvaluationsEvaluatorTimeout clears `evaluator` and moves the
+    // task to 'pending_approval' precisely because that evaluator failed to act. Unguarded, a
+    // late reconciler retry restores the evaluator the timeout removed, on a task whose current
+    // state exists to record their absence. The predicate has to be in the WHERE clause rather
+    // than a status read in application code, which is stale the moment two passes race.
+    const dialect = new PgDialect();
+    const captured: { params: unknown[]; sql: string }[] = [];
+    const db = {
+      update: () => ({
+        set: () => ({
+          where: (predicate: { getSQL: () => never }) => {
+            captured.push(dialect.sqlToQuery(predicate.getSQL()));
+            return {
+              then: (onfulfilled?: (value: undefined) => unknown) =>
+                Promise.resolve(undefined).then(onfulfilled),
+            };
+          },
+        }),
+      }),
+    };
+
+    await completeEvaluatorAssignment({
+      db: db as never,
+      payload: {
+        assignment: buildEvaluatorAssignment({ evaluator: EVALUATOR }),
+        payer: REQUESTER,
+        taskId: '0xtask',
+      },
+    });
+
+    expect(captured).toHaveLength(1);
+    expect(captured[0]?.params).toContain('0xtask');
+    // 'open' is the whole allowed set: EvaluatorFacet.assignEvaluator reverts TaskNotOpen for
+    // anything else, and the write leaves the status alone, so there is no result of its own
+    // and no indexer-race state to widen for.
+    expect(captured[0]?.params).toContain('open');
+    expect(captured[0]?.params).not.toContain('pending_approval');
   });
 });

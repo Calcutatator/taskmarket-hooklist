@@ -26,9 +26,7 @@ describe('getOptionalDatabaseUrl', () => {
   it('normalizes a configured PostgreSQL URL', () => {
     process.env.DATABASE_URL = '  postgresql://taskmarket:taskmarket@localhost:5432/test  ';
 
-    expect(getOptionalDatabaseUrl()).toBe(
-      'postgresql://taskmarket:taskmarket@localhost:5432/test'
-    );
+    expect(getOptionalDatabaseUrl()).toBe('postgresql://taskmarket:taskmarket@localhost:5432/test');
   });
 
   it('rejects a non-PostgreSQL URL', () => {
@@ -302,5 +300,37 @@ describe('getServerConfig replacement gas policy', () => {
     process.env.REPLACEMENT_GAS_MAX_MULTIPLE = '1';
 
     expect(() => getServerConfig()).toThrow();
+  });
+
+  it.each(['', '   '])(
+    'reads a blank absolute ceiling as unset rather than refusing to boot: %j',
+    (value) => {
+      // `.optional()` covers a variable that is absent from the environment, not one present
+      // and empty -- and leaving a key blank in a `.env` file is the ordinary way an operator
+      // says "unset". Without normalising it first, the digits-only rule rejects `''` and the
+      // process exits at boot over a field nobody meant to configure.
+      process.env.REPLACEMENT_GAS_MAX_FEE_WEI = value;
+
+      expect(getServerConfig().REPLACEMENT_GAS_MAX_FEE_WEI).toBeUndefined();
+    }
+  );
+
+  it.each(['1e18', '0x10', '1.5', '-1', '0', '1 000'])(
+    'still refuses a non-empty ceiling that is not plain digits: %j',
+    (value) => {
+      // The digits-only rule is the whole reason this field is a string: a per-gas ceiling in
+      // wei is exactly the quantity that exceeds Number.MAX_SAFE_INTEGER, and every form here
+      // is one Number would have accepted and quietly mangled. Forgiving the empty case must
+      // not forgive any of these.
+      process.env.REPLACEMENT_GAS_MAX_FEE_WEI = value;
+
+      expect(() => getServerConfig()).toThrow();
+    }
+  );
+
+  it('parses a real ceiling well past the float-safe range without losing digits', () => {
+    process.env.REPLACEMENT_GAS_MAX_FEE_WEI = '90071992547409910';
+
+    expect(getServerConfig().REPLACEMENT_GAS_MAX_FEE_WEI).toBe(90071992547409910n);
   });
 });

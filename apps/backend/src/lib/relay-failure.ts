@@ -13,6 +13,25 @@ import { BaseError, ContractFunctionRevertedError } from 'viem';
 export type RelayFailureKind = 'deterministic' | 'transient';
 
 /**
+ * A relay attempt refused by our own code, on grounds that waiting cannot change.
+ *
+ * The classifier below reads "deterministic" out of the chain's own vocabulary, which means a
+ * broadcaster that rejects its persisted payload before ever building a transaction has no way
+ * to say so: a plain `Error` falls through to the `transient` default and the reconciler retries
+ * an intent that can only ever be refused again -- ADR-0047's unbounded loop, reached without
+ * the chain being involved at all. This class is how a broadcaster states the verdict itself.
+ *
+ * Only for facts fixed in the payload. Anything that depends on on-chain state or on the
+ * network must keep the default, because the default is the cheaper mistake.
+ */
+export class DeterministicRelayError extends Error {
+  constructor(message: string) {
+    super(message);
+    this.name = 'DeterministicRelayError';
+  }
+}
+
+/**
  * Text `services/contract.ts` puts in front of every decoded revert, and the value it uses
  * when it could not decode one. An undecodable failure is treated as transient: the retry
  * loop in `relayThroughForwarderResult` exhausts into this same message when the RPC never
@@ -62,6 +81,10 @@ const TRANSIENT_MARKERS = [
  * finished -- the more expensive mistake of the two.
  */
 export function classifyRelayFailure(error: unknown): RelayFailureKind {
+  // Checked before anything else: this is a verdict stated outright, not one inferred from a
+  // message, so no amount of text matching below should be able to talk it back into a retry.
+  if (error instanceof DeterministicRelayError) return 'deterministic';
+
   // A decoded revert carried by viem itself, e.g. from a simulate() that was never retried.
   if (error instanceof BaseError) {
     const reverted = error.walk((e) => e instanceof ContractFunctionRevertedError);

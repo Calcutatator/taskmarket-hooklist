@@ -1,5 +1,5 @@
 // Implements: ADR-0045, ADR-0047
-import { eq } from 'drizzle-orm';
+import { and, eq, inArray } from 'drizzle-orm';
 
 import type { db as DbType } from '../db/client';
 import { tasks } from '../db/schema';
@@ -164,10 +164,28 @@ export function sendEvaluatorAssignment(
 }
 
 /**
+ * The status `assignEvaluator` is callable from, which is also the status it leaves behind.
+ *
+ * `EvaluatorFacet.assignEvaluator` reverts `TaskNotOpen` for anything but `Open`, and it writes
+ * only the evaluator config -- the task's own status is untouched -- so 'open' is the whole set.
+ * There is no indexer-race widening to add either: `processEvaluatorAssignedEvent` mirrors the
+ * evaluator and its stake and likewise leaves the status alone.
+ */
+const ASSIGNABLE_STATUSES = ['open'] as const;
+
+/**
  * Mirror the confirmed on-chain assignment onto the task row.
  *
  * Idempotent by construction -- it writes the same five values from the same payload however
  * many times it runs, which is what lets a reconciler pass repeat it safely (ADR-0045).
+ *
+ * Guarded all the same, for the reason `completeEvaluationsEvaluate` is: repeating fixed values
+ * is only harmless while nothing else has deliberately unset them. Something has.
+ * `completeEvaluationsEvaluatorTimeout` clears `evaluator` and moves the task to
+ * 'pending_approval' precisely because that evaluator failed to act within its window; an
+ * unguarded late retry landing after it would put the removed evaluator back on a task whose
+ * current state exists to record their absence, and the requester would be looking at an
+ * evaluator the chain has already forfeited the stake of.
  */
 export async function completeEvaluatorAssignment(input: {
   db: Db;
@@ -176,7 +194,7 @@ export async function completeEvaluatorAssignment(input: {
   await input.db
     .update(tasks)
     .set(input.payload.assignment)
-    .where(eq(tasks.id, input.payload.taskId));
+    .where(and(eq(tasks.id, input.payload.taskId), inArray(tasks.status, ASSIGNABLE_STATUSES)));
 }
 
 /**

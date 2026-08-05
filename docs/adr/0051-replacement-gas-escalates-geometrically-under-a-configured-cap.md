@@ -305,6 +305,40 @@ ADR.
 
 **Neutral / follow-up:**
 
+- **Correction, decided 2026-08-04: monotonicity wins over the cap, and point 1's claim that
+  holding at the ceiling is "clamp-and-continue behaviour" is wrong.** Point 1 states that "once
+  escalation reaches the ceiling, attempts stop increasing and hold there, which is point 2's
+  clamp-and-continue behaviour and not a licence to creep past the cap by one wei per pass." The
+  second half of that sentence is right and the first half does not follow from it. Holding at the
+  ceiling continues nothing. Escalation is computed from the previous attempt's fee, so once that
+  fee *is* the ceiling, every later pass computes a value above the ceiling, clamps back, and lands
+  on exactly the previous fee -- and a replacement that does not raise the fee is rejected by the
+  provider as an insufficient bump. The reconciler then replaces forever while putting nothing on
+  the network: precisely the "rejected as underpriced, forever" loop this ADR was written to
+  remove, reached through the ceiling rather than through a flat oracle. The Consequences section's
+  claim that that loop "cannot occur" was true only of the flat-oracle route.
+
+  So the ceiling now yields. The replacement fee is always strictly greater than the fee it
+  replaces, and when a clamp would violate that, the clamp is discarded and the full escalated fee
+  is used -- not `previous + 1n`, which is strictly greater arithmetically but still under every
+  provider's minimum-bump rule and so still lands nothing. This ADR's own cost asymmetry settles
+  which side gives: a capped 21,000-gas self-transfer costs cents even well above the ceiling,
+  while a blocked nonce blocks every paid write on the shared relayer, which is incident #54. The
+  same reasoning already appears here as "the alternative is a stalled shared relayer, and the
+  asymmetry ... is not close"; it simply was not carried through to the ceiling's own edge.
+
+  The ceiling is not thereby inert. It still binds the first attempt and the first pass that
+  reaches it, where the clamped value is a genuine increase over what it replaces; only the passes
+  after that override it. Each override is reported on `ReplacementGasDecision` as its own field,
+  `cappedBelowPreviousFee`, and logged at error -- deliberately not folded into
+  `cappedBelowOpeningBid`, because the two say opposite things about the ceiling (obeyed there,
+  disregarded here) and an operator reading one merged flag could not tell whether the maximum they
+  configured was honoured. Both carry the same remedy: this deployment's `REPLACEMENT_GAS_MAX_MULTIPLE`
+  (or `REPLACEMENT_GAS_MAX_FEE_WEI`) is too low for the fee regime it is now operating in. The
+  Negative trade-off above -- "we will sometimes overpay for gas, knowingly" -- now extends past the
+  configured ceiling, which is a real widening of that cost and is stated here rather than left to
+  be discovered.
+
 - **Correction, decided 2026-08-04: this field is a bigint, not a number.** The table above
   originally specified `int`, following the `z.coerce.number()` pattern the surrounding config
   uses. That is wrong for this one field, and the reason generalises: a per-gas ceiling in wei is

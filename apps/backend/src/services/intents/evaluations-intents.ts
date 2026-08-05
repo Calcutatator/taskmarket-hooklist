@@ -2,6 +2,7 @@
 import { and, eq, inArray } from 'drizzle-orm';
 
 import { getServerConfig } from '../../config/env';
+import { DeterministicRelayError } from '../../lib/relay-failure';
 import type { db as DbType } from '../../db/client';
 import { tasks } from '../../db/schema';
 import {
@@ -25,6 +26,32 @@ type Db = typeof DbType;
  * that can drift apart without anything noticing.
  */
 export const VERDICT_MAP: Record<string, number> = { approve: 0, reject: 1, partial: 2 };
+
+/**
+ * The verdict's on-chain code, or a refusal to send anything at all.
+ *
+ * One helper for both call sites, for the same reason the map above is one table: a lookup
+ * duplicated per caller is a second thing that can drift. Both callers previously fell back to
+ * `?? 0`, and 0 is APPROVE -- so a verdict outside the vocabulary did not fail, it paid the
+ * awards out. A value we cannot interpret must never be silently resolved into the most
+ * generous of the three.
+ *
+ * `DeterministicRelayError` rather than a plain throw because this runs on the broadcast path,
+ * which a reconciler pass reaches with no caller waiting. `classifyRelayFailure` defaults to
+ * `transient`, so a plain error would put a payload that can never succeed back in the queue on
+ * every pass, forever -- exactly the loop ADR-0047 exists to end. Stated as deterministic, the
+ * intent instead reaches a visible terminal state: `failed` if nothing was paid, or budget-
+ * exhausted and handed to settlement's refund sweep if something was.
+ */
+function verdictCode(verdict: string): number {
+  const code = VERDICT_MAP[verdict];
+  if (code === undefined) {
+    throw new DeterministicRelayError(
+      `unknown verdict "${verdict}"; expected one of ${Object.keys(VERDICT_MAP).join(', ')}`
+    );
+  }
+  return code;
+}
 
 /** The statuses `evaluate()` is callable from (evaluations.router.ts), plus its own result. */
 const EVALUATABLE_STATUSES = ['open', 'pending_approval', 'review', 'appealing'] as const;
@@ -85,7 +112,7 @@ export async function broadcastEvaluationsEvaluate(context: {
   const result = await contractEvaluate(
     payload.taskId as `0x${string}`,
     context.evaluator as `0x${string}`,
-    VERDICT_MAP[payload.verdict] ?? 0,
+    verdictCode(payload.verdict),
     payload.score,
     payload.confidence,
     payload.evidenceHash as `0x${string}`,
@@ -298,7 +325,7 @@ export async function broadcastEvaluationsResolveDispute(context: {
   const result = await contractResolveDispute(
     payload.taskId as `0x${string}`,
     context.resolver as `0x${string}`,
-    VERDICT_MAP[payload.verdict] ?? 0,
+    verdictCode(payload.verdict),
     awardArgs(payload.awards)
   );
   return result.txHash;

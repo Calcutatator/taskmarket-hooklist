@@ -23,6 +23,20 @@ export type ReplacementGasDecision = {
    * price the market already says is insufficient.
    */
   cappedBelowOpeningBid: boolean;
+  /**
+   * True when a ceiling was *overridden* to keep the fee above the one it replaces.
+   *
+   * A separate field from `cappedBelowOpeningBid` rather than a widening of it, because the two
+   * report opposite things about the ceiling. `cappedBelowOpeningBid` says the ceiling was
+   * obeyed and the transaction went out underpriced; this says the ceiling was disregarded and
+   * the transaction went out above it. An operator reading a single merged flag could not tell
+   * whether their configured maximum was honoured, which is the one fact they set it to control.
+   *
+   * Both mean the same thing about the configuration -- `REPLACEMENT_GAS_MAX_MULTIPLE` (or
+   * `REPLACEMENT_GAS_MAX_FEE_WEI`) is too low for the fee regime this deployment is in -- and
+   * this one means it has already begun costing more than it saves.
+   */
+  cappedBelowPreviousFee: boolean;
   fees: GasFees;
 };
 
@@ -40,7 +54,12 @@ function escalateField(
   previous: bigint | null,
   original: bigint | null,
   policy: ReplacementGasPolicy
-): { capped: boolean; cappedBelowOpeningBid: boolean; value: bigint } {
+): {
+  capped: boolean;
+  cappedBelowOpeningBid: boolean;
+  cappedBelowPreviousFee: boolean;
+  value: bigint;
+} {
   const openingBid = ceilDiv(oracle * policy.firstBumpPct, 100n);
 
   // The base of the multiplication is the price that already failed, not a fresh oracle
@@ -48,13 +67,12 @@ function escalateField(
   // makes every attempt clear the provider's minimum bump. The `previous + 1n` term
   // guarantees strict monotonicity outright, so it does not depend on the configured
   // percentage surviving truncation at the bottom of the number range.
-  let value =
+  const escalated =
     previous === null
       ? openingBid
       : maxOf(ceilDiv(previous * policy.escalationPct, 100n), openingBid, previous + 1n);
+  let value = escalated;
 
-  // The multiple is applied *after* the +1 floor, so reaching the ceiling holds the fee there
-  // rather than letting it creep one wei past the cap on every pass.
   const multipleCeiling = original === null ? null : original * policy.maxMultiple;
   let capped = false;
   let cappedBelowOpeningBid = false;
@@ -68,9 +86,32 @@ function escalateField(
     value = policy.maxFeeWei;
   }
 
+  // Monotonicity wins over the ceiling, always. A ceiling reached once is reached on every
+  // later pass -- the escalation is computed from `previous`, which is now the ceiling itself
+  // -- so clamping would return exactly `previous`, and a replacement that does not raise the
+  // fee is rejected as underpriced. Holding at the cap therefore does not "hold" anything: it
+  // replaces forever while putting nothing on the network, which is the stuck-nonce loop
+  // ADR-0051 exists to end, reached through the ceiling instead of through a flat oracle.
+  //
+  // The cost asymmetry settles which side gives. Exceeding the cap costs cents: a replacement
+  // is a 21,000-gas self-transfer, and the cap bounds a per-gas price, not an exposure. A
+  // blocked nonce blocks every paid write on the shared server wallet (incident #54). So the
+  // fee is restored to the full escalation -- not to `previous + 1`, which is strictly greater
+  // arithmetically but still under every provider's minimum-bump rule and so still lands
+  // nothing.
+  //
+  // This does not make the ceiling inert. It still binds on the first attempt and on the first
+  // pass that reaches it, where the clamped value is genuinely above `previous`; only the
+  // passes after that override it, and each one says so.
+  let cappedBelowPreviousFee = false;
+  if (previous !== null && value <= previous) {
+    cappedBelowPreviousFee = true;
+    value = escalated;
+  }
+
   // A fee of zero is not a transaction. Only reachable from a zero original or a zero
   // absolute ceiling, both of which are misconfiguration rather than a real price.
-  return { capped, cappedBelowOpeningBid, value: maxOf(value, 1n) };
+  return { capped, cappedBelowOpeningBid, cappedBelowPreviousFee, value: maxOf(value, 1n) };
 }
 
 /**
@@ -106,6 +147,7 @@ export function computeReplacementFees(input: {
   return {
     capped: maxFee.capped || priorityFee.capped,
     cappedBelowOpeningBid: maxFee.cappedBelowOpeningBid || priorityFee.cappedBelowOpeningBid,
+    cappedBelowPreviousFee: maxFee.cappedBelowPreviousFee || priorityFee.cappedBelowPreviousFee,
     fees: {
       maxFeePerGas: maxFee.value,
       // A priority fee above the max fee is rejected outright, and the clamps above are
