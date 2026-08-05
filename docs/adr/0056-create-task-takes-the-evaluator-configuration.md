@@ -17,7 +17,7 @@
 - **Deciders:** (none recorded — an agent may not self-approve)
 - **Realized by:** packages/contracts/src/facets/CoreFacet.sol,
   packages/contracts/src/libraries/LibTaskMarket.sol,
-  packages/contracts/script/upgrades/Rev016Upgrade.s.sol,
+  packages/contracts/script/upgrades/Rev018Upgrade.s.sol,
   apps/backend/src/services/intents/tasks-create-intent.ts
 - **Supersedes / Superseded-by:** —
 - **Pending Supersedes / Superseded-by:** —
@@ -124,21 +124,57 @@ evaluator now has exactly one relayed intent, and it is the paid one.
 
 **Negative / trade-offs:**
 
-- **Migration.** `createTask`'s selector changes from `0xa595d889` to `0x95d5ec3f`, and rev016
-  removes the old one. Anything still encoding the nine-parameter signature reverts at the
-  diamond's fallback. In-repo there is exactly one encoder — the hand-written viem ABI in
-  `apps/backend/src/services/contract.ts` — updated in the same change. `TaskMarketForwarder` does
-  **not** encode the selector itself: it relays whatever calldata it is handed and hashes the
-  selector into its receipt, so it needs no redeployment and no change. Any third-party caller
-  must re-encode; a task with no evaluator passes the all-zero struct. The break is deliberate and
-  loud, which is the point: a silent success would be worse than a revert.
+- **Migration.** `createTask`'s parameter list changes, so its selector changes with it: the
+  nine-scalar form gives way to one taking `TaskConfig`, `StakeConfig`, `HookConfig`,
+  `TaskContent` and `TaskEvaluatorConfig`. Both selectors are `keccak256` of the signature, so
+  neither is written down here — the signatures live in `CoreFacet.sol` (see **Realized by**) and
+  `cast sig` derives the routing value from whichever one you are checking. The literal was
+  recorded in prose twice before and was wrong both times, for the same reason: a value duplicated
+  out of the code it is computed from goes stale the next time the code moves. The revision
+  document is where an operator should read the shipped literals, because it records one specific
+  cut and is meant to be compared against a block explorer.
+  Anything still encoding the nine-parameter signature keeps working for the whole rev018 window
+  and only reverts at the diamond's fallback once rev019 removes the shim. In-repo there is
+  exactly one encoder — the hand-written viem ABI in `apps/backend/src/services/contract.ts` —
+  updated in the same change. `TaskMarketForwarder` does **not** encode the selector itself: it
+  relays whatever calldata it is handed and hashes the selector into its receipt, so it needs no
+  redeployment and no change. Any third-party caller must re-encode before rev019; a task with no
+  evaluator passes the all-zero struct. The eventual break is deliberate and loud, which is the
+  point: a silent success would be worse than a revert.
 - One more parameter on `ITMPCore.createTask`, which other implementors may follow. The spec note
   added to `erc-8195.md` states the requirement as normative rather than incidental.
 - Every in-repo `createTask` call site had to be updated, which is a wide, mechanical diff across
   the Forge tests.
-- Deploying this requires a `diamondCut` (rev016). Until that cut lands on a given network, the
-  backend's updated ABI and the deployed contract disagree and creation fails there — so the
-  contract upgrade and the backend deploy are ordered, not independent.
+- Deploying this requires a `diamondCut` (rev018). The contract upgrade and the backend deploy are
+  ordered, not independent, so the sequence below is part of the decision rather than an operator
+  detail left to discover.
+
+**Rollout.** The signature change ships expand-then-contract across two revisions, which is what
+makes the cut zero-downtime:
+
+1. **rev018 — the facet cut.** `Rev018Upgrade.s.sol` `Replace`s the existing CoreFacet selectors
+   and `Add`s the new evaluator-aware `createTask`. The nine-parameter form is deliberately kept
+   routed to a deprecated shim that forwards to the same shared body with an all-zero
+   `TaskEvaluatorConfig`. After this step the diamond answers both selectors identically for a
+   task with no evaluator, and every existing caller keeps working untouched.
+2. **The backend deploy.** `apps/backend/src/services/contract.ts` starts encoding the new
+   selector, so newly created tasks carry their evaluator terms atomically. Nothing forces this to
+   be simultaneous with step 1, because step 1 broke nothing.
+3. **rev019 — the removal.** Once nothing encodes the old form, `Rev019Upgrade.s.sol` removes the
+   shim's selector and the ADR's end state is reached: one selector, no way to create a task by a
+   route that cannot carry evaluator terms.
+
+A caller still using the old form **during** the window succeeds and gets a task with no
+evaluator, exactly as that signature has always meant — not a silent half-configuration, because
+the old signature never accepted evaluator terms to begin with. **After** rev019 the same call
+reverts at the diamond's fallback, which is the loud failure this ADR prefers to a silent one.
+
+Rollback is independent on each side. Before rev019, the backend can be reverted to the old
+encoding with no contract action at all, since the shim is still routed. The rev018 cut itself is
+reversible by a `diamondCut` restoring the previous CoreFacet, and because it only added a
+selector, reverting it strands nothing that existed before it. Reverting rev019 means re-adding
+the shim's selector by cut — which is why step 3 waits on evidence that nothing calls it, rather
+than following step 1 in the same deploy.
 
 **Neutral / follow-up:**
 
@@ -158,6 +194,9 @@ evaluator now has exactly one relayed intent, and it is the paid one.
 - [ADR-0046 — Relayed intents chain follow-on writes](0046-relayed-intents-chain-follow-on-writes.md)
 - [ADR-0045 — Relayed writes are durable intents, not request-scoped transactions](0045-relayed-writes-are-durable-intents-not-request-scoped-transactions.md)
 - [ADR-0011 — Diamond selectors: single source and versioned upgrades](0011-diamond-selectors-single-source-and-versioned-upgrades.md)
-- `packages/contracts/docs/specs/erc8195/rev016-escrow-liability-and-atomic-evaluator-config.md`
+- `packages/contracts/docs/specs/erc8195/rev018-create-task-evaluator-config.md` — the shipped cut,
+  and the place that records the literal selectors
 - `packages/contracts/src/libraries/LibTaskMarket.sol` — `_applyEvaluatorConfig`, the shared body
-- `packages/contracts/script/upgrades/Rev016Upgrade.s.sol` — the Remove/Replace/Add cut
+- `packages/contracts/script/upgrades/Rev018Upgrade.s.sol` — the Replace/Add cut that keeps the
+  legacy selector routed
+- `packages/contracts/script/upgrades/Rev019Upgrade.s.sol` — the later cut that removes it
