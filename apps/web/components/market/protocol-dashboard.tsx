@@ -36,7 +36,7 @@ const deployedContracts: DeployedContract[] = [
   },
   {
     address: '0x833589fCD6eDb6E08f4c7C32D4f71b54bdA02913',
-    body: 'Circle USDC on Base — 6 decimals, settlement token for rewards, fees, stakes, and refunds.',
+    body: 'Circle USDC on Base. Six-decimal settlement token for rewards, fees, stakes, and refunds.',
     label: 'USDC',
   },
   {
