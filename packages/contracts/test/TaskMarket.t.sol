@@ -4153,6 +4153,63 @@ contract TaskMarketTest is DiamondTestHelper {
         assertEq(usdc.balanceOf(attacker), attackerBefore);
     }
 
+    // A non-zero award to address(0) must be rejected by evaluate() itself, not deferred to
+    // _payAwards. The verdict is one-shot on chain: if it were stored, the task would move to
+    // Appealing and then finalizeVerdict would revert forever, stranding the escrow.
+    function test_RevertWhen_Evaluate_AwardsZeroAddress_ClaimMode() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
+        _claimTask(taskId, worker1, 0);
+        _submitWork(taskId, worker1, keccak256("genuine work"));
+
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: address(0), amount: REWARD, rank: 1 });
+
+        vm.expectRevert(ITMPCore.InvalidAwardRecipient.selector);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 1000, awards);
+
+        // No verdict was stored, so the task never left Review and remains finalizable later.
+        assertEq(uint8(market.getTaskState(taskId)), uint8(ITMPCore.TaskStatus.Review), "task must stay in Review");
+    }
+
+    // Same guard on the bounty-like branch, which otherwise checks submission presence.
+    function test_RevertWhen_Evaluate_AwardsZeroAddress_BountyMode() public {
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.BOUNTY(), 0, 0);
+        _assignEvaluator(taskId, requester, evaluator, 0, uint32(2 days), uint32(1 days));
+        _submitWork(taskId, worker1, keccak256("genuine work"));
+
+        ITMPCore.Award[] memory awards = new ITMPCore.Award[](1);
+        awards[0] = ITMPCore.Award({ worker: address(0), amount: REWARD, rank: 1 });
+
+        vm.expectRevert(ITMPCore.InvalidAwardRecipient.selector);
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 1000, awards);
+    }
+
+    // resolveDispute() shares _validateAwardRecipients, so the same guard applies there.
+    function test_RevertWhen_ResolveDispute_AwardsZeroAddress() public {
+        address resolver = address(20);
+        bytes32 taskId = _createTask(requester, REWARD, DURATION, market.CLAIM(), 0, 0);
+        _relay(
+            requester,
+            0,
+            abi.encodeCall(market.assignEvaluator, (taskId, evaluator, 0, 0, uint32(2 days), uint32(1 days), resolver))
+        );
+        _claimTask(taskId, worker1, 0);
+        _submitWork(taskId, worker1, keccak256("genuine work"));
+
+        ITMPCore.Award[] memory legitAwards = new ITMPCore.Award[](1);
+        legitAwards[0] = ITMPCore.Award({ worker: worker1, amount: REWARD, rank: 1 });
+        _evaluate(taskId, evaluator, ITMPCore.VerdictType.APPROVE, 900, legitAwards);
+        _appeal(taskId, worker1);
+
+        ITMPCore.Award[] memory zeroAwards = new ITMPCore.Award[](1);
+        zeroAwards[0] = ITMPCore.Award({ worker: address(0), amount: REWARD, rank: 1 });
+
+        vm.prank(resolver);
+        vm.expectRevert(ITMPCore.InvalidAwardRecipient.selector);
+        market.resolveDispute(taskId, ITMPCore.VerdictType.APPROVE, zeroAwards);
+    }
+
     // -------------------------------------------------------------------------
     // assignEvaluator: revert guards
     // -------------------------------------------------------------------------

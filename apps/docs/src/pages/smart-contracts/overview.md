@@ -303,7 +303,7 @@ function assignEvaluator(
 ) external
 ```
 
-Assigns an evaluator to an Open task. Only the requester may call this. If `stakeAmount > 0` the contract pulls it from the requester via `transferFrom`. `feeBps` (max 10000) is the evaluator's cut of the reward, paid out when `evaluate` is called. `disputeResolver` may be `address(0)` if disputes are not supported for this task. Reverts if an evaluator is already assigned to the task, and reverts with `EvaluatorCannotBeRequester` or `DisputeResolverCannotBeRequester` if either address equals the task's requester -- a requester cannot judge their own task. Emits `EvaluatorAssigned`.
+Assigns an evaluator to an Open task. Only the requester may call this. If `stakeAmount > 0` the contract pulls it from the requester via `transferFrom`. `feeBps` (max 10000) is the evaluator's cut of the reward, paid out when `evaluate` is called. `disputeResolver` may be `address(0)` if disputes are not supported for this task. Reverts if an evaluator is already assigned to the task, and reverts with `EvaluatorCannotBeRequester` or `DisputeResolverCannotBeRequester` if either address equals the task's requester -- a requester cannot judge their own task. Reverts with `AppealWindowTooShort` if `appealWindowSecs` is below the protocol-wide floor returned by `minAppealWindowSecs()`, so a task can never be assigned an appeal window too short for the worker to use. Emits `EvaluatorAssigned`.
 
 ### evaluate
 
