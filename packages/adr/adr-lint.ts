@@ -54,6 +54,22 @@ function resolveScope(): LintScope {
   return 'whole-corpus';
 }
 
+// Whether an ADR author may stand as their own reviewer/decider. When true, the
+// self-ack-smell nudge is suppressed. Precedence: ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW
+// env > adr-lint.config.json > built-in default (false).
+function resolveAllowAuthorSelfReview(): boolean {
+  const env = process.env.ADR_LINT_ALLOW_AUTHOR_SELF_REVIEW;
+  if (env !== undefined) return /^(1|true|yes|on)$/i.test(env.trim());
+  try {
+    const v = (JSON.parse(readFileSync(SCOPE_CONFIG, 'utf8')) as { allow_author_self_review?: unknown }).allow_author_self_review;
+    if (typeof v === 'boolean') return v;
+  } catch {
+    // missing or malformed config -> fall through to the default
+  }
+  return false;
+}
+const ALLOW_AUTHOR_SELF_REVIEW = resolveAllowAuthorSelfReview();
+
 function getChangedFiles(): string[] {
   const argvFiles = process.argv.slice(2);
   if (argvFiles.length > 0) return argvFiles;
@@ -80,7 +96,7 @@ function getChangedFiles(): string[] {
 // `| jq` (or read by an agent) gets clean JSON with no prose mixed in, while a human running it
 // directly in a terminal still sees everything (stdout and stderr both render there).
 function runCli(adrDir: string, changedFiles: string[], gateFiles: string[]): void {
-  const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT, gateFiles);
+  const { issues: adrIssues, adrFiles } = lintAdrDir(adrDir, changedFiles, REPO_ROOT, gateFiles, ALLOW_AUTHOR_SELF_REVIEW);
   // RFCs are not structurally linted (see lintRfcDir's own doc comment) -- only index
   // freshness is checked here, the same mechanical property enforced for ADRs.
   const { issues: rfcIssues, rfcFiles } = lintRfcDir(RFC_DIR, REPO_ROOT);

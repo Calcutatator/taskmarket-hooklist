@@ -469,7 +469,14 @@ export function checkConsideredOptionsMinimum(content: string, file: string): Is
 }
 
 // See docs/adr/README.md "Three roles" for the Author/Reviewers/Deciders policy this enforces.
-export function checkAuthorReviewersDeciders(content: string, file: string, status: string | null): Issue[] {
+// When allowAuthorSelfReview is true, the self-ack-smell nudge is suppressed (an author may
+// stand as their own reviewer/decider); a blank Deciders on an Accepted ADR still blocks.
+export function checkAuthorReviewersDeciders(
+  content: string,
+  file: string,
+  status: string | null,
+  allowAuthorSelfReview = false,
+): Issue[] {
   const issues: Issue[] = [];
   const author = fieldValue(content, AUTHOR_RE);
   const reviewers = fieldValue(content, REVIEWERS_RE);
@@ -489,7 +496,7 @@ export function checkAuthorReviewersDeciders(content: string, file: string, stat
       message: 'Status is Accepted but Reviewers is blank or a placeholder — consider recording a lightweight technical ack',
     });
   }
-  if (!isPlaceholder(author)) {
+  if (!allowAuthorSelfReview && !isPlaceholder(author)) {
     const authorName = normalizeName(author);
     if (!isPlaceholder(deciders) && authorName && authorName === normalizeName(deciders)) {
       issues.push({
@@ -1062,7 +1069,10 @@ export function lintAdrDir(
   // the source-changed-without-an-ADR coverage warning): in whole-corpus mode
   // the gate looks at every tracked source file, not just this push's diff.
   // Defaults to changedFiles so existing callers keep diff-scoped behavior.
-  gateFiles: string[] = changedFiles
+  gateFiles: string[] = changedFiles,
+  // When true, an author who also appears as reviewer/decider does not raise the
+  // self-ack-smell warning. Defaults to false so existing callers are unchanged.
+  allowAuthorSelfReview = false
 ): LintResult {
   const issues: Issue[] = [];
 
@@ -1104,7 +1114,7 @@ export function lintAdrDir(
     issues.push(...checkRequiredSections(content, file));
     issues.push(...checkYStatement(content, file));
     issues.push(...checkConsideredOptionsMinimum(content, file));
-    issues.push(...checkAuthorReviewersDeciders(content, file, status));
+    issues.push(...checkAuthorReviewersDeciders(content, file, status, allowAuthorSelfReview));
   }
 
   // Supersession symmetry + direction, binding for Accepted-lineage ADRs

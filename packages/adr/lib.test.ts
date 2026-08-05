@@ -1145,6 +1145,16 @@ describe('checkAuthorReviewersDeciders (direct)', () => {
     expect(issues).toEqual([]);
   });
 
+  test('self-ack smell is suppressed when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', 'Carol'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => /self-ack smell/.test(i.message))).toBe(false);
+  });
+
+  test('a blank Deciders still blocks even when author self-review is allowed', () => {
+    const issues = checkAuthorReviewersDeciders(adr('Carol', 'Carol', '—'), 'x.md', 'Accepted', true);
+    expect(issues.some((i) => i.type === 'ERROR' && /Deciders is blank/.test(i.message))).toBe(true);
+  });
+
   test('property: across every Status x placeholder-combination, Deciders-blocking fires iff Accepted and Deciders is a placeholder', () => {
     const names = ['—', 'Alice', 'Bob', 'Carol'];
     fc.assert(
