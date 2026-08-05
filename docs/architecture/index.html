@@ -261,16 +261,16 @@
   </div>
 
   <div class="panel">
-    <svg viewBox="0 0 1000 340" role="img" aria-label="Flow. Payment settles, then an intent is recorded with the payment attached, a nonce is allocated, the transaction is broadcast, and on confirmation the result is written. If the request disconnects, the reconciler completes the intent. Only confirmed failure triggers a refund.">
+    <svg viewBox="0 0 1000 340" role="img" aria-label="Flow. A ticket is written first, then the payment settles and is attached to it, a nonce is allocated, the transaction is broadcast, and on confirmation the result is written. If the request disconnects, the reconciler completes the intent. Only confirmed failure triggers a refund.">
       <g font-family="Helvetica Neue,Arial,sans-serif">
-        <rect x="16" y="30" width="168" height="76" fill="#fff6e8" stroke="#2a1018" stroke-width="3.5"/>
-        <text x="100" y="62" text-anchor="middle" fill="#2a1018" font-size="15" font-weight="700">Payment</text>
-        <text x="100" y="83" text-anchor="middle" fill="#2a1018" font-size="12" font-weight="600">settles first</text>
+        <rect x="16" y="30" width="168" height="76" fill="#1e7a3b" stroke="#2a1018" stroke-width="3.5"/>
+        <text x="100" y="62" text-anchor="middle" fill="#fff6e8" font-size="15" font-weight="700">Ticket written</text>
+        <text x="100" y="83" text-anchor="middle" fill="#fff6e8" font-size="12" font-weight="600">before paying</text>
         <path d="M192,68 L224,68" stroke="#2a1018" stroke-width="4"/><path d="M218,60 L230,68 L218,76 Z" fill="#2a1018"/>
 
-        <rect x="236" y="30" width="168" height="76" fill="#1e7a3b" stroke="#2a1018" stroke-width="3.5"/>
-        <text x="320" y="62" text-anchor="middle" fill="#fff6e8" font-size="15" font-weight="700">Ticket written</text>
-        <text x="320" y="83" text-anchor="middle" fill="#fff6e8" font-size="12" font-weight="600">payment attached</text>
+        <rect x="236" y="30" width="168" height="76" fill="#fff6e8" stroke="#2a1018" stroke-width="3.5"/>
+        <text x="320" y="62" text-anchor="middle" fill="#2a1018" font-size="15" font-weight="700">Payment settles</text>
+        <text x="320" y="83" text-anchor="middle" fill="#2a1018" font-size="12" font-weight="600">attached to the ticket</text>
         <path d="M412,68 L444,68" stroke="#2a1018" stroke-width="4"/><path d="M438,60 L450,68 L438,76 Z" fill="#2a1018"/>
 
         <rect x="456" y="30" width="168" height="76" fill="#1e7a3b" stroke="#2a1018" stroke-width="3.5"/>
