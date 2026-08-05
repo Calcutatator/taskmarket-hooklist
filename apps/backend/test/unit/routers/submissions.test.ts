@@ -39,7 +39,11 @@ vi.mock('../../../src/config/env', async (importOriginal) => ({
 import { submissionsRouter } from '../../../src/routers/submissions.router';
 import { recoverMessageAddress } from 'viem';
 import { privateKeyToAccount } from 'viem/accounts';
-import { buildSubmitMessage } from '@taskmarket/shared';
+import {
+  ArtifactCreateSchema,
+  ArtifactKeyInputSchema,
+  buildSubmitMessage,
+} from '@taskmarket/shared';
 import { envelopeForError } from '../../../src/lib/api-error';
 import { getStorageBackend } from '../../../src/lib/storage';
 import { contractSubmitWork } from '../../../src/services/contract';
@@ -169,6 +173,88 @@ describe('submissions router', () => {
       // Left at `broadcast`, not `completed` and not `failed`: the transaction is on chain,
       // so the intent stays claimable and a later pass retries the recording.
       expect(ctx.intents[0]!.status).toBe('broadcast');
+    });
+  });
+
+  /**
+   * An artifact id is seeded from the artifact's `displayOrder`, so two artifacts sharing one
+   * would be minted the same id -- and the payload carries the rows, so a rebroadcast would
+   * replay the collision rather than notice it. The reason that cannot happen is that
+   * `displayOrder` is never an input: both submit paths assign it from the position of the
+   * artifact in the request array, and neither `ArtifactCreateSchema` nor `ArtifactKeyInputSchema`
+   * has the field for a caller to set. Positions in one array are distinct by construction.
+   *
+   * The other half of the property is stability. ADR-0060 requires a payload to replay to the
+   * same call, and these ids are inside it: minting fresh ones per attempt would make an honest
+   * retry look like a different write and record a second set of artifact rows. Both halves are
+   * pinned here because they are pinned by the same choice -- deriving the id from the request's
+   * own key and a positional index rather than from anything random or supplied.
+   */
+  describe('artifact ids', () => {
+    const threeArtifacts = {
+      ...baseSubmitInput,
+      artifacts: [
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'a.txt' },
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'b.txt' },
+        { ...baseSubmitInput.artifacts[0]!, fileName: 'c.txt' },
+      ],
+    };
+
+    type ArtifactRow = { id: string; displayOrder: number; fileName: string };
+
+    async function submittedArtifacts(
+      idempotencyKey?: `${string}-${string}-${string}-${string}-${string}`
+    ): Promise<ArtifactRow[]> {
+      vi.mocked(recoverMessageAddress).mockResolvedValueOnce(WORKER as `0x${string}`);
+      const ctx = createIntentCtx();
+      if (idempotencyKey) ctx.idempotencyKey = idempotencyKey;
+      ctx.db.select.mockReturnValueOnce(makeChain([makeTask({ mode: 'bounty', status: 'open' })]));
+
+      await submissionsRouter.createCaller(ctx).submit(threeArtifacts);
+
+      return (ctx.intents[0]!.payload as { artifacts: ArtifactRow[] }).artifacts;
+    }
+
+    // Verifies: ADR-0060
+    it('cannot collide, because displayOrder is the array position and not an input', async () => {
+      const artifacts = await submittedArtifacts();
+
+      expect(artifacts.map((artifact) => artifact.displayOrder)).toEqual([0, 1, 2]);
+      expect(new Set(artifacts.map((artifact) => artifact.id)).size).toBe(3);
+    });
+
+    // Verifies: ADR-0060
+    it('is fixed by the request, so a caller cannot force two artifacts to share one', () => {
+      // Parsed rather than asserted about the type: the schema strips what it does not declare,
+      // so a caller sending `displayOrder` gets it dropped before the router ever sees it. This
+      // is what stops a client from reintroducing the collision the router's own indexing rules
+      // out.
+      const parsed = ArtifactCreateSchema.parse({
+        ...baseSubmitInput.artifacts[0]!,
+        displayOrder: 7,
+      });
+      expect(parsed).not.toHaveProperty('displayOrder');
+
+      const parsedFromKey = ArtifactKeyInputSchema.parse({
+        artifactKey: 'submissions/x/pending/a.txt',
+        fileName: 'a.txt',
+        mimeType: 'text/plain',
+        role: 'attachment' as const,
+        sizeBytes: 1,
+        sha256Hash: 'a'.repeat(64),
+        keccak256Hash: `0x${'b'.repeat(64)}`,
+        displayOrder: 7,
+      });
+      expect(parsedFromKey).not.toHaveProperty('displayOrder');
+    });
+
+    // Verifies: ADR-0060
+    it('is the same for the same request, so a replay records no second set of rows', async () => {
+      const key = '00000000-0000-0000-0000-0000000000aa' as const;
+      const first = await submittedArtifacts(key);
+      const second = await submittedArtifacts(key);
+
+      expect(second.map((artifact) => artifact.id)).toEqual(first.map((artifact) => artifact.id));
     });
   });
 

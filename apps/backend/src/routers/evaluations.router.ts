@@ -194,6 +194,26 @@ export const evaluationsRouter = router({
         operation: 'evaluations.finalizeVerdict',
         payer: ctx.caller?.address,
         payload: {
+          // `rejected` is read from the task row rather than supplied by the caller, which is
+          // the exact shape ADR-0060 names as its residual risk: a payload field the router
+          // derives from state, then replays verbatim hours later. It is safe here, and the
+          // reason is worth writing down because it is not the one it looks like.
+          //
+          // It is NOT that the `appealing` guard above freezes the column.
+          // `completeEvaluationsEvaluate` writes `verdictType` guarded to a status set that
+          // includes 'appealing', so a write can land inside this window.
+          //
+          // What actually freezes the value is that a task has at most one verdict.
+          // `EvaluatorFacet.evaluate` is callable only from Review/Open/PendingApproval and
+          // leaves the task Appealing, so a second evaluation reverts and exactly one
+          // TaskEvaluated is ever emitted. Both writers of `tasks.verdictType` -- the indexer's
+          // `processTaskEvaluatedEvent` and `completeEvaluationsEvaluate` -- derive from that
+          // one evaluation, so a write landing inside this window rewrites the column with the
+          // value it already held. A rebroadcast cannot carry a different verdict than the
+          // request did.
+          //
+          // `apps/backend/test/unit/config/task-verdict-type-writers.test.ts` pins that writer
+          // set, so a third writer fails a test here rather than silently invalidating this.
           rejected: task.verdictType === 'REJECT',
           taskId: input.taskId,
         } satisfies EvaluationsFinalizeVerdictIntentPayload,
