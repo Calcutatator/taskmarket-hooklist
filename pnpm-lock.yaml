@@ -40,6 +40,9 @@ importers:
       '@privy-io/node':
         specifier: ^0.25.0
         version: 0.25.0(viem@2.45.3)
+      '@taskmarket/contracts':
+        specifier: workspace:*
+        version: link:../../packages/contracts
       '@taskmarket/shared':
         specifier: workspace:*
         version: link:../../packages/shared

@@ -177,6 +177,12 @@ jobs:
 
       - run: make build contracts
 
+      # The committed ABI under packages/contracts/abi/ is what the backend indexer
+      # reads its event definitions from, so a stale copy would silently defeat the
+      # indexer's drift guard. Same shape as the gas snapshot check below.
+      - name: ABI freshness check
+        run: make contract abi-check
+
       - run: make lint-check contracts
 
       - run: make format-check contracts
