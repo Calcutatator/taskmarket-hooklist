@@ -323,9 +323,19 @@ also re-checks the `SwapRewardHook.s.sol` single-owner-key assumption against th
 
 ## Step 11 — Post-migration checks
 
+**Do not run smoke tests against mainnet or testnet as part of this procedure.** They create real
+tasks and move real funds, and they are not what validates this migration. The relay-path smoke
+(`make smoke nonce`) belongs to the agent sandbox as a pre-merge gate on the backend build — it
+runs against a disposable stack before that build is deployed, not against a live deployment
+afterwards.
+
+What confirms this migration on a live network is observed behaviour:
+
 - Backend logs: no `nonce too low` or replacement failures from the reconciler.
 - A DREAMS withdrawal succeeds for a real user (exercises `hook.backend()`).
 - A relayed task write succeeds (exercises the forwarder's `authorizedRelayer`).
+- The allocator stays level with or ahead of the chain (the step 9 check, re-run once some real
+  traffic has flowed).
 
 ## If something goes wrong
 
