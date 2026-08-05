@@ -17,10 +17,13 @@ export const bidCmd = new Command('bid')
       return;
     }
 
-    const result = (await x402Post(`/api/tasks/${taskId}/bids`, {
-      taskId,
-      price: priceBaseUnits,
-    })) as { bidId: string };
+    const { data: result, idempotencyKey } = await x402Post<{ bidId: string }>(
+      `/api/tasks/${taskId}/bids`,
+      {
+        taskId,
+        price: priceBaseUnits,
+      }
+    );
 
-    printResult({ bidId: result.bidId });
+    printResult({ bidId: result.bidId }, { idempotencyKey });
   });

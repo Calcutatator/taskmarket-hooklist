@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/keystore.js', () => ({
   loadKeystore: vi.fn(),
@@ -50,11 +51,11 @@ describe('xmtp command', () => {
       installationId: 'install-1',
       dbPath: '/tmp/xmtp.db',
     } as any);
-    vi.mocked(apiPost).mockResolvedValue({
+    vi.mocked(apiPost).mockResolvedValue(writeOutcome({
       inboxId: 'inbox-1',
       installationId: 'install-1',
       policyMode: 'allowlist',
-    } as any);
+    } as any));
 
     await xmtpCommand.parseAsync(['node', 'xmtp', 'init'], { from: 'node' });
 
@@ -65,7 +66,7 @@ describe('xmtp command', () => {
         xmtpInstallationId: 'install-1',
       })
     );
-    expect(printResult).toHaveBeenCalledWith({ policyMode: 'allowlist' });
+    expect(printResult).toHaveBeenCalledWith({ policyMode: 'allowlist' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('status fetches backend status and prints it', async () => {
@@ -82,6 +83,7 @@ describe('xmtp command', () => {
         'x-taskmarket-api-token': 'token-1',
       },
     });
+    // A read, so no key: `status` never wrote anything there is a handle to.
     expect(printResult).toHaveBeenCalledWith(
       expect.objectContaining({
         inboxId: 'inbox-1',

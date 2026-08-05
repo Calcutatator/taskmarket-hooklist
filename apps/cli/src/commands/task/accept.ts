@@ -38,9 +38,9 @@ export const acceptCmd = new Command('accept')
       return;
     }
 
-    await x402Post(`/api/tasks/${taskId}/accept`, {
+    const { idempotencyKey } = await x402Post(`/api/tasks/${taskId}/accept`, {
       taskId,
       worker: opts.worker,
     });
-    printResult({ accepted: true });
+    printResult({ accepted: true }, { idempotencyKey });
   });

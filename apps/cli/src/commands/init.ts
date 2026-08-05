@@ -48,11 +48,11 @@ async function tryRegisterEmail(
   explicit: boolean
 ): Promise<string | null> {
   try {
-    const reg = (await apiPost('/api/emails/register', {
+    const { data: reg } = await apiPost<{ emailAddress: string }>('/api/emails/register', {
       deviceId,
       apiToken,
       username,
-    })) as { emailAddress: string };
+    });
     return reg.emailAddress;
   } catch (err: unknown) {
     if (explicit) {

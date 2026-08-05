@@ -1,8 +1,9 @@
-// A relayed write that fails must leave the operator holding the key it was sent under: the
-// intent id is minted by the backend and only reaches the caller in the response the failure
-// destroyed, so the client-chosen key is the only handle that survives. These tests pin that the
-// key reaches the CLI's JSON envelope from every transport path, that a caller-supplied key
-// round-trips, and that a plain re-run is a new operation rather than a silent retry.
+// A relayed write must leave the operator holding the key it was sent under: the intent id is
+// minted by the backend and only reaches the caller in the response a failure destroys, so the
+// client-chosen key is the only handle that survives. These tests pin that the key reaches the
+// CLI's JSON envelope from every transport path and from both outcomes, that it always names the
+// write the envelope describes, that a caller-supplied key round-trips, and that a plain re-run
+// is a new operation rather than a silent retry.
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 
 import type { Keystore } from '../../../src/lib/keystore.js';
@@ -33,14 +34,13 @@ vi.mock('../../../src/lib/keystore.js', async (importOriginal) => {
 
 import { IDEMPOTENCY_KEY_HEADER } from '@taskmarket/shared';
 
-import { ApiError, apiDelete, apiGet, apiPost } from '../../../src/lib/api.js';
+import { ApiError, apiDelete, apiGet, apiPost, withErrorContext } from '../../../src/lib/api.js';
 import {
-  getCurrentIdempotencyKey,
+  idempotencyKeyForError,
   resetIdempotencyState,
   resolveIdempotencyKey,
-  withIdempotencyScope,
 } from '../../../src/lib/idempotency.js';
-import { printError, printResult } from '../../../src/lib/output.js';
+import { printError, printResult, renderFailure } from '../../../src/lib/output.js';
 import { x402Post } from '../../../src/lib/x402.js';
 
 const mockFetch = vi.fn();
@@ -159,12 +159,62 @@ describe('the key a failed write was sent under reaches the error', () => {
   it('a GET failure has no key, because a read is not an operation to recover', async () => {
     mockFetch.mockResolvedValue(jsonResponse(500, { error: 'internal' }));
 
-    await withIdempotencyScope(async () => {
-      const caught = (await apiGet('/api/tasks/0xabc').catch((e: unknown) => e)) as ApiError;
+    const caught = (await apiGet('/api/tasks/0xabc').catch((e: unknown) => e)) as ApiError;
 
-      expect(caught.idempotencyKey).toBeUndefined();
-      expect(getCurrentIdempotencyKey()).toBeUndefined();
+    expect(caught.idempotencyKey).toBeUndefined();
+  });
+
+  // The failures with no response behind them: a dropped connection, a signing error, a payment
+  // the server would not quote for. There is no `ApiError` to carry a key, so the key is attached
+  // to whatever was thrown -- and it survives being wrapped for context on the way out.
+  it('a failure with no ApiError still carries the key, through a context wrapper', async () => {
+    mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'));
+
+    const caught = await apiPost('/api/tasks', {}).catch((e: unknown) => e);
+
+    expect(caught).not.toBeInstanceOf(ApiError);
+    expect(idempotencyKeyForError(caught)).toBe(headerFor(0));
+    expect(idempotencyKeyForError(withErrorContext(caught, 'create failed'))).toBe(headerFor(0));
+  });
+});
+
+describe('the key a successful write was sent under comes back with the result', () => {
+  it('apiPost returns it beside the payload, and it matches the header sent', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(200, { taskId: '0xabc' }));
+
+    const { data, idempotencyKey } = await apiPost('/api/tasks', {});
+
+    expect(data).toEqual({ taskId: '0xabc' });
+    expect(idempotencyKey).toBe(headerFor(0));
+  });
+
+  it('x402Post returns it after a paid round, and it is the key round 1 presented', async () => {
+    mockFetch.mockResolvedValueOnce({
+      ok: false,
+      status: 402,
+      json: async () => PAYMENT_REQUIREMENTS,
+      text: async () => JSON.stringify(PAYMENT_REQUIREMENTS),
     });
+    mockFetch.mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ deviceEncryptionKey: dek }),
+      text: async () => JSON.stringify({ deviceEncryptionKey: dek }),
+    });
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, { success: true }));
+
+    const { idempotencyKey } = await x402Post('/api/tasks', {});
+
+    expect(idempotencyKey).toBe(headerFor(0));
+    expect(idempotencyKey).toBe(headerFor(2));
+  });
+
+  it('apiDelete returns it beside the payload', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(200, { deleted: true }));
+
+    const { data, idempotencyKey } = await apiDelete('/api/tasks/0xabc');
+
+    expect(data).toEqual({ deleted: true });
+    expect(idempotencyKey).toBe(headerFor(0));
   });
 });
 
@@ -237,6 +287,7 @@ describe('a plain re-run is a new operation, not a retry', () => {
   });
 });
 
+
 describe('the CLI envelope', () => {
   let stderr: ReturnType<typeof vi.spyOn>;
   let stdout: ReturnType<typeof vi.spyOn>;
@@ -253,53 +304,41 @@ describe('the CLI envelope', () => {
     process.exitCode = undefined;
   });
 
-  it('printError surfaces the key of the write that just failed, without the command passing it', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(500, { error: 'boom' }));
-    const caught = await withIdempotencyScope(async () => {
-      const err = (await apiPost('/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
-      printError(err.message);
-      expect(process.exitCode).toBe(1);
-      return err;
-    });
+  function failure(): Record<string, unknown> {
+    return JSON.parse((stderr.mock.calls[0][0] as string).trim()) as Record<string, unknown>;
+  }
 
-    const written = JSON.parse((stderr.mock.calls[0][0] as string).trim()) as Record<
-      string,
-      unknown
-    >;
-    expect(written.ok).toBe(false);
-    expect(written.idempotencyKey).toBe(caught.idempotencyKey);
+  it('renderFailure reports the key the failed write carried, without the command passing it', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(500, { error: 'boom' }));
+
+    const caught = (await apiPost('/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
+    renderFailure(caught);
+
+    expect(process.exitCode).toBe(1);
+    expect(failure().ok).toBe(false);
+    expect(failure().idempotencyKey).toBe(caught.idempotencyKey);
   });
 
-  it('printError omits the key entirely when the command attempted no write', async () => {
-    await withIdempotencyScope(async () => {
-      printError('not a write at all');
-      expect(process.exitCode).toBe(1);
-    });
+  it('printError omits the key entirely, because a message the CLI composed named no write', () => {
+    printError('not a write at all');
 
-    const written = JSON.parse((stderr.mock.calls[0][0] as string).trim()) as Record<
-      string,
-      unknown
-    >;
-    expect(written).toEqual({ ok: false, error: 'not a write at all' });
+    expect(process.exitCode).toBe(1);
+    expect(failure()).toEqual({ ok: false, error: 'not a write at all' });
   });
 
   it('printResult reports the key beside data, leaving the backend payload untouched', async () => {
     mockFetch.mockResolvedValue(jsonResponse(200, { taskId: '0xabc' }));
 
-    await withIdempotencyScope(async () => {
-      await apiPost('/api/tasks', {});
-      printResult({ taskId: '0xabc' });
+    const { data, idempotencyKey } = await apiPost('/api/tasks', {});
+    printResult(data, { idempotencyKey });
 
-      const written = JSON.parse(stdout.mock.calls[0][0] as string) as Record<string, unknown>;
-      expect(written.data).toEqual({ taskId: '0xabc' });
-      expect(written.idempotencyKey).toBe(headerFor(0));
-    });
+    const written = JSON.parse(stdout.mock.calls[0][0] as string) as Record<string, unknown>;
+    expect(written.data).toEqual({ taskId: '0xabc' });
+    expect(written.idempotencyKey).toBe(headerFor(0));
   });
 
-  it('printResult on a read-only command emits the envelope unchanged', async () => {
-    await withIdempotencyScope(async () => {
-      printResult({ tasks: [] });
-    });
+  it('printResult on a read-only command emits the envelope unchanged', () => {
+    printResult({ tasks: [] });
 
     expect(JSON.parse(stdout.mock.calls[0][0] as string)).toEqual({
       ok: true,
@@ -308,95 +347,107 @@ describe('the CLI envelope', () => {
   });
 });
 
-// These are the tests that fail against a module-level "last key minted" global. The daemon
-// (apps/cli/src/commands/daemon.ts) runs three write loops concurrently for the life of the
-// process, and `task submit` uploads its files with Promise.all, so "the last key minted" can
-// belong to a different write than the one that failed. Reporting that key is worse than
-// reporting none: it is the handle an operator re-presents, so a wrong key matches a different
-// intent, returns its result, and leaves the write they wanted undone while telling them it
-// succeeded.
-describe('concurrent writes do not report each other', () => {
-  function deferredResponse(status: number, body: unknown) {
-    let release!: () => void;
-    const gate = new Promise<void>((resolve) => {
-      release = resolve;
-    });
-    return { release, response: gate.then(() => jsonResponse(status, body)) };
+// The reason the key is returned and attached rather than looked up: none of these arrangements
+// leaves a "current write" for anything to read. A batch stashes a failure and keeps writing; a
+// poll loop writes once a turn forever; concurrent branches interleave. In every one, the answer
+// to "which write does this report name" is carried by the thing being reported.
+describe('a report names its own write, whatever ran in between', () => {
+  let stderr: ReturnType<typeof vi.spyOn>;
+  let stdout: ReturnType<typeof vi.spyOn>;
+
+  beforeEach(() => {
+    stderr = vi.spyOn(process.stderr, 'write').mockImplementation(() => true);
+    stdout = vi.spyOn(console, 'log').mockImplementation(() => undefined);
+    process.exitCode = undefined;
+  });
+
+  afterEach(() => {
+    stderr.mockRestore();
+    stdout.mockRestore();
+    process.exitCode = undefined;
+  });
+
+  function failure(): Record<string, unknown> {
+    return JSON.parse((stderr.mock.calls[0][0] as string).trim()) as Record<string, unknown>;
   }
 
-  const tick = () => new Promise((resolve) => setImmediate(resolve));
-
-  it('a write failing after a sibling minted reports its own key, not the sibling one', async () => {
-    // Ordering: A is sent, B is sent (minting second), then A fails. A process-wide "last key
-    // minted" would hand A's failure B's key.
-    const first = deferredResponse(500, { error: 'A failed' });
-    mockFetch.mockReturnValueOnce(first.response);
+  // The shape `task reject-all-submissions` has, and the case that motivated all of this: the
+  // failure is rendered only after every later write has finished.
+  it('a batch whose second of three writes fails reports the second key, not the last', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    mockFetch.mockResolvedValueOnce(jsonResponse(500, { error: 'ServerTransactionPendingError' }));
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
 
-    let ambientAtFailure: string | undefined;
+    const failures: unknown[] = [];
+    for (const path of ['/api/a', '/api/b', '/api/c']) {
+      try {
+        await apiPost(path, {});
+      } catch (err) {
+        failures.push(err);
+      }
+    }
+    renderFailure(withErrorContext(failures[0], '1 of 3 rejection(s) failed'));
 
-    const branchA = withIdempotencyScope(async () => {
-      const err = (await apiPost('/api/a', {}).catch((e: unknown) => e)) as ApiError;
-      ambientAtFailure = getCurrentIdempotencyKey();
-      return err;
-    });
-
-    await tick();
-    const branchB = withIdempotencyScope(() => apiPost('/api/b', {}));
-    await tick();
-
-    first.release();
-    const [errA] = await Promise.all([branchA, branchB]);
-
-    const keyA = headerFor(0);
-    const keyB = headerFor(1);
-    expect(keyA).not.toBe(keyB);
-    // Both the ambient read and the error agree, and both name A's own write.
-    expect(ambientAtFailure).toBe(keyA);
-    expect(errA.idempotencyKey).toBe(keyA);
+    expect(failure().idempotencyKey).toBe(headerFor(1));
+    expect(failure().idempotencyKey).not.toBe(headerFor(2));
   });
 
-  it('two writes overlapping inside one scope report no ambient key rather than the wrong one', async () => {
-    // The safety net for a fork point nobody wrapped: sharing a scope must degrade to silence,
-    // never to a confident wrong answer.
-    const first = deferredResponse(500, { error: 'A failed' });
-    mockFetch.mockReturnValueOnce(first.response);
+  // Same batch, but the failure has no response behind it, so there is no `ApiError` to carry the
+  // key. This is the case a "last write" answer would have got wrong even on the failure side.
+  it('covers a batch failure with no HTTP response behind it, such as a dropped connection', async () => {
+    mockFetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
+    mockFetch.mockRejectedValueOnce(new TypeError('fetch failed'));
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
 
-    await withIdempotencyScope(async () => {
-      const a = apiPost('/api/a', {}).catch((e: unknown) => e);
-      await tick();
-      const b = apiPost('/api/b', {});
-      await tick();
+    const failures: unknown[] = [];
+    for (const path of ['/api/a', '/api/b', '/api/c']) {
+      try {
+        await apiPost(path, {});
+      } catch (err) {
+        failures.push(err);
+      }
+    }
+    expect(failures[0]).not.toBeInstanceOf(ApiError);
+    renderFailure(failures[0]);
 
-      first.release();
-      const errA = (await a) as ApiError;
-      await b;
-
-      expect(getCurrentIdempotencyKey()).toBeUndefined();
-      // The error still knows its own key, which is why the ApiError route is the primary one.
-      expect(errA.idempotencyKey).toBe(headerFor(0));
-    });
+    expect(failure().idempotencyKey).toBe(headerFor(1));
   });
 
-  it('sequential writes in one scope stay unambiguous, so the last one is still reported', async () => {
+  // What the daemon's heartbeat does: write, report, sleep, forever.
+  it('a loop reports each turn own write, however many turns came before', async () => {
+    mockFetch.mockResolvedValue(jsonResponse(200, { ok: true }));
+
+    for (let turn = 0; turn < 3; turn++) {
+      const { idempotencyKey } = await apiPost('/trpc/xmtp.heartbeat', {});
+      printResult({ event: 'xmtp.heartbeat' }, { idempotencyKey });
+    }
+
+    for (let turn = 0; turn < 3; turn++) {
+      const envelope = JSON.parse(stdout.mock.calls[turn][0] as string) as Record<string, unknown>;
+      expect(envelope.idempotencyKey).toBe(headerFor(turn));
+    }
+  });
+
+  // What `task submit` does with its per-file uploads. Nothing coordinates the branches.
+  it('concurrent writes each report their own key', async () => {
+    let releaseFirst!: () => void;
+    const gate = new Promise<void>((resolve) => {
+      releaseFirst = resolve;
+    });
+    mockFetch.mockReturnValueOnce(gate.then(() => jsonResponse(500, { error: 'A failed' })));
     mockFetch.mockResolvedValueOnce(jsonResponse(200, { ok: true }));
-    mockFetch.mockResolvedValueOnce(jsonResponse(500, { error: 'second failed' }));
 
-    await withIdempotencyScope(async () => {
-      await apiPost('/api/a', {});
-      await apiPost('/api/b', {}).catch(() => undefined);
+    const a = apiPost('/api/a', {}).catch((e: unknown) => e);
+    await new Promise((resolve) => setImmediate(resolve));
+    const b = apiPost('/api/b', {});
+    await new Promise((resolve) => setImmediate(resolve));
 
-      expect(getCurrentIdempotencyKey()).toBe(headerFor(1));
-    });
-  });
+    releaseFirst();
+    const errA = (await a) as ApiError;
+    const { idempotencyKey: keyB } = await b;
 
-  it('reports nothing outside any scope, rather than falling back to a process-wide guess', async () => {
-    mockFetch.mockResolvedValue(jsonResponse(500, { error: 'boom' }));
-
-    const caught = (await apiPost('/api/tasks', {}).catch((e: unknown) => e)) as ApiError;
-
-    expect(caught.idempotencyKey).toBe(headerFor(0));
-    expect(getCurrentIdempotencyKey()).toBeUndefined();
+    expect(errA.idempotencyKey).toBe(headerFor(0));
+    expect(keyB).toBe(headerFor(1));
+    expect(errA.idempotencyKey).not.toBe(keyB);
   });
 });

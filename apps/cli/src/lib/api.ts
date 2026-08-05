@@ -5,7 +5,13 @@ import {
   isInFlightApiError,
 } from '@taskmarket/shared';
 
-import { idempotencyHeaders, resolveIdempotencyKey, withIdempotentWrite } from './idempotency.js';
+import {
+  idempotencyHeaders,
+  idempotencyKeyForError,
+  rememberIdempotencyKeyFor,
+  resolveIdempotencyKey,
+  withIdempotentWrite,
+} from './idempotency.js';
 import { loadKeystore, type Keystore } from './keystore.js';
 
 export const API_URL = process.env.TASKMARKET_API_URL ?? 'https://api.taskmarket.dev';
@@ -102,15 +108,19 @@ export function failureMessage(
  */
 export function withErrorContext(error: unknown, context: string): Error {
   const message = error instanceof Error ? error.message : String(error);
-  if (error instanceof ApiError) {
-    return new ApiError(
-      error.status,
-      `${context}: ${message}`,
-      error.idempotencyKey,
-      error.envelope
-    );
+  const wrapped =
+    error instanceof ApiError
+      ? new ApiError(error.status, `${context}: ${message}`, error.idempotencyKey, error.envelope)
+      : new Error(`${context}: ${message}`);
+  // The wrapper is what gets rendered, so it has to inherit the original's idempotency key or the
+  // added sentence would cost the caller the handle to the write it is describing. This is the
+  // path a batch takes -- it stashes a failure, finishes its remaining writes, and only then
+  // wraps and renders -- which is exactly when no ambient answer would be right.
+  const key = idempotencyKeyForError(error);
+  if (key !== undefined) {
+    rememberIdempotencyKeyFor(wrapped, key);
   }
-  return new Error(`${context}: ${message}`);
+  return wrapped;
 }
 
 /** True when a failure is one the backend classified as possibly still landing (ADR-0058). */
@@ -167,15 +177,27 @@ export async function apiGet(
   return res.json();
 }
 
-export async function apiPost(
+/**
+ * What a write returns: the backend's payload, and the key that write was sent under.
+ *
+ * The key is returned rather than left somewhere to be looked up, for the same reason it is
+ * attached to the `ApiError` a failure raises -- so that whichever outcome the caller ends up
+ * reporting, the key it reports came from that outcome. This is the shape the backend already
+ * uses on its own side of the same problem: `runRelayedIntent` returns `{ intent, txHash }` and
+ * `apiError` puts `idempotencyKey` on the envelope, and neither is ambient.
+ */
+export interface WriteOutcome<T = unknown> {
+  data: T;
+  idempotencyKey: string;
+}
+
+export async function apiPost<T = unknown>(
   path: string,
   body: Record<string, unknown>,
   options?: { headers?: Record<string, string>; idempotencyKey?: string }
-): Promise<unknown> {
+): Promise<WriteOutcome<T>> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
-  // The key is the scope's current one for exactly as long as this write is in flight, so a
-  // failure rendered while it is open reports this write's key and not a sibling's.
   return withIdempotentWrite(idempotencyKey, async () => {
     const res = await fetch(`${API_URL}${path}`, {
       method: 'POST',
@@ -197,14 +219,14 @@ export async function apiPost(
         apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return res.json();
+    return { data: (await res.json()) as T, idempotencyKey };
   });
 }
 
-export async function apiDelete(
+export async function apiDelete<T = unknown>(
   path: string,
   options?: { headers?: Record<string, string>; idempotencyKey?: string }
-): Promise<unknown> {
+): Promise<WriteOutcome<T>> {
   const legalHeaders = await legalReceiptHeaders(path, 'POST');
   const idempotencyKey = resolveIdempotencyKey(options?.idempotencyKey);
   return withIdempotentWrite(idempotencyKey, async () => {
@@ -227,6 +249,6 @@ export async function apiDelete(
         apiErrorEnvelopeOf(read.body) ?? undefined
       );
     }
-    return res.json();
+    return { data: (await res.json()) as T, idempotencyKey };
   });
 }

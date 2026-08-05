@@ -15,12 +15,15 @@ export const rateCmd = new Command('rate')
       return;
     }
 
-    const result = (await x402Post(`/api/tasks/${taskId}/rate`, {
+    const { data: result, idempotencyKey } = await x402Post<{
+      success: boolean;
+      feedbackId: string;
+    }>(`/api/tasks/${taskId}/rate`, {
       taskId,
       worker: opts.worker,
       rating,
       ...(opts.feedback ? { feedbackText: opts.feedback } : {}),
-    })) as { success: boolean; feedbackId: string };
+    });
 
-    printResult({ feedbackId: result.feedbackId });
+    printResult({ feedbackId: result.feedbackId }, { idempotencyKey });
   });

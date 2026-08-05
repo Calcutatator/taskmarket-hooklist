@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const TASK = '0xtask0000000000000000000000000000000001';
@@ -35,7 +36,7 @@ describe('task resolve-dispute command', () => {
   });
 
   it('posts approve verdict with award and prints txHash', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xresolvetx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xresolvetx' }));
 
     await resolveDisputeCmd.parseAsync(
       ['node', 'resolve-dispute', TASK, '--verdict', 'approve', '--award', `${WORKER}:5:1`],
@@ -47,11 +48,11 @@ describe('task resolve-dispute command', () => {
       verdict: 'approve',
       awards: [{ worker: WORKER, amount: '5000000', rank: 1 }],
     });
-    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xresolvetx' });
+    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xresolvetx' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('posts partial verdict with multiple awards', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xresolvetx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xresolvetx' }));
 
     await resolveDisputeCmd.parseAsync(
       [

@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const TASK = '0xtask0000000000000000000000000000000001';
@@ -27,7 +28,7 @@ describe('task evaluate command', () => {
   });
 
   it('posts approve verdict and prints txHash', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xevaluatetx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xevaluatetx' }));
 
     await evaluateCmd.parseAsync(['node', 'evaluate', TASK, '--verdict', 'approve'], {
       from: 'node',
@@ -37,7 +38,7 @@ describe('task evaluate command', () => {
       `/api/tasks/${TASK}/evaluate`,
       expect.objectContaining({ taskId: TASK, verdict: 'approve' })
     );
-    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xevaluatetx' });
+    expect(mockPrintResult).toHaveBeenCalledWith({ txHash: '0xevaluatetx' }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('rejects invalid verdict', async () => {
@@ -62,7 +63,7 @@ describe('task evaluate command', () => {
   });
 
   it('accepts valid evidence-hash', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xtx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xtx' }));
     const hash = '0x' + 'ab'.repeat(32);
 
     await evaluateCmd.parseAsync(
@@ -77,7 +78,7 @@ describe('task evaluate command', () => {
   });
 
   it('parses --award entries into USDC micro-units', async () => {
-    mockX402Post.mockResolvedValue({ txHash: '0xtx' });
+    mockX402Post.mockResolvedValue(writeOutcome({ txHash: '0xtx' }));
 
     await evaluateCmd.parseAsync(
       ['node', 'evaluate', TASK, '--verdict', 'partial', '--award', `${WORKER}:5:1`],

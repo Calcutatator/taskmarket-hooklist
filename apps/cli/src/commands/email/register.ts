@@ -17,11 +17,14 @@ export const registerCommand = new Command('register')
     }
 
     const keystore = await loadKeystore();
-    const result = (await apiPost('/api/emails/register', {
-      deviceId: keystore.deviceId,
-      apiToken: keystore.apiToken,
-      username: opts.username,
-    })) as { emailAddress: string };
+    const { data: result, idempotencyKey } = await apiPost<{ emailAddress: string }>(
+      '/api/emails/register',
+      {
+        deviceId: keystore.deviceId,
+        apiToken: keystore.apiToken,
+        username: opts.username,
+      }
+    );
 
-    printResult({ emailAddress: result.emailAddress });
+    printResult({ emailAddress: result.emailAddress }, { idempotencyKey });
   });

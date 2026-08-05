@@ -16,11 +16,11 @@ export const uninviteCmd = new Command('uninvite')
     }
 
     try {
-      const result = await apiDelete(
+      const { data: result, idempotencyKey } = await apiDelete<Record<string, unknown>>(
         `/api/tasks/${taskId}/private-access/viewers/${encodeURIComponent(address)}`,
         { headers: auth.headers }
       );
-      printResult(result as Record<string, unknown>);
+      printResult(result, { idempotencyKey });
     } catch (err: unknown) {
       renderFailure(err, { fallback: 'Failed to remove viewer.' });
     }

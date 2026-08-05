@@ -89,7 +89,8 @@ describe('x402Post', () => {
     });
 
     const result = await x402Post('/api/tasks', { description: 'test' });
-    expect(result).toEqual({ success: true, taskId: '0xabc' });
+    expect(result.data).toEqual({ success: true, taskId: '0xabc' });
+    expect(result.idempotencyKey).toEqual(expect.any(String));
     expect(mockFetch).toHaveBeenCalledOnce();
   });
 
@@ -117,7 +118,8 @@ describe('x402Post', () => {
 
     const result = await x402Post('/api/tasks', { description: 'test' });
 
-    expect(result).toEqual({ success: true, taskId: '0xabc' });
+    expect(result.data).toEqual({ success: true, taskId: '0xabc' });
+    expect(result.idempotencyKey).toEqual(expect.any(String));
     expect(mockFetch).toHaveBeenCalledTimes(3);
   });
 

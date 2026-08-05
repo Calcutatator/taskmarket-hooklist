@@ -78,8 +78,11 @@ export const evaluateCmd = new Command('evaluate')
         body.evidenceHash = opts.evidenceHash;
       }
 
-      const result = (await x402Post(`/api/tasks/${taskId}/evaluate`, body)) as { txHash: string };
-      printResult({ txHash: result.txHash });
+      const { data: result, idempotencyKey } = await x402Post<{ txHash: string }>(
+        `/api/tasks/${taskId}/evaluate`,
+        body
+      );
+      printResult({ txHash: result.txHash }, { idempotencyKey });
     }
   );
 

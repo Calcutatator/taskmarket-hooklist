@@ -66,11 +66,14 @@ export const resolveDisputeCmd = new Command('resolve-dispute')
       return;
     }
 
-    const result = (await x402Post(`/api/tasks/${taskId}/resolve-dispute`, {
-      taskId,
-      verdict: opts.verdict,
-      awards,
-    })) as { txHash: string };
+    const { data: result, idempotencyKey } = await x402Post<{ txHash: string }>(
+      `/api/tasks/${taskId}/resolve-dispute`,
+      {
+        taskId,
+        verdict: opts.verdict,
+        awards,
+      }
+    );
 
-    printResult({ txHash: result.txHash });
+    printResult({ txHash: result.txHash }, { idempotencyKey });
   });

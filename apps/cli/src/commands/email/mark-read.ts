@@ -5,13 +5,16 @@ import { printResult } from '../../lib/output.js';
 
 async function setReadStatus(id: string, read: boolean): Promise<void> {
   const keystore = await loadKeystore();
-  const result = (await apiPost('/api/emails/mark-read', {
-    deviceId: keystore.deviceId,
-    apiToken: keystore.apiToken,
-    id,
-    read,
-  })) as { id: string; isRead: boolean };
-  printResult({ id: result.id, isRead: result.isRead });
+  const { data: result, idempotencyKey } = await apiPost<{ id: string; isRead: boolean }>(
+    '/api/emails/mark-read',
+    {
+      deviceId: keystore.deviceId,
+      apiToken: keystore.apiToken,
+      id,
+      read,
+    }
+  );
+  printResult({ id: result.id, isRead: result.isRead }, { idempotencyKey });
 }
 
 export const markReadCommand = new Command('mark-read')

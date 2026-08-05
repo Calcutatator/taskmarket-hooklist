@@ -2,7 +2,6 @@ import { Command } from 'commander';
 import { loadKeystore } from '../lib/keystore.js';
 import { apiGet, apiPost } from '../lib/api.js';
 import { printResult } from '../lib/output.js';
-import { withIdempotencyScope } from '../lib/idempotency.js';
 import { createXmtpClient, listenForEnvelopes } from '../lib/xmtp-client.js';
 import type { XmtpClientSession } from '../lib/xmtp-client.js';
 import type { AgentMessageEnvelope } from '@taskmarket/shared';
@@ -205,12 +204,17 @@ export const daemonCommand = new Command('daemon')
             await sleepOrAbort(heartbeatIntervalMs, abortController.signal);
             if (stopped) break;
             try {
-              await apiPost('/trpc/xmtp.heartbeat', {
+              // Each beat reports the key its own write returned, which is what makes a loop
+              // safe to report from at all: nothing here depends on how many beats came before.
+              const { idempotencyKey } = await apiPost('/trpc/xmtp.heartbeat', {
                 deviceId: keystore.deviceId,
                 apiToken: keystore.apiToken,
                 installationId: client.installationId,
               });
-              printResult({ event: 'xmtp.heartbeat', installationId: client.installationId });
+              printResult(
+                { event: 'xmtp.heartbeat', installationId: client.installationId },
+                { idempotencyKey }
+              );
             } catch (err) {
               process.stderr.write(
                 `Heartbeat failed: ${err instanceof Error ? err.message : String(err)}\n`
@@ -424,6 +428,9 @@ export const daemonCommand = new Command('daemon')
                   )) as EmailListResult;
 
                   for (const email of result.emails) {
+                    // An announcement, not a write: this line reports a message that arrived, and
+                    // the mark-read below is a separate operation the caller is not being told
+                    // about. It carries no key for that reason, rather than for want of one.
                     printResult({
                       event: 'email.new',
                       id: email.id,
@@ -457,25 +464,19 @@ export const daemonCommand = new Command('daemon')
             }
           };
 
-          // Same reasoning one level down: emailPollLoop writes (mark-read) alongside three
-          // sibling loops, so it needs a scope of its own rather than sharing taskPollLoop's.
           await Promise.allSettled([
-            withIdempotencyScope(inboxPollLoop),
-            withIdempotencyScope(newTaskPollLoop),
-            withIdempotencyScope(auctionPollLoop),
-            withIdempotencyScope(emailPollLoop),
+            inboxPollLoop(),
+            newTaskPollLoop(),
+            auctionPollLoop(),
+            emailPollLoop(),
           ]);
         };
 
-        // The daemon is long-lived and these loops write concurrently for its whole life, so
-        // there is no such thing as "the write this process just made". Each loop gets its own
-        // idempotency scope, making the key a failing loop reports its own write's key rather
-        // than whichever sibling loop happened to write most recently.
-        await Promise.allSettled([
-          withIdempotencyScope(xmtpLoop),
-          withIdempotencyScope(heartbeatLoop),
-          withIdempotencyScope(taskPollLoop),
-        ]);
+        // These loops write concurrently for the life of the process, so "the write this daemon
+        // just made" has never had an answer here. It does not need one: each loop reports the
+        // key its own call returned, so concurrency between them is not something the reporting
+        // has to be told about.
+        await Promise.allSettled([xmtpLoop(), heartbeatLoop(), taskPollLoop()]);
       } finally {
         process.off('SIGINT', stop);
         process.off('SIGTERM', stop);

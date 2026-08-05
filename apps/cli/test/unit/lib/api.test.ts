@@ -122,6 +122,6 @@ describe('ApiError', () => {
 
   it('does not throw on a 2xx response', async () => {
     mockFetch.mockResolvedValue(jsonResponse(200, { ok: true }));
-    await expect(apiPost('/api/tasks', {})).resolves.toEqual({ ok: true });
+    await expect(apiPost('/api/tasks', {})).resolves.toMatchObject({ data: { ok: true } });
   });
 });

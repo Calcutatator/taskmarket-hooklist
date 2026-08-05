@@ -109,22 +109,26 @@ export async function acceptLegalBundle(options: {
 
   await confirmAcceptance(bundle, options.assumeYes);
   const challenge = LegalChallengeResponseSchema.parse(
-    await apiPost('/api/legal/challenge', {
-      walletAddress: options.walletAddress,
-    })
+    (
+      await apiPost('/api/legal/challenge', {
+        walletAddress: options.walletAddress,
+      })
+    ).data
   );
   validateLegalChallenge(bundle, challenge, options.walletAddress);
 
   const signature = await options.signMessage(challenge.message);
   const result = LegalAcceptanceResponseSchema.parse(
-    await apiPost('/api/legal/accept/wallet', {
-      ...affirmations,
-      bundleDigest: bundle.bundleDigest,
-      bundleVersion: bundle.version,
-      nonce: challenge.nonce,
-      signature,
-      walletAddress: options.walletAddress,
-    })
+    (
+      await apiPost('/api/legal/accept/wallet', {
+        ...affirmations,
+        bundleDigest: bundle.bundleDigest,
+        bundleVersion: bundle.version,
+        nonce: challenge.nonce,
+        signature,
+        walletAddress: options.walletAddress,
+      })
+    ).data
   );
 
   if (result.bundleDigest !== bundle.bundleDigest || result.bundleVersion !== bundle.version) {

@@ -71,7 +71,10 @@ export const assignEvaluatorCmd = new Command('assign-evaluator')
         body.disputeResolver = opts.disputeResolver;
       }
 
-      const result = await x402Post(`/api/tasks/${taskId}/evaluator`, body);
-      printResult(result as Record<string, unknown>);
+      const { data: result, idempotencyKey } = await x402Post<Record<string, unknown>>(
+        `/api/tasks/${taskId}/evaluator`,
+        body
+      );
+      printResult(result, { idempotencyKey });
     }
   );

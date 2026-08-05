@@ -15,13 +15,16 @@ export const pitchCmd = new Command('pitch')
     // longer the auth mechanism — the X402 payer must equal workerAddress.
     const signature = await signMessage(`taskmarket:pitch:${taskId}`, keystore);
 
-    const result = (await x402Post(`/api/tasks/${taskId}/pitches`, {
-      taskId,
-      workerAddress: keystore.walletAddress,
-      pitchText: opts.text,
-      ...(opts.duration ? { estimatedDuration: parseInt(opts.duration, 10) } : {}),
-      signature,
-    })) as { pitchId: string };
+    const { data: result, idempotencyKey } = await x402Post<{ pitchId: string }>(
+      `/api/tasks/${taskId}/pitches`,
+      {
+        taskId,
+        workerAddress: keystore.walletAddress,
+        pitchText: opts.text,
+        ...(opts.duration ? { estimatedDuration: parseInt(opts.duration, 10) } : {}),
+        signature,
+      }
+    );
 
-    printResult({ pitchId: result.pitchId });
+    printResult({ pitchId: result.pitchId }, { idempotencyKey });
   });

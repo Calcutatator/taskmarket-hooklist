@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 
 vi.mock('../../src/lib/x402.js', () => ({
   x402Post: vi.fn(),
@@ -24,7 +25,7 @@ describe('task auction-accept command', () => {
   });
 
   it('posts to bids accept endpoint without min-price', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ acceptedPrice: '2000000', workerAddress: '0xworker' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ acceptedPrice: '2000000', workerAddress: '0xworker' }));
 
     await auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask'], { from: 'node' });
 
@@ -33,11 +34,11 @@ describe('task auction-accept command', () => {
       acceptedPrice: '2000000',
       acceptedPriceUsdc: '2.000000',
       workerAddress: '0xworker',
-    });
+    }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('converts --min-price to base units', async () => {
-    vi.mocked(x402Post).mockResolvedValue({ acceptedPrice: '3000000', workerAddress: '0xworker' });
+    vi.mocked(x402Post).mockResolvedValue(writeOutcome({ acceptedPrice: '3000000', workerAddress: '0xworker' }));
 
     await auctionAcceptCmd.parseAsync(['node', 'auction-accept', '0xtask', '--min-price', '1.5'], {
       from: 'node',

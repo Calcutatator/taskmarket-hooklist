@@ -1,4 +1,5 @@
 import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { writeOutcome, TEST_IDEMPOTENCY_KEY } from '../helpers/write-outcome.js';
 import type { Command } from 'commander';
 
 const TASK = '0xtask0000000000000000000000000000000001';
@@ -35,7 +36,7 @@ describe('task accept-submissions command', () => {
   });
 
   it('posts winners and prints accepted count', async () => {
-    mockX402Post.mockResolvedValue({ success: true });
+    mockX402Post.mockResolvedValue(writeOutcome({ success: true }));
 
     await acceptSubmissionsCmd.parseAsync(
       [
@@ -57,7 +58,7 @@ describe('task accept-submissions command', () => {
         { worker: WORKER_B, share: 4000 },
       ],
     });
-    expect(mockPrintResult).toHaveBeenCalledWith({ accepted: true, winners: 2 });
+    expect(mockPrintResult).toHaveBeenCalledWith({ accepted: true, winners: 2 }, { idempotencyKey: TEST_IDEMPOTENCY_KEY });
   });
 
   it('rejects when shares do not sum to 10000', async () => {
