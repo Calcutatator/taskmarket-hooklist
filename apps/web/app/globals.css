@@ -200,6 +200,7 @@
   --taskdrop-pink: #e74079;
   --taskdrop-pink-bright: #ff3d7e;
   --taskdrop-pink-link: #ff85b0;
+  --taskdrop-kicker: #fce6ee;
   --taskdrop-cream: #fff6e8;
   --taskdrop-cream-muted: #efe6d6;
   --taskdrop-cream-border: #eadfc9;
@@ -213,15 +214,17 @@
   --taskdrop-video-muted: #8a8378;
   --taskdrop-code: #191310;
   --taskdrop-code-border: #3a2f27;
+  --taskdrop-code-foreground: var(--taskdrop-cream);
   --drop-hero: var(--taskdrop-green);
   --drop-hero-foreground: #f7f0e2;
   --drop-accent: var(--taskdrop-pink);
-  --drop-accent-foreground: var(--taskdrop-cream);
-  --drop-kicker: var(--taskdrop-heat);
+  --drop-accent-foreground: var(--taskdrop-code);
+  --drop-kicker: var(--taskdrop-kicker);
   --drop-cta: var(--taskdrop-cream);
   --drop-cta-foreground: var(--taskdrop-ink);
   --drop-code: var(--taskdrop-green);
   --drop-code-border: var(--taskdrop-green-border);
+  --drop-code-foreground: var(--taskdrop-code-foreground);
   --drop-active: var(--taskdrop-green-light);
   --drop-footer: var(--taskdrop-video);
   --drop-footer-muted: var(--taskdrop-video-muted);
@@ -284,6 +287,7 @@
   --color-drop-cta-foreground: var(--drop-cta-foreground);
   --color-drop-code: var(--drop-code);
   --color-drop-code-border: var(--drop-code-border);
+  --color-drop-code-foreground: var(--drop-code-foreground);
   --color-drop-active: var(--drop-active);
   --color-drop-footer: var(--drop-footer);
   --color-drop-footer-muted: var(--drop-footer-muted);

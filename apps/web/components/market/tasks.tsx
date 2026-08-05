@@ -48,6 +48,7 @@ import { PublishedCelebration } from '@/components/market/tasks/published-celebr
 import { TaskActionsPanel } from '@/components/market/task-actions-panel';
 import { TaskEvaluationTerms } from '@/components/market/task-evaluation-terms';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
+import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
 import { TaskVisibilityBadge } from '@/components/market/unlisted-badge';
 import { Badge } from '@/components/ui/badge';
@@ -2684,12 +2685,13 @@ function TaskSummaryRail({
 
         <SummaryGroup title="Task type">
           <div className="flex flex-wrap gap-2">
+            <Link href={modeHref}>
+              <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
+                {task.mode}
+              </Badge>
+            </Link>
             <InfoTooltip label={MODE_TOOLTIPS[task.mode]}>
-              <Link href={modeHref}>
-                <Badge className="hover:opacity-80" variant={taskModeBadgeVariant(task.mode)}>
-                  {task.mode}
-                </Badge>
-              </Link>
+              <span className="sr-only">About {task.mode} tasks</span>
             </InfoTooltip>
             {task.auctionType ? (
               <Badge variant="terminal">{labelize(task.auctionType)} auction</Badge>
@@ -2919,6 +2921,29 @@ export function TaskDetailPanel({
         </section>
         <LiveStatusBanner marketStats={marketStats} modeData={modeData} task={task} />
         <SettlementPayoutsPanel profileBasePath={profileBasePath} task={task} />
+        {descriptionBody || detailTags.length > 0 ? (
+          <section
+            className="grid gap-4 border-t border-border/58 pt-5"
+            data-testid="task-description-surface"
+          >
+            {descriptionBody ? (
+              <TaskDescriptionDisclosure>
+                <TaskBrief body={descriptionBody} />
+              </TaskDescriptionDisclosure>
+            ) : null}
+            {detailTags.length > 0 ? (
+              <div className="flex flex-wrap gap-2">
+                {detailTags.map((tag) => (
+                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
+                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
+                      {tag}
+                    </Badge>
+                  </Link>
+                ))}
+              </div>
+            ) : null}
+          </section>
+        ) : null}
         {!submissionReviewEligible && participationModule ? (
           <div className="order-1 lg:order-4">{participationModule}</div>
         ) : null}
@@ -2958,25 +2983,6 @@ export function TaskDetailPanel({
           task={task}
         />
         <AssignEvaluatorAction className="order-2 lg:order-1" task={task} />
-        {descriptionBody || detailTags.length > 0 ? (
-          <section className="order-2 grid gap-5 border-t border-border/58 pt-5 lg:order-1">
-            <h2 className="font-display font-semibold leading-none tracking-tight text-foreground">
-              Details
-            </h2>
-            {descriptionBody ? <TaskBrief body={descriptionBody} /> : null}
-            {detailTags.length > 0 ? (
-              <div className="flex flex-wrap gap-2">
-                {detailTags.map((tag) => (
-                  <Link href={taskFiltersHref(listBase, { tags: tag }) as Route} key={tag}>
-                    <Badge className="hover:opacity-80" variant={TASK_TAG_BADGE_VARIANT}>
-                      {tag}
-                    </Badge>
-                  </Link>
-                ))}
-              </div>
-            ) : null}
-          </section>
-        ) : null}
         {cancelActions.length > 0 ? (
           <div className="order-3">
             <TaskActionsPanel

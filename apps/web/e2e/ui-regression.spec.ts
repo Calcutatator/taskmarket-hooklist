@@ -347,6 +347,101 @@ test('keeps pending-review detail usable without horizontal overflow', async ({ 
   await expectNoHorizontalOverflow(page);
 });
 
+test('places the task description before review and runs HTML in the full-viewport gallery', async ({
+  page,
+}, testInfo) => {
+  test.skip(
+    testInfo.project.name !== 'chromium-desktop',
+    'The full-viewport gallery control is intentionally desktop-only.'
+  );
+
+  await page.goto('/dashboard/tasks/e2e-pending-review');
+
+  const description = page.getByRole('group', { name: 'Description' });
+  const descriptionBody = description.getByTestId('task-description-body');
+  const submissionReview = page.getByRole('heading', { name: 'Submission review' });
+  const showFullDescription = description.getByRole('button', {
+    name: 'Show full description',
+  });
+  await expect(showFullDescription).toHaveAttribute('aria-expanded', 'false');
+  await expect(descriptionBody).toHaveAttribute('data-collapsed', 'true');
+  await expect(description.getByTestId('task-description-fade')).toBeVisible();
+  await expect(description).toContainText(
+    'Compare every submitted artifact against the brief before releasing escrow.'
+  );
+  const collapsedDescriptionBox = await descriptionBody.boundingBox();
+  expect(collapsedDescriptionBox).not.toBeNull();
+  expect(collapsedDescriptionBox!.height).toBeGreaterThanOrEqual(199);
+  expect(collapsedDescriptionBox!.height).toBeLessThanOrEqual(201);
+  const submissionReviewHandle = await submissionReview.elementHandle();
+  expect(submissionReviewHandle).not.toBeNull();
+  if (!submissionReviewHandle) {
+    throw new Error('Submission review heading did not render.');
+  }
+  expect(
+    await description.evaluate(
+      (element, reviewHeading) =>
+        Boolean(element.compareDocumentPosition(reviewHeading) & Node.DOCUMENT_POSITION_FOLLOWING),
+      submissionReviewHandle
+    )
+  ).toBe(true);
+
+  await showFullDescription.click();
+  await expect(description.getByRole('button', { name: 'Collapse description' })).toHaveAttribute(
+    'aria-expanded',
+    'true'
+  );
+  await expect(descriptionBody).toHaveAttribute('data-collapsed', 'false');
+  await expect(description.getByTestId('task-description-fade')).toHaveCount(0);
+  const expandedDescriptionBox = await descriptionBody.boundingBox();
+  expect(expandedDescriptionBox).not.toBeNull();
+  expect(expandedDescriptionBox!.height).toBeGreaterThan(200);
+
+  const comparison = page.getByRole('region', { name: 'Artifact comparison' });
+  await comparison
+    .getByRole('button', { name: /Open candidate-a-calculator\.html preview/i })
+    .click();
+
+  const dialog = page.locator('[role="dialog"][data-full-viewport]');
+  const frameTitle = 'Interactive preview of candidate-a-calculator.html';
+  const frameElement = dialog.getByTitle(frameTitle);
+  await expect(frameElement).toHaveAttribute('sandbox', 'allow-scripts');
+  await expect(frameElement).toHaveAttribute('allow', '');
+  await expect(frameElement).toHaveAttribute('referrerpolicy', 'no-referrer');
+
+  await dialog.getByRole('button', { name: 'Enter full screen' }).click();
+  await expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+  await expect(dialog.getByRole('button', { name: 'Exit full screen' })).toBeVisible();
+
+  const viewport = page.viewportSize();
+  const dialogBox = await dialog.boundingBox();
+  expect(viewport).not.toBeNull();
+  expect(dialogBox).not.toBeNull();
+  expect(dialogBox!.x).toBeLessThanOrEqual(2);
+  expect(dialogBox!.y).toBeLessThanOrEqual(2);
+  expect(dialogBox!.width).toBeGreaterThanOrEqual(viewport!.width - 4);
+  expect(dialogBox!.height).toBeGreaterThanOrEqual(viewport!.height - 4);
+
+  const galleryFrameBox = await dialog.getByTestId('gallery-frame').boundingBox();
+  expect(galleryFrameBox).not.toBeNull();
+  expect(galleryFrameBox!.height).toBeGreaterThan(viewport!.height * 0.65);
+
+  const frame = page.frameLocator(`iframe[title="${frameTitle}"]`);
+  await expect(frame.getByRole('heading', { name: 'Submission calculator' })).toBeVisible();
+  await frame.getByLabel('First number').fill('21');
+  await frame.getByLabel('Second number').fill('21');
+  await frame.getByRole('button', { name: 'Add numbers' }).click();
+  await expect(frame.getByRole('status')).toHaveText('42');
+
+  await page.keyboard.press('Escape');
+  await expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+  await expect(dialog.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+
+  await closeArtifactDialog(page, dialog);
+  await expect(dialog).toHaveCount(0);
+  await expect(frameElement).toHaveCount(0);
+});
+
 test('keeps a real task video playing when activity polling re-signs its URL', async ({
   page,
 }, testInfo) => {
@@ -738,7 +833,7 @@ test('keeps long task brief references within the mobile viewport', async ({ pag
 
   await page.goto('/tasks/mock-bounty-open');
 
-  await expect(page.getByRole('heading', { name: /Details/i })).toBeVisible();
+  await expect(page.getByRole('group', { name: 'Description' })).toBeVisible();
   await expect(
     page.locator('#main-content').getByText(/7ba0f258954455441a7bd3d21ca19049/i)
   ).toBeVisible();

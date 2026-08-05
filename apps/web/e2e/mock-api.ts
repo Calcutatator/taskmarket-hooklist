@@ -273,7 +273,7 @@ const tasks: TaskDetailResponse[] = [
   }),
   task({
     description:
-      'Bounty - pending requester review with multiple submissions and mixed artifact types.',
+      'Bounty - pending requester review with multiple submissions and mixed artifact types.\n\nCompare every submitted artifact against the brief before releasing escrow. Review the visual hierarchy, interaction quality, and fidelity of each candidate against the requested outcome.\n\nConfirm that interactive HTML submissions remain usable with a keyboard and pointer, that media scales cleanly across the available viewport, and that every important state is represented.\n\nRecord specific strengths, gaps, and follow-up requests before choosing a final submission. The decision should be clear enough that each contributor understands how their work was evaluated.',
     id: 'e2e-pending-review',
     mode: 'bounty',
     pendingActions: [

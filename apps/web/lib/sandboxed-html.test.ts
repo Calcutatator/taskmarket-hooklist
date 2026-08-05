@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  INTERACTIVE_HTML_ESCAPE_MESSAGE,
   MAX_INTERACTIVE_HTML_BYTES,
   buildSandboxedHtmlDocument,
   canRenderInteractiveHtml,
@@ -118,5 +119,17 @@ describe('buildSandboxedHtmlDocument', () => {
     expect(policies).toHaveLength(2);
     expect(policies[0]?.getAttribute('content')).toContain("default-src 'none'");
     expect(policies[1]?.getAttribute('content')).toBe('default-src *');
+  });
+
+  it('adds a fixed Escape bridge after submitted content without expanding permissions', () => {
+    const rendered = buildSandboxedHtmlDocument(
+      '<button id="submitted-control">Submitted control</button>'
+    );
+    const parsed = new DOMParser().parseFromString(rendered, 'text/html');
+    const bridge = parsed.body.querySelector('script[data-taskmarket-bridge="escape"]');
+
+    expect(bridge?.previousElementSibling?.id).toBe('submitted-control');
+    expect(bridge?.textContent).toContain("event.key==='Escape'");
+    expect(bridge?.textContent).toContain(INTERACTIVE_HTML_ESCAPE_MESSAGE);
   });
 });

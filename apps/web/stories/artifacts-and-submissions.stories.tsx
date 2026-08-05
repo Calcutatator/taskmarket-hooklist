@@ -5,6 +5,7 @@
 // storybook-coverage: components/market/private-task-access-gate.tsx
 // storybook-coverage: components/market/resilient-artifact-video.tsx
 // storybook-coverage: components/market/submission-gallery.tsx
+// storybook-coverage: components/market/task-description-disclosure.tsx
 // storybook-coverage: components/market/task-participation-module.tsx
 // storybook-coverage: components/market/task-review-status.tsx
 // storybook-coverage: components/market/tasks/live-status-banner.tsx
@@ -13,6 +14,7 @@
 
 import type { PendingAction } from '@taskmarket/shared';
 import type { Meta, StoryObj } from '@storybook/nextjs-vite';
+import { expect, userEvent, within } from 'storybook/test';
 
 import { ArtifactPoster } from '@/components/market/artifact-poster';
 import {
@@ -34,8 +36,10 @@ import {
   SubmissionGalleryDialog,
   submissionMediaEntries,
 } from '@/components/market/submission-gallery';
+import { TaskDescriptionDisclosure } from '@/components/market/task-description-disclosure';
 import { TaskParticipationModule } from '@/components/market/task-participation-module';
 import { TaskReviewStatus } from '@/components/market/task-review-status';
+import { TaskDetailPanel } from '@/components/market/tasks';
 import { LiveStatusBanner } from '@/components/market/tasks/live-status-banner';
 import { WorkerSubmissionActions } from '@/components/market/worker-submission-actions';
 import { WorkerSubmissionHistory } from '@/components/market/worker-submission-history';
@@ -177,6 +181,119 @@ const reviewTask = taskDetailFixture({
   status: 'pending_approval',
   submissionCount: submissions.length,
 });
+const longBriefReviewTask = taskDetailFixture({
+  ...reviewTask,
+  description: `Review the Taskmarket protocol documentation
+
+Compare the current task, submission, and evaluator guidance across the public docs and agent-facing skill bundle. Identify inconsistencies, missing edge cases, and the highest-impact opportunities to make the workflow easier to follow.
+
+DELIVERABLES
+A prioritized review with direct references, recommended copy, and a short rationale for every proposed change.
+
+QUALITY BAR
+Keep the recommendations specific enough that another contributor can implement them without reconstructing the research.`,
+  tags: ['research', 'protocol', 'long-brief'],
+});
+
+export const CollapsedTaskDescription: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  render: () => (
+    <div className="max-w-2xl">
+      <TaskDescriptionDisclosure>
+        <div className="grid gap-4 text-sm leading-6 text-muted-foreground">
+          <p>
+            Review every submission against the task brief and document the evidence behind the
+            final decision.
+          </p>
+          <p>
+            Check visual hierarchy, interaction quality, keyboard access, responsive behavior, and
+            whether the submitted result covers every requested state. Record direct references for
+            each strength or gap so the evaluation can be acted on without additional research.
+          </p>
+          <p>
+            Confirm the final artifact remains usable at desktop and mobile widths before releasing
+            escrow.
+          </p>
+        </div>
+      </TaskDescriptionDisclosure>
+    </div>
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const description = canvas.getByRole('group', { name: 'Description' });
+    const descriptionBody = within(description).getByTestId('task-description-body');
+    const showFullDescription = within(description).getByRole('button', {
+      name: 'Show full description',
+    });
+
+    await expect(showFullDescription).toHaveAttribute('aria-expanded', 'false');
+    await expect(descriptionBody).toHaveAttribute('data-collapsed', 'true');
+    await expect(within(description).getByTestId('task-description-fade')).toBeVisible();
+
+    await userEvent.click(showFullDescription);
+
+    await expect(
+      within(description).getByRole('button', { name: 'Collapse description' })
+    ).toHaveAttribute('aria-expanded', 'true');
+    await expect(descriptionBody).toHaveAttribute('data-collapsed', 'false');
+    await expect(
+      within(description).queryByTestId('task-description-fade')
+    ).not.toBeInTheDocument();
+  },
+};
+
+export const TaskDetailCollapsedDescriptionBeforeSubmissions: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  render: () => (
+    <TaskDetailPanel
+      backHref="/tasks"
+      modeData={{ submissions }}
+      profileBasePath="/agents"
+      task={longBriefReviewTask}
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const canvas = within(canvasElement);
+    const description = canvas.getByRole('group', { name: 'Description' });
+    const descriptionBody = within(description).getByTestId('task-description-body');
+    const submissionReview = canvas.getByRole('heading', { name: 'Submission review' });
+    const briefCopy = within(description).getByText(
+      /Identify inconsistencies, missing edge cases/i
+    );
+
+    const showFullDescription = within(description).getByRole('button', {
+      name: 'Show full description',
+    });
+    await expect(showFullDescription).toHaveAttribute('aria-expanded', 'false');
+    await expect(descriptionBody).toHaveAttribute('data-collapsed', 'true');
+    await expect(descriptionBody).toHaveClass('max-h-[200px]', 'overflow-hidden');
+    await expect(within(description).getByTestId('task-description-fade')).toBeVisible();
+    await expect(briefCopy).toBeVisible();
+    await expect(
+      Boolean(
+        description.compareDocumentPosition(submissionReview) & Node.DOCUMENT_POSITION_FOLLOWING
+      )
+    ).toBe(true);
+
+    await userEvent.click(showFullDescription);
+    await expect(
+      within(description).getByRole('button', { name: 'Collapse description' })
+    ).toHaveAttribute('aria-expanded', 'true');
+    await expect(descriptionBody).toHaveAttribute('data-collapsed', 'false');
+    await expect(descriptionBody).not.toHaveClass('max-h-[200px]', 'overflow-hidden');
+    await expect(
+      within(description).queryByTestId('task-description-fade')
+    ).not.toBeInTheDocument();
+    await expect(briefCopy).toBeVisible();
+    await expect(canvas.getByText('long-brief', { exact: true })).toBeVisible();
+  },
+};
 
 export const OpenSubmissionGallery: Story = {
   render: () => (
@@ -190,6 +307,51 @@ export const OpenSubmissionGallery: Story = {
       taskId="task-1"
     />
   ),
+};
+
+export const FullscreenInteractiveHtmlGallery: Story = {
+  parameters: {
+    a11y: { test: 'error' },
+    viewport: { defaultViewport: 'desktop' },
+  },
+  render: () => (
+    <SubmissionGalleryDialog
+      contextLabel="Protocol review submissions"
+      entries={submissionMediaEntries(submissions)}
+      initialArtifactId={htmlArtifact.id}
+      onOpenChange={() => undefined}
+      open
+      profileBasePath="/agents"
+      taskId="task-1"
+    />
+  ),
+  play: async ({ canvasElement }) => {
+    const documentBody = within(canvasElement.ownerDocument.body);
+    const galleryFrame = await documentBody.findByTestId('gallery-frame');
+    const dialog = galleryFrame.closest<HTMLElement>('[role="dialog"]');
+
+    await expect(dialog).not.toBeNull();
+    if (!dialog) {
+      throw new Error('Submission gallery dialog did not render.');
+    }
+    const gallery = within(dialog);
+    const frame = await gallery.findByTitle('Interactive preview of interactive-report.html');
+
+    await expect(frame).toHaveAttribute('sandbox', 'allow-scripts');
+    await expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+
+    const enterFullScreen = gallery.getByRole('button', { name: 'Enter full screen' });
+    enterFullScreen.focus();
+    await userEvent.keyboard('{Enter}');
+
+    await expect(dialog).toHaveAttribute('data-full-viewport', 'true');
+    const exitFullScreen = gallery.getByRole('button', { name: 'Exit full screen' });
+    await expect(canvasElement.ownerDocument.activeElement).toBe(exitFullScreen);
+
+    await userEvent.click(exitFullScreen);
+    await expect(dialog).toHaveAttribute('data-full-viewport', 'false');
+    await expect(gallery.getByRole('button', { name: 'Enter full screen' })).toBeVisible();
+  },
 };
 
 export const SubmissionHistory: Story = {
